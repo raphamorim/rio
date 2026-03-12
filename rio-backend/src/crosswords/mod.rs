@@ -2957,46 +2957,34 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
-        debug!(
-            "insert_graphic: resizing with cell_width={}, cell_height={}",
-            cell_width, cell_height
-        );
-        let graphic = match graphic.resized(
-            cell_width,
-            cell_height,
-            cell_width * self.grid.columns(),
-            cell_height * self.grid.screen_lines(),
-        ) {
-            Some(graphic) => {
-                debug!(
-                    "insert_graphic: resized to {}x{}",
-                    graphic.width, graphic.height
-                );
-                graphic
-            }
-            None => {
-                debug!("insert_graphic: resize returned None, aborting");
-                return;
-            }
-        };
+        // Compute display dimensions without CPU pixel resampling.
+        // The GPU will scale the original texture to these dimensions.
+        let view_width = cell_width * self.grid.columns();
+        let view_height = cell_height * self.grid.screen_lines();
+        let (display_w, display_h) =
+            graphic.compute_display_dimensions(cell_width, cell_height, view_width, view_height);
 
-        if graphic.width > MAX_GRAPHIC_DIMENSIONS[0]
-            || graphic.height > MAX_GRAPHIC_DIMENSIONS[1]
+        if display_w > MAX_GRAPHIC_DIMENSIONS[0]
+            || display_h > MAX_GRAPHIC_DIMENSIONS[1]
         {
             debug!(
-                "insert_graphic: dimensions too large {}x{}, max is {:?}",
-                graphic.width, graphic.height, MAX_GRAPHIC_DIMENSIONS
+                "insert_graphic: display dimensions too large {}x{}, max is {:?}",
+                display_w, display_h, MAX_GRAPHIC_DIMENSIONS
             );
             return;
         }
 
-        let width = graphic.width as u16;
-        let height = graphic.height as u16;
+        let width = display_w as u16;
+        let height = display_h as u16;
 
         if width == 0 || height == 0 {
             debug!("insert_graphic: zero width or height, aborting");
             return;
         }
+
+        let mut graphic = graphic;
+        graphic.display_width = Some(display_w);
+        graphic.display_height = Some(display_h);
 
         // Calculate bytes for this graphic
         let graphic_bytes = graphic.pixels.len();

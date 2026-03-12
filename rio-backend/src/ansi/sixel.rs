@@ -549,6 +549,8 @@ impl Parser {
             pixels: rgba_pixels,
             is_opaque,
             resize: None,
+            display_width: None,
+            display_height: None,
         };
 
         Ok((data, self.color_registers))

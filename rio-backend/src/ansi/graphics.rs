@@ -425,6 +425,8 @@ fn check_opaque_region() {
         pixels: vec![255; 10 * 10 * 3],
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -448,6 +450,8 @@ fn check_opaque_region() {
         color_type: ColorType::Rgba,
         is_opaque: false,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));
@@ -469,6 +473,8 @@ fn test_graphics_memory_tracking() {
         pixels,
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
 
     let bytes = Graphics::calculate_graphic_bytes(&graphic);
@@ -506,6 +512,8 @@ fn test_graphics_eviction_unused_first() {
         pixels: pixels1.clone(),
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -523,6 +531,8 @@ fn test_graphics_eviction_unused_first() {
         pixels: pixels2.clone(),
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
     graphics.pending.push(graphic2);
     graphics.track_graphic(GraphicId::new(2), pixels2.len());
@@ -561,6 +571,8 @@ fn test_graphics_eviction_oldest_first() {
         pixels: pixels1.clone(),
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -577,6 +589,8 @@ fn test_graphics_eviction_oldest_first() {
         pixels: pixels2.clone(),
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
     graphics.pending.push(graphic2);
     graphics.track_graphic(GraphicId::new(2), pixels2.len());
@@ -611,6 +625,8 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
         pixels: pixels1.clone(),
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -649,6 +665,8 @@ fn test_graphics_no_eviction_when_under_limit() {
         pixels: pixels1.clone(),
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
