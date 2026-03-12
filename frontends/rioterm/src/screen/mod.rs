@@ -88,6 +88,7 @@ pub struct Screen<'screen> {
     pub clipboard: Rc<RefCell<Clipboard>>,
     last_ime_cursor_pos: Option<(f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
+    pub shell_selector: crate::shell_selector::ShellSelector,
 }
 
 pub struct ScreenWindowProperties {
@@ -194,7 +195,7 @@ impl Screen<'_> {
 
         let context_manager_config = context::ContextManagerConfig {
             cwd: config.navigation.current_working_directory,
-            shell,
+            shell: shell.clone(),
             working_dir,
             spawn_performer: true,
             #[cfg(not(target_os = "windows"))]
@@ -273,6 +274,10 @@ impl Screen<'_> {
             bindings,
             clipboard,
             last_ime_cursor_pos: None,
+            shell_selector: crate::shell_selector::ShellSelector::new(
+                config.shell.clone(),
+                config.shells.clone(),
+            ),
         })
     }
 
@@ -418,6 +423,12 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
+
+        // Update shell selector with potentially new shells list
+        self.shell_selector = crate::shell_selector::ShellSelector::new(
+            config.shell.clone(),
+            config.shells.clone(),
+        );
 
         if cfg!(target_os = "macos") {
             self.sugarloaf.set_background_color(None);
@@ -635,6 +646,68 @@ impl Screen<'_> {
             self.update_hint_state();
             self.render();
             return;
+        }
+
+        // Handle shell selector navigation when active
+        if self.shell_selector.is_active() {
+            match key.logical_key {
+                // Escape: close selector
+                Key::Named(NamedKey::Escape) => {
+                    self.shell_selector.stop();
+                    self.render();
+                    return;
+                }
+                // Enter: select current profile and create tab
+                Key::Named(NamedKey::Enter) => {
+                    if let Some(shell) = self.shell_selector.selected_profile().cloned() {
+                        self.shell_selector.stop();
+                        self.create_tab_with_shell(Some(shell));
+                    }
+                    return;
+                }
+                // j or Down arrow: select next profile
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.shell_selector.select_next();
+                    self.render();
+                    return;
+                }
+                // k or Up arrow: select previous profile
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.shell_selector.select_previous();
+                    self.render();
+                    return;
+                }
+                // Number keys 1-9: select profile by index
+                Key::Character(ref ch) => {
+                    let ch_str = ch.as_str();
+                    if let Ok(index) = ch_str.parse::<usize>() {
+                        if index > 0 && self.shell_selector.select_by_index(index - 1) {
+                            if let Some(shell) =
+                                self.shell_selector.selected_profile().cloned()
+                            {
+                                self.shell_selector.stop();
+                                self.create_tab_with_shell(Some(shell));
+                            }
+                        }
+                        return;
+                    }
+                    // Handle j/k for vim-style navigation
+                    match ch_str {
+                        "j" => {
+                            self.shell_selector.select_next();
+                            self.render();
+                            return;
+                        }
+                        "k" => {
+                            self.shell_selector.select_previous();
+                            self.render();
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
         }
 
         let ignore_chars = self.process_key_bindings(key, &mode, mods);
@@ -982,6 +1055,14 @@ impl Screen<'_> {
                     Act::TabCreateNew => {
                         self.create_tab();
                     }
+                    Act::ShellProfileSelector => {
+                        if self.shell_selector.is_active() {
+                            self.shell_selector.stop();
+                        } else {
+                            self.shell_selector.start();
+                        }
+                        self.render();
+                    }
                     Act::TabCloseCurrent => {
                         self.close_tab();
                     }
@@ -1223,6 +1304,10 @@ impl Screen<'_> {
     }
 
     pub fn create_tab(&mut self) {
+        self.create_tab_with_shell(None);
+    }
+
+    pub fn create_tab_with_shell(&mut self, shell: Option<rio_backend::config::Shell>) {
         let redirect = true;
 
         // We resize the current tab ahead to prepare the
@@ -1231,7 +1316,8 @@ impl Screen<'_> {
         self.resize_top_or_bottom_line(num_tabs + 1);
 
         let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.add_context(redirect, rich_text_id);
+        self.context_manager
+            .add_context_with_shell(redirect, rich_text_id, shell);
 
         self.cancel_search();
         self.render();
@@ -2577,12 +2663,21 @@ impl Screen<'_> {
             }
         }
 
+        // Determine if shell selector should be rendered
+        let shell_selector = if self.shell_selector.is_active() {
+            Some(&self.shell_selector)
+        } else {
+            None
+        };
+
         // let renderer_run_start = std::time::Instant::now();
-        let window_update = self.renderer.run(
+        let window_update = self.renderer.run_with_shell_selector(
             &mut self.sugarloaf,
             &mut self.context_manager,
             &self.search_state.focused_match,
+            shell_selector,
         );
+
         // In case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)

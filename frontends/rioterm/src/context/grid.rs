@@ -5,7 +5,7 @@ use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
     layout::SugarDimensions, Object, Quad, RichText, Sugarloaf,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
@@ -203,7 +203,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn get_ordered_keys(&self) -> Vec<usize> {
         let mut keys = Vec::new();
         if let Some(root) = self.root {
-            self.collect_keys_recursive(root, &mut keys);
+            let mut visited = HashSet::new();
+            self.collect_keys_recursive(root, &mut keys, &mut visited);
         }
         keys
     }
@@ -231,14 +232,27 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         keys.iter().position(|&k| k == key)
     }
 
-    fn collect_keys_recursive(&self, key: usize, keys: &mut Vec<usize>) {
+    fn collect_keys_recursive(
+        &self,
+        key: usize,
+        keys: &mut Vec<usize>,
+        visited: &mut HashSet<usize>,
+    ) {
+        if !visited.insert(key) {
+            tracing::warn!(
+                "Detected cycle while collecting ordered keys at key {:?}",
+                key
+            );
+            return;
+        }
+
         if let Some(item) = self.inner.get(&key) {
             keys.push(key);
             if let Some(right_key) = item.right {
-                self.collect_keys_recursive(right_key, keys);
+                self.collect_keys_recursive(right_key, keys, visited);
             }
             if let Some(down_key) = item.down {
-                self.collect_keys_recursive(down_key, keys);
+                self.collect_keys_recursive(down_key, keys, visited);
             }
         }
     }
@@ -707,7 +721,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return;
         }
         if let Some(root) = self.root {
-            self.calculate_positions_recursive(root, self.margin);
+            let mut visited = HashSet::new();
+            self.calculate_positions_recursive(root, self.margin, &mut visited);
         }
     }
 
@@ -722,7 +737,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             if self.inner.contains_key(&key) {
                 // Find the position this node should have based on its parent
                 let margin = self.find_node_margin(key);
-                self.calculate_positions_recursive(key, margin);
+                let mut visited = HashSet::new();
+                self.calculate_positions_recursive(key, margin, &mut visited);
             }
         }
     }
@@ -771,7 +787,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Recursively calculate positions for grid items
-    fn calculate_positions_recursive(&mut self, key: usize, margin: Delta<f32>) {
+    fn calculate_positions_recursive(
+        &mut self,
+        key: usize,
+        margin: Delta<f32>,
+        visited: &mut HashSet<usize>,
+    ) {
+        if !visited.insert(key) {
+            tracing::warn!(
+                "Detected cycle while calculating grid positions at key {:?}",
+                key
+            );
+            return;
+        }
+
         if let Some(item) = self.inner.get_mut(&key) {
             // Set position for current item in the rich text object
             item.set_position([margin.x, margin.top_y]);
@@ -800,11 +829,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             // Recursively calculate positions for child items
             if let Some(down_key) = down_key {
-                self.calculate_positions_recursive(down_key, down_margin);
+                self.calculate_positions_recursive(down_key, down_margin, visited);
             }
 
             if let Some(right_key) = right_key {
-                self.calculate_positions_recursive(right_key, right_margin);
+                self.calculate_positions_recursive(right_key, right_margin, visited);
             }
         }
     }
@@ -1130,9 +1159,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         let mut last_right = None;
         let mut right_ptr = self.inner.get(&base_key).and_then(|item| item.right);
+        let mut visited = HashSet::new();
 
         // Find the last right item and resize all
         while let Some(right_key) = right_ptr {
+            if !visited.insert(right_key) {
+                tracing::warn!(
+                    "Detected cycle while inheriting right children at key {:?}",
+                    right_key
+                );
+                break;
+            }
+
             if !self.inner.contains_key(&right_key) {
                 break;
             }
@@ -1803,13 +1841,27 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Find all down children and update their width
         if let Some(parent) = self.inner.get(&parent_key) {
             if let Some(down_key) = parent.down {
-                self.update_children_width_recursive(down_key, new_width);
+                let mut visited = HashSet::new();
+                self.update_children_width_recursive(down_key, new_width, &mut visited);
             }
         }
     }
 
     /// Recursively update width for all nodes in a vertical chain
-    fn update_children_width_recursive(&mut self, key: usize, new_width: f32) {
+    fn update_children_width_recursive(
+        &mut self,
+        key: usize,
+        new_width: f32,
+        visited: &mut HashSet<usize>,
+    ) {
+        if !visited.insert(key) {
+            tracing::warn!(
+                "Detected cycle while updating children width at key {:?}",
+                key
+            );
+            return;
+        }
+
         let down_key = if let Some(item) = self.inner.get_mut(&key) {
             item.val.dimension.update_width(new_width);
             item.down
@@ -1821,7 +1873,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Continue down the chain
         if let Some(down_key) = down_key {
-            self.update_children_width_recursive(down_key, new_width);
+            self.update_children_width_recursive(down_key, new_width, visited);
         }
     }
 

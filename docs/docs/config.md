@@ -1374,6 +1374,64 @@ program = "/opt/homebrew/bin/tmux"
 args = ["new-session", "-c", "/var/www"]
 ```
 
+### Multiple Shell Profiles
+
+Rio supports multiple shell profiles, allowing you to quickly switch between different shells when creating new tabs.
+
+- `Ctrl+Shift+T` (or `Cmd+T` on macOS) creates a new tab with the default shell
+- `Ctrl+Shift+Y` (or `Cmd+Y` on macOS) opens a profile selector to choose which shell to use
+
+You can define additional shell profiles using `[[shells]]`:
+
+```toml
+# Default shell
+[shell]
+program = "/bin/zsh"
+args = ["--login"]
+
+# Additional shell profiles (uncomment to enable)
+# [[shells]]
+# name = "Fish"
+# program = "/bin/fish"
+# args = ["--login"]
+#
+# [[shells]]
+# name = "Bash"
+# program = "/bin/bash"
+# args = ["--login"]
+```
+
+#### Windows Example with WSL, PowerShell, and CMD
+
+```toml
+# Default shell (PowerShell)
+[shell]
+program = "pwsh"
+args = []
+
+# Additional shell profiles (uncomment to enable)
+# [[shells]]
+# name = "WSL"
+# program = "C:\\Windows\\System32\\wsl.exe"
+# args = []
+#
+# [[shells]]
+# name = "CMD"
+# program = "C:\\Windows\\System32\\cmd.exe"
+# args = []
+#
+# [[shells]]
+# name = "Git Bash"
+# program = "C:\\Program Files\\Git\\bin\\bash.exe"
+# args = ["--login"]
+```
+
+When you press `Ctrl+Shift+Y`, a selector overlay will appear showing all available profiles. Use:
+- `j`/`k` or arrow keys to navigate
+- `1-9` to directly select a profile by number
+- `Enter` to confirm selection
+- `Escape` to cancel
+
 ## theme
 
 The configuration property `theme` is used for specifying the theme. Rio will look in the `themes` folder for the theme.
