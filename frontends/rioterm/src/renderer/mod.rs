@@ -2,7 +2,7 @@ mod char_cache;
 pub mod command_palette;
 mod font_cache;
 pub mod island;
-mod search;
+pub mod search;
 pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;
@@ -35,12 +35,6 @@ use std::ops::RangeInclusive;
 
 use unicode_width::UnicodeWidthChar;
 
-#[derive(Default)]
-pub struct Search {
-    rich_text_id: Option<usize>,
-    active_search: Option<String>,
-}
-
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
@@ -57,7 +51,7 @@ pub struct Renderer {
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
-    pub search: Search,
+    pub search: search::SearchOverlay,
     #[allow(unused)]
     pub option_as_alt: String,
     #[allow(unused)]
@@ -135,7 +129,7 @@ impl Renderer {
             command_palette: command_palette::CommandPalette::new(),
             named_colors,
             dynamic_background,
-            search: Search::default(),
+            search: search::SearchOverlay::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
             char_cache: CharCache::new(),
@@ -150,7 +144,7 @@ impl Renderer {
 
     #[inline]
     pub fn set_active_search(&mut self, active_search: Option<String>) {
-        self.search.active_search = active_search;
+        self.search.set_active_search(active_search);
     }
 
     #[inline]
@@ -604,9 +598,11 @@ impl Renderer {
                     last_char_was_space = false;
                 }
 
-                // Only break runs when styles differ in ways that affect shaping
-                // Background color is intentionally ignored to improve cache hit rates
-                if !styles_are_compatible_for_shaping(&last_style, &style) {
+                // Break runs when styles differ in ways that affect shaping
+                // or when background color changes (for search highlights, etc.)
+                if !styles_are_compatible_for_shaping(&last_style, &style)
+                    || last_style.background_color != style.background_color
+                {
                     if !content.is_empty() {
                         if let Some(line) = line_opt {
                             builder.add_text_on_line(line, &content, last_style);
@@ -854,88 +850,6 @@ impl Renderer {
     }
 
     #[inline]
-    fn update_search_rich_text(&mut self, content: &mut Content) {
-        if let Some(active_search_content) = &self.search.active_search {
-            if let Some(search_rich_text) = self.search.rich_text_id {
-                if active_search_content.is_empty() {
-                    content
-                        .sel(search_rich_text)
-                        .clear()
-                        .new_line()
-                        .add_text(
-                            &String::from("Search: type something..."),
-                            SpanStyle {
-                                color: [
-                                    self.named_colors.foreground[0],
-                                    self.named_colors.foreground[1],
-                                    self.named_colors.foreground[2],
-                                    self.named_colors.foreground[3] - 0.3,
-                                ],
-                                ..SpanStyle::default()
-                            },
-                        )
-                        .build();
-                } else {
-                    let style = SpanStyle {
-                        color: self.named_colors.foreground,
-                        ..SpanStyle::default()
-                    };
-                    let line = content.sel(search_rich_text);
-                    line.clear().new_line().add_text("Search: ", style);
-
-                    // Collect characters that need font lookups
-                    let mut font_lookups = Vec::new();
-                    let mut char_styles = Vec::new();
-
-                    for character in active_search_content.chars() {
-                        let mut char_style = style;
-                        if let Some((font_id, width)) =
-                            self.font_cache.get(&(character, style.font_attrs))
-                        {
-                            char_style.font_id = *font_id;
-                            char_style.width = *width;
-                        } else {
-                            font_lookups.push((char_styles.len(), character));
-                        }
-                        char_styles.push((char_style, character));
-                    }
-
-                    // Batch font lookups with a single lock acquisition
-                    if !font_lookups.is_empty() {
-                        let font_ctx = self.font_context.inner.read();
-                        for (style_index, character) in font_lookups {
-                            let mut width = character.width().unwrap_or(1) as f32;
-                            let char_style = &mut char_styles[style_index].0;
-
-                            if let Some((font_id, is_emoji)) =
-                                font_ctx.find_best_font_match(character, char_style)
-                            {
-                                char_style.font_id = font_id;
-                                if is_emoji {
-                                    width = 2.0;
-                                }
-                            }
-                            char_style.width = width;
-                        }
-                    }
-
-                    // Render all characters
-                    for (char_style, character) in char_styles {
-                        line.add_text_on_line(
-                            // Add on first line
-                            1,
-                            self.char_cache.get_str(character),
-                            char_style,
-                        );
-                    }
-
-                    line.build();
-                }
-            }
-        }
-    }
-
-    #[inline]
     pub fn run(
         &mut self,
         sugarloaf: &mut Sugarloaf,
@@ -943,15 +857,6 @@ impl Renderer {
         focused_match: &Option<RangeInclusive<Pos>>,
     ) -> Option<crate::context::renderable::WindowUpdate> {
         // let start = std::time::Instant::now();
-
-        // In case rich text for search was not created
-        let has_search = self.search.active_search.is_some();
-        if has_search && self.search.rich_text_id.is_none() {
-            let search_rich_text = crate::context::next_rich_text_id();
-            let _ = sugarloaf.text(Some(search_rich_text));
-            sugarloaf.set_text_font_size(&search_rich_text, 12.0);
-            self.search.rich_text_id = Some(search_rich_text);
-        }
 
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
@@ -1204,8 +1109,6 @@ impl Renderer {
             }
         }
 
-        self.update_search_rich_text(sugarloaf.content());
-
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
 
@@ -1216,6 +1119,11 @@ impl Renderer {
                 context_manager,
             );
         }
+
+        self.search.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
 
         self.command_palette.render(
             sugarloaf,

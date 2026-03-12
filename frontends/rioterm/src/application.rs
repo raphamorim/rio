@@ -970,6 +970,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 return;
                             }
 
+                            if route.window.screen.handle_search_click() {
+                                route.request_redraw();
+                                return;
+                            }
+
                             let handled_by_island = route
                                 .window
                                 .screen
@@ -1104,6 +1109,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
+                }
+
+                // Handle search overlay hover
+                if route.window.screen.renderer.search.is_active() {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    let win_w = route.window.screen.sugarloaf.window_size().width as f32;
+                    let mx = x as f32 / scale;
+                    let my = y as f32 / scale;
+                    if route
+                        .window
+                        .screen
+                        .renderer
+                        .search
+                        .hover(mx, my, win_w, scale)
+                    {
+                        route.window.screen.render();
+                        route.request_redraw();
+                    }
                 }
 
                 // Check if mouse is over island and set cursor to default
