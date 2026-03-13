@@ -12,20 +12,15 @@ use crate::bindings::FontSizeAction;
 use crate::event::ClickState;
 use crate::router::Route;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum TouchPurpose {
+    #[default]
     None,
     Select(Touch),
     Scroll(Touch),
     Zoom(TouchZoom),
     Tap(Touch),
     Invalid(HashSet<u64, RandomState>),
-}
-
-impl Default for TouchPurpose {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 const FONT_SIZE_STEP: f32 = 1.00;

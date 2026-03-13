@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use std::ffi::{c_void, OsStr, OsString};
 use std::iter::once;
 use std::ops::BitAnd;
