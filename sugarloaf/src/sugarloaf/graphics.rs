@@ -252,15 +252,19 @@ impl GraphicData {
         };
 
         if width == 0 || height == 0 {
-            return (0, 0);
+            return (self.width, self.height);
         }
 
         if resize.width == ResizeParameter::Auto {
-            width = self.width * height / self.height;
+            width =
+                (self.width as f64 * height as f64 / self.height as f64).round()
+                    as usize;
         }
 
         if resize.height == ResizeParameter::Auto {
-            height = self.height * width / self.width;
+            height =
+                (self.height as f64 * width as f64 / self.width as f64).round()
+                    as usize;
         }
 
         width = cmp::min(width, MAX_GRAPHIC_DIMENSIONS[0]);
@@ -271,8 +275,8 @@ impl GraphicData {
             let scale_w = width as f64 / self.width as f64;
             let scale_h = height as f64 / self.height as f64;
             let scale = scale_w.min(scale_h);
-            width = (self.width as f64 * scale) as usize;
-            height = (self.height as f64 * scale) as usize;
+            width = (self.width as f64 * scale).round() as usize;
+            height = (self.height as f64 * scale).round() as usize;
         }
 
         (width, height)
