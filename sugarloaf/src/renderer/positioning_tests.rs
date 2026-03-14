@@ -945,8 +945,7 @@ mod tests {
         };
 
         let rect = Rect::new(0.0, 0.0, 100.0, line_height);
-        let underline =
-            compositor.create_underline_from_decoration(&style_with_offset, &rect);
+        let underline = compositor.create_underline_from_decoration(&style_with_offset);
 
         if let Some(underline) = underline {
             // Should use font's strikeout offset (negated)
@@ -962,8 +961,7 @@ mod tests {
             ..style_with_offset
         };
 
-        let underline =
-            compositor.create_underline_from_decoration(&style_with_x_height, &rect);
+        let underline = compositor.create_underline_from_decoration(&style_with_x_height);
 
         if let Some(underline) = underline {
             // Should use half of x-height above baseline
@@ -979,8 +977,7 @@ mod tests {
             ..style_with_offset
         };
 
-        let underline =
-            compositor.create_underline_from_decoration(&style_fallback, &rect);
+        let underline = compositor.create_underline_from_decoration(&style_fallback);
 
         if let Some(underline) = underline {
             // Should use approximate position

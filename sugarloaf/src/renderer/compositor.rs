@@ -26,7 +26,6 @@ impl Compositor {
     pub fn create_underline_from_decoration(
         &self,
         style: &TextRunStyle,
-        rect: &Rect,
     ) -> Option<RunUnderline> {
         match style.decoration {
             Some(SpanStyleDecoration::Underline(info)) => {
@@ -137,7 +136,7 @@ impl Compositor {
         order: u8,
     ) {
         let rect = rect.into();
-        let underline = self.create_underline_from_decoration(style, &rect);
+        let underline = self.create_underline_from_decoration(style);
 
         let subpx_bias = (0.125, 0.);
         let color = style.color;

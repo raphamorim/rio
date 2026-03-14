@@ -879,13 +879,14 @@ impl Renderer {
                 let panel_rect = grid_context.layout_rect();
                 let ctx = grid_context.context();
                 let terminal = ctx.terminal.lock();
-                self.scrollbar.push_panel_state(scrollbar::PanelScrollState {
-                    rich_text_id: ctx.rich_text_id,
-                    panel_rect,
-                    display_offset: terminal.display_offset(),
-                    history_size: terminal.history_size(),
-                    screen_lines: terminal.screen_lines(),
-                });
+                self.scrollbar
+                    .push_panel_state(scrollbar::PanelScrollState {
+                        rich_text_id: ctx.rich_text_id,
+                        panel_rect,
+                        display_offset: terminal.display_offset(),
+                        history_size: terminal.history_size(),
+                        screen_lines: terminal.screen_lines(),
+                    });
             }
         }
 
