@@ -3107,19 +3107,6 @@ impl Screen<'_> {
         }
     }
 
-    pub fn render_assistant(
-        &mut self,
-        assistant: &crate::router::routes::assistant::Assistant,
-    ) {
-        self.sugarloaf.clear();
-        crate::router::routes::assistant::screen(
-            &mut self.sugarloaf,
-            &self.context_manager.current().dimension,
-            assistant,
-        );
-        self.sugarloaf.render();
-    }
-
     pub fn render_welcome(&mut self) {
         self.sugarloaf.clear();
         crate::router::routes::welcome::screen(

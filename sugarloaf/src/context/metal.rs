@@ -1,6 +1,6 @@
 use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
-use ::objc::runtime::Object;
-use ::objc::{msg_send, sel, sel_impl};
+use ::objc_rs::runtime::Object;
+use ::objc_rs::{msg_send, sel, sel_impl};
 use core_graphics_types::geometry::CGSize;
 use metal::{
     CommandBuffer, CommandQueue, Device, MTLGPUFamily, MTLPixelFormat, MetalDrawable,

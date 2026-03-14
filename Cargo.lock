@@ -4166,7 +4166,7 @@ dependencies = [
  "memmap2",
  "metal 0.32.0",
  "num-traits",
- "objc",
+ "objc-rs",
  "parking_lot",
  "png 0.17.16",
  "raw-window-handle",
