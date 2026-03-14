@@ -234,7 +234,7 @@ impl<'a> WgpuContext<'a> {
         self.scale = scale;
     }
 
-    pub fn get_optimal_texture_format(&self, channels: u32) -> wgpu::TextureFormat {
+    pub fn get_optimal_texture_format(&self) -> wgpu::TextureFormat {
         // wgpu always uses f32 formats, not f16
         wgpu::TextureFormat::Rgba8Unorm
     }
