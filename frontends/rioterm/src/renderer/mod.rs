@@ -1,5 +1,4 @@
 pub mod assistant;
-mod char_cache;
 pub mod command_palette;
 mod font_cache;
 pub mod island;
@@ -9,7 +8,6 @@ pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;
 use crate::renderer::font_cache::FontCache;
-use char_cache::CharCache;
 use rio_backend::crosswords::LineDamage;
 use rio_backend::event::TerminalDamage;
 use taffy::NodeId;
@@ -65,7 +63,6 @@ pub struct Renderer {
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
-    char_cache: CharCache,
 }
 
 /// Check if two styles are compatible for shaping (can be in the same text run)
@@ -138,7 +135,6 @@ impl Renderer {
             scrollbar: scrollbar::Scrollbar::new(config.enable_scroll_bar),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
-            char_cache: CharCache::new(),
             is_game_mode_enabled: config.renderer.strategy.is_game(),
         };
 
