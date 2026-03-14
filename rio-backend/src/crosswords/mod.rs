@@ -3129,6 +3129,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
                             offset_y as usize,
                             cell_width,
                             cell_height,
+                            width as usize,
+                            height as usize,
                         ) =>
                     {
                         // Ensure that we don't exceed the graphics limit per cell.
