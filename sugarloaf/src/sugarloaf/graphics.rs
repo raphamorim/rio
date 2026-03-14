@@ -34,6 +34,9 @@ impl Graphics {
             return;
         }
 
+        let display_w = graphic_data.display_width.unwrap_or(graphic_data.width) as f32;
+        let display_h =
+            graphic_data.display_height.unwrap_or(graphic_data.height) as f32;
         self.inner.insert(
             graphic_data.id,
             GraphicDataEntry {
