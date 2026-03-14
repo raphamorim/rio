@@ -5,21 +5,20 @@
 
 #![allow(clippy::uninlined_format_args)]
 
-use crate::components::rich_text::RichTextBrush;
 use crate::font::FontLibrary;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::Script;
 use crate::font_introspector::{shape::cluster::GlyphCluster, FontRef};
+use crate::layout::content_data::{ContentData, ContentState};
 use crate::layout::render_data::RenderData;
-use crate::layout::RichTextLayout;
-use crate::Graphics;
+use crate::layout::TextLayout;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::debug;
 
 use crate::font_introspector::Attributes;
@@ -76,22 +75,10 @@ impl CachedContent {
     }
 }
 
-pub struct RichTextCounter(AtomicUsize);
-
-impl RichTextCounter {
-    pub const fn new() -> Self {
-        Self(AtomicUsize::new(1))
-    }
-
-    pub fn next(&self) -> usize {
-        self.0.fetch_add(1, Ordering::Relaxed)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct FragmentData {
     pub content: String,
-    pub style: FragmentStyle,
+    pub style: SpanStyle,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -100,7 +87,7 @@ pub struct BuilderLine {
     pub render_data: RenderData,
 }
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq)]
 #[repr(C)]
 pub enum BuilderStateUpdate {
     #[default]
@@ -109,13 +96,13 @@ pub enum BuilderStateUpdate {
     Noop,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Debug)]
 pub struct BuilderState {
     pub lines: Vec<BuilderLine>,
     pub vars: FontSettingCache<f32>,
     pub last_update: BuilderStateUpdate,
-    scaled_font_size: f32,
-    pub layout: RichTextLayout,
+    pub scaled_font_size: f32,
+    pub layout: TextLayout,
 }
 
 impl BuilderState {
@@ -128,16 +115,12 @@ impl BuilderState {
         self.lines.remove(pos);
     }
     #[inline]
-    pub fn from_layout(layout: &RichTextLayout) -> Self {
+    pub fn from_layout(layout: &TextLayout) -> Self {
         Self {
             layout: *layout,
             scaled_font_size: layout.font_size * layout.dimensions.scale,
             ..BuilderState::default()
         }
-    }
-    #[inline]
-    pub fn new_line(&mut self) {
-        self.lines.push(BuilderLine::default());
     }
     #[inline]
     pub fn current_line(&self) -> usize {
@@ -166,11 +149,73 @@ impl BuilderState {
         };
     }
     #[inline]
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self) -> &mut Self {
         self.lines.clear();
         self.vars.clear();
         self.last_update = BuilderStateUpdate::Full;
+        self.lines.push(BuilderLine::default());
+        self
     }
+
+    /// Add a text span with the given style
+    #[inline]
+    pub fn add_span(&mut self, text: &str, style: SpanStyle) -> &mut Self {
+        if self.lines.is_empty() {
+            self.lines.push(BuilderLine::default());
+        }
+        let current_line = self.current_line();
+        if let Some(line) = self.lines.get_mut(current_line) {
+            line.fragments.push(FragmentData {
+                content: text.to_string(),
+                style,
+            });
+        }
+        self
+    }
+
+    /// Add a new line
+    #[inline]
+    pub fn new_line(&mut self) -> &mut Self {
+        self.lines.push(BuilderLine::default());
+        self
+    }
+
+    /// Clear a specific line's fragments
+    #[inline]
+    pub fn clear_line(&mut self, line_number: usize) -> &mut Self {
+        if let Some(line) = self.lines.get_mut(line_number) {
+            line.fragments.clear();
+            line.render_data.glyphs.clear();
+            line.render_data.runs.clear();
+            self.mark_line_dirty(line_number);
+        }
+        self
+    }
+
+    /// Add text to a specific line
+    #[inline]
+    pub fn add_span_on_line(
+        &mut self,
+        line_number: usize,
+        text: &str,
+        style: SpanStyle,
+    ) -> &mut Self {
+        if let Some(line) = self.lines.get_mut(line_number) {
+            line.fragments.push(FragmentData {
+                content: text.to_string(),
+                style,
+            });
+        }
+        self
+    }
+
+    /// Finalize the text building (placeholder for compatibility)
+    #[inline]
+    pub fn build(&mut self) -> &mut Self {
+        self.last_update = BuilderStateUpdate::Full;
+        self
+    }
+
     #[inline]
     pub fn rescale(&mut self, scale_factor: f32) {
         self.scaled_font_size = self.layout.font_size * scale_factor;
@@ -221,14 +266,14 @@ impl BuilderState {
 pub type FontSettingKey = u32;
 
 /// Cache of tag/value pairs for font settings.
-#[derive(Default)]
-pub struct FontSettingCache<T: Copy + PartialOrd + PartialEq> {
+#[derive(Default, Clone, Debug)]
+pub struct FontSettingCache<T: Copy + PartialOrd + PartialEq + std::fmt::Debug> {
     settings: Vec<Setting<T>>,
     lists: Vec<FontSettingList>,
     tmp: Vec<Setting<T>>,
 }
 
-impl<T: Copy + PartialOrd + PartialEq> FontSettingCache<T> {
+impl<T: Copy + PartialOrd + PartialEq + std::fmt::Debug> FontSettingCache<T> {
     pub fn get(&self, key: u32) -> &[Setting<T>] {
         if key == !0 {
             &[]
@@ -251,7 +296,7 @@ impl<T: Copy + PartialOrd + PartialEq> FontSettingCache<T> {
 pub const EMPTY_FONT_SETTINGS: FontSettingKey = !0;
 
 /// Range within a font setting cache.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct FontSettingList {
     pub start: u32,
     pub end: u32,
@@ -282,14 +327,14 @@ pub struct UnderlineInfo {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub enum FragmentStyleDecoration {
+pub enum SpanStyleDecoration {
     // offset, size
     Underline(UnderlineInfo),
     Strikethrough,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub struct FragmentStyle {
+pub struct SpanStyle {
     pub font_id: usize,
     //  Unicode width
     pub width: f32,
@@ -308,7 +353,7 @@ pub struct FragmentStyle {
     /// Multiplicative line spacing factor.
     // pub line_spacing: f32,
     /// Enable underline decoration.
-    pub decoration: Option<FragmentStyleDecoration>,
+    pub decoration: Option<SpanStyleDecoration>,
     /// Decoration color.
     pub decoration_color: Option<[f32; 4]>,
     /// Cursor style.
@@ -319,7 +364,7 @@ pub struct FragmentStyle {
     pub drawable_char: Option<DrawableChar>,
 }
 
-impl Default for FragmentStyle {
+impl Default for SpanStyle {
     fn default() -> Self {
         Self {
             font_id: 0,
@@ -345,10 +390,11 @@ pub struct Content {
     fonts: FontLibrary,
     font_features: Vec<crate::font_introspector::Setting<u16>>,
     scx: ShapeContext,
-    pub states: FxHashMap<usize, BuilderState>,
+    pub states: FxHashMap<usize, ContentState>,
+    /// Transient text content that gets cleared after each render
+    pub transient_texts: Vec<ContentState>,
     word_cache: WordCache,
     selector: Option<usize>,
-    counter: RichTextCounter,
 }
 
 impl Content {
@@ -358,16 +404,23 @@ impl Content {
             fonts: font_library.clone(),
             scx: ShapeContext::new(),
             states: FxHashMap::default(),
+            transient_texts: Vec::new(),
             word_cache: WordCache::new(),
             font_features: vec![],
             selector: None,
-            counter: RichTextCounter::new(),
         }
     }
 
     #[inline]
     pub fn sel(&mut self, state_id: usize) -> &mut Content {
         self.selector = Some(state_id);
+
+        // Ensure the state exists - create it with default text layout if missing
+        self.states.entry(state_id).or_insert_with(|| {
+            let default_layout = TextLayout::default();
+            let builder_state = BuilderState::from_layout(&default_layout);
+            ContentState::new(ContentData::Text(builder_state))
+        });
 
         self
     }
@@ -383,13 +436,42 @@ impl Content {
         self.word_cache = WordCache::new();
     }
 
+    /// Get text state by ID (returns None if ID doesn't exist or is not text)
     #[inline]
     pub fn get_state(&self, state_id: &usize) -> Option<&BuilderState> {
+        self.states.get(state_id)?.as_text()
+    }
+
+    /// Get mutable text state by ID (returns None if ID doesn't exist or is not text)
+    #[inline]
+    pub fn get_state_mut(&mut self, state_id: &usize) -> Option<&mut BuilderState> {
+        self.states.get_mut(state_id)?.as_text_mut()
+    }
+
+    /// Get text by ID - returns the lines API if text, None otherwise
+    #[inline]
+    pub fn get_text_by_id(&self, id: usize) -> Option<&BuilderState> {
+        self.states.get(&id)?.as_text()
+    }
+
+    /// Get mutable text by ID
+    #[inline]
+    pub fn get_text_by_id_mut(&mut self, id: usize) -> Option<&mut BuilderState> {
+        self.states.get_mut(&id)?.as_text_mut()
+    }
+
+    /// Get content state by ID (any type)
+    #[inline]
+    pub fn get_content_state(&self, state_id: &usize) -> Option<&ContentState> {
         self.states.get(state_id)
     }
 
+    /// Get mutable content state by ID (any type)
     #[inline]
-    pub fn get_state_mut(&mut self, state_id: &usize) -> Option<&mut BuilderState> {
+    pub fn get_content_state_mut(
+        &mut self,
+        state_id: &usize,
+    ) -> Option<&mut ContentState> {
         self.states.get_mut(state_id)
     }
 
@@ -401,12 +483,105 @@ impl Content {
         self.font_features = font_features;
     }
 
+    /// Create text content at the given ID (overwrites existing content)
     #[inline]
-    pub fn create_state(&mut self, rich_text_layout: &RichTextLayout) -> usize {
-        let id = self.counter.next();
-        self.states
-            .insert(id, BuilderState::from_layout(rich_text_layout));
-        id
+    pub fn set_text(&mut self, id: usize, rich_text_layout: &TextLayout) {
+        let mut builder_state = BuilderState::from_layout(rich_text_layout);
+
+        // Immediately calculate dimensions for a representative character
+        builder_state.layout.dimensions =
+            self.calculate_character_cell_dimensions(rich_text_layout);
+
+        if let Some(content_state) = self.states.get_mut(&id) {
+            content_state.data = ContentData::Text(builder_state);
+            content_state.render_data.needs_repaint = true;
+            content_state.render_data.should_remove = false;
+        } else {
+            self.states
+                .insert(id, ContentState::new(ContentData::Text(builder_state)));
+        }
+    }
+
+    /// Calculate character cell dimensions
+    fn calculate_character_cell_dimensions(
+        &self,
+        layout: &TextLayout,
+    ) -> crate::layout::TextDimensions {
+        if let Some(font_library_data) = self.fonts.inner.try_read() {
+            let font_id = 0; // FONT_ID_REGULAR
+            let font_size = layout.font_size;
+
+            // Get font data to create swash FontRef
+            if let Some((font_data, offset, _key)) = font_library_data.get_data(&font_id)
+            {
+                // Create swash FontRef directly from font data
+                if let Some(font_ref) = crate::font_introspector::FontRef::from_index(
+                    &font_data,
+                    offset as usize,
+                ) {
+                    // Get metrics using swash
+                    let font_metrics = font_ref.metrics(&[]);
+
+                    // Calculate character cell width using space character
+                    let glyph_id = font_ref.charmap().map(' ' as u32);
+                    let char_width = {
+                        // Get advance width for space character using GlyphMetrics
+                        let glyph_metrics =
+                            crate::font_introspector::GlyphMetrics::from_font(
+                                &font_ref,
+                                &[],
+                            );
+                        let advance = glyph_metrics.advance_width(glyph_id);
+
+                        // Scale to font size
+                        let units_per_em = font_metrics.units_per_em as f32;
+                        let scale_factor = font_size / units_per_em;
+
+                        if advance > 0.0 {
+                            advance * scale_factor
+                        } else {
+                            // Fallback: approximate monospace character width
+                            font_size
+                        }
+                    };
+
+                    // Calculate line height using scaled metrics
+                    let units_per_em = font_metrics.units_per_em as f32;
+                    let scale_factor = font_size / units_per_em;
+                    let ascent = font_metrics.ascent * scale_factor;
+                    let descent = font_metrics.descent.abs() * scale_factor;
+                    let leading = font_metrics.leading * scale_factor;
+                    let line_height = (ascent + descent + leading) * layout.line_height;
+
+                    // Scale to physical pixels to match what the brush returns
+                    let char_width_physical = char_width * layout.dimensions.scale;
+                    let line_height_physical = line_height * layout.dimensions.scale;
+
+                    // Return dimensions in physical pixels (matching brush behavior)
+                    let result = crate::layout::TextDimensions {
+                        width: char_width_physical,
+                        height: line_height_physical,
+                        scale: layout.dimensions.scale,
+                    };
+
+                    // println!("  -> Returning dimensions (physical): width={}, height={}, scale={}",
+                    //     result.width, result.height, result.scale);
+
+                    return result;
+                }
+            }
+        }
+
+        // Fallback to reasonable defaults if font metrics unavailable
+        // Return in physical pixels to match brush behavior
+        let fallback_width = layout.font_size;
+        let fallback_height = layout.font_size * layout.line_height;
+
+        crate::layout::TextDimensions {
+            width: fallback_width * layout.dimensions.scale,
+            height: fallback_height * layout.dimensions.scale,
+            scale: layout.dimensions.scale,
+        }
     }
 
     #[inline]
@@ -416,50 +591,110 @@ impl Content {
 
     #[inline]
     pub fn mark_states_clean(&mut self) {
-        for state in self.states.values_mut() {
-            state.mark_clean();
+        for content_state in self.states.values_mut() {
+            if let Some(text_state) = content_state.as_text_mut() {
+                text_state.mark_clean();
+            }
         }
     }
 
+    /// Add a transient text content that will be cleared after rendering.
+    /// Returns the index into transient_texts vec.
     #[inline]
-    pub fn update_dimensions(
-        &mut self,
-        state_id: &usize,
-        advance_brush: &mut RichTextBrush,
-    ) {
-        let mut content = Content::new(&self.fonts);
-        if let Some(rte) = self.states.get_mut(state_id) {
-            let id = content.create_state(&rte.layout);
-            content
-                .sel(id)
-                .new_line()
-                .add_text(" ", FragmentStyle::default())
-                .build();
-            let render_data = content.get_state(&id).unwrap().lines[0].clone();
+    pub fn add_transient_text(&mut self, layout: &TextLayout) -> usize {
+        let mut builder_state = BuilderState::from_layout(layout);
+        builder_state.layout.dimensions =
+            self.calculate_character_cell_dimensions(layout);
 
-            if let Some(dimension) = advance_brush.dimensions(
-                &self.fonts,
-                &render_data,
-                &mut Graphics::default(),
-            ) {
-                rte.layout.dimensions.height = dimension.height;
-                rte.layout.dimensions.width = dimension.width;
+        let mut content_state = ContentState::new(ContentData::Text(builder_state));
+        content_state.render_data.transient = true;
+
+        let index = self.transient_texts.len();
+        self.transient_texts.push(content_state);
+        index
+    }
+
+    /// Get mutable reference to transient text by index
+    #[inline]
+    pub fn get_transient_text_mut(&mut self, index: usize) -> Option<&mut BuilderState> {
+        self.transient_texts.get_mut(index)?.as_text_mut()
+    }
+
+    /// Get mutable reference to transient content state by index
+    #[inline]
+    pub fn get_transient_state_mut(&mut self, index: usize) -> Option<&mut ContentState> {
+        self.transient_texts.get_mut(index)
+    }
+
+    /// Clear all transient texts (called after rendering)
+    #[inline]
+    pub fn clear_transient_texts(&mut self) {
+        self.transient_texts.clear();
+    }
+
+    /// Build/shape all transient texts
+    #[inline]
+    pub fn build_transient_texts(&mut self) {
+        let script = Script::Latin;
+
+        for transient_idx in 0..self.transient_texts.len() {
+            let (scaled_font_size, num_lines) = {
+                let content_state = &self.transient_texts[transient_idx];
+                let text_state = match content_state.as_text() {
+                    Some(state) => state,
+                    None => continue,
+                };
+                (text_state.scaled_font_size, text_state.lines.len())
+            };
+
+            // Process each line
+            for line_number in 0..num_lines {
+                let content_state = &mut self.transient_texts[transient_idx];
+                let text_state = match content_state.as_text_mut() {
+                    Some(state) => state,
+                    None => continue,
+                };
+
+                Self::process_text_line(
+                    text_state,
+                    line_number,
+                    scaled_font_size,
+                    script,
+                    &self.font_features,
+                    &self.fonts,
+                    &mut self.scx,
+                    &mut self.word_cache,
+                );
             }
         }
     }
 
     #[inline]
+    pub fn update_dimensions(&mut self, state_id: &usize) {
+        let layout = if let Some(text_state) = self.get_state(state_id) {
+            text_state.layout
+        } else {
+            return;
+        };
+
+        let new_dimension = self.calculate_character_cell_dimensions(&layout);
+
+        if let Some(text_state) = self.get_state_mut(state_id) {
+            text_state.layout.dimensions = new_dimension;
+        }
+    }
+
+    #[inline]
     pub fn clear_state(&mut self, id: &usize) {
-        if let Some(state) = self.states.get_mut(id) {
-            state.clear();
-            state.begin();
+        if let Some(text_state) = self.get_state_mut(id) {
+            text_state.clear();
         }
     }
 
     #[inline]
     pub fn new_line_with_id(&mut self, id: &usize) -> &mut Content {
-        if let Some(content) = self.states.get_mut(id) {
-            content.new_line();
+        if let Some(text_state) = self.get_state_mut(id) {
+            text_state.new_line();
         }
 
         self
@@ -477,8 +712,8 @@ impl Content {
     #[inline]
     pub fn new_line_at(&mut self, pos: usize) -> &mut Content {
         if let Some(selector) = self.selector {
-            if let Some(content) = self.states.get_mut(&selector) {
-                content.new_line_at(pos);
+            if let Some(text_state) = self.get_state_mut(&selector) {
+                text_state.new_line_at(pos);
             }
         }
 
@@ -488,8 +723,8 @@ impl Content {
     #[inline]
     pub fn remove_line_at(&mut self, pos: usize) -> &mut Content {
         if let Some(selector) = self.selector {
-            if let Some(content) = self.states.get_mut(&selector) {
-                content.remove_line_at(pos);
+            if let Some(text_state) = self.get_state_mut(&selector) {
+                text_state.remove_line_at(pos);
             }
         }
 
@@ -499,8 +734,8 @@ impl Content {
     #[inline]
     pub fn clear_line(&mut self, line_to_clear: usize) -> &mut Content {
         if let Some(selector) = self.selector {
-            if let Some(state) = self.states.get_mut(&selector) {
-                if let Some(line) = state.lines.get_mut(line_to_clear) {
+            if let Some(text_state) = self.get_state_mut(&selector) {
+                if let Some(line) = text_state.lines.get_mut(line_to_clear) {
                     line.fragments.clear();
                     line.render_data.clear();
                 }
@@ -512,9 +747,8 @@ impl Content {
 
     #[inline]
     pub fn clear_with_id(&mut self, id: &usize) -> &mut Content {
-        if let Some(state) = self.states.get_mut(id) {
-            state.clear();
-            state.begin();
+        if let Some(text_state) = self.get_state_mut(id) {
+            text_state.clear();
         }
 
         self
@@ -522,9 +756,10 @@ impl Content {
 
     #[inline]
     pub fn clear_all(&mut self) -> &mut Content {
-        for state in &mut self.states.values_mut() {
-            state.clear();
-            state.begin();
+        for content_state in self.states.values_mut() {
+            if let Some(text_state) = content_state.as_text_mut() {
+                text_state.clear();
+            }
         }
 
         self
@@ -540,7 +775,7 @@ impl Content {
     }
 
     #[inline]
-    pub fn add_text(&mut self, text: &str, style: FragmentStyle) -> &mut Content {
+    pub fn add_text(&mut self, text: &str, style: SpanStyle) -> &mut Content {
         if let Some(selector) = self.selector {
             return self.add_text_with_id(&selector, text, style);
         }
@@ -553,12 +788,12 @@ impl Content {
         &mut self,
         line_idx: usize,
         text: &str,
-        style: FragmentStyle,
+        style: SpanStyle,
     ) -> &mut Content {
         if let Some(selector) = self.selector {
-            if let Some(state) = self.states.get_mut(&selector) {
-                state.mark_line_dirty(line_idx);
-                if let Some(line) = state.lines.get_mut(line_idx) {
+            if let Some(text_state) = self.get_state_mut(&selector) {
+                text_state.mark_line_dirty(line_idx);
+                if let Some(line) = text_state.lines.get_mut(line_idx) {
                     line.fragments.push(FragmentData {
                         content: text.to_string(),
                         style,
@@ -575,11 +810,11 @@ impl Content {
         &mut self,
         id: &usize,
         text: &str,
-        style: FragmentStyle,
+        style: SpanStyle,
     ) -> &mut Content {
-        if let Some(state) = self.states.get_mut(id) {
-            let current_line = state.current_line();
-            if let Some(line) = &mut state.lines.get_mut(current_line) {
+        if let Some(text_state) = self.get_state_mut(id) {
+            let current_line = text_state.current_line();
+            if let Some(line) = &mut text_state.lines.get_mut(current_line) {
                 line.fragments.push(FragmentData {
                     content: text.to_string(),
                     style,
@@ -595,23 +830,61 @@ impl Content {
         // Get all needed data while borrowing parts of self separately
         let script = Script::Latin;
 
-        // Safe to get state first as we'll only use it to access properties
-        let state = match self.states.get_mut(&state_id) {
+        // First check if state exists and is text type, get immutable data
+        let (scaled_font_size, num_lines) = {
+            let content_state = match self.states.get(&state_id) {
+                Some(state) => state,
+                None => return,
+            };
+            let text_state = match content_state.as_text() {
+                Some(state) => state,
+                None => return,
+            };
+            (text_state.scaled_font_size, text_state.lines.len())
+        };
+
+        let features = &self.font_features;
+
+        // Check if the line exists
+        if line_number >= num_lines {
+            return;
+        }
+
+        // Now get mutable borrow for the actual processing
+        let content_state = match self.states.get_mut(&state_id) {
             Some(state) => state,
             None => return,
         };
 
-        // Get references to the scaled font size and features outside any other borrows
-        let scaled_font_size = state.scaled_font_size;
-        let features = &self.font_features;
+        let text_state = match content_state.as_text_mut() {
+            Some(state) => state,
+            None => return,
+        };
 
-        // Check if the line exists
-        if line_number >= state.lines.len() {
-            return;
-        }
+        Self::process_text_line(
+            text_state,
+            line_number,
+            scaled_font_size,
+            script,
+            features,
+            &self.fonts,
+            &mut self.scx,
+            &mut self.word_cache,
+        );
+    }
 
+    fn process_text_line(
+        text_state: &mut BuilderState,
+        line_number: usize,
+        scaled_font_size: f32,
+        script: Script,
+        features: &[crate::font_introspector::Setting<u16>],
+        fonts: &FontLibrary,
+        scx: &mut ShapeContext,
+        word_cache: &mut WordCache,
+    ) {
         // Process fragments in the line
-        let line = &mut state.lines[line_number];
+        let line = &mut text_state.lines[line_number];
 
         // Process each fragment
         for fragment_idx in 0..line.fragments.len() {
@@ -623,15 +896,13 @@ impl Content {
             let style = item.style;
 
             // Get vars for this fragment
-            let vars: Vec<_> = state.vars.get(font_vars).to_vec();
+            let vars: Vec<_> = text_state.vars.get(font_vars).to_vec();
 
             // Check if the shaped text is already in the cache
-            if let Some(cached_content) =
-                self.word_cache.get_cached_content(&font_id, content)
+            if let Some(cached_content) = word_cache.get_cached_content(&font_id, content)
             {
                 // Get metrics from FontLibraryData (with caching)
-                if let Some((ascent, descent, leading)) = self
-                    .fonts
+                if let Some((ascent, descent, leading)) = fonts
                     .inner
                     .write()
                     .get_font_metrics(&font_id, scaled_font_size)
@@ -647,14 +918,6 @@ impl Content {
                     // Handle different types of cached content
                     match cached_content {
                         CachedContent::Normal(clusters) => {
-                            // debug!("=== CACHE HIT: USING NORMAL CONTENT ===");
-                            // debug!("Content: '{}' (len={})", content, content.len());
-                            // debug!(
-                            //     "Using cached Normal content with {} clusters",
-                            //     clusters.len()
-                            // );
-                            // debug!("=== END CACHE HIT ===");
-
                             if line.render_data.push_run_without_shaper(
                                 style,
                                 scaled_font_size,
@@ -667,13 +930,6 @@ impl Content {
                         }
                         CachedContent::RepeatedWhitespace { .. } => {
                             // Expand the whitespace sequence to the actual clusters
-                            // debug!("=== CACHE HIT: USING OPTIMIZED WHITESPACE ===");
-                            // debug!("Content: '{}' (len={})", content, content.len());
-                            // debug!(
-                            //     "Using cached RepeatedWhitespace - no shaping needed!"
-                            // );
-                            // debug!("=== END CACHE HIT ===");
-
                             let expanded_clusters = cached_content.expand(None);
 
                             if line.render_data.push_run_without_shaper(
@@ -694,24 +950,17 @@ impl Content {
 
             // If not in cache, shape the text
             // Set up cache entry info
-            self.word_cache.set_content(font_id, content);
+            word_cache.set_content(font_id, content);
 
             // Check if this is a repeated whitespace sequence that we can optimize
             if let Some((whitespace_char, count)) =
                 WordCache::analyze_whitespace_sequence(content)
             {
-                debug!("=== WHITESPACE OPTIMIZATION ===");
-                debug!(
-                    "Detected repeated whitespace: '{}' x{}",
-                    whitespace_char, count
-                );
-                debug!("Shaping only single character instead of {}", count);
-
                 // Shape only a single whitespace character
                 let single_char_content = whitespace_char.to_string();
 
                 // Process the font data directly without cloning FontRef
-                let font_library = &self.fonts.inner.read();
+                let font_library = &fonts.inner.read();
                 if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
                 {
                     let font_ref = FontRef {
@@ -719,8 +968,7 @@ impl Content {
                         offset,
                         key,
                     };
-                    let mut shaper = self
-                        .scx
+                    let mut shaper = scx
                         .builder(font_ref)
                         .script(script)
                         .size(scaled_font_size)
@@ -747,19 +995,19 @@ impl Content {
                         };
 
                         // Store in cache
-                        if let Some(cache) = self.word_cache.inner.get_mut(&font_id) {
-                            cache.put(self.word_cache.content_hash, cached_content);
+                        if let Some(cache) = word_cache.inner.get_mut(&font_id) {
+                            cache.put(word_cache.content_hash, cached_content);
                         } else {
                             let size = if font_id == 0 { 512 } else { 128 };
                             let mut cache =
                                 LruCache::new(NonZeroUsize::new(size).unwrap());
-                            cache.put(self.word_cache.content_hash, cached_content);
-                            self.word_cache.inner.insert(font_id, cache);
+                            cache.put(word_cache.content_hash, cached_content);
+                            word_cache.inner.insert(font_id, cache);
                         }
 
                         // Get the cached content and expand it for rendering
                         if let Some(cached) =
-                            self.word_cache.get_cached_content(&font_id, content)
+                            word_cache.get_cached_content(&font_id, content)
                         {
                             let expanded_clusters = cached.expand(None);
                             line.render_data.push_run_without_shaper(
@@ -773,14 +1021,14 @@ impl Content {
                     }
 
                     // Reset cache state
-                    self.word_cache.font_id = 0;
-                    self.word_cache.content_hash = 0;
-                    self.word_cache.current_content = None;
+                    word_cache.font_id = 0;
+                    word_cache.content_hash = 0;
+                    word_cache.current_content = None;
                 }
             } else {
                 // Normal content - shape as usual
                 // Process the font data directly without cloning FontRef
-                let font_library = &self.fonts.inner.read();
+                let font_library = &fonts.inner.read();
                 if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
                 {
                     let font_ref = FontRef {
@@ -788,8 +1036,7 @@ impl Content {
                         offset,
                         key,
                     };
-                    let mut shaper = self
-                        .scx
+                    let mut shaper = scx
                         .builder(font_ref) // Use reference directly without cloning
                         .script(script)
                         .size(scaled_font_size)
@@ -805,7 +1052,7 @@ impl Content {
                         scaled_font_size,
                         line_number as u32,
                         shaper,
-                        &mut self.word_cache,
+                        word_cache,
                     );
                 }
             }
@@ -814,20 +1061,22 @@ impl Content {
 
     #[inline]
     pub fn build(&mut self) {
-        // let start = std::time::Instant::now();
         if let Some(selector) = self.selector {
             let state_id = selector;
 
-            if let Some(state) = self.states.get_mut(&state_id) {
-                state.mark_dirty();
-                for line_number in 0..state.lines.len() {
-                    self.process_line(state_id, line_number);
+            let num_lines = {
+                if let Some(text_state) = self.get_state_mut(&state_id) {
+                    text_state.mark_dirty();
+                    text_state.lines.len()
+                } else {
+                    0
                 }
+            };
+
+            for line_number in 0..num_lines {
+                self.process_line(state_id, line_number);
             }
         }
-
-        // let duration = start.elapsed();
-        // println!("Time elapsed in build() is: {:?}", duration);
     }
 
     #[inline]
@@ -835,6 +1084,273 @@ impl Content {
         if let Some(selector) = self.selector {
             // Process just the specified line
             self.process_line(selector, line_number);
+        }
+    }
+
+    /// Set rectangle at ID (overwrites existing content)
+    #[inline]
+    pub fn set_rect(
+        &mut self,
+        id: usize,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
+        if let Some(content_state) = self.states.get_mut(&id) {
+            content_state.data = ContentData::Rect {
+                x,
+                y,
+                width,
+                height,
+                color,
+                depth,
+            };
+            content_state.render_data.needs_repaint = true;
+            content_state.render_data.should_remove = false;
+        } else {
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                    depth,
+                }),
+            );
+        }
+    }
+
+    /// Set rounded rectangle at ID
+    #[inline]
+    pub fn set_rounded_rect(
+        &mut self,
+        id: usize,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+        border_radius: f32,
+    ) {
+        if let Some(content_state) = self.states.get_mut(&id) {
+            content_state.data = ContentData::RoundedRect {
+                x,
+                y,
+                width,
+                height,
+                color,
+                depth,
+                border_radius,
+            };
+            content_state.render_data.needs_repaint = true;
+            content_state.render_data.should_remove = false;
+        } else {
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::RoundedRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                    depth,
+                    border_radius,
+                }),
+            );
+        }
+    }
+
+    /// Set line at ID
+    #[inline]
+    pub fn set_line(
+        &mut self,
+        id: usize,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
+        if let Some(content_state) = self.states.get_mut(&id) {
+            content_state.data = ContentData::Line {
+                x1,
+                y1,
+                x2,
+                y2,
+                width,
+                color,
+                depth,
+            };
+            content_state.render_data.needs_repaint = true;
+            content_state.render_data.should_remove = false;
+        } else {
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Line {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    width,
+                    color,
+                    depth,
+                }),
+            );
+        }
+    }
+
+    /// Set triangle at ID
+    #[inline]
+    pub fn set_triangle(
+        &mut self,
+        id: usize,
+        points: [(f32, f32); 3],
+        color: [f32; 4],
+        depth: f32,
+    ) {
+        if let Some(content_state) = self.states.get_mut(&id) {
+            content_state.data = ContentData::Triangle {
+                points,
+                color,
+                depth,
+            };
+            content_state.render_data.needs_repaint = true;
+            content_state.render_data.should_remove = false;
+        } else {
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Triangle {
+                    points,
+                    color,
+                    depth,
+                }),
+            );
+        }
+    }
+
+    /// Set polygon at ID
+    #[inline]
+    pub fn set_polygon(
+        &mut self,
+        id: usize,
+        points: &[(f32, f32)],
+        color: [f32; 4],
+        depth: f32,
+    ) {
+        let points_smallvec: SmallVec<[(f32, f32); 8]> = points.iter().copied().collect();
+        if let Some(content_state) = self.states.get_mut(&id) {
+            content_state.data = ContentData::Polygon {
+                points: points_smallvec,
+                color,
+                depth,
+            };
+            content_state.render_data.needs_repaint = true;
+            content_state.render_data.should_remove = false;
+        } else {
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Polygon {
+                    points: points_smallvec,
+                    color,
+                    depth,
+                }),
+            );
+        }
+    }
+
+    /// Set arc at ID
+    #[inline]
+    pub fn set_arc(
+        &mut self,
+        id: usize,
+        center_x: f32,
+        center_y: f32,
+        radius: f32,
+        start_angle: f32,
+        end_angle: f32,
+        stroke_width: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
+        if let Some(content_state) = self.states.get_mut(&id) {
+            content_state.data = ContentData::Arc {
+                center_x,
+                center_y,
+                radius,
+                start_angle,
+                end_angle,
+                stroke_width,
+                color,
+                depth,
+            };
+            content_state.render_data.needs_repaint = true;
+            content_state.render_data.should_remove = false;
+        } else {
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Arc {
+                    center_x,
+                    center_y,
+                    radius,
+                    start_angle,
+                    end_angle,
+                    stroke_width,
+                    color,
+                    depth,
+                }),
+            );
+        }
+    }
+
+    /// Set image rectangle at ID
+    #[inline]
+    pub fn set_image(
+        &mut self,
+        id: usize,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        coords: [f32; 4],
+        depth: f32,
+        atlas_layer: i32,
+    ) {
+        if let Some(content_state) = self.states.get_mut(&id) {
+            content_state.data = ContentData::Image {
+                x,
+                y,
+                width,
+                height,
+                color,
+                coords,
+                depth,
+                atlas_layer,
+            };
+            content_state.render_data.needs_repaint = true;
+            content_state.render_data.should_remove = false;
+        } else {
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Image {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                    coords,
+                    depth,
+                    atlas_layer,
+                }),
+            );
         }
     }
 }
@@ -2594,7 +3110,7 @@ mod tests {
     #[test]
     fn test_upfront_whitespace_optimization() {
         use crate::font::{FontLibrary, SugarloafFonts};
-        use crate::layout::RichTextLayout;
+        use crate::layout::TextLayout;
 
         // Create a minimal font setup
         let fonts_spec = SugarloafFonts::default();
@@ -2604,20 +3120,20 @@ mod tests {
         let mut content = Content::new(&font_library);
 
         // Create a state with a simple layout
-        let layout = RichTextLayout {
+        let layout = TextLayout {
             font_size: 14.0,
             original_font_size: 14.0,
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout);
+        let state_id = content.create_state(&layout, None);
 
         // Add a line with long whitespace sequence
         let whitespace_content = "          "; // 10 spaces
         content
             .sel(state_id)
             .new_line()
-            .add_text(whitespace_content, FragmentStyle::default());
+            .add_text(whitespace_content, SpanStyle::default());
 
         // Check if optimization should trigger
         let analysis = WordCache::analyze_whitespace_sequence(whitespace_content);
@@ -2650,7 +3166,7 @@ mod tests {
     #[test]
     fn test_cache_hit_behavior() {
         use crate::font::{FontLibrary, SugarloafFonts};
-        use crate::layout::RichTextLayout;
+        use crate::layout::TextLayout;
 
         // Create a minimal font setup
         let fonts_spec = SugarloafFonts::default();
@@ -2660,13 +3176,13 @@ mod tests {
         let mut content = Content::new(&font_library);
 
         // Create a state with a simple layout
-        let layout = RichTextLayout {
+        let layout = TextLayout {
             font_size: 14.0,
             original_font_size: 14.0,
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout);
+        let state_id = content.create_state(&layout, None);
 
         let whitespace_content = "          "; // 10 spaces
         let font_id = 0;
@@ -2675,7 +3191,7 @@ mod tests {
         content
             .sel(state_id)
             .new_line()
-            .add_text(whitespace_content, FragmentStyle::default());
+            .add_text(whitespace_content, SpanStyle::default());
 
         content.build();
 
@@ -2706,7 +3222,7 @@ mod tests {
         content
             .sel(state_id)
             .new_line()
-            .add_text(whitespace_content, FragmentStyle::default());
+            .add_text(whitespace_content, SpanStyle::default());
 
         content.build();
 
@@ -2736,7 +3252,7 @@ mod tests {
     #[test]
     fn test_cache_state_transitions() {
         use crate::font::{FontLibrary, SugarloafFonts};
-        use crate::layout::RichTextLayout;
+        use crate::layout::TextLayout;
 
         // Create a minimal font setup
         let fonts_spec = SugarloafFonts::default();
@@ -2746,13 +3262,13 @@ mod tests {
         let mut content = Content::new(&font_library);
 
         // Create a state with a simple layout
-        let layout = RichTextLayout {
+        let layout = TextLayout {
             font_size: 14.0,
             original_font_size: 14.0,
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout);
+        let state_id = content.create_state(&layout, None);
 
         let whitespace_content = "          "; // 10 spaces
         let font_id = 0;
@@ -2767,7 +3283,7 @@ mod tests {
         content
             .sel(state_id)
             .new_line()
-            .add_text(whitespace_content, FragmentStyle::default());
+            .add_text(whitespace_content, SpanStyle::default());
 
         // Before build: cache should still be empty
         let pre_build_cache = content
@@ -2806,7 +3322,7 @@ mod tests {
         content
             .sel(state_id)
             .new_line()
-            .add_text(whitespace_content, FragmentStyle::default());
+            .add_text(whitespace_content, SpanStyle::default());
 
         // Before second build: cache should still exist
         let pre_second_build_cache = content

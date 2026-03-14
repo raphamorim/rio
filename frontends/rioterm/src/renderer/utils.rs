@@ -1,6 +1,6 @@
 use crate::constants;
-use crate::context::grid::ContextDimension;
-use rio_backend::config::navigation::{Navigation, NavigationMode};
+use crate::layout::ContextDimension;
+use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_window::window::Theme;
 
@@ -11,19 +11,24 @@ pub fn padding_top_from_config(
     num_tabs: usize,
     #[allow(unused)] macos_use_unified_titlebar: bool,
 ) -> f32 {
-    let default_padding = constants::PADDING_Y + padding_y_top;
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        if navigation.hide_if_single && num_tabs == 1 {
-            return default_padding;
-        } else if navigation.mode == NavigationMode::TopTab {
-            return constants::PADDING_Y_WITH_TAB_ON_TOP + padding_y_top;
+    // When navigation is enabled (Tab mode), start content below island
+    if navigation.is_enabled() {
+        // On Linux/Windows, if hide_if_single is true and there's only one tab,
+        // the island is hidden so render from 0 + configured margin
+        #[cfg(not(target_os = "macos"))]
+        if navigation.hide_if_single && num_tabs <= 1 {
+            return constants::PADDING_Y + padding_y_top;
         }
+
+        use crate::renderer::island::ISLAND_HEIGHT;
+        return ISLAND_HEIGHT + padding_y_top;
     }
+
+    let default_padding = constants::PADDING_Y + padding_y_top;
 
     #[cfg(target_os = "macos")]
     {
+        use rio_backend::config::navigation::NavigationMode;
         if navigation.mode == NavigationMode::NativeTab {
             let additional = if macos_use_unified_titlebar {
                 constants::ADDITIONAL_PADDING_Y_ON_UNIFIED_TITLEBAR
@@ -31,8 +36,6 @@ pub fn padding_top_from_config(
                 0.0
             };
             return additional + padding_y_top;
-        } else if navigation.hide_if_single && num_tabs == 1 {
-            return default_padding;
         }
     }
 
@@ -41,32 +44,17 @@ pub fn padding_top_from_config(
 
 #[inline]
 pub fn padding_bottom_from_config(
-    navigation: &Navigation,
+    _navigation: &Navigation,
     padding_y_bottom: f32,
-    num_tabs: usize,
-    is_search_active: bool,
+    _num_tabs: usize,
 ) -> f32 {
-    let default_padding = 0.0 + padding_y_bottom;
-
-    if is_search_active {
-        return padding_y_bottom + constants::PADDING_Y_BOTTOM_TABS;
-    }
-
-    if navigation.hide_if_single && num_tabs == 1 {
-        return default_padding;
-    }
-
-    if navigation.mode == NavigationMode::BottomTab {
-        return padding_y_bottom + constants::PADDING_Y_BOTTOM_TABS;
-    }
-
-    default_padding
+    padding_y_bottom
 }
 
 #[inline]
 pub fn terminal_dimensions(layout: &ContextDimension) -> teletypewriter::WinsizeBuilder {
-    let width = layout.width - (layout.margin.x * 2.);
-    let height = (layout.height - layout.margin.top_y) - layout.margin.bottom_y;
+    let width = layout.width - layout.margin.left - layout.margin.right;
+    let height = layout.height - layout.margin.top - layout.margin.bottom;
     teletypewriter::WinsizeBuilder {
         width: width as u16,
         height: height as u16,

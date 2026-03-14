@@ -93,95 +93,6 @@ impl Route<'_> {
     #[inline]
     pub fn begin_render(&mut self) {
         self.window.render_timestamp = Instant::now();
-
-        // // Track frame count for performance monitoring
-        // use std::collections::HashMap;
-        // use std::sync::Mutex;
-
-        // static FRAME_COUNTERS: Mutex<
-        //     Option<HashMap<rio_window::window::WindowId, (u64, std::time::Instant)>>,
-        // > = Mutex::new(None);
-        // static LAST_LOG: Mutex<Option<std::time::Instant>> = Mutex::new(None);
-
-        // let window_id = self.window.winit_window.id();
-
-        // {
-        //     // Use try_lock to avoid blocking other windows during performance logging
-        //     let mut counters = match FRAME_COUNTERS.try_lock() {
-        //         Ok(guard) => guard,
-        //         Err(_) => return, // Skip performance logging if another window is using it
-        //     };
-        //     if counters.is_none() {
-        //         *counters = Some(HashMap::new());
-        //     }
-
-        //     let mut last_log = match LAST_LOG.try_lock() {
-        //         Ok(guard) => guard,
-        //         Err(_) => return, // Skip performance logging if another window is using it
-        //     };
-        //     if last_log.is_none() {
-        //         *last_log = Some(std::time::Instant::now());
-        //     }
-
-        //     if let (Some(ref mut counters_map), Some(ref mut last_log_time)) =
-        //         (counters.as_mut(), last_log.as_mut())
-        //     {
-        //         let entry = counters_map
-        //             .entry(window_id)
-        //             .or_insert((0, std::time::Instant::now()));
-        //         entry.0 += 1;
-
-        //         // Log performance stats every 5 seconds
-        //         if last_log_time.elapsed().as_secs() >= 5 {
-        //             let total_windows = counters_map.len();
-        //             if total_windows > 1 {
-        //                 tracing::warn!(
-        //                     "[PERF] Multi-window performance stats ({} windows):",
-        //                     total_windows
-        //                 );
-        //                 let mut sorted_windows: Vec<_> = counters_map.iter().collect();
-        //                 sorted_windows.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // Sort by frame count descending
-
-        //                 for (i, (id, (frames, start_time))) in
-        //                     sorted_windows.iter().enumerate()
-        //                 {
-        //                     let fps = *frames as f64 / start_time.elapsed().as_secs_f64();
-        //                     let priority = if i == 0 { "HIGH" } else { "LOW" };
-        //                     tracing::warn!(
-        //                         "[PERF]   Window {:?}: {:.1} FPS ({} frames) [{}]",
-        //                         id,
-        //                         fps,
-        //                         frames,
-        //                         priority
-        //                     );
-        //                 }
-
-        //                 // Check for significant FPS differences
-        //                 if sorted_windows.len() >= 2 {
-        //                     let highest_fps = sorted_windows[0].1 .0 as f64
-        //                         / sorted_windows[0].1 .1.elapsed().as_secs_f64();
-        //                     let lowest_fps = sorted_windows.last().unwrap().1 .0 as f64
-        //                         / sorted_windows
-        //                             .last()
-        //                             .unwrap()
-        //                             .1
-        //                              .1
-        //                             .elapsed()
-        //                             .as_secs_f64();
-        //                     if highest_fps > lowest_fps * 2.0 {
-        //                         tracing::error!("[PERF] SIGNIFICANT FPS DIFFERENCE: {:.1} vs {:.1} FPS - window prioritization detected!", highest_fps, lowest_fps);
-        //                     }
-        //                 }
-        //             }
-        //             **last_log_time = std::time::Instant::now();
-        //             // Reset counters
-        //             for (_, (frames, start_time)) in counters_map.iter_mut() {
-        //                 *frames = 0;
-        //                 *start_time = std::time::Instant::now();
-        //             }
-        //         }
-        //     }
-        // }
     }
 
     #[inline]
@@ -216,12 +127,17 @@ impl Route<'_> {
         }
 
         self.assistant.set(error.to_owned());
-        self.path = RoutePath::Assistant;
+        self.window
+            .screen
+            .renderer
+            .assistant
+            .set_error(error.to_owned());
     }
 
     #[inline]
     pub fn clear_errors(&mut self) {
         self.assistant.clear();
+        self.window.screen.renderer.assistant.clear();
         self.path = RoutePath::Terminal;
     }
 
@@ -237,18 +153,128 @@ impl Route<'_> {
 
     #[inline]
     pub fn has_key_wait(&mut self, key_event: &rio_window::event::KeyEvent) -> bool {
+        use rio_window::event::ElementState;
+
+        // Handle island color picker / rename input
+        if let Some(ref mut island) = self.window.screen.renderer.island {
+            if island.is_color_picker_open() {
+                let consumed = island.handle_rename_input(key_event);
+                if consumed {
+                    self.window.screen.render();
+                    return true;
+                }
+            }
+        }
+
+        // Handle command palette input first (works in all routes)
+        if self.window.screen.renderer.command_palette.is_enabled() {
+            if key_event.state == ElementState::Pressed {
+                match &key_event.logical_key {
+                    Key::Named(NamedKey::Escape) => {
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .set_enabled(false);
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::ArrowUp) => {
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .move_selection_up();
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::ArrowDown) => {
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .move_selection_down();
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::Tab) => {
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .move_selection_down();
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::Enter) => {
+                        if let Some(action) = self
+                            .window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .get_selected_action()
+                        {
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .set_enabled(false);
+                            self.window.screen.execute_palette_action(action);
+                        }
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::Backspace) => {
+                        let current_query =
+                            self.window.screen.renderer.command_palette.query.clone();
+                        if !current_query.is_empty() {
+                            let mut chars = current_query.chars().collect::<Vec<_>>();
+                            chars.pop();
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .set_query(chars.into_iter().collect());
+                            self.window.screen.render();
+                        }
+                    }
+                    _ => {
+                        if let Some(text) = key_event.text.as_ref() {
+                            // Filter out control characters
+                            let text_str = text.as_str();
+                            if !text_str.is_empty()
+                                && text_str.chars().all(|c| !c.is_control())
+                            {
+                                let current_query = self
+                                    .window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .query
+                                    .clone();
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .set_query(format!("{}{}", current_query, text_str));
+                                self.window.screen.render();
+                            }
+                        }
+                    }
+                }
+            }
+            return true; // Block all input when command palette is active
+        }
+
         if self.path == RoutePath::Terminal {
             return false;
         }
 
         let is_enter = key_event.logical_key == Key::Named(NamedKey::Enter);
-        if self.path == RoutePath::Assistant {
-            if self.assistant.is_warning() && is_enter {
+
+        // Handle assistant overlay dismiss
+        if self.window.screen.renderer.assistant.is_active() {
+            if self.window.screen.renderer.assistant.is_warning() && is_enter {
                 self.assistant.clear();
-                self.path = RoutePath::Terminal;
-            } else {
-                return true;
+                self.window.screen.renderer.assistant.clear();
+                self.window.screen.render();
             }
+            return true;
         }
 
         if self.path == RoutePath::ConfirmQuit {
@@ -498,9 +524,6 @@ pub struct RouteWindow<'a> {
     pub vblank_interval: Duration,
     pub winit_window: Window,
     pub screen: Screen<'a>,
-
-    #[cfg(target_os = "macos")]
-    pub is_macos_deadzone: bool,
 }
 
 impl<'a> RouteWindow<'a> {
@@ -667,8 +690,6 @@ impl<'a> RouteWindow<'a> {
             needs_render_after_occlusion: false,
             winit_window,
             screen,
-            #[cfg(target_os = "macos")]
-            is_macos_deadzone: false,
         }
     }
 }

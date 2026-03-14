@@ -542,13 +542,15 @@ impl Parser {
         }
 
         let data = GraphicData {
-            id: GraphicId(0),
+            id: GraphicId::new(1),
             height: self.height,
             width: self.width,
             color_type: ColorType::Rgba,
             pixels: rgba_pixels,
             is_opaque,
             resize: None,
+            display_width: None,
+            display_height: None,
         };
 
         Ok((data, self.color_registers))

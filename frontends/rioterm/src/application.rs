@@ -97,38 +97,6 @@ impl Application<'_> {
         )
     }
 
-    fn handle_visual_bell(&mut self, window_id: WindowId) {
-        if let Some(route) = self.router.routes.get_mut(&window_id) {
-            route.window.screen.renderer.trigger_visual_bell();
-
-            // Mark content as dirty to ensure render happens
-            route
-                .window
-                .screen
-                .ctx_mut()
-                .current_mut()
-                .renderable_content
-                .pending_update
-                .set_dirty();
-
-            // Force immediate render to show the bell
-            route.request_redraw();
-
-            // Schedule a render after the bell duration to clear it
-            let timer_id =
-                TimerId::new(Topic::Render, route.window.screen.ctx().current_route());
-            let event = EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
-
-            // Schedule render to clear bell effect after visual bell duration
-            self.scheduler.schedule(
-                event,
-                crate::constants::BELL_DURATION,
-                false,
-                timer_id,
-            );
-        }
-    }
-
     fn handle_audio_bell(&mut self) {
         #[cfg(target_os = "macos")]
         {
@@ -270,7 +238,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                         // Mark the renderable content as needing to render
                         if let Some(ctx_item) =
-                            route.window.screen.ctx_mut().get_mut(route_id)
+                            route.window.screen.ctx_mut().get_by_route_id(route_id)
                         {
                             ctx_item.val.renderable_content.pending_update.set_dirty();
                         }
@@ -329,7 +297,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // Mark the renderable content as needing to check for damage
                         // The actual damage retrieval will happen during render
                         if let Some(ctx_item) =
-                            route.window.screen.ctx_mut().get_mut(route_id)
+                            route.window.screen.ctx_mut().get_by_route_id(route_id)
                         {
                             ctx_item.val.renderable_content.pending_update.set_dirty();
                             route.schedule_redraw(&mut self.scheduler, route_id);
@@ -339,10 +307,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    tracing::info!(
+                        "UpdateGraphics: route_id={}, pending={}, remove={}",
+                        route_id,
+                        queues.pending.len(),
+                        queues.remove_queue.len()
+                    );
+
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 
                     for graphic_data in queues.pending {
+                        tracing::info!(
+                            "Inserting graphic: id={}, width={}, height={}",
+                            graphic_data.id.get(),
+                            graphic_data.width,
+                            graphic_data.height
+                        );
                         sugarloaf.graphics.insert(graphic_data);
                     }
 
@@ -447,7 +428,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .window
                         .screen
                         .context_manager
-                        .should_close_context_manager(route_id)
+                        .should_close_context_manager(
+                            route_id,
+                            &mut route.window.screen.sugarloaf,
+                        )
                     {
                         self.router.routes.remove(&window_id);
 
@@ -483,7 +467,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             terminal.cursor().pos.row.0 as usize
                         };
 
-                        // Set UI damage for cursor line
+                        // Set terminal damage for cursor line
                         route
                             .window
                             .screen
@@ -491,25 +475,30 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Partial(
-                                [rio_backend::crosswords::LineDamage::new(
-                                    cursor_line,
-                                    true,
-                                )]
-                                .into_iter()
-                                .collect(),
-                            ));
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Partial(
+                                    [rio_backend::crosswords::LineDamage::new(
+                                        cursor_line,
+                                        true,
+                                    )]
+                                    .into_iter()
+                                    .collect(),
+                                ),
+                            );
 
                         route.request_redraw();
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::Bell) => {
-                // Handle visual bell
-                if self.config.bell.visual {
-                    self.handle_visual_bell(window_id);
+            RioEventType::Rio(RioEvent::ProgressReport(report)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    if let Some(island) = &mut route.window.screen.renderer.island {
+                        island.set_progress_report(report);
+                        route.request_redraw();
+                    }
                 }
-
+            }
+            RioEventType::Rio(RioEvent::Bell) => {
                 // Handle audio bell
                 if self.config.bell.audio {
                     self.handle_audio_bell();
@@ -797,7 +786,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Background color is index 1 relative to NamedColor::Foreground
                     if index == NamedColor::Foreground as usize + 1 {
                         let grid = screen.context_manager.current_grid_mut();
-                        if let Some(context_item) = grid.get_mut(route_id) {
+                        if let Some(context_item) = grid.get_mut(route_id.into()) {
                             use crate::context::renderable::BackgroundState;
                             context_item.context_mut().renderable_content.background =
                                 Some(match color {
@@ -919,20 +908,93 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     _ => (),
                 }
 
-                #[cfg(target_os = "macos")]
-                {
-                    if route.window.is_macos_deadzone {
-                        return;
-                    }
-                }
-
                 match state {
                     ElementState::Pressed => {
-                        // In case need to switch grid current
-                        route.window.screen.select_current_based_on_mouse();
+                        // Calculate time since the last click to handle double/triple clicks.
+                        // Do this early so island clicks can use the click state
+                        let now = Instant::now();
+                        let elapsed =
+                            now - route.window.screen.mouse.last_click_timestamp;
+                        route.window.screen.mouse.last_click_timestamp = now;
 
-                        if route.window.screen.trigger_hyperlink() {
-                            return;
+                        let threshold = Duration::from_millis(300);
+                        let mouse = &route.window.screen.mouse;
+                        route.window.screen.mouse.click_state = match mouse.click_state {
+                            // Reset click state if button has changed.
+                            _ if button != mouse.last_click_button => {
+                                route.window.screen.mouse.last_click_button = button;
+                                ClickState::Click
+                            }
+                            ClickState::Click if elapsed < threshold => {
+                                ClickState::DoubleClick
+                            }
+                            ClickState::DoubleClick if elapsed < threshold => {
+                                ClickState::TripleClick
+                            }
+                            _ => ClickState::Click,
+                        };
+
+                        if let MouseButton::Left = button {
+                            // Check if clicking on a panel border to start resize
+                            {
+                                let mx = route.window.screen.mouse.x as f32;
+                                let my = route.window.screen.mouse.y as f32;
+                                let grid =
+                                    route.window.screen.context_manager.current_grid();
+                                if let Some(border) = grid.find_border_at_position(mx, my)
+                                {
+                                    let start_pos = match border.direction {
+                                        crate::layout::BorderDirection::Vertical => mx,
+                                        crate::layout::BorderDirection::Horizontal => my,
+                                    };
+                                    let size_a = grid.get_panel_size(
+                                        border.left_or_top,
+                                        border.direction,
+                                    );
+                                    let size_b = grid.get_panel_size(
+                                        border.right_or_bottom,
+                                        border.direction,
+                                    );
+                                    route.window.screen.resize_state =
+                                        Some(crate::layout::ResizeState {
+                                            border,
+                                            start_pos,
+                                            original_sizes: (size_a, size_b),
+                                        });
+                                    return;
+                                }
+                            }
+
+                            if route.window.screen.handle_assistant_click() {
+                                route.request_redraw();
+                                return;
+                            }
+
+                            if route.window.screen.handle_palette_click() {
+                                route.request_redraw();
+                                return;
+                            }
+
+                            if route.window.screen.handle_search_click() {
+                                route.request_redraw();
+                                return;
+                            }
+
+                            let handled_by_island = route
+                                .window
+                                .screen
+                                .handle_island_click(&route.window.winit_window);
+
+                            if handled_by_island {
+                                // Island handled the click, don't process further
+                                route.request_redraw();
+                                return;
+                            }
+
+                            if route.window.screen.handle_scrollbar_click() {
+                                route.request_redraw();
+                                return;
+                            }
                         }
 
                         // Process mouse press before bindings to update the `click_state`.
@@ -958,30 +1020,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                             route.window.screen.process_mouse_bindings(button);
                         } else {
-                            // Calculate time since the last click to handle double/triple clicks.
-                            let now = Instant::now();
-                            let elapsed =
-                                now - route.window.screen.mouse.last_click_timestamp;
-                            route.window.screen.mouse.last_click_timestamp = now;
+                            // In case need to switch grid current
+                            route.window.screen.select_current_based_on_mouse();
 
-                            let threshold = Duration::from_millis(300);
-                            let mouse = &route.window.screen.mouse;
-                            route.window.screen.mouse.click_state = match mouse
-                                .click_state
-                            {
-                                // Reset click state if button has changed.
-                                _ if button != mouse.last_click_button => {
-                                    route.window.screen.mouse.last_click_button = button;
-                                    ClickState::Click
-                                }
-                                ClickState::Click if elapsed < threshold => {
-                                    ClickState::DoubleClick
-                                }
-                                ClickState::DoubleClick if elapsed < threshold => {
-                                    ClickState::TripleClick
-                                }
-                                _ => ClickState::Click,
-                            };
+                            if route.window.screen.trigger_hyperlink() {
+                                return;
+                            }
 
                             // Load mouse point, treating message bar and padding as the closest square.
                             let display_offset = route.window.screen.display_offset();
@@ -997,6 +1041,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.window.screen.process_mouse_bindings(button);
                     }
                     ElementState::Released => {
+                        if route.window.screen.renderer.scrollbar.is_dragging() {
+                            route.window.screen.handle_scrollbar_release();
+                            route.window.screen.render();
+                            route.request_redraw();
+                            return;
+                        }
+
+                        if route.window.screen.resize_state.is_some() {
+                            route.window.screen.resize_state = None;
+                            route.window.winit_window.set_cursor(CursorIcon::Default);
+                            return;
+                        }
+
                         if !route.window.screen.modifiers.state().shift_key()
                             && route.window.screen.mouse_mode()
                         {
@@ -1044,43 +1101,178 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let x = position.x;
                 let y = position.y;
 
-                let lmb_pressed =
-                    route.window.screen.mouse.left_button_state == ElementState::Pressed;
-                let rmb_pressed =
-                    route.window.screen.mouse.right_button_state == ElementState::Pressed;
-
-                let has_selection = !route.window.screen.selection_is_empty();
-
-                #[cfg(target_os = "macos")]
-                {
-                    // Dead zone for MacOS only
-                    // e.g: Dragging the terminal
-                    if !has_selection
-                        && !route.window.screen.context_manager.config.is_native
-                        && route.window.screen.is_macos_deadzone(y)
-                    {
-                        route.window.winit_window.set_cursor(CursorIcon::Default);
-
-                        route.window.is_macos_deadzone = true;
-                        return;
-                    }
-
-                    route.window.is_macos_deadzone = false;
-                }
-
-                if has_selection && (lmb_pressed || rmb_pressed) {
-                    route.window.screen.update_selection_scrolling(y);
-                }
-
-                let display_offset = route.window.screen.display_offset();
-                let old_point = route.window.screen.mouse_position(display_offset);
-
                 let layout = route.window.screen.sugarloaf.window_size();
 
                 let x = x.clamp(0.0, (layout.width as i32 - 1).into()) as usize;
                 let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
+
+                // Handle assistant overlay hover
+                if route.window.screen.renderer.assistant.is_active() {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    let win_w = route.window.screen.sugarloaf.window_size().width as f32;
+                    let mx = x as f32 / scale;
+                    let my = y as f32 / scale;
+                    if route
+                        .window
+                        .screen
+                        .renderer
+                        .assistant
+                        .hover(mx, my, win_w, scale)
+                    {
+                        route.window.screen.render();
+                        route.request_redraw();
+                    }
+
+                    if route
+                        .window
+                        .screen
+                        .renderer
+                        .assistant
+                        .hovered_button()
+                        .is_some()
+                    {
+                        route.window.winit_window.set_cursor(CursorIcon::Pointer);
+                    } else {
+                        route.window.winit_window.set_cursor(CursorIcon::Default);
+                    }
+                    return;
+                }
+
+                // Handle command palette hover
+                if route.window.screen.renderer.command_palette.is_enabled() {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    let win_w = route.window.screen.sugarloaf.window_size().width as f32;
+                    let mx = x as f32 / scale;
+                    let my = y as f32 / scale;
+                    if route
+                        .window
+                        .screen
+                        .renderer
+                        .command_palette
+                        .hover(mx, my, win_w, scale)
+                    {
+                        route.window.screen.render();
+                        route.request_redraw();
+                    }
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    return;
+                }
+
+                // Handle search overlay hover
+                if route.window.screen.renderer.search.is_active() {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    let win_w = route.window.screen.sugarloaf.window_size().width as f32;
+                    let mx = x as f32 / scale;
+                    let my = y as f32 / scale;
+                    if route
+                        .window
+                        .screen
+                        .renderer
+                        .search
+                        .hover(mx, my, win_w, scale)
+                    {
+                        route.window.screen.render();
+                        route.request_redraw();
+                    }
+                }
+
+                // Check if mouse is over island and set cursor to default
+                use crate::renderer::island::ISLAND_HEIGHT;
+                let scale_factor = route.window.screen.sugarloaf.scale_factor();
+                let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
+                if route.window.screen.renderer.navigation.is_enabled()
+                    && y <= island_height_px
+                {
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    return;
+                }
+
+                // Handle scrollbar drag
+                if route.window.screen.renderer.scrollbar.is_dragging() {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    let mouse_y = y as f32 / scale;
+                    route.window.screen.handle_scrollbar_drag(mouse_y);
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    route.request_redraw();
+                    return;
+                }
+
+                // Handle panel border resize
+                if route.window.screen.resize_state.is_some() {
+                    let state = route.window.screen.resize_state.unwrap();
+                    let current_pos = match state.border.direction {
+                        crate::layout::BorderDirection::Vertical => x as f32,
+                        crate::layout::BorderDirection::Horizontal => y as f32,
+                    };
+                    let delta = current_pos - state.start_pos;
+                    let border = state.border;
+                    let original_sizes = state.original_sizes;
+                    route
+                        .window
+                        .screen
+                        .context_manager
+                        .current_grid_mut()
+                        .resize_border(
+                            &border,
+                            original_sizes,
+                            delta,
+                            &mut route.window.screen.sugarloaf,
+                        );
+                    let cursor = match border.direction {
+                        crate::layout::BorderDirection::Vertical => CursorIcon::ColResize,
+                        crate::layout::BorderDirection::Horizontal => {
+                            CursorIcon::RowResize
+                        }
+                    };
+                    route.window.winit_window.set_cursor(cursor);
+                    route.window.screen.context_manager.request_render();
+                    route.request_redraw();
+                    return;
+                }
+
+                // Check if hovering over a panel border
+                {
+                    let grid = route.window.screen.context_manager.current_grid();
+                    if let Some(border) = grid.find_border_at_position(x as f32, y as f32)
+                    {
+                        let cursor = match border.direction {
+                            crate::layout::BorderDirection::Vertical => {
+                                CursorIcon::ColResize
+                            }
+                            crate::layout::BorderDirection::Horizontal => {
+                                CursorIcon::RowResize
+                            }
+                        };
+                        route.window.winit_window.set_cursor(cursor);
+                        route.window.screen.mouse.on_border = true;
+                        return;
+                    }
+                }
+
+                // Check if hovering over scrollbar
+                if route.window.screen.is_hovering_scrollbar() {
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    return;
+                }
+
+                // Track leaving a border to force cursor reset below
+                let was_on_border = route.window.screen.mouse.on_border;
+                route.window.screen.mouse.on_border = false;
+
+                let lmb_pressed =
+                    route.window.screen.mouse.left_button_state == ElementState::Pressed;
+                let rmb_pressed =
+                    route.window.screen.mouse.right_button_state == ElementState::Pressed;
+
+                let has_selection = !route.window.screen.selection_is_empty();
+                if has_selection && (lmb_pressed || rmb_pressed) {
+                    route.window.screen.update_selection_scrolling(position.y);
+                }
+
+                let display_offset = route.window.screen.display_offset();
+                let old_point = route.window.screen.mouse_position(display_offset);
 
                 let point = route.window.screen.mouse_position(display_offset);
 
@@ -1090,7 +1282,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let square_side = route.window.screen.side_by_pos(x);
 
                 // If the mouse hasn't changed cells, do nothing.
+                // Force update when transitioning off a border so the cursor resets.
                 if !square_changed
+                    && !was_on_border
                     && route.window.screen.mouse.square_side == square_side
                     && route.window.screen.mouse.inside_text_area == inside_text_area
                 {
@@ -1169,13 +1363,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match delta {
                     MouseScrollDelta::LineDelta(columns, lines) => {
-                        let layout = route.window.screen.sugarloaf.rich_text_layout(&0);
-                        let new_scroll_px_x = columns * layout.font_size;
-                        let new_scroll_px_y = lines * layout.font_size;
-                        route
-                            .window
-                            .screen
-                            .scroll(new_scroll_px_x as f64, new_scroll_px_y as f64);
+                        let current_id = route.window.screen.ctx().current().rich_text_id;
+                        if let Some(layout) =
+                            route.window.screen.sugarloaf.get_text_layout(&current_id)
+                        {
+                            let new_scroll_px_x = columns * layout.font_size;
+                            let new_scroll_px_y = lines * layout.font_size;
+                            route
+                                .window
+                                .screen
+                                .scroll(new_scroll_px_x as f64, new_scroll_px_y as f64);
+                        }
                     }
                     MouseScrollDelta::PixelDelta(mut lpos) => {
                         match phase {
@@ -1230,7 +1428,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Ime(ime) => {
-                if route.path == RoutePath::Assistant {
+                if route.window.screen.renderer.assistant.is_active() {
                     return;
                 }
 
@@ -1319,7 +1517,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::DroppedFile(path) => {
-                if route.path == RoutePath::Assistant {
+                if route.window.screen.renderer.assistant.is_active() {
                     return;
                 }
 
@@ -1354,13 +1552,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.begin_render();
 
                 match route.path {
-                    RoutePath::Assistant => {
-                        route.window.screen.render_assistant(&route.assistant);
-                    }
                     RoutePath::Welcome => {
                         route.window.screen.render_welcome();
                     }
-                    RoutePath::Terminal => {
+                    RoutePath::Assistant | RoutePath::Terminal => {
                         if let Some(window_update) = route.window.screen.render() {
                             use crate::context::renderable::{
                                 BackgroundState, WindowUpdate,
@@ -1417,7 +1612,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
 
-                if self.config.renderer.strategy.is_game() {
+                let island_needs_redraw = route
+                    .window
+                    .screen
+                    .renderer
+                    .island
+                    .as_ref()
+                    .is_some_and(|i| i.needs_rename_redraw());
+                if self.config.renderer.strategy.is_game()
+                    || route.path == RoutePath::Welcome
+                    || route.window.screen.renderer.command_palette.is_enabled()
+                    || island_needs_redraw
+                {
                     route.request_redraw();
                 } else if route
                     .window
