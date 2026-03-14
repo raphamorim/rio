@@ -155,6 +155,8 @@ pub struct Config {
     pub hints: Hints,
     #[serde(default = "Bell::default")]
     pub bell: Bell,
+    #[serde(default = "default_bool_true", rename = "enable-scroll-bar")]
+    pub enable_scroll_bar: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -631,6 +633,7 @@ impl Default for Config {
             draw_bold_text_with_light_colors: false,
             hints: Hints::default(),
             bell: Bell::default(),
+            enable_scroll_bar: true,
         }
     }
 }

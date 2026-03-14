@@ -29,6 +29,10 @@ language: 'en'
   - Defaults to standard macOS positioning (11.4, 16.1)
   - Not available in Tab navigation mode
 - **OSC 9;4 Progress Bar Support**: Terminal progress indicator (ConEmu/Windows Terminal compatible)
+- **Scroll Bar**: Overlay scroll bar that appears on scroll and fades out after 2s
+  - Works per-panel in split views
+  - Draggable thumb with click-on-track jump scrolling
+  - Configure via `enable-scroll-bar` (enabled by default)
 - Wgpu now is always f32.
   - This fixes non arm chip macos use cases.
 

@@ -118,6 +118,7 @@ pub struct TerminalSnapshot {
     // Cache terminal dimensions to avoid repeated calls
     pub columns: usize,
     pub screen_lines: usize,
+    pub history_size: usize,
     // Kitty graphics virtual placements
     pub kitty_virtual_placements: FxHashMap<(u32, u32), VirtualPlacement>,
     // Kitty graphics stored images

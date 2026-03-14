@@ -1386,6 +1386,16 @@ multiplier = 3.0
 divider = 1.0
 ```
 
+## enable-scroll-bar
+
+Show an overlay scroll bar when scrolling. The scroll bar appears on scroll and fades out after 2 seconds. It does not change the width of the content and works independently in each panel. The scroll bar is also draggable.
+
+Default is `true`.
+
+```toml
+enable-scroll-bar = true
+```
+
 ## shell
 
 You can set `shell.program` to the path of your favorite shell, e.g. `/bin/fish`.

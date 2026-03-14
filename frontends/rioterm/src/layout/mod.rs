@@ -145,6 +145,12 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
         }
     }
 
+    /// Returns the cached absolute layout rect [x, y, width, height] in physical pixels.
+    #[inline]
+    pub fn layout_rect(&self) -> [f32; 4] {
+        self.layout_rect
+    }
+
     #[inline]
     pub fn context(&self) -> &Context<T> {
         &self.val
@@ -1048,6 +1054,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    pub fn current_item(&self) -> Option<&ContextGridItem<T>> {
+        self.inner.get(&self.current)
+    }
+
     pub fn current(&self) -> &Context<T> {
         if let Some(item) = self.inner.get(&self.current) {
             &item.val
