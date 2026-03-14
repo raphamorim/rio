@@ -2961,11 +2961,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // The GPU will scale the original texture to these dimensions.
         let view_width = cell_width * self.grid.columns();
         let view_height = cell_height * self.grid.screen_lines();
-        let (display_w, display_h) =
-            graphic.compute_display_dimensions(cell_width, cell_height, view_width, view_height);
+        let (display_w, display_h) = graphic.compute_display_dimensions(
+            cell_width,
+            cell_height,
+            view_width,
+            view_height,
+        );
 
-        if display_w > MAX_GRAPHIC_DIMENSIONS[0]
-            || display_h > MAX_GRAPHIC_DIMENSIONS[1]
+        if display_w > MAX_GRAPHIC_DIMENSIONS[0] || display_h > MAX_GRAPHIC_DIMENSIONS[1]
         {
             debug!(
                 "insert_graphic: display dimensions too large {}x{}, max is {:?}",

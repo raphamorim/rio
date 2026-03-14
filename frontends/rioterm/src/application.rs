@@ -990,6 +990,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 route.request_redraw();
                                 return;
                             }
+
+                            if route.window.screen.handle_scrollbar_click() {
+                                route.request_redraw();
+                                return;
+                            }
                         }
 
                         // Process mouse press before bindings to update the `click_state`.
@@ -1036,6 +1041,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.window.screen.process_mouse_bindings(button);
                     }
                     ElementState::Released => {
+                        if route.window.screen.renderer.scrollbar.is_dragging() {
+                            route.window.screen.handle_scrollbar_release();
+                            route.window.screen.render();
+                            route.request_redraw();
+                            return;
+                        }
+
                         if route.window.screen.resize_state.is_some() {
                             route.window.screen.resize_state = None;
                             route.window.winit_window.set_cursor(CursorIcon::Default);
@@ -1177,6 +1189,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
+                // Handle scrollbar drag
+                if route.window.screen.renderer.scrollbar.is_dragging() {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    let mouse_y = y as f32 / scale;
+                    route.window.screen.handle_scrollbar_drag(mouse_y);
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    route.request_redraw();
+                    return;
+                }
+
                 // Handle panel border resize
                 if route.window.screen.resize_state.is_some() {
                     let state = route.window.screen.resize_state.unwrap();
@@ -1227,6 +1249,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.window.screen.mouse.on_border = true;
                         return;
                     }
+                }
+
+                // Check if hovering over scrollbar
+                if route.window.screen.is_hovering_scrollbar() {
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    return;
                 }
 
                 // Track leaving a border to force cursor reset below

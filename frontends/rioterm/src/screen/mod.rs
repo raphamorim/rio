@@ -1045,19 +1045,22 @@ impl Screen<'_> {
                     }
                     Act::ScrollPageUp => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = terminal.grid.screen_lines() as i32;
                         terminal.vi_mode_cursor =
                             terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
                         terminal.scroll_display(Scroll::PageUp);
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ScrollPageDown => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = -(terminal.grid.screen_lines() as i32);
 
                         terminal.vi_mode_cursor =
@@ -1065,12 +1068,14 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::PageDown);
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ScrollHalfPageUp => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = terminal.grid.screen_lines() as i32 / 2;
 
                         terminal.vi_mode_cursor =
@@ -1078,12 +1083,14 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ScrollHalfPageDown => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = -(terminal.grid.screen_lines() as i32 / 2);
 
                         terminal.vi_mode_cursor =
@@ -1091,22 +1098,26 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ScrollToTop => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         terminal.scroll_display(Scroll::Top);
 
                         let topmost_line = terminal.grid.topmost_line();
                         terminal.vi_mode_cursor.pos.row = topmost_line;
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ScrollToBottom => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         terminal.scroll_display(Scroll::Bottom);
 
                         // Move vi mode cursor.
@@ -1116,13 +1127,16 @@ impl Screen<'_> {
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::Scroll(delta) => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         terminal.scroll_display(Scroll::Delta(*delta));
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ClearHistory => {
@@ -2307,6 +2321,123 @@ impl Screen<'_> {
         }
     }
 
+    pub fn handle_scrollbar_click(&mut self) -> bool {
+        let scale_factor = self.sugarloaf.scale_factor();
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        let grid = self.context_manager.current_grid_mut();
+        let grid_margin = (grid.scaled_margin.left, grid.scaled_margin.top);
+
+        let item = match grid.current_item() {
+            Some(item) => item,
+            None => return false,
+        };
+
+        let panel_rect = item.layout_rect();
+        let rich_text_id = item.context().rich_text_id;
+
+        let terminal = item.context().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let history_size = terminal.history_size();
+        let screen_lines = terminal.screen_lines();
+        drop(terminal);
+
+        if let Some((grab_offset, geom)) = self.renderer.scrollbar.hit_test(
+            mouse_x,
+            mouse_y,
+            panel_rect,
+            scale_factor,
+            display_offset,
+            history_size,
+            screen_lines,
+            grid_margin,
+        ) {
+            self.renderer.scrollbar.start_drag(
+                rich_text_id,
+                grab_offset,
+                &geom,
+                history_size,
+            );
+
+            // If clicked on track (not on thumb), jump-scroll to that position
+            if grab_offset.is_none() {
+                if let Some(new_offset) = self.renderer.scrollbar.drag_update(mouse_y) {
+                    let mut terminal = self.context_manager.current_mut().terminal.lock();
+                    let current = terminal.display_offset();
+                    let delta = new_offset as i32 - current as i32;
+                    terminal.scroll_display(Scroll::Delta(delta));
+                    drop(terminal);
+                }
+            }
+            self.render();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn handle_scrollbar_drag(&mut self, mouse_y: f32) -> bool {
+        if !self.renderer.scrollbar.is_dragging() {
+            return false;
+        }
+
+        if let Some(new_offset) = self.renderer.scrollbar.drag_update(mouse_y) {
+            let mut terminal = self.context_manager.current_mut().terminal.lock();
+            let current = terminal.display_offset();
+            let delta = new_offset as i32 - current as i32;
+            if delta != 0 {
+                terminal.scroll_display(Scroll::Delta(delta));
+            }
+            drop(terminal);
+            self.render();
+        }
+        true
+    }
+
+    pub fn handle_scrollbar_release(&mut self) {
+        self.renderer.scrollbar.end_drag();
+    }
+
+    pub fn is_hovering_scrollbar(&self) -> bool {
+        if !self.renderer.scrollbar.is_enabled() {
+            return false;
+        }
+        let scale_factor = self.sugarloaf.scale_factor();
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        let grid = self.context_manager.current_grid();
+        let grid_margin = (grid.scaled_margin.left, grid.scaled_margin.top);
+
+        let item = match grid.current_item() {
+            Some(item) => item,
+            None => return false,
+        };
+
+        let panel_rect = item.layout_rect();
+
+        let terminal = item.context().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let history_size = terminal.history_size();
+        let screen_lines = terminal.screen_lines();
+        drop(terminal);
+
+        self.renderer
+            .scrollbar
+            .hit_test(
+                mouse_x,
+                mouse_y,
+                panel_rect,
+                scale_factor,
+                display_offset,
+                history_size,
+                screen_lines,
+                grid_margin,
+            )
+            .is_some()
+    }
+
     pub fn handle_island_click(&mut self, window: &rio_window::window::Window) -> bool {
         // Only handle if navigation is enabled
         if !self.renderer.navigation.is_enabled() {
@@ -2912,9 +3043,12 @@ impl Screen<'_> {
                 / layout.dimensions.height as f64) as i32;
 
             if lines != 0 {
-                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                let current = self.context_manager.current_mut();
+                let rich_text_id = current.rich_text_id;
+                let mut terminal = current.terminal.lock();
                 terminal.scroll_display(Scroll::Delta(lines));
                 drop(terminal);
+                self.renderer.scrollbar.notify_scroll(rich_text_id);
             }
         }
 

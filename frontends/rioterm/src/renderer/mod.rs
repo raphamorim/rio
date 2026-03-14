@@ -3,6 +3,7 @@ mod char_cache;
 pub mod command_palette;
 mod font_cache;
 pub mod island;
+pub mod scrollbar;
 pub mod search;
 pub mod utils;
 
@@ -54,6 +55,7 @@ pub struct Renderer {
     ignore_selection_fg_color: bool,
     pub search: search::SearchOverlay,
     pub assistant: assistant::AssistantOverlay,
+    pub scrollbar: scrollbar::Scrollbar,
     #[allow(unused)]
     pub option_as_alt: String,
     #[allow(unused)]
@@ -133,6 +135,7 @@ impl Renderer {
             dynamic_background,
             search: search::SearchOverlay::default(),
             assistant: assistant::AssistantOverlay::default(),
+            scrollbar: scrollbar::Scrollbar::new(config.enable_scroll_bar),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
             char_cache: CharCache::new(),
@@ -869,6 +872,23 @@ impl Renderer {
             self.last_active = Some(active_key);
         }
 
+        // Update per-panel scroll state for scrollbar rendering (all panels, not just dirty ones)
+        if self.scrollbar.is_enabled() {
+            self.scrollbar.clear_panel_states();
+            for grid_context in grid.contexts_mut().values() {
+                let panel_rect = grid_context.layout_rect();
+                let ctx = grid_context.context();
+                let terminal = ctx.terminal.lock();
+                self.scrollbar.push_panel_state(scrollbar::PanelScrollState {
+                    rich_text_id: ctx.rich_text_id,
+                    panel_rect,
+                    display_offset: terminal.display_offset(),
+                    history_size: terminal.history_size(),
+                    screen_lines: terminal.screen_lines(),
+                });
+            }
+        }
+
         for (key, grid_context) in grid.contexts_mut().iter_mut() {
             let is_active = &active_key == key;
             let context = grid_context.context_mut();
@@ -951,6 +971,7 @@ impl Renderer {
                     damage,
                     columns: terminal.columns(),
                     screen_lines: terminal.screen_lines(),
+                    history_size: terminal.history_size(),
                     kitty_virtual_placements: terminal
                         .graphics
                         .kitty_virtual_placements
@@ -1138,6 +1159,24 @@ impl Renderer {
             (window_size.width, window_size.height, scale_factor),
         );
 
+        // Render scrollbars for each panel
+        let grid_scaled_margin_sb = context_manager.get_current_grid_scaled_margin();
+        let grid_margin_sb = (grid_scaled_margin_sb.left, grid_scaled_margin_sb.top);
+        let panel_count = self.scrollbar.panel_states().len();
+        for i in 0..panel_count {
+            let state = self.scrollbar.panel_states()[i];
+            self.scrollbar.render(
+                sugarloaf,
+                state.panel_rect,
+                scale_factor,
+                state.display_offset,
+                state.history_size,
+                state.screen_lines,
+                state.rich_text_id,
+                grid_margin_sb,
+            );
+        }
+
         // Render panel borders (on top of terminal content)
         let grid_scaled_margin = context_manager.get_current_grid_scaled_margin();
         for border_object in context_manager.get_panel_borders() {
@@ -1221,7 +1260,10 @@ impl Renderer {
 
     /// Check if the renderer needs continuous redraw (for animations)
     #[inline]
-    pub fn needs_redraw(&self) -> bool {
+    pub fn needs_redraw(&mut self) -> bool {
+        if self.scrollbar.needs_redraw() {
+            return true;
+        }
         if let Some(island) = &self.island {
             island.needs_redraw()
         } else {
