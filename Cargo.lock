@@ -2432,6 +2432,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "malloc_buf"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f32c8c0575eee8637bf462087c00098fe16d6cb621f1abb6ebab4da414d57fd"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2757,7 +2766,7 @@ version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "915b1b472bc21c53464d6c8461c9d3af805ba1ef837e1cac254428f4a77177b1"
 dependencies = [
- "malloc_buf",
+ "malloc_buf 0.0.6",
 ]
 
 [[package]]
@@ -2766,7 +2775,16 @@ version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64a1e7069a2525126bf12a9f1f7916835fafade384fb27cabf698e745e2a1eb8"
 dependencies = [
- "malloc_buf",
+ "malloc_buf 0.0.6",
+]
+
+[[package]]
+name = "objc-rs"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a9b38a5df34f19b4f55bdbdf42c32f4b147359e7a845fb60b4b74e44399379a"
+dependencies = [
+ "malloc_buf 1.0.0",
 ]
 
 [[package]]
@@ -3620,7 +3638,7 @@ dependencies = [
  "js-sys",
  "libc",
  "memmap2",
- "objc-rs",
+ "objc-rs 0.3.1",
  "objc2 0.5.2",
  "objc2-app-kit",
  "objc2-foundation 0.2.2",
@@ -3671,7 +3689,7 @@ dependencies = [
  "libc",
  "lru",
  "notify",
- "objc-rs",
+ "objc-rs 0.3.1",
  "parking_lot",
  "pretty_assertions",
  "raw-window-handle",
@@ -4166,7 +4184,7 @@ dependencies = [
  "memmap2",
  "metal 0.32.0",
  "num-traits",
- "objc-rs",
+ "objc-rs 0.2.8",
  "parking_lot",
  "png 0.17.16",
  "raw-window-handle",

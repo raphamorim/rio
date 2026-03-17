@@ -92,15 +92,6 @@ impl AssistantOverlay {
         self.error = None;
     }
 
-    #[inline]
-    pub fn is_warning(&self) -> bool {
-        if let Some(report) = &self.error {
-            report.level != RioErrorLevel::Error
-        } else {
-            true
-        }
-    }
-
     /// Returns (overlay_x, overlay_y, overlay_width, overlay_height) in logical coords.
     fn overlay_rect(&self, window_width: f32, scale_factor: f32) -> (f32, f32, f32, f32) {
         let logical_width = window_width / scale_factor;

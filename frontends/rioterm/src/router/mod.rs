@@ -269,7 +269,7 @@ impl Route<'_> {
 
         // Handle assistant overlay dismiss
         if self.window.screen.renderer.assistant.is_active() {
-            if self.window.screen.renderer.assistant.is_warning() && is_enter {
+            if is_enter {
                 self.assistant.clear();
                 self.window.screen.renderer.assistant.clear();
                 self.window.screen.render();

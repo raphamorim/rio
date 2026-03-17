@@ -1555,7 +1555,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     RoutePath::Welcome => {
                         route.window.screen.render_welcome();
                     }
-                    RoutePath::Assistant | RoutePath::Terminal => {
+                    RoutePath::Terminal => {
                         if let Some(window_update) = route.window.screen.render() {
                             use crate::context::renderable::{
                                 BackgroundState, WindowUpdate,
