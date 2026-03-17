@@ -33,10 +33,18 @@ impl SugarState {
     }
 
     pub fn found_font_features(
-        _font_features: &Option<Vec<String>>,
+        font_features: &Option<Vec<String>>,
     ) -> Vec<crate::font_introspector::Setting<u16>> {
-        // Simplified for now - TODO: Implement proper font feature parsing
-        vec![]
+        let mut found_font_features = vec![];
+        if let Some(features) = font_features {
+            for feature in features {
+                let setting: crate::font_introspector::Setting<u16> =
+                    (feature.as_str(), 1).into();
+                found_font_features.push(setting);
+            }
+        }
+
+        found_font_features
     }
 
     #[inline]
