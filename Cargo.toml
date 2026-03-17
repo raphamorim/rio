@@ -73,7 +73,7 @@ bitflags = "2.9.0"
 iovec = "0.1.4"
 console_error_panic_hook = "0.1.7"
 tracing = "0.1.41"
-objc = { package = "objc-rs", version = "0.2.8" }
+objc = { package = "objc-rs", version = "0.3.1" }
 memmap2 = "0.9.5"
 url = "2.5.4"
 criterion = { version = "0.6.0", features = ["html_reports"] }

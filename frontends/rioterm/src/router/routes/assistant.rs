@@ -1,4 +1,4 @@
-use rio_backend::error::{RioError, RioErrorLevel};
+use rio_backend::error::RioError;
 
 pub struct Assistant {
     pub inner: Option<RioError>,
@@ -19,14 +19,4 @@ impl Assistant {
         self.inner = None;
     }
 
-    #[inline]
-    pub fn is_warning(&self) -> bool {
-        if let Some(report) = &self.inner {
-            if report.level == RioErrorLevel::Error {
-                return false;
-            }
-        }
-
-        true
-    }
 }
