@@ -604,7 +604,7 @@ impl Renderer {
         }
 
         // Process transient texts (rendered once then cleared)
-        for (index, content_state) in state.content.transient_texts.iter().enumerate() {
+        for (_index, content_state) in state.content.transient_texts.iter().enumerate() {
             // Skip if hidden
             if content_state.render_data.hidden {
                 continue;

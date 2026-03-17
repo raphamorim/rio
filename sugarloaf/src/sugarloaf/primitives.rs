@@ -343,13 +343,6 @@ pub enum Object {
     RichText(RichText),
 }
 
-pub enum CornerType {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
 pub fn drawable_character(character: char) -> Option<DrawableChar> {
     match character {
 '\u{2500}'..='\u{259f}'

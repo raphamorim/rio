@@ -4,7 +4,6 @@ use std::time::Instant;
 
 pub struct ContextTitleExtra {
     pub program: String,
-    pub path: String,
 }
 
 pub struct ContextTitle {
@@ -54,22 +53,13 @@ pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
     context: &Context<T>,
 ) -> Option<ContextTitleExtra> {
     #[cfg(unix)]
-    let path =
-        teletypewriter::foreground_process_path(*context.main_fd, context.shell_pid)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-    #[cfg(not(unix))]
-    let path = String::default();
-
-    #[cfg(unix)]
     let program =
         teletypewriter::foreground_process_name(*context.main_fd, context.shell_pid);
 
     #[cfg(not(unix))]
     let program = String::default();
 
-    Some(ContextTitleExtra { program, path })
+    Some(ContextTitleExtra { program })
 }
 
 // Possible options:

@@ -86,11 +86,6 @@ impl SearchOverlay {
         }
     }
 
-    #[inline]
-    pub fn reset_caret_blink(&mut self) {
-        self.caret_blink_start = Instant::now();
-    }
-
     /// Returns (overlay_x, overlay_y, overlay_width, overlay_height) in logical coords.
     fn overlay_rect(&self, window_width: f32, scale_factor: f32) -> (f32, f32, f32, f32) {
         let logical_width = window_width / scale_factor;
@@ -450,8 +445,4 @@ impl SearchOverlay {
         }
     }
 
-    /// Returns true when the caret animation needs a redraw.
-    pub fn needs_redraw(&self) -> bool {
-        self.is_active()
-    }
 }

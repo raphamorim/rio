@@ -687,10 +687,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.current_route = self.current().route_id;
     }
 
-    pub fn extend_with_grid_objects(&self, target: &mut Vec<Object>) {
-        self.contexts[self.current_index].extend_with_objects(target);
-    }
-
     #[inline]
     pub fn len(&self) -> usize {
         self.contexts.len()
@@ -1173,70 +1169,6 @@ pub fn process_open_url(
     }
 
     (shell, working_dir)
-}
-
-// Standalone function for calculating selection damage
-#[inline]
-fn calculate_selection_damage(
-    old: Option<SelectionRange>,
-    new: Option<SelectionRange>,
-) -> rio_backend::event::TerminalDamage {
-    use rio_backend::crosswords::LineDamage;
-    use std::collections::BTreeSet;
-
-    match (old, new) {
-        // No selection -> No selection: no damage
-        (None, None) => rio_backend::event::TerminalDamage::CursorOnly,
-
-        // Selection cleared or created: need full damage
-        (None, Some(_)) | (Some(_), None) => rio_backend::event::TerminalDamage::Full,
-
-        // Selection changed: calculate partial damage
-        (Some(old_range), Some(new_range)) => {
-            let mut damaged_lines = BTreeSet::new();
-
-            // If block selection mode changed, use full damage
-            if old_range.is_block != new_range.is_block {
-                return rio_backend::event::TerminalDamage::Full;
-            }
-
-            // Calculate the range of lines that need updating
-            let min_start_row = old_range.start.row.min(new_range.start.row);
-            let max_start_row = old_range.start.row.max(new_range.start.row);
-            let min_end_row = old_range.end.row.min(new_range.end.row);
-            let max_end_row = old_range.end.row.max(new_range.end.row);
-
-            // Start row changes
-            if old_range.start.row != new_range.start.row {
-                for row in min_start_row.0..=max_start_row.0 {
-                    damaged_lines.insert(LineDamage::new(row as usize, true));
-                }
-            }
-
-            // End row changes
-            if old_range.end.row != new_range.end.row {
-                for row in min_end_row.0..=max_end_row.0 {
-                    damaged_lines.insert(LineDamage::new(row as usize, true));
-                }
-            }
-
-            // If only columns changed on the same rows
-            if old_range.start.row == new_range.start.row
-                && old_range.start.col != new_range.start.col
-            {
-                damaged_lines
-                    .insert(LineDamage::new(old_range.start.row.0 as usize, true));
-            }
-
-            if old_range.end.row == new_range.end.row
-                && old_range.end.col != new_range.end.col
-            {
-                damaged_lines.insert(LineDamage::new(old_range.end.row.0 as usize, true));
-            }
-
-            rio_backend::event::TerminalDamage::Partial(damaged_lines)
-        }
-    }
 }
 
 #[cfg(test)]
