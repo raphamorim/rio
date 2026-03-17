@@ -18,5 +18,4 @@ impl Assistant {
     pub fn clear(&mut self) {
         self.inner = None;
     }
-
 }
