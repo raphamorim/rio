@@ -444,5 +444,4 @@ impl SearchOverlay {
             sugarloaf.set_visibility(text_ids[i], true);
         }
     }
-
 }
