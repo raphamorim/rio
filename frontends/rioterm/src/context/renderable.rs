@@ -19,11 +19,6 @@ pub struct UIDamage {
 }
 
 impl UIDamage {
-    /// Check if any UI element is dirty
-    pub fn is_dirty(&self) -> bool {
-        self.island || self.search
-    }
-
     /// Merge two UI damages
     pub fn merge(self, other: Self) -> Self {
         Self {

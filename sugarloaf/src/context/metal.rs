@@ -131,22 +131,6 @@ impl MetalContext {
     //     MetalCommandEncoder { command_buffer }
     // }
 
-    fn submit_commands(&self, encoder: MetalCommandEncoder) {
-        encoder.command_buffer.commit();
-    }
-
-    fn present_texture(&self, texture: MetalTexture) {
-        texture.drawable.present();
-    }
-
-    fn size(&self) -> SugarloafWindowSize {
-        self.size
-    }
-
-    fn scale(&self) -> f32 {
-        self.scale
-    }
-
     pub fn supports_f16(&self) -> bool {
         self.supports_f16
     }

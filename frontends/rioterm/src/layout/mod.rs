@@ -109,7 +109,6 @@ pub struct ContextGrid<T: EventListener> {
     pub current: NodeId,
     pub scaled_margin: Margin,
     scale: f32,
-    border_color: [f32; 4],
     inner: FxHashMap<NodeId, ContextGridItem<T>>,
     pub root: Option<NodeId>,
     panel_config: rio_backend::config::layout::Panel,
@@ -159,15 +158,6 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     #[inline]
     pub fn context_mut(&mut self) -> &mut Context<T> {
         &mut self.val
-    }
-
-    #[inline]
-    pub fn position(&self) -> [f32; 2] {
-        if let Object::RichText(ref rich_text) = self.rich_text_object {
-            rich_text.render_data.position
-        } else {
-            [0.0, 0.0]
-        }
     }
 
     /// Update the position in the rich text object
@@ -255,7 +245,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             scale,
             width,
             height,
-            border_color,
             root: Some(panel_node),
             panel_config,
             tree,
@@ -956,11 +945,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         &mut self.inner
     }
 
-    #[inline]
-    pub fn contexts(&mut self) -> &FxHashMap<NodeId, ContextGridItem<T>> {
-        &self.inner
-    }
-
     /// Get contexts ordered by visual position (top-to-bottom, left-to-right)
     pub fn get_ordered_keys(&self) -> Vec<NodeId> {
         let mut panels: Vec<(NodeId, f32, f32)> = self
@@ -977,12 +961,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         });
 
         panels.into_iter().map(|(id, _, _)| id).collect()
-    }
-
-    /// Get the index of the current key in the ordered list
-    pub fn current_index(&self) -> usize {
-        let keys = self.get_ordered_keys();
-        keys.iter().position(|&k| k == self.current).unwrap_or(0)
     }
 
     #[inline]
@@ -1102,26 +1080,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    #[inline]
-    pub fn extend_with_objects(&self, target: &mut Vec<Object>) {
-        let len = self.inner.len();
-        if len == 0 {
-            return;
-        }
-
-        // Reserve space for more objects
-        target.reserve(len);
-
-        // In case there's only 1 context then ignore quad
-        if len == 1 {
-            if let Some(root) = self.root {
-                if let Some(item) = self.inner.get(&root) {
-                    target.push(item.rich_text_object.clone());
-                }
-            }
-        }
-    }
-
     pub fn current_context_with_computed_dimension(&self) -> (&Context<T>, Margin) {
         let len = self.inner.len();
         if len <= 1 {
@@ -1165,15 +1123,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         false
-    }
-
-    pub fn find_by_rich_text_id(&self, searched_rich_text_id: usize) -> Option<NodeId> {
-        for (&key, item) in &self.inner {
-            if item.val.rich_text_id == searched_rich_text_id {
-                return Some(key);
-            }
-        }
-        None
     }
 
     #[inline]
@@ -1226,17 +1175,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.apply_taffy_layout(sugarloaf);
     }
 
-    fn request_resize(&mut self, key: NodeId) {
-        if let Some(item) = self.inner.get_mut(&key) {
-            let mut terminal = item.val.terminal.lock();
-            terminal.resize::<ContextDimension>(item.val.dimension);
-            drop(terminal);
-            let winsize =
-                crate::renderer::utils::terminal_dimensions(&item.val.dimension);
-            let _ = item.val.messenger.send_resize(winsize);
-        }
-    }
-
     #[inline]
     pub fn calculate_positions(&mut self) {
         if self.inner.is_empty() {
@@ -1249,7 +1187,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         // Update positions from layout_rect for all panels
-        for (&node_id, item) in &mut self.inner {
+        for (_, item) in &mut self.inner {
             let x = item.layout_rect[0] + self.scaled_margin.left;
             let y = item.layout_rect[1] + self.scaled_margin.top;
             item.set_position([x, y]);
@@ -1637,26 +1575,8 @@ impl ContextDimension {
     }
 
     #[inline]
-    pub fn increase_width(&mut self, acc_width: f32) {
-        self.width += acc_width;
-        self.update();
-    }
-
-    #[inline]
     pub fn update_height(&mut self, height: f32) {
         self.height = height;
-        self.update();
-    }
-
-    #[inline]
-    pub fn increase_height(&mut self, acc_height: f32) {
-        self.height += acc_height;
-        self.update();
-    }
-
-    #[inline]
-    pub fn update_margin(&mut self, margin: Margin) {
-        self.margin = margin;
         self.update();
     }
 

@@ -3271,7 +3271,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
 
             // Save current cursor position
-            let saved_cursor = self.grid.cursor.pos;
+            let _saved_cursor = self.grid.cursor.pos;
 
             // Move cursor to placement position if specified
             if placement.x > 0 || placement.y > 0 {

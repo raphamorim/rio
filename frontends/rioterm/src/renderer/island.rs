@@ -502,11 +502,6 @@ impl Island {
         self.color_picker_tab.is_some()
     }
 
-    /// Get the custom title for a tab, if any
-    pub fn get_custom_title(&self, tab_index: usize) -> Option<&str> {
-        self.tab_custom_titles.get(&tab_index).map(|s| s.as_str())
-    }
-
     /// Check if a click hits a color swatch in the picker.
     /// Returns true if the click was consumed.
     pub fn handle_color_picker_click(

@@ -901,18 +901,6 @@ impl BatchManager {
         }
     }
 
-    #[inline]
-    pub fn add_mask_rect(
-        &mut self,
-        rect: &Rect,
-        depth: f32,
-        color: &[f32; 4],
-        coords: &[f32; 4],
-        subpix: bool,
-    ) {
-        self.add_mask_rect_with_order(rect, depth, color, coords, subpix, 0);
-    }
-
     pub fn add_mask_rect_with_order(
         &mut self,
         rect: &Rect,

@@ -43,7 +43,7 @@ use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
-    layout::RootStyle, RichTextConfig, Sugarloaf, SugarloafBackend, SugarloafErrors,
+    layout::RootStyle, Sugarloaf, SugarloafBackend, SugarloafErrors,
     SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
 };
 use rio_window::event::ElementState;
