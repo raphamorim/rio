@@ -8,7 +8,7 @@ use rio_window::window::Theme;
 pub fn padding_top_from_config(
     navigation: &Navigation,
     padding_y_top: f32,
-    _num_tabs: usize,
+    #[allow(unused)] num_tabs: usize,
     #[allow(unused)] macos_use_unified_titlebar: bool,
 ) -> f32 {
     // When navigation is enabled (Tab mode), start content below island
@@ -40,15 +40,6 @@ pub fn padding_top_from_config(
     }
 
     default_padding
-}
-
-#[inline]
-pub fn padding_bottom_from_config(
-    _navigation: &Navigation,
-    padding_y_bottom: f32,
-    _num_tabs: usize,
-) -> f32 {
-    padding_y_bottom
 }
 
 #[inline]
