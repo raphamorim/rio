@@ -775,16 +775,16 @@ impl Content {
     }
 
     #[inline]
-    pub fn add_text(&mut self, text: &str, style: SpanStyle) -> &mut Content {
+    pub fn add_span(&mut self, text: &str, style: SpanStyle) -> &mut Content {
         if let Some(selector) = self.selector {
-            return self.add_text_with_id(&selector, text, style);
+            return self.add_span_with_id(&selector, text, style);
         }
 
         self
     }
 
     #[inline]
-    pub fn add_text_on_line(
+    pub fn add_span_on_line(
         &mut self,
         line_idx: usize,
         text: &str,
@@ -806,7 +806,7 @@ impl Content {
     }
 
     /// Adds a text fragment to the paragraph.
-    pub fn add_text_with_id(
+    pub fn add_span_with_id(
         &mut self,
         id: &usize,
         text: &str,
@@ -873,6 +873,7 @@ impl Content {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn process_text_line(
         text_state: &mut BuilderState,
         line_number: usize,
@@ -1089,6 +1090,7 @@ impl Content {
 
     /// Set rectangle at ID (overwrites existing content)
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn set_rect(
         &mut self,
         id: usize,
@@ -1127,6 +1129,7 @@ impl Content {
 
     /// Set rounded rectangle at ID
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn set_rounded_rect(
         &mut self,
         id: usize,
@@ -1168,6 +1171,7 @@ impl Content {
 
     /// Set line at ID
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn set_line(
         &mut self,
         id: usize,
@@ -1268,6 +1272,7 @@ impl Content {
 
     /// Set arc at ID
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn set_arc(
         &mut self,
         id: usize,
@@ -1312,6 +1317,7 @@ impl Content {
 
     /// Set image rectangle at ID
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn set_image(
         &mut self,
         id: usize,
@@ -3126,14 +3132,15 @@ mod tests {
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout, None);
+        content.set_text(0, &layout);
+        let state_id = 0;
 
         // Add a line with long whitespace sequence
         let whitespace_content = "          "; // 10 spaces
         content
             .sel(state_id)
             .new_line()
-            .add_text(whitespace_content, SpanStyle::default());
+            .add_span(whitespace_content, SpanStyle::default());
 
         // Check if optimization should trigger
         let analysis = WordCache::analyze_whitespace_sequence(whitespace_content);
@@ -3182,7 +3189,8 @@ mod tests {
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout, None);
+        content.set_text(0, &layout);
+        let state_id = 0;
 
         let whitespace_content = "          "; // 10 spaces
         let font_id = 0;
@@ -3191,7 +3199,7 @@ mod tests {
         content
             .sel(state_id)
             .new_line()
-            .add_text(whitespace_content, SpanStyle::default());
+            .add_span(whitespace_content, SpanStyle::default());
 
         content.build();
 
@@ -3222,7 +3230,7 @@ mod tests {
         content
             .sel(state_id)
             .new_line()
-            .add_text(whitespace_content, SpanStyle::default());
+            .add_span(whitespace_content, SpanStyle::default());
 
         content.build();
 
@@ -3268,7 +3276,8 @@ mod tests {
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout, None);
+        content.set_text(0, &layout);
+        let state_id = 0;
 
         let whitespace_content = "          "; // 10 spaces
         let font_id = 0;
@@ -3283,7 +3292,7 @@ mod tests {
         content
             .sel(state_id)
             .new_line()
-            .add_text(whitespace_content, SpanStyle::default());
+            .add_span(whitespace_content, SpanStyle::default());
 
         // Before build: cache should still be empty
         let pre_build_cache = content
@@ -3322,7 +3331,7 @@ mod tests {
         content
             .sel(state_id)
             .new_line()
-            .add_text(whitespace_content, SpanStyle::default());
+            .add_span(whitespace_content, SpanStyle::default());
 
         // Before second build: cache should still exist
         let pre_second_build_cache = content

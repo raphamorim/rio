@@ -109,8 +109,18 @@ impl ApplicationHandler for Application {
                     self.height,
                     [0.1, 0.1, 0.2, 1.0],
                     0.0,
+                    0,
                 ); // background
-                sugarloaf.rect(None, 50.0, 50.0, 200.0, 100.0, [1.0, 0.2, 0.2, 0.8], 0.0); // red rectangle
+                sugarloaf.rect(
+                    None,
+                    50.0,
+                    50.0,
+                    200.0,
+                    100.0,
+                    [1.0, 0.2, 0.2, 0.8],
+                    0.0,
+                    0,
+                ); // red rectangle
                 sugarloaf.rect(
                     None,
                     300.0,
@@ -119,6 +129,7 @@ impl ApplicationHandler for Application {
                     80.0,
                     [0.2, 1.0, 0.2, 0.9],
                     0.0,
+                    0,
                 ); // green rectangle
                 sugarloaf.rect(
                     None,
@@ -128,6 +139,7 @@ impl ApplicationHandler for Application {
                     120.0,
                     [0.2, 0.2, 1.0, 0.7],
                     0.0,
+                    0,
                 ); // blue rectangle
 
                 sugarloaf.render();

@@ -42,7 +42,7 @@ impl Default for Char {
 }
 
 /// Shaping class of a character.
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug, Default)]
 #[repr(u8)]
 pub enum ShapeClass {
     /// Reph form.
@@ -52,6 +52,7 @@ pub enum ShapeClass {
     /// Myanmar three character prefix.
     Kinzi,
     /// Base character.
+    #[default]
     Base,
     /// Mark character.
     Mark,
@@ -77,10 +78,4 @@ pub enum ShapeClass {
     Vs,
     /// Other character.
     Other,
-}
-
-impl Default for ShapeClass {
-    fn default() -> Self {
-        Self::Base
-    }
 }

@@ -9,6 +9,7 @@ pub struct Context<'a> {
     pub inner: ContextType<'a>,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum ContextType<'a> {
     Wgpu(webgpu::WgpuContext<'a>),
     #[cfg(target_os = "macos")]

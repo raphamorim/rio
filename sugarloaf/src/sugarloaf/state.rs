@@ -295,7 +295,7 @@ impl SugarState {
         self.style.scale_factor = scale;
 
         // Re-scale all text content with the new scale factor
-        for (_id, content_state) in &mut self.content.states {
+        for content_state in self.content.states.values_mut() {
             if let Some(text_state) = content_state.as_text_mut() {
                 text_state.rescale(scale);
                 text_state.layout.dimensions.height = 0.0;

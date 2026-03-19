@@ -217,6 +217,7 @@ mod tests {
     fn test_margin_deserialize_invalid() {
         let toml_str = r#"margin = [10, 5, 15]"#;
         #[derive(Deserialize)]
+        #[allow(dead_code)]
         struct Config {
             margin: Margin,
         }

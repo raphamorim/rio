@@ -120,8 +120,10 @@ impl ApplicationHandler for Application {
                 const TEXT_ID_0: usize = 0;
                 const TEXT_ID_1: usize = 1;
 
+                sugarloaf.text(Some(TEXT_ID_0));
                 sugarloaf
-                    .text(TEXT_ID_0)
+                    .content()
+                    .sel(TEXT_ID_0)
                     .clear()
                     .new_line()
                     .add_span(
@@ -132,11 +134,13 @@ impl ApplicationHandler for Application {
                             ..SpanStyle::default()
                         },
                     )
-                    .new_line();
-                sugarloaf.build_text_by_id(TEXT_ID_0);
+                    .new_line()
+                    .build();
 
+                sugarloaf.text(Some(TEXT_ID_1));
                 sugarloaf
-                    .text(TEXT_ID_1)
+                    .content()
+                    .sel(TEXT_ID_1)
                     .clear()
                     .new_line()
                     .add_span(
@@ -147,8 +151,8 @@ impl ApplicationHandler for Application {
                             ..SpanStyle::default()
                         },
                     )
-                    .new_line();
-                sugarloaf.build_text_by_id(TEXT_ID_1);
+                    .new_line()
+                    .build();
 
                 // Add rectangles directly
                 sugarloaf.rect(None, 10., 10., 120., 100., [1.0, 1.0, 1.0, 1.0], 0.0, 0);

@@ -7,7 +7,7 @@
 #![allow(clippy::uninlined_format_args)]
 // Positioning tests for cached vs non-cached text rendering
 
-use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
+use super::text_run_manager::{CacheResult, TextRunManager};
 use crate::font::text_run_cache::ShapedGlyph;
 use crate::sugarloaf::primitives::{CursorKind, DrawableChar, SugarCursor};
 
@@ -74,19 +74,12 @@ impl PositioningTestHelper {
 
         if use_cache {
             // Try to get cached data
-            let cached_result = self.text_run_manager.get_cached_data(
-                text,
-                font_id,
-                font_size,
-                Some([1.0, 1.0, 1.0, 1.0]), // white color
-            );
+            let cached_result = self
+                .text_run_manager
+                .get_cached_data(text, font_id, font_size);
 
             match cached_result {
-                CacheResult::ShapingOnly {
-                    glyphs: cached_glyphs,
-                    ..
-                }
-                | CacheResult::GlyphsOnly {
+                CacheResult::Hit {
                     glyphs: cached_glyphs,
                     ..
                 } => {
@@ -98,11 +91,6 @@ impl PositioningTestHelper {
                         px += shaped_glyph.x_advance * char_width;
                     }
                     advance = cached_glyphs.iter().map(|g| g.x_advance).sum();
-                }
-                CacheResult::FullRender { .. } => {
-                    // For full render, we'd use cached vertices, but for testing
-                    // we'll simulate the same glyph positioning
-                    advance = text.len() as f32 * 10.0; // Mock advance
                 }
                 CacheResult::Miss => {
                     // Cache miss - simulate fresh shaping
@@ -907,10 +895,9 @@ mod tests {
 
     #[test]
     fn test_strikethrough_positioning() {
-        use crate::components::rich_text::compositor::Compositor;
-        use crate::components::rich_text::text::TextRunStyle;
-        use crate::components::rich_text::Rect;
-        use crate::layout::FragmentStyleDecoration;
+        use crate::renderer::compositor::{Compositor, Rect};
+        use crate::renderer::text::TextRunStyle;
+        use crate::layout::SpanStyleDecoration;
 
         let compositor = Compositor::new();
         let font_size = 16.0;
@@ -932,7 +919,7 @@ mod tests {
             padding_y: 0.0,
             line_height_without_mod: line_height,
             advance: 100.0,
-            decoration: Some(FragmentStyleDecoration::Strikethrough),
+            decoration: Some(SpanStyleDecoration::Strikethrough),
             decoration_color: None,
             cursor: None,
             drawable_char: None,
@@ -944,7 +931,7 @@ mod tests {
             descent,
         };
 
-        let rect = Rect::new(0.0, 0.0, 100.0, line_height);
+        let _rect = Rect::new(0.0, 0.0, 100.0, line_height);
         let underline = compositor.create_underline_from_decoration(&style_with_offset);
 
         if let Some(underline) = underline {
@@ -980,8 +967,8 @@ mod tests {
         let underline = compositor.create_underline_from_decoration(&style_fallback);
 
         if let Some(underline) = underline {
-            // Should use approximate position
-            assert_eq!(underline.offset, -(rect.height * 0.3));
+            // Should use 25% of ascent above baseline as fallback
+            assert_eq!(underline.offset, -(ascent * 0.25));
         } else {
             panic!("Expected strikethrough underline");
         }

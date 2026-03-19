@@ -2179,7 +2179,7 @@ impl Screen<'_> {
         }
 
         let scale_factor = self.sugarloaf.scale_factor();
-        let window_width = self.sugarloaf.window_size().width as f32;
+        let window_width = self.sugarloaf.window_size().width;
         let mouse_x = self.mouse.x as f32 / scale_factor;
         let mouse_y = self.mouse.y as f32 / scale_factor;
 
@@ -2222,7 +2222,7 @@ impl Screen<'_> {
         }
 
         let scale_factor = self.sugarloaf.scale_factor();
-        let window_width = self.sugarloaf.window_size().width as f32;
+        let window_width = self.sugarloaf.window_size().width;
         let mouse_x = self.mouse.x as f32 / scale_factor;
         let mouse_y = self.mouse.y as f32 / scale_factor;
 
@@ -2267,7 +2267,7 @@ impl Screen<'_> {
         }
 
         let scale_factor = self.sugarloaf.scale_factor();
-        let window_width = self.sugarloaf.window_size().width as f32;
+        let window_width = self.sugarloaf.window_size().width;
         let mouse_x = self.mouse.x as f32 / scale_factor;
         let mouse_y = self.mouse.y as f32 / scale_factor;
 
@@ -2451,7 +2451,7 @@ impl Screen<'_> {
         let scale_factor = self.sugarloaf.scale_factor();
         let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
 
-        let window_width = self.sugarloaf.window_size().width as f32;
+        let window_width = self.sugarloaf.window_size().width;
         let num_tabs = self.context_manager.len();
 
         // Check if the color picker is open and the click hits a swatch

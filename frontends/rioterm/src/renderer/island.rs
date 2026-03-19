@@ -182,7 +182,6 @@ impl Island {
         match state {
             ProgressState::Remove => {
                 // Should not reach here, but just in case
-                return;
             }
             ProgressState::Set | ProgressState::Error | ProgressState::Pause => {
                 // Render progress bar with specific percentage
@@ -336,7 +335,7 @@ impl Island {
                 .sel(tab_data.text_id)
                 .clear()
                 .new_line()
-                .add_text(
+                .add_span(
                     &title,
                     SpanStyle {
                         color: text_color,
@@ -694,7 +693,7 @@ impl Island {
                     .sel(text_id)
                     .clear()
                     .new_line()
-                    .add_text(
+                    .add_span(
                         text,
                         SpanStyle {
                             color: text_color,
@@ -732,7 +731,7 @@ impl Island {
             .sel(text_id)
             .clear()
             .new_line()
-            .add_text(
+            .add_span(
                 &display_text,
                 SpanStyle {
                     color: text_color,
@@ -748,7 +747,7 @@ impl Island {
 
         // Blinking caret
         let elapsed = self.rename_caret_time.elapsed().as_millis();
-        let show_caret = (elapsed / 500) % 2 == 0;
+        let show_caret = (elapsed / 500).is_multiple_of(2);
         if show_caret {
             let caret_x = text_x + rendered_width;
             if caret_x <= input_x + input_width {

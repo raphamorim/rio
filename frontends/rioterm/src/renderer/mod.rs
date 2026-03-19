@@ -563,9 +563,9 @@ impl Renderer {
             if style.drawable_char.is_some() {
                 if !content.is_empty() {
                     if let Some(line) = line_opt {
-                        builder.add_text_on_line(line, &content, last_style);
+                        builder.add_span_on_line(line, &content, last_style);
                     } else {
-                        builder.add_text(&content, last_style);
+                        builder.add_span(&content, last_style);
                     }
                     content.clear();
                 }
@@ -577,9 +577,9 @@ impl Renderer {
                     if !last_char_was_space {
                         if !content.is_empty() {
                             if let Some(line) = line_opt {
-                                builder.add_text_on_line(line, &content, last_style);
+                                builder.add_span_on_line(line, &content, last_style);
                             } else {
-                                builder.add_text(&content, last_style);
+                                builder.add_span(&content, last_style);
                             }
                             content.clear();
                         }
@@ -590,9 +590,9 @@ impl Renderer {
                 } else {
                     if last_char_was_space && !content.is_empty() {
                         if let Some(line) = line_opt {
-                            builder.add_text_on_line(line, &content, last_style);
+                            builder.add_span_on_line(line, &content, last_style);
                         } else {
-                            builder.add_text(&content, last_style);
+                            builder.add_span(&content, last_style);
                         }
                         content.clear();
                     }
@@ -607,9 +607,9 @@ impl Renderer {
                 {
                     if !content.is_empty() {
                         if let Some(line) = line_opt {
-                            builder.add_text_on_line(line, &content, last_style);
+                            builder.add_span_on_line(line, &content, last_style);
                         } else {
-                            builder.add_text(&content, last_style);
+                            builder.add_span(&content, last_style);
                         }
                         content.clear();
                     }
@@ -624,9 +624,9 @@ impl Renderer {
             if column == (columns - 1) {
                 if !content.is_empty() {
                     if let Some(line) = line_opt {
-                        builder.add_text_on_line(line, &content, last_style);
+                        builder.add_span_on_line(line, &content, last_style);
                     } else {
-                        builder.add_text(&content, last_style);
+                        builder.add_span(&content, last_style);
                     }
                 }
 

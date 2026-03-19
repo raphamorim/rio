@@ -527,7 +527,7 @@ impl CommandPalette {
             .sel(input_id)
             .clear()
             .new_line()
-            .add_text(
+            .add_span(
                 display_text,
                 SpanStyle {
                     color: text_color,
@@ -542,7 +542,7 @@ impl CommandPalette {
         sugarloaf.set_visibility(input_id, true);
 
         let elapsed_ms = self.caret_blink_start.elapsed().as_millis();
-        let caret_visible = (elapsed_ms / CARET_BLINK_MS) % 2 == 0;
+        let caret_visible = (elapsed_ms / CARET_BLINK_MS).is_multiple_of(2);
 
         if caret_visible {
             let text_width = if self.query.is_empty() {
@@ -617,7 +617,7 @@ impl CommandPalette {
                 .sel(result_id)
                 .clear()
                 .new_line()
-                .add_text(
+                .add_span(
                     cmd.title,
                     SpanStyle {
                         color: if is_selected {
@@ -643,7 +643,7 @@ impl CommandPalette {
                     .sel(shortcut_id)
                     .clear()
                     .new_line()
-                    .add_text(
+                    .add_span(
                         cmd.shortcut,
                         SpanStyle {
                             color: SHORTCUT_TEXT_COLOR,

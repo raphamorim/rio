@@ -1078,7 +1078,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                     if let Some(state) = state {
                         // Parse optional progress value from params[3]
                         let progress = if params.len() >= 4 {
-                            parse_number(params[3]).map(|p| (p as u8).min(100))
+                            parse_number(params[3]).map(|p| p.min(100))
                         } else {
                             None
                         };
@@ -2293,7 +2293,7 @@ mod tests {
         state.buffer.reserve(4096);
         let chunk1 = b"Ga=T,f=32,s=100,v=100,m=1;AQIDBAUG";
         state.buffer.extend_from_slice(chunk1);
-        assert!(state.buffer.len() > 0);
+        assert!(!state.buffer.is_empty());
 
         // Chunk 2 with m=1 (in reality, each chunk is a separate APC)
         state.buffer.clear();
