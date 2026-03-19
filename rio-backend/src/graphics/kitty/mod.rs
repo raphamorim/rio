@@ -610,7 +610,7 @@ fn test_image_row_occupation_single_row() {
         0,
     );
 
-    let initial_cursor_row = term.grid.cursor.pos.row.0;
+    let _initial_cursor_row = term.grid.cursor.pos.row.0;
 
     // Create a small image that fits in 1 row
     let pixels = vec![255u8; 50 * 20 * 4];

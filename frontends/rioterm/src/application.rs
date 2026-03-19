@@ -369,7 +369,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     let new_font_library = rio_backend::sugarloaf::font::FontLibrary::new(
                         config.fonts.to_owned(),
                     );
-                    self.router.font_library = Box::new(new_font_library.0);
+                    *self.router.font_library = new_font_library.0;
                     new_font_library.1
                 } else {
                     None
@@ -1111,7 +1111,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // Handle assistant overlay hover
                 if route.window.screen.renderer.assistant.is_active() {
                     let scale = route.window.screen.sugarloaf.scale_factor();
-                    let win_w = route.window.screen.sugarloaf.window_size().width as f32;
+                    let win_w = route.window.screen.sugarloaf.window_size().width;
                     let mx = x as f32 / scale;
                     let my = y as f32 / scale;
                     if route
@@ -1143,7 +1143,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // Handle command palette hover
                 if route.window.screen.renderer.command_palette.is_enabled() {
                     let scale = route.window.screen.sugarloaf.scale_factor();
-                    let win_w = route.window.screen.sugarloaf.window_size().width as f32;
+                    let win_w = route.window.screen.sugarloaf.window_size().width;
                     let mx = x as f32 / scale;
                     let my = y as f32 / scale;
                     if route
@@ -1163,7 +1163,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // Handle search overlay hover
                 if route.window.screen.renderer.search.is_active() {
                     let scale = route.window.screen.sugarloaf.scale_factor();
-                    let win_w = route.window.screen.sugarloaf.window_size().width as f32;
+                    let win_w = route.window.screen.sugarloaf.window_size().width;
                     let mx = x as f32 / scale;
                     let my = y as f32 / scale;
                     if route

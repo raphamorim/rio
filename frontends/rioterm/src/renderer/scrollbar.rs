@@ -124,7 +124,7 @@ impl Scrollbar {
     fn opacity_for(&self, rich_text_id: usize) -> f32 {
         if self
             .drag_state
-            .map_or(false, |d| d.rich_text_id == rich_text_id)
+            .is_some_and(|d| d.rich_text_id == rich_text_id)
         {
             return 1.0;
         }
@@ -195,6 +195,7 @@ impl Scrollbar {
     /// If it hits the track (but not thumb), returns None for offset (jump-scroll).
     ///
     /// Returns `Some((grab_offset_y, geometry))` if hit, `None` if miss.
+    #[allow(clippy::too_many_arguments)]
     pub fn hit_test(
         &self,
         mouse_x: f32,
@@ -288,6 +289,7 @@ impl Scrollbar {
     }
 
     /// Render a scrollbar for a given panel.
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         sugarloaf: &mut Sugarloaf,
@@ -319,7 +321,7 @@ impl Scrollbar {
 
         let is_dragging = self
             .drag_state
-            .map_or(false, |d| d.rich_text_id == rich_text_id);
+            .is_some_and(|d| d.rich_text_id == rich_text_id);
         let base_color = if is_dragging {
             SCROLLBAR_DRAG_COLOR
         } else {

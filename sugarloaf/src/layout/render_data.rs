@@ -97,7 +97,7 @@ impl RenderData {
                         // Simple glyph
                         glyphs.push(GlyphData {
                             data: glyph.id as u32 | (packed_advance << 16),
-                            size: glyph.data as u32,
+                            size: glyph.data,
                         });
                         continue;
                     }
@@ -107,7 +107,7 @@ impl RenderData {
                 detailed_glyphs.push(Glyph::new(glyph));
                 glyphs.push(GlyphData {
                     data: GLYPH_DETAILED | detail_index,
-                    size: glyph.data as u32,
+                    size: glyph.data,
                 });
             }
             advance += cluster_advance;
@@ -163,7 +163,7 @@ impl RenderData {
                         // Simple glyph
                         glyphs.push(GlyphData {
                             data: glyph.id as u32 | (packed_advance << 16),
-                            size: glyph.data as u32,
+                            size: glyph.data,
                         });
                         continue;
                     }
@@ -173,7 +173,7 @@ impl RenderData {
                 detailed_glyphs.push(Glyph::new(glyph));
                 glyphs.push(GlyphData {
                     data: GLYPH_DETAILED | detail_index,
-                    size: glyph.data as u32,
+                    size: glyph.data,
                 });
             }
             advance += cluster_advance;

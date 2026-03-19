@@ -1187,7 +1187,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         // Update positions from layout_rect for all panels
-        for (_, item) in &mut self.inner {
+        for item in self.inner.values_mut() {
             let x = item.layout_rect[0] + self.scaled_margin.left;
             let y = item.layout_rect[1] + self.scaled_margin.top;
             item.set_position([x, y]);

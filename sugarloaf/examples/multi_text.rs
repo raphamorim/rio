@@ -133,8 +133,10 @@ impl ApplicationHandler for Application {
                 let time = std::time::Instant::now();
 
                 // First text area
+                sugarloaf.text(Some(TEXT_ID_0));
                 sugarloaf
-                    .text(TEXT_ID_0)
+                    .content()
+                    .sel(TEXT_ID_0)
                     .clear()
                     .new_line()
                     .add_span(
@@ -152,12 +154,14 @@ impl ApplicationHandler for Application {
                             color: [1.0, 1.0, 1.0, 1.0],
                             ..SpanStyle::default()
                         },
-                    );
-                sugarloaf.build_text_by_id(TEXT_ID_0);
+                    )
+                    .build();
 
                 // Second text area
+                sugarloaf.text(Some(TEXT_ID_1));
                 sugarloaf
-                    .text(TEXT_ID_1)
+                    .content()
+                    .sel(TEXT_ID_1)
                     .clear()
                     .new_line()
                     .add_span(
@@ -175,18 +179,20 @@ impl ApplicationHandler for Application {
                             color: [1.0, 1.0, 1.0, 1.0],
                             ..SpanStyle::default()
                         },
-                    );
-                sugarloaf.build_text_by_id(TEXT_ID_1);
+                    )
+                    .build();
 
                 // Third text area - demonstrates partial updates
                 let needs_init = sugarloaf
                     .get_text_by_id(TEXT_ID_2)
-                    .map_or(true, |state| state.lines.is_empty());
+                    .is_none_or(|state| state.lines.is_empty());
 
                 if needs_init {
                     // Initial setup
+                    sugarloaf.text(Some(TEXT_ID_2));
                     sugarloaf
-                        .text(TEXT_ID_2)
+                        .content()
+                        .sel(TEXT_ID_2)
                         .new_line()
                         .add_span(
                             &format!("Should not update {:?}", time.elapsed()),
@@ -202,19 +208,23 @@ impl ApplicationHandler for Application {
                                 color: [1.0, 1.0, 1.0, 1.0],
                                 ..SpanStyle::default()
                             },
-                        );
-                    sugarloaf.build_text_by_id(TEXT_ID_2);
+                        )
+                        .build();
                 } else {
                     // Partial update - only update line 1
-                    sugarloaf.text(TEXT_ID_2).clear_line(1).add_span_on_line(
-                        1,
-                        &format!("Updated {:?}", time.elapsed()),
-                        SpanStyle {
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            ..SpanStyle::default()
-                        },
-                    );
-                    sugarloaf.build_text_by_id_line_number(TEXT_ID_2, 1);
+                    sugarloaf
+                        .content()
+                        .sel(TEXT_ID_2)
+                        .clear_line(1)
+                        .add_span_on_line(
+                            1,
+                            &format!("Updated {:?}", time.elapsed()),
+                            SpanStyle {
+                                color: [1.0, 1.0, 1.0, 1.0],
+                                ..SpanStyle::default()
+                            },
+                        )
+                        .build_line(1);
                 }
 
                 // Add background rectangles (cached)
@@ -226,6 +236,7 @@ impl ApplicationHandler for Application {
                     200.0,
                     [1.0, 0.5, 0.5, 0.5],
                     0.0,
+                    0,
                 );
                 sugarloaf.rect(
                     Some(RECT_ID_1),
@@ -235,6 +246,7 @@ impl ApplicationHandler for Application {
                     150.0,
                     [1.0, 0.5, 0.5, 0.5],
                     0.0,
+                    0,
                 );
                 sugarloaf.rect(
                     Some(RECT_ID_2),
@@ -244,6 +256,7 @@ impl ApplicationHandler for Application {
                     150.0,
                     [1.0, 0.5, 0.5, 0.5],
                     0.0,
+                    0,
                 );
 
                 // Position and show text

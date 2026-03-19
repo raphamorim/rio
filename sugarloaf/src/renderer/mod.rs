@@ -454,7 +454,7 @@ impl Renderer {
 
         let library = state.content.font_library();
         // Iterate over all content states and render visible ones
-        for (_, content_state) in &state.content.states {
+        for content_state in state.content.states.values() {
             // Skip if marked for removal or hidden
             if content_state.render_data.should_remove || content_state.render_data.hidden
             {
@@ -604,7 +604,7 @@ impl Renderer {
         }
 
         // Process transient texts (rendered once then cleared)
-        for (_index, content_state) in state.content.transient_texts.iter().enumerate() {
+        for content_state in state.content.transient_texts.iter() {
             // Skip if hidden
             if content_state.render_data.hidden {
                 continue;
@@ -1209,6 +1209,7 @@ impl Renderer {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn rect(
         &mut self,
         x: f32,
@@ -1234,6 +1235,7 @@ impl Renderer {
 
     /// Add a rounded rectangle with the specified border radius
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn rounded_rect(
         &mut self,
         x: f32,
@@ -1294,6 +1296,7 @@ impl Renderer {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn add_image_rect(
         &mut self,
         x: f32,
@@ -1879,9 +1882,11 @@ mod rect_positioning_tests {
     struct GlyphRect {
         #[allow(unused)]
         pub x: f32,
+        #[allow(unused)]
         pub y: f32,
         #[allow(unused)]
         pub width: f32,
+        #[allow(unused)]
         pub height: f32,
         #[allow(unused)]
         pub baseline_y: f32,
@@ -1896,7 +1901,9 @@ mod rect_positioning_tests {
         pub y: f32,
         #[allow(unused)]
         pub width: f32,
+        #[allow(unused)]
         pub height: f32,
+        #[allow(unused)]
         pub baseline_y: f32,
     }
 

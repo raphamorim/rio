@@ -329,7 +329,7 @@ impl AssistantOverlay {
             .sel(heading_id)
             .clear()
             .new_line()
-            .add_text(
+            .add_span(
                 heading_text,
                 SpanStyle {
                     color: heading_color,
@@ -356,7 +356,7 @@ impl AssistantOverlay {
                 .sel(body_id)
                 .clear()
                 .new_line()
-                .add_text(
+                .add_span(
                     line_text,
                     SpanStyle {
                         color: TEXT_COLOR,
@@ -382,7 +382,7 @@ impl AssistantOverlay {
             .sel(link_id)
             .clear()
             .new_line()
-            .add_text(
+            .add_span(
                 DOCS_URL,
                 SpanStyle {
                     color: LINK_COLOR,
@@ -443,7 +443,7 @@ impl AssistantOverlay {
             .sel(close_id)
             .clear()
             .new_line()
-            .add_text(
+            .add_span(
                 "\u{2022}",
                 SpanStyle {
                     color: BUTTON_TEXT_COLOR,

@@ -317,7 +317,7 @@ impl SearchOverlay {
                     .sel(input_id)
                     .clear()
                     .new_line()
-                    .add_text(
+                    .add_span(
                         text,
                         SpanStyle {
                             color: text_color,
@@ -355,7 +355,7 @@ impl SearchOverlay {
             .sel(input_id)
             .clear()
             .new_line()
-            .add_text(
+            .add_span(
                 &display_text,
                 SpanStyle {
                     color: text_color,
@@ -371,7 +371,7 @@ impl SearchOverlay {
 
         // Caret
         let elapsed_ms = self.caret_blink_start.elapsed().as_millis();
-        let caret_visible = (elapsed_ms / CARET_BLINK_MS) % 2 == 0;
+        let caret_visible = (elapsed_ms / CARET_BLINK_MS).is_multiple_of(2);
 
         if caret_visible {
             let caret_x = if active_search.is_empty() {
@@ -429,7 +429,7 @@ impl SearchOverlay {
                 .sel(text_ids[i])
                 .clear()
                 .new_line()
-                .add_text(
+                .add_span(
                     labels[i],
                     SpanStyle {
                         color: BUTTON_TEXT_COLOR,

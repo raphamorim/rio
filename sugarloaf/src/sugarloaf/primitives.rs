@@ -264,6 +264,7 @@ pub struct Quad {
 }
 
 impl Quad {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         x: f32,
         y: f32,
@@ -288,6 +289,7 @@ impl Quad {
     }
 
     /// Create a quad with uniform corner radius and uniform border width
+    #[allow(clippy::too_many_arguments)]
     pub fn with_uniform_border(
         x: f32,
         y: f32,
@@ -312,6 +314,7 @@ impl Quad {
     }
 
     /// Create a quad with dashed border
+    #[allow(clippy::too_many_arguments)]
     pub fn with_dashed_border(
         x: f32,
         y: f32,

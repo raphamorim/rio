@@ -117,8 +117,10 @@ impl ApplicationHandler for Application {
             WindowEvent::RedrawRequested => {
                 const TEXT_ID: usize = 1;
 
+                sugarloaf.text(Some(TEXT_ID));
                 sugarloaf
-                    .text(TEXT_ID)
+                    .content()
+                    .sel(TEXT_ID)
                     .clear()
                     .add_span(
                         "Sugarloaf",
@@ -245,8 +247,8 @@ impl ApplicationHandler for Application {
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
                             ..SpanStyle::default()
                         },
-                    );
-                sugarloaf.build_text_by_id(TEXT_ID);
+                    )
+                    .build();
                 sugarloaf.set_position(TEXT_ID, 10., 10.);
                 sugarloaf.set_visibility(TEXT_ID, true);
                 sugarloaf.render();

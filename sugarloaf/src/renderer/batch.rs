@@ -51,8 +51,8 @@ impl Vertex {
 
     /// Convert vertex to bytes for caching
     #[inline]
-    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
-        bytemuck::cast(*self)
+    pub fn to_bytes(self) -> [u8; Self::SIZE] {
+        bytemuck::cast(self)
     }
 
     /// Create vertex from bytes

@@ -146,8 +146,10 @@ impl ApplicationHandler for Application {
             WindowEvent::RedrawRequested => {
                 const TEXT_ID: usize = 0;
 
+                sugarloaf.text(Some(TEXT_ID));
                 sugarloaf
-                    .text(TEXT_ID)
+                    .content()
+                    .sel(TEXT_ID)
                     .clear()
                     .new_line()
                     .add_span(
@@ -197,8 +199,8 @@ impl ApplicationHandler for Application {
                             }),
                             ..SpanStyle::default()
                         },
-                    );
-                sugarloaf.build_text_by_id(TEXT_ID);
+                    )
+                    .build();
 
                 // Show rich text using new API
                 sugarloaf.set_position(TEXT_ID, 10., 0.);

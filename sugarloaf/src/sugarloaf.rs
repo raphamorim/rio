@@ -424,6 +424,7 @@ impl Sugarloaf<'_> {
     /// - `id: Some(n)` - cached with id n, overwrites existing content
     /// - `order` - draw order (higher values render on top)
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn rect(
         &mut self,
         id: Option<usize>,
@@ -468,6 +469,7 @@ impl Sugarloaf<'_> {
     /// - `id: Some(n)` - cached with id n, overwrites existing content
     /// - `order` - draw order (higher values render on top)
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn rounded_rect(
         &mut self,
         id: Option<usize>,
@@ -569,6 +571,7 @@ impl Sugarloaf<'_> {
     /// - `id: None` - not cached, rendered immediately
     /// - `id: Some(n)` - cached with id n, overwrites existing content
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn image_rect(
         &mut self,
         id: Option<usize>,
