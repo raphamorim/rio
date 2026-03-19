@@ -895,9 +895,9 @@ mod tests {
 
     #[test]
     fn test_strikethrough_positioning() {
+        use crate::layout::SpanStyleDecoration;
         use crate::renderer::compositor::{Compositor, Rect};
         use crate::renderer::text::TextRunStyle;
-        use crate::layout::SpanStyleDecoration;
 
         let compositor = Compositor::new();
         let font_size = 16.0;
