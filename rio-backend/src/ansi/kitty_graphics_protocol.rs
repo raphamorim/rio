@@ -815,7 +815,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     // Open the file mapping
                     let handle = OpenFileMappingW(FILE_MAP_READ, 0, wide_name.as_ptr());
 
-                    if handle == 0 {
+                    if handle.is_null() {
                         let err = std::io::Error::last_os_error();
                         debug!(
                             "Failed to open shared memory '{}': {}",
@@ -827,7 +827,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     // Map view of file
                     let base_ptr = MapViewOfFile(handle, FILE_MAP_READ, 0, 0, 0);
 
-                    if base_ptr.is_null() {
+                    if base_ptr.Value.is_null() {
                         let err = std::io::Error::last_os_error();
                         debug!("Failed to map view of file: {}", err);
                         CloseHandle(handle);
@@ -837,7 +837,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     // Query memory to get size
                     let mut mem_info: MEMORY_BASIC_INFORMATION = std::mem::zeroed();
                     if VirtualQuery(
-                        base_ptr,
+                        base_ptr.Value,
                         &mut mem_info,
                         std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
                     ) == 0
@@ -870,7 +870,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     }
 
                     // Copy data from shared memory
-                    let data_ptr = (base_ptr as *const u8).add(cmd.offset as usize);
+                    let data_ptr = (base_ptr.Value as *const u8).add(cmd.offset as usize);
                     let data = std::slice::from_raw_parts(data_ptr, data_size).to_vec();
 
                     // Cleanup
