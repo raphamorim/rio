@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn test_panel_default() {
         let panel = Panel::default();
-        assert_eq!(panel.margin, Margin::all(5.0));
+        assert_eq!(panel.margin, Margin::all(2.0));
         assert_eq!(panel.row_gap, 0.0);
         assert_eq!(panel.column_gap, 0.0);
         assert_eq!(panel.border_width, 2.0);

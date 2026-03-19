@@ -444,6 +444,10 @@ fn test_cursor_movement_no_move() {
         0,
     );
 
+    // Set proper cell dimensions for testing
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
     // Start at a specific position
     term.grid.cursor.pos.row.0 = 5;
     term.grid.cursor.pos.col.0 = 10;
@@ -609,6 +613,10 @@ fn test_image_row_occupation_single_row() {
         window_id,
         0,
     );
+
+    // Set proper cell dimensions for testing
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
 
     let _initial_cursor_row = term.grid.cursor.pos.row.0;
 
