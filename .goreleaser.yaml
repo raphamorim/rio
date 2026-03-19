@@ -40,14 +40,23 @@ builds:
     flags: [--release, -p=rioterm]
     targets: [aarch64-pc-windows-msvc]
 
-  - id: macos
+  - id: macos-x86_64
     builder: rust
     command: build
     flags: [--release, -p=rioterm]
     env:
-      - MACOSX_DEPLOYMENT_TARGET={{ if eq .Arch "amd64" }}10.15{{ else }}11.0{{ end }}
+      - MACOSX_DEPLOYMENT_TARGET=10.15
       - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
-    targets: [x86_64-apple-darwin, aarch64-apple-darwin]
+    targets: [x86_64-apple-darwin]
+
+  - id: macos-arm64
+    builder: rust
+    command: build
+    flags: [--release, -p=rioterm]
+    env:
+      - MACOSX_DEPLOYMENT_TARGET=11.0
+      - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
+    targets: [aarch64-apple-darwin]
 
   - id: linux-arm64-wayland
     builder: rust
@@ -115,13 +124,13 @@ archives:
     ids: [windows-arm64]
     name_template: "{{ .ProjectName }}-portable-aarch64"
 
-universal_binaries:
-  - ids: [macos]
-    replace: true
-
 dmg:
-  - name: "{{ .ProjectName }}"
+  - name: "{{ .ProjectName }}-x86_64"
     use: appbundle
+    ids: [macos-x86_64]
+  - name: "{{ .ProjectName }}-arm64"
+    use: appbundle
+    ids: [macos-arm64]
 
 notarize:
   macos_native:
@@ -135,7 +144,20 @@ notarize:
         profile_name: "{{ .Env.MACOS_NOTARY_KEYCHAIN_PROFILE }}"
 
 app_bundles:
-  - icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
+  - ids: [macos-x86_64]
+    icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
+    bundle: com.raphaelamorim.rio
+    extra_files:
+      - src: ./misc/72/rio
+        dst: Contents/Resources/72/rio
+      # releases made before goreleaser integration included the classic icon
+      - src: ./misc/osx/Rio.app/Contents/Resources/icon-classic.icns
+        dst: Contents/Resources/icon-classic.icns
+    templated_extra_files:
+      - src: ./misc/osx/Rio.app/Contents/Info.plist
+        dst: Contents/Info.plist
+  - ids: [macos-arm64]
+    icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
     bundle: com.raphaelamorim.rio
     extra_files:
       - src: ./misc/72/rio
