@@ -228,8 +228,8 @@ pub mod test {
             Margin::default(),
         );
 
-        assert_eq!(context_dimension.columns, 66);
-        assert_eq!(context_dimension.lines, 88);
+        assert_eq!(context_dimension.columns, 64);
+        assert_eq!(context_dimension.lines, 84);
 
         let rich_text_id = 0;
         let context = create_mock_context(
@@ -239,21 +239,21 @@ pub mod test {
             context_dimension,
         );
         assert_eq!(update_title("", &context), String::from(""));
-        assert_eq!(update_title("{{columns}}", &context), String::from("66"));
-        assert_eq!(update_title("{{COLUMNS}}", &context), String::from("66"));
-        assert_eq!(update_title("{{ COLUMNS }}", &context), String::from("66"));
-        assert_eq!(update_title("{{ columns }}", &context), String::from("66"));
+        assert_eq!(update_title("{{columns}}", &context), String::from("64"));
+        assert_eq!(update_title("{{COLUMNS}}", &context), String::from("64"));
+        assert_eq!(update_title("{{ COLUMNS }}", &context), String::from("64"));
+        assert_eq!(update_title("{{ columns }}", &context), String::from("64"));
         assert_eq!(
             update_title("hello {{ COLUMNS }} AbC", &context),
-            String::from("hello 66 AbC")
+            String::from("hello 64 AbC")
         );
         assert_eq!(
             update_title("hello {{ Lines }} AbC", &context),
-            String::from("hello 88 AbC")
+            String::from("hello 84 AbC")
         );
         assert_eq!(
             update_title("{{ columns }}x{{lines}}", &context),
-            String::from("66x88")
+            String::from("64x84")
         );
 
         assert_eq!(update_title("{{ title }}", &context), String::from(""));
@@ -279,8 +279,8 @@ pub mod test {
             Margin::default(),
         );
 
-        assert_eq!(context_dimension.columns, 66);
-        assert_eq!(context_dimension.lines, 88);
+        assert_eq!(context_dimension.columns, 64);
+        assert_eq!(context_dimension.lines, 84);
 
         let rich_text_id = 0;
         let context = create_mock_context(
@@ -295,7 +295,7 @@ pub mod test {
 
         assert_eq!(
             update_title("{{ title || columns }}", &context),
-            String::from("66")
+            String::from("64")
         );
 
         assert_eq!(
@@ -316,7 +316,7 @@ pub mod test {
 
         assert_eq!(
             update_title("{{ columns || title }}", &context),
-            String::from("66")
+            String::from("64")
         );
 
         // let's modify current_directory to actually be something

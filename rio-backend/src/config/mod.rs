@@ -1399,7 +1399,7 @@ mod tests {
             "platform-navigation-merge",
             r#"
             [navigation]
-            mode = "TopTab"
+            mode = "Tab"
             clickable = true
 
             [platform]
