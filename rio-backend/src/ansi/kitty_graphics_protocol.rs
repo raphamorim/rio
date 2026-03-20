@@ -1255,7 +1255,8 @@ mod tests {
     fn test_file_transmission_medium() {
         // Create a temporary file
         use std::io::Write;
-        let temp_path = "/tmp/test_kitty_image.rgba";
+        let temp_path = std::env::temp_dir().join("test_kitty_image.rgba");
+        let temp_path = temp_path.to_str().unwrap();
         let mut file = std::fs::File::create(temp_path).unwrap();
         file.write_all(&[255, 0, 0, 255]).unwrap(); // 1x1 red pixel
         drop(file);
@@ -1277,7 +1278,8 @@ mod tests {
     fn test_temp_file_transmission_medium() {
         // Create a temporary file with required naming
         use std::io::Write;
-        let temp_path = "/tmp/tty-graphics-protocol-test.rgba";
+        let temp_path = std::env::temp_dir().join("tty-graphics-protocol-test.rgba");
+        let temp_path = temp_path.to_str().unwrap();
         let mut file = std::fs::File::create(temp_path).unwrap();
         file.write_all(&[255, 0, 0, 255]).unwrap(); // 1x1 red pixel
         drop(file);

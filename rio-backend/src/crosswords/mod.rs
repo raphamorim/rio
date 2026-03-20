@@ -3271,7 +3271,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
 
             // Display the graphic at the cursor position with cursor_movement from placement
-            self.insert_graphic(graphic_data, None, Some(placement.cursor_movement), Some(placement.image_id), placement.z_index);
+            self.insert_graphic(
+                graphic_data,
+                None,
+                Some(placement.cursor_movement),
+                Some(placement.image_id),
+                placement.z_index,
+            );
 
             // Note: cursor position handling is now controlled by cursor_movement parameter
         } else {
