@@ -27,6 +27,14 @@ pub struct TextureRef {
     /// Graphic identifier.
     pub id: GraphicId,
 
+    /// The kitty protocol image_id (i= parameter), if this graphic was placed
+    /// via the kitty graphics protocol. Used for delete-by-image-id (d=i).
+    pub kitty_image_id: Option<u32>,
+
+    /// Z-index layer for this graphic (kitty z= parameter).
+    /// Used for delete-by-z-index (d=z).
+    pub z_index: i32,
+
     /// Width, in pixels, of the graphic.
     pub width: u16,
 
@@ -61,7 +69,7 @@ impl Drop for TextureRef {
 pub type GraphicsCell = SmallVec<[GraphicCell; 1]>;
 
 /// Graphic data stored in a single cell.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GraphicCell {
     /// Texture to draw the graphic in this cell.
     pub texture: Arc<TextureRef>,
@@ -71,28 +79,6 @@ pub struct GraphicCell {
 
     /// Offset in the y direction.
     pub offset_y: u16,
-
-    /// Queue to track removed textures.
-    pub texture_operations: Weak<Mutex<Vec<GraphicId>>>,
-}
-
-impl PartialEq for GraphicCell {
-    fn eq(&self, c: &Self) -> bool {
-        // Ignore texture_operations.
-        self.texture == c.texture
-            && self.offset_x == c.offset_x
-            && self.offset_y == c.offset_y
-    }
-}
-
-impl Eq for GraphicCell {}
-
-impl Drop for GraphicCell {
-    fn drop(&mut self) {
-        if let Some(texture_operations) = self.texture_operations.upgrade() {
-            texture_operations.lock().push(self.texture.id);
-        }
-    }
 }
 
 /// Kitty graphics Unicode placeholder character
@@ -169,6 +155,12 @@ pub struct Graphics {
     /// Tracks when each graphic was added (for eviction priority)
     /// Maps GraphicId to insertion timestamp
     pub image_timestamps: FxHashMap<GraphicId, std::time::Instant>,
+
+    /// Weak references to placed textures, for O(1) liveness checks.
+    /// Avoids scanning the entire grid to find which graphics are in use.
+    /// When the Arc<TextureRef> in grid cells is fully dropped, the Weak
+    /// will report strong_count() == 0, meaning the graphic is no longer displayed.
+    pub placed_textures: FxHashMap<GraphicId, Weak<TextureRef>>,
 }
 
 impl Default for Graphics {
@@ -189,6 +181,7 @@ impl Default for Graphics {
             total_bytes: 0,
             total_limit: 320 * 1024 * 1024, // 320MB like Ghostty
             image_timestamps: FxHashMap::default(),
+            placed_textures: FxHashMap::default(),
         }
     }
 }
@@ -390,6 +383,32 @@ impl Graphics {
             freed_bytes, self.total_bytes
         );
         freed_bytes >= bytes_to_free
+    }
+
+    /// Register a placed texture for liveness tracking.
+    /// Call this after creating the Arc<TextureRef> in insert_graphic.
+    pub fn register_placed_texture(
+        &mut self,
+        graphic_id: GraphicId,
+        weak: Weak<TextureRef>,
+    ) {
+        self.placed_textures.insert(graphic_id, weak);
+    }
+
+    /// Collect IDs of graphics still displayed in the grid.
+    /// O(number of placements) instead of O(rows * cols).
+    pub fn collect_active_graphic_ids(&mut self) -> std::collections::HashSet<u64> {
+        // Clean up stale entries and collect live ones in one pass
+        let mut active = std::collections::HashSet::new();
+        self.placed_textures.retain(|id, weak| {
+            if weak.strong_count() > 0 {
+                active.insert(id.get());
+                true
+            } else {
+                false
+            }
+        });
+        active
     }
 
     /// Track a new graphic's memory usage and timestamp

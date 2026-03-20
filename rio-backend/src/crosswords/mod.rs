@@ -1475,25 +1475,8 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
-    /// Cleanup unused kitty images from cache
-    /// Collect all graphic IDs currently in use (displayed in the grid)
-    fn collect_used_graphic_ids(&self) -> std::collections::HashSet<u64> {
-        let mut used_ids = std::collections::HashSet::new();
-        for line_idx in 0..self.grid.screen_lines() {
-            let line = Line(line_idx as i32);
-            for col_idx in 0..self.grid.columns() {
-                let col = Column(col_idx);
-                let cell = &self.grid[line][col];
-                if cell.flags.contains(Flags::GRAPHICS) {
-                    if let Some(graphics) = cell.graphics() {
-                        for graphic in graphics {
-                            used_ids.insert(graphic.texture.id.get());
-                        }
-                    }
-                }
-            }
-        }
-        used_ids
+    fn collect_used_graphic_ids(&mut self) -> std::collections::HashSet<u64> {
+        self.graphics.collect_active_graphic_ids()
     }
 
     fn cleanup_unused_kitty_images(&mut self) {
@@ -2923,7 +2906,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             match parser.finish() {
                 // Sixel uses None to indicate traditional Sixel cursor behavior
                 Ok((graphic, palette)) => {
-                    self.insert_graphic(graphic, Some(palette), None)
+                    self.insert_graphic(graphic, Some(palette), None, None, 0)
                 }
                 Err(err) => warn!("Failed to parse Sixel data: {}", err),
             }
@@ -2938,6 +2921,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         graphic: GraphicData,
         palette: Option<Vec<ColorRgb>>,
         cursor_movement: Option<u8>,
+        kitty_image_id: Option<u32>,
+        z_index: i32,
     ) {
         debug!(
             "insert_graphic called: id={}, {}x{}, format={:?}, cursor_movement={:?}",
@@ -2997,19 +2982,21 @@ impl<U: EventListener> Handler for Crosswords<U> {
             graphic_bytes, self.graphics.total_bytes, self.graphics.total_limit
         );
 
-        // Check if we need to evict images to make space
-        let used_ids = self.collect_used_graphic_ids();
-        debug!(
-            "insert_graphic: {} images currently in use in grid",
-            used_ids.len()
-        );
-
-        if !self.graphics.evict_images(graphic_bytes, &used_ids) {
-            warn!(
-                "Failed to evict enough images for {} bytes, image may not display",
-                graphic_bytes
+        // Only scan the grid for used IDs when eviction is actually needed
+        if self.graphics.total_bytes + graphic_bytes > self.graphics.total_limit {
+            let used_ids = self.collect_used_graphic_ids();
+            debug!(
+                "insert_graphic: {} images currently in use in grid, need eviction",
+                used_ids.len()
             );
-            // Continue anyway - let it fail gracefully rather than silently dropping
+
+            if !self.graphics.evict_images(graphic_bytes, &used_ids) {
+                warn!(
+                    "Failed to evict enough images for {} bytes, image may not display",
+                    graphic_bytes
+                );
+                // Continue anyway - let it fail gracefully rather than silently dropping
+            }
         }
 
         let graphic_id = self.graphics.next_id();
@@ -3083,11 +3070,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let texture = Arc::new(TextureRef {
             id: graphic_id,
+            kitty_image_id,
+            z_index,
             width,
             height,
             cell_height,
             texture_operations: Arc::downgrade(&self.graphics.texture_operations),
         });
+
+        self.graphics
+            .register_placed_texture(graphic_id, Arc::downgrade(&texture));
 
         for (top, offset_y) in (0..).zip((0..height).step_by(cell_height)) {
             let line = if scrolling {
@@ -3108,13 +3100,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     break;
                 }
 
-                let texture_operations =
-                    Arc::downgrade(&self.graphics.texture_operations);
                 let graphic_cell = GraphicCell {
                     texture: texture.clone(),
                     offset_x,
                     offset_y,
-                    texture_operations,
                 };
 
                 let mut cell = self.grid.cursor.template.clone();
@@ -3282,7 +3271,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
 
             // Display the graphic at the cursor position with cursor_movement from placement
-            self.insert_graphic(graphic_data, None, Some(placement.cursor_movement));
+            self.insert_graphic(graphic_data, None, Some(placement.cursor_movement), Some(placement.image_id), placement.z_index);
 
             // Note: cursor position handling is now controlled by cursor_movement parameter
         } else {
@@ -3315,11 +3304,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
             }
             b'i' | b'I' => {
-                // Delete by image ID
+                // Delete by kitty image ID
                 let image_id_to_match = delete.image_id;
                 self.delete_graphics_matching(|cell_graphic| {
-                    // Match by GraphicId - need to check if this graphic's ID matches
-                    cell_graphic.texture.id.get() == image_id_to_match as u64
+                    cell_graphic.texture.kitty_image_id == Some(image_id_to_match)
                 });
 
                 // If uppercase, also delete from cache
@@ -3373,9 +3361,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
             }
             b'z' | b'Z' => {
-                // Delete by z-index (not fully implemented - would need z-index tracking)
-                debug!("Delete by z-index not implemented - treating as delete all");
-                self.delete_all_graphics();
+                // Delete by z-index
+                let z = delete.z_index;
+                self.delete_graphics_matching(|cell_graphic| {
+                    cell_graphic.texture.z_index == z
+                });
+
+                if delete.action == b'Z' && delete.delete_data {
+                    self.cleanup_unused_kitty_images();
+                }
             }
             _ => {
                 debug!(
