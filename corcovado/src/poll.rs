@@ -1,5 +1,5 @@
 use crate::event_imp::{self as event, Event, Evented, PollOpt, Ready};
-use tracing::trace;
+use crate::{sys, Token};
 use std::cell::UnsafeCell;
 #[cfg(all(unix, not(target_os = "fuchsia")))]
 use std::os::unix::io::AsRawFd;
@@ -13,7 +13,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use std::{fmt, io, ptr};
 use std::{mem, ops};
-use crate::{sys, Token};
+use tracing::trace;
 
 // Poll is backed by two readiness queues. The first is a system readiness queue
 // represented by `sys::Selector`. The system readiness queue handles events

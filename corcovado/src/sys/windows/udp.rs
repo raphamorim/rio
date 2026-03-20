@@ -20,9 +20,9 @@ use miow::net::UdpSocketExt as MiowUdpSocketExt;
 #[allow(unused_imports)]
 use net2::{UdpBuilder, UdpSocketExt};
 
-use event::Evented;
 use crate::sys::windows::from_raw_arc::FromRawArc;
 use crate::sys::windows::selector::{Overlapped, ReadyBinding};
+use event::Evented;
 use {poll, Poll, PollOpt, Ready, Token};
 
 pub struct UdpSocket {

@@ -1,6 +1,6 @@
+use crate::{io, poll, Evented, Poll, PollOpt, Ready, Token};
 use std::sync::Mutex;
 use zircon_sys::zx_handle_t;
-use crate::{io, poll, Evented, Poll, PollOpt, Ready, Token};
 
 /// Wrapper for registering a `HandleBase` type with mio.
 #[derive(Debug)]

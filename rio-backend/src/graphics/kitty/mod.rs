@@ -1105,7 +1105,7 @@ fn test_delete_by_image_id_does_not_delete_wrong_id() {
 fn test_no_double_push_on_graphic_cell_drop() {
     use crate::ansi::graphics::{GraphicCell, TextureRef};
     use parking_lot::Mutex;
-    use std::sync::{Arc, Weak};
+    use std::sync::Arc;
 
     let texture_ops: Arc<Mutex<Vec<GraphicId>>> = Arc::new(Mutex::new(Vec::new()));
 

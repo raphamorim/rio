@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use tracing::trace;
 #[cfg(not(target_os = "netbsd"))]
 use std::os::raw::{c_int, c_short};
 use std::os::unix::io::AsRawFd;
@@ -7,6 +6,7 @@ use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use std::{cmp, fmt, ptr};
+use tracing::trace;
 
 use libc::{self, time_t};
 

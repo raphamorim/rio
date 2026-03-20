@@ -1,5 +1,5 @@
-use std::{fmt, io, ops};
 use crate::{Poll, Token};
+use std::{fmt, io, ops};
 
 /// A value that may be registered with `Poll`
 ///

@@ -1,10 +1,10 @@
+use crate::{io, PollOpt, Ready};
 use libc;
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::ops::{Deref, DerefMut};
 use std::os::unix::io::RawFd;
 use zircon;
-use crate::{io, PollOpt, Ready};
 
 mod awakener;
 mod eventedfd;

@@ -1,18 +1,18 @@
+use crate::sys;
+use crate::sys::fuchsia::{
+    assert_fuchsia_ready_repr, epoll_event_to_ready, poll_opts_to_wait_async, EventedFd,
+    EventedFdInner, FuchsiaReady,
+};
+use crate::{io, Event, PollOpt, Ready, Token};
 use std::collections::hash_map;
 use std::fmt;
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
-use crate::sys;
-use crate::sys::fuchsia::{
-    assert_fuchsia_ready_repr, epoll_event_to_ready, poll_opts_to_wait_async, EventedFd,
-    EventedFdInner, FuchsiaReady,
-};
 use zircon;
 use zircon::AsHandleRef;
 use zircon_sys::zx_handle_t;
-use crate::{io, Event, PollOpt, Ready, Token};
 
 /// The kind of registration-- file descriptor or handle.
 ///
