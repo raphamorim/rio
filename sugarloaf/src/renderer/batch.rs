@@ -2272,50 +2272,57 @@ impl BatchManager {
                 self.rect(&lower_left_rect, depth, &color, order);
             }
             DrawableChar::DiagonalRisingBar => {
-                self.add_line(
-                    x,
-                    y + line_height, // bottom-left corner
-                    x + line_width,
-                    y, // top-right corner
-                    stroke,
-                    depth,
-                    color,
-                );
+                // ╱ — bottom-left to top-right
+                let half = stroke / 2.0;
+                let len = (line_width * line_width + line_height * line_height).sqrt();
+                let nx = line_height / len * half;
+                let ny = line_width / len * half;
+                let points = [
+                    (x - nx, y + line_height - ny),
+                    (x + nx, y + line_height + ny),
+                    (x + line_width + nx, y + ny),
+                    (x + line_width - nx, y - ny),
+                ];
+                self.add_antialiased_polygon(&points, depth, color);
             }
             DrawableChar::DiagonalFallingBar => {
-                self.add_line(
-                    x,
-                    y,
-                    x + line_width,
-                    y + line_height,
-                    stroke,
-                    depth,
-                    color,
-                );
+                // ╲ — top-left to bottom-right
+                let half = stroke / 2.0;
+                let len = (line_width * line_width + line_height * line_height).sqrt();
+                let nx = line_height / len * half;
+                let ny = line_width / len * half;
+                let points = [
+                    (x - nx, y + ny),
+                    (x + nx, y - ny),
+                    (x + line_width + nx, y + line_height - ny),
+                    (x + line_width - nx, y + line_height + ny),
+                ];
+                self.add_antialiased_polygon(&points, depth, color);
             }
             DrawableChar::DiagonalCross => {
-                // DiagonalCross (╳) - combination of both diagonals using add_line
+                // ╳ — both diagonals
+                let half = stroke / 2.0;
+                let len = (line_width * line_width + line_height * line_height).sqrt();
+                let nx = line_height / len * half;
+                let ny = line_width / len * half;
+
                 // Rising diagonal (╱)
-                self.add_line(
-                    x,
-                    y + line_height, // bottom-left corner
-                    x + line_width,
-                    y, // top-right corner
-                    stroke,
-                    depth,
-                    color,
-                );
+                let rising = [
+                    (x - nx, y + line_height - ny),
+                    (x + nx, y + line_height + ny),
+                    (x + line_width + nx, y + ny),
+                    (x + line_width - nx, y - ny),
+                ];
+                self.add_antialiased_polygon(&rising, depth, color);
 
                 // Falling diagonal (╲)
-                self.add_line(
-                    x,
-                    y, // top-left corner
-                    x + line_width,
-                    y + line_height, // bottom-right corner
-                    stroke,
-                    depth,
-                    color,
-                );
+                let falling = [
+                    (x - nx, y + ny),
+                    (x + nx, y - ny),
+                    (x + line_width + nx, y + line_height - ny),
+                    (x + line_width - nx, y + line_height + ny),
+                ];
+                self.add_antialiased_polygon(&falling, depth, color);
             }
             DrawableChar::LowerOneEighthBlock => {
                 // Lower One Eighth Block (▁) - fills bottom 1/8 of the cell
