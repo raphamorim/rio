@@ -5,6 +5,7 @@
 
 #![allow(unused)]
 
+use tracing::trace;
 use std::fmt;
 use std::io;
 use std::io::prelude::*;

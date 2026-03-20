@@ -1,3 +1,4 @@
+use tracing::trace;
 use std::fmt;
 use std::io::{self, Read};
 use std::mem;

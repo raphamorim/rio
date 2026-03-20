@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 #![allow(clippy::all)]
 
+use tracing::trace;
 use std::cell::UnsafeCell;
 use std::os::windows::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
