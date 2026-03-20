@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkrio_docs=globalThis.webpackChunkrio_docs||[]).push([[7484],{8650:a=>{a.exports=JSON.parse('{"authors":[{"name":"Raphael Amorim","title":"Creator of Rio Terminal","url":"https://github.com/raphamorim","key":"raphamorim","page":null,"count":1}]}')}}]);

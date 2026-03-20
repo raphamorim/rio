@@ -18,44 +18,58 @@
 <p>The next version of Rio is a significant step forward. A lot of the work has gone into the rendering pipeline, the UI layer, and laying the groundwork for something bigger. Let me walk you through it.</p>
 <p>The renderer has been substantially reworked. Here's a rundown:</p>
 <ul>
-<li><strong>Metal support</strong>: Rio now runs natively on Metal, Apple's GPU API. This means lower overhead and better integration on macOS.</li>
-<li><strong>Rect system rewrite</strong>:The<!-- --> rect pipeline has been fixed and images have been merged into the same rect system, removing a whole class of rendering inconsistencies.</li>
-<li><strong>Shape-level deduplication</strong>:Previously<!-- -->, only rich text elements had IDs and could skip recomputation. Now any type of shape can do the same, which cuts down redundant GPU work significantly.</li>
-<li><strong>Z-index fixes</strong>:Layering<!-- --> issues that caused elements to render in the wrong order have been resolved.</li>
-<li><strong>Strikethrough fix</strong>:Strikethrough<!-- --> rendering was broken in certain scenarios and is now working correctly.</li>
-<li><strong>Column/row dimension fixes</strong>:Terminal<!-- --> dimensions are now computed correctly, fixing a category of layout bugs.</li>
-<li><strong>Consistent 60+ FPS</strong>:Even<!-- --> when hammering the terminal with empty line breaks, Rio now maintains at least a consistent 60fps. Performance was a priority throughout.</li>
+<li class=""><strong>Metal support</strong>: Rio now runs natively on Metal, Apple's GPU API. This means lower overhead and better integration on macOS.</li>
+<li class=""><strong>Rect system rewrite</strong>:The<!-- --> rect pipeline has been fixed and images have been merged into the same rect system, removing a whole class of rendering inconsistencies.</li>
+<li class=""><strong>Shape-level deduplication</strong>:Previously<!-- -->, only rich text elements had IDs and could skip recomputation. Now any type of shape can do the same, which cuts down redundant GPU work significantly.</li>
+<li class=""><strong>Z-index fixes</strong>:Layering<!-- --> issues that caused elements to render in the wrong order have been resolved.</li>
+<li class=""><strong>Strikethrough fix</strong>:Strikethrough<!-- --> rendering was broken in certain scenarios and is now working correctly.</li>
+<li class=""><strong>Column/row dimension fixes</strong>:Terminal<!-- --> dimensions are now computed correctly, fixing a category of layout bugs.</li>
+<li class=""><strong>Consistent 60+ FPS</strong>:Even<!-- --> when hammering the terminal with empty line breaks, Rio now maintains at least a consistent 60fps. Performance was a priority throughout.</li>
 </ul>
 <p>New UI features also:</p>
 <ul>
-<li><strong>Command palette</strong>:Rio<!-- --> now ships with a built-in command palette. It's the foundation for a more discoverable, keyboard-driven interface.</li>
-<li><strong>New navigation system</strong>:Tab<!-- --> navigation has been redesigned from scratch with a new island-style tab bar.</li>
-<li><strong>Title bar progress bar</strong>:Long-running<!-- --> operations can now show progress directly in the title bar.</li>
-<li><strong>Tab management improvements</strong>:Creating<!-- --> or switching tabs now properly manages visible rich text, fixing visual glitches during transitions.</li>
-<li><strong>New welcome screen</strong>:First-launch<!-- --> experience has been refreshed.</li>
-<li><strong>Editable tab titles and colors</strong>:You<!-- --> can now rename tabs and change their colors directly through the UI.</li>
+<li class=""><strong>Command palette</strong>:Rio<!-- --> now ships with a built-in command palette. It's the foundation for a more discoverable, keyboard-driven interface.</li>
+<li class=""><strong>New navigation system</strong>:Tab<!-- --> navigation has been redesigned from scratch with a new island-style tab bar.</li>
+<li class=""><strong>Title bar progress bar</strong>:Long-running<!-- --> operations can now show progress directly in the title bar.</li>
+<li class=""><strong>Tab management improvements</strong>:Creating<!-- --> or switching tabs now properly manages visible rich text, fixing visual glitches during transitions.</li>
+<li class=""><strong>New welcome screen</strong>:First-launch<!-- --> experience has been refreshed.</li>
+<li class=""><strong>Editable tab titles and colors</strong>:You<!-- --> can now rename tabs and change their colors directly through the UI.</li>
 </ul>
-<p>And more stuff to announce like Quake mode, Kitty image protocol, <a href="https://terminal-wg.pages.freedesktop.org/bidi/" target="_blank" rel="noopener noreferrer">BiDi (bidirectional text) support</a> and etcetera.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="introducing-librio">Introducing librio<a href="https://rioterm.com/zh-hans/blog/2026/03/11/whats-coming-next#introducing-librio" class="hash-link" aria-label="Introducing librio的直接链接" title="Introducing librio的直接链接">​</a></h2>
+<p>And more stuff to announce like Quake mode, Kitty image protocol, <a href="https://terminal-wg.pages.freedesktop.org/bidi/" target="_blank" rel="noopener noreferrer" class="">BiDi (bidirectional text) support</a> and etcetera.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="introducing-librio">Introducing librio<a href="https://rioterm.com/zh-hans/blog/2026/03/11/whats-coming-next#introducing-librio" class="hash-link" aria-label="Introducing librio的直接链接" title="Introducing librio的直接链接" translate="no">​</a></h2>
 <p>This is one I'm particularly excited about.</p>
-<p><strong>librio</strong> is Rio's terminal engine extracted as a standalone library, similar in spirit to <a href="https://ghostty.org/" target="_blank" rel="noopener noreferrer">libghostty</a>. The idea is simple: other applications should be able to embed a high-quality terminal without reinventing the wheel.</p>
+<p><strong>librio</strong> is Rio's terminal engine extracted as a standalone library, similar in spirit to <a href="https://ghostty.org/" target="_blank" rel="noopener noreferrer" class="">libghostty</a>. The idea is simple: other applications should be able to embed a high-quality terminal without reinventing the wheel.</p>
 <p>librio handles the input processing, the grid, and all the terminal emulation logic, packaged as a library that can be consumed by native applications.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="super-rio">Super Rio<a href="https://rioterm.com/zh-hans/blog/2026/03/11/whats-coming-next#super-rio" class="hash-link" aria-label="Super Rio的直接链接" title="Super Rio的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="super-rio">Super Rio<a href="https://rioterm.com/zh-hans/blog/2026/03/11/whats-coming-next#super-rio" class="hash-link" aria-label="Super Rio的直接链接" title="Super Rio的直接链接" translate="no">​</a></h2>
 <p>To prove out librio, I've been working on a project called <strong>Super Rio</strong>, a terminal application built fully native in Swift, powered entirely by librio under the hood. It's a native macOS app that gets all of Rio's terminal capabilities without reimplementing them.</p>
 <p>Super Rio is both a showcase for librio and an exploration of what a truly native terminal experience looks like when the heavy lifting is handled by a proven engine. It's also where I plan to explore AI features, things like inline suggestions, natural language commands, and intelligent context awareness.</p>
 <p>Here's a quick look at Super Rio in action:</p>
 <iframe width="560" height="315" src="https://www.youtube.com/embed/c8mcMNn0f5s" title="Super Rio" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
 <p>More details on Super Rio will come as it matures.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="help-keep-rio-alive-on-linux-and-windows">Help keep Rio alive on Linux and Windows<a href="https://rioterm.com/zh-hans/blog/2026/03/11/whats-coming-next#help-keep-rio-alive-on-linux-and-windows" class="hash-link" aria-label="Help keep Rio alive on Linux and Windows的直接链接" title="Help keep Rio alive on Linux and Windows的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="help-keep-rio-alive-on-linux-and-windows">Help keep Rio alive on Linux and Windows<a href="https://rioterm.com/zh-hans/blog/2026/03/11/whats-coming-next#help-keep-rio-alive-on-linux-and-windows" class="hash-link" aria-label="Help keep Rio alive on Linux and Windows的直接链接" title="Help keep Rio alive on Linux and Windows的直接链接" translate="no">​</a></h2>
 <p>Rio is a passion project. Sponsorship currently covers the Apple Developer license, stickers, and domain costs, the basics to keep the project running and distributed.</p>
 <p>One area where I could really use help is <strong>Linux and Windows support</strong>: My MacBook is the machine I use to develop and debug Rio on Linux and Windows (through VMs/remote), but it's also my music production machine, loaded with audio software and configs. I've been making it work, but it hasn't been the best experience.</p>
-<p>I'd love to get a dedicated Linux machine solely for Rio development, something that lets me properly test, debug, and iterate without workarounds. If you find Rio useful and want to help, consider <a href="https://github.com/sponsors/raphamorim" target="_blank" rel="noopener noreferrer">sponsoring the project</a>. Every bit helps keep the project moving forward across all platforms.</p>
+<p>I'd love to get a dedicated Linux machine solely for Rio development, something that lets me properly test, debug, and iterate without workarounds. If you find Rio useful and want to help, consider <a href="https://github.com/sponsors/raphamorim" target="_blank" rel="noopener noreferrer" class="">sponsoring the project</a>. Every bit helps keep the project moving forward across all platforms.</p>
 <hr>
 <p>That's it for now. There's a lot more in the pipeline, but these are the highlights. Thanks for sticking around, and as always, happy hacking!</p>]]></content>
         <author>
             <name>Raphael Amorim</name>
             <uri>https://github.com/raphamorim</uri>
         </author>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Version 0.3 released]]></title>
+        <id>https://rioterm.com/zh-hans/blog/2025/12/28/version-zero-dot-three</id>
+        <link href="https://rioterm.com/zh-hans/blog/2025/12/28/version-zero-dot-three"/>
+        <updated>2025-12-28T12:28:00.000Z</updated>
+        <summary type="html"><![CDATA[Welcome to the new Rio Terminal experience]]></summary>
+        <content type="html"><![CDATA[<p>I am excited to announce Rio terminal v0.3 is released.</p>
+<p>Let's break down this long-waited release in parts, also if you're not really a reading/blog person you can optionally watch this video about the release.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="new-rendering-architecture">New rendering architecture<a href="https://rioterm.com/zh-hans/blog/2025/12/28/version-zero-dot-three#new-rendering-architecture" class="hash-link" aria-label="New rendering architecture的直接链接" title="New rendering architecture的直接链接" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="native-metal-for-macos">Native metal for MacOS<a href="https://rioterm.com/zh-hans/blog/2025/12/28/version-zero-dot-three#native-metal-for-macos" class="hash-link" aria-label="Native metal for MacOS的直接链接" title="Native metal for MacOS的直接链接" translate="no">​</a></h2>
+<p>tl;dr</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="quake-mode">Quake mode<a href="https://rioterm.com/zh-hans/blog/2025/12/28/version-zero-dot-three#quake-mode" class="hash-link" aria-label="Quake mode的直接链接" title="Quake mode的直接链接" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="tab-mode">Tab mode<a href="https://rioterm.com/zh-hans/blog/2025/12/28/version-zero-dot-three#tab-mode" class="hash-link" aria-label="Tab mode的直接链接" title="Tab mode的直接链接" translate="no">​</a></h2>]]></content>
     </entry>
     <entry>
         <title type="html"><![CDATA[Rio Terminal Now Available on Flathub via Flatpak]]></title>
@@ -67,13 +81,13 @@
 <p>For those unfamiliar, Rio is a fast, GPU-accelerated terminal emulator built in Rust. It offers a beautiful, minimal interface with modern features such as ligature support, true-color rendering, tabs, and a configuration-less setup experience — making it a top choice for developers and terminal power users who want performance without compromise.</p>
 <p>Demo of Rio running on a Steam Deck:</p>
 <p><img decoding="async" loading="lazy" alt="Demo flatpak on Steam Deck" src="https://rioterm.com/zh-hans/assets/images/demo-flatpak-steamdeck-ed57c50251c7e072fa8631d631deb1be.jpg" width="1936" height="1452" class="img_ev3q"></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="why-flatpak">Why Flatpak?<a href="https://rioterm.com/zh-hans/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak#why-flatpak" class="hash-link" aria-label="Why Flatpak?的直接链接" title="Why Flatpak?的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="why-flatpak">Why Flatpak?<a href="https://rioterm.com/zh-hans/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak#why-flatpak" class="hash-link" aria-label="Why Flatpak?的直接链接" title="Why Flatpak?的直接链接" translate="no">​</a></h2>
 <p>Distributing Rio via Flatpak and Flathub means easier access and broader compatibility across Linux distributions. Whether you're running Fedora, Ubuntu, Arch, or anything in between, you can now install Rio in seconds with:</p>
 <div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token plain">flatpak </span><span class="token function" style="color:rgb(80, 250, 123)">install</span><span class="token plain"> flathub com.rioterm.Rio</span><br></span></code></pre></div></div>
 <p>Flatpak ensures consistent sandboxing, updates, and dependency management, making Rio more accessible and reliable for a diverse range of users.</p>
-<p>This milestone wouldn’t have been possible without the dedicated effort of <a href="https://github.com/ranisalt" target="_blank" rel="noopener noreferrer">Ranieri Althoff</a>, who generously contributed the Flatpak packaging and submission to Flathub. Ranieri's work ensures that more users can discover and enjoy Rio with minimal friction, and we’re incredibly grateful for the time and expertise he’s invested.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="get-started-with-rio">Get Started with Rio<a href="https://rioterm.com/zh-hans/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak#get-started-with-rio" class="hash-link" aria-label="Get Started with Rio的直接链接" title="Get Started with Rio�的直接链接">​</a></h2>
-<p>Ready to try it out? Head over to the <a href="https://flathub.org/apps/com.rioterm.Rio" target="_blank" rel="noopener noreferrer">Flathub page</a>, click “Install,” or run the Flatpak command in your terminal. For configuration tips, keyboard shortcuts, and advanced features, check out the <a href="https://github.com/raphamorim/rio" target="_blank" rel="noopener noreferrer">Rio GitHub repo</a>.</p>
+<p>This milestone wouldn’t have been possible without the dedicated effort of <a href="https://github.com/ranisalt" target="_blank" rel="noopener noreferrer" class="">Ranieri Althoff</a>, who generously contributed the Flatpak packaging and submission to Flathub. Ranieri's work ensures that more users can discover and enjoy Rio with minimal friction, and we’re incredibly grateful for the time and expertise he’s invested.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="get-started-with-rio">Get Started with Rio<a href="https://rioterm.com/zh-hans/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak#get-started-with-rio" class="hash-link" aria-label="Get Started with Rio的直接链接" title="Get Started with Rio的直接链接" translate="no">​</a></h2>
+<p>Ready to try it out? Head over to the <a href="https://flathub.org/apps/com.rioterm.Rio" target="_blank" rel="noopener noreferrer" class="">Flathub page</a>, click “Install,” or run the Flatpak command in your terminal. For configuration tips, keyboard shortcuts, and advanced features, check out the <a href="https://github.com/raphamorim/rio" target="_blank" rel="noopener noreferrer" class="">Rio GitHub repo</a>.</p>
 <p>We’re thrilled to see Rio reaching more users and evolving as a next-gen terminal emulator for the Linux desktop.</p>
 <p>Happy hacking!</p>]]></content>
     </entry>
@@ -90,7 +104,7 @@ Frankly, it's the kind of work I don't want to do for every release.</p>
 <p>GoReleaser is a release automation tool. It currently supports Go, Rust, Zig, and TypeScript (with Bun and Deno).
 GoReleaser was created to solve a problem we all had at some point: releasing software is boring and error prone.</p>
 <p><img decoding="async" loading="lazy" src="https://raw.githubusercontent.com/goreleaser/artwork/refs/heads/master/goreleaser_rust_zig_16_9.png" alt="GoReleaser logo" class="img_ev3q"></p>
-<p>Rio wouldn't be using GoReleaser without the awesome work of <a href="https://github.com/vedantmgoyal9" target="_blank" rel="noopener noreferrer">Vedant Mohan Goyal</a> and <a href="https://github.com/caarlos0" target="_blank" rel="noopener noreferrer">Carlos Alexandro Becker</a>.
+<p>Rio wouldn't be using GoReleaser without the awesome work of <a href="https://github.com/vedantmgoyal9" target="_blank" rel="noopener noreferrer" class="">Vedant Mohan Goyal</a> and <a href="https://github.com/caarlos0" target="_blank" rel="noopener noreferrer" class="">Carlos Alexandro Becker</a>.
 Speaking of which, Vedant is writing a blog post about migrating the Rio pipeline to GoReleaser - seriously go follow him!</p>
 <p>That's it for today folks :)</p>]]></content>
     </entry>
@@ -100,7 +114,7 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
         <link href="https://rioterm.com/zh-hans/blog/2025/01/17/new-year-new-look"/>
         <updated>2025-01-17T15:34:00.000Z</updated>
         <summary type="html"><![CDATA[New year, new look!! There you go, Rio terminal got a new logo and icon made by Christian Rocha.]]></summary>
-        <content type="html"><![CDATA[<p>New year, new look!! There you go, Rio terminal got a new logo/icon made by <a href="https://x.com/meowgorithm" target="_blank" rel="noopener noreferrer">Christian Rocha</a>.</p>
+        <content type="html"><![CDATA[<p>New year, new look!! There you go, Rio terminal got a new logo/icon made by <a href="https://x.com/meowgorithm" target="_blank" rel="noopener noreferrer" class="">Christian Rocha</a>.</p>
 <table><thead><tr><th>Before</th><th>After</th></tr></thead><tbody><tr><td><img alt="Rio logo before" src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/Rio-terminal-logo.png/440px-Rio-terminal-logo.png" width="880px"></td><td><img decoding="async" loading="lazy" alt="Rio logo after" src="https://rioterm.com/zh-hans/assets/images/rio-logo-c13ca93614b2ac6b8007481dbde2ac14.png" width="800" height="800" class="img_ev3q"></td></tr></tbody></table>
 <p>The first logo was made by myself but lacked a chef touch that Christian masterfully gave to it!</p>
 <p>You may have already noticed on MacOS that if you're using version 0.2.24, in the upcoming versions it will be patched to Linux, BSD and Microsoft Windows.</p>
@@ -116,18 +130,18 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
         <content type="html"><![CDATA[<p>Hey there folks!</p>
 <p>The Rio Terminal is a side project based on my free time (low this year due to being a new parent), when I started to work on Rio my goal was to learn mostly and eventually, I ended up using Rio in my daily life. However, the terminal wasn't designed to fit people's usage more than myself and would be quite hard to scale the source code to fit some of the feature requests, considering I never expected Rio to be used besides myself.</p>
 <p>As I open-sourced Rio, many people started to use and eventually requests came in, making me realize that parts of the terminal would have to evolve to comprehend such requests and would eventually mean a rewrite of core parts along with incremental changes in other parts.</p>
-<p>I have been working on 0.1.0 release since last December and still have a lot to be done (<a href="https://github.com/users/raphamorim/projects/6/views/1" target="_blank" rel="noopener noreferrer">Github backlog for 0.1.0</a>). It is hard to give an estimation because there's no regular promised cadence and, I am not in a rush because it will require a lot of further testing and writing a lot of tests as well. Releases are likely to be made in small versions, is very likely that 0.1.0 will start with MacOS with Windows (I hope so at least).</p>
+<p>I have been working on 0.1.0 release since last December and still have a lot to be done (<a href="https://github.com/users/raphamorim/projects/6/views/1" target="_blank" rel="noopener noreferrer" class="">Github backlog for 0.1.0</a>). It is hard to give an estimation because there's no regular promised cadence and, I am not in a rush because it will require a lot of further testing and writing a lot of tests as well. Releases are likely to be made in small versions, is very likely that 0.1.0 will start with MacOS with Windows (I hope so at least).</p>
 <p>Summary of 0.1.0 goals:</p>
 <ul>
-<li>Split screens.</li>
-<li>Stabilization of different fonts besides the default one.</li>
-<li>New windowing, migration from Winit to a project created for Rio purposes, called WA. WA uses gaming directives and is a mix of windowing architecture from <a href="https://github.com/not-fl3/miniquad" target="_blank" rel="noopener noreferrer">not-fl3/miniquad</a> and <a href="https://github.com/makepad/makepad" target="_blank" rel="noopener noreferrer">makepad/makepad</a> along with <a href="https://github.com/rust-windowing/winit" target="_blank" rel="noopener noreferrer">winit</a>.</li>
-<li>Sixel support.</li>
-<li>Font ligatures.</li>
-<li>Auto-Italicize and Auto-Bolding fonts.</li>
-<li>Addition of SIMD support for a few critical/repetitive operations.</li>
-<li>Emoji support.</li>
-<li>Give some love to Linux X11/Wayland to bring the native experience closer.</li>
+<li class="">Split screens.</li>
+<li class="">Stabilization of different fonts besides the default one.</li>
+<li class="">New windowing, migration from Winit to a project created for Rio purposes, called WA. WA uses gaming directives and is a mix of windowing architecture from <a href="https://github.com/not-fl3/miniquad" target="_blank" rel="noopener noreferrer" class="">not-fl3/miniquad</a> and <a href="https://github.com/makepad/makepad" target="_blank" rel="noopener noreferrer" class="">makepad/makepad</a> along with <a href="https://github.com/rust-windowing/winit" target="_blank" rel="noopener noreferrer" class="">winit</a>.</li>
+<li class="">Sixel support.</li>
+<li class="">Font ligatures.</li>
+<li class="">Auto-Italicize and Auto-Bolding fonts.</li>
+<li class="">Addition of SIMD support for a few critical/repetitive operations.</li>
+<li class="">Emoji support.</li>
+<li class="">Give some love to Linux X11/Wayland to bring the native experience closer.</li>
 </ul>
 <p>Note: Finally got a second computer with Windows/Linux, and it will make it insanely easier to work on Rio than I was doing before.</p>
 <div class="react-tweet-theme root_D3qd root_Y6tr"><article class="article_kRZ8"><span class="skeleton_FMR8" style="height:3rem;margin-bottom:0.75rem"></span><span class="skeleton_FMR8" style="height:6rem;margin:0.5rem 0"></span><div style="border-top:var(--tweet-border);margin:0.5rem 0"></div><span class="skeleton_FMR8" style="height:2rem"></span><span class="skeleton_FMR8" style="height:2rem;border-radius:9999px;margin-top:0.5rem"></span></article></div>]]></content>
@@ -139,67 +153,67 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
         <updated>2023-09-19T13:53:00.000Z</updated>
         <summary type="html"><![CDATA[Crates.io, Alpine Linux, openSUSE, Nix home manager, adaptive theme, settings UI, welcome UI, blinking cursor, plain navigation mode ...]]></summary>
         <content type="html"><![CDATA[<p>This post also includes changes of v0.0.19.</p>
-<h3 class="anchor anchorWithStickyNavbar_LWe7" id="highlight-1-new-window-api-breaking-change">Highlight #1: New window API (breaking change)<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-1-new-window-api-breaking-change" class="hash-link" aria-label="Highlight #1: New window API (breaking change)的直接链接" title="Highlight #1: New window API (breaking change)的直接链接">​</a></h3>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-1-new-window-api-breaking-change">Highlight #1: New window API (breaking change)<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-1-new-window-api-breaking-change" class="hash-link" aria-label="Highlight #1: New window API (breaking change)的直接链接" title="Highlight #1: New window API (breaking change)的直接链接" translate="no">​</a></h3>
 <p>Configuration properties: window_height, window_width and window_opacity has been moved to a new window/background API:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token comment" style="color:rgb(98, 114, 164)"># Window configuration</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)"># • width - define the initial window width.</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#   Default: 600</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)"># • height - define the initial window height.</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#   Default: 400</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)"># • mode - define how the window will be created</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#     - "Windowed" (default) is based on width and height</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#     - "Maximized" window is created with maximized</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#     - "Fullscreen" window is created with fullscreen</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">window</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">width</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">600</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">height</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">400</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">mode</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"Windowed"</span><br></span></code></pre></div></div>
 <p>From now and on you can also set image as background.</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token comment" style="color:rgb(98, 114, 164)"># Background configuration</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)"># • opacity - changes the background transparency state</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#   Default: 1.0</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)"># • mode - defines background mode between "Color" and "Image"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#   Default: Color</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)"># • image - Set an image as background</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#   Default: None</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">background</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">mode</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"Image"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">opacity</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">1.0</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">background.image</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">path</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"/Users/rapha/Desktop/eastward.jpg"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">width</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">200.0</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">height</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">200.0</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">x</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">0.0</span><br></span></code></pre></div></div>
 <p>Although you can define opacity though the new configuration API it does not work either for the image neither for the window. This something will be fixed in upcoming releases. An example below using the configuration we just saw.</p>
 <p><img decoding="async" loading="lazy" src="https://media.discordapp.net/attachments/1110689410258841662/1152881776348364811/F6JGpamXsAAWvcG.png?width=1048&amp;height=848" alt="Example background" class="img_ev3q"></p>
-<p>note: The image above is from the <a href="https://en.wikipedia.org/wiki/Eastward_(video_game)" target="_blank" rel="noopener noreferrer">Eastward game</a></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="highlight-2-cratesio">Highlight #2: crates.io<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-2-cratesio" class="hash-link" aria-label="Highlight #2: crates.io的直接链接" title="Highlight #2: crates.io的直接链接">​</a></h2>
-<p>Rio terminal is now also available in crates.io: <a href="https://crates.io/crates/rioterm" target="_blank" rel="noopener noreferrer">https://crates.io/crates/rioterm</a> .</p>
+<p>note: The image above is from the <a href="https://en.wikipedia.org/wiki/Eastward_(video_game)" target="_blank" rel="noopener noreferrer" class="">Eastward game</a></p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-2-cratesio">Highlight #2: crates.io<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-2-cratesio" class="hash-link" aria-label="Highlight #2: crates.io的直接链接" title="Highlight #2: crates.io的直接链接" translate="no">​</a></h2>
+<p>Rio terminal is now also available in crates.io: <a href="https://crates.io/crates/rioterm" target="_blank" rel="noopener noreferrer" class="">https://crates.io/crates/rioterm</a> .</p>
 <div class="language-sh codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-sh codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token function" style="color:rgb(80, 250, 123)">cargo</span><span class="token plain"> </span><span class="token function" style="color:rgb(80, 250, 123)">install</span><span class="token plain"> rioterm</span><br></span></code></pre></div></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="highlight-3-alpine-linux-opensuse-and-nix-home-manager">Highlight #3: Alpine Linux, openSUSE and Nix home manager.<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-3-alpine-linux-opensuse-and-nix-home-manager" class="hash-link" aria-label="Highlight #3: Alpine Linux, openSUSE and Nix home manager.的直接链接" title="Highlight #3: Alpine Linux, openSUSE and Nix home manager.的直接链接">​</a></h2>
-<p>• Rio has landed in Nix home manager: <a href="https://github.com/nix-community/home-manager/pull/4118" target="_blank" rel="noopener noreferrer">nix-community/home-manager/pull/4118</a> and huge props to <a href="https://twitter.com/otaviosalvador" target="_blank" rel="noopener noreferrer">@otaviosalvador</a> for making it possible.</p>
-<p>• Rio has landed in Alpine Linux: <a href="https://gitlab.alpinelinux.org/alpine/aports/-/merge_requests/51369" target="_blank" rel="noopener noreferrer">gitlab.alpinelinux.org</a> and huge props to <a href="https://github.com/androw" target="_blank" rel="noopener noreferrer">@androw</a> for making it possible.</p>
-<p>• Rio has landed in openSUSE: <a href="https://build.opensuse.org/package/show/X11:terminals/rioterm" target="_blank" rel="noopener noreferrer">build.opensuse.org</a> and huge props to <a href="https://github.com/androw" target="_blank" rel="noopener noreferrer">@androw</a> for making it possible.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="highlight-4-welcome-screen-and-default-creation-of-configuration-file">Highlight #4: Welcome screen and default creation of configuration file<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-4-welcome-screen-and-default-creation-of-configuration-file" class="hash-link" aria-label="Highlight #4: Welcome screen and default creation of configuration file的直接链接" title="Highlight #4: Welcome screen and default creation of configuration file的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-3-alpine-linux-opensuse-and-nix-home-manager">Highlight #3: Alpine Linux, openSUSE and Nix home manager.<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-3-alpine-linux-opensuse-and-nix-home-manager" class="hash-link" aria-label="Highlight #3: Alpine Linux, openSUSE and Nix home manager.的直接链接" title="Highlight #3: Alpine Linux, openSUSE and Nix home manager.的直接链接" translate="no">​</a></h2>
+<p>• Rio has landed in Nix home manager: <a href="https://github.com/nix-community/home-manager/pull/4118" target="_blank" rel="noopener noreferrer" class="">nix-community/home-manager/pull/4118</a> and huge props to <a href="https://twitter.com/otaviosalvador" target="_blank" rel="noopener noreferrer" class="">@otaviosalvador</a> for making it possible.</p>
+<p>• Rio has landed in Alpine Linux: <a href="https://gitlab.alpinelinux.org/alpine/aports/-/merge_requests/51369" target="_blank" rel="noopener noreferrer" class="">gitlab.alpinelinux.org</a> and huge props to <a href="https://github.com/androw" target="_blank" rel="noopener noreferrer" class="">@androw</a> for making it possible.</p>
+<p>• Rio has landed in openSUSE: <a href="https://build.opensuse.org/package/show/X11:terminals/rioterm" target="_blank" rel="noopener noreferrer" class="">build.opensuse.org</a> and huge props to <a href="https://github.com/androw" target="_blank" rel="noopener noreferrer" class="">@androw</a> for making it possible.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-4-welcome-screen-and-default-creation-of-configuration-file">Highlight #4: Welcome screen and default creation of configuration file<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-4-welcome-screen-and-default-creation-of-configuration-file" class="hash-link" aria-label="Highlight #4: Welcome screen and default creation of configuration file的直接链接" title="Highlight #4: Welcome screen and default creation of configuration file的直接链接" translate="no">​</a></h2>
 <p>Now Rio terminal does create the configuration file per first initialization.</p>
 <p><img decoding="async" loading="lazy" src="https://user-images.githubusercontent.com/240594/268500927-788ea316-ede8-4d23-ba1f-9621a6a82908.png" alt="Welcome message" class="img_ev3q"></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="highlight-5-settings-ui">Highlight #5: Settings UI<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-5-settings-ui" class="hash-link" aria-label="Highlight #5: Settings UI的直接链接" title="Highlight #5: Settings UI的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-5-settings-ui">Highlight #5: Settings UI<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-5-settings-ui" class="hash-link" aria-label="Highlight #5: Settings UI的直接链接" title="Highlight #5: Settings UI的直接链接" translate="no">​</a></h2>
 <p>After v0.0.19, Rio will start to provide a custom internal settings UI, where you can manage your configuration without edit the file.</p>
 <p><img decoding="async" loading="lazy" alt="Settings UI" src="https://rioterm.com/zh-hans/assets/images/demo-settings-9983cd7afab3b90b642cd4beb0de7269.png" width="852" height="570" class="img_ev3q"></p>
 <p>Note: Not all the configuration options has been ported, so you would still need to use the config file for specific configuration updates.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="highlight-6-error-handling">Highlight #6: Error handling<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-6-error-handling" class="hash-link" aria-label="Highlight #6: Error handling的直接链接" title="Highlight #6: Error handling的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-6-error-handling">Highlight #6: Error handling<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-6-error-handling" class="hash-link" aria-label="Highlight #6: Error handling的直接链接" title="Highlight #6: Error handling的直接链接" translate="no">​</a></h2>
 <p>Configuration errors, command errors, font not found and etecetera are not silent anymore. This version introduces an UI for error handling.</p>
 <p><img decoding="async" loading="lazy" alt="Error handling" src="https://rioterm.com/zh-hans/assets/images/demo-error-handling-095b418bb1da6ebc7339b39039145e7d.png" width="1424" height="1024" class="img_ev3q"></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="highlight-7-adaptive-theme">Highlight #7: Adaptive theme<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-7-adaptive-theme" class="hash-link" aria-label="Highlight #7: Adaptive theme的直接链接" title="Highlight #7: Adaptive theme的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-7-adaptive-theme">Highlight #7: Adaptive theme<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-7-adaptive-theme" class="hash-link" aria-label="Highlight #7: Adaptive theme的直接链接" title="Highlight #7: Adaptive theme的直接链接" translate="no">​</a></h2>
 <p>Rio support theme based on the system theme (light and dark). This configuration only works for Web, MacOS and Windows.</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">adaptive-theme</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">light</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"belafonte-day"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">dark</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"belafonte-night"</span><br></span></code></pre></div></div>
 <p>Example of usage with MacOS:</p>
 <p><img decoding="async" loading="lazy" alt="Settings UI" src="https://rioterm.com/zh-hans/assets/images/adaptive-theme-0a39b7efecc31441e4b4853606cb02e5.gif" width="538" height="370" class="img_ev3q"></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="highlight-8-blinking-cursor">Highlight #8: Blinking cursor<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-8-blinking-cursor" class="hash-link" aria-label="Highlight #8: Blinking cursor的直接链接" title="Highlight #8: Blinking cursor的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-8-blinking-cursor">Highlight #8: Blinking cursor<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-8-blinking-cursor" class="hash-link" aria-label="Highlight #8: Blinking cursor的直接链接" title="Highlight #8: Blinking cursor的直接链接" translate="no">​</a></h2>
 <p>Rio now supports blinking cursor.</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token comment" style="color:rgb(98, 114, 164)"># Blinking Cursor</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)"># Default is false</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token comment" style="color:rgb(98, 114, 164)">#</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">blinking-cursor</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre></div></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="highlight-9-navigation-mode-called-plain">Highlight #9: Navigation mode called "Plain"<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-9-navigation-mode-called-plain" class="hash-link" aria-label="Highlight #9: Navigation mode called &quot;Plain&quot;的直接链接" title="Highlight #9: Navigation mode called &quot;Plain&quot;的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-9-navigation-mode-called-plain">Highlight #9: Navigation mode called "Plain"<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#highlight-9-navigation-mode-called-plain" class="hash-link" aria-label="Highlight #9: Navigation mode called &quot;Plain&quot;的直接链接" title="Highlight #9: Navigation mode called &quot;Plain&quot;的直接链接" translate="no">​</a></h2>
 <p>Navigation mode "Plain" is perfect if you use tmux/zellij or anything similar.</p>
 <p>Plain navigation mode will simply turn off any platform key binding, will not add any key binding (like creation of tabs, windows, panels and other platform key bindings). Note it also get rid of platform key bingins such as shift+control+c for example, to re-add it you would need to map yourself.</p>
 <p>This mode is great if you want configure every single bit of how Rio key bindings will work.</p>
 <p>Usage:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">navigation</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">mode</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"Plain"</span><br></span></code></pre></div></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="full-changelog-of-v0019">Full changelog of v0.0.19<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#full-changelog-of-v0019" class="hash-link" aria-label="Full changelog of v0.0.19的直接链接" title="Full changelog of v0.0.19的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="full-changelog-of-v0019">Full changelog of v0.0.19<a href="https://rioterm.com/zh-hans/blog/2023/09/19/release-0.0.19#full-changelog-of-v0019" class="hash-link" aria-label="Full changelog of v0.0.19的直接链接" title="Full changelog of v0.0.19的直接链接" translate="no">​</a></h2>
 <ul>
-<li>Fix for retrieving shell environment variable when running inside of Flatpak sandbox (Ref: <a href="https://github.com/raphamorim/rio/issues/198" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/198</a>).</li>
-<li>Rio terminal is now also available in crates.io: <a href="https://crates.io/crates/rioterm" target="_blank" rel="noopener noreferrer">https://crates.io/crates/rioterm</a> .</li>
-<li>Added "navigation.mode = "Plain"", it basically disables all platform key bindings for tabs, windows and panels creation (Ref <a href="https://github.com/raphamorim/rio/issues/213" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/213</a>).</li>
-<li>Support for blinking cursor (Ref: <a href="https://github.com/raphamorim/rio/issues/137" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/137</a>) (this option is not enabled by default).</li>
-<li>Migrated font-kit to a custom font loader.</li>
-<li>Support to MacOS tile window positioning feature (left or right).</li>
-<li>Added support to MacOS display native top bar items.</li>
-<li>Support to adaptive theme (theme selection based on user system theme variant "dark" or "light").</li>
-<li>Implemented "ScrollPageUp", "ScrollPageDown", "ScrollHalfPageUp", "ScrollHalfPageDown", "ScrollToTop", "ScrollToBottom", "ScrollLineUp", "ScrollLineDown" (Ref: <a href="https://github.com/raphamorim/rio/issues/206" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/206</a>).</li>
-<li>Support to "fonts.family" (it overwrites regular, bold, bold-italic and italic font families).</li>
-<li>Added a welcome screen UI.</li>
-<li>Added a settings UI.</li>
-<li>Exposes "RIO_CONFIG" environment variable that contains the path of the configuration.</li>
-<li>Rio creates a configuration file with all defaults if does not exist.</li>
-<li>Added "OpenConfigEditor" key binding for all platforms.</li>
-<li>Configuration property "editor" was removed.</li>
-<li>Created Assistant, Rio terminal UI for display error (Ref: <a href="https://github.com/raphamorim/rio/issues/168" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/168</a>).</li>
-<li>Fix 'Backspace' keypress triggers Ctrl+h keybinding in Zellij instead of deleting character. (Ref: <a href="https://github.com/raphamorim/rio/issues/197" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/197</a>).</li>
-<li>Implemented "TERM_PROGRAM" and "TERM_PROGRAM_VERSION" (Ref: <a href="https://github.com/raphamorim/rio/issues/200" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/200</a>).</li>
-<li>Whenever native tabs is on disable macos deadzone logic.</li>
+<li class="">Fix for retrieving shell environment variable when running inside of Flatpak sandbox (Ref: <a href="https://github.com/raphamorim/rio/issues/198" target="_blank" rel="noopener noreferrer" class="">https://github.com/raphamorim/rio/issues/198</a>).</li>
+<li class="">Rio terminal is now also available in crates.io: <a href="https://crates.io/crates/rioterm" target="_blank" rel="noopener noreferrer" class="">https://crates.io/crates/rioterm</a> .</li>
+<li class="">Added "navigation.mode = "Plain"", it basically disables all platform key bindings for tabs, windows and panels creation (Ref <a href="https://github.com/raphamorim/rio/issues/213" target="_blank" rel="noopener noreferrer" class="">https://github.com/raphamorim/rio/issues/213</a>).</li>
+<li class="">Support for blinking cursor (Ref: <a href="https://github.com/raphamorim/rio/issues/137" target="_blank" rel="noopener noreferrer" class="">https://github.com/raphamorim/rio/issues/137</a>) (this option is not enabled by default).</li>
+<li class="">Migrated font-kit to a custom font loader.</li>
+<li class="">Support to MacOS tile window positioning feature (left or right).</li>
+<li class="">Added support to MacOS display native top bar items.</li>
+<li class="">Support to adaptive theme (theme selection based on user system theme variant "dark" or "light").</li>
+<li class="">Implemented "ScrollPageUp", "ScrollPageDown", "ScrollHalfPageUp", "ScrollHalfPageDown", "ScrollToTop", "ScrollToBottom", "ScrollLineUp", "ScrollLineDown" (Ref: <a href="https://github.com/raphamorim/rio/issues/206" target="_blank" rel="noopener noreferrer" class="">https://github.com/raphamorim/rio/issues/206</a>).</li>
+<li class="">Support to "fonts.family" (it overwrites regular, bold, bold-italic and italic font families).</li>
+<li class="">Added a welcome screen UI.</li>
+<li class="">Added a settings UI.</li>
+<li class="">Exposes "RIO_CONFIG" environment variable that contains the path of the configuration.</li>
+<li class="">Rio creates a configuration file with all defaults if does not exist.</li>
+<li class="">Added "OpenConfigEditor" key binding for all platforms.</li>
+<li class="">Configuration property "editor" was removed.</li>
+<li class="">Created Assistant, Rio terminal UI for display error (Ref: <a href="https://github.com/raphamorim/rio/issues/168" target="_blank" rel="noopener noreferrer" class="">https://github.com/raphamorim/rio/issues/168</a>).</li>
+<li class="">Fix 'Backspace' keypress triggers Ctrl+h keybinding in Zellij instead of deleting character. (Ref: <a href="https://github.com/raphamorim/rio/issues/197" target="_blank" rel="noopener noreferrer" class="">https://github.com/raphamorim/rio/issues/197</a>).</li>
+<li class="">Implemented "TERM_PROGRAM" and "TERM_PROGRAM_VERSION" (Ref: <a href="https://github.com/raphamorim/rio/issues/200" target="_blank" rel="noopener noreferrer" class="">https://github.com/raphamorim/rio/issues/200</a>).</li>
+<li class="">Whenever native tabs is on disable macos deadzone logic.</li>
 </ul>]]></content>
     </entry>
     <entry>
@@ -209,38 +223,38 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
         <updated>2023-08-29T17:53:00.000Z</updated>
         <summary type="html"><![CDATA[Rio terminal release: New font configuration API, native tabs, kitty keyboard protocol and other stuff.]]></summary>
         <content type="html"><![CDATA[<p>This post also includes changes from v0.0.16 and v0.0.17.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="highlights">Highlights<a href="https://rioterm.com/zh-hans/blog/2023/08/29/release-0.0.17#highlights" class="hash-link" aria-label="Highlights的直接链接" title="Highlights的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlights">Highlights<a href="https://rioterm.com/zh-hans/blog/2023/08/29/release-0.0.17#highlights" class="hash-link" aria-label="Highlights的直接链接" title="Highlights的直接链接" translate="no">​</a></h2>
 <ul>
-<li>New font configuration API.</li>
-<li>Native Tabs for MacOS.</li>
+<li class="">New font configuration API.</li>
+<li class="">Native Tabs for MacOS.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="breaking-change-new-font-api">Breaking change: New font API<a href="https://rioterm.com/zh-hans/blog/2023/08/29/release-0.0.17#breaking-change-new-font-api" class="hash-link" aria-label="Breaking change: New font API的直接链接" title="Breaking change: New font API的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="breaking-change-new-font-api">Breaking change: New font API<a href="https://rioterm.com/zh-hans/blog/2023/08/29/release-0.0.17#breaking-change-new-font-api" class="hash-link" aria-label="Breaking change: New font API的直接链接" title="Breaking change: New font API的直接链接" translate="no">​</a></h2>
 <p>If you don't use Rio default font configuration you will be affected by this change.</p>
 <p>A new API has been introduced to select fonts, now you can configure even different font families for "regular", "bold", "italic" and "bold-italic".</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">fonts</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">size</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">18</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain" style="display:inline-block"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">fonts.regular</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">family</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"cascadiamono"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">style</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"normal"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">weight</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">400</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain" style="display:inline-block"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">fonts.bold</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">family</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"cascadiamono"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">style</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"normal"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">weight</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">800</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain" style="display:inline-block"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">fonts.italic</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">family</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"cascadiamono"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">style</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"italic"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">weight</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">400</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain" style="display:inline-block"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">fonts.bold-italic</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">family</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"cascadiamono"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">style</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"italic"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">weight</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">800</span><br></span></code></pre></div></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="native-tabs-macos-only">Native Tabs (macOs only)<a href="https://rioterm.com/zh-hans/blog/2023/08/29/release-0.0.17#native-tabs-macos-only" class="hash-link" aria-label="Native Tabs (macOs only)的直接链接" title="Native Tabs (macOs only)的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="native-tabs-macos-only">Native Tabs (macOs only)<a href="https://rioterm.com/zh-hans/blog/2023/08/29/release-0.0.17#native-tabs-macos-only" class="hash-link" aria-label="Native Tabs (macOs only)的直接链接" title="Native Tabs (macOs only)的直接链接" translate="no">​</a></h2>
 <p>Native tabs have arrived for MacOS users.</p>
 <p><img decoding="async" loading="lazy" alt="native tab example" src="https://rioterm.com/zh-hans/assets/images/demo-native-tabs-663d9555fa1db6e9400021fd83a8f2a9.png" width="748" height="579" class="img_ev3q"></p>
 <p>To configure it you will need to update the configuration file and set navigation mode as "NativeTab":</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">navigation</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">mode</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"NativeTab"</span><br></span></code></pre></div></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="changelog-of-v0017-along-with-v0016">Changelog of v0.0.17 along with v0.0.16<a href="https://rioterm.com/zh-hans/blog/2023/08/29/release-0.0.17#changelog-of-v0017-along-with-v0016" class="hash-link" aria-label="Changelog of v0.0.17 along with v0.0.16的直接链接" title="Changelog of v0.0.17 along with v0.0.16的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="changelog-of-v0017-along-with-v0016">Changelog of v0.0.17 along with v0.0.16<a href="https://rioterm.com/zh-hans/blog/2023/08/29/release-0.0.17#changelog-of-v0017-along-with-v0016" class="hash-link" aria-label="Changelog of v0.0.17 along with v0.0.16的直接链接" title="Changelog of v0.0.17 along with v0.0.16的直接链接" translate="no">​</a></h2>
 <ul>
-<li>Configuration "font" does not work anymore, a new configuration API of font selection has been introduced.</li>
-<li>Action "TabSwitchNext" and "TabSwitchPrev" has been renamed to "SelectNextTab" and "SelectPrevTab".</li>
-<li>Support to "NativeTab" (MacOS only).</li>
-<li>Support for kitty's keyboard protocol ("CSI u"). Ref: <a href="https://sw.kovidgoyal.net/kitty/keyboard-protocol/" target="_blank" rel="noopener noreferrer">https://sw.kovidgoyal.net/kitty/keyboard-protocol/</a></li>
-<li>Added new actions for tab selection: "SelectTab1", "SelectTab2", "SelectTab3", "SelectTab4", "SelectTab5", "SelectTab6", "SelectTab7", "SelectTab8", "SelectTab9", "SelectLastTab".</li>
-<li>Support lowercased action and fix overwrite for actions in custom key bindings.</li>
-<li>Added action "Minimize" for minimize Rio terminal window.</li>
-<li>Added action "ClearHistory" for clear terminal saved history.</li>
-<li>Added action "ReceiveChar" for custom key bindings.</li>
-<li>New default key bindings for Linux and Windows so that conflicts with readline key bindings are removed.</li>
-<li>Winit Version 0.29.1-beta.</li>
-<li>Allow paste with the middle mouse of the button (fixes <a href="https://github.com/raphamorim/rio/issues/123" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/123</a>).</li>
-<li>Support startup notify protocol to raise initial window on Wayland/X11.</li>
-<li>Fix Double-tap by touchpad on the titlebar doesn't maximize/unmaximize the window in GNOME 44, Wayland.</li>
-<li>Fix tab/breadcrumb bug introduced in 0.0.15</li>
-<li>Introduce new configuration property: "navigation.macos-hide-window-button".</li>
+<li class="">Configuration "font" does not work anymore, a new configuration API of font selection has been introduced.</li>
+<li class="">Action "TabSwitchNext" and "TabSwitchPrev" has been renamed to "SelectNextTab" and "SelectPrevTab".</li>
+<li class="">Support to "NativeTab" (MacOS only).</li>
+<li class="">Support for kitty's keyboard protocol ("CSI u"). Ref: <a href="https://sw.kovidgoyal.net/kitty/keyboard-protocol/" target="_blank" rel="noopener noreferrer" class="">https://sw.kovidgoyal.net/kitty/keyboard-protocol/</a></li>
+<li class="">Added new actions for tab selection: "SelectTab1", "SelectTab2", "SelectTab3", "SelectTab4", "SelectTab5", "SelectTab6", "SelectTab7", "SelectTab8", "SelectTab9", "SelectLastTab".</li>
+<li class="">Support lowercased action and fix overwrite for actions in custom key bindings.</li>
+<li class="">Added action "Minimize" for minimize Rio terminal window.</li>
+<li class="">Added action "ClearHistory" for clear terminal saved history.</li>
+<li class="">Added action "ReceiveChar" for custom key bindings.</li>
+<li class="">New default key bindings for Linux and Windows so that conflicts with readline key bindings are removed.</li>
+<li class="">Winit Version 0.29.1-beta.</li>
+<li class="">Allow paste with the middle mouse of the button (fixes <a href="https://github.com/raphamorim/rio/issues/123" target="_blank" rel="noopener noreferrer" class="">https://github.com/raphamorim/rio/issues/123</a>).</li>
+<li class="">Support startup notify protocol to raise initial window on Wayland/X11.</li>
+<li class="">Fix Double-tap by touchpad on the titlebar doesn't maximize/unmaximize the window in GNOME 44, Wayland.</li>
+<li class="">Fix tab/breadcrumb bug introduced in 0.0.15</li>
+<li class="">Introduce new configuration property: "navigation.macos-hide-window-button".</li>
 </ul>]]></content>
     </entry>
     <entry>
@@ -250,39 +264,39 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
         <updated>2023-08-02T12:34:00.000Z</updated>
         <summary type="html"><![CDATA[Support to tabs, custom key bindings, performance improvements, color automation for tabs, binary size optimization, bug fixes and other updates.]]></summary>
         <content type="html"><![CDATA[<p>This post also includes changes from v0.0.13 and v0.0.12.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="highlights">Highlights<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#highlights" class="hash-link" aria-label="Highlights的直接链接" title="Highlights的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlights">Highlights<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#highlights" class="hash-link" aria-label="Highlights的直接链接" title="Highlights的直接链接" translate="no">​</a></h2>
 <ul>
-<li>Navigation.</li>
-<li>Custom key bindings.</li>
-<li>Performance updates.</li>
-<li>Color automation for tabs.</li>
+<li class="">Navigation.</li>
+<li class="">Custom key bindings.</li>
+<li class="">Performance updates.</li>
+<li class="">Color automation for tabs.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="navigation">Navigation<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#navigation" class="hash-link" aria-label="Navigation的直接链接" title="Navigation的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="navigation">Navigation<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#navigation" class="hash-link" aria-label="Navigation的直接链接" title="Navigation的直接链接" translate="no">​</a></h2>
 <p>Rio allows to choose navigation between the following options:</p>
 <ul>
-<li><code>CollapsedTab</code></li>
-<li><code>BottomTab</code></li>
-<li><code>TopTab</code></li>
-<li><code>Breadcrumb</code></li>
+<li class=""><code>CollapsedTab</code></li>
+<li class=""><code>BottomTab</code></li>
+<li class=""><code>TopTab</code></li>
+<li class=""><code>Breadcrumb</code></li>
 </ul>
 <p>You can set the navigation mode in the configuration file. An example of configuration:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">navigation</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">mode</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"BottomTab"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">use-current-path</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">clickable</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre></div></div>
 <p>Note: BottomTab and TopTab does not support click mode yet.</p>
 <p>Below some images with different navigation setups:</p>
 <ul>
-<li>First image: BottomTab navigation x11.</li>
-<li>Second image: TopTav navigation wayland.</li>
+<li class="">First image: BottomTab navigation x11.</li>
+<li class="">Second image: TopTav navigation wayland.</li>
 </ul>
 <p><img decoding="async" loading="lazy" alt="example navigation x11" src="https://rioterm.com/zh-hans/assets/images/demo-navigation-x11-21f1a78c0ce45a1d878717cb6e5f64cb.png" width="1668" height="1198" class="img_ev3q"></p>
 <p><img decoding="async" loading="lazy" alt="second example navigation Wayland" src="https://rioterm.com/zh-hans/assets/images/demo-navigation-wayland-9dab1a71f07fd9c93f4ed8919b523c8e.png" width="1346" height="902" class="img_ev3q"></p>
 <ul>
-<li>First image: Breadcrumb navigation macos.</li>
-<li>Second image: BottomTab navigation macos.</li>
+<li class="">First image: Breadcrumb navigation macos.</li>
+<li class="">Second image: BottomTab navigation macos.</li>
 </ul>
 <p><img decoding="async" loading="lazy" alt="example breadcrumb navigation macos" src="https://rioterm.com/zh-hans/assets/images/demo-breadcrumb-d35acfa5227edcf96354ce73c590acf7.png" width="1132" height="526" class="img_ev3q"></p>
 <p><img decoding="async" loading="lazy" alt="example BottomTab navigation macos" src="https://rioterm.com/zh-hans/assets/images/demo-bottom-tab-7143377666f5e5b75de1ec22c0f7d176.png" width="1824" height="1224" class="img_ev3q"></p>
-<p>More info about navigation in <a href="https://rioterm.com/zh-hans/docs/config">config</a>.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="sugarloaf-performance-improvements">Sugarloaf performance improvements<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#sugarloaf-performance-improvements" class="hash-link" aria-label="Sugarloaf performance improvements的直接链接" title="Sugarloaf performance improvements的直接链接">​</a></h2>
+<p>More info about navigation in <a class="" href="https://rioterm.com/zh-hans/docs/config">config</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="sugarloaf-performance-improvements">Sugarloaf performance improvements<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#sugarloaf-performance-improvements" class="hash-link" aria-label="Sugarloaf performance improvements的直接链接" title="Sugarloaf performance improvements的直接链接" translate="no">​</a></h2>
 <p>Performance improvements with Sugarloaf de-duplication of input data.</p>
 <p>Before an average sugarloaf.stack call would cost around "~253.5µs" and now it does cost an average of "~51.5µs".</p>
 <p>The algorithm is effective whenever the terminal has a lot of repetition like empty spaces. The benchmark test below was made rendering 100.000 characters that had repetition:</p>
@@ -290,50 +304,50 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
 <p>The de-duplication algorithm in the renderer considerably reduced the initial rendering time from avg <strong>6ms to 2ms</strong> and using Rio in a large screen (&gt;=136 columns) has dropped from <strong>36ms to 8ms</strong>.</p>
 <p>Tweet reference:</p>
 <div class="react-tweet-theme root_D3qd root_Y6tr"><article class="article_kRZ8"><span class="skeleton_FMR8" style="height:3rem;margin-bottom:0.75rem"></span><span class="skeleton_FMR8" style="height:6rem;margin:0.5rem 0"></span><div style="border-top:var(--tweet-border);margin:0.5rem 0"></div><span class="skeleton_FMR8" style="height:2rem"></span><span class="skeleton_FMR8" style="height:2rem;border-radius:9999px;margin-top:0.5rem"></span></article></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="color-automation-for-navigation">Color automation for navigation<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#color-automation-for-navigation" class="hash-link" aria-label="Color automation for navigation的直接链接" title="Color automation for navigation的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="color-automation-for-navigation">Color automation for navigation<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#color-automation-for-navigation" class="hash-link" aria-label="Color automation for navigation的直接链接" title="Color automation for navigation的直接链接" translate="no">​</a></h2>
 <p>Rio allows to specify color overwrites for tabs based on program context.</p>
 <p>The example below sets <code>#FFFF00</code> as color background whenever <code>nvim</code> is running.</p>
 <p><img decoding="async" loading="lazy" alt="example navigation with color automation" src="https://rioterm.com/zh-hans/assets/images/demo-colorized-navigation-9dd764d270c6e5be42c381b48c704679.png" width="950" height="660" class="img_ev3q">
 <img decoding="async" loading="lazy" alt="second example navigation with color automation" src="https://rioterm.com/zh-hans/assets/images/demo-colorized-navigation-2-63209bd650fba709433ceb11d828e689.png" width="870" height="604" class="img_ev3q"></p>
 <p>The configuration would be like:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">navigation</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">color-automation</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">  </span><span class="token punctuation" style="color:rgb(248, 248, 242)">{</span><span class="token plain"> </span><span class="token key property">program</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"nvim"</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">color</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"#FFFF00"</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">}</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><br></span></code></pre></div></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="custom-key-bindings">Custom key bindings<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#custom-key-bindings" class="hash-link" aria-label="Custom key bindings的直接链接" title="Custom key bindings的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="custom-key-bindings">Custom key bindings<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#custom-key-bindings" class="hash-link" aria-label="Custom key bindings的直接链接" title="Custom key bindings的直接链接" translate="no">​</a></h2>
 <p>Now you can configure custom key bindings for Rio terminal.</p>
 <p>Below an example of two custom key bindings:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">bindings</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">keys</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">  </span><span class="token punctuation" style="color:rgb(248, 248, 242)">{</span><span class="token plain"> </span><span class="token key property">key</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"q"</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">with</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"super"</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">action</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"Quit"</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">}</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">  </span><span class="token comment" style="color:rgb(98, 114, 164)"># Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">  </span><span class="token punctuation" style="color:rgb(248, 248, 242)">{</span><span class="token plain"> </span><span class="token key property">key</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"home"</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">with</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"super | shift"</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">bytes</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token number">27</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token number">91</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token number">53</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token number">126</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">}</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><br></span></code></pre></div></div>
 <p>For example, in the first binding will tell Rio to close the terminal every time that "q" key is pressed along with "super" (in MacOS the "super" key is "command").</p>
-<p>More info about custom key bindings in <a href="https://rioterm.com/zh-hans/docs/key-bindings">key-bindings</a>.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="changelog-of-v0015-along-with-0013-and-0012">Changelog of v0.0.15 along with 0.0.13 and 0.0.12<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#changelog-of-v0015-along-with-0013-and-0012" class="hash-link" aria-label="Changelog of v0.0.15 along with 0.0.13 and 0.0.12的直接链接" title="Changelog of v0.0.15 along with 0.0.13 and 0.0.12的直接链接">​</a></h2>
+<p>More info about custom key bindings in <a class="" href="https://rioterm.com/zh-hans/docs/key-bindings">key-bindings</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="changelog-of-v0015-along-with-0013-and-0012">Changelog of v0.0.15 along with 0.0.13 and 0.0.12<a href="https://rioterm.com/zh-hans/blog/2023/08/02/release-0.0.15#changelog-of-v0015-along-with-0013-and-0012" class="hash-link" aria-label="Changelog of v0.0.15 along with 0.0.13 and 0.0.12的直接链接" title="Changelog of v0.0.15 along with 0.0.13 and 0.0.12的直接链接" translate="no">​</a></h2>
 <ul>
-<li>Introduce configurable navigation with the following options: "CollapsedTab" (default), "Breadcrumb", "TopTab" and "BottomTab".</li>
-<li>Performance improvements with Sugarloaf de-duplication of input data. Before: "~253.5µs" and now "~51.5µs".</li>
-<li>Introduce "navigation.use-current-path" which sets if a tab/breacrumb should be open from the current context path.</li>
-<li>Fix rendering unicode with 1 width glyphs (fix <a href="https://github.com/raphamorim/rio/issues/160" target="_blank" rel="noopener noreferrer">#160</a>).</li>
-<li>Increased max tabs from 9 to 72.</li>
-<li>Default colors "selection-foreground" and "selection-background" has changed.</li>
-<li>Default colors "tab" and "tab-active" has changed.</li>
-<li>Implementation of custom key bindings (<a href="https://github.com/raphamorim/rio/issues/117" target="_blank" rel="noopener noreferrer">#117</a>).</li>
-<li>Fix .deb packing in GH Actions.</li>
-<li>Fix key binding for switch tab next (MacOS only).</li>
-<li>Fix scroll when copying text outside of offset.</li>
-<li>Fix copy key bindings.</li>
-<li>Fix Fuzzy Finder issue (<a href="https://github.com/raphamorim/rio/issues/132" target="_blank" rel="noopener noreferrer">#132</a>).</li>
-<li>Introduce Copa (Alacritty's VTE forked version to introduce new sequences/instructions in next versions).</li>
-<li>Upgraded Winit to 0.29.0-beta.0</li>
-<li>Support for keybindings with dead keys.</li>
-<li>"Back"/"Forward" mouse buttons support in bindings.</li>
-<li>Fix unconditional query of xdg-portal settings on Wayland</li>
-<li>Fix "Maximized" startup mode not filling the screen properly on GNOME Wayland.</li>
-<li>Fix Default Vi key bindings for "Last"/"First" actions not working on X11/Wayland.</li>
-<li>Set "padding-x" to 0 for non-macos.</li>
-<li>Set "app_id"/"WM_CLASS" property on Wayland/X11.</li>
-<li>Strip binary is on for release builds.</li>
-<li>Each paste or key binding that has writing leads to clear selection and scroll bottom.</li>
-<li>Fixed over-rendering when scrolling.</li>
-<li>Fix selection.</li>
-<li>Support to copy using VIM.</li>
-<li>Fix for MacOS deadzone changing cursor to draggable on window buttons.</li>
-<li>Fix for scroll using tmux.</li>
+<li class="">Introduce configurable navigation with the following options: "CollapsedTab" (default), "Breadcrumb", "TopTab" and "BottomTab".</li>
+<li class="">Performance improvements with Sugarloaf de-duplication of input data. Before: "~253.5µs" and now "~51.5µs".</li>
+<li class="">Introduce "navigation.use-current-path" which sets if a tab/breacrumb should be open from the current context path.</li>
+<li class="">Fix rendering unicode with 1 width glyphs (fix <a href="https://github.com/raphamorim/rio/issues/160" target="_blank" rel="noopener noreferrer" class="">#160</a>).</li>
+<li class="">Increased max tabs from 9 to 72.</li>
+<li class="">Default colors "selection-foreground" and "selection-background" has changed.</li>
+<li class="">Default colors "tab" and "tab-active" has changed.</li>
+<li class="">Implementation of custom key bindings (<a href="https://github.com/raphamorim/rio/issues/117" target="_blank" rel="noopener noreferrer" class="">#117</a>).</li>
+<li class="">Fix .deb packing in GH Actions.</li>
+<li class="">Fix key binding for switch tab next (MacOS only).</li>
+<li class="">Fix scroll when copying text outside of offset.</li>
+<li class="">Fix copy key bindings.</li>
+<li class="">Fix Fuzzy Finder issue (<a href="https://github.com/raphamorim/rio/issues/132" target="_blank" rel="noopener noreferrer" class="">#132</a>).</li>
+<li class="">Introduce Copa (Alacritty's VTE forked version to introduce new sequences/instructions in next versions).</li>
+<li class="">Upgraded Winit to 0.29.0-beta.0</li>
+<li class="">Support for keybindings with dead keys.</li>
+<li class="">"Back"/"Forward" mouse buttons support in bindings.</li>
+<li class="">Fix unconditional query of xdg-portal settings on Wayland</li>
+<li class="">Fix "Maximized" startup mode not filling the screen properly on GNOME Wayland.</li>
+<li class="">Fix Default Vi key bindings for "Last"/"First" actions not working on X11/Wayland.</li>
+<li class="">Set "padding-x" to 0 for non-macos.</li>
+<li class="">Set "app_id"/"WM_CLASS" property on Wayland/X11.</li>
+<li class="">Strip binary is on for release builds.</li>
+<li class="">Each paste or key binding that has writing leads to clear selection and scroll bottom.</li>
+<li class="">Fixed over-rendering when scrolling.</li>
+<li class="">Fix selection.</li>
+<li class="">Support to copy using VIM.</li>
+<li class="">Fix for MacOS deadzone changing cursor to draggable on window buttons.</li>
+<li class="">Fix for scroll using tmux.</li>
 </ul>]]></content>
     </entry>
     <entry>
@@ -345,23 +359,23 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
         <content type="html"><![CDATA[<p>Example of Rio v0.0.11 using the new sugarloaf:</p>
 <p>v0.0.11 includes v0.0.10 with a bug fix of CachedSugar for font styles.</p>
 <ul>
-<li>Major rewrote of sugarloaf.</li>
-<li>Sugarloaf: Performance improvements around 80-110%.</li>
-<li>Sugarloaf: Introduced CachedSugar.</li>
-<li>Sugarloaf: Usage of PixelScale.</li>
-<li>Sugarloaf: Line-height support.</li>
-<li>Open new tab using the current tab directory.</li>
-<li>Fix some symbols break the horizontal and vertical alignment of lines (ref <a href="https://github.com/raphamorim/rio/issues/148" target="_blank" rel="noopener noreferrer">#148</a>).</li>
-<li>Fix font size configuration is confusing (ref <a href="https://github.com/raphamorim/rio/issues/139" target="_blank" rel="noopener noreferrer">#139</a>).</li>
-<li>Fix Glyph not rendered in prompt (ref: <a href="https://github.com/raphamorim/rio/issues/135" target="_blank" rel="noopener noreferrer">#135</a>).</li>
-<li>Use fork by default in test context.</li>
-<li>Updated terminfo.</li>
-<li>Increased default font size to 18.</li>
-<li>Move to next and prev tab using keybindings.</li>
-<li>Setting editor by keybindings and new property called "editor" in configuration file.</li>
-<li>Rio creates ".deb" packages (canary and release).</li>
-<li>Binary size optimization (ref: <a href="https://github.com/raphamorim/rio/pull/152" target="_blank" rel="noopener noreferrer">#152</a>) by <a href="https://github.com/OlshaMB" target="_blank" rel="noopener noreferrer">@OlshaMB</a></li>
-<li>A huge thanks to <a href="https://github.com/ralgozino" target="_blank" rel="noopener noreferrer">@ralgozino</a> for all bug reporting and testing through this version development.</li>
+<li class="">Major rewrote of sugarloaf.</li>
+<li class="">Sugarloaf: Performance improvements around 80-110%.</li>
+<li class="">Sugarloaf: Introduced CachedSugar.</li>
+<li class="">Sugarloaf: Usage of PixelScale.</li>
+<li class="">Sugarloaf: Line-height support.</li>
+<li class="">Open new tab using the current tab directory.</li>
+<li class="">Fix some symbols break the horizontal and vertical alignment of lines (ref <a href="https://github.com/raphamorim/rio/issues/148" target="_blank" rel="noopener noreferrer" class="">#148</a>).</li>
+<li class="">Fix font size configuration is confusing (ref <a href="https://github.com/raphamorim/rio/issues/139" target="_blank" rel="noopener noreferrer" class="">#139</a>).</li>
+<li class="">Fix Glyph not rendered in prompt (ref: <a href="https://github.com/raphamorim/rio/issues/135" target="_blank" rel="noopener noreferrer" class="">#135</a>).</li>
+<li class="">Use fork by default in test context.</li>
+<li class="">Updated terminfo.</li>
+<li class="">Increased default font size to 18.</li>
+<li class="">Move to next and prev tab using keybindings.</li>
+<li class="">Setting editor by keybindings and new property called "editor" in configuration file.</li>
+<li class="">Rio creates ".deb" packages (canary and release).</li>
+<li class="">Binary size optimization (ref: <a href="https://github.com/raphamorim/rio/pull/152" target="_blank" rel="noopener noreferrer" class="">#152</a>) by <a href="https://github.com/OlshaMB" target="_blank" rel="noopener noreferrer" class="">@OlshaMB</a></li>
+<li class="">A huge thanks to <a href="https://github.com/ralgozino" target="_blank" rel="noopener noreferrer" class="">@ralgozino</a> for all bug reporting and testing through this version development.</li>
 </ul>]]></content>
     </entry>
     <entry>
@@ -371,94 +385,94 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
         <updated>2023-07-17T12:34:00.000Z</updated>
         <summary type="html"><![CDATA[Multi window support, FreeBSD support, possibility of choose between Spawn and Fork, inverse instruction, multi byte rendering fixes, support to older MacOS versions, select shell and working-dir in configuration file.]]></summary>
         <content type="html"><![CDATA[<ul>
-<li>Multi window support.</li>
-<li>Support to older MacOS versions (older or equal to Big Sur).</li>
-<li>Possibility of choose between Spawn and Fork.</li>
-<li>Inverse instruction.</li>
-<li>Introduced "rio" terminfo.</li>
-<li>Multi byte rendering fixes.</li>
-<li>Select shell and working-dir in configuration file.</li>
-<li>FreeBSD support and <a href="https://github.com/freebsd/freebsd-ports/commit/8582b8c59459a7dc5112a94a39de45f6cc124c3e" target="_blank" rel="noopener noreferrer">added to FreeBSD ports</a>.</li>
+<li class="">Multi window support.</li>
+<li class="">Support to older MacOS versions (older or equal to Big Sur).</li>
+<li class="">Possibility of choose between Spawn and Fork.</li>
+<li class="">Inverse instruction.</li>
+<li class="">Introduced "rio" terminfo.</li>
+<li class="">Multi byte rendering fixes.</li>
+<li class="">Select shell and working-dir in configuration file.</li>
+<li class="">FreeBSD support and <a href="https://github.com/freebsd/freebsd-ports/commit/8582b8c59459a7dc5112a94a39de45f6cc124c3e" target="_blank" rel="noopener noreferrer" class="">added to FreeBSD ports</a>.</li>
 </ul>
 <br>
 <h1>Overview</h1>
 <p>Rio release 0.0.9 is finally here, there's a lot of updates to cover so let's get started. I also would like to remind you that Rio is still unstable. This release adds a lot of bug fixes and feature additions in order to make Rio terminal stable.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="multi-window-support">Multi window support<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#multi-window-support" class="hash-link" aria-label="Multi window support的直接链接" title="Multi window support的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="multi-window-support">Multi window support<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#multi-window-support" class="hash-link" aria-label="Multi window support的直接链接" title="Multi window support的直接链接" translate="no">​</a></h2>
 <p>Rio terminal has added the support to multi window feature.</p>
 <img src="https://miro.medium.com/v2/resize:fit:2914/format:webp/1*KyVD4EJ-wQU8pTmOFTwaQg.png" width="100%">
 <p>Shortcuts:</p>
 <ul>
-<li>MacOS: Command + N</li>
-<li>Windows: Alt + N</li>
-<li>Linux: Control + N</li>
+<li class="">MacOS: Command + N</li>
+<li class="">Windows: Alt + N</li>
+<li class="">Linux: Control + N</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="support-to-older-macos-versions-older-or-equal-to-big-sur">Support to older MacOS versions (older or equal to Big Sur).<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#support-to-older-macos-versions-older-or-equal-to-big-sur" class="hash-link" aria-label="Support to older MacOS versions (older or equal to Big Sur).的直接链接" title="Support to older MacOS versions (older or equal to Big Sur).的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="support-to-older-macos-versions-older-or-equal-to-big-sur">Support to older MacOS versions (older or equal to Big Sur).<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#support-to-older-macos-versions-older-or-equal-to-big-sur" class="hash-link" aria-label="Support to older MacOS versions (older or equal to Big Sur).的直接链接" title="Support to older MacOS versions (older or equal to Big Sur).的直接链接" translate="no">​</a></h2>
 <p>Now it is available for versions below Ventura (Rome).</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="choose-between-fork-or-spawn">Choose between fork or spawn<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#choose-between-fork-or-spawn" class="hash-link" aria-label="Choose between fork or spawn的直接链接" title="Choose between fork or spawn的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="choose-between-fork-or-spawn">Choose between fork or spawn<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#choose-between-fork-or-spawn" class="hash-link" aria-label="Choose between fork or spawn的直接链接" title="Choose between fork or spawn的直接链接" translate="no">​</a></h2>
 <p>Decide which one to use in the configuration file by the usage of property "use-fork":</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">use-fork</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre></div></div>
 <p>Defaults for POSIX-based systems:</p>
 <ul>
-<li>MacOS: spawn processes</li>
-<li>Linux/BSD: fork processes</li>
+<li class="">MacOS: spawn processes</li>
+<li class="">Linux/BSD: fork processes</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="inverse-instructions">Inverse instructions<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#inverse-instructions" class="hash-link" aria-label="Inverse instructions的直接链接" title="Inverse instructions的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="inverse-instructions">Inverse instructions<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#inverse-instructions" class="hash-link" aria-label="Inverse instructions的直接链接" title="Inverse instructions的直接链接" translate="no">​</a></h2>
 <p>Before the v0.0.9, programs were not correctly rendered in the terminal due to the lack of inverse instruction in Rio.</p>
 <p>For example, ranger uses inverse to show the active path.</p>
 <p>Before:</p>
 <p><img decoding="async" loading="lazy" src="https://user-images.githubusercontent.com/3630346/245280487-12af56a1-d9ad-4310-bd4e-3d96d42e8a42.png" alt="Rio before 0.0.9" class="img_ev3q"></p>
 <p>Now:</p>
 <p><img decoding="async" loading="lazy" src="https://user-images.githubusercontent.com/3630346/251224085-39531c88-8e04-48ad-b09a-8fd12a0e011b.png" alt="Rio now" class="img_ev3q"></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="introduced-rio-terminfo">Introduced "rio" terminfo<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#introduced-rio-terminfo" class="hash-link" aria-label="Introduced &quot;rio&quot; terminfo的直接链接" title="Introduced &quot;rio&quot; terminfo的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="introduced-rio-terminfo">Introduced "rio" terminfo<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#introduced-rio-terminfo" class="hash-link" aria-label="Introduced &quot;rio&quot; terminfo的直接链接" title="Introduced &quot;rio&quot; terminfo的直接链接" translate="no">​</a></h2>
 <p>Terminfo (formerly Termcap) is a database of terminal capabilities and more. For every (well almost) model of terminal it tells application programs what the terminal is capable of doing.</p>
 <p>It tells what escape sequences (or control characters) to send to the terminal in order to do things such as move the cursor to a new location, erase part of the screen, scroll the screen, change modes, change appearance (colors, brightness, blinking, underlining, reverse video etc.).</p>
 <p>After about 1980, many terminals supported over a hundred different commands (some of which take numeric parameters).</p>
 <p>Rio terminal has now it's own terminfo:</p>
 <div class="language-sh codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-sh codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token plain">$ </span><span class="token builtin class-name" style="color:rgb(189, 147, 249)">echo</span><span class="token plain"> </span><span class="token environment constant" style="color:rgb(189, 147, 249)">$TERM</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">rio</span><br></span></code></pre></div></div>
-<p>More info <a href="https://rioterm.com/zh-hans/docs/install#terminfo">here</a>.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="fixes-for-multi-byte-rendering">Fixes for multi-byte rendering<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#fixes-for-multi-byte-rendering" class="hash-link" aria-label="Fixes for multi-byte rendering的直接链接" title="Fixes for multi-byte rendering的直接链接">​</a></h2>
+<p>More info <a class="" href="https://rioterm.com/zh-hans/docs/install#terminfo">here</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="fixes-for-multi-byte-rendering">Fixes for multi-byte rendering<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#fixes-for-multi-byte-rendering" class="hash-link" aria-label="Fixes for multi-byte rendering的直接链接" title="Fixes for multi-byte rendering的直接链接" translate="no">​</a></h2>
 <p>Before the v0.0.9, multi-byte characters were not correctly rendered in the terminal.</p>
-<p>Before: As reported in the issue <a href="https://github.com/raphamorim/rio/issues/127" target="_blank" rel="noopener noreferrer">#127</a></p>
+<p>Before: As reported in the issue <a href="https://github.com/raphamorim/rio/issues/127" target="_blank" rel="noopener noreferrer" class="">#127</a></p>
 <p>Now:</p>
 <p><img decoding="async" loading="lazy" src="https://user-images.githubusercontent.com/3630346/252940293-da345089-3d4c-4d05-8b0f-d0665f1e1347.png" alt="Now" class="img_ev3q"></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="configuration-file-addition-shell">Configuration file addition: shell<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#configuration-file-addition-shell" class="hash-link" aria-label="Configuration file addition: shell的直接链接" title="Configuration file addition: shell的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="configuration-file-addition-shell">Configuration file addition: shell<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#configuration-file-addition-shell" class="hash-link" aria-label="Configuration file addition: shell的直接链接" title="Configuration file addition: shell的直接链接" translate="no">​</a></h2>
 <p>Now you can set "shell.program" to the path of your favorite shell, e.g. "/bin/fish".</p>
 <p>Entries in "shell.args" are passed unmodified as arguments to the shell.</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">shell</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">{</span><span class="token plain"> </span><span class="token key property">program</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"/bin/zsh"</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">args</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token string" style="color:rgb(255, 121, 198)">"--login"</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">}</span><br></span></code></pre></div></div>
 <p>Defaults:</p>
 <ul>
-<li>MacOS: /bin/zsh --login</li>
-<li>Linux/BSD: user login shell</li>
-<li>Windows: powershell</li>
+<li class="">MacOS: /bin/zsh --login</li>
+<li class="">Linux/BSD: user login shell</li>
+<li class="">Windows: powershell</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="configuration-file-addition-working_dir">Configuration file addition: working_dir<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#configuration-file-addition-working_dir" class="hash-link" aria-label="Configuration file addition: working_dir的直接链接" title="Configuration file addition: working_dir的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="configuration-file-addition-working_dir">Configuration file addition: working_dir<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#configuration-file-addition-working_dir" class="hash-link" aria-label="Configuration file addition: working_dir的直接链接" title="Configuration file addition: working_dir的直接链接" translate="no">​</a></h2>
 <p>Directory the shell is started in. If this is unset the working
 directory of the parent process will be used.</p>
 <p>This configuration only has effect if use-fork is disabled</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">working_dir</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"/Users/raphael/Documents/"</span><br></span></code></pre></div></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="configuration-file-removal-advanced">Configuration file removal: Advanced<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#configuration-file-removal-advanced" class="hash-link" aria-label="Configuration file removal: Advanced的直接链接" title="Configuration file removal: Advanced的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="configuration-file-removal-advanced">Configuration file removal: Advanced<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#configuration-file-removal-advanced" class="hash-link" aria-label="Configuration file removal: Advanced的直接链接" title="Configuration file removal: Advanced的直接链接" translate="no">​</a></h2>
 <p>Breaking changes for configuration file regarding "Advanced". The configuration "Advanced" has moved to root level and "disable-render-when-unfocused" renamed to "disable-unfocused-render".</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"dracula"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain" style="display:inline-block"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">advanced</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">disable-render-when-unfocused</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre></div></div>
 <p><strong>now</strong></p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"dracula"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">disable-unfocused-render</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre></div></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="changelog-of-v009">Changelog of v0.0.9<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#changelog-of-v009" class="hash-link" aria-label="Changelog of v0.0.9的直接链接" title="Changelog of v0.0.9的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="changelog-of-v009">Changelog of v0.0.9<a href="https://rioterm.com/zh-hans/blog/2023/07/17/release-0.0.9#changelog-of-v009" class="hash-link" aria-label="Changelog of v0.0.9的直接链接" title="Changelog of v0.0.9的直接链接" translate="no">​</a></h2>
 <ul>
-<li>The configuration "Advanced" has moved to root level and "disable-render-when-unfocused" renamed to "disable-unfocused-render".</li>
-<li>Support to <strong>spawn and fork processes</strong>, spawn has became default. Spawn increases Rio compatibility in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal to fork processes instead of spawning processes, enable "use-fork" in the configuration file.</li>
-<li>Introduced "RIO_LOG_LEVEL" variable usage.</li>
-<li>Increased max tabs from 6 to 9.</li>
-<li>Fix Incorrect cursor position when using multi-byte characters (Ref: <a href="https://github.com/raphamorim/rio/issues/127" target="_blank" rel="noopener noreferrer">#127</a>)</li>
-<li>Fix bug <a href="https://github.com/raphamorim/rio/issues/112" target="_blank" rel="noopener noreferrer">"black screen with nearly zero interactivity"</a> and new tab hanging.</li>
-<li>Fix cursor disappearing after resize.</li>
-<li>Introduction of "shell" and "working_dir" in configuration file.</li>
-<li>Multi window support <a href="https://github.com/raphamorim/rio/issues/97" target="_blank" rel="noopener noreferrer">#97</a>.</li>
-<li>Corrections on select and scroll experience (it was using wrongly font-bound for line calculation).</li>
-<li>Add selection color to the theme config (closed <a href="https://github.com/raphamorim/rio/issues/125" target="_blank" rel="noopener noreferrer">#125</a>).</li>
-<li>Implemented Inverse (fix <a href="https://github.com/raphamorim/rio/issues/92" target="_blank" rel="noopener noreferrer">#92</a>).</li>
-<li>Proper choose formats that matches Rio requirements (related <a href="https://github.com/raphamorim/rio/issues/122" target="_blank" rel="noopener noreferrer">#122</a>).</li>
-<li>Corcovado: Filter windows crate dependency to only Windows targets (related: <a href="https://github.com/raphamorim/rio/issues/119" target="_blank" rel="noopener noreferrer">#119</a>).</li>
-<li>Teletypewriter: Fixes for musl as target_env (related: <a href="https://github.com/raphamorim/rio/issues/119" target="_blank" rel="noopener noreferrer">#119</a>).</li>
-<li>FreeBSD support, implementation by <a href="https://github.com/yurivict" target="_blank" rel="noopener noreferrer">yurivict</a> (<a href="https://github.com/freebsd/freebsd-ports/commit/8582b8c59459a7dc5112a94a39de45f6cc124c3e" target="_blank" rel="noopener noreferrer">Commit</a>, Ref: <a href="https://github.com/raphamorim/rio/issues/115" target="_blank" rel="noopener noreferrer">#115</a>)</li>
+<li class="">The configuration "Advanced" has moved to root level and "disable-render-when-unfocused" renamed to "disable-unfocused-render".</li>
+<li class="">Support to <strong>spawn and fork processes</strong>, spawn has became default. Spawn increases Rio compatibility in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal to fork processes instead of spawning processes, enable "use-fork" in the configuration file.</li>
+<li class="">Introduced "RIO_LOG_LEVEL" variable usage.</li>
+<li class="">Increased max tabs from 6 to 9.</li>
+<li class="">Fix Incorrect cursor position when using multi-byte characters (Ref: <a href="https://github.com/raphamorim/rio/issues/127" target="_blank" rel="noopener noreferrer" class="">#127</a>)</li>
+<li class="">Fix bug <a href="https://github.com/raphamorim/rio/issues/112" target="_blank" rel="noopener noreferrer" class="">"black screen with nearly zero interactivity"</a> and new tab hanging.</li>
+<li class="">Fix cursor disappearing after resize.</li>
+<li class="">Introduction of "shell" and "working_dir" in configuration file.</li>
+<li class="">Multi window support <a href="https://github.com/raphamorim/rio/issues/97" target="_blank" rel="noopener noreferrer" class="">#97</a>.</li>
+<li class="">Corrections on select and scroll experience (it was using wrongly font-bound for line calculation).</li>
+<li class="">Add selection color to the theme config (closed <a href="https://github.com/raphamorim/rio/issues/125" target="_blank" rel="noopener noreferrer" class="">#125</a>).</li>
+<li class="">Implemented Inverse (fix <a href="https://github.com/raphamorim/rio/issues/92" target="_blank" rel="noopener noreferrer" class="">#92</a>).</li>
+<li class="">Proper choose formats that matches Rio requirements (related <a href="https://github.com/raphamorim/rio/issues/122" target="_blank" rel="noopener noreferrer" class="">#122</a>).</li>
+<li class="">Corcovado: Filter windows crate dependency to only Windows targets (related: <a href="https://github.com/raphamorim/rio/issues/119" target="_blank" rel="noopener noreferrer" class="">#119</a>).</li>
+<li class="">Teletypewriter: Fixes for musl as target_env (related: <a href="https://github.com/raphamorim/rio/issues/119" target="_blank" rel="noopener noreferrer" class="">#119</a>).</li>
+<li class="">FreeBSD support, implementation by <a href="https://github.com/yurivict" target="_blank" rel="noopener noreferrer" class="">yurivict</a> (<a href="https://github.com/freebsd/freebsd-ports/commit/8582b8c59459a7dc5112a94a39de45f6cc124c3e" target="_blank" rel="noopener noreferrer" class="">Commit</a>, Ref: <a href="https://github.com/raphamorim/rio/issues/115" target="_blank" rel="noopener noreferrer" class="">#115</a>)</li>
 </ul>]]></content>
     </entry>
     <entry>
@@ -467,61 +481,61 @@ directory of the parent process will be used.</p>
         <link href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7"/>
         <updated>2023-07-07T12:34:00.000Z</updated>
         <summary type="html"><![CDATA[Configuration reload, x11 and wayland stabilization, sugarloaf ported to WebAssembly, addition to NIX OS packages and other updates.]]></summary>
-        <content type="html"><![CDATA[<h2 class="anchor anchorWithStickyNavbar_LWe7" id="v007-highlights">v0.0.7: Highlights<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#v007-highlights" class="hash-link" aria-label="v0.0.7: Highlights的直接链接" title="v0.0.7: Highlights的直接链接">​</a></h2>
+        <content type="html"><![CDATA[<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="v007-highlights">v0.0.7: Highlights<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#v007-highlights" class="hash-link" aria-label="v0.0.7: Highlights的直接链接" title="v0.0.7: Highlights的直接链接" translate="no">​</a></h2>
 <ul>
-<li>Support to custom fonts</li>
-<li>Configuration reload</li>
-<li>x11 and wayland stabilization</li>
-<li>Sugarloaf ported to WebAssembly</li>
-<li>Addition to NIX OS packages (kudos to <a href="https://github.com/otavio" target="_blank" rel="noopener noreferrer">@otavio</a>, PR: <a href="https://github.com/NixOS/nixpkgs/pull/237664" target="_blank" rel="noopener noreferrer">NixOS/nixpkgs/pull/237664</a>)</li>
-<li>Styles properties have been moved to root level</li>
+<li class="">Support to custom fonts</li>
+<li class="">Configuration reload</li>
+<li class="">x11 and wayland stabilization</li>
+<li class="">Sugarloaf ported to WebAssembly</li>
+<li class="">Addition to NIX OS packages (kudos to <a href="https://github.com/otavio" target="_blank" rel="noopener noreferrer" class="">@otavio</a>, PR: <a href="https://github.com/NixOS/nixpkgs/pull/237664" target="_blank" rel="noopener noreferrer" class="">NixOS/nixpkgs/pull/237664</a>)</li>
+<li class="">Styles properties have been moved to root level</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="overview">Overview<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#overview" class="hash-link" aria-label="Overview的直接链接" title="Overview的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="overview">Overview<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#overview" class="hash-link" aria-label="Overview的直接链接" title="Overview的直接链接" translate="no">​</a></h2>
 <p>Rio release 0.0.7 is finally here, there's a lot of updates to cover so let's get started. I also would like to remind you that Rio is still unstable. This release adds a lot of bug fixes and feature additions in order to make Rio terminal stable.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="breaking-change-styles-properties-have-been-moved-to-root-level">Breaking change: Styles properties have been moved to root level<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#breaking-change-styles-properties-have-been-moved-to-root-level" class="hash-link" aria-label="Breaking change: Styles properties have been moved to root level的直接链接" title="Breaking change: Styles properties have been moved to root level的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="breaking-change-styles-properties-have-been-moved-to-root-level">Breaking change: Styles properties have been moved to root level<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#breaking-change-styles-properties-have-been-moved-to-root-level" class="hash-link" aria-label="Breaking change: Styles properties have been moved to root level的直接链接" title="Breaking change: Styles properties have been moved to root level的直接链接" translate="no">​</a></h2>
 <p>The only breaking change of v0.0.7 is that styles properties such as "font", "theme" and "font-size" moved to the root level.</p>
 <p>Before:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">cursor</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">'|'</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">style</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">font-size</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">18</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"lucario"</span><br></span></code></pre></div></div>
 <p>After:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">cursor</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">'|'</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"lucario"</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">font-size</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">18</span><br></span></code></pre></div></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="reload-automatically-when-the-configuration-file-has-changed">Reload automatically when the configuration file has changed.<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#reload-automatically-when-the-configuration-file-has-changed" class="hash-link" aria-label="Reload automatically when the configuration file has changed.的直接链接" title="Reload automatically when the configuration file has changed.的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="reload-automatically-when-the-configuration-file-has-changed">Reload automatically when the configuration file has changed.<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#reload-automatically-when-the-configuration-file-has-changed" class="hash-link" aria-label="Reload automatically when the configuration file has changed.的直接链接" title="Reload automatically when the configuration file has changed.的直接链接" translate="no">​</a></h2>
 <p>Any file update in the configuration file will trigger a render operation in Rio terminal with the new configuration.</p>
-<p>If you have any suggestion of configuration ideas to Rio, please feel free to <a href="https://github.com/raphamorim/rio/issues/new" target="_blank" rel="noopener noreferrer">open an issue</a>.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="width-and-height-is-not-longer-available-in-the-configuration-file">width and height is not longer available in the configuration file.<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#width-and-height-is-not-longer-available-in-the-configuration-file" class="hash-link" aria-label="width and height is not longer available in the configuration file.的直接链接" title="width and height is not longer available in the configuration file.的直接链接">​</a></h2>
+<p>If you have any suggestion of configuration ideas to Rio, please feel free to <a href="https://github.com/raphamorim/rio/issues/new" target="_blank" rel="noopener noreferrer" class="">open an issue</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="width-and-height-is-not-longer-available-in-the-configuration-file">width and height is not longer available in the configuration file.<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#width-and-height-is-not-longer-available-in-the-configuration-file" class="hash-link" aria-label="width and height is not longer available in the configuration file.的直接链接" title="width and height is not longer available in the configuration file.的直接链接" translate="no">​</a></h2>
 <p>The property width and height doesn't work anymore after the 0.0.7 release.</p>
 <p>Before you could set the initial width and height of the screen, this configuration is not longer possible. It was removed due to compatibility with different targets.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="stabilization-of-linux-x11-and-wayland">Stabilization of Linux x11 and Wayland<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#stabilization-of-linux-x11-and-wayland" class="hash-link" aria-label="Stabilization of Linux x11 and Wayland�的直接链接" title="Stabilization of Linux x11 and Wayland的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="stabilization-of-linux-x11-and-wayland">Stabilization of Linux x11 and Wayland<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#stabilization-of-linux-x11-and-wayland" class="hash-link" aria-label="Stabilization of Linux x11 and Wayland的直接链接" title="Stabilization of Linux x11 and Wayland的直接链接" translate="no">​</a></h2>
 <p>In older versions of Rio terminal it was possible to actually use Rio but it was slow and buggy for many users. Many fixes has been done in the v0.0.7 to bring the experience of Linux users close to what MacOS have right now.</p>
 <p>The tweet below have a video demo that shows Rio running with X11:</p>
 <div class="react-tweet-theme root_D3qd root_Y6tr"><article class="article_kRZ8"><span class="skeleton_FMR8" style="height:3rem;margin-bottom:0.75rem"></span><span class="skeleton_FMR8" style="height:6rem;margin:0.5rem 0"></span><div style="border-top:var(--tweet-border);margin:0.5rem 0"></div><span class="skeleton_FMR8" style="height:2rem"></span><span class="skeleton_FMR8" style="height:2rem;border-radius:9999px;margin-top:0.5rem"></span></article></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="custom-font-rendering">Custom font rendering<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#custom-font-rendering" class="hash-link" aria-label="Custom font rendering的直接链接" title="Custom font rendering的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="custom-font-rendering">Custom font rendering<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#custom-font-rendering" class="hash-link" aria-label="Custom font rendering的直接链接" title="Custom font rendering的直接链接" translate="no">​</a></h2>
 <p>Now you can actually use different installed fonts by changing the property "font".</p>
 <p>The example below considers that you have "Fira code" font installed in your machine.</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">font</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"Fira code"</span><br></span></code></pre></div></div>
 <p>A quick look of how font updates looks like in v0.0.7:</p>
 <div class="react-tweet-theme root_D3qd root_Y6tr"><article class="article_kRZ8"><span class="skeleton_FMR8" style="height:3rem;margin-bottom:0.75rem"></span><span class="skeleton_FMR8" style="height:6rem;margin:0.5rem 0"></span><div style="border-top:var(--tweet-border);margin:0.5rem 0"></div><span class="skeleton_FMR8" style="height:2rem"></span><span class="skeleton_FMR8" style="height:2rem;border-radius:9999px;margin-top:0.5rem"></span></article></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="sugarloaf-ported-to-webassembly">Sugarloaf ported to WebAssembly<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#sugarloaf-ported-to-webassembly" class="hash-link" aria-label="Sugarloaf ported to WebAssembly的直接链接" title="Sugarloaf ported to WebAssembly的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="sugarloaf-ported-to-webassembly">Sugarloaf ported to WebAssembly<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#sugarloaf-ported-to-webassembly" class="hash-link" aria-label="Sugarloaf ported to WebAssembly的直接链接" title="Sugarloaf ported to WebAssembly的直接链接" translate="no">​</a></h2>
 <p>The Rio support to WASM has moved one step ahead by introduction of Sugarloaf (Rio renderer) to WebAssembly.</p>
 <p>In the image below you can see it in action:</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="changelog-of-v007">Changelog of v0.0.7<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#changelog-of-v007" class="hash-link" aria-label="Changelog of v0.0.7的直接链接" title="Changelog of v0.0.7的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="changelog-of-v007">Changelog of v0.0.7<a href="https://rioterm.com/zh-hans/blog/2023/07/07/release-0.0.7#changelog-of-v007" class="hash-link" aria-label="Changelog of v0.0.7的直接链接" title="Changelog of v0.0.7的直接链接" translate="no">​</a></h2>
 <ul>
-<li>Breaking changes for configuration file regarding "Style" property.</li>
-<li>Fix Background color not entirely set on vim <a href="https://github.com/raphamorim/rio/issues/88" target="_blank" rel="noopener noreferrer">#88</a></li>
-<li>Scroll now works for x11 and wayland.</li>
-<li>No longer renders to macos and x11 windows that are fully occluded / not directly visible.</li>
-<li>Introduced "window-opacity" config property for WebAssembly and Wayland builds.</li>
-<li>Add permissions instructions to Rio macos builds (Fix <a href="https://github.com/raphamorim/rio/issues/99" target="_blank" rel="noopener noreferrer">#99</a>).</li>
-<li>Fixes for x11 and wayland rendering (Related: <a href="https://github.com/raphamorim/rio/issues/98" target="_blank" rel="noopener noreferrer">#98</a> and <a href="https://github.com/raphamorim/rio/issues/100" target="_blank" rel="noopener noreferrer">#100</a>).</li>
-<li>Performance fixes (Related: <a href="https://github.com/raphamorim/rio/issues/101" target="_blank" rel="noopener noreferrer">#101</a>).</li>
-<li>Sugarloaf WebAssembly support.</li>
-<li>Fixed resize for all contexts: removed the glitch when resizing and switching between tabs.</li>
-<li>Fixed cursor inconsistencies <a href="https://github.com/raphamorim/rio/issues/95" target="_blank" rel="noopener noreferrer">#95</a>.</li>
-<li>Added command line interface support ("--help", "--version", "-e" and "--command").</li>
-<li>Added a fallback for WPGU request device operation: downlevel limits, which will allow the code to run on all possible hardware.</li>
-<li>Added "padding-x" to configuration.</li>
-<li>Reload automatically when the configuration file is changed (<a href="https://github.com/raphamorim/rio/issues/69" target="_blank" rel="noopener noreferrer">#69</a>).</li>
-<li>Fix "Ctrl+D" and "exit" command not closing the app (<a href="https://github.com/raphamorim/rio/issues/87" target="_blank" rel="noopener noreferrer">#87</a>).</li>
-<li>Changed default "light-black" color.</li>
+<li class="">Breaking changes for configuration file regarding "Style" property.</li>
+<li class="">Fix Background color not entirely set on vim <a href="https://github.com/raphamorim/rio/issues/88" target="_blank" rel="noopener noreferrer" class="">#88</a></li>
+<li class="">Scroll now works for x11 and wayland.</li>
+<li class="">No longer renders to macos and x11 windows that are fully occluded / not directly visible.</li>
+<li class="">Introduced "window-opacity" config property for WebAssembly and Wayland builds.</li>
+<li class="">Add permissions instructions to Rio macos builds (Fix <a href="https://github.com/raphamorim/rio/issues/99" target="_blank" rel="noopener noreferrer" class="">#99</a>).</li>
+<li class="">Fixes for x11 and wayland rendering (Related: <a href="https://github.com/raphamorim/rio/issues/98" target="_blank" rel="noopener noreferrer" class="">#98</a> and <a href="https://github.com/raphamorim/rio/issues/100" target="_blank" rel="noopener noreferrer" class="">#100</a>).</li>
+<li class="">Performance fixes (Related: <a href="https://github.com/raphamorim/rio/issues/101" target="_blank" rel="noopener noreferrer" class="">#101</a>).</li>
+<li class="">Sugarloaf WebAssembly support.</li>
+<li class="">Fixed resize for all contexts: removed the glitch when resizing and switching between tabs.</li>
+<li class="">Fixed cursor inconsistencies <a href="https://github.com/raphamorim/rio/issues/95" target="_blank" rel="noopener noreferrer" class="">#95</a>.</li>
+<li class="">Added command line interface support ("--help", "--version", "-e" and "--command").</li>
+<li class="">Added a fallback for WPGU request device operation: downlevel limits, which will allow the code to run on all possible hardware.</li>
+<li class="">Added "padding-x" to configuration.</li>
+<li class="">Reload automatically when the configuration file is changed (<a href="https://github.com/raphamorim/rio/issues/69" target="_blank" rel="noopener noreferrer" class="">#69</a>).</li>
+<li class="">Fix "Ctrl+D" and "exit" command not closing the app (<a href="https://github.com/raphamorim/rio/issues/87" target="_blank" rel="noopener noreferrer" class="">#87</a>).</li>
+<li class="">Changed default "light-black" color.</li>
 </ul>]]></content>
     </entry>
     <entry>
@@ -530,54 +544,54 @@ directory of the parent process will be used.</p>
         <link href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8"/>
         <updated>2023-07-03T12:34:00.000Z</updated>
         <summary type="html"><![CDATA[Support to Microsoft Windows, Homebrew casks and formulas, migration to Corcovado, selection improvements and increase/decrease font-size in a session.]]></summary>
-        <content type="html"><![CDATA[<h2 class="anchor anchorWithStickyNavbar_LWe7" id="v008-highlights">v0.0.8: Highlights<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#v008-highlights" class="hash-link" aria-label="v0.0.8: Highlights的直接链接" title="v0.0.8: Highlights的直接链接">​</a></h2>
+        <content type="html"><![CDATA[<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="v008-highlights">v0.0.8: Highlights<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#v008-highlights" class="hash-link" aria-label="v0.0.8: Highlights的直接链接" title="v0.0.8: Highlights的直接链接" translate="no">​</a></h2>
 <ul>
-<li>Support to Microsoft Windows.</li>
-<li>Support to Homebrew as cask <a href="https://formulae.brew.sh/cask/rio" target="_blank" rel="noopener noreferrer">formulae.brew.sh/cask/rio</a>.</li>
-<li>Support to Homebrew as formula <a href="https://formulae.brew.sh/formula/rio" target="_blank" rel="noopener noreferrer">formulae.brew.sh/formula/rio</a>.</li>
-<li>Selection improvements and increase/decrease font-size in a session.</li>
-<li>Migration to Corcovado.</li>
+<li class="">Support to Microsoft Windows.</li>
+<li class="">Support to Homebrew as cask <a href="https://formulae.brew.sh/cask/rio" target="_blank" rel="noopener noreferrer" class="">formulae.brew.sh/cask/rio</a>.</li>
+<li class="">Support to Homebrew as formula <a href="https://formulae.brew.sh/formula/rio" target="_blank" rel="noopener noreferrer" class="">formulae.brew.sh/formula/rio</a>.</li>
+<li class="">Selection improvements and increase/decrease font-size in a session.</li>
+<li class="">Migration to Corcovado.</li>
 </ul>
 <br>
 <h1>Overview</h1>
 <p>Rio release 0.0.8 is finally here, there's a lot of updates to cover so let's get started. I also would like to remind you that Rio is still unstable. This release adds a lot of bug fixes and feature additions in order to make Rio terminal stable.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="microsoft-windows">Microsoft Windows<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#microsoft-windows" class="hash-link" aria-label="Microsoft Windows的直接链接" title="Microsoft Windows的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="microsoft-windows">Microsoft Windows<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#microsoft-windows" class="hash-link" aria-label="Microsoft Windows的直接链接" title="Microsoft Windows的直接链接" translate="no">​</a></h2>
 <p>Added support to Microsoft Windows.</p>
 <p>Windows 10:
 <img decoding="async" loading="lazy" alt="Demo windows in use" src="https://rioterm.com/zh-hans/assets/images/demo-windows-11-bad66a98a794d3a573fd3456ad7c7ab5.png" width="806" height="563" class="img_ev3q"></p>
 <p>Windows 11:
 <img decoding="async" loading="lazy" alt="Demo windows in search" src="https://rioterm.com/zh-hans/assets/images/demo-windows-11-bad66a98a794d3a573fd3456ad7c7ab5.png" width="806" height="563" class="img_ev3q"></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="homebrew-as-cask">Homebrew as Cask<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#homebrew-as-cask" class="hash-link" aria-label="Homebrew as Cask的直接链接" title="Homebrew as Cask的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="homebrew-as-cask">Homebrew as Cask<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#homebrew-as-cask" class="hash-link" aria-label="Homebrew as Cask的直接链接" title="Homebrew as Cask的直接链接" translate="no">​</a></h2>
 <p>Homebrew is a free and open-source software package management system that simplifies the installation of software on Apple's operating system, macOS.</p>
-<p>Rio has been added as a cask <a href="https://formulae.brew.sh/cask/rio" target="_blank" rel="noopener noreferrer">formulae.brew.sh/cask/rio</a> to their package source. To install Rio with homebrew you need to run the command below:</p>
+<p>Rio has been added as a cask <a href="https://formulae.brew.sh/cask/rio" target="_blank" rel="noopener noreferrer" class="">formulae.brew.sh/cask/rio</a> to their package source. To install Rio with homebrew you need to run the command below:</p>
 <div class="language-sh codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-sh codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token plain">brew update </span><span class="token operator">&amp;&amp;</span><span class="token plain"> brew </span><span class="token function" style="color:rgb(80, 250, 123)">install</span><span class="token plain"> </span><span class="token parameter variable" style="color:rgb(189, 147, 249);font-style:italic">--cask</span><span class="token plain"> rio</span><br></span></code></pre></div></div>
-<p>Github reference: <a href="https://github.com/Homebrew/homebrew-cask/pull/149824" target="_blank" rel="noopener noreferrer">github.com/Homebrew/homebrew-cask/pull/149824</a></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="homebrew-as-formula">Homebrew as Formula<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#homebrew-as-formula" class="hash-link" aria-label="Homebrew as Formula的直接链接" title="Homebrew as Formula的直接链接">​</a></h2>
-<p>Rio has been added as a formula <a href="https://formulae.brew.sh/formula/rio" target="_blank" rel="noopener noreferrer">formulae.brew.sh/formula/rio</a> to their package source. To install Rio with homebrew you need to run the command below:</p>
+<p>Github reference: <a href="https://github.com/Homebrew/homebrew-cask/pull/149824" target="_blank" rel="noopener noreferrer" class="">github.com/Homebrew/homebrew-cask/pull/149824</a></p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="homebrew-as-formula">Homebrew as Formula<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#homebrew-as-formula" class="hash-link" aria-label="Homebrew as Formula的直接链接" title="Homebrew as Formula的直接链接" translate="no">​</a></h2>
+<p>Rio has been added as a formula <a href="https://formulae.brew.sh/formula/rio" target="_blank" rel="noopener noreferrer" class="">formulae.brew.sh/formula/rio</a> to their package source. To install Rio with homebrew you need to run the command below:</p>
 <div class="language-sh codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-sh codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token plain">brew update </span><span class="token operator">&amp;&amp;</span><span class="token plain"> brew </span><span class="token function" style="color:rgb(80, 250, 123)">install</span><span class="token plain"> rio</span><br></span></code></pre></div></div>
-<p>Github reference: <a href="https://github.com/Homebrew/homebrew-core/pull/134295" target="_blank" rel="noopener noreferrer">github.com/Homebrew/homebrew-cask/pull/149824</a></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="selection-improvements-and-increasedecrease-font-size-in-a-session">Selection improvements and increase/decrease font-size in a session<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#selection-improvements-and-increasedecrease-font-size-in-a-session" class="hash-link" aria-label="Selection improvements and increase/decrease font-size in a session的直接链接" title="Selection improvements and increase/decrease font-size in a session的直接链接">​</a></h2>
+<p>Github reference: <a href="https://github.com/Homebrew/homebrew-core/pull/134295" target="_blank" rel="noopener noreferrer" class="">github.com/Homebrew/homebrew-cask/pull/149824</a></p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="selection-improvements-and-increasedecrease-font-size-in-a-session">Selection improvements and increase/decrease font-size in a session<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#selection-improvements-and-increasedecrease-font-size-in-a-session" class="hash-link" aria-label="Selection improvements and increase/decrease font-size in a session的直接链接" title="Selection improvements and increase/decrease font-size in a session的直接链接" translate="no">​</a></h2>
 <p>The version v0.0.8 has added the following missing functionalities: Scroll and select, Semantic and line selection and the ability to increase, decrease and reset font size using keyboard shortcut during session coming for Rio terminal.</p>
 <p>Below you can see a demo with all those functionalities:</p>
 <div class="react-tweet-theme root_D3qd root_Y6tr"><article class="article_kRZ8"><span class="skeleton_FMR8" style="height:3rem;margin-bottom:0.75rem"></span><span class="skeleton_FMR8" style="height:6rem;margin:0.5rem 0"></span><div style="border-top:var(--tweet-border);margin:0.5rem 0"></div><span class="skeleton_FMR8" style="height:2rem"></span><span class="skeleton_FMR8" style="height:2rem;border-radius:9999px;margin-top:0.5rem"></span></article></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="migration-to-corcovado">Migration to Corcovado<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#migration-to-corcovado" class="hash-link" aria-label="Migration to Corcovado的直接链接" title="Migration to Corcovado的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="migration-to-corcovado">Migration to Corcovado<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#migration-to-corcovado" class="hash-link" aria-label="Migration to Corcovado的直接链接" title="Migration to Corcovado的直接链接" translate="no">​</a></h2>
 <p>Rio terminal migrated from Mio to Corcovado. Corcovado is a maintained fork of mio 0.6.x along mio-signal-hook, mio-extras and using Windows API that works in Windows 11. It uses Rust edition 2021 instead of 2018.</p>
 <p>Corcovado also uses Rust standard library for net and io instead of Mio 0.6.x.</p>
 <br>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="changelog-of-v008">Changelog of v0.0.8<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#changelog-of-v008" class="hash-link" aria-label="Changelog of v0.0.8的直接链接" title="Changelog of v0.0.8的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="changelog-of-v008">Changelog of v0.0.8<a href="https://rioterm.com/zh-hans/blog/2023/07/10/release-0.0.8#changelog-of-v008" class="hash-link" aria-label="Changelog of v0.0.8的直接链接" title="Changelog of v0.0.8的直接链接" translate="no">​</a></h2>
 <ul>
-<li>Added generation of ".msi" and ".exe" files to the release pipeline (stable and canary).</li>
-<li>Support to Microsoft Windows 11.</li>
-<li>Ability to in/decrease font size using keyboard shortcut during session (ref: <a href="https://github.com/raphamorim/rio/issues/109" target="_blank" rel="noopener noreferrer">#109</a>)</li>
-<li>Inverted Canary and Stable icons.</li>
-<li>ANSI mouse reports (e.g: scroll and click working on VIM).</li>
-<li>Scroll and apply selection.</li>
-<li>Semantic and line selection.</li>
-<li>Rio is available in Homebrew casks and formulas.</li>
-<li>Rio stable versions are notarized now.</li>
-<li>Migration of mio, mio-extras, mio-signal-hook to Corcovado.</li>
-<li>Changed default black color to "#4c4345".</li>
-<li>Fix mouse position for when selecting text.</li>
+<li class="">Added generation of ".msi" and ".exe" files to the release pipeline (stable and canary).</li>
+<li class="">Support to Microsoft Windows 11.</li>
+<li class="">Ability to in/decrease font size using keyboard shortcut during session (ref: <a href="https://github.com/raphamorim/rio/issues/109" target="_blank" rel="noopener noreferrer" class="">#109</a>)</li>
+<li class="">Inverted Canary and Stable icons.</li>
+<li class="">ANSI mouse reports (e.g: scroll and click working on VIM).</li>
+<li class="">Scroll and apply selection.</li>
+<li class="">Semantic and line selection.</li>
+<li class="">Rio is available in Homebrew casks and formulas.</li>
+<li class="">Rio stable versions are notarized now.</li>
+<li class="">Migration of mio, mio-extras, mio-signal-hook to Corcovado.</li>
+<li class="">Changed default black color to "#4c4345".</li>
+<li class="">Fix mouse position for when selecting text.</li>
 </ul>]]></content>
     </entry>
     <entry>
@@ -587,34 +601,34 @@ directory of the parent process will be used.</p>
         <updated>2023-06-07T10:34:14.000Z</updated>
         <summary type="html"><![CDATA[Tabs support, underline and beam cursor, text styles and many bug fixes.]]></summary>
         <content type="html"><![CDATA[<p>Rio release 0.0.6 is finally here, there's a lot of updates to cover so let's get started. I also would like to remind you that Rio is still unstable. This release adds a lot of bug fixes and feature additions in order to make Rio terminal stable.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="underline-and-strikethrough-style">Underline and strikethrough style<a href="https://rioterm.com/zh-hans/blog/2023/06/07/release-0.0.6#underline-and-strikethrough-style" class="hash-link" aria-label="Underline and strikethrough style的直接链接" title="Underline and strikethrough style的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="underline-and-strikethrough-style">Underline and strikethrough style<a href="https://rioterm.com/zh-hans/blog/2023/06/07/release-0.0.6#underline-and-strikethrough-style" class="hash-link" aria-label="Underline and strikethrough style的直接链接" title="Underline and strikethrough style的直接链接" translate="no">​</a></h2>
 <p>Support to text styling as such "Underline" and "Strikethrough".</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="tabs-support">Tabs support<a href="https://rioterm.com/zh-hans/blog/2023/06/07/release-0.0.6#tabs-support" class="hash-link" aria-label="Tabs support的直接链接" title="Tabs support的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="tabs-support">Tabs support<a href="https://rioterm.com/zh-hans/blog/2023/06/07/release-0.0.6#tabs-support" class="hash-link" aria-label="Tabs support的直接链接" title="Tabs support的直接链接" translate="no">​</a></h2>
 <p>Tabs has been added to Rio terminal for macos and linux platform.</p>
 <p>The shortcuts:</p>
 <ul>
-<li>Create tab: Logo key (Command in macos) + T.</li>
-<li>Close tab: Logo key (Command in macos) + W.</li>
-<li>Switch tab: Control key + Tab key.</li>
+<li class="">Create tab: Logo key (Command in macos) + T.</li>
+<li class="">Close tab: Logo key (Command in macos) + W.</li>
+<li class="">Switch tab: Control key + Tab key.</li>
 </ul>
 <p>Below you can see an example of usage:</p>
 <div class="react-tweet-theme root_D3qd root_Y6tr"><article class="article_kRZ8"><span class="skeleton_FMR8" style="height:3rem;margin-bottom:0.75rem"></span><span class="skeleton_FMR8" style="height:6rem;margin:0.5rem 0"></span><div style="border-top:var(--tweet-border);margin:0.5rem 0"></div><span class="skeleton_FMR8" style="height:2rem"></span><span class="skeleton_FMR8" style="height:2rem;border-radius:9999px;margin-top:0.5rem"></span></article></div>
 <p>Note: There's a limit of maximum of 6 tabs for now.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="support-to-beam-and-underline-cursors">Support to Beam and Underline cursors<a href="https://rioterm.com/zh-hans/blog/2023/06/07/release-0.0.6#support-to-beam-and-underline-cursors" class="hash-link" aria-label="Support to Beam and Underline cursors的直接链接" title="Support to Beam and Underline cursors的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="support-to-beam-and-underline-cursors">Support to Beam and Underline cursors<a href="https://rioterm.com/zh-hans/blog/2023/06/07/release-0.0.6#support-to-beam-and-underline-cursors" class="hash-link" aria-label="Support to Beam and Underline cursors的直接链接" title="Support to Beam and Underline cursors的直接链接" translate="no">​</a></h2>
 <p>Beam and underline cursor support has been added to Rio terminal. Also, block cursor and IME state allow a character to be visible.</p>
 <div class="react-tweet-theme root_D3qd root_Y6tr"><article class="article_kRZ8"><span class="skeleton_FMR8" style="height:3rem;margin-bottom:0.75rem"></span><span class="skeleton_FMR8" style="height:6rem;margin:0.5rem 0"></span><div style="border-top:var(--tweet-border);margin:0.5rem 0"></div><span class="skeleton_FMR8" style="height:2rem"></span><span class="skeleton_FMR8" style="height:2rem;border-radius:9999px;margin-top:0.5rem"></span></article></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="changelog">Changelog<a href="https://rioterm.com/zh-hans/blog/2023/06/07/release-0.0.6#changelog" class="hash-link" aria-label="Changelog的直接链接" title="Changelog的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="changelog">Changelog<a href="https://rioterm.com/zh-hans/blog/2023/06/07/release-0.0.6#changelog" class="hash-link" aria-label="Changelog的直接链接" title="Changelog的直接链接" translate="no">​</a></h2>
 <ul>
-<li>Fix: support to clipboard in linux by <a href="https://github.com/joseemds" target="_blank" rel="noopener noreferrer">@joseemds</a>.</li>
-<li>Font style for custom fonts by <a href="https://github.com/OlshaMB" target="_blank" rel="noopener noreferrer">@OlshaMB</a> (closed <a href="https://github.com/raphamorim/rio/issues/80" target="_blank" rel="noopener noreferrer">#80</a> and <a href="https://github.com/raphamorim/rio/issues/81" target="_blank" rel="noopener noreferrer">#81</a>)</li>
-<li>Text styles Underline and Strikethrough (closed <a href="https://github.com/raphamorim/rio/issues/79" target="_blank" rel="noopener noreferrer">#79</a>).</li>
-<li>Update default colors for tabs/tabs-active.</li>
-<li>Tabs support.</li>
-<li>Fix rendering tab and hidden chars by replacing to space by <a href="https://github.com/niuez" target="_blank" rel="noopener noreferrer">@niuez</a>, (closed <a href="https://github.com/raphamorim/rio/issues/56" target="_blank" rel="noopener noreferrer">#56</a>).</li>
-<li>Block cursor hover a character and still allow it to be visible.</li>
-<li>Support to caret Beam and Underline cursor <a href="https://github.com/raphamorim/rio/issues/67" target="_blank" rel="noopener noreferrer">#67</a> by <a href="https://github.com/niuez" target="_blank" rel="noopener noreferrer">@niuez</a>.</li>
-<li>Fix panics if custom font is not found <a href="https://github.com/raphamorim/rio/issues/68" target="_blank" rel="noopener noreferrer">#68</a>.</li>
-<li>MacOs ignore alt key in cntrlseq (same behavior as Terminal.app, Hyper, iTerm and etecetera).</li>
+<li class="">Fix: support to clipboard in linux by <a href="https://github.com/joseemds" target="_blank" rel="noopener noreferrer" class="">@joseemds</a>.</li>
+<li class="">Font style for custom fonts by <a href="https://github.com/OlshaMB" target="_blank" rel="noopener noreferrer" class="">@OlshaMB</a> (closed <a href="https://github.com/raphamorim/rio/issues/80" target="_blank" rel="noopener noreferrer" class="">#80</a> and <a href="https://github.com/raphamorim/rio/issues/81" target="_blank" rel="noopener noreferrer" class="">#81</a>)</li>
+<li class="">Text styles Underline and Strikethrough (closed <a href="https://github.com/raphamorim/rio/issues/79" target="_blank" rel="noopener noreferrer" class="">#79</a>).</li>
+<li class="">Update default colors for tabs/tabs-active.</li>
+<li class="">Tabs support.</li>
+<li class="">Fix rendering tab and hidden chars by replacing to space by <a href="https://github.com/niuez" target="_blank" rel="noopener noreferrer" class="">@niuez</a>, (closed <a href="https://github.com/raphamorim/rio/issues/56" target="_blank" rel="noopener noreferrer" class="">#56</a>).</li>
+<li class="">Block cursor hover a character and still allow it to be visible.</li>
+<li class="">Support to caret Beam and Underline cursor <a href="https://github.com/raphamorim/rio/issues/67" target="_blank" rel="noopener noreferrer" class="">#67</a> by <a href="https://github.com/niuez" target="_blank" rel="noopener noreferrer" class="">@niuez</a>.</li>
+<li class="">Fix panics if custom font is not found <a href="https://github.com/raphamorim/rio/issues/68" target="_blank" rel="noopener noreferrer" class="">#68</a>.</li>
+<li class="">MacOs ignore alt key in cntrlseq (same behavior as Terminal.app, Hyper, iTerm and etecetera).</li>
 </ul>]]></content>
     </entry>
     <entry>
@@ -624,33 +638,33 @@ directory of the parent process will be used.</p>
         <updated>2023-05-31T10:34:14.000Z</updated>
         <summary type="html"><![CDATA[Arrival to Linux, themes support and many bug fixes.]]></summary>
         <content type="html"><![CDATA[<p>Rio release 0.0.5 is finally here, there's a lot of updates to cover so let's get started. I also would like to remind you that Rio is still unstable. This release adds a lot of bug fixes and feature additions in order to make Rio terminal stable.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="new-configuration-path">New configuration path<a href="https://rioterm.com/zh-hans/blog/2023/05/31/release-0.0.5#new-configuration-path" class="hash-link" aria-label="New configuration path的直接链接" title="New configuration path的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="new-configuration-path">New configuration path<a href="https://rioterm.com/zh-hans/blog/2023/05/31/release-0.0.5#new-configuration-path" class="hash-link" aria-label="New configuration path的直接链接" title="New configuration path的直接链接" translate="no">​</a></h2>
 <p>Configuration path has changed from <code>{$HOME}/.rio/</code> to <code>{$HOME}/.config/rio</code>.</p>
 <p>Changes were applied for macOS and Linux.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="linux-support">Linux Support<a href="https://rioterm.com/zh-hans/blog/2023/05/31/release-0.0.5#linux-support" class="hash-link" aria-label="Linux Support的直接链接" title="Linux Support的直接链接">​</a></h2>
-<p>Rio is now available to Linux, build information was added in the <a href="https://rioterm.com/zh-hans/docs/install">install</a> page.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="linux-support">Linux Support<a href="https://rioterm.com/zh-hans/blog/2023/05/31/release-0.0.5#linux-support" class="hash-link" aria-label="Linux Support的直接链接" title="Linux Support的直接链接" translate="no">​</a></h2>
+<p>Rio is now available to Linux, build information was added in the <a class="" href="https://rioterm.com/zh-hans/docs/install">install</a> page.</p>
 <p><img decoding="async" loading="lazy" alt="Linux support" src="https://rioterm.com/zh-hans/assets/images/linux-edbdfd8e494118000e7984f4edd140fd.jpeg" width="2560" height="1666" class="img_ev3q"></p>
 <p>Linux builds are considered less stable than macOs, due to macOs features availability comparison.</p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="themes-support">Themes Support<a href="https://rioterm.com/zh-hans/blog/2023/05/31/release-0.0.5#themes-support" class="hash-link" aria-label="Themes Support的直接链接" title="Themes Support的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="themes-support">Themes Support<a href="https://rioterm.com/zh-hans/blog/2023/05/31/release-0.0.5#themes-support" class="hash-link" aria-label="Themes Support的直接链接" title="Themes Support的直接链接" translate="no">​</a></h2>
 <p>A new property was added to Rio configuration file called "theme". You can set the theme that you want to use and Rio will look in the folder "themes" in the configuration path.</p>
 <p><img decoding="async" loading="lazy" alt="Themes support" src="https://rioterm.com/zh-hans/assets/images/themes-3d4190a60babb8dd15249ebd3ff09433.png" width="2584" height="1604" class="img_ev3q"></p>
 <p>Dracula theme example:</p>
 <p><img decoding="async" loading="lazy" alt="Example dracula" src="https://rioterm.com/zh-hans/assets/images/dracula-nvim-a1d1457e2aa3780989b7e3378e473316.png" width="1824" height="1424" class="img_ev3q"></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="bold-and-italic-style">Bold and italic style<a href="https://rioterm.com/zh-hans/blog/2023/05/31/release-0.0.5#bold-and-italic-style" class="hash-link" aria-label="Bold and italic style的直接链接" title="Bold and italic style的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="bold-and-italic-style">Bold and italic style<a href="https://rioterm.com/zh-hans/blog/2023/05/31/release-0.0.5#bold-and-italic-style" class="hash-link" aria-label="Bold and italic style的直接链接" title="Bold and italic style的直接链接" translate="no">​</a></h2>
 <p>Support to text styling as such "bold" and "italic".</p>
 <p><img decoding="async" loading="lazy" alt="Themes support" src="https://rioterm.com/zh-hans/assets/images/font-macos-c4784c228d88df845c1799fd07542625.png" width="1572" height="658" class="img_ev3q"></p>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="changelog">Changelog<a href="https://rioterm.com/zh-hans/blog/2023/05/31/release-0.0.5#changelog" class="hash-link" aria-label="Changelog的直接链接" title="Changelog的直接链接">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="changelog">Changelog<a href="https://rioterm.com/zh-hans/blog/2023/05/31/release-0.0.5#changelog" class="hash-link" aria-label="Changelog的直接��链接" title="Changelog的直接链接" translate="no">​</a></h2>
 <ul>
-<li>Fix to render specific 24bit colors <a href="https://github.com/raphamorim/rio/issues/#66" target="_blank" rel="noopener noreferrer">#66</a> by <a href="https://github.com/niuez" target="_blank" rel="noopener noreferrer">@niuez</a>.</li>
-<li>Cross build for arm64 and x86</li>
-<li>Bold and Italic support <a href="https://github.com/raphamorim/rio/issues/#33" target="_blank" rel="noopener noreferrer">#33</a>.</li>
-<li>Add RioEvent::ColorRequest events to write color updates on pty.</li>
-<li>Theme support <a href="https://github.com/raphamorim/rio/issues/42" target="_blank" rel="noopener noreferrer">#42</a>.</li>
-<li>Fix font-size dependency for serialization</li>
-<li>Fix cursor visibility on VI mode and scroll <a href="https://github.com/raphamorim/#51" target="_blank" rel="noopener noreferrer">#51</a></li>
-<li>Performance fixes for rendering from teletypewriter updates.</li>
-<li>Fix scale issues for 1.0 scale factor or using monitor with different scale factor. <a href="https://github.com/raphamorim/rio/issues/#50" target="_blank" rel="noopener noreferrer">#50</a></li>
-<li>Improved release process to only contain Rio.app file. <a href="https://github.com/raphamorim/rio/issues/#54" target="_blank" rel="noopener noreferrer">#54</a></li>
+<li class="">Fix to render specific 24bit colors <a href="https://github.com/raphamorim/rio/issues/#66" target="_blank" rel="noopener noreferrer" class="">#66</a> by <a href="https://github.com/niuez" target="_blank" rel="noopener noreferrer" class="">@niuez</a>.</li>
+<li class="">Cross build for arm64 and x86</li>
+<li class="">Bold and Italic support <a href="https://github.com/raphamorim/rio/issues/#33" target="_blank" rel="noopener noreferrer" class="">#33</a>.</li>
+<li class="">Add RioEvent::ColorRequest events to write color updates on pty.</li>
+<li class="">Theme support <a href="https://github.com/raphamorim/rio/issues/42" target="_blank" rel="noopener noreferrer" class="">#42</a>.</li>
+<li class="">Fix font-size dependency for serialization</li>
+<li class="">Fix cursor visibility on VI mode and scroll <a href="https://github.com/raphamorim/#51" target="_blank" rel="noopener noreferrer" class="">#51</a></li>
+<li class="">Performance fixes for rendering from teletypewriter updates.</li>
+<li class="">Fix scale issues for 1.0 scale factor or using monitor with different scale factor. <a href="https://github.com/raphamorim/rio/issues/#50" target="_blank" rel="noopener noreferrer" class="">#50</a></li>
+<li class="">Improved release process to only contain Rio.app file. <a href="https://github.com/raphamorim/rio/issues/#54" target="_blank" rel="noopener noreferrer" class="">#54</a></li>
 </ul>]]></content>
     </entry>
 </feed>
