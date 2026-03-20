@@ -66,6 +66,10 @@ impl Context<'_> {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+
         match &mut self.inner {
             ContextType::Wgpu(ctx) => ctx.resize(width, height),
             #[cfg(target_os = "macos")]
