@@ -26,6 +26,8 @@ impl Handler for TestHandler {
         data: GraphicData,
         _palette: Option<Vec<crate::config::colors::ColorRgb>>,
         _cursor_movement: Option<u8>,
+        _kitty_image_id: Option<u32>,
+        _z_index: i32,
     ) {
         self.graphics.push(data);
     }
@@ -70,7 +72,7 @@ fn test_direct_parse_transmit() {
 
     if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
-            handler.insert_graphic(graphic_data, None, Some(0));
+            handler.insert_graphic(graphic_data, None, Some(0), None, 0);
         }
     }
 
@@ -102,7 +104,7 @@ fn test_parse_png_format() {
 
     if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
-            handler.insert_graphic(graphic_data, None, Some(0));
+            handler.insert_graphic(graphic_data, None, Some(0), None, 0);
         }
     }
 
@@ -156,7 +158,7 @@ fn test_png_transmit_and_display() {
                 term.place_graphic(placement);
             } else {
                 // Direct display without placement request
-                term.insert_graphic(graphic_data, None, Some(0));
+                term.insert_graphic(graphic_data, None, Some(0), None, 0);
             }
         }
     }
@@ -187,7 +189,7 @@ fn test_png_format_support() {
 
     if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
-            handler.insert_graphic(graphic_data, None, Some(0));
+            handler.insert_graphic(graphic_data, None, Some(0), None, 0);
 
             let graphic = &handler.graphics[0];
             assert_eq!(graphic.width, 1, "PNG should decode to 1x1");
@@ -294,7 +296,7 @@ fn test_chunked_transfer() {
     ];
     if let Some(response) = kitty_graphics_protocol::parse(&params3, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
-            handler.insert_graphic(graphic_data, None, Some(0));
+            handler.insert_graphic(graphic_data, None, Some(0), None, 0);
         }
     }
 
@@ -342,7 +344,7 @@ fn test_multiple_graphics_in_sequence() {
     for (params, _) in &graphics_params {
         if let Some(response) = kitty_graphics_protocol::parse(params, &mut state) {
             if let Some(graphic_data) = response.graphic_data {
-                handler.insert_graphic(graphic_data, None, Some(0));
+                handler.insert_graphic(graphic_data, None, Some(0), None, 0);
             }
         }
     }
@@ -895,4 +897,341 @@ fn test_place_nonexistent_graphic() {
 
     // Should not panic, just warn
     term.place_graphic(placement);
+}
+
+#[test]
+fn test_delete_by_z_index_only_deletes_matching() {
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 24),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // Insert a graphic with z_index=5
+    let pixels = vec![255u8; 10 * 20 * 4]; // 1 cell
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 10,
+        height: 20,
+        color_type: ColorType::Rgba,
+        pixels,
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+    };
+    term.insert_graphic(graphic, None, Some(0), Some(1), 5);
+
+    // Insert another graphic with z_index=10
+    term.grid.cursor.pos.col = crate::crosswords::pos::Column(1);
+    term.grid.cursor.pos.row = crate::crosswords::pos::Line(0);
+    let pixels2 = vec![255u8; 10 * 20 * 4];
+    let graphic2 = GraphicData {
+        id: GraphicId::new(2),
+        width: 10,
+        height: 20,
+        color_type: ColorType::Rgba,
+        pixels: pixels2,
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+    };
+    term.insert_graphic(graphic2, None, Some(0), Some(2), 10);
+
+    // Delete by z_index=5 — should only remove the first graphic
+    let delete = DeleteRequest {
+        action: b'z',
+        image_id: 0,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        z_index: 5,
+        delete_data: false,
+    };
+    term.delete_graphics(delete);
+
+    // Cell at col 0 should have no graphics (z=5 was deleted)
+    let cell0 = &term.grid[crate::crosswords::pos::Line(0)]
+        [crate::crosswords::pos::Column(0)];
+    assert!(
+        cell0.graphics().is_none(),
+        "z=5 graphic should have been deleted"
+    );
+
+    // Cell at col 1 should still have graphics (z=10 was not deleted)
+    let cell1 = &term.grid[crate::crosswords::pos::Line(0)]
+        [crate::crosswords::pos::Column(1)];
+    assert!(
+        cell1.graphics().is_some(),
+        "z=10 graphic should NOT have been deleted"
+    );
+}
+
+#[test]
+fn test_delete_by_kitty_image_id() {
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 24),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // Insert graphic with kitty_image_id=42
+    let pixels = vec![255u8; 10 * 20 * 4];
+    let graphic = GraphicData {
+        id: GraphicId::new(42),
+        width: 10,
+        height: 20,
+        color_type: ColorType::Rgba,
+        pixels,
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+    };
+    // insert_graphic assigns a NEW internal GraphicId (via next_id()),
+    // but we pass kitty_image_id=42 so delete-by-id can find it.
+    term.insert_graphic(graphic, None, Some(0), Some(42), 0);
+
+    // Verify it was placed
+    let cell = &term.grid[crate::crosswords::pos::Line(0)]
+        [crate::crosswords::pos::Column(0)];
+    assert!(cell.graphics().is_some(), "Graphic should be placed");
+
+    // The internal GraphicId should NOT be 42 (it's assigned by next_id)
+    let internal_id = cell.graphics().unwrap()[0].texture.id;
+    assert_ne!(
+        internal_id.get(),
+        42,
+        "Internal ID should differ from kitty image_id"
+    );
+
+    // But kitty_image_id should be 42
+    assert_eq!(
+        cell.graphics().unwrap()[0].texture.kitty_image_id,
+        Some(42),
+        "kitty_image_id should be stored in TextureRef"
+    );
+
+    // Delete by image_id=42 (d=i)
+    let delete = DeleteRequest {
+        action: b'i',
+        image_id: 42,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        z_index: 0,
+        delete_data: false,
+    };
+    term.delete_graphics(delete);
+
+    // Graphic should be gone
+    let cell = &term.grid[crate::crosswords::pos::Line(0)]
+        [crate::crosswords::pos::Column(0)];
+    assert!(
+        cell.graphics().is_none(),
+        "Delete by image_id should remove the placed graphic"
+    );
+}
+
+#[test]
+fn test_delete_by_image_id_does_not_delete_wrong_id() {
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 24),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // Insert graphic with kitty_image_id=42
+    let pixels = vec![255u8; 10 * 20 * 4];
+    let graphic = GraphicData {
+        id: GraphicId::new(42),
+        width: 10,
+        height: 20,
+        color_type: ColorType::Rgba,
+        pixels,
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+    };
+    term.insert_graphic(graphic, None, Some(0), Some(42), 0);
+
+    // Try to delete image_id=99 — should NOT delete the image_id=42 graphic
+    let delete = DeleteRequest {
+        action: b'i',
+        image_id: 99,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        z_index: 0,
+        delete_data: false,
+    };
+    term.delete_graphics(delete);
+
+    let cell = &term.grid[crate::crosswords::pos::Line(0)]
+        [crate::crosswords::pos::Column(0)];
+    assert!(
+        cell.graphics().is_some(),
+        "Delete with wrong image_id should NOT remove the graphic"
+    );
+}
+
+#[test]
+fn test_no_double_push_on_graphic_cell_drop() {
+    use crate::ansi::graphics::{GraphicCell, TextureRef};
+    use std::sync::{Arc, Weak};
+    use parking_lot::Mutex;
+
+    let texture_ops: Arc<Mutex<Vec<GraphicId>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let texture = Arc::new(TextureRef {
+        id: GraphicId::new(99),
+        kitty_image_id: None,
+        z_index: 0,
+        width: 10,
+        height: 20,
+        cell_height: 20,
+        texture_operations: Arc::downgrade(&texture_ops),
+    });
+
+    // Create two GraphicCells referencing the same texture (simulating multi-cell image)
+    let cell1 = GraphicCell {
+        texture: texture.clone(),
+        offset_x: 0,
+        offset_y: 0,
+    };
+    let cell2 = GraphicCell {
+        texture: texture.clone(),
+        offset_x: 10,
+        offset_y: 0,
+    };
+
+    // Drop both cells — should NOT push to texture_operations (GraphicCell has no Drop impl)
+    drop(cell1);
+    drop(cell2);
+    assert!(
+        texture_ops.lock().is_empty(),
+        "GraphicCell drop should NOT push to texture_operations"
+    );
+
+    // Drop the last Arc<TextureRef> — should push exactly once
+    drop(texture);
+    let ops = texture_ops.lock();
+    assert_eq!(
+        ops.len(),
+        1,
+        "TextureRef drop should push exactly once, got {}",
+        ops.len()
+    );
+    assert_eq!(ops[0], GraphicId::new(99));
+}
+
+#[test]
+fn test_placed_textures_tracks_inserts() {
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 24),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    assert!(
+        term.graphics.placed_textures.is_empty(),
+        "Should start with no placed textures"
+    );
+
+    // Insert a graphic
+    let pixels = vec![255u8; 10 * 20 * 4];
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 10,
+        height: 20,
+        color_type: ColorType::Rgba,
+        pixels,
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+    };
+    term.insert_graphic(graphic, None, Some(0), None, 0);
+
+    assert_eq!(
+        term.graphics.placed_textures.len(),
+        1,
+        "Should track 1 placed texture after insert"
+    );
+}
+
+#[test]
+fn test_collect_active_ids_uses_weak_refs() {
+    use crate::ansi::graphics::TextureRef;
+    use std::sync::Arc;
+
+    let mut graphics = crate::ansi::graphics::Graphics::default();
+
+    // Simulate placing a texture
+    let texture_ops = graphics.texture_operations.clone();
+    let texture = Arc::new(TextureRef {
+        id: GraphicId::new(1),
+        kitty_image_id: None,
+        z_index: 0,
+        width: 10,
+        height: 20,
+        cell_height: 20,
+        texture_operations: Arc::downgrade(&texture_ops),
+    });
+    graphics.register_placed_texture(GraphicId::new(1), Arc::downgrade(&texture));
+
+    // While texture is alive, it should appear in active IDs
+    let active = graphics.collect_active_graphic_ids();
+    assert!(
+        active.contains(&1),
+        "Active texture should appear in collect_active_graphic_ids"
+    );
+
+    // Drop the texture — weak ref becomes dead
+    drop(texture);
+
+    // Now it should be cleaned up
+    let active = graphics.collect_active_graphic_ids();
+    assert!(
+        !active.contains(&1),
+        "Dropped texture should NOT appear in collect_active_graphic_ids"
+    );
+    assert!(
+        graphics.placed_textures.is_empty(),
+        "Stale entry should be cleaned up"
+    );
 }

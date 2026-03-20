@@ -399,6 +399,8 @@ pub trait Handler {
         _data: GraphicData,
         _palette: Option<Vec<ColorRgb>>,
         _cursor_movement: Option<u8>,
+        _kitty_image_id: Option<u32>,
+        _z_index: i32,
     ) {
     }
 
@@ -822,6 +824,18 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                     .map(|p| p.cursor_movement)
                     .unwrap_or(0);
 
+                // Extract the kitty image_id and z_index for transmit-and-display
+                let kitty_image_id = response
+                    .placement_request
+                    .as_ref()
+                    .map(|p| p.image_id)
+                    .filter(|&id| id != 0);
+                let z_index = response
+                    .placement_request
+                    .as_ref()
+                    .map(|p| p.z_index)
+                    .unwrap_or(0);
+
                 if let Some(graphic_data) = response.graphic_data {
                     debug!(
                         "[process_apc_buffer] Graphic data present: id={}, {}x{}",
@@ -836,6 +850,8 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                             graphic_data,
                             None,
                             Some(cursor_movement),
+                            kitty_image_id,
+                            z_index,
                         );
                     } else {
                         // a=t: Transmit only
@@ -1199,7 +1215,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             b"1337" => {
                 if let Some(graphic) = iterm2_image_protocol::parse(params) {
                     // iTerm2 protocol uses None (traditional behavior like Sixel)
-                    self.handler.insert_graphic(graphic, None, None);
+                    self.handler.insert_graphic(graphic, None, None, None, 0);
                 }
             }
 
