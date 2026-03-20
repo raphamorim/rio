@@ -960,16 +960,16 @@ fn test_delete_by_z_index_only_deletes_matching() {
     term.delete_graphics(delete);
 
     // Cell at col 0 should have no graphics (z=5 was deleted)
-    let cell0 = &term.grid[crate::crosswords::pos::Line(0)]
-        [crate::crosswords::pos::Column(0)];
+    let cell0 =
+        &term.grid[crate::crosswords::pos::Line(0)][crate::crosswords::pos::Column(0)];
     assert!(
         cell0.graphics().is_none(),
         "z=5 graphic should have been deleted"
     );
 
     // Cell at col 1 should still have graphics (z=10 was not deleted)
-    let cell1 = &term.grid[crate::crosswords::pos::Line(0)]
-        [crate::crosswords::pos::Column(1)];
+    let cell1 =
+        &term.grid[crate::crosswords::pos::Line(0)][crate::crosswords::pos::Column(1)];
     assert!(
         cell1.graphics().is_some(),
         "z=10 graphic should NOT have been deleted"
@@ -1010,8 +1010,8 @@ fn test_delete_by_kitty_image_id() {
     term.insert_graphic(graphic, None, Some(0), Some(42), 0);
 
     // Verify it was placed
-    let cell = &term.grid[crate::crosswords::pos::Line(0)]
-        [crate::crosswords::pos::Column(0)];
+    let cell =
+        &term.grid[crate::crosswords::pos::Line(0)][crate::crosswords::pos::Column(0)];
     assert!(cell.graphics().is_some(), "Graphic should be placed");
 
     // The internal GraphicId should NOT be 42 (it's assigned by next_id)
@@ -1042,8 +1042,8 @@ fn test_delete_by_kitty_image_id() {
     term.delete_graphics(delete);
 
     // Graphic should be gone
-    let cell = &term.grid[crate::crosswords::pos::Line(0)]
-        [crate::crosswords::pos::Column(0)];
+    let cell =
+        &term.grid[crate::crosswords::pos::Line(0)][crate::crosswords::pos::Column(0)];
     assert!(
         cell.graphics().is_none(),
         "Delete by image_id should remove the placed graphic"
@@ -1093,8 +1093,8 @@ fn test_delete_by_image_id_does_not_delete_wrong_id() {
     };
     term.delete_graphics(delete);
 
-    let cell = &term.grid[crate::crosswords::pos::Line(0)]
-        [crate::crosswords::pos::Column(0)];
+    let cell =
+        &term.grid[crate::crosswords::pos::Line(0)][crate::crosswords::pos::Column(0)];
     assert!(
         cell.graphics().is_some(),
         "Delete with wrong image_id should NOT remove the graphic"
@@ -1104,8 +1104,8 @@ fn test_delete_by_image_id_does_not_delete_wrong_id() {
 #[test]
 fn test_no_double_push_on_graphic_cell_drop() {
     use crate::ansi::graphics::{GraphicCell, TextureRef};
-    use std::sync::{Arc, Weak};
     use parking_lot::Mutex;
+    use std::sync::{Arc, Weak};
 
     let texture_ops: Arc<Mutex<Vec<GraphicId>>> = Arc::new(Mutex::new(Vec::new()));
 
