@@ -36,11 +36,6 @@ impl ImageId {
     pub fn is_empty(self) -> bool {
         self.0 == 0
     }
-
-    /// Returns true if the image contains transparency.
-    pub fn has_alpha(self) -> bool {
-        self.0 & ID_ALPHA_BIT != 0
-    }
 }
 
 /// Location of an image in a texture.

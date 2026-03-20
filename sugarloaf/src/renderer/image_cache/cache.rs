@@ -901,11 +901,6 @@ impl ImageCache {
             .collect()
     }
 
-    /// Get the number of color atlases (for array size)
-    pub fn get_atlas_count(&self) -> usize {
-        self.color_atlases.len()
-    }
-
     /// Get the mask texture view for WebGPU rendering
     pub fn get_mask_texture_view(&self) -> Option<&wgpu::TextureView> {
         match &self.device_queue {
