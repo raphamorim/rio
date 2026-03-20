@@ -22,8 +22,8 @@ use net2::{UdpBuilder, UdpSocketExt};
 
 use crate::sys::windows::from_raw_arc::FromRawArc;
 use crate::sys::windows::selector::{Overlapped, ReadyBinding};
-use event::Evented;
-use {poll, Poll, PollOpt, Ready, Token};
+use crate::event::Evented;
+use crate::{poll, Poll, PollOpt, Ready, Token};
 
 pub struct UdpSocket {
     imp: Imp,

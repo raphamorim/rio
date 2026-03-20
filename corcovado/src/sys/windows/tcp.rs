@@ -16,8 +16,8 @@ use net2::{TcpBuilder, TcpStreamExt as Net2TcpExt};
 use crate::sys::windows::from_raw_arc::FromRawArc;
 use crate::sys::windows::selector::{Overlapped, ReadyBinding};
 use crate::sys::windows::Family;
-use event::Evented;
-use {poll, Poll, PollOpt, Ready, Token};
+use crate::event::Evented;
+use crate::{poll, Poll, PollOpt, Ready, Token};
 
 pub struct TcpStream {
     /// Separately stored implementation to ensure that the `Drop`

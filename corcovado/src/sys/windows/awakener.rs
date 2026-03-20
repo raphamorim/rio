@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use crate::sys::windows::Selector;
 use crate::{io, poll, Poll, PollOpt, Ready, Token};
-use event::Evented;
+use crate::event::Evented;
 use miow::iocp::CompletionStatus;
 
 pub struct Awakener {
