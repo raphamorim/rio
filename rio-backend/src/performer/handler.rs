@@ -1661,28 +1661,113 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
 }
 
 /// Process XTGETTCAP request and return DCS response.
+/// Multiple capability queries can be separated by `;` in a single request.
+/// Each capability gets its own DCS response (like Ghostty/xterm).
 fn process_xtgettcap_request(buffer: &[u8]) -> String {
     debug!("Processing XTGETTCAP request: {:?}", buffer);
-    // Decode hex-encoded capability name
-    let capability_name = match decode_hex_string(buffer) {
-        Ok(name) => name,
-        Err(_) => {
-            // Invalid hex encoding - return error response
-            debug!("Invalid hex encoding in XTGETTCAP request");
-            return "\x1bP0+r\x1b\\".to_string();
-        }
-    };
-    debug!("Decoded capability name: {}", capability_name);
 
-    if let Some(value) = get_termcap_capability(&capability_name) {
-        // Encode both name and value in hex
+    let mut response = String::new();
+
+    for query in buffer.split(|&b| b == b';') {
+        if query.is_empty() {
+            continue;
+        }
+
+        let capability_name = match decode_hex_string(query) {
+            Ok(name) => name,
+            Err(_) => {
+                debug!("Invalid hex encoding in XTGETTCAP request");
+                continue;
+            }
+        };
+        debug!("XTGETTCAP query for: {}", capability_name);
+
         let hex_name = encode_hex_string(&capability_name);
-        let hex_value = encode_hex_string(&value);
-        format!("\x1bP1+r{hex_name}={hex_value}\x1b\\")
-    } else {
-        // Invalid capability name - return error response
-        "\x1bP0+r\x1b\\".to_string()
+        if let Some(value) = get_termcap_capability(&capability_name) {
+            if value.is_empty() {
+                // Boolean capability
+                response.push_str(&format!("\x1bP1+r{hex_name}\x1b\\"));
+            } else {
+                // String/numeric capability — decode terminfo source format
+                // to raw bytes before hex-encoding
+                let decoded = decode_terminfo_value(&value);
+                let hex_value = encode_hex_bytes(&decoded);
+                response.push_str(&format!("\x1bP1+r{hex_name}={hex_value}\x1b\\"));
+            }
+        } else {
+            response.push_str(&format!("\x1bP0+r{hex_name}\x1b\\"));
+        }
     }
+
+    if response.is_empty() {
+        "\x1bP0+r\x1b\\".to_string()
+    } else {
+        response
+    }
+}
+
+/// Decode terminfo source format escape sequences to raw bytes.
+/// Converts `\\E` to ESC (0x1b), `\\n` to newline, `\\r` to CR, etc.
+/// Values containing `%` (parameterized) are returned as-is in source format.
+fn decode_terminfo_value(value: &str) -> Vec<u8> {
+    // Parameterized values are kept in source format (like Ghostty/Kitty)
+    if value.contains('%') {
+        return value.as_bytes().to_vec();
+    }
+
+    let mut result = Vec::with_capacity(value.len());
+    let bytes = value.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            match bytes[i + 1] {
+                b'E' => {
+                    result.push(0x1b);
+                    i += 2;
+                }
+                b'n' => {
+                    result.push(b'\n');
+                    i += 2;
+                }
+                b'r' => {
+                    result.push(b'\r');
+                    i += 2;
+                }
+                b't' => {
+                    result.push(b'\t');
+                    i += 2;
+                }
+                b'\\' => {
+                    result.push(b'\\');
+                    i += 2;
+                }
+                _ => {
+                    result.push(bytes[i]);
+                    i += 1;
+                }
+            }
+        } else if bytes[i] == b'^' && i + 1 < bytes.len() {
+            // Control character: ^? = DEL (0x7F), ^X = X - 64
+            let ctrl = if bytes[i + 1] == b'?' {
+                0x7F
+            } else {
+                bytes[i + 1].wrapping_sub(64)
+            };
+            result.push(ctrl);
+            i += 2;
+        } else {
+            result.push(bytes[i]);
+            i += 1;
+        }
+    }
+
+    result
+}
+
+/// Encode raw bytes as hex string (2 uppercase hex digits per byte).
+fn encode_hex_bytes(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02X}")).collect()
 }
 
 /// Decode hex-encoded string (2 hex digits per character).
@@ -2116,11 +2201,11 @@ mod tests {
         assert!(response.starts_with("\x1bP1+r"));
         assert!(response.contains("436F="));
 
-        // Test invalid capability
+        // Test invalid capability — gets its own DCS 0+r response with hex name
         let response = process_xtgettcap_request(b"5858"); // "XX"
-        assert_eq!(response, "\x1bP0+r\x1b\\");
+        assert_eq!(response, "\x1bP0+r5858\x1b\\");
 
-        // Test invalid hex
+        // Test invalid hex — skipped, empty response
         let response = process_xtgettcap_request(b"ZZ");
         assert_eq!(response, "\x1bP0+r\x1b\\");
     }
@@ -2139,9 +2224,71 @@ mod tests {
         let response = process_xtgettcap_request(b"524742"); // "RGB"
         assert_eq!(response, "\x1bP1+r524742=382F382F38\x1b\\");
 
-        // Test invalid capability
+        // Test invalid capability — returns 0+r with hex-encoded name
         let response = process_xtgettcap_request(b"5858"); // "XX"
-        assert_eq!(response, "\x1bP0+r\x1b\\");
+        assert_eq!(response, "\x1bP0+r5858\x1b\\");
+    }
+
+    #[test]
+    fn test_xtgettcap_multiple_queries() {
+        // Vim sends multiple queries separated by ';'
+        // BE=4245, BD=4244, PS=5053, PE=5045
+        let response = process_xtgettcap_request(b"4245;4244;5053;5045");
+
+        // Each capability should get its own DCS response
+        assert!(response.contains("\x1bP1+r4245="));
+        assert!(response.contains("\x1bP1+r4244="));
+        assert!(response.contains("\x1bP1+r5053="));
+        assert!(response.contains("\x1bP1+r5045="));
+
+        // Should contain 4 separate DCS responses
+        let count = response.matches("\x1bP1+r").count();
+        assert_eq!(
+            count, 4,
+            "Should have 4 separate DCS responses, got {count}"
+        );
+    }
+
+    #[test]
+    fn test_xtgettcap_boolean_capability() {
+        // Boolean capabilities (empty value) should not have '='
+        // "am" (auto margins) = 616D
+        let response = process_xtgettcap_request(b"616D");
+        assert_eq!(response, "\x1bP1+r616D\x1b\\");
+    }
+
+    #[test]
+    fn test_xtgettcap_value_decoding() {
+        // Values with \E should be decoded to ESC (0x1b) before hex-encoding
+        // "PS" (paste start) = \E[200~ should become 1B5B3230307E
+        let response = process_xtgettcap_request(b"5053"); // "PS"
+        assert_eq!(response, "\x1bP1+r5053=1B5B3230307E\x1b\\");
+
+        // "PE" (paste end) = \E[201~ should become 1B5B3230317E
+        let response = process_xtgettcap_request(b"5045"); // "PE"
+        assert_eq!(response, "\x1bP1+r5045=1B5B3230317E\x1b\\");
+    }
+
+    #[test]
+    fn test_decode_terminfo_value() {
+        // \E should become ESC
+        assert_eq!(
+            decode_terminfo_value("\\E[200~"),
+            vec![0x1b, b'[', b'2', b'0', b'0', b'~']
+        );
+
+        // Parameterized values stay as-is
+        let param = "\\E[%p1%dA";
+        assert_eq!(decode_terminfo_value(param), param.as_bytes().to_vec());
+
+        // ^H should become backspace
+        assert_eq!(decode_terminfo_value("^H"), vec![8]);
+
+        // \\n should become newline
+        assert_eq!(decode_terminfo_value("\\n"), vec![b'\n']);
+
+        // \\r should become CR
+        assert_eq!(decode_terminfo_value("\\r"), vec![b'\r']);
     }
 
     #[test]
