@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use tracing::trace;
 #[cfg(not(target_os = "netbsd"))]
 use std::os::raw::{c_int, c_short};
 use std::os::unix::io::AsRawFd;
@@ -9,10 +10,10 @@ use std::{cmp, fmt, ptr};
 
 use libc::{self, time_t};
 
-use event_imp::{self as event, Event};
-use sys::unix::io::set_cloexec;
-use sys::unix::{cvt, UnixReady};
-use {io, PollOpt, Ready, Token};
+use crate::event_imp::{self as event, Event};
+use crate::sys::unix::io::set_cloexec;
+use crate::sys::unix::{cvt, UnixReady};
+use crate::{io, PollOpt, Ready, Token};
 
 /// Each Selector has a globally unique(ish) ID associated with it. This ID
 /// gets tracked by `TcpStream`, `TcpListener`, etc... when they are first
@@ -386,8 +387,8 @@ impl fmt::Debug for Events {
 
 #[test]
 fn does_not_register_rw() {
-    use unix::EventedFd;
-    use {Poll, PollOpt, Ready, Token};
+    use crate::unix::EventedFd;
+    use crate::{Poll, PollOpt, Ready, Token};
 
     let kq = unsafe { libc::kqueue() };
     let kqf = EventedFd(&kq);

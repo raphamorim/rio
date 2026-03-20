@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::ops::{Deref, DerefMut};
 use std::os::unix::io::RawFd;
 use zircon;
-use {io, PollOpt, Ready};
+use crate::{io, PollOpt, Ready};
 
 mod awakener;
 mod eventedfd;
@@ -132,7 +132,7 @@ impl IsMinusOne for isize {
     }
 }
 
-fn cvt<T: IsMinusOne>(t: T) -> ::io::Result<T> {
+fn cvt<T: IsMinusOne>(t: T) -> crate::io::Result<T> {
     use std::io;
 
     if t.is_minus_one() {

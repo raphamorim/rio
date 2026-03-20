@@ -1,4 +1,4 @@
-use event_imp::{ready_as_usize, ready_from_usize, Ready};
+use crate::event_imp::{ready_as_usize, ready_from_usize, Ready};
 use std::ops;
 pub use zircon_sys::{zx_signals_t, ZX_OBJECT_READABLE, ZX_OBJECT_WRITABLE};
 

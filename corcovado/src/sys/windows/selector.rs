@@ -11,15 +11,15 @@ use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
 use windows_sys::Win32::System::IO::OVERLAPPED;
 use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
 
-use lazycell::AtomicLazyCell;
+use crate::lazycell::AtomicLazyCell;
 
 use miow;
 use miow::iocp::{CompletionPort, CompletionStatus};
 
-use event_imp::{Event, Evented, Ready};
-use poll::{self, Poll};
-use sys::windows::buffer_pool::BufferPool;
-use {PollOpt, Token};
+use crate::event_imp::{Event, Evented, Ready};
+use crate::poll::{self, Poll};
+use crate::sys::windows::buffer_pool::BufferPool;
+use crate::{PollOpt, Token};
 
 /// Each Selector has a globally unique(ish) ID associated with it. This ID
 /// gets tracked by `TcpStream`, `TcpListener`, etc... when they are first
