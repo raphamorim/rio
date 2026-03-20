@@ -777,8 +777,6 @@ impl Renderer {
                                 has_alpha: true,
                                 data: image_cache::ImageData::Borrowed(pixels.as_ref()),
                                 content_type: image_cache::ContentType::Color,
-                                // Protocol graphics (Kitty/Sixel) get individual textures
-                                uses_individual_texture: true,
                             };
 
                             // Try to allocate, with eviction retry if needed
