@@ -61,6 +61,7 @@ pub struct WgpuRenderer {
     supported_vertex_buffer: usize,
 }
 
+#[cfg(target_os = "macos")]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 struct Globals {
