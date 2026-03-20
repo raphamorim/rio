@@ -1082,7 +1082,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                         if let MouseButton::Left | MouseButton::Right = button {
                             if self.config.copy_on_select {
-                                route.window.screen.copy_selection(ClipboardType::Clipboard);
+                                route
+                                    .window
+                                    .screen
+                                    .copy_selection(ClipboardType::Clipboard);
                             }
                         }
                     }
