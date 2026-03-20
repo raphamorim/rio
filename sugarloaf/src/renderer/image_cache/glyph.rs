@@ -226,8 +226,6 @@ impl GlyphCacheSession<'_> {
                     has_alpha: true,
                     data: image_data,
                     content_type,
-                    // Glyphs use the atlas
-                    uses_individual_texture: false,
                 };
                 let image = self.images.allocate(req)?;
 
