@@ -1596,11 +1596,6 @@ impl Screen<'_> {
         };
         drop(terminal);
 
-        if ty == ClipboardType::Selection {
-            self.clipboard
-                .borrow_mut()
-                .set(ClipboardType::Clipboard, text.clone());
-        }
         self.clipboard.borrow_mut().set(ty, text);
     }
 

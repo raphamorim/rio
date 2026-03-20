@@ -1081,8 +1081,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
 
                         if let MouseButton::Left | MouseButton::Right = button {
-                            // Copy selection on release, to prevent flooding the display server.
-                            route.window.screen.copy_selection(ClipboardType::Selection);
+                            if self.config.copy_on_select {
+                                route.window.screen.copy_selection(ClipboardType::Clipboard);
+                            }
                         }
                     }
                 }
