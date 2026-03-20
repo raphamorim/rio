@@ -1,13 +1,13 @@
 #![allow(deprecated)]
 #![allow(clippy::all)]
 
-use tracing::trace;
 use std::cell::UnsafeCell;
 use std::os::windows::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{fmt, io};
+use tracing::trace;
 use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
 use windows_sys::Win32::System::IO::OVERLAPPED;
 use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
