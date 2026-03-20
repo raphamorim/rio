@@ -1,11 +1,11 @@
+use crate::sys::fuchsia::{poll_opts_to_wait_async, sys, DontDrop};
+use crate::{io, poll, Evented, Poll, PollOpt, Ready, Token};
 use libc;
 use std::mem;
 use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
-use crate::sys::fuchsia::{poll_opts_to_wait_async, sys, DontDrop};
 use zircon;
 use zircon::AsHandleRef;
-use crate::{io, poll, Evented, Poll, PollOpt, Ready, Token};
 
 /// Properties of an `EventedFd`'s current registration
 #[derive(Debug)]

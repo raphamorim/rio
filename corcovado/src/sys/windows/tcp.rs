@@ -13,10 +13,10 @@ use miow::iocp::CompletionStatus;
 use miow::net::*;
 use net2::{TcpBuilder, TcpStreamExt as Net2TcpExt};
 
-use event::Evented;
 use crate::sys::windows::from_raw_arc::FromRawArc;
 use crate::sys::windows::selector::{Overlapped, ReadyBinding};
 use crate::sys::windows::Family;
+use event::Evented;
 use {poll, Poll, PollOpt, Ready, Token};
 
 pub struct TcpStream {

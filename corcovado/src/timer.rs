@@ -1,12 +1,12 @@
 //! Timer optimized for I/O related operations
-use tracing::trace;
-use crate::{event::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use crate::lazycell::LazyCell;
+use crate::{event::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use slab::Slab;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{cmp, fmt, io, thread};
+use tracing::trace;
 
 mod convert {
     use std::time::Duration;
