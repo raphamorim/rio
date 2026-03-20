@@ -5,13 +5,13 @@
 
 #![allow(unused)]
 
-use tracing::trace;
 use std::fmt;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
 use std::net::{self, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Mutex, MutexGuard};
+use tracing::trace;
 use windows_sys::Win32::Networking::WinSock::WSAEMSGSIZE;
 use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
 

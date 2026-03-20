@@ -1,4 +1,3 @@
-use tracing::trace;
 use std::fmt;
 use std::io::{self, Read};
 use std::mem;
@@ -6,6 +5,7 @@ use std::net::{self, Shutdown, SocketAddr};
 use std::os::windows::prelude::*;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
+use tracing::trace;
 use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
 
