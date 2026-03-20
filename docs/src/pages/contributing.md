@@ -13,7 +13,7 @@ Help Rio by donating via [GitHub Sponsors](https://github.com/sponsors/raphamori
 
 ## No AI Policy
 
-No LLMs for issues, patches and pull requests.
+No LLMs for issues, patches and pull requests. This rule was copied from the [Zig project](https://codeberg.org/ziglang/zig#strict-no-llm-no-ai-policy).
 
 ## No Required Language
 
