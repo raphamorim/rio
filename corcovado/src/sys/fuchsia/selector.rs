@@ -4,15 +4,15 @@ use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
-use sys;
-use sys::fuchsia::{
+use crate::sys;
+use crate::sys::fuchsia::{
     assert_fuchsia_ready_repr, epoll_event_to_ready, poll_opts_to_wait_async, EventedFd,
     EventedFdInner, FuchsiaReady,
 };
 use zircon;
 use zircon::AsHandleRef;
 use zircon_sys::zx_handle_t;
-use {io, Event, PollOpt, Ready, Token};
+use crate::{io, Event, PollOpt, Ready, Token};
 
 /// The kind of registration-- file descriptor or handle.
 ///

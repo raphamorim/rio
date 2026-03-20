@@ -97,26 +97,10 @@
 //
 // ```
 
-extern crate iovec;
-extern crate net2;
-extern crate slab;
-
 #[cfg(target_os = "fuchsia")]
-extern crate fuchsia_zircon as zircon;
+use fuchsia_zircon as zircon;
 #[cfg(target_os = "fuchsia")]
-extern crate fuchsia_zircon_sys as zircon_sys;
-
-#[cfg(unix)]
-extern crate libc;
-
-#[cfg(windows)]
-extern crate miow;
-
-#[cfg(windows)]
-extern crate windows_sys;
-
-#[macro_use]
-extern crate tracing;
+use fuchsia_zircon_sys as zircon_sys;
 
 mod event_imp;
 mod io;
@@ -148,8 +132,8 @@ pub use event::Events;
 #[cfg(all(unix, not(target_os = "fuchsia")))]
 pub mod unix {
     //! Unix only extensions
-    pub use sys::unix::UnixReady;
-    pub use sys::EventedFd;
+    pub use crate::sys::unix::UnixReady;
+    pub use crate::sys::EventedFd;
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -161,8 +145,8 @@ pub mod fuchsia {
     //! This module depends on the [magenta-sys crate](https://crates.io/crates/magenta-sys)
     //! and so might introduce breaking changes, even on minor releases,
     //! so long as that crate remains unstable.
-    pub use sys::fuchsia::{zx_signals_t, FuchsiaReady};
-    pub use sys::EventedHandle;
+    pub use crate::sys::fuchsia::{zx_signals_t, FuchsiaReady};
+    pub use crate::sys::EventedHandle;
 }
 
 /// Windows-only extensions to the mio crate.
@@ -218,5 +202,5 @@ pub mod fuchsia {
 #[cfg(windows)]
 pub mod windows {
 
-    pub use sys::{Binding, Overlapped};
+    pub use crate::sys::{Binding, Overlapped};
 }
