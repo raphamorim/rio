@@ -372,7 +372,18 @@ impl Screen<'_> {
 
         self.sugarloaf
             .update_filters(config.renderer.filters.as_slice());
+
+        // Preserve existing Island (tab state) and update its colors
+        let old_island = self.renderer.island.take();
         self.renderer = Renderer::new(config, font_library);
+        if let Some(mut island) = old_island {
+            island.update_colors(
+                config.colors.tabs,
+                config.colors.tabs_active,
+                config.colors.tab_border,
+            );
+            self.renderer.island = Some(island);
+        }
 
         let scale = self.sugarloaf.scale_factor();
         for context_grid in self.context_manager.contexts_mut() {
@@ -417,12 +428,8 @@ impl Screen<'_> {
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
 
-        if cfg!(target_os = "macos") {
-            self.sugarloaf.set_background_color(None);
-        } else {
-            self.sugarloaf
-                .set_background_color(Some(self.renderer.dynamic_background.1));
-        }
+        self.sugarloaf
+            .set_background_color(Some(self.renderer.dynamic_background.1));
 
         if let Some(image) = &config.window.background_image {
             self.sugarloaf.set_background_image(image);

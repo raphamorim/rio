@@ -121,6 +121,21 @@ impl Island {
         }
     }
 
+    pub fn update_colors(
+        &mut self,
+        inactive_text_color: [f32; 4],
+        active_text_color: [f32; 4],
+        border_color: [f32; 4],
+    ) {
+        self.inactive_text_color = inactive_text_color;
+        self.active_text_color = active_text_color;
+        self.border_color = border_color;
+        // Clear cached titles to force re-render with new colors
+        for tab_data in self.tab_data.values_mut() {
+            tab_data.last_title.clear();
+        }
+    }
+
     /// Update the progress bar state from an OSC 9;4 report
     pub fn set_progress_report(&mut self, report: ProgressReport) {
         match report.state {
