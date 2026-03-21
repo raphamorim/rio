@@ -97,16 +97,23 @@ const config = {
       // Replace with your project's social card
       image: '/assets/banner.png',
       navbar: {
-        logo: {
-          src: '/assets/rio-logo.svg',
-        },
+        title: 'Rio',
+        style: 'dark',
         items: [
-          { to: '/docs/install', label: 'Install', position: 'left' },
-          { to: '/docs/config', label: 'Config', position: 'left', },
-          { to: '/docs/features', label: 'Features', position: 'left' },
+          {
+            type: 'dropdown',
+            label: 'Docs',
+            position: 'left',
+            items: [
+              { to: '/docs/install', label: 'Install' },
+              { to: '/docs/config', label: 'Config' },
+              { to: '/docs/features', label: 'Features' },
+              { to: '/docs/key-bindings', label: 'Key Bindings' },
+            ],
+          },
           { to: '/changelog', label: 'Changelog', position: 'left' },
-          { to: '/contributing', label: 'Contributing', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
+          { to: '/contributing', label: 'Contributing', position: 'left' },
           {
             type: 'localeDropdown',
             position: 'right',
@@ -118,9 +125,9 @@ const config = {
           },
           {
             href: 'https://github.com/raphamorim/rio',
-            label: 'GitHub',
             position: 'right',
-            // image: '/assets/github-mark.svg',
+            className: 'header-github-link',
+            'aria-label': 'GitHub repository',
           },
         ],
       },
