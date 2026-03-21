@@ -2,7 +2,7 @@
 // Note: type annotations allow type checking and IDEs autocompletion
 
 const { themes } = require('prism-react-renderer');
-const lightCodeTheme = themes.github;
+const lightCodeTheme = themes.dracula;
 const darkCodeTheme = themes.dracula;
 
 const defaultLocale = 'en';
