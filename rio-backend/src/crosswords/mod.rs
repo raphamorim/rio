@@ -3152,14 +3152,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // - Some(1): Kitty C=1 (cursor doesn't move at all)
         match cursor_movement {
             None => {
-                // Sixel graphics - traditional behavior
+                // Sixel graphics - cursor stays on last row of image
                 if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-                    // Move cursor to the right of the image
                     let graphic_columns = graphic.width.div_ceil(cell_width);
                     self.move_forward(Column(graphic_columns));
                 } else if scrolling {
-                    // Move cursor to next line AFTER the image (traditional Sixel)
-                    self.linefeed();
                     self.carriage_return();
                 }
             }
