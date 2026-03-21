@@ -44,7 +44,35 @@ body {
   padding: 0 2rem;
 }
 
-/* ── Navbar ─────────────────────────────────────────────────────────── */
+div[class*="announcementBar"] {
+  background: linear-gradient(90deg, #0c0c0e 0%, #1a0a1e 50%, #0c0c0e 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.5rem 0;
+}
+
+div[class*="announcementBar"] a {
+  color: #e879f9;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+div[class*="announcementBar"] a:hover {
+  color: #fb43fe;
+}
+
+div[class*="announcementBar"] button {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+div[class*="announcementBar"] button:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+div[class*="announcementBar"] button svg {
+  fill: currentColor;
+}
 
 .navbar {
   backdrop-filter: saturate(180%) blur(20px);
@@ -173,8 +201,6 @@ body {
   color: #fff;
 }
 
-/* ── Footer ─────────────────────────────────────────────────────────── */
-
 .footer {
   background: linear-gradient(180deg, #111113 0%, #0a0a0b 100%);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -237,8 +263,6 @@ body {
 .footer__copyright::after {
   left: calc(50% + 0.35rem);
 }
-
-/* ── Changelog page ─────────────────────────────────────────────────── */
 
 /* Page titles with gradient */
 .changelog-title {
@@ -325,8 +349,6 @@ article :not(pre) > code {
 [data-theme='dark'] article :not(pre) > code {
   background-color: rgba(232, 121, 249, 0.1);
 }
-
-/* ── Blog ───────────────────────────────────────────────────────────── */
 
 /* Blog list page — post cards */
 .blog-list-page article {

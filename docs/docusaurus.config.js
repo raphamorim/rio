@@ -195,8 +195,8 @@ const config = {
       announcementBar: {
         id: 'support_us',
         content:
-          'Support Rio Terminal via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">GitHub Sponsors</a>',
-        backgroundColor: '#f712ff',
+          'Enjoying Rio? <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">Sponsor the project</a> to keep it going',
+        backgroundColor: 'transparent',
         textColor: '#FFFFFF',
         isCloseable: true,
       },
