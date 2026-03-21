@@ -4,8 +4,6 @@ import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import FeaturesSection from '@site/src/components/FeaturesSection/index';
 import MentionsSection from '@site/src/components/MentionsSection/index';
-import MediaSection from '@site/src/components/MediaSection/index';
-import RioLogo from '@site/static/assets/rio-logo.png';
 import Heading from '@theme/Heading';
 import Layout from '@theme/Layout';
 import clsx from 'clsx';
@@ -24,20 +22,24 @@ function HomepageHeader() {
         <Heading as="h1" className={styles.title}>
           {siteConfig.title}
         </Heading>
+        <p className={styles.subtitle}>A modern terminal for the 21st century.</p>
         <p className={styles.tagline}>{siteConfig.tagline}</p>
-        <div className={styles.actionButtonSection}>
+        <div className={styles.actions}>
           <Link to="/docs/install" className={styles.actionButton}>
-            <Translate>Install</Translate>
+            <Translate>Get Started</Translate>
+          </Link>
+          <Link to="/docs/features" className={styles.actionButtonSecondary}>
+            <Translate>Features</Translate>
           </Link>
         </div>
-        <div className={styles.actionButtonSection}>
-        <iframe
-              className={styles.githubStarButton}
-              src="https://ghbtns.com/github-btn.html?user=raphamorim&amp;repo=rio&amp;type=star&amp;count=true&amp;size=large"
-              width={160}
-              height={30}
-              title="GitHub Stars"
-            />
+        <div className={styles.starSection}>
+          <iframe
+            className={styles.githubStarButton}
+            src="https://ghbtns.com/github-btn.html?user=raphamorim&amp;repo=rio&amp;type=star&amp;count=true&amp;size=large"
+            width={160}
+            height={30}
+            title="GitHub Stars"
+          />
         </div>
       </div>
       <div className={styles.logoContainer}>
@@ -60,7 +62,6 @@ export default function Home() {
       <HomepageHeader />
       <main>
         <FeaturesSection />
-        <MediaSection />
         <MentionsSection />
       </main>
     </Layout>
