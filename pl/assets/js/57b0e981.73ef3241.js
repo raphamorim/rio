@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkrio_docs=globalThis.webpackChunkrio_docs||[]).push([[9654],{4485:o=>{o.exports=JSON.parse('{"metadata":{"permalink":"/pl/blog/page/2","page":2,"postsPerPage":10,"totalPages":2,"totalCount":14,"previousPage":"/pl/blog","blogDescription":"Blog","blogTitle":"Blog"}}')}}]);

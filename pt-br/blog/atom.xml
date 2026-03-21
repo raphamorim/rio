@@ -58,20 +58,6 @@
         </author>
     </entry>
     <entry>
-        <title type="html"><![CDATA[Version 0.3 released]]></title>
-        <id>https://rioterm.com/pt-br/blog/2025/12/28/version-zero-dot-three</id>
-        <link href="https://rioterm.com/pt-br/blog/2025/12/28/version-zero-dot-three"/>
-        <updated>2025-12-28T12:28:00.000Z</updated>
-        <summary type="html"><![CDATA[Welcome to the new Rio Terminal experience]]></summary>
-        <content type="html"><![CDATA[<p>I am excited to announce Rio terminal v0.3 is released.</p>
-<p>Let's break down this long-waited release in parts, also if you're not really a reading/blog person you can optionally watch this video about the release.</p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="new-rendering-architecture">New rendering architecture<a href="https://rioterm.com/pt-br/blog/2025/12/28/version-zero-dot-three#new-rendering-architecture" class="hash-link" aria-label="New rendering architecturelink direto para" title="New rendering architecturelink direto para" translate="no">​</a></h2>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="native-metal-for-macos">Native metal for MacOS<a href="https://rioterm.com/pt-br/blog/2025/12/28/version-zero-dot-three#native-metal-for-macos" class="hash-link" aria-label="Native metal for MacOSlink direto para" title="Native metal for MacOSlink direto para" translate="no">​</a></h2>
-<p>tl;dr</p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="quake-mode">Quake mode<a href="https://rioterm.com/pt-br/blog/2025/12/28/version-zero-dot-three#quake-mode" class="hash-link" aria-label="Quake modelink direto para" title="Quake modelink direto para" translate="no">​</a></h2>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="tab-mode">Tab mode<a href="https://rioterm.com/pt-br/blog/2025/12/28/version-zero-dot-three#tab-mode" class="hash-link" aria-label="Tab modelink direto para" title="Tab modelink direto para" translate="no">​</a></h2>]]></content>
-    </entry>
-    <entry>
         <title type="html"><![CDATA[Rio Terminal Now Available on Flathub via Flatpak]]></title>
         <id>https://rioterm.com/pt-br/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak</id>
         <link href="https://rioterm.com/pt-br/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak"/>

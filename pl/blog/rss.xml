@@ -55,20 +55,6 @@
 <p>That's it for now. There's a lot more in the pipeline, but these are the highlights. Thanks for sticking around, and as always, happy hacking!</p>]]></content:encoded>
         </item>
         <item>
-            <title><![CDATA[Version 0.3 released]]></title>
-            <link>https://rioterm.com/pl/blog/2025/12/28/version-zero-dot-three</link>
-            <guid>https://rioterm.com/pl/blog/2025/12/28/version-zero-dot-three</guid>
-            <pubDate>Sun, 28 Dec 2025 12:28:00 GMT</pubDate>
-            <description><![CDATA[Welcome to the new Rio Terminal experience]]></description>
-            <content:encoded><![CDATA[<p>I am excited to announce Rio terminal v0.3 is released.</p>
-<p>Let's break down this long-waited release in parts, also if you're not really a reading/blog person you can optionally watch this video about the release.</p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="new-rendering-architecture">New rendering architecture<a href="https://rioterm.com/pl/blog/2025/12/28/version-zero-dot-three#new-rendering-architecture" class="hash-link" aria-label="Bezpośredni link do New rendering architecture" title="Bezpośredni link do New rendering architecture" translate="no">​</a></h2>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="native-metal-for-macos">Native metal for MacOS<a href="https://rioterm.com/pl/blog/2025/12/28/version-zero-dot-three#native-metal-for-macos" class="hash-link" aria-label="Bezpośredni link do Native metal for MacOS" title="Bezpośredni link do Native metal for MacOS" translate="no">​</a></h2>
-<p>tl;dr</p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="quake-mode">Quake mode<a href="https://rioterm.com/pl/blog/2025/12/28/version-zero-dot-three#quake-mode" class="hash-link" aria-label="Bezpośredni link do Quake mode" title="Bezpośredni link do Quake mode" translate="no">​</a></h2>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="tab-mode">Tab mode<a href="https://rioterm.com/pl/blog/2025/12/28/version-zero-dot-three#tab-mode" class="hash-link" aria-label="Bezpośredni link do Tab mode" title="Bezpośredni link do Tab mode" translate="no">​</a></h2>]]></content:encoded>
-        </item>
-        <item>
             <title><![CDATA[Rio Terminal Now Available on Flathub via Flatpak]]></title>
             <link>https://rioterm.com/pl/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak</link>
             <guid>https://rioterm.com/pl/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak</guid>

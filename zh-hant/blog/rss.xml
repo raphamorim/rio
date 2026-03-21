@@ -55,20 +55,6 @@
 <p>That's it for now. There's a lot more in the pipeline, but these are the highlights. Thanks for sticking around, and as always, happy hacking!</p>]]></content:encoded>
         </item>
         <item>
-            <title><![CDATA[Version 0.3 released]]></title>
-            <link>https://rioterm.com/zh-hant/blog/2025/12/28/version-zero-dot-three</link>
-            <guid>https://rioterm.com/zh-hant/blog/2025/12/28/version-zero-dot-three</guid>
-            <pubDate>Sun, 28 Dec 2025 12:28:00 GMT</pubDate>
-            <description><![CDATA[Welcome to the new Rio Terminal experience]]></description>
-            <content:encoded><![CDATA[<p>I am excited to announce Rio terminal v0.3 is released.</p>
-<p>Let's break down this long-waited release in parts, also if you're not really a reading/blog person you can optionally watch this video about the release.</p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="new-rendering-architecture">New rendering architecture<a href="https://rioterm.com/zh-hant/blog/2025/12/28/version-zero-dot-three#new-rendering-architecture" class="hash-link" aria-label="New rendering architecture的直接連結" title="New rendering architecture的直接連結" translate="no">​</a></h2>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="native-metal-for-macos">Native metal for MacOS<a href="https://rioterm.com/zh-hant/blog/2025/12/28/version-zero-dot-three#native-metal-for-macos" class="hash-link" aria-label="Native metal for MacOS的直接連結" title="Native metal for MacOS的直接連結" translate="no">​</a></h2>
-<p>tl;dr</p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="quake-mode">Quake mode<a href="https://rioterm.com/zh-hant/blog/2025/12/28/version-zero-dot-three#quake-mode" class="hash-link" aria-label="Quake mode的直接連結" title="Quake mode的直接連結" translate="no">​</a></h2>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="tab-mode">Tab mode<a href="https://rioterm.com/zh-hant/blog/2025/12/28/version-zero-dot-three#tab-mode" class="hash-link" aria-label="Tab mode的直接連結" title="Tab mode的直接連結" translate="no">​</a></h2>]]></content:encoded>
-        </item>
-        <item>
             <title><![CDATA[Rio Terminal Now Available on Flathub via Flatpak]]></title>
             <link>https://rioterm.com/zh-hant/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak</link>
             <guid>https://rioterm.com/zh-hant/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak</guid>
@@ -268,7 +254,7 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
 <li class="">Performance updates.</li>
 <li class="">Color automation for tabs.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="navigation">Navigation<a href="https://rioterm.com/zh-hant/blog/2023/08/02/release-0.0.15#navigation" class="hash-link" aria-label="Navigation的直接連結" title="Navigation的直接連結" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="navigation">Navigation<a href="https://rioterm.com/zh-hant/blog/2023/08/02/release-0.0.15#navigation" class="hash-link" aria-label="Navigation的直接連結" title="Navigation的直接連��結" translate="no">​</a></h2>
 <p>Rio allows to choose navigation between the following options:</p>
 <ul>
 <li class=""><code>CollapsedTab</code></li>
@@ -614,7 +600,7 @@ directory of the parent process will be used.</p>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="support-to-beam-and-underline-cursors">Support to Beam and Underline cursors<a href="https://rioterm.com/zh-hant/blog/2023/06/07/release-0.0.6#support-to-beam-and-underline-cursors" class="hash-link" aria-label="Support to Beam and Underline cursors的直接連結" title="Support to Beam and Underline cursors的直接連結" translate="no">​</a></h2>
 <p>Beam and underline cursor support has been added to Rio terminal. Also, block cursor and IME state allow a character to be visible.</p>
 <div class="react-tweet-theme root_D3qd root_Y6tr"><article class="article_kRZ8"><span class="skeleton_FMR8" style="height:3rem;margin-bottom:0.75rem"></span><span class="skeleton_FMR8" style="height:6rem;margin:0.5rem 0"></span><div style="border-top:var(--tweet-border);margin:0.5rem 0"></div><span class="skeleton_FMR8" style="height:2rem"></span><span class="skeleton_FMR8" style="height:2rem;border-radius:9999px;margin-top:0.5rem"></span></article></div>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="changelog">Changelog<a href="https://rioterm.com/zh-hant/blog/2023/06/07/release-0.0.6#changelog" class="hash-link" aria-label="Changelog的直接�連結" title="Changelog的直接連結" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="changelog">Changelog<a href="https://rioterm.com/zh-hant/blog/2023/06/07/release-0.0.6#changelog" class="hash-link" aria-label="Changelog的直接連結" title="Changelog的直接連結" translate="no">​</a></h2>
 <ul>
 <li class="">Fix: support to clipboard in linux by <a href="https://github.com/joseemds" target="_blank" rel="noopener noreferrer" class="">@joseemds</a>.</li>
 <li class="">Font style for custom fonts by <a href="https://github.com/OlshaMB" target="_blank" rel="noopener noreferrer" class="">@OlshaMB</a> (closed <a href="https://github.com/raphamorim/rio/issues/80" target="_blank" rel="noopener noreferrer" class="">#80</a> and <a href="https://github.com/raphamorim/rio/issues/81" target="_blank" rel="noopener noreferrer" class="">#81</a>)</li>

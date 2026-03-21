@@ -58,20 +58,6 @@
         </author>
     </entry>
     <entry>
-        <title type="html"><![CDATA[Version 0.3 released]]></title>
-        <id>https://rioterm.com/ko/blog/2025/12/28/version-zero-dot-three</id>
-        <link href="https://rioterm.com/ko/blog/2025/12/28/version-zero-dot-three"/>
-        <updated>2025-12-28T12:28:00.000Z</updated>
-        <summary type="html"><![CDATA[Welcome to the new Rio Terminal experience]]></summary>
-        <content type="html"><![CDATA[<p>I am excited to announce Rio terminal v0.3 is released.</p>
-<p>Let's break down this long-waited release in parts, also if you're not really a reading/blog person you can optionally watch this video about the release.</p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="new-rendering-architecture">New rendering architecture<a href="https://rioterm.com/ko/blog/2025/12/28/version-zero-dot-three#new-rendering-architecture" class="hash-link" aria-label="New rendering architecture에 대한 직접 링크" title="New rendering architecture에 대한 직접 링크" translate="no">​</a></h2>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="native-metal-for-macos">Native metal for MacOS<a href="https://rioterm.com/ko/blog/2025/12/28/version-zero-dot-three#native-metal-for-macos" class="hash-link" aria-label="Native metal for MacOS에 대한 직접 링크" title="Native metal for MacOS에 대한 직접 링크" translate="no">​</a></h2>
-<p>tl;dr</p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="quake-mode">Quake mode<a href="https://rioterm.com/ko/blog/2025/12/28/version-zero-dot-three#quake-mode" class="hash-link" aria-label="Quake mode에 대한 직접 링크" title="Quake mode에 대한 직접 링크" translate="no">​</a></h2>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="tab-mode">Tab mode<a href="https://rioterm.com/ko/blog/2025/12/28/version-zero-dot-three#tab-mode" class="hash-link" aria-label="Tab mode에 대한 직접 링크" title="Tab mode에 대한 직접 링크" translate="no">​</a></h2>]]></content>
-    </entry>
-    <entry>
         <title type="html"><![CDATA[Rio Terminal Now Available on Flathub via Flatpak]]></title>
         <id>https://rioterm.com/ko/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak</id>
         <link href="https://rioterm.com/ko/blog/2025/05/19/rio-terminal-now-available-on-flathub-via-flatpak"/>
@@ -171,7 +157,7 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-4-welcome-screen-and-default-creation-of-configuration-file">Highlight #4: Welcome screen and default creation of configuration file<a href="https://rioterm.com/ko/blog/2023/09/19/release-0.0.19#highlight-4-welcome-screen-and-default-creation-of-configuration-file" class="hash-link" aria-label="Highlight #4: Welcome screen and default creation of configuration file에 대한 직접 링크" title="Highlight #4: Welcome screen and default creation of configuration file에 대한 직접 링크" translate="no">​</a></h2>
 <p>Now Rio terminal does create the configuration file per first initialization.</p>
 <p><img decoding="async" loading="lazy" src="https://user-images.githubusercontent.com/240594/268500927-788ea316-ede8-4d23-ba1f-9621a6a82908.png" alt="Welcome message" class="img_ev3q"></p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-5-settings-ui">Highlight #5: Settings UI<a href="https://rioterm.com/ko/blog/2023/09/19/release-0.0.19#highlight-5-settings-ui" class="hash-link" aria-label="Highlight #5: Settings UI에 대한 직접 링크" title="Highlight #5: Settings UI에 대한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="highlight-5-settings-ui">Highlight #5: Settings UI<a href="https://rioterm.com/ko/blog/2023/09/19/release-0.0.19#highlight-5-settings-ui" class="hash-link" aria-label="Highlight #5: Settings UI��에 대한 직접 링크" title="Highlight #5: Settings UI에 대한 직접 링크" translate="no">​</a></h2>
 <p>After v0.0.19, Rio will start to provide a custom internal settings UI, where you can manage your configuration without edit the file.</p>
 <p><img decoding="async" loading="lazy" alt="Settings UI" src="https://rioterm.com/ko/assets/images/demo-settings-9983cd7afab3b90b642cd4beb0de7269.png" width="852" height="570" class="img_ev3q"></p>
 <p>Note: Not all the configuration options has been ported, so you would still need to use the config file for specific configuration updates.</p>
@@ -435,7 +421,7 @@ Speaking of which, Vedant is writing a blog post about migrating the Rio pipelin
 <p>Before: As reported in the issue <a href="https://github.com/raphamorim/rio/issues/127" target="_blank" rel="noopener noreferrer" class="">#127</a></p>
 <p>Now:</p>
 <p><img decoding="async" loading="lazy" src="https://user-images.githubusercontent.com/3630346/252940293-da345089-3d4c-4d05-8b0f-d0665f1e1347.png" alt="Now" class="img_ev3q"></p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="configuration-file-addition-shell">Configuration file addition: shell<a href="https://rioterm.com/ko/blog/2023/07/17/release-0.0.9#configuration-file-addition-shell" class="hash-link" aria-label="Configuration file addition: shell에 ��대한 직접 링크" title="Configuration file addition: shell에 대한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="configuration-file-addition-shell">Configuration file addition: shell<a href="https://rioterm.com/ko/blog/2023/07/17/release-0.0.9#configuration-file-addition-shell" class="hash-link" aria-label="Configuration file addition: shell에 대한 직접 링크" title="Configuration file addition: shell에 대한 직접 링크" translate="no">​</a></h2>
 <p>Now you can set "shell.program" to the path of your favorite shell, e.g. "/bin/fish".</p>
 <p>Entries in "shell.args" are passed unmodified as arguments to the shell.</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">shell</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">{</span><span class="token plain"> </span><span class="token key property">program</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">"/bin/zsh"</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">args</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token string" style="color:rgb(255, 121, 198)">"--login"</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">}</span><br></span></code></pre></div></div>
