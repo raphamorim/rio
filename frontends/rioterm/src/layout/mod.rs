@@ -1,5 +1,5 @@
-// #[cfg(test)]
-// mod layout_tests;
+#[cfg(test)]
+mod tests;
 
 use crate::context::Context;
 use crate::mouse::Mouse;
@@ -70,8 +70,8 @@ fn compute(
     let visible_columns =
         std::cmp::max((available_width / dimensions.width) as usize, MIN_COLS);
 
-    // Calculate lines - divide by scaled character height
-    let char_height = dimensions.height * line_height;
+    // note: TextDimensions.height already includes the line_height modifier
+    let char_height = dimensions.height;
     if char_height <= 0.0 {
         return (visible_columns, MIN_LINES);
     }

@@ -553,9 +553,11 @@ impl Content {
                     let leading = font_metrics.leading * scale_factor;
                     let line_height = (ascent + descent + leading) * layout.line_height;
 
-                    // Scale to physical pixels to match what the brush returns
+                    // Scale to physical pixels to match what the brush returns.
+                    // physical scale — the renderer uses that ceiled value.
                     let char_width_physical = char_width * layout.dimensions.scale;
-                    let line_height_physical = line_height * layout.dimensions.scale;
+                    let line_height_physical =
+                        (line_height * layout.dimensions.scale).ceil();
 
                     // Return dimensions in physical pixels (matching brush behavior)
                     let result = crate::layout::TextDimensions {
