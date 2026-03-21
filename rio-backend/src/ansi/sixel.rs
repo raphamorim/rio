@@ -521,24 +521,34 @@ impl Parser {
             self.color_registers.len()
         );
 
-        let mut rgba_pixels = Vec::with_capacity(self.pixels.len() * 4);
-
+        let pixel_count = self.pixels.len();
+        let mut rgba_pixels = vec![0u8; pixel_count * 4];
         let mut is_opaque = true;
 
-        for &register in &self.pixels {
-            let pixel = {
-                if register == REG_TRANSPARENT {
-                    is_opaque = false;
-                    [0; 4]
-                } else {
-                    match self.color_registers.get(register.0 as usize) {
-                        None => [0, 0, 0, 255],
-                        Some(color) => [color.r, color.g, color.b, 255],
-                    }
-                }
-            };
+        // Build a lookup table from color registers for fast indexed conversion
+        let max_reg = self.color_registers.len();
+        let mut lut = vec![[0u8, 0, 0, 255]; max_reg];
+        for (i, color) in self.color_registers.iter().enumerate() {
+            lut[i] = [color.r, color.g, color.b, 255];
+        }
 
-            rgba_pixels.extend_from_slice(&pixel);
+        for (i, &register) in self.pixels.iter().enumerate() {
+            let offset = i * 4;
+            if register == REG_TRANSPARENT {
+                is_opaque = false;
+                // rgba_pixels is already zeroed
+            } else {
+                let idx = register.0 as usize;
+                let pixel = if idx < max_reg {
+                    lut[idx]
+                } else {
+                    [0, 0, 0, 255]
+                };
+                rgba_pixels[offset] = pixel[0];
+                rgba_pixels[offset + 1] = pixel[1];
+                rgba_pixels[offset + 2] = pixel[2];
+                rgba_pixels[offset + 3] = pixel[3];
+            }
         }
 
         let data = GraphicData {
