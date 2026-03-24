@@ -498,11 +498,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         should_set_current = true;
                     }
                 }
+                self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
                 self.contexts.remove(index_to_remove);
                 self.titles.titles.remove(&index_to_remove);
 
                 if should_set_current {
                     self.set_current(0);
+                }
+
+                if !self.contexts.is_empty() {
+                    self.keep_only_active_context_visible(sugarloaf);
                 }
             };
         }
