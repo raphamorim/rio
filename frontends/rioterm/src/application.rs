@@ -1448,6 +1448,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
                     }
                 }
+
+                route.request_redraw();
             }
 
             WindowEvent::KeyboardInput {
