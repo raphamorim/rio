@@ -2123,15 +2123,16 @@ impl Screen<'_> {
 
     #[inline]
     pub fn contains_point(&self, x: usize, y: usize) -> bool {
-        let current_context = self.context_manager.current();
-        let layout = current_context.dimension;
-        let width = layout.dimension.width;
-        x <= (layout.margin.left + layout.columns as f32 * width) as usize
-            && x > (layout.margin.left * layout.dimension.scale) as usize
-            && y <= (layout.margin.top * layout.dimension.scale
-                + layout.lines as f32 * layout.dimension.height)
-                as usize
-            && y > layout.margin.top as usize
+        let current_grid = self.context_manager.current_grid();
+        let (context, margin) = current_grid.current_context_with_computed_dimension();
+        let layout = context.dimension;
+        // Margin is already pre-scaled (physical pixels), same as x/y.
+        let cell_width = layout.dimension.width;
+        let cell_height = layout.dimension.height * self.sugarloaf.style().line_height;
+        x > margin.left as usize
+            && x <= (margin.left + layout.columns as f32 * cell_width) as usize
+            && y > margin.top as usize
+            && y <= (margin.top + layout.lines as f32 * cell_height) as usize
     }
 
     #[inline]
