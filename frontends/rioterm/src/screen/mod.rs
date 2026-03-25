@@ -2130,25 +2130,17 @@ impl Screen<'_> {
 
     #[inline]
     pub fn side_by_pos(&self, x: usize) -> Side {
+        let current_grid = self.context_manager.current_grid();
+        let (_, margin) = current_grid.current_context_with_computed_dimension();
         let current_context = self.context_manager.current();
         let layout = current_context.dimension;
-        let width = (layout.dimension.width) as usize;
-        let margin_x = layout.margin.left * layout.dimension.scale;
 
-        let cell_x = x.saturating_sub(margin_x as usize) % width;
-        let half_cell_width = width / 2;
-
-        let additional_padding = (layout.width - margin_x) % width as f32;
-        let end_of_grid = layout.width - margin_x - additional_padding;
-
-        if cell_x > half_cell_width
-            // Edge case when mouse leaves the window.
-            || x as f32 >= end_of_grid
-        {
-            Side::Right
-        } else {
-            Side::Left
-        }
+        crate::mouse::calculate_side_by_pos(
+            x,
+            margin.left,
+            layout.dimension.width,
+            layout.width,
+        )
     }
 
     #[inline]
