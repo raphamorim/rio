@@ -1109,6 +1109,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 let x = x.clamp(0.0, (layout.width as i32 - 1).into()) as usize;
                 let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
+
+                // Snapshot the old mouse position before updating coordinates
+                // so we can detect whether the cursor moved to a new cell.
+                let old_x = route.window.screen.mouse.x;
+                let old_y = route.window.screen.mouse.y;
+
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
 
@@ -1276,11 +1282,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
 
                 let display_offset = route.window.screen.display_offset();
-                let old_point = route.window.screen.mouse_position(display_offset);
-
                 let point = route.window.screen.mouse_position(display_offset);
 
-                let square_changed = old_point != point;
+                // Detect cell change by comparing pixel positions against cell
+                // dimensions, avoiding a second mouse_position() call.
+                let square_changed = x != old_x || y != old_y;
 
                 let inside_text_area = route.window.screen.contains_point(x, y);
                 let square_side = route.window.screen.side_by_pos(x);
@@ -1295,10 +1301,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                if route.window.screen.update_highlighted_hints() {
+                // Skip hint/hyperlink highlighting during active selection
+                // drag to avoid unnecessary terminal locks and regex matching.
+                let is_selecting = (lmb_pressed || rmb_pressed)
+                    && (route.window.screen.modifiers.state().shift_key()
+                        || !route.window.screen.mouse_mode());
+
+                if !is_selecting && route.window.screen.update_highlighted_hints() {
                     route.window.winit_window.set_cursor(CursorIcon::Pointer);
                     route.window.screen.context_manager.request_render();
-                } else {
+                } else if !is_selecting {
                     let cursor_icon =
                         if !route.window.screen.modifiers.state().shift_key()
                             && route.window.screen.mouse_mode()
@@ -1331,10 +1343,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.mouse.inside_text_area = inside_text_area;
                 route.window.screen.mouse.square_side = square_side;
 
-                if (lmb_pressed || rmb_pressed)
-                    && (route.window.screen.modifiers.state().shift_key()
-                        || !route.window.screen.mouse_mode())
-                {
+                if is_selecting {
                     route.window.screen.update_selection(point, square_side);
                     route.window.screen.context_manager.request_render();
                 } else if square_changed

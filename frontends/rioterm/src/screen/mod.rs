@@ -330,7 +330,6 @@ impl Screen<'_> {
         calculate_mouse_position(
             &self.mouse,
             display_offset,
-            style.scale_factor,
             (context_dimension.columns, context_dimension.lines),
             margin.left,
             margin.top,
