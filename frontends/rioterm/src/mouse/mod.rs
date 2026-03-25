@@ -75,7 +75,6 @@ impl Mouse {
 pub fn calculate_mouse_position(
     mouse: &Mouse,
     display_offset: usize,
-    scale_factor: f32,
     columns_rows: (usize, usize),
     margin_x_left: f32,
     margin_y_top: f32,
@@ -86,23 +85,22 @@ pub fn calculate_mouse_position(
         return Pos::default();
     }
 
-    let cell_width = cell_dimension.0 as usize;
-    let cell_height = cell_dimension.1 as usize;
-    let scaled_margin_x = (margin_x_left * scale_factor) as usize;
+    let cell_width = cell_dimension.0;
+    let cell_height = cell_dimension.1;
+    // Margins are already pre-scaled (multiplied by scale_factor in
+    // update_scaled_margin), so use them directly — do not scale again.
+    let margin_x = margin_x_left as usize;
+    let margin_y = margin_y_top as usize;
 
-    let col: Column = if (scaled_margin_x + cell_width) > mouse.x {
+    let col = if (margin_x + cell_width as usize) > mouse.x {
         Column(0)
     } else {
-        let col = (mouse.x - scaled_margin_x) / cell_width;
+        let col = ((mouse.x - margin_x) as f32 / cell_width) as usize;
         std::cmp::min(Column(col), Column(columns_rows.0 - 1))
     };
 
-    // TODO: Refactor row position
-    let row = mouse
-        .y
-        .saturating_sub((margin_y_top * scale_factor) as usize)
-        / cell_height;
-    let calc_row = std::cmp::min(row, columns_rows.1 - 1);
+    let row = mouse.y.saturating_sub(margin_y) as f32 / cell_height;
+    let calc_row = std::cmp::min(row as usize, columns_rows.1 - 1);
     let row = Line(calc_row as i32) - (display_offset);
 
     Pos::new(row, col)
@@ -112,10 +110,11 @@ pub fn calculate_mouse_position(
 pub mod test {
     use super::*;
 
+    /// Cell boundaries with width=9.4 and no margin: 0, 9.4, 18.8, 28.2, ...
     #[test]
     fn test_pos_calc_moving_mouse_x_with_scale_1() {
         let display_offset = 0;
-        let scale_factor = 1.0;
+
         let columns = 10;
         let lines = 5;
         let margin_x_left = 0.0;
@@ -123,377 +122,246 @@ pub mod test {
         let cell_dimension_width = 9.4;
         let cell_dimension_height = 18.0;
 
-        let mouse = Mouse {
-            x: 8,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=8 → 8/9.4 = 0.85 → col 0
+        let mouse = Mouse { x: 8, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(0)));
 
-        let mouse = Mouse {
-            x: 8,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=9 → 9/9.4 = 0.96 → col 0 (still within first cell)
+        let mouse = Mouse { x: 9, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(0)));
 
-        let mouse = Mouse {
-            x: 9,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=10 → 10/9.4 = 1.06 → col 1
+        let mouse = Mouse { x: 10, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(1)));
 
-        let mouse = Mouse {
-            x: 17,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=17 → 17/9.4 = 1.81 → col 1
+        let mouse = Mouse { x: 17, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(1)));
 
-        let mouse = Mouse {
-            x: 19,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=19 → 19/9.4 = 2.02 → col 2
+        let mouse = Mouse { x: 19, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(2)));
     }
 
+    /// Same as scale_1 — scale_factor doesn't affect column math when margins
+    /// are already pre-scaled (and here margin is 0).
     #[test]
     fn test_pos_calc_moving_mouse_x_with_scale_2() {
         let display_offset = 0;
-        let scale_factor = 2.0;
+
         let columns = 10;
         let lines = 5;
-        let margin_x_left = 0.0;
+        let margin_x_left = 0.0; // already scaled
         let margin_y_top = 0.0;
         let cell_dimension_width = 9.4;
         let cell_dimension_height = 18.0;
 
-        let mouse = Mouse {
-            x: 8,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        let mouse = Mouse { x: 8, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(0)));
 
-        let mouse = Mouse {
-            x: 8,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=9 → 9/9.4 = 0.96 → col 0
+        let mouse = Mouse { x: 9, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(0)));
 
-        let mouse = Mouse {
-            x: 9,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=10 → 10/9.4 = 1.06 → col 1
+        let mouse = Mouse { x: 10, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(1)));
 
-        let mouse = Mouse {
-            x: 17,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        let mouse = Mouse { x: 17, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(1)));
 
-        let mouse = Mouse {
-            x: 19,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        let mouse = Mouse { x: 19, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(2)));
     }
 
+    /// With pre-scaled margin=10, cell boundaries at: 10, 19.4, 28.8, 38.2, ...
     #[test]
     fn test_pos_calc_moving_mouse_x_with_scale_1_with_margin_10() {
         let display_offset = 0;
-        let scale_factor = 1.0;
+
         let columns = 10;
         let lines = 5;
-        let margin_x_left = 10.0;
+        let margin_x_left = 10.0; // already scaled (10 * 1.0)
         let margin_y_top = 0.0;
         let cell_dimension_width = 9.4;
         let cell_dimension_height = 18.0;
 
-        let mouse = Mouse {
-            x: 8,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=8 → before margin → col 0
+        let mouse = Mouse { x: 8, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(0)));
 
-        let mouse = Mouse {
-            x: 9,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=9 → before margin → col 0
+        let mouse = Mouse { x: 9, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(0)));
 
-        let mouse = Mouse {
-            x: 18,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=18 → (18-10)/9.4 = 0.85 → col 0
+        let mouse = Mouse { x: 18, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(0)));
 
-        let mouse = Mouse {
-            x: 19,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=20 → (20-10)/9.4 = 1.06 → col 1
+        let mouse = Mouse { x: 20, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(1)));
 
-        let mouse = Mouse {
-            x: 27,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=28 → (28-10)/9.4 = 1.91 → col 1
+        let mouse = Mouse { x: 28, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(1)));
 
-        let mouse = Mouse {
-            x: 28,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=29 → (29-10)/9.4 = 2.02 → col 2
+        let mouse = Mouse { x: 29, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(2)));
 
-        let mouse = Mouse {
-            x: 36,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=38 → (38-10)/9.4 = 2.98 → col 2
+        let mouse = Mouse { x: 38, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(2)));
 
-        let mouse = Mouse {
-            x: 37,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=39 → (39-10)/9.4 = 3.08 → col 3
+        let mouse = Mouse { x: 39, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(3)));
     }
 
+    /// Margin=20 is already pre-scaled (e.g. config 10.0 * scale 2.0).
+    /// Cell boundaries at: 20, 29.4, 38.8, ...
     #[test]
     fn test_pos_calc_moving_mouse_x_with_scale_2_with_margin_10() {
         let display_offset = 0;
-        let scale_factor = 2.0;
+
         let columns = 10;
         let lines = 5;
-        let margin_x_left = 10.0;
+        let margin_x_left = 20.0; // already scaled (10 * 2.0)
         let margin_y_top = 0.0;
         let cell_dimension_width = 9.4;
         let cell_dimension_height = 18.0;
 
-        let mouse = Mouse {
-            x: 9,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=9 → before margin → col 0
+        let mouse = Mouse { x: 9, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(0)));
 
-        let mouse = Mouse {
-            x: 19,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=28 → (28-20)/9.4 = 0.85 → col 0
+        let mouse = Mouse { x: 28, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(0)));
 
-        let mouse = Mouse {
-            x: 28,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        let mouse = Mouse {
-            x: 29,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=30 → (30-20)/9.4 = 1.06 → col 1
+        let mouse = Mouse { x: 30, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(1)));
     }
 
+    /// Regression: margins passed to calculate_mouse_position are already
+    /// pre-scaled (multiplied by scale_factor in update_scaled_margin), but the
+    /// function multiplied them by scale_factor again.  With a 2× display and
+    /// margin_y_top=72 (already 36*2), the double-scaling produces 144 instead
+    /// of 72, shifting the row calculation by ~2 rows.
+    ///
+    /// Uses exact values observed on a Retina display:
+    ///   cell 16.41×33, margin (4, 72) pre-scaled, scale 2.0, 96×27 grid.
+    #[test]
+    fn test_row_not_double_scaled() {
+        let display_offset = 0;
+
+        let columns = 96;
+        let lines = 27;
+        // These margins are ALREADY scaled (config margin * scale_factor).
+        let margin_x_left = 4.0; // e.g. config 2.0 * scale 2.0
+        let margin_y_top = 72.0; // e.g. config 36.0 * scale 2.0
+        let cell_w = 16.41;
+        let cell_h = 33.0;
+
+        // Row 0 starts at y = margin_y_top = 72.
+        // Row 6 spans y = [72 + 6*33, 72 + 7*33) = [270, 303).
+        let mouse = Mouse {
+            x: 100,
+            y: 280,
+            ..Default::default()
+        };
+        let pos = calculate_mouse_position(
+            &mouse,
+            display_offset,
+            (columns, lines),
+            margin_x_left,
+            margin_y_top,
+            (cell_w, cell_h),
+        );
+        // (280 - 72) / 33 = 6.3 → row 6
+        // Bug: (280 - 144) / 33 = 4.1 → row 4  (margin double-scaled)
+        assert_eq!(pos.row, Line(6));
+
+        // Row 22 spans y = [72 + 22*33, 72 + 23*33) = [798, 831).
+        let mouse = Mouse {
+            x: 100,
+            y: 820,
+            ..Default::default()
+        };
+        let pos = calculate_mouse_position(
+            &mouse,
+            display_offset,
+            (columns, lines),
+            margin_x_left,
+            margin_y_top,
+            (cell_w, cell_h),
+        );
+        // (820 - 72) / 33 = 22.7 → row 22
+        // Bug: (820 - 144) / 33 = 20.5 → row 20
+        assert_eq!(pos.row, Line(22));
+    }
+
+    /// Same double-scaling issue on the X axis, but less visible with small
+    /// margins.  With margin_x_left=20 (pre-scaled) and scale=2.0 the error
+    /// is 20 extra pixels — enough to shift a column.
+    #[test]
+    fn test_col_not_double_scaled() {
+        let display_offset = 0;
+
+        let columns = 96;
+        let lines = 27;
+        let margin_x_left = 20.0; // already scaled
+        let margin_y_top = 72.0;
+        let cell_w = 16.41;
+        let cell_h = 33.0;
+
+        // Col 3 starts at x = 20 + 3*16.41 = 69.23.
+        let mouse = Mouse {
+            x: 70,
+            y: 200,
+            ..Default::default()
+        };
+        let pos = calculate_mouse_position(
+            &mouse,
+            display_offset,
+            (columns, lines),
+            margin_x_left,
+            margin_y_top,
+            (cell_w, cell_h),
+        );
+        // (70 - 20) / 16.41 = 3.05 → col 3
+        // Bug: (70 - 40) / 16 = 1.87 → col 1  (margin double-scaled + int truncation)
+        assert_eq!(pos.col, Column(3));
+    }
+
+    /// Cell width=12.6, margin=10 (pre-scaled). Boundaries: 10, 22.6, 35.2, 47.8, ...
     #[test]
     fn test_pos_calc_font_size_12_6_moving_mouse_x_with_scale_1_with_margin_10() {
         let display_offset = 0;
-        let scale_factor = 1.0;
+
         let columns = 10;
         let lines = 5;
         let margin_x_left = 10.0;
@@ -501,79 +369,29 @@ pub mod test {
         let cell_dimension_width = 12.6;
         let cell_dimension_height = 18.0;
 
-        let mouse = Mouse {
-            x: 10,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=10 → (10-10)/12.6 = 0 → col 0
+        let mouse = Mouse { x: 10, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(0)));
 
-        let mouse = Mouse {
-            x: 22,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=22 → (22-10)/12.6 = 0.95 → col 0
+        let mouse = Mouse { x: 22, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
+        assert_eq!(pos, Pos::new(Line(0), Column(0)));
+
+        // x=23 → (23-10)/12.6 = 1.03 → col 1
+        let mouse = Mouse { x: 23, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(1)));
 
-        let mouse = Mouse {
-            x: 23,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=35 → (35-10)/12.6 = 1.98 → col 1
+        let mouse = Mouse { x: 35, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(1)));
 
-        let mouse = Mouse {
-            x: 35,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(2)));
-
-        let mouse = Mouse {
-            x: 36,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            scale_factor,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
+        // x=36 → (36-10)/12.6 = 2.06 → col 2
+        let mouse = Mouse { x: 36, ..Default::default() };
+        let pos = calculate_mouse_position(&mouse, display_offset, (columns, lines), margin_x_left, margin_y_top, (cell_dimension_width, cell_dimension_height));
         assert_eq!(pos, Pos::new(Line(0), Column(2)));
     }
 }
