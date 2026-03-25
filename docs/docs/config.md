@@ -1761,6 +1761,15 @@ macos-use-unified-titlebar = false
 
 ![Demo unified titlebar](/assets/demos/demo-macos-unified-titlebar.png)
 
+## window.macos-use-quit-dialog
+
+Use the native macOS quit confirmation dialog instead of the in-window dialog. Disabled by default. Only takes effect when `confirm-before-quit` is enabled.
+
+```toml
+[window]
+macos-use-quit-dialog = false
+```
+
 ## window.macos-use-shadow
 
 You can enable window shadow on MacOS by config, it's disabled by default.

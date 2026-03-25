@@ -278,6 +278,10 @@ impl<T> EventLoop<T> {
         self.delegate.set_confirm_before_quit(confirmation);
     }
 
+    pub fn set_use_native_quit_dialog(&self, native: bool) {
+        self.delegate.set_use_native_quit_dialog(native);
+    }
+
     pub fn run<F>(mut self, handler: F) -> Result<(), EventLoopError>
     where
         F: FnMut(Event<T>, &RootWindowTarget),

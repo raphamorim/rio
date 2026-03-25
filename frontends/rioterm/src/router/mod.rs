@@ -278,13 +278,22 @@ impl Route<'_> {
         }
 
         if self.path == RoutePath::ConfirmQuit {
-            if key_event.logical_key == Key::Named(NamedKey::Escape) {
-                self.path = RoutePath::Terminal;
-            } else if is_enter {
-                self.quit();
-
-                return true;
+            if key_event.state == rio_window::event::ElementState::Pressed {
+                match &key_event.logical_key {
+                    Key::Character(c) if c.as_str() == "n" || c.as_str() == "N" => {
+                        self.path = RoutePath::Terminal;
+                    }
+                    Key::Named(NamedKey::Escape) => {
+                        self.path = RoutePath::Terminal;
+                    }
+                    Key::Character(c) if c.as_str() == "y" || c.as_str() == "Y" => {
+                        self.quit();
+                        return true;
+                    }
+                    _ => {}
+                }
             }
+            return true;
         }
 
         if self.path == RoutePath::Welcome && is_enter {

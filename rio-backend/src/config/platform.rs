@@ -55,6 +55,8 @@ pub struct PlatformWindow {
     pub decorations: Option<window::Decorations>,
     #[serde(default = "Option::default", rename = "macos-use-unified-titlebar")]
     pub macos_use_unified_titlebar: Option<bool>,
+    #[serde(default = "Option::default", rename = "macos-use-quit-dialog")]
+    pub macos_use_quit_dialog: Option<bool>,
     #[serde(default = "Option::default", rename = "macos-use-shadow")]
     pub macos_use_shadow: Option<bool>,
     #[serde(default = "Option::default", rename = "macos-traffic-light-position-x")]
