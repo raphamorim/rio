@@ -318,6 +318,12 @@ impl<T> EventLoop<T> {
         self.event_loop.set_confirm_before_quit(confirmation)
     }
 
+    #[inline]
+    #[cfg(target_os = "macos")]
+    pub fn set_use_native_quit_dialog(&self, native: bool) {
+        self.event_loop.set_use_native_quit_dialog(native)
+    }
+
     /// Sets the [`ControlFlow`].
     pub fn set_control_flow(&self, control_flow: ControlFlow) {
         self.event_loop

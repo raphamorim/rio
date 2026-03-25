@@ -510,6 +510,9 @@ impl Config {
             if let Some(macos_unified) = window_overwrite.macos_use_unified_titlebar {
                 self.window.macos_use_unified_titlebar = macos_unified;
             }
+            if let Some(macos_quit_dialog) = window_overwrite.macos_use_quit_dialog {
+                self.window.macos_use_quit_dialog = macos_quit_dialog;
+            }
             if let Some(macos_shadow) = window_overwrite.macos_use_shadow {
                 self.window.macos_use_shadow = macos_shadow;
             }

@@ -65,7 +65,10 @@ impl Application<'_> {
         event_loop.listen_device_events(DeviceEvents::Never);
 
         #[cfg(target_os = "macos")]
-        event_loop.set_confirm_before_quit(config.confirm_before_quit);
+        {
+            event_loop.set_confirm_before_quit(config.confirm_before_quit);
+            event_loop.set_use_native_quit_dialog(config.window.macos_use_quit_dialog);
+        }
 
         Application {
             config,
@@ -414,7 +417,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::Exit) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if cfg!(target_os = "macos") && self.config.confirm_before_quit {
+                    if self.config.confirm_before_quit {
                         route.confirm_quit();
                         route.request_redraw();
                     } else {
@@ -870,8 +873,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         match event {
             WindowEvent::CloseRequested => {
-                // MacOS doesn't exit the loop
-                if cfg!(target_os = "macos") && self.config.confirm_before_quit {
+                // When the macOS native quit dialog handles confirmation,
+                // the app delegate manages the lifecycle — just remove the route.
+                if cfg!(target_os = "macos")
+                    && self.config.confirm_before_quit
+                    && self.config.window.macos_use_quit_dialog
+                {
                     self.router.routes.remove(&window_id);
                     return;
                 }
@@ -1654,9 +1661,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     RoutePath::ConfirmQuit => {
                         route.window.screen.render_dialog(
-                            "Quit Rio?",
-                            "Continue -> press escape key",
-                            "Quit -> press enter key",
+                            "want to quit?",
+                            "yes (y)",
+                            "no (n)",
                         );
                     }
                 }
