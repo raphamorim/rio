@@ -498,6 +498,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::SelectionScrollTick) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.window.screen.selection_scroll_tick();
+                    route.window.screen.render();
+                    route.request_redraw();
+                }
+            }
             RioEventType::Rio(RioEvent::Bell) => {
                 // Handle audio bell
                 if self.config.bell.audio {
@@ -1041,6 +1048,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.window.screen.process_mouse_bindings(button);
                     }
                     ElementState::Released => {
+                        // Stop selection auto-scroll on button release.
+                        if let MouseButton::Left | MouseButton::Right = button {
+                            let scroll_timer_id =
+                                route.window.screen.ctx().current_route();
+                            let timer_id =
+                                TimerId::new(Topic::SelectionScrolling, scroll_timer_id);
+                            self.scheduler.unschedule(timer_id);
+                        }
+
                         if route.window.screen.renderer.scrollbar.is_dragging() {
                             route.window.screen.handle_scrollbar_release();
                             route.window.screen.render();
@@ -1117,6 +1133,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
+                route.window.screen.mouse.raw_y = position.y;
 
                 // Handle assistant overlay hover
                 if route.window.screen.renderer.assistant.is_active() {
@@ -1278,7 +1295,28 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 let has_selection = !route.window.screen.selection_is_empty();
                 if has_selection && (lmb_pressed || rmb_pressed) {
-                    route.window.screen.update_selection_scrolling(position.y);
+                    // Only start the timer when the mouse enters the scroll
+                    // zone. Once running, the tick reads mouse.raw_y each
+                    // iteration so it keeps scrolling after CursorMoved
+                    // stops (mouse left window). Cancelled on button release.
+                    let delta = route.window.screen.selection_scroll_delta(position.y);
+                    if delta != 0 {
+                        let scroll_timer_id = route.window.screen.ctx().current_route();
+                        let timer_id =
+                            TimerId::new(Topic::SelectionScrolling, scroll_timer_id);
+                        if !self.scheduler.scheduled(timer_id) {
+                            let event = EventPayload::new(
+                                RioEventType::Rio(RioEvent::SelectionScrollTick),
+                                window_id,
+                            );
+                            self.scheduler.schedule(
+                                event,
+                                Duration::from_millis(15),
+                                true,
+                                timer_id,
+                            );
+                        }
+                    }
                 }
 
                 let display_offset = route.window.screen.display_offset();

@@ -57,12 +57,6 @@ use std::ffi::OsStr;
 use std::rc::Rc;
 use touch::TouchPurpose;
 
-/// Minimum number of pixels at the bottom/top where selection scrolling is performed.
-const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
-
-/// Number of pixels for increasing the selection scrolling speed factor by one.
-const SELECTION_SCROLLING_STEP: f32 = 10.;
-
 /// Maximum number of lines for the blocking search while still typing the search regex.
 const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
 
@@ -2080,39 +2074,52 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
-        let current_context = self.context_manager.current();
-        let layout = current_context.dimension;
-        let sugarloaf_layout = match self
-            .sugarloaf
-            .get_text_layout(&current_context.rich_text_id)
-        {
-            Some(l) => l,
-            None => return,
-        };
-        let scale_factor = layout.dimension.scale;
-        let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
-        let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
+    /// Compute the selection scroll delta for the given mouse Y position.
+    /// Returns 0 if the mouse is within the viewport, ±1 at the edges.
+    /// `mouse_y` is in physical pixels (from CursorMoved position.y).
+    pub fn selection_scroll_delta(&self, mouse_y: f64) -> i32 {
+        let current_grid = self.context_manager.current_grid();
+        let (context, margin) = current_grid.current_context_with_computed_dimension();
+        let layout = context.dimension;
+        // All values in physical pixels — margin is pre-scaled, cell
+        // dimensions are in physical pixels, position.y is physical.
+        let cell_height =
+            (layout.dimension.height * self.sugarloaf.style().line_height) as f64;
+        let text_area_top = margin.top as f64;
+        let text_area_bottom = text_area_top + layout.lines as f64 * cell_height;
+        let window_height = self.sugarloaf.window_size().height as f64;
 
-        // Compute the height of the scrolling areas.
-        let end_top = max(min_height, crate::constants::PADDING_Y as i32) as f64;
-        let text_area_bottom = (crate::constants::PADDING_Y + layout.lines as f32)
-            * sugarloaf_layout.font_size;
-        let start_bottom =
-            min(layout.height as i32 - min_height, text_area_bottom as i32) as f64;
-
-        // Get distance from closest window boundary.
-        let delta = if mouse_y < end_top {
-            end_top - mouse_y + step
-        } else if mouse_y >= start_bottom {
-            start_bottom - mouse_y - step
+        if mouse_y < text_area_top {
+            1 // scroll up (into history)
+        } else if mouse_y >= window_height - cell_height && mouse_y >= text_area_bottom {
+            -1 // scroll down (toward present)
         } else {
+            0
+        }
+    }
+
+    /// Perform one tick of selection auto-scroll.
+    /// Reads mouse.raw_y to compute scroll direction.
+    /// Scrolls 1 line per tick.
+    pub fn selection_scroll_tick(&mut self) {
+        if self.mouse.left_button_state != rio_window::event::ElementState::Pressed {
             return;
-        };
+        }
+
+        let delta = self.selection_scroll_delta(self.mouse.raw_y);
+        if delta == 0 {
+            return;
+        }
 
         let mut terminal = self.context_manager.current_mut().terminal.lock();
-        terminal.scroll_display(Scroll::Delta((delta / step) as i32));
+        terminal.scroll_display(Scroll::Delta(delta));
         drop(terminal);
+
+        // Update selection to match the new scroll position.
+        let display_offset = self.display_offset();
+        let point = self.mouse_position(display_offset);
+        let side = self.mouse.square_side;
+        self.update_selection(point, side);
     }
 
     #[inline]
