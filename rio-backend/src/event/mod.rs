@@ -154,6 +154,9 @@ pub enum RioEvent {
 
     BlinkCursor(u64, usize),
 
+    /// Selection scroll tick — auto-scroll while dragging outside viewport.
+    SelectionScrollTick,
+
     /// Update window titles.
     UpdateTitles,
 
@@ -226,6 +229,7 @@ impl Debug for RioEvent {
             RioEvent::BlinkCursor(timeout, route_id) => {
                 write!(f, "BlinkCursor {timeout} {route_id}")
             }
+            RioEvent::SelectionScrollTick => write!(f, "SelectionScrollTick"),
             RioEvent::UpdateTitles => write!(f, "UpdateTitles"),
             RioEvent::Noop => write!(f, "Noop"),
             RioEvent::Copy(_) => write!(f, "Copy"),

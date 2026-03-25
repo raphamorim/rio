@@ -32,6 +32,8 @@ pub struct Mouse {
     pub x: usize,
     pub y: usize,
     pub on_border: bool,
+    /// Raw (unclamped) cursor Y in physical pixels, for selection scroll.
+    pub raw_y: f64,
 }
 
 impl Default for Mouse {
@@ -51,6 +53,7 @@ impl Default for Mouse {
             accumulated_scroll: AccumulatedScroll::default(),
             x: Default::default(),
             y: Default::default(),
+            raw_y: 0.0,
         }
     }
 }
