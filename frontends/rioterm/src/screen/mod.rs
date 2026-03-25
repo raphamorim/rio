@@ -3096,7 +3096,6 @@ impl Screen<'_> {
     }
 
     pub fn render_welcome(&mut self) {
-        self.sugarloaf.clear();
         crate::router::routes::welcome::screen(
             &mut self.sugarloaf,
             &self.context_manager.current().dimension,
