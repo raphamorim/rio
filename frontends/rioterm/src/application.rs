@@ -1615,7 +1615,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     RoutePath::Welcome => {
                         route.window.screen.render_welcome();
                     }
-                    RoutePath::Terminal => {
+                    RoutePath::Terminal | RoutePath::ConfirmQuit => {
+                        if route.path == RoutePath::ConfirmQuit {
+                            let dim = route.window.screen.ctx().current().dimension;
+                            crate::router::routes::dialog::screen(
+                                &mut route.window.screen.sugarloaf,
+                                &dim,
+                                "want to quit?",
+                                "yes (y)",
+                                "no (n)",
+                            );
+                        }
+
                         if let Some(window_update) = route.window.screen.render() {
                             use crate::context::renderable::{
                                 BackgroundState, WindowUpdate,
@@ -1659,13 +1670,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             &route.window.winit_window,
                         );
                     }
-                    RoutePath::ConfirmQuit => {
-                        route.window.screen.render_dialog(
-                            "want to quit?",
-                            "yes (y)",
-                            "no (n)",
-                        );
-                    }
                 }
 
                 // let duration = start.elapsed();
@@ -1681,6 +1685,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .is_some_and(|i| i.needs_rename_redraw());
                 if self.config.renderer.strategy.is_game()
                     || route.path == RoutePath::Welcome
+                    || route.path == RoutePath::ConfirmQuit
                     || route.window.screen.renderer.command_palette.is_enabled()
                     || island_needs_redraw
                 {
