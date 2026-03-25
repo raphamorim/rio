@@ -80,7 +80,7 @@ fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
         && a.drawable_char == b.drawable_char
         && a.font_vars == b.font_vars
         && a.width == b.width
-    // Note: background_color is intentionally excluded!
+    // note: background_color is intentionally excluded
 }
 
 impl Renderer {

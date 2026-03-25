@@ -395,6 +395,14 @@ impl Sugarloaf<'_> {
         }
     }
 
+    /// Set the render order for a transient text element.
+    #[inline]
+    pub fn set_transient_order(&mut self, index: usize, order: u8) {
+        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
+            content_state.render_data.order = order;
+        }
+    }
+
     /// Set whether to use grid cell size for glyph positioning (transient text)
     /// - true: monospace grid alignment (default, for terminal)
     /// - false: proportional text using actual glyph advances (for rich text)
