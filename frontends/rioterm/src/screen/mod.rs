@@ -3292,9 +3292,14 @@ impl Screen<'_> {
         }
 
         let current_grid = self.context_manager.current_grid();
-        let (context, margin) = current_grid.current_context_with_computed_dimension();
-        let layout = context.dimension;
-        let terminal = context.terminal.lock();
+        let scaled_margin = current_grid.get_scaled_margin();
+
+        let Some(current_item) = current_grid.current_item() else {
+            return;
+        };
+
+        let layout = current_item.val.dimension;
+        let terminal = current_item.val.terminal.lock();
         let cursor_pos = terminal.grid.cursor.pos;
         drop(terminal);
 
@@ -3302,9 +3307,6 @@ impl Screen<'_> {
         let cell_width = layout.dimension.width;
         let line_height = self.sugarloaf.style().line_height;
         let cell_height = layout.dimension.height * line_height;
-        // Margin from current_context_with_computed_dimension is already pre-scaled
-        let margin_x = margin.left;
-        let margin_y = margin.top;
 
         // Validate dimensions before calculation
         if cell_width <= 0.0 || cell_height <= 0.0 {
@@ -3316,10 +3318,16 @@ impl Screen<'_> {
             return;
         }
 
-        // Convert grid position to pixel position, centering horizontally in the cell
+        // Panel origin: layout_rect is relative to root container,
+        // add scaled_margin to get absolute screen position
+        let panel_rect = current_item.layout_rect();
+        let origin_x = panel_rect[0] + scaled_margin.left;
+        let origin_y = panel_rect[1] + scaled_margin.top;
+
+        // Convert grid position to pixel position
         let pixel_x =
-            margin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
-        let pixel_y = margin_y + (cursor_pos.row.0 as f32 * cell_height);
+            origin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
+        let pixel_y = origin_y + (cursor_pos.row.0 as f32 * cell_height);
 
         // Validate final coordinates
         if pixel_x.is_nan() || pixel_y.is_nan() || pixel_x < 0.0 || pixel_y < 0.0 {
