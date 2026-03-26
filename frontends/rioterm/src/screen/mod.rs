@@ -3291,17 +3291,20 @@ impl Screen<'_> {
             return;
         }
 
-        let current_context = self.context_manager.current();
-        let terminal = current_context.terminal.lock();
+        let current_grid = self.context_manager.current_grid();
+        let (context, margin) = current_grid.current_context_with_computed_dimension();
+        let layout = context.dimension;
+        let terminal = context.terminal.lock();
         let cursor_pos = terminal.grid.cursor.pos;
-        let layout = current_context.dimension;
         drop(terminal);
 
         // Calculate pixel position of cursor
         let cell_width = layout.dimension.width;
-        let cell_height = layout.dimension.height;
-        let margin_x = layout.margin.left * layout.dimension.scale;
-        let margin_y = layout.margin.top * layout.dimension.scale;
+        let line_height = self.sugarloaf.style().line_height;
+        let cell_height = layout.dimension.height * line_height;
+        // Margin from current_context_with_computed_dimension is already pre-scaled
+        let margin_x = margin.left;
+        let margin_y = margin.top;
 
         // Validate dimensions before calculation
         if cell_width <= 0.0 || cell_height <= 0.0 {
@@ -3316,8 +3319,7 @@ impl Screen<'_> {
         // Convert grid position to pixel position, centering horizontally in the cell
         let pixel_x =
             margin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
-        let pixel_y =
-            margin_y + (cursor_pos.row.0 as f32 * cell_height * layout.line_height);
+        let pixel_y = margin_y + (cursor_pos.row.0 as f32 * cell_height);
 
         // Validate final coordinates
         if pixel_x.is_nan() || pixel_y.is_nan() || pixel_x < 0.0 || pixel_y < 0.0 {
