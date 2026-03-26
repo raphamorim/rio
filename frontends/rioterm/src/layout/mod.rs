@@ -1094,7 +1094,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         if let Some(current_item) = self.inner.get(&self.current) {
-            (&current_item.val, self.scaled_margin)
+            // For multi-panel layouts, the margin must include the panel's
+            // absolute offset so that mouse coordinates (which are relative
+            // to the window) are correctly translated to panel-local grid
+            // positions.
+            let [abs_x, abs_y, _, _] = current_item.layout_rect;
+            let margin = Margin {
+                left: self.scaled_margin.left + abs_x,
+                top: self.scaled_margin.top + abs_y,
+                right: self.scaled_margin.right,
+                bottom: self.scaled_margin.bottom,
+            };
+            (&current_item.val, margin)
         } else {
             tracing::error!("Current key {:?} not found in grid", self.current);
             if let Some(root) = self.root {
