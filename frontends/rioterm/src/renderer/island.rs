@@ -758,7 +758,11 @@ impl Island {
         sugarloaf.set_position(text_id, text_x, text_y);
         sugarloaf.set_visibility(text_id, true);
 
-        let rendered_width = sugarloaf.get_text_rendered_width(&text_id);
+        let rendered_width = if self.rename_input.is_empty() {
+            0.0
+        } else {
+            sugarloaf.get_text_rendered_width(&text_id)
+        };
 
         // Blinking caret
         let elapsed = self.rename_caret_time.elapsed().as_millis();
