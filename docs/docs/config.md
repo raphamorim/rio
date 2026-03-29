@@ -255,6 +255,19 @@ args = []
 
 :::
 
+## effects
+
+Configure visual effects for the terminal.
+
+- `custom-cursor`: Enables a custom cursor effect. Default: `false`
+
+```toml
+[effects]
+custom-cursor = true
+```
+
+![Custom cursor](/assets/features/demo-custom-cursor.png)
+
 ## env-vars
 
 Sets environment variables.
