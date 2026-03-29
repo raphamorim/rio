@@ -4,12 +4,19 @@ use serde::{Deserialize, Serialize};
 pub struct Effects {
     #[serde(default = "bool::default", rename = "custom-cursor")]
     pub custom_cursor: bool,
+    #[serde(default = "default_trail_cursor", rename = "trail-cursor")]
+    pub trail_cursor: bool,
+}
+
+fn default_trail_cursor() -> bool {
+    true
 }
 
 impl Default for Effects {
     fn default() -> Effects {
         Effects {
             custom_cursor: false,
+            trail_cursor: true,
         }
     }
 }

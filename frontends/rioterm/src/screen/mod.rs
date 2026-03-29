@@ -3259,6 +3259,54 @@ impl Screen<'_> {
             );
         }
 
+        if self.renderer.trail_cursor_enabled {
+            let current_grid = self.context_manager.current_grid();
+            let scaled_margin = current_grid.get_scaled_margin();
+
+            if let Some(current_item) = current_grid.current_item() {
+                let layout = current_item.val.dimension;
+                let cell_width = layout.dimension.width;
+                let line_height = self.sugarloaf.style().line_height;
+                let cell_height = layout.dimension.height * line_height;
+                let scale_factor = self.sugarloaf.scale_factor();
+
+                let panel_rect = current_item.layout_rect();
+                let origin_x = panel_rect[0] + scaled_margin.left;
+                let origin_y = panel_rect[1] + scaled_margin.top;
+
+                let cursor = &self
+                    .context_manager
+                    .current()
+                    .renderable_content
+                    .cursor;
+                let cursor_row = cursor.state.pos.row.0 as usize;
+                let cursor_col = cursor.state.pos.col.0;
+                let cursor_shape = cursor.state.content;
+
+                // Cursor position in physical pixels.
+                let cursor_px_x = origin_x + cursor_col as f32 * cell_width;
+                let cursor_px_y = origin_y + cursor_row as f32 * cell_height;
+
+                self.renderer.trail_cursor.set_destination(
+                    cursor_px_x,
+                    cursor_px_y,
+                    cell_width,
+                    cell_height,
+                    cursor_shape,
+                );
+                self.renderer
+                    .trail_cursor
+                    .animate(cell_width, cell_height);
+
+                let cursor_color = self.renderer.named_colors.cursor;
+                self.renderer.trail_cursor.draw(
+                    &mut self.sugarloaf,
+                    scale_factor,
+                    cursor_color,
+                );
+            }
+        }
+
         self.sugarloaf.render();
 
         // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
