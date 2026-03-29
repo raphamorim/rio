@@ -73,6 +73,7 @@ Execute a predefined action in Rio terminal.
 | CreateWindow     | Create a Rio window instance |
 | Quit             | Exit Rio |
 | ToggleFullscreen | Toggle fullscreen |
+| ToggleAppearanceTheme | Toggle between dark and light appearance theme |
 
 ### [Split Actions](#split-actions)
 

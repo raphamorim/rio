@@ -162,7 +162,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             return;
         }
 
-        update_colors_based_on_theme(&mut self.config, event_loop.system_theme());
+        let theme = self.config.force_theme.map(|t| t.to_window_theme()).or(event_loop.system_theme());
+        update_colors_based_on_theme(&mut self.config, theme);
 
         self.router.create_window(
             event_loop,
@@ -385,7 +386,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Apply system theme to ensure colors are consistent
                     if !has_checked_adaptive_colors {
                         let system_theme = route.window.winit_window.theme();
-                        update_colors_based_on_theme(&mut self.config, system_theme);
+                        let theme = self.config.force_theme.map(|t| t.to_window_theme()).or(system_theme);
+                        update_colors_based_on_theme(&mut self.config, theme);
                         has_checked_adaptive_colors = true;
                     }
 
@@ -788,6 +790,34 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .set_fullscreen(Some(Fullscreen::Borderless(None))),
                         _ => route.window.winit_window.set_fullscreen(None),
                     }
+                }
+            }
+            RioEventType::Rio(RioEvent::ToggleAppearanceTheme) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    use rio_backend::config::theme::AppearanceTheme;
+                    let current = self
+                        .config
+                        .force_theme
+                        .or_else(|| {
+                            route
+                                .window
+                                .winit_window
+                                .theme()
+                                .map(AppearanceTheme::from_window_theme)
+                        })
+                        .unwrap_or(AppearanceTheme::Dark);
+                    let toggled = current.toggled();
+                    self.config.force_theme = Some(toggled);
+                    update_colors_based_on_theme(
+                        &mut self.config,
+                        Some(toggled.to_window_theme()),
+                    );
+                    route.window.screen.update_config(
+                        &self.config,
+                        &self.router.font_library,
+                        false,
+                    );
+                    route.window.configure_window(&self.config);
                 }
             }
             RioEventType::Rio(RioEvent::ColorChange(route_id, index, color)) => {
@@ -1567,6 +1597,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::ThemeChanged(new_theme) => {
+                if self.config.force_theme.is_some() {
+                    return;
+                }
                 update_colors_based_on_theme(&mut self.config, Some(new_theme));
                 route.window.screen.update_config(
                     &self.config,

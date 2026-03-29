@@ -127,7 +127,11 @@ impl Renderer {
             navigation: config.navigation.clone(),
             margin: config.margin,
             island,
-            command_palette: command_palette::CommandPalette::new(),
+            command_palette: {
+                let mut palette = command_palette::CommandPalette::new();
+                palette.has_adaptive_theme = config.adaptive_colors.is_some();
+                palette
+            },
             named_colors,
             dynamic_background,
             search: search::SearchOverlay::default(),

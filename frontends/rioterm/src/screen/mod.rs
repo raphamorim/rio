@@ -1138,6 +1138,9 @@ impl Screen<'_> {
                         self.render();
                     }
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
+                    Act::ToggleAppearanceTheme => {
+                        self.context_manager.toggle_appearance_theme();
+                    }
                     Act::Minimize => {
                         self.context_manager.minimize();
                     }
@@ -3175,6 +3178,9 @@ impl Screen<'_> {
             }
             PaletteAction::ToggleFullscreen => {
                 self.context_manager.toggle_full_screen();
+            }
+            PaletteAction::ToggleAppearanceTheme => {
+                self.context_manager.toggle_appearance_theme();
             }
             PaletteAction::Copy => {
                 self.copy_selection(ClipboardType::Clipboard);

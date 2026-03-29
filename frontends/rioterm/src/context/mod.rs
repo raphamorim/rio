@@ -648,6 +648,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn toggle_appearance_theme(&mut self) {
+        self.event_proxy
+            .send_event(RioEvent::ToggleAppearanceTheme, self.window_id);
+    }
+
+    #[inline]
     pub fn minimize(&mut self) {
         self.event_proxy
             .send_event(RioEvent::Minimize(true), self.window_id);
