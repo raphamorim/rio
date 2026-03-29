@@ -19,7 +19,7 @@ objc2-user-notifications = { version = "0.2.2", features = [
 ] }
 
 [target.'cfg(all(not(target_os = "macos"), not(target_os = "windows")))'.dependencies]
-zbus = { version = "4", default-features = false, features = ["blocking"] }
+zbus = { version = "4", features = ["blocking"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
