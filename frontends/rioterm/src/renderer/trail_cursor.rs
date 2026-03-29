@@ -221,6 +221,11 @@ pub struct TrailCursor {
     /// Previous destination center, used to detect jumps.
     prev_dest_cx: f32,
     prev_dest_cy: f32,
+    /// Center before the current jump — preserved so `compute_jump` can
+    /// measure travel distance (since `set_destination` overwrites
+    /// `prev_dest` before `animate` runs).
+    jump_from_cx: f32,
+    jump_from_cy: f32,
     /// One-shot flag: set when destination changes, consumed in `animate`.
     jumped: bool,
     /// True until the first real destination is set — first frame teleports.
@@ -244,6 +249,8 @@ impl TrailCursor {
             dest_cy: 0.0,
             prev_dest_cx: -1e6,
             prev_dest_cy: -1e6,
+            jump_from_cx: -1e6,
+            jump_from_cy: -1e6,
             jumped: false,
             first_frame: true,
             prev_shape: CursorShape::Block,
@@ -282,6 +289,8 @@ impl TrailCursor {
         if (cx - self.prev_dest_cx).abs() > 0.01
             || (cy - self.prev_dest_cy).abs() > 0.01
         {
+            self.jump_from_cx = self.prev_dest_cx;
+            self.jump_from_cy = self.prev_dest_cy;
             self.prev_dest_cx = cx;
             self.prev_dest_cy = cy;
             self.jumped = true;
@@ -338,21 +347,14 @@ impl TrailCursor {
         cell_height: f32,
     ) {
         // Compute jump vector in cell units for short-movement detection.
-        // Use corner 0's previous destination to measure the jump, same
-        // as neovide computing (corner_destination - previous_destination)
-        // / cursor_dimensions.
-        let (prev_dest_x, prev_dest_y) =
-            (self.corners[0].prev_dest_x, self.corners[0].prev_dest_y);
-        let (new_dest_x, new_dest_y) =
-            self.corners[0].destination(cx, cy, cell_width, cell_height);
-
+        // `jump_from` is the center *before* this jump was detected.
         let jump_x = if cell_width > 0.0 {
-            ((new_dest_x - prev_dest_x) / cell_width).abs()
+            ((cx - self.jump_from_cx) / cell_width).abs()
         } else {
             0.0
         };
         let jump_y = if cell_height > 0.0 {
-            ((new_dest_y - prev_dest_y) / cell_height).abs()
+            ((cy - self.jump_from_cy) / cell_height).abs()
         } else {
             0.0
         };
