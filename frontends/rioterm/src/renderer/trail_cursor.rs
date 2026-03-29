@@ -1,7 +1,7 @@
+// This file was heavily inspired by neovide implementation.
+
 use rio_backend::sugarloaf::Sugarloaf;
 use std::time::Instant;
-
-// ── Defaults (matching neovide) ─────────────────────────────────────
 
 /// Animation duration for long jumps (seconds).
 const ANIMATION_LENGTH: f32 = 0.15;
@@ -13,18 +13,9 @@ const SHORT_ANIMATION_LENGTH: f32 = 0.04;
 /// trailing edge lags most).
 const TRAIL_SIZE: f32 = 1.0;
 
-/// Standard corner offsets (relative to center, in cell-fraction units).
-/// Order: top-left, top-right, bottom-right, bottom-left.
-/// Always uses full block size regardless of cursor shape — the trail
-/// represents the movement path, not the cursor shape.
-const STANDARD_CORNERS: [(f32, f32); 4] =
-    [(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)];
-
 /// Depth / draw order for the trail quad (behind regular cursor text).
 const DEPTH: f32 = 0.0;
 const ORDER: u8 = 10;
-
-// ── Critically-damped spring (matches neovide exactly) ──────────────
 
 #[derive(Clone)]
 struct Spring {
@@ -79,8 +70,6 @@ impl Spring {
         }
     }
 }
-
-// ── Animated corner ─────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct Corner {
@@ -192,8 +181,6 @@ impl Corner {
         (dx / travel_len) * corner_dir_x + (dy / travel_len) * corner_dir_y
     }
 }
-
-// ── TrailCursor ─────────────────────────────────────────────────────
 
 pub struct TrailCursor {
     /// Four corners: [top-left, top-right, bottom-right, bottom-left].
@@ -411,7 +398,7 @@ impl TrailCursor {
             return;
         }
 
-        let steps = ((height as usize).max(1)).min(640);
+        let steps = (height as usize).clamp(1, 640);
         let step_h = height / steps as f32;
 
         for s in 0..steps {
