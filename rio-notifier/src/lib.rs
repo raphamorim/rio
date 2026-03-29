@@ -1,3 +1,11 @@
+/// Request notification authorization from the OS.
+/// On macOS this triggers the permission prompt on first call.
+/// No-op on other platforms.
+pub fn request_authorization() {
+    #[cfg(target_os = "macos")]
+    platform::request_authorization();
+}
+
 /// Send a desktop notification using the platform's native API.
 ///
 /// - **macOS**: `UNUserNotificationCenter` (requires app bundle with identifier).
@@ -20,12 +28,37 @@ pub fn send_notification(title: &str, body: &str) {
 
 #[cfg(target_os = "macos")]
 mod platform {
+    use block2::RcBlock;
     use objc::runtime::Object;
     use objc::{class, msg_send, sel, sel_impl};
-    use objc2_foundation::NSString;
+    use objc2::runtime::Bool;
+    use objc2_foundation::{NSError, NSString};
     use objc2_user_notifications::{
-        UNMutableNotificationContent, UNNotificationRequest, UNUserNotificationCenter,
+        UNAuthorizationOptions, UNMutableNotificationContent, UNNotificationRequest,
+        UNUserNotificationCenter,
     };
+    use std::sync::Once;
+
+    pub(crate) fn request_authorization() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| unsafe {
+            let bundle: *mut Object = msg_send![class!(NSBundle), mainBundle];
+            if bundle.is_null() {
+                return;
+            }
+            let bundle_id: *mut Object = msg_send![bundle, bundleIdentifier];
+            if bundle_id.is_null() {
+                return;
+            }
+
+            let center = UNUserNotificationCenter::currentNotificationCenter();
+            center.requestAuthorizationWithOptions_completionHandler(
+                UNAuthorizationOptions::UNAuthorizationOptionAlert
+                    | UNAuthorizationOptions::UNAuthorizationOptionSound,
+                &RcBlock::new(|_ok: Bool, _err: *mut NSError| {}),
+            );
+        });
+    }
 
     pub fn notify(title: &str, body: &str) {
         unsafe {
