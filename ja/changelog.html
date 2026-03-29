@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ja/assets/css/styles.5591d8de.css">
-<script src="/ja/assets/js/runtime~main.d5ffd73d.js" defer="defer"></script>
+<script src="/ja/assets/js/runtime~main.72c766cf.js" defer="defer"></script>
 <script src="/ja/assets/js/main.afa64593.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -56,6 +56,8 @@
 <li class=""><strong>New GPU-Rendered Navigation</strong>: Faster, smoother tab interface</li>
 <li class=""><strong>Command Palette</strong>: Quick access to terminal functions</li>
 <li class=""><strong>Toggle Appearance Theme</strong>: Switch between dark and light themes at runtime via key binding (<code>ToggleAppearanceTheme</code>) or command palette (only available when adaptive theme is configured)</li>
+<li class=""><strong>Custom Mouse Cursor</strong>: Configurable mouse cursor effects via <code>effects.custom-mouse-cursor</code></li>
+<li class=""><strong>Trail Cursor</strong>: Smooth spring-animated cursor trail using neovide-style physics (enabled by default via <code>effects.trail-cursor</code>)</li>
 <li class=""><strong>Force Theme</strong>: New <code>force-theme</code> configuration property to override the system theme when using adaptive themes</li>
 <li class=""><strong>Quake Window Mode</strong>: Drop-down terminal from top of screen</li>
 <li class=""><strong>macOS Traffic Light Positioning</strong>: Customize position of window control buttons<!-- -->
@@ -513,11 +515,11 @@
 <li class="">Search matching a wrapping fullwidth character in the last column.</li>
 <li class="">Update Rust to 1.87.0.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0218">0.2.18<a href="#0218" class="hash-link" aria-label="0.2.18 への直接リンク" title="0.2.18 への直接リンク" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0218">0.2.18<a href="#0218" class="hash-link" aria-label="0.2.18 へ  の直接リンク" title="0.2.18 への直接リンク" translate="no">​</a></h2>
 <ul>
 <li class="">Fix image display crashing the application whenever f16 is available.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0217">0.2.17<a href="#0217" class="hash-link" aria-label="0.2.17 への 直接リンク" title="0.2.17 への直接リンク" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0217">0.2.17<a href="#0217" class="hash-link" aria-label="0.2.17 への直接リンク" title="0.2.17 への直接リンク" translate="no">​</a></h2>
 <ul>
 <li class=""><em>Breaking:</em> Decorations as <code>Enabled</code> is default on MacOS (instead of <code>Transparent</code>).</li>
 <li class="">F16 Texture supports whenever is available.</li>
@@ -831,7 +833,7 @@
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">cursor</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&#x27;▇&#x27;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">blinking-cursor</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre></div></div>
 <p>After:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">cursor</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">shape</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&#x27;block&#x27;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">blinking</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre></div></div>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0111">0.1.11<a href="#0111" class="hash-link" aria-label="0.1.11 への直接リンク" title="0.1.11 への直接リンク" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0111">0.1.11<a href="#0111" class="hash-link" aria-label="0.1.11 への直接リンク" title="0.1.11 への直接リンク" translate="no"> ​</a></h2>
 <ul>
 <li class="">Experimental support to Sixel protocol.</li>
 <li class="">Clipboard has been moved to Application level and shared to all windows.</li>
@@ -1137,7 +1139,7 @@
 <li class="">Update <code>.icns</code> file with more format and add new icon (Ref: <a href="https://github.com/raphamorim/rio/pull/329" target="_blank" rel="noopener noreferrer" class="">#329</a>) by <a href="https://github.com/nix6839" target="_blank" rel="noopener noreferrer" class="">@nix6839</a>.</li>
 <li class="">Update <code>.ico</code> files with more resolution and add new icon (Ref: <a href="https://github.com/raphamorim/rio/pull/329" target="_blank" rel="noopener noreferrer" class="">#329</a>) by <a href="https://github.com/nix6839" target="_blank" rel="noopener noreferrer" class="">@nix6839</a>.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0027">0.0.27<a href="#0027" class="hash-link" aria-label="0.0.27 への直接リンク" title="0.0.27 への直接リンク" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0027">0.0.27<a href="#0027" class="hash-link" aria-label="0.0.27 への直接リンク" title="0.0.27 への 直接リンク" translate="no">​</a></h2>
 <ul>
 <li class="">Activate the hyperlink check whenever a modifier is changed (<code>alt</code> for windows/linux/bsd and <code>command</code> for macos).</li>
 <li class="">Fix Error when Double click on terminal side (Ref <a href="https://github.com/raphamorim/rio/issues/316" target="_blank" rel="noopener noreferrer" class="">#316</a>).</li>
@@ -1350,7 +1352,7 @@
 <li class="">Fix for MacOS deadzone changing cursor to draggable on window buttons.</li>
 <li class="">Fix for scroll using tmux.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0011">0.0.11<a href="#0011" class="hash-link" aria-label="0.0.11 への直接リンク" title="0.0.11 への  直接リンク" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0011">0.0.11<a href="#0011" class="hash-link" aria-label="0.0.11 への直接リンク" title="0.0.11 への直接リンク" translate="no">​</a></h2>
 <ul>
 <li class="">Fix for font styles using CachedSugar.</li>
 </ul>
