@@ -162,7 +162,7 @@ pub fn create_window_builder(
 }
 
 pub fn configure_window(winit_window: &Window, config: &Config) {
-    if config.effects.custom_cursor {
+    if config.effects.custom_mouse_cursor {
         winit_window.set_cursor_visible(false);
     } else {
         winit_window.set_cursor_visible(true);

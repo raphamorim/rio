@@ -111,7 +111,13 @@ impl Corner {
         }
     }
 
-    fn destination(&self, center_x: f32, center_y: f32, cell_w: f32, cell_h: f32) -> (f32, f32) {
+    fn destination(
+        &self,
+        center_x: f32,
+        center_y: f32,
+        cell_w: f32,
+        cell_h: f32,
+    ) -> (f32, f32) {
         (
             center_x + self.rel_x * cell_w,
             center_y + self.rel_y * cell_h,
@@ -286,8 +292,7 @@ impl TrailCursor {
         self.dest_cy = cy;
 
         // Detect a jump (destination changed).
-        if (cx - self.prev_dest_cx).abs() > 0.01
-            || (cy - self.prev_dest_cy).abs() > 0.01
+        if (cx - self.prev_dest_cx).abs() > 0.01 || (cy - self.prev_dest_cy).abs() > 0.01
         {
             self.jump_from_cx = self.prev_dest_cx;
             self.jump_from_cy = self.prev_dest_cy;
@@ -303,10 +308,7 @@ impl TrailCursor {
     /// neovide's `animate`).
     pub fn animate(&mut self, cell_width: f32, cell_height: f32) {
         let now = Instant::now();
-        let dt = now
-            .duration_since(self.last_frame)
-            .as_secs_f32()
-            .min(0.1);
+        let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
 
         let cx = self.dest_cx;
@@ -339,13 +341,7 @@ impl TrailCursor {
     /// Compute corner direction-alignment ranking and assign animation
     /// lengths.  Called exactly once per cursor jump (matching neovide's
     /// `Corner::jump` called from the `if self.jumped` block).
-    fn compute_jump(
-        &mut self,
-        cx: f32,
-        cy: f32,
-        cell_width: f32,
-        cell_height: f32,
-    ) {
+    fn compute_jump(&mut self, cx: f32, cy: f32, cell_width: f32, cell_height: f32) {
         // Compute jump vector in cell units for short-movement detection.
         // `jump_from` is the center *before* this jump was detected.
         let jump_x = if cell_width > 0.0 {
@@ -370,10 +366,22 @@ impl TrailCursor {
 
         // Direction-alignment ranking (neovide-style).
         let mut alignments: [(usize, f32); 4] = [
-            (0, self.corners[0].direction_alignment(cx, cy, cell_width, cell_height)),
-            (1, self.corners[1].direction_alignment(cx, cy, cell_width, cell_height)),
-            (2, self.corners[2].direction_alignment(cx, cy, cell_width, cell_height)),
-            (3, self.corners[3].direction_alignment(cx, cy, cell_width, cell_height)),
+            (
+                0,
+                self.corners[0].direction_alignment(cx, cy, cell_width, cell_height),
+            ),
+            (
+                1,
+                self.corners[1].direction_alignment(cx, cy, cell_width, cell_height),
+            ),
+            (
+                2,
+                self.corners[2].direction_alignment(cx, cy, cell_width, cell_height),
+            ),
+            (
+                3,
+                self.corners[3].direction_alignment(cx, cy, cell_width, cell_height),
+            ),
         ];
 
         // Sort ascending: lowest alignment = most trailing.
