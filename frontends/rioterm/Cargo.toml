@@ -48,6 +48,7 @@ url = { workspace = true }
 smallvec = { workspace = true }
 rio-window = { workspace = true }
 lru = "0.16.0"
+rio-notifier = { workspace = true }
 
 [target.'cfg(all(not(target_os = "macos"), not(target_os = "windows")))'.dependencies]
 cpal = { version = "0.15", optional = true }

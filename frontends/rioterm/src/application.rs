@@ -138,6 +138,10 @@ impl Application<'_> {
         }
     }
 
+    fn handle_desktop_notification(&self, title: &str, body: &str) {
+        rio_notifier::send_notification(title, body);
+    }
+
     pub fn run(
         &mut self,
         event_loop: EventLoop<EventPayload>,
@@ -523,6 +527,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if self.config.bell.audio {
                     self.handle_audio_bell();
                 }
+            }
+            RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {
+                self.handle_desktop_notification(&title, &body);
             }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
                 if let Some(route) = self.router.routes.get(&window_id) {

@@ -2581,6 +2581,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn desktop_notification(&mut self, title: String, body: String) {
+        self.event_proxy.send_event(
+            RioEvent::DesktopNotification { title, body },
+            self.window_id,
+        );
+    }
+
+    #[inline]
     fn substitute(&mut self) {
         warn!("[unimplemented] Substitute");
     }

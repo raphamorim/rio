@@ -98,6 +98,7 @@ brevity.
 | `OSC 2`   | IMPLEMENTED |                                                |
 | `OSC 4`   | IMPLEMENTED |                                                |
 | `OSC 8`   | IMPLEMENTED |                                                |
+| `OSC 9`   | IMPLEMENTED | Desktop notifications and progress bar (9;4)   |
 | `OSC 10`  | IMPLEMENTED |                                                |
 | `OSC 11`  | IMPLEMENTED |                                                |
 | `OSC 12`  | IMPLEMENTED |                                                |
@@ -107,6 +108,7 @@ brevity.
 | `OSC 110` | IMPLEMENTED |                                                |
 | `OSC 111` | IMPLEMENTED |                                                |
 | `OSC 112` | IMPLEMENTED |                                                |
+| `OSC 777` | IMPLEMENTED | Desktop notifications (rxvt notify extension)  |
 
 ### DCS (Device Control String) - `ESC P`
 
