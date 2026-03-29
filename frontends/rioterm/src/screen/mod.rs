@@ -1885,9 +1885,7 @@ impl Screen<'_> {
                 post_processing: true,
                 persist: false,
                 action: rio_backend::config::hints::HintAction::Command {
-                    command: rio_backend::config::hints::HintCommand::Simple(
-                        "xdg-open".to_string(),
-                    ),
+                    command: rio_backend::config::hints::default_url_command(),
                 },
                 mouse: rio_backend::config::hints::HintMouse::default(),
                 binding: None,
@@ -1924,19 +1922,23 @@ impl Screen<'_> {
             return None;
         }
 
-        // Extract text from the line
+        // Extract line text and map byte offsets to column indices
+        // (regex returns byte offsets which diverge from columns for non-ASCII)
         let mut line_text = String::new();
         for col in 0..grid.columns() {
             let cell = &grid[point.row][rio_backend::crosswords::pos::Column(col)];
             line_text.push(cell.c);
         }
+        let byte_to_col = build_byte_to_col(line_text.chars());
         let line_text = line_text.trim_end();
 
         // Find all matches in this line and check if point is within any of them
         for mat in regex.find_iter(line_text) {
-            let start_col = rio_backend::crosswords::pos::Column(mat.start());
-            let end_col =
-                rio_backend::crosswords::pos::Column(mat.end().saturating_sub(1));
+            let start_col =
+                rio_backend::crosswords::pos::Column(byte_to_col[mat.start()]);
+            let end_col = rio_backend::crosswords::pos::Column(
+                byte_to_col[mat.end().saturating_sub(1)],
+            );
 
             // Check if the point is within this match
             if point.col >= start_col && point.col <= end_col {
@@ -2031,6 +2033,15 @@ impl Screen<'_> {
         } else {
             false
         }
+    }
+
+    /// Clear the highlighted hint to prevent double-fire on click
+    #[inline]
+    pub fn clear_highlighted_hint(&mut self) {
+        self.context_manager
+            .current_mut()
+            .renderable_content
+            .highlighted_hint = None;
     }
 
     fn open_hyperlink(&self, hyperlink: Hyperlink) {
@@ -3717,6 +3728,18 @@ fn post_process_hyperlink_uri(uri: &str) -> String {
     chars.into_iter().take(end_idx + 1).collect()
 }
 
+/// Build a mapping from byte offsets to column indices for a sequence of chars.
+/// Each char occupies one grid column but may be 1-4 bytes in UTF-8.
+fn build_byte_to_col(chars: impl Iterator<Item = char>) -> Vec<usize> {
+    let mut byte_to_col = Vec::new();
+    for (col, ch) in chars.enumerate() {
+        for _ in 0..ch.len_utf8() {
+            byte_to_col.push(col);
+        }
+    }
+    byte_to_col
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3776,5 +3799,45 @@ mod tests {
             post_process_hyperlink_uri("https://example.com/path[with]brackets"),
             "https://example.com/path[with]brackets"
         );
+    }
+
+    #[test]
+    fn test_byte_to_col_with_regex_match() {
+        // Reproduces the bug from #1457: regex byte offsets used as column
+        // indices cause URL truncation when non-ASCII chars precede the URL
+        let url_re =
+            regex::Regex::new(rio_backend::config::hints::DEFAULT_URL_REGEX).unwrap();
+
+        // ASCII-only: byte offsets happen to equal column indices
+        let line = "see https://example.com ok";
+        let byte_to_col = build_byte_to_col(line.chars());
+        let mat = url_re.find(line).unwrap();
+        assert_eq!(mat.as_str(), "https://example.com");
+        assert_eq!(byte_to_col[mat.start()], 4); // correct column
+        assert_eq!(mat.start(), 4); // byte offset matches column for ASCII
+
+        // 2-byte char (é) before URL: byte offset diverges from column
+        let line = "café https://example.com ok";
+        let byte_to_col = build_byte_to_col(line.chars());
+        let mat = url_re.find(line).unwrap();
+        assert_eq!(mat.as_str(), "https://example.com");
+        assert_eq!(byte_to_col[mat.start()], 5); // correct column
+        assert_eq!(mat.start(), 6); // raw byte offset is 6 (é = 2 bytes)
+
+        // 3-byte CJK char: offset diverges further
+        let line = "中 https://example.com ok";
+        let byte_to_col = build_byte_to_col(line.chars());
+        let mat = url_re.find(line).unwrap();
+        assert_eq!(mat.as_str(), "https://example.com");
+        assert_eq!(byte_to_col[mat.start()], 2); // correct column
+        assert_eq!(mat.start(), 4); // raw byte offset is 4 (中 = 3 bytes)
+
+        // 4-byte emoji: worst divergence
+        let line = "😀 https://example.com ok";
+        let byte_to_col = build_byte_to_col(line.chars());
+        let mat = url_re.find(line).unwrap();
+        assert_eq!(mat.as_str(), "https://example.com");
+        assert_eq!(byte_to_col[mat.start()], 2); // correct column
+        assert_eq!(mat.start(), 5); // raw byte offset is 5 (😀 = 4 bytes)
     }
 }

@@ -162,7 +162,7 @@ fn default_hints_enabled() -> Vec<Hint> {
     }]
 }
 
-fn default_url_command() -> HintCommand {
+pub fn default_url_command() -> HintCommand {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     return HintCommand::Simple("xdg-open".to_string());
 
