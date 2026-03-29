@@ -162,7 +162,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             return;
         }
 
-        let theme = self.config.force_theme.map(|t| t.to_window_theme()).or(event_loop.system_theme());
+        let theme = self
+            .config
+            .force_theme
+            .map(|t| t.to_window_theme())
+            .or(event_loop.system_theme());
         update_colors_based_on_theme(&mut self.config, theme);
 
         self.router.create_window(
@@ -386,7 +390,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Apply system theme to ensure colors are consistent
                     if !has_checked_adaptive_colors {
                         let system_theme = route.window.winit_window.theme();
-                        let theme = self.config.force_theme.map(|t| t.to_window_theme()).or(system_theme);
+                        let theme = self
+                            .config
+                            .force_theme
+                            .map(|t| t.to_window_theme())
+                            .or(system_theme);
                         update_colors_based_on_theme(&mut self.config, theme);
                         has_checked_adaptive_colors = true;
                     }
@@ -1068,6 +1076,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             route.window.screen.select_current_based_on_mouse();
 
                             if route.window.screen.trigger_hyperlink() {
+                                route.window.screen.clear_highlighted_hint();
+                                route.request_redraw();
                                 return;
                             }
 
