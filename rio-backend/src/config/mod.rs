@@ -2,6 +2,7 @@ pub mod bell;
 pub mod bindings;
 pub mod colors;
 pub mod defaults;
+pub mod effects;
 pub mod hints;
 pub mod keyboard;
 pub mod layout;
@@ -161,6 +162,8 @@ pub struct Config {
     pub bell: Bell,
     #[serde(default = "default_bool_true", rename = "enable-scroll-bar")]
     pub enable_scroll_bar: bool,
+    #[serde(default = "effects::Effects::default")]
+    pub effects: effects::Effects,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -643,6 +646,7 @@ impl Default for Config {
             hints: Hints::default(),
             bell: Bell::default(),
             enable_scroll_bar: true,
+            effects: effects::Effects::default(),
         }
     }
 }

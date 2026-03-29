@@ -3249,6 +3249,18 @@ impl Screen<'_> {
             &self.search_state.focused_match,
         );
 
+        if self.renderer.custom_cursor {
+            let scale = self.sugarloaf.scale_factor();
+            crate::renderer::custom_cursor::draw(
+                &mut self.sugarloaf,
+                self.mouse.x as f32,
+                self.mouse.y as f32,
+                scale,
+            );
+        }
+
+        self.sugarloaf.render();
+
         // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
         if self.renderer.needs_redraw() {
             self.context_manager

@@ -1,5 +1,6 @@
 pub mod assistant;
 pub mod command_palette;
+pub mod custom_cursor;
 mod font_cache;
 pub mod island;
 pub mod scrollbar;
@@ -63,6 +64,7 @@ pub struct Renderer {
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
+    pub custom_cursor: bool,
 }
 
 /// Check if two styles are compatible for shaping (can be in the same text run)
@@ -140,6 +142,7 @@ impl Renderer {
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
             is_game_mode_enabled: config.renderer.strategy.is_game(),
+            custom_cursor: config.effects.custom_cursor,
         };
 
         // Pre-populate font cache with common characters for better performance
@@ -1252,8 +1255,6 @@ impl Renderer {
         } else {
             None
         };
-
-        sugarloaf.render();
 
         // let _duration = start.elapsed();
         window_update
