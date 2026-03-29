@@ -3277,7 +3277,6 @@ impl Screen<'_> {
                 let cursor = &self.context_manager.current().renderable_content.cursor;
                 let cursor_row = cursor.state.pos.row.0 as usize;
                 let cursor_col = cursor.state.pos.col.0;
-                let cursor_shape = cursor.state.content;
 
                 // Cursor position in physical pixels.
                 let cursor_px_x = origin_x + cursor_col as f32 * cell_width;
@@ -3288,7 +3287,6 @@ impl Screen<'_> {
                     cursor_px_y,
                     cell_width,
                     cell_height,
-                    cursor_shape,
                 );
                 self.renderer.trail_cursor.animate(cell_width, cell_height);
 
