@@ -62,6 +62,7 @@ pub enum PaletteAction {
     ResetFontSize,
     ToggleViMode,
     ToggleFullscreen,
+    ToggleAppearanceTheme,
     Copy,
     Paste,
     SearchForward,
@@ -164,6 +165,11 @@ const COMMANDS: &[Command] = &[
         action: PaletteAction::ToggleFullscreen,
     },
     Command {
+        title: "Toggle Appearance Theme",
+        shortcut: "",
+        action: PaletteAction::ToggleAppearanceTheme,
+    },
+    Command {
         title: "Copy",
         shortcut: "Cmd+C",
         action: PaletteAction::Copy,
@@ -248,6 +254,7 @@ pub struct CommandPalette {
     pub query: String,
     pub selected_index: usize,
     scroll_offset: usize,
+    pub has_adaptive_theme: bool,
     /// Pre-allocated rich text ID for input (lazily initialized)
     input_text_id: Option<usize>,
     /// Pre-allocated rich text IDs for result rows (lazily initialized, fixed pool)
@@ -265,6 +272,7 @@ impl Default for CommandPalette {
             query: String::new(),
             selected_index: 0,
             scroll_offset: 0,
+            has_adaptive_theme: false,
             input_text_id: None,
             result_text_ids: Vec::new(),
             shortcut_text_ids: Vec::new(),
@@ -330,8 +338,15 @@ impl CommandPalette {
     }
 
     fn filtered_commands(&self) -> Vec<(i32, &Command)> {
+        let has_adaptive = self.has_adaptive_theme;
         let mut results: Vec<(i32, &Command)> = COMMANDS
             .iter()
+            .filter(|cmd| {
+                if cmd.action == PaletteAction::ToggleAppearanceTheme {
+                    return has_adaptive;
+                }
+                true
+            })
             .filter_map(|cmd| {
                 let score = fuzzy_score(&self.query, cmd.title)?;
                 Some((score, cmd))
@@ -702,7 +717,8 @@ mod tests {
     fn test_filtered_commands_empty_query() {
         let palette = CommandPalette::new();
         let filtered = palette.filtered_commands();
-        assert_eq!(filtered.len(), COMMANDS.len());
+        // ToggleAppearanceTheme is hidden when has_adaptive_theme is false
+        assert_eq!(filtered.len(), COMMANDS.len() - 1);
     }
 
     #[test]

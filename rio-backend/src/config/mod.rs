@@ -30,7 +30,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::{default::Default, fs::File};
 use sugarloaf::font::fonts::SugarloafFonts;
-use theme::{AdaptiveColors, AdaptiveTheme, Theme};
+use theme::{AdaptiveColors, AdaptiveTheme, AppearanceTheme, Theme};
 use tracing::warn;
 
 #[derive(Clone, Debug)]
@@ -130,6 +130,8 @@ pub struct Config {
     pub colors: Colors,
     #[serde(default = "Option::default", skip_serializing)]
     pub adaptive_colors: Option<AdaptiveColors>,
+    #[serde(default = "Option::default", rename = "force-theme")]
+    pub force_theme: Option<AppearanceTheme>,
     #[serde(default = "Developer::default")]
     pub developer: Developer,
     #[serde(default = "Bindings::default")]
@@ -612,6 +614,7 @@ impl Default for Config {
             editor: default_editor(),
             adaptive_theme: None,
             adaptive_colors: None,
+            force_theme: None,
             bindings: Bindings::default(),
             colors: Colors::default(),
             scroll: Scroll::default(),

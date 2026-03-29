@@ -263,6 +263,7 @@ impl From<String> for Action {
             "movedividerleft" => Some(Action::MoveDividerLeft),
             "movedividerright" => Some(Action::MoveDividerRight),
             "togglevimode" => Some(Action::ToggleViMode),
+            "toggleappearancetheme" => Some(Action::ToggleAppearanceTheme),
             "togglefullscreen" => Some(Action::ToggleFullscreen),
             "none" => Some(Action::None),
             _ => None,
@@ -455,6 +456,9 @@ pub enum Action {
 
     /// Toggle vi mode.
     ToggleViMode,
+
+    /// Toggle appearance theme (dark/light).
+    ToggleAppearanceTheme,
 
     // Tab selections
     SelectTab(usize),

@@ -47,6 +47,18 @@ When configured, Rio will automatically switch between the specified light and d
 
 ![Adaptive theme](/assets/features/adaptive-theme.gif)
 
+## force-theme
+
+When using adaptive themes, you can override the system theme by forcing Rio to use a specific theme regardless of the system appearance.
+
+```toml
+force-theme = "dark"
+```
+
+Accepted values: `"dark"` or `"light"`. When not set, Rio follows the system theme.
+
+You can also toggle the appearance theme at runtime using the `ToggleAppearanceTheme` key binding action or through the command palette.
+
 ## colors
 
 Defining colors in the configuration file will not have any effect if you're using a theme.
