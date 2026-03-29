@@ -65,7 +65,7 @@ pub struct Renderer {
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
-    pub custom_cursor: bool,
+    pub custom_mouse_cursor: bool,
     pub trail_cursor_enabled: bool,
     pub trail_cursor: trail_cursor::TrailCursor,
 }
@@ -145,7 +145,7 @@ impl Renderer {
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
             is_game_mode_enabled: config.renderer.strategy.is_game(),
-            custom_cursor: config.effects.custom_cursor,
+            custom_mouse_cursor: config.effects.custom_mouse_cursor,
             trail_cursor_enabled: config.effects.trail_cursor,
             trail_cursor: trail_cursor::TrailCursor::new(),
         };

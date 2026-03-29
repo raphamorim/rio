@@ -3249,7 +3249,7 @@ impl Screen<'_> {
             &self.search_state.focused_match,
         );
 
-        if self.renderer.custom_cursor {
+        if self.renderer.custom_mouse_cursor {
             let scale = self.sugarloaf.scale_factor();
             crate::renderer::custom_cursor::draw(
                 &mut self.sugarloaf,
@@ -3274,11 +3274,7 @@ impl Screen<'_> {
                 let origin_x = panel_rect[0] + scaled_margin.left;
                 let origin_y = panel_rect[1] + scaled_margin.top;
 
-                let cursor = &self
-                    .context_manager
-                    .current()
-                    .renderable_content
-                    .cursor;
+                let cursor = &self.context_manager.current().renderable_content.cursor;
                 let cursor_row = cursor.state.pos.row.0 as usize;
                 let cursor_col = cursor.state.pos.col.0;
                 let cursor_shape = cursor.state.content;
@@ -3294,9 +3290,7 @@ impl Screen<'_> {
                     cell_height,
                     cursor_shape,
                 );
-                self.renderer
-                    .trail_cursor
-                    .animate(cell_width, cell_height);
+                self.renderer.trail_cursor.animate(cell_width, cell_height);
 
                 let cursor_color = self.renderer.named_colors.cursor;
                 self.renderer.trail_cursor.draw(
