@@ -260,10 +260,12 @@ args = []
 Configure visual effects for the terminal.
 
 - `custom-cursor`: Enables a custom cursor effect. Default: `false`
+- `trail-cursor`: Enables a fading trail effect when the cursor moves. Default: `true`
 
 ```toml
 [effects]
 custom-cursor = true
+trail-cursor = true
 ```
 
 ![Custom cursor](/assets/features/demo-custom-cursor.png)
