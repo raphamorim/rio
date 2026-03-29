@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ko/assets/css/styles.5591d8de.css">
-<script src="/ko/assets/js/runtime~main.4ba3155f.js" defer="defer"></script>
+<script src="/ko/assets/js/runtime~main.5445bd12.js" defer="defer"></script>
 <script src="/ko/assets/js/main.3b295c57.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -55,6 +55,8 @@
 <li class=""><strong>Native Vulkan Support</strong> (Linux/Windows): Hardware-accelerated rendering with Vulkan</li>
 <li class=""><strong>New GPU-Rendered Navigation</strong>: Faster, smoother tab interface</li>
 <li class=""><strong>Command Palette</strong>: Quick access to terminal functions</li>
+<li class=""><strong>Toggle Appearance Theme</strong>: Switch between dark and light themes at runtime via key binding (<code>ToggleAppearanceTheme</code>) or command palette (only available when adaptive theme is configured)</li>
+<li class=""><strong>Force Theme</strong>: New <code>force-theme</code> configuration property to override the system theme when using adaptive themes</li>
 <li class=""><strong>Quake Window Mode</strong>: Drop-down terminal from top of screen</li>
 <li class=""><strong>macOS Traffic Light Positioning</strong>: Customize position of window control buttons<!-- -->
 <ul>
@@ -121,7 +123,7 @@
 <li class="">Fix font loader for fallbacks and extra.</li>
 <li class="">Fix font size updating through config.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0236-1">0.2.36<a href="#0236-1" class="hash-link" aria-label="0.2.36에 대 한 직접 링크" title="0.2.36에 대한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0236-1">0.2.36<a href="#0236-1" class="hash-link" aria-label="0.2.36에 대한 직접 링크" title="0.2.36에 대한 직접 링크" translate="no">​</a></h2>
 <ul>
 <li class="">Fix handler should process two intermediate bytes in CSI sequences by <a href="https://github.com/aymanbagabas" target="_blank" rel="noopener noreferrer" class="">@aymanbagabas</a>.</li>
 <li class="">Fix DECSCUSR.</li>
@@ -292,7 +294,7 @@
 <ul>
 <li class="">Breaking: <code>navigation.use-current-directory</code> has been renamed to <code>navigation.current-working-directory</code>.</li>
 </ul>
-<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="performance-optimizations">Performance Optimizations<a href="#performance-optimizations" class="hash-link" aria-label="Performance Optimizations에 대한 직접 링크" title="Performance Optimizations에 대한 직접 링크" translate="no">​</a></h3>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="performance-optimizations">Performance Optimizations<a href="#performance-optimizations" class="hash-link" aria-label="Performance Optimizations에 대한 직접 링크" title="Performance Optimizations에 대한 직접 링크" translate="no"> ​</a></h3>
 <ul>
 <li class=""><strong>Major</strong>: Implemented efficient CVDisplayLink-based VSync synchronization for macOS<!-- -->
 <ul>
@@ -1317,7 +1319,7 @@
 <li class="">Default colors <code>selection-foreground</code> and <code>selection-background</code> has changed.</li>
 <li class="">Default colors <code>tab</code> and <code>tab-active</code> has changed.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0014">0.0.14<a href="#0014" class="hash-link" aria-label="0.0.14에 대한 직접 링크" title="0.0.14에 대한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0014">0.0.14<a href="#0014" class="hash-link" aria-label="0.0.14에 대한 직접 링크" title="0.0.14에 대한   직접 링크" translate="no">​</a></h2>
 <ul>
 <li class="">Implementation of custom key bindings (<a href="https://github.com/raphamorim/rio/issues/117" target="_blank" rel="noopener noreferrer" class="">#117</a>).</li>
 <li class="">Fix .deb packing in GH Actions.</li>
@@ -1348,7 +1350,7 @@
 <li class="">Fix for MacOS deadzone changing cursor to draggable on window buttons.</li>
 <li class="">Fix for scroll using tmux.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0011">0.0.11<a href="#0011" class="hash-link" aria-label="0.0.11에 대한 직접 링크" title="0.0.11에   대한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0011">0.0.11<a href="#0011" class="hash-link" aria-label="0.0.11에 대한 직접 링크" title="0.0.11에 대한 직접 링크" translate="no">​</a></h2>
 <ul>
 <li class="">Fix for font styles using CachedSugar.</li>
 </ul>
@@ -1418,7 +1420,7 @@
 <li class="">Changed default black color to <code>#4c4345</code>.</li>
 <li class="">Fix mouse position for when selecting text.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="007">0.0.7<a href="#007" class="hash-link" aria-label="0.0.7에 대한 직접 링크" title="0.0.7에 대한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="007">0.0.7<a href="#007" class="hash-link" aria-label="0.0.7에 대한   직접 링크" title="0.0.7에 대한 직접 링크" translate="no">​</a></h2>
 <ul>
 <li class="">Breaking changes for configuration file regarding <code>Style</code> property.</li>
 </ul>
