@@ -1,4 +1,3 @@
-use rio_backend::ansi::CursorShape;
 use rio_backend::sugarloaf::Sugarloaf;
 use std::time::Instant;
 
@@ -14,11 +13,10 @@ const SHORT_ANIMATION_LENGTH: f32 = 0.04;
 /// trailing edge lags most).
 const TRAIL_SIZE: f32 = 1.0;
 
-/// Default cell percentage for bar / underline thickness (neovide: 1/8).
-const DEFAULT_CELL_PERCENTAGE: f32 = 1.0 / 8.0;
-
 /// Standard corner offsets (relative to center, in cell-fraction units).
 /// Order: top-left, top-right, bottom-right, bottom-left.
+/// Always uses full block size regardless of cursor shape — the trail
+/// represents the movement path, not the cursor shape.
 const STANDARD_CORNERS: [(f32, f32); 4] =
     [(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)];
 
@@ -35,6 +33,7 @@ struct Spring {
 }
 
 impl Spring {
+    #[inline]
     fn new() -> Self {
         Self {
             position: 0.0,
@@ -42,12 +41,14 @@ impl Spring {
         }
     }
 
+    #[inline]
     fn reset(&mut self) {
         self.position = 0.0;
         self.velocity = 0.0;
     }
 
     /// Advance by variable `dt`. Returns `true` while still moving.
+    #[inline]
     fn update(&mut self, dt: f32, animation_length: f32) -> bool {
         if animation_length <= dt {
             self.reset();
@@ -111,6 +112,7 @@ impl Corner {
         }
     }
 
+    #[inline]
     fn destination(
         &self,
         center_x: f32,
@@ -124,6 +126,7 @@ impl Corner {
         )
     }
 
+    #[inline]
     fn update(
         &mut self,
         center_x: f32,
@@ -164,6 +167,7 @@ impl Corner {
     /// Direction alignment: dot product of the corner's relative direction
     /// with the travel direction.  Higher = more aligned with movement =
     /// "leading".  Matches neovide's `calculate_direction_alignment`.
+    #[inline]
     fn direction_alignment(
         &self,
         center_x: f32,
@@ -189,32 +193,6 @@ impl Corner {
     }
 }
 
-// ── Shape-aware corner positions (matching neovide) ─────────────────
-
-/// Compute the four corner relative offsets for a given cursor shape.
-///
-/// - **Block**: full cell.
-/// - **Beam** (vertical bar): x squished so the right side collapses to
-///   `cell_percentage` width on the left.
-/// - **Underline** (horizontal bar): y squished so the top collapses to
-///   `cell_percentage` height at the bottom.
-fn shape_corners(shape: CursorShape) -> [(f32, f32); 4] {
-    let pct = DEFAULT_CELL_PERCENTAGE;
-    match shape {
-        CursorShape::Block => STANDARD_CORNERS,
-        CursorShape::Beam => {
-            // Transform x: (x + 0.5) * pct - 0.5
-            STANDARD_CORNERS.map(|(x, y)| ((x + 0.5) * pct - 0.5, y))
-        }
-        CursorShape::Underline => {
-            // Transform y: -((-y + 0.5) * pct - 0.5) — bar sits at bottom
-            STANDARD_CORNERS.map(|(x, y)| (x, -((-y + 0.5) * pct - 0.5)))
-        }
-        // Hidden or any other — treat as block (won't be drawn anyway).
-        _ => STANDARD_CORNERS,
-    }
-}
-
 // ── TrailCursor ─────────────────────────────────────────────────────
 
 pub struct TrailCursor {
@@ -236,8 +214,6 @@ pub struct TrailCursor {
     jumped: bool,
     /// True until the first real destination is set — first frame teleports.
     first_frame: bool,
-    /// Last known cursor shape (to detect shape changes).
-    prev_shape: CursorShape,
     animating: bool,
 }
 
@@ -259,7 +235,6 @@ impl TrailCursor {
             jump_from_cy: -1e6,
             jumped: false,
             first_frame: true,
-            prev_shape: CursorShape::Block,
             animating: false,
         }
     }
@@ -273,18 +248,7 @@ impl TrailCursor {
         cursor_y: f32,
         cell_width: f32,
         cell_height: f32,
-        cursor_shape: CursorShape,
     ) {
-        // Update corner relative positions when cursor shape changes.
-        if cursor_shape != self.prev_shape {
-            let offsets = shape_corners(cursor_shape);
-            for (i, corner) in self.corners.iter_mut().enumerate() {
-                corner.rel_x = offsets[i].0;
-                corner.rel_y = offsets[i].1;
-            }
-            self.prev_shape = cursor_shape;
-        }
-
         // Center of cursor cell.
         let cx = cursor_x + cell_width * 0.5;
         let cy = cursor_y + cell_height * 0.5;
@@ -436,7 +400,7 @@ impl TrailCursor {
         ];
 
         // Four edges of the quad: TL→TR, TR→BR, BR→BL, BL→TL.
-        let edges: [(usize, usize); 4] = [(0, 1), (1, 2), (2, 3), (3, 0)];
+        const EDGES: [(usize, usize); 4] = [(0, 1), (1, 2), (2, 3), (3, 0)];
 
         // Bounding box.
         let min_y = pts.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
@@ -447,7 +411,7 @@ impl TrailCursor {
             return;
         }
 
-        let steps = (height / 1.0).ceil().max(1.0) as usize;
+        let steps = ((height as usize).max(1)).min(640);
         let step_h = height / steps as f32;
 
         for s in 0..steps {
@@ -456,7 +420,7 @@ impl TrailCursor {
             let mut x_max = f32::NEG_INFINITY;
 
             // Intersect this scanline with each edge.
-            for &(a, b) in &edges {
+            for &(a, b) in &EDGES {
                 let (ax, ay) = pts[a];
                 let (bx, by) = pts[b];
 
