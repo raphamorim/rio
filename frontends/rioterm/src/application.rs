@@ -70,6 +70,8 @@ impl Application<'_> {
             event_loop.set_use_native_quit_dialog(config.window.macos_use_quit_dialog);
         }
 
+        rio_notifier::request_authorization();
+
         Application {
             config,
             event_proxy,
