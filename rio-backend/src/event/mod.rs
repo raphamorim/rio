@@ -144,6 +144,12 @@ pub enum RioEvent {
     /// Terminal bell ring.
     Bell,
 
+    /// Desktop notification from OSC 9 or OSC 777.
+    DesktopNotification {
+        title: String,
+        body: String,
+    },
+
     /// Shutdown request.
     Exit,
 
@@ -209,6 +215,9 @@ impl Debug for RioEvent {
             }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
+            RioEvent::DesktopNotification { title, body } => {
+                write!(f, "DesktopNotification({title}, {body})")
+            }
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::Quit => write!(f, "Quit"),
             RioEvent::CloseTerminal(route) => write!(f, "CloseTerminal {route}"),
