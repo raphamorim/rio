@@ -255,6 +255,23 @@ args = []
 
 :::
 
+## effects
+
+Configure visual effects for the terminal.
+
+- `custom-mouse-cursor`: Enables a custom mouse cursor effect. Default: `false`
+- `trail-cursor`: Enables a smooth trail animation when the terminal cursor moves, using spring physics for natural motion. Default: `false`
+
+```toml
+[effects]
+custom-mouse-cursor = true
+trail-cursor = true
+```
+
+![Custom cursor](/assets/features/demo-custom-cursor.png)
+
+![Trail cursor](/assets/features/demo-trail-cursor.gif)
+
 ## env-vars
 
 Sets environment variables.

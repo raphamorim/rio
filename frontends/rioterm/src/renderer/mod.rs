@@ -1,9 +1,11 @@
 pub mod assistant;
 pub mod command_palette;
+pub mod custom_cursor;
 mod font_cache;
 pub mod island;
 pub mod scrollbar;
 pub mod search;
+pub mod trail_cursor;
 pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;
@@ -63,6 +65,9 @@ pub struct Renderer {
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
+    pub custom_mouse_cursor: bool,
+    pub trail_cursor_enabled: bool,
+    pub trail_cursor: trail_cursor::TrailCursor,
 }
 
 /// Check if two styles are compatible for shaping (can be in the same text run)
@@ -140,6 +145,9 @@ impl Renderer {
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
             is_game_mode_enabled: config.renderer.strategy.is_game(),
+            custom_mouse_cursor: config.effects.custom_mouse_cursor,
+            trail_cursor_enabled: config.effects.trail_cursor,
+            trail_cursor: trail_cursor::TrailCursor::new(),
         };
 
         // Pre-populate font cache with common characters for better performance
@@ -1253,8 +1261,6 @@ impl Renderer {
             None
         };
 
-        sugarloaf.render();
-
         // let _duration = start.elapsed();
         window_update
     }
@@ -1262,6 +1268,9 @@ impl Renderer {
     /// Check if the renderer needs continuous redraw (for animations)
     #[inline]
     pub fn needs_redraw(&mut self) -> bool {
+        if self.trail_cursor.is_animating() {
+            return true;
+        }
         if self.scrollbar.needs_redraw() {
             return true;
         }

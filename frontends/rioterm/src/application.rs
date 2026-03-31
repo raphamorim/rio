@@ -70,6 +70,8 @@ impl Application<'_> {
             event_loop.set_use_native_quit_dialog(config.window.macos_use_quit_dialog);
         }
 
+        rio_notifier::request_authorization();
+
         Application {
             config,
             event_proxy,
@@ -136,6 +138,10 @@ impl Application<'_> {
                 tracing::debug!("Audio bell requested but audio feature is not enabled");
             }
         }
+    }
+
+    fn handle_desktop_notification(&self, title: &str, body: &str) {
+        rio_notifier::send_notification(title, body);
     }
 
     pub fn run(
@@ -523,6 +529,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if self.config.bell.audio {
                     self.handle_audio_bell();
                 }
+            }
+            RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {
+                self.handle_desktop_notification(&title, &body);
             }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
                 if let Some(route) = self.router.routes.get(&window_id) {

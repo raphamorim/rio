@@ -233,6 +233,9 @@ pub trait Handler {
     /// Hopefully this is never implemented.
     fn bell(&mut self) {}
 
+    /// Desktop notification (OSC 9 / OSC 777).
+    fn desktop_notification(&mut self, _title: String, _body: String) {}
+
     /// Substitute char under cursor.
     fn substitute(&mut self) {}
 
@@ -1104,7 +1107,29 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                         return;
                     }
                 }
-                // OSC 9 can also be used for desktop notifications, but we don't support that yet
+                // OSC 9 desktop notification: ESC ] 9 ; <body> ST
+                if params.len() >= 2 {
+                    let body = std::str::from_utf8(params[1])
+                        .unwrap_or_default()
+                        .to_string();
+                    self.handler.desktop_notification(String::new(), body);
+                    return;
+                }
+                unhandled(params);
+            }
+
+            // OSC 777 - rxvt notification: ESC ] 777 ; notify ; <title> ; <body> ST
+            b"777" => {
+                if params.len() >= 4 && params[1] == b"notify" {
+                    let title = std::str::from_utf8(params[2])
+                        .unwrap_or_default()
+                        .to_string();
+                    let body = std::str::from_utf8(params[3])
+                        .unwrap_or_default()
+                        .to_string();
+                    self.handler.desktop_notification(title, body);
+                    return;
+                }
                 unhandled(params);
             }
 

@@ -162,8 +162,13 @@ pub fn create_window_builder(
 }
 
 pub fn configure_window(winit_window: &Window, config: &Config) {
-    let current_mouse_cursor = CursorIcon::Text;
-    winit_window.set_cursor(current_mouse_cursor);
+    if config.effects.custom_mouse_cursor {
+        winit_window.set_cursor_visible(false);
+    } else {
+        winit_window.set_cursor_visible(true);
+        let current_mouse_cursor = CursorIcon::Text;
+        winit_window.set_cursor(current_mouse_cursor);
+    }
 
     // https://docs.rs/winit/latest/winit;/window/enum.ImePurpose.html#variant.Terminal
     winit_window.set_ime_purpose(ImePurpose::Terminal);

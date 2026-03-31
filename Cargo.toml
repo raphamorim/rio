@@ -7,6 +7,7 @@ members = [
     "rio-proc-macros",
     "rio-backend",
     "rio-window",
+    "rio-notifier",
     "frontends/rioterm",
 ]
 resolver = "2"
@@ -31,6 +32,7 @@ readme = "README.md"
 teletypewriter = { path = "teletypewriter", version = "0.3.0" }
 rio-backend = { path = "rio-backend", version = "0.3.0" }
 rio-window = { path = "rio-window", version = "0.3.0", default-features = false }
+rio-notifier = { path = "rio-notifier", version = "0.3.0" }
 sugarloaf = { path = "sugarloaf", version = "0.3.0" }
 
 # Own dependencies
