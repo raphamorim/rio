@@ -401,6 +401,8 @@ impl MetalRenderer {
 
 struct CachedGraphic {
     location: image_cache::ImageLocation,
+    /// Atlas allocation ID for deallocation.
+    image_id: image_cache::ImageId,
     width: f32,
     height: f32,
     last_used_frame: u64,
@@ -835,6 +837,7 @@ impl Renderer {
                                         graphic.id,
                                         CachedGraphic {
                                             location,
+                                            image_id: id,
                                             width: entry.width,
                                             height: entry.height,
                                             last_used_frame: self.current_frame,
@@ -1191,7 +1194,10 @@ impl Renderer {
                         .map(|e| e.generation != cached.generation)
                         .unwrap_or(false);
                     if stale {
-                        self.graphic_cache.remove(&overlay.graphic_id);
+                        // Deallocate old atlas entry before re-uploading
+                        if let Some(old) = self.graphic_cache.remove(&overlay.graphic_id) {
+                            self.images.deallocate(old.image_id);
+                        }
                         true
                     } else {
                         cached.last_used_frame = self.current_frame;
@@ -1250,6 +1256,7 @@ impl Renderer {
                                 overlay.graphic_id,
                                 CachedGraphic {
                                     location,
+                                    image_id: id,
                                     width: entry.width,
                                     height: entry.height,
                                     last_used_frame: self.current_frame,
@@ -1309,8 +1316,8 @@ impl Renderer {
     /// Evict a specific graphic from the cache.
     fn evict_graphic(&mut self, graphic_id: GraphicId) -> bool {
         if let Some(cached) = self.graphic_cache.remove(&graphic_id) {
-            // Note: ImageCache doesn't currently expose deallocate publicly,
-            // but the entry will be overwritten when atlas space is reused
+            // Deallocate from atlas to free GPU memory
+            self.images.deallocate(cached.image_id);
             tracing::debug!(
                 "Evicted graphic {:?} (last used: frame {})",
                 graphic_id,
@@ -2129,6 +2136,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
+                image_id: image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 10,
@@ -2144,6 +2152,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
+                image_id: image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 5, // Oldest
@@ -2159,6 +2168,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
+                image_id: image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 15, // Newest
@@ -2193,6 +2203,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
+                image_id: image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 50,

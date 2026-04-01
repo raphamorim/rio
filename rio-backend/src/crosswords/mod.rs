@@ -3621,8 +3621,17 @@ impl<U: EventListener> Crosswords<U> {
             .unwrap_or(self.graphics.kitty_transmit_generation);
         graphic_data.generation = generation;
 
-        // Memory management
+        // Memory management — untrack old allocation before tracking new one
         let graphic_bytes = graphic_data.pixels.len();
+        if let Some(&old_ts) = self.graphics.image_timestamps.get(&graphic_id) {
+            // Same graphic_id being re-transmitted; untrack old bytes first
+            let _ = old_ts; // just used for existence check
+            // Estimate old bytes from stored image if available
+            if let Some(stored) = self.graphics.get_kitty_image(image_id) {
+                let old_bytes = stored.data.pixels.len();
+                self.graphics.untrack_graphic(graphic_id, old_bytes);
+            }
+        }
         if self.graphics.total_bytes + graphic_bytes > self.graphics.total_limit {
             let used_ids = self.collect_used_graphic_ids();
             self.graphics.evict_images(graphic_bytes, &used_ids);
@@ -3677,14 +3686,23 @@ impl<U: EventListener> Crosswords<U> {
             transmit_generation: generation,
         };
 
+        // Check if this placement already exists with the same generation
+        // (avoids re-uploading identical pixel data to GPU every frame)
+        let needs_upload = match self.graphics.kitty_placements.get(&(image_id, placement_id)) {
+            Some(existing) => existing.transmit_generation != generation,
+            None => true,
+        };
+
         self.graphics
             .kitty_placements
             .insert((image_id, placement_id), kitty_placement);
         self.graphics.kitty_graphics_dirty = true;
 
-        // Push graphic data for GPU upload
-        self.graphics.pending.push(graphic_data);
-        self.send_graphics_updates();
+        // Only push pixel data when image data actually changed
+        if needs_upload {
+            self.graphics.pending.push(graphic_data);
+            self.send_graphics_updates();
+        }
 
         // Handle cursor movement per kitty spec
         match placement.cursor_movement {
