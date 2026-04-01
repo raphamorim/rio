@@ -986,12 +986,27 @@ impl Renderer {
                         .kitty_virtual_placements
                         .clone(),
                     kitty_images: terminal.graphics.kitty_images.clone(),
+                    kitty_placements: {
+                        let mut placements: Vec<_> = terminal
+                            .graphics
+                            .kitty_placements
+                            .values()
+                            .cloned()
+                            .collect();
+                        placements.sort_by_key(|p| p.z_index);
+                        placements
+                    },
                 };
+                terminal.graphics.kitty_graphics_dirty = false;
                 terminal.reset_damage();
                 drop(terminal);
 
                 snapshot
             };
+
+            // Store kitty placements for later overlay rendering
+            context.renderable_content.terminal_snapshot_placements =
+                terminal_snapshot.kitty_placements.clone();
 
             // Get hint matches from renderable content
             let hint_matches = context.renderable_content.hint_matches.as_deref();

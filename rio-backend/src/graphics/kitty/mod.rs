@@ -7,6 +7,7 @@ use crate::ansi::kitty_graphics_protocol::{
 use crate::crosswords::Crosswords;
 use crate::event::{EventListener, RioEvent, WindowId};
 use crate::performer::handler::Handler;
+use crate::ansi::graphics::KittyPlacement;
 use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 
 // Common test utilities
@@ -395,6 +396,7 @@ fn test_cursor_movement_default() {
         }),
         display_width: None,
         display_height: None,
+        generation: 0,
     };
 
     term.store_graphic(graphic);
@@ -470,6 +472,7 @@ fn test_cursor_movement_no_move() {
         }),
         display_width: None,
         display_height: None,
+        generation: 0,
     };
 
     term.store_graphic(graphic);
@@ -572,6 +575,7 @@ fn test_image_row_occupation_exact_fit() {
         }),
         display_width: None,
         display_height: None,
+        generation: 0,
     };
 
     term.store_graphic(graphic);
@@ -638,6 +642,7 @@ fn test_image_row_occupation_single_row() {
         }),
         display_width: None,
         display_height: None,
+        generation: 0,
     };
 
     term.store_graphic(graphic);
@@ -702,6 +707,7 @@ fn test_image_row_occupation_three_rows() {
         }),
         display_width: None,
         display_height: None,
+        generation: 0,
     };
 
     term.store_graphic(graphic);
@@ -771,6 +777,7 @@ fn test_image_row_occupation_from_middle() {
         }),
         display_width: None,
         display_height: None,
+        generation: 0,
     };
 
     term.store_graphic(graphic);
@@ -857,6 +864,7 @@ fn test_store_graphic() {
         resize: None,
         display_width: None,
         display_height: None,
+        generation: 0,
     };
 
     // Store without displaying
@@ -927,6 +935,7 @@ fn test_delete_by_z_index_only_deletes_matching() {
         resize: None,
         display_width: None,
         display_height: None,
+        generation: 0,
     };
     term.insert_graphic(graphic, None, Some(0), Some(1), 5);
 
@@ -944,6 +953,7 @@ fn test_delete_by_z_index_only_deletes_matching() {
         resize: None,
         display_width: None,
         display_height: None,
+        generation: 0,
     };
     term.insert_graphic(graphic2, None, Some(0), Some(2), 10);
 
@@ -1004,6 +1014,7 @@ fn test_delete_by_kitty_image_id() {
         resize: None,
         display_width: None,
         display_height: None,
+        generation: 0,
     };
     // insert_graphic assigns a NEW internal GraphicId (via next_id()),
     // but we pass kitty_image_id=42 so delete-by-id can find it.
@@ -1078,6 +1089,7 @@ fn test_delete_by_image_id_does_not_delete_wrong_id() {
         resize: None,
         display_width: None,
         display_height: None,
+        generation: 0,
     };
     term.insert_graphic(graphic, None, Some(0), Some(42), 0);
 
@@ -1184,6 +1196,7 @@ fn test_placed_textures_tracks_inserts() {
         resize: None,
         display_width: None,
         display_height: None,
+        generation: 0,
     };
     term.insert_graphic(graphic, None, Some(0), None, 0);
 
@@ -1233,5 +1246,880 @@ fn test_collect_active_ids_uses_weak_refs() {
     assert!(
         graphics.placed_textures.is_empty(),
         "Stale entry should be cleaned up"
+    );
+}
+
+// ============================================================
+// Overlay placement tests
+// ============================================================
+
+#[test]
+fn test_graphic_id_kitty_vs_sixel_no_collision() {
+    let kitty_id = GraphicId::new_kitty(1);
+    let sixel_id = GraphicId::new(1);
+
+    assert_ne!(kitty_id, sixel_id, "Kitty and sixel IDs must not collide");
+    assert!(kitty_id.is_kitty());
+    assert!(!sixel_id.is_kitty());
+
+    // High bit set for kitty
+    assert!(kitty_id.get() & (1u64 << 63) != 0);
+    assert!(sixel_id.get() & (1u64 << 63) == 0);
+}
+
+#[test]
+fn test_graphic_id_kitty_different_images() {
+    let id1 = GraphicId::new_kitty(1);
+    let id2 = GraphicId::new_kitty(2);
+    let id1_again = GraphicId::new_kitty(1);
+
+    assert_ne!(id1, id2);
+    assert_eq!(id1, id1_again);
+}
+
+#[test]
+fn test_store_kitty_image_increments_generation() {
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+    let pixels = vec![255u8; 4 * 4 * 4];
+
+    let data1 = GraphicData {
+        id: GraphicId::new(1),
+        width: 4,
+        height: 4,
+        color_type: ColorType::Rgba,
+        pixels: pixels.clone(),
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(1, None, data1);
+    let gen1 = graphics.get_kitty_image(1).unwrap().generation;
+
+    let data2 = GraphicData {
+        id: GraphicId::new(1),
+        width: 4,
+        height: 4,
+        color_type: ColorType::Rgba,
+        pixels: pixels.clone(),
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(1, None, data2);
+    let gen2 = graphics.get_kitty_image(1).unwrap().generation;
+
+    assert!(gen2 > gen1, "Generation must increase on re-transmission");
+}
+
+#[test]
+fn test_kitty_placement_insert_and_delete() {
+    use crate::ansi::graphics::{Graphics, KittyPlacement};
+
+    let mut graphics = Graphics::default();
+
+    let placement = KittyPlacement {
+        image_id: 1,
+        placement_id: 0,
+        graphic_id: GraphicId::new_kitty(1),
+        source_x: 0,
+        source_y: 0,
+        source_width: 0,
+        source_height: 0,
+        dest_col: 0,
+        dest_row: 0,
+        columns: 10,
+        rows: 5,
+        pixel_width: 100,
+        pixel_height: 50,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        z_index: 0,
+        transmit_generation: 1,
+    };
+
+    graphics.kitty_placements.insert((1, 0), placement);
+    assert_eq!(graphics.kitty_placements.len(), 1);
+
+    // Delete by image_id
+    graphics
+        .kitty_placements
+        .retain(|k, _| k.0 != 1);
+    assert_eq!(graphics.kitty_placements.len(), 0);
+}
+
+#[test]
+fn test_kitty_placement_delete_by_z_index() {
+    use crate::ansi::graphics::{Graphics, KittyPlacement};
+
+    let mut graphics = Graphics::default();
+
+    let make_placement = |image_id: u32, z: i32| KittyPlacement {
+        image_id,
+        placement_id: 0,
+        graphic_id: GraphicId::new_kitty(image_id),
+        source_x: 0,
+        source_y: 0,
+        source_width: 0,
+        source_height: 0,
+        dest_col: 0,
+        dest_row: 0,
+        columns: 1,
+        rows: 1,
+        pixel_width: 10,
+        pixel_height: 10,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        z_index: z,
+        transmit_generation: 1,
+    };
+
+    graphics.kitty_placements.insert((1, 0), make_placement(1, 0));
+    graphics.kitty_placements.insert((2, 0), make_placement(2, -1));
+    graphics.kitty_placements.insert((3, 0), make_placement(3, 0));
+    assert_eq!(graphics.kitty_placements.len(), 3);
+
+    // Delete z=0 placements
+    graphics.kitty_placements.retain(|_, p| p.z_index != 0);
+    assert_eq!(graphics.kitty_placements.len(), 1);
+    assert!(graphics.kitty_placements.contains_key(&(2, 0)));
+}
+
+#[test]
+fn test_collect_active_ids_includes_overlay_placements() {
+    use crate::ansi::graphics::{Graphics, KittyPlacement};
+
+    let mut graphics = Graphics::default();
+
+    let placement = KittyPlacement {
+        image_id: 42,
+        placement_id: 0,
+        graphic_id: GraphicId::new_kitty(42),
+        source_x: 0,
+        source_y: 0,
+        source_width: 0,
+        source_height: 0,
+        dest_col: 0,
+        dest_row: 0,
+        columns: 1,
+        rows: 1,
+        pixel_width: 10,
+        pixel_height: 10,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        z_index: 0,
+        transmit_generation: 1,
+    };
+
+    graphics.kitty_placements.insert((42, 0), placement);
+
+    let active = graphics.collect_active_graphic_ids();
+    assert!(
+        active.contains(&GraphicId::new_kitty(42).get()),
+        "Overlay placements should be counted as active"
+    );
+}
+
+#[test]
+fn test_eviction_removes_dangling_placements() {
+    use crate::ansi::graphics::{Graphics, KittyPlacement};
+
+    let mut graphics = Graphics {
+        total_limit: 100,
+        ..Graphics::default()
+    };
+
+    // Add a graphic that will be evicted
+    let pixels = vec![255u8; 200]; // 200 bytes, exceeds 100 limit
+    let data = GraphicData {
+        id: GraphicId::new_kitty(1),
+        width: 10,
+        height: 5,
+        color_type: ColorType::Rgba,
+        pixels,
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.pending.push(data);
+    graphics.track_graphic(GraphicId::new_kitty(1), 200);
+
+    // Add an overlay placement referencing this graphic
+    let placement = KittyPlacement {
+        image_id: 1,
+        placement_id: 0,
+        graphic_id: GraphicId::new_kitty(1),
+        source_x: 0,
+        source_y: 0,
+        source_width: 0,
+        source_height: 0,
+        dest_col: 0,
+        dest_row: 0,
+        columns: 1,
+        rows: 1,
+        pixel_width: 10,
+        pixel_height: 10,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        z_index: 0,
+        transmit_generation: 1,
+    };
+    graphics.kitty_placements.insert((1, 0), placement);
+
+    // Trigger eviction
+    let used_ids = std::collections::HashSet::new();
+    graphics.evict_images(100, &used_ids);
+
+    // Placement should be removed along with the image
+    assert!(
+        graphics.kitty_placements.is_empty(),
+        "Dangling placements should be removed during eviction"
+    );
+}
+
+#[test]
+fn test_next_id_stays_below_kitty_space() {
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+    graphics.last_id = (1u64 << 63) - 2;
+
+    let id1 = graphics.next_id();
+    assert!(!id1.is_kitty(), "Sixel ID must not enter kitty space");
+
+    let id2 = graphics.next_id();
+    // After wrapping, should be back to 1
+    assert_eq!(id2.get(), 1);
+    assert!(!id2.is_kitty());
+}
+
+/// Helper to create a KittyPlacement for tests.
+fn make_test_placement(
+    image_id: u32,
+    placement_id: u32,
+    dest_col: usize,
+    dest_row: i64,
+    columns: u32,
+    rows: u32,
+    z_index: i32,
+) -> KittyPlacement {
+    KittyPlacement {
+        image_id,
+        placement_id,
+        graphic_id: GraphicId::new_kitty(image_id),
+        source_x: 0,
+        source_y: 0,
+        source_width: 0,
+        source_height: 0,
+        dest_col,
+        dest_row,
+        columns,
+        rows,
+        pixel_width: columns * 10,
+        pixel_height: rows * 20,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        z_index,
+        transmit_generation: 1,
+    }
+}
+
+#[test]
+fn test_placement_id_zero_creates_multiple() {
+    // Ghostty test: "storage: add placement with zero placement id"
+    // When placement_id=0, each insertion should use a unique key
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    // Insert two placements with placement_id=0 for same image
+    // In the real code, the handler auto-assigns unique IDs, but at the
+    // data structure level, (image_id, 0) would overwrite. The protocol
+    // layer should assign unique placement_ids before inserting.
+    let p1 = make_test_placement(1, 0, 0, 0, 5, 3, 0);
+    let p2 = make_test_placement(1, 1, 5, 0, 5, 3, 0);
+
+    graphics.kitty_placements.insert((1, 0), p1);
+    graphics.kitty_placements.insert((1, 1), p2);
+
+    assert_eq!(graphics.kitty_placements.len(), 2);
+}
+
+#[test]
+fn test_delete_all_placements_preserves_images() {
+    // Kitty test: "test_gr_delete" d=a (lowercase) deletes placements but not images
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    // Store an image
+    let data = GraphicData {
+        id: GraphicId::new_kitty(1),
+        width: 4,
+        height: 4,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 64],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(1, None, data);
+
+    // Add placements
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 0));
+    graphics
+        .kitty_placements
+        .insert((1, 1), make_test_placement(1, 1, 5, 0, 5, 3, 0));
+
+    // Delete all placements (lowercase 'a' = keep images)
+    graphics.kitty_placements.clear();
+
+    assert_eq!(graphics.kitty_placements.len(), 0, "All placements removed");
+    assert!(
+        graphics.get_kitty_image(1).is_some(),
+        "Image should still exist"
+    );
+}
+
+#[test]
+fn test_delete_all_placements_and_images() {
+    // Kitty test: "test_gr_delete" d=A (uppercase) deletes both
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    let data = GraphicData {
+        id: GraphicId::new_kitty(1),
+        width: 4,
+        height: 4,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 64],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(1, None, data);
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 0));
+
+    // Uppercase A: delete placements AND images
+    graphics.kitty_placements.clear();
+    graphics.kitty_images.clear();
+    graphics.kitty_image_numbers.clear();
+
+    assert_eq!(graphics.kitty_placements.len(), 0);
+    assert!(graphics.get_kitty_image(1).is_none());
+}
+
+#[test]
+fn test_delete_by_specific_placement_id() {
+    // Ghostty test: "storage: delete placement by specific id"
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 0));
+    graphics
+        .kitty_placements
+        .insert((1, 1), make_test_placement(1, 1, 5, 0, 5, 3, 0));
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_test_placement(2, 0, 0, 5, 5, 3, 0));
+
+    assert_eq!(graphics.kitty_placements.len(), 3);
+
+    // Delete specific placement (image_id=1, placement_id=1)
+    graphics.kitty_placements.remove(&(1, 1));
+
+    assert_eq!(graphics.kitty_placements.len(), 2);
+    assert!(graphics.kitty_placements.contains_key(&(1, 0)));
+    assert!(!graphics.kitty_placements.contains_key(&(1, 1)));
+    assert!(graphics.kitty_placements.contains_key(&(2, 0)));
+}
+
+#[test]
+fn test_delete_by_image_id_removes_all_placements_for_image() {
+    // Ghostty test: "storage: delete all placements by image id"
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 0));
+    graphics
+        .kitty_placements
+        .insert((1, 1), make_test_placement(1, 1, 5, 0, 5, 3, 0));
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_test_placement(2, 0, 0, 5, 5, 3, 0));
+
+    // Delete all placements for image_id=1
+    graphics.kitty_placements.retain(|k, _| k.0 != 1);
+
+    assert_eq!(graphics.kitty_placements.len(), 1);
+    assert!(graphics.kitty_placements.contains_key(&(2, 0)));
+}
+
+#[test]
+fn test_delete_intersecting_cursor() {
+    // Ghostty test: "storage: delete intersecting cursor"
+    // Kitty test: "test_gr_delete" d=C
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    // Place at col=0, row=0, size 5x3
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 0));
+    // Place at col=10, row=10, size 5x3
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_test_placement(2, 0, 10, 10, 5, 3, 0));
+
+    // Cursor at (2, 1) — intersects placement 1 (col 0..5, row 0..3)
+    let cursor_col = 2usize;
+    let cursor_abs_row = 1i64;
+    graphics.kitty_placements.retain(|_, p| {
+        !(p.dest_col <= cursor_col
+            && cursor_col < p.dest_col + p.columns as usize
+            && p.dest_row <= cursor_abs_row
+            && cursor_abs_row < p.dest_row + p.rows as i64)
+    });
+
+    assert_eq!(graphics.kitty_placements.len(), 1);
+    assert!(graphics.kitty_placements.contains_key(&(2, 0)));
+}
+
+#[test]
+fn test_delete_intersecting_cursor_hits_multiple() {
+    // Ghostty test: "storage: delete intersecting cursor hits multiple"
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    // Two overlapping placements at same position
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 10, 10, 0));
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_test_placement(2, 0, 0, 0, 5, 5, 1));
+
+    let cursor_col = 2usize;
+    let cursor_abs_row = 2i64;
+    graphics.kitty_placements.retain(|_, p| {
+        !(p.dest_col <= cursor_col
+            && cursor_col < p.dest_col + p.columns as usize
+            && p.dest_row <= cursor_abs_row
+            && cursor_abs_row < p.dest_row + p.rows as i64)
+    });
+
+    assert_eq!(
+        graphics.kitty_placements.len(),
+        0,
+        "Both overlapping placements should be removed"
+    );
+}
+
+#[test]
+fn test_delete_by_column() {
+    // Ghostty test: "storage: delete by column"
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    // Placement at col 0, width 5 cells
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 0));
+    // Placement at col 10, width 5 cells
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_test_placement(2, 0, 10, 0, 5, 3, 0));
+    // Placement at col 3, width 2 cells (overlaps column 3)
+    graphics
+        .kitty_placements
+        .insert((3, 0), make_test_placement(3, 0, 3, 5, 2, 1, 0));
+
+    // Delete placements intersecting column 3
+    let col = 3usize;
+    graphics
+        .kitty_placements
+        .retain(|_, p| !(p.dest_col <= col && col < p.dest_col + p.columns as usize));
+
+    assert_eq!(graphics.kitty_placements.len(), 1);
+    assert!(
+        graphics.kitty_placements.contains_key(&(2, 0)),
+        "Only placement at col 10 should survive"
+    );
+}
+
+#[test]
+fn test_delete_by_row() {
+    // Ghostty test: "storage: delete by row"
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    // Placement at row 0, height 3
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 0));
+    // Placement at row 10, height 2
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_test_placement(2, 0, 0, 10, 5, 2, 0));
+
+    // Delete placements intersecting row 1
+    let abs_row = 1i64;
+    graphics.kitty_placements.retain(|_, p| {
+        !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64)
+    });
+
+    assert_eq!(graphics.kitty_placements.len(), 1);
+    assert!(graphics.kitty_placements.contains_key(&(2, 0)));
+}
+
+#[test]
+fn test_delete_by_column_1x1() {
+    // Ghostty test: "storage: delete by column 1x1"
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 1, 1, 0));
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_test_placement(2, 0, 1, 0, 1, 1, 0));
+    graphics
+        .kitty_placements
+        .insert((3, 0), make_test_placement(3, 0, 2, 0, 1, 1, 0));
+
+    // Delete column 1
+    let col = 1usize;
+    graphics
+        .kitty_placements
+        .retain(|_, p| !(p.dest_col <= col && col < p.dest_col + p.columns as usize));
+
+    assert_eq!(graphics.kitty_placements.len(), 2);
+    assert!(graphics.kitty_placements.contains_key(&(1, 0)));
+    assert!(!graphics.kitty_placements.contains_key(&(2, 0)));
+    assert!(graphics.kitty_placements.contains_key(&(3, 0)));
+}
+
+#[test]
+fn test_delete_by_row_1x1() {
+    // Ghostty test: "storage: delete by row 1x1"
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 1, 1, 0));
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_test_placement(2, 0, 0, 1, 1, 1, 0));
+    graphics
+        .kitty_placements
+        .insert((3, 0), make_test_placement(3, 0, 0, 2, 1, 1, 0));
+
+    // Delete row 1
+    let abs_row = 1i64;
+    graphics.kitty_placements.retain(|_, p| {
+        !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64)
+    });
+
+    assert_eq!(graphics.kitty_placements.len(), 2);
+    assert!(graphics.kitty_placements.contains_key(&(1, 0)));
+    assert!(!graphics.kitty_placements.contains_key(&(2, 0)));
+    assert!(graphics.kitty_placements.contains_key(&(3, 0)));
+}
+
+#[test]
+fn test_retransmit_same_image_id_updates_data() {
+    // Kitty test: "test_load_images" — re-transmit replaces image data
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    let data1 = GraphicData {
+        id: GraphicId::new_kitty(1),
+        width: 4,
+        height: 4,
+        color_type: ColorType::Rgba,
+        pixels: vec![0u8; 64],
+        is_opaque: false,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(1, None, data1);
+    let gen1 = graphics.get_kitty_image(1).unwrap().generation;
+    let pixels1 = graphics.get_kitty_image(1).unwrap().data.pixels[0];
+
+    // Re-transmit with different pixel data
+    let data2 = GraphicData {
+        id: GraphicId::new_kitty(1),
+        width: 4,
+        height: 4,
+        color_type: ColorType::Rgba,
+        pixels: vec![128u8; 64],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(1, None, data2);
+    let gen2 = graphics.get_kitty_image(1).unwrap().generation;
+    let pixels2 = graphics.get_kitty_image(1).unwrap().data.pixels[0];
+
+    assert!(gen2 > gen1, "Generation must increase");
+    assert_ne!(pixels1, pixels2, "Pixel data must be replaced");
+    assert_eq!(pixels2, 128);
+}
+
+#[test]
+fn test_image_number_mapping() {
+    // Kitty test: "test_gr_operations_with_numbers" — I parameter maps to image_id
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    let data = GraphicData {
+        id: GraphicId::new_kitty(42),
+        width: 2,
+        height: 2,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 16],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    // Store with image_number=7
+    graphics.store_kitty_image(42, Some(7), data);
+
+    // Lookup by number
+    let stored = graphics.get_kitty_image_by_number(7);
+    assert!(stored.is_some(), "Should find image by number");
+    assert_eq!(stored.unwrap().data.id, GraphicId::new_kitty(42));
+
+    // Non-existent number
+    assert!(graphics.get_kitty_image_by_number(99).is_none());
+}
+
+#[test]
+fn test_image_number_remapping_on_retransmit() {
+    // Kitty: re-transmitting with same I= gets new image data but same mapping
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    let data1 = GraphicData {
+        id: GraphicId::new_kitty(1),
+        width: 2,
+        height: 2,
+        color_type: ColorType::Rgba,
+        pixels: vec![0u8; 16],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(1, Some(100), data1);
+
+    // Re-transmit same image_id with same number
+    let data2 = GraphicData {
+        id: GraphicId::new_kitty(1),
+        width: 2,
+        height: 2,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 16],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(1, Some(100), data2);
+
+    let stored = graphics.get_kitty_image_by_number(100).unwrap();
+    assert_eq!(
+        stored.data.pixels[0], 255,
+        "Number mapping should point to newest data"
+    );
+}
+
+#[test]
+fn test_placement_source_rect_tracking() {
+    // Kitty/Ghostty: placements track source rectangle for partial image display
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    let mut p = make_test_placement(1, 0, 0, 0, 10, 5, 0);
+    p.source_x = 10;
+    p.source_y = 20;
+    p.source_width = 100;
+    p.source_height = 50;
+
+    graphics.kitty_placements.insert((1, 0), p);
+
+    let stored = graphics.kitty_placements.get(&(1, 0)).unwrap();
+    assert_eq!(stored.source_x, 10);
+    assert_eq!(stored.source_y, 20);
+    assert_eq!(stored.source_width, 100);
+    assert_eq!(stored.source_height, 50);
+}
+
+#[test]
+fn test_placement_z_ordering_sort() {
+    // Kitty/Ghostty: placements sorted by z-index for layered rendering
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 10));
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_test_placement(2, 0, 0, 0, 5, 3, -1));
+    graphics
+        .kitty_placements
+        .insert((3, 0), make_test_placement(3, 0, 0, 0, 5, 3, 0));
+
+    let mut sorted: Vec<_> = graphics.kitty_placements.values().collect();
+    sorted.sort_by_key(|p| p.z_index);
+
+    assert_eq!(sorted[0].z_index, -1, "Negative z first");
+    assert_eq!(sorted[1].z_index, 0, "Zero z middle");
+    assert_eq!(sorted[2].z_index, 10, "Positive z last");
+}
+
+#[test]
+fn test_delete_kitty_images_cleans_number_mapping() {
+    // When images are deleted, number mappings should be cleaned up
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    let data = GraphicData {
+        id: GraphicId::new_kitty(1),
+        width: 2,
+        height: 2,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 16],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(1, Some(7), data);
+
+    assert!(graphics.get_kitty_image_by_number(7).is_some());
+
+    // Delete by predicate
+    graphics.delete_kitty_images(|id, _| *id == 1);
+
+    assert!(
+        graphics.get_kitty_image_by_number(7).is_none(),
+        "Number mapping should be cleaned up when image is deleted"
+    );
+}
+
+#[test]
+fn test_both_columns_and_rows_no_aspect_ratio() {
+    // Ghostty: when both c= and r= specified, stretch to fill (no aspect ratio)
+    // This is what psone relies on for correct width rendering.
+    let mut state = KittyGraphicsState::default();
+
+    // 2x2 RGBA = 16 bytes, base64("/////w==" is 4 bytes, need 16 bytes)
+    // Use pre-encoded: 16 bytes of 0xFF = "/////////////////////w=="
+    let params: Vec<&[u8]> = vec![
+        b"G",
+        b"a=T,f=32,s=2,v=2,c=80,r=20,i=1",
+        b"/////////////////////w==",
+    ];
+
+    let response = kitty_graphics_protocol::parse(&params, &mut state);
+    assert!(response.is_some());
+    let graphic_data = response.unwrap().graphic_data.unwrap();
+
+    assert!(graphic_data.resize.is_some());
+    let resize = graphic_data.resize.unwrap();
+    assert!(
+        !resize.preserve_aspect_ratio,
+        "Both c= and r= specified: should NOT preserve aspect ratio"
+    );
+}
+
+#[test]
+fn test_only_columns_preserves_aspect_ratio() {
+    // When only c= specified, compute r= from aspect ratio
+    let mut state = KittyGraphicsState::default();
+
+    let params: Vec<&[u8]> = vec![
+        b"G",
+        b"a=T,f=32,s=2,v=2,c=80,i=1",
+        b"/////////////////////w==",
+    ];
+
+    let response = kitty_graphics_protocol::parse(&params, &mut state);
+    assert!(response.is_some());
+    let graphic_data = response.unwrap().graphic_data.unwrap();
+
+    let resize = graphic_data.resize.unwrap();
+    assert!(
+        resize.preserve_aspect_ratio,
+        "Only c= specified: should preserve aspect ratio"
+    );
+}
+
+#[test]
+fn test_only_rows_preserves_aspect_ratio() {
+    // When only r= specified, compute c= from aspect ratio
+    let mut state = KittyGraphicsState::default();
+
+    let params: Vec<&[u8]> = vec![
+        b"G",
+        b"a=T,f=32,s=2,v=2,r=20,i=1",
+        b"/////////////////////w==",
+    ];
+
+    let response = kitty_graphics_protocol::parse(&params, &mut state);
+    assert!(response.is_some());
+    let graphic_data = response.unwrap().graphic_data.unwrap();
+
+    let resize = graphic_data.resize.unwrap();
+    assert!(
+        resize.preserve_aspect_ratio,
+        "Only r= specified: should preserve aspect ratio"
     );
 }

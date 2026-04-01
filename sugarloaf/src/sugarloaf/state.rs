@@ -165,10 +165,11 @@ impl SugarState {
         advance_brush: &mut Renderer,
         context: &mut super::Context,
         graphics: &mut Graphics,
+        overlays: &[super::graphics::GraphicOverlay],
     ) {
         // Shape transient texts before rendering
         self.content.build_transient_texts();
-        advance_brush.prepare(context, self, graphics);
+        advance_brush.prepare(context, self, graphics, overlays);
     }
 
     #[inline]

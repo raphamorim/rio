@@ -7,7 +7,7 @@ use crate::components::filters::{Filter, FiltersBrush};
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::{RootStyle, TextLayout};
 use crate::renderer::Renderer;
-use crate::sugarloaf::graphics::Graphics;
+use crate::sugarloaf::graphics::{GraphicOverlay, Graphics};
 
 use crate::context::Context;
 use crate::Content;
@@ -27,6 +27,8 @@ pub struct Sugarloaf<'a> {
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
     filters_brush: Option<FiltersBrush>,
+    /// Kitty graphics overlay placements to render this frame.
+    pub graphic_overlays: Vec<GraphicOverlay>,
 }
 
 #[derive(Debug)]
@@ -163,6 +165,7 @@ impl Sugarloaf<'_> {
             renderer,
             graphics: Graphics::default(),
             filters_brush: None,
+            graphic_overlays: Vec::new(),
         };
 
         Ok(instance)
@@ -817,8 +820,12 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn render(&mut self) {
         self.state.compute_dimensions();
-        self.state
-            .compute_updates(&mut self.renderer, &mut self.ctx, &mut self.graphics);
+        self.state.compute_updates(
+            &mut self.renderer,
+            &mut self.ctx,
+            &mut self.graphics,
+            &self.graphic_overlays,
+        );
 
         match self.ctx.inner {
             crate::context::ContextType::Wgpu(_) => {

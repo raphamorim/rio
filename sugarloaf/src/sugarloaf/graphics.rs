@@ -14,6 +14,7 @@ pub struct GraphicDataEntry {
     pub handle: Handle,
     pub width: f32,
     pub height: f32,
+    pub generation: u64,
 }
 
 #[derive(Default)]
@@ -29,8 +30,11 @@ impl Graphics {
 
     #[inline]
     pub fn insert(&mut self, graphic_data: GraphicData) {
-        if self.inner.contains_key(&graphic_data.id) {
-            return;
+        // Check if existing entry has the same generation (skip re-upload)
+        if let Some(existing) = self.inner.get(&graphic_data.id) {
+            if existing.generation == graphic_data.generation {
+                return;
+            }
         }
 
         let display_w = graphic_data.display_width.unwrap_or(graphic_data.width) as f32;
@@ -45,6 +49,7 @@ impl Graphics {
                 ),
                 width: display_w,
                 height: display_h,
+                generation: graphic_data.generation,
             },
         );
     }
@@ -62,6 +67,22 @@ pub struct Graphic {
     pub offset_y: u16,
 }
 
+/// An overlay placement for a kitty graphics image.
+/// Used by the renderer to draw images on top of (or behind) terminal content.
+#[derive(Debug, Clone)]
+pub struct GraphicOverlay {
+    /// Internal graphic ID for looking up in the Graphics store.
+    pub graphic_id: GraphicId,
+    /// Screen-relative position (in logical pixels).
+    pub x: f32,
+    pub y: f32,
+    /// Display dimensions (in logical pixels).
+    pub width: f32,
+    pub height: f32,
+    /// Z-index for layering.
+    pub z_index: i32,
+}
+
 /// Unique identifier for every graphic added to a grid.
 /// An id of 0 represents a temporary, non-referenceable image
 /// (matching kitty's behavior).
@@ -69,10 +90,26 @@ pub struct Graphic {
 pub struct GraphicId(pub u64);
 
 impl GraphicId {
-    /// Create a new GraphicId from a u64 value.
+    /// Bit flag to distinguish kitty IDs from sixel IDs.
+    const KITTY_TAG: u64 = 1u64 << 63;
+
+    /// Create a new GraphicId from a u64 value (for sixel/general use).
     #[inline]
     pub const fn new(value: u64) -> Self {
         Self(value)
+    }
+
+    /// Create a GraphicId for a kitty protocol image.
+    /// Uses bit 63 as a tag to avoid collision with sixel IDs.
+    #[inline]
+    pub const fn new_kitty(image_id: u32) -> Self {
+        Self((image_id as u64) | Self::KITTY_TAG)
+    }
+
+    /// Returns true if this ID belongs to a kitty protocol image.
+    #[inline]
+    pub const fn is_kitty(self) -> bool {
+        self.0 & Self::KITTY_TAG != 0
     }
 
     /// Get the inner u64 value.
@@ -123,6 +160,10 @@ pub struct GraphicData {
     /// Display height in pixels (set when GPU scaling is used instead of CPU resize).
     /// If None, display at the original pixel height.
     pub display_height: Option<usize>,
+
+    /// Generation counter for cache invalidation.
+    /// Incremented when image data changes (re-transmission with same ID).
+    pub generation: u64,
 }
 
 impl GraphicData {
@@ -205,6 +246,7 @@ impl GraphicData {
             resize: None,
             display_width: None,
             display_height: None,
+            generation: 0,
         }
     }
 
@@ -403,6 +445,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
+        generation: 0,
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -428,6 +471,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
+        generation: 0,
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));
