@@ -1263,23 +1263,26 @@ impl Renderer {
             }
         }
 
-        // Draw overlays
+        // Draw overlays in z-index layers (matching kitty/ghostty):
+        //   z < i32::MIN/2   → order 0, unmasked (drawn with/after cell backgrounds)
+        //   i32::MIN/2 ≤ z<0 → order 0, unmasked (between bg and text, since
+        //                       batch sort puts unmasked before masked at same order)
+        //   z ≥ 0            → order 1 (above text: after all order-0 batches)
+        //
+        // Overlays arrive sorted by z_index from the snapshot. Within the same
+        // order bucket, later draws paint on top (painter's algorithm).
         for overlay in overlays {
             if let Some(cached) = self.graphic_cache.get(&overlay.graphic_id) {
-                let depth = if overlay.z_index >= 0 {
-                    0.5 // Above text
-                } else {
-                    -0.05 // Between bg and text
-                };
+                let order: u8 = if overlay.z_index >= 0 { 1 } else { 0 };
 
-                self.comp.batches.add_image_rect(
+                self.comp.batches.add_image_rect_with_order(
                     &compositor::Rect::new(
                         overlay.x,
                         overlay.y,
                         overlay.width,
                         overlay.height,
                     ),
-                    depth,
+                    0.0,
                     &[1.0, 1.0, 1.0, 1.0],
                     &[
                         cached.location.min.0,
@@ -1288,6 +1291,7 @@ impl Renderer {
                         cached.location.max.1,
                     ],
                     cached.atlas_layer,
+                    order,
                 );
             }
         }
