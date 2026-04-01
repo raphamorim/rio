@@ -3299,6 +3299,63 @@ impl Screen<'_> {
             }
         }
 
+        // Build kitty graphics overlay list from placements
+        {
+            let current_grid = self.context_manager.current_grid();
+            let scaled_margin = current_grid.get_scaled_margin();
+
+            if let Some(current_item) = current_grid.current_item() {
+                let layout = current_item.val.dimension;
+                let cell_width = layout.dimension.width;
+                let line_height = self.sugarloaf.style().line_height;
+                let cell_height = layout.dimension.height * line_height;
+                let panel_rect = current_item.layout_rect();
+                // All coordinates in physical pixels (sugarloaf renderer works in physical px)
+                let origin_x = panel_rect[0] + scaled_margin.left;
+                let origin_y = panel_rect[1] + scaled_margin.top;
+
+                let ctx = self.context_manager.current();
+                let placements = &ctx.renderable_content.terminal_snapshot_placements;
+
+                let mut overlays = Vec::with_capacity(placements.len());
+                let terminal = ctx.terminal.lock();
+                let history_size = terminal.history_size() as i64;
+                let display_offset = terminal.display_offset() as i64;
+                let screen_lines = terminal.screen_lines() as i64;
+                drop(terminal);
+
+                for p in placements {
+                    // Convert absolute row to screen-relative
+                    let screen_row =
+                        p.dest_row - (history_size - display_offset);
+                    if screen_row < 0 || screen_row >= screen_lines {
+                        continue; // Off-screen
+                    }
+
+                    // pixel_width/height are in physical pixels (computed from
+                    // cell_width * columns where cell_width is physical).
+                    // Coordinates are also physical: origin + col * cell_width.
+                    let x = origin_x + p.dest_col as f32 * cell_width;
+                    let y = origin_y + screen_row as f32 * cell_height;
+                    let width = p.pixel_width as f32;
+                    let height = p.pixel_height as f32;
+
+                    overlays.push(rio_backend::sugarloaf::GraphicOverlay {
+                        graphic_id: p.graphic_id,
+                        x,
+                        y,
+                        width,
+                        height,
+                        z_index: p.z_index,
+                    });
+                }
+
+                self.sugarloaf.graphic_overlays = overlays;
+            } else {
+                self.sugarloaf.graphic_overlays.clear();
+            }
+        }
+
         self.sugarloaf.render();
 
         // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)

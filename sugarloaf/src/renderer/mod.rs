@@ -406,6 +406,8 @@ struct CachedGraphic {
     last_used_frame: u64,
     /// Atlas layer index (1-based, 0 = no texture)
     atlas_layer: i32,
+    /// Generation counter for cache invalidation on re-transmission.
+    generation: u64,
 }
 
 pub struct Renderer {
@@ -449,6 +451,7 @@ impl Renderer {
         context: &mut crate::context::Context,
         state: &crate::sugarloaf::state::SugarState,
         graphics: &mut Graphics,
+        overlays: &[crate::sugarloaf::graphics::GraphicOverlay],
     ) {
         // Always clear vertices first
         self.vertices.clear();
@@ -646,6 +649,11 @@ impl Renderer {
         // Reset clip_rect after rendering all content
         self.comp.batches.clip_rect = [0.0; 4];
 
+        // Render kitty graphics overlays
+        if !overlays.is_empty() {
+            self.render_graphic_overlays(graphics, overlays);
+        }
+
         self.vertices.clear();
         self.images.process_atlases(context);
         self.comp.finish(&mut self.vertices);
@@ -831,6 +839,7 @@ impl Renderer {
                                             height: entry.height,
                                             last_used_frame: self.current_frame,
                                             atlas_layer,
+                                            generation: entry.generation,
                                         },
                                     );
                                 }
@@ -1163,6 +1172,125 @@ impl Renderer {
         // let screen_render_duration = start.elapsed();
         // if self.renderer.enable_performance_logging {
         // println!("[PERF] draw_layout() total: {:?}", screen_render_duration);
+    }
+
+    /// Render kitty graphics overlays on top of (or behind) terminal content.
+    fn render_graphic_overlays(
+        &mut self,
+        graphics: &mut Graphics,
+        overlays: &[crate::sugarloaf::graphics::GraphicOverlay],
+    ) {
+        // Upload overlay graphics to atlas
+        for overlay in overlays {
+            // Check if cached and generation still matches
+            let needs_upload = match self.graphic_cache.get_mut(&overlay.graphic_id) {
+                Some(cached) => {
+                    // Check if generation changed (re-transmission)
+                    let stale = graphics
+                        .get(&overlay.graphic_id)
+                        .map(|e| e.generation != cached.generation)
+                        .unwrap_or(false);
+                    if stale {
+                        self.graphic_cache.remove(&overlay.graphic_id);
+                        true
+                    } else {
+                        cached.last_used_frame = self.current_frame;
+                        false
+                    }
+                }
+                None => true,
+            };
+            if !needs_upload {
+                continue;
+            }
+
+            // Not cached — upload to atlas
+            if let Some(entry) = graphics.get(&overlay.graphic_id) {
+                if let crate::components::core::image::Data::Rgba {
+                    width,
+                    height,
+                    ref pixels,
+                } = entry.handle.data
+                {
+                    let add_image = image_cache::AddImage {
+                        width: width as u16,
+                        height: height as u16,
+                        has_alpha: true,
+                        data: image_cache::ImageData::Borrowed(pixels.as_ref()),
+                        content_type: image_cache::ContentType::Color,
+                    };
+
+                    let mut image_id = self.images.allocate(add_image.clone());
+
+                    if image_id.is_none() {
+                        let mut evicted = 0;
+                        while evicted < 5 {
+                            if let Some(oldest_id) = self.find_oldest_graphic() {
+                                self.evict_graphic(oldest_id);
+                                evicted += 1;
+                                image_id = self.images.allocate(add_image.clone());
+                                if image_id.is_some() {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(id) = image_id {
+                        if let Some(location) = self.images.get(&id) {
+                            let atlas_layer = self
+                                .images
+                                .get_atlas_index(id)
+                                .map(|idx| (idx + 1) as i32)
+                                .unwrap_or(1);
+
+                            self.graphic_cache.insert(
+                                overlay.graphic_id,
+                                CachedGraphic {
+                                    location,
+                                    width: entry.width,
+                                    height: entry.height,
+                                    last_used_frame: self.current_frame,
+                                    atlas_layer,
+                                    generation: entry.generation,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Draw overlays
+        for overlay in overlays {
+            if let Some(cached) = self.graphic_cache.get(&overlay.graphic_id) {
+                let depth = if overlay.z_index >= 0 {
+                    0.5 // Above text
+                } else {
+                    -0.05 // Between bg and text
+                };
+
+                self.comp.batches.add_image_rect(
+                    &compositor::Rect::new(
+                        overlay.x,
+                        overlay.y,
+                        overlay.width,
+                        overlay.height,
+                    ),
+                    depth,
+                    &[1.0, 1.0, 1.0, 1.0],
+                    &[
+                        cached.location.min.0,
+                        cached.location.min.1,
+                        cached.location.max.0,
+                        cached.location.max.1,
+                    ],
+                    cached.atlas_layer,
+                );
+            }
+        }
     }
 
     /// Find the least recently used graphic ID for eviction.
@@ -2001,6 +2129,7 @@ mod rect_positioning_tests {
                 height: 100.0,
                 last_used_frame: 10,
                 atlas_layer: 1,
+                generation: 0,
             },
         );
 
@@ -2015,6 +2144,7 @@ mod rect_positioning_tests {
                 height: 100.0,
                 last_used_frame: 5, // Oldest
                 atlas_layer: 1,
+                generation: 0,
             },
         );
 
@@ -2029,6 +2159,7 @@ mod rect_positioning_tests {
                 height: 100.0,
                 last_used_frame: 15, // Newest
                 atlas_layer: 1,
+                generation: 0,
             },
         );
 
@@ -2062,6 +2193,7 @@ mod rect_positioning_tests {
                 height: 100.0,
                 last_used_frame: 50,
                 atlas_layer: 1,
+                generation: 0,
             },
         );
 
