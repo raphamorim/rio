@@ -931,7 +931,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             let is_opaque = pixels.chunks(4).all(|chunk| chunk[3] == 255);
 
             // Create resize command if columns/rows specified
+            // When both c= and r= are given, stretch to fill (no aspect ratio).
+            // When only one is given, compute the other preserving aspect ratio.
             let resize = if cmd.columns > 0 || cmd.rows > 0 {
+                let both_specified = cmd.columns > 0 && cmd.rows > 0;
                 Some(ResizeCommand {
                     width: if cmd.columns > 0 {
                         ResizeParameter::Cells(cmd.columns)
@@ -943,7 +946,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     } else {
                         ResizeParameter::Auto
                     },
-                    preserve_aspect_ratio: true,
+                    preserve_aspect_ratio: !both_specified,
                 })
             } else {
                 None
@@ -959,6 +962,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 resize,
                 display_width: None,
                 display_height: None,
+                generation: 0,
             })
         }
         Format::Rgb24 | Format::Rgba32 => {
@@ -1016,7 +1020,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             };
 
             // Create resize command if columns/rows specified
+            // When both c= and r= are given, stretch to fill (no aspect ratio).
+            // When only one is given, compute the other preserving aspect ratio.
             let resize = if cmd.columns > 0 || cmd.rows > 0 {
+                let both_specified = cmd.columns > 0 && cmd.rows > 0;
                 Some(ResizeCommand {
                     width: if cmd.columns > 0 {
                         ResizeParameter::Cells(cmd.columns)
@@ -1028,7 +1035,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     } else {
                         ResizeParameter::Auto
                     },
-                    preserve_aspect_ratio: true,
+                    preserve_aspect_ratio: !both_specified,
                 })
             } else {
                 None
@@ -1044,6 +1051,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 resize,
                 display_width: None,
                 display_height: None,
+                generation: 0,
             })
         }
     }

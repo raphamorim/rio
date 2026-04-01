@@ -410,6 +410,14 @@ pub trait Handler {
     /// Store a graphic without displaying (for a=t transmit-only).
     fn store_graphic(&mut self, _data: GraphicData) {}
 
+    /// Transmit and display a kitty graphic as an overlay (for a=T).
+    fn kitty_transmit_and_display(
+        &mut self,
+        _data: GraphicData,
+        _placement: kitty_graphics_protocol::PlacementRequest,
+    ) {
+    }
+
     /// Place an existing graphic at a specific location (for a=p).
     fn place_graphic(&mut self, _placement: kitty_graphics_protocol::PlacementRequest) {}
 
@@ -817,28 +825,6 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
             {
                 debug!("[process_apc_buffer] Kitty graphics parsed successfully");
 
-                let has_graphic = response.graphic_data.is_some();
-                let has_placement = response.placement_request.is_some();
-
-                // Get cursor_movement from placement if available
-                let cursor_movement = response
-                    .placement_request
-                    .as_ref()
-                    .map(|p| p.cursor_movement)
-                    .unwrap_or(0);
-
-                // Extract the kitty image_id and z_index for transmit-and-display
-                let kitty_image_id = response
-                    .placement_request
-                    .as_ref()
-                    .map(|p| p.image_id)
-                    .filter(|&id| id != 0);
-                let z_index = response
-                    .placement_request
-                    .as_ref()
-                    .map(|p| p.z_index)
-                    .unwrap_or(0);
-
                 if let Some(graphic_data) = response.graphic_data {
                     debug!(
                         "[process_apc_buffer] Graphic data present: id={}, {}x{}",
@@ -847,31 +833,22 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                         graphic_data.height
                     );
 
-                    if has_placement {
-                        // a=T: Transmit and display
-                        self.handler.insert_graphic(
-                            graphic_data,
-                            None,
-                            Some(cursor_movement),
-                            kitty_image_id,
-                            z_index,
-                        );
+                    if let Some(placement) = response.placement_request {
+                        // a=T: Transmit and display as overlay
+                        self.handler
+                            .kitty_transmit_and_display(graphic_data, placement);
                     } else {
                         // a=t: Transmit only
                         self.handler.store_graphic(graphic_data);
                     }
-                }
-
-                if let Some(placement) = response.placement_request {
+                } else if let Some(placement) = response.placement_request {
                     debug!(
                         "[process_apc_buffer] Placement request: image_id={}",
                         placement.image_id
                     );
 
-                    if !has_graphic {
-                        // a=p: Display previously stored image
-                        self.handler.place_graphic(placement);
-                    }
+                    // a=p: Display previously stored image
+                    self.handler.place_graphic(placement);
                 }
 
                 if let Some(delete) = response.delete_request {

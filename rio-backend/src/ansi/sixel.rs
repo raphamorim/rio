@@ -561,6 +561,7 @@ impl Parser {
             resize: None,
             display_width: None,
             display_height: None,
+            generation: 0,
         };
 
         Ok((data, self.color_registers))
