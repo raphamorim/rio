@@ -3247,12 +3247,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
             image_id, graphic_data.width, graphic_data.height
         );
 
-        // Store the image so it can be re-placed later (a=p)
+        // Store the image first (this takes ownership and bumps generation)
         self.graphics
-            .store_kitty_image(image_id, None, graphic_data.clone());
+            .store_kitty_image(image_id, None, graphic_data);
 
-        // Place as overlay
-        self.place_kitty_overlay(image_id, &placement, graphic_data);
+        // Place as overlay using the stored image data
+        if let Some(stored) = self.graphics.get_kitty_image(image_id) {
+            let data = stored.data.clone();
+            self.place_kitty_overlay(image_id, &placement, data);
+        }
     }
 
     #[inline]

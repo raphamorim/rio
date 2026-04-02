@@ -379,7 +379,7 @@ impl Graphics {
 
         // Check stored kitty images
         for (&kitty_id, stored) in &self.kitty_images {
-            let graphic_id = GraphicId::new(kitty_id as u64);
+            let graphic_id = GraphicId::new_kitty(kitty_id);
             let is_used = used_ids.contains(&graphic_id.get());
             let bytes = Self::calculate_graphic_bytes(&stored.data);
             candidates.push((graphic_id, stored.transmission_time, is_used, bytes));
@@ -423,9 +423,11 @@ impl Graphics {
             // Remove from pending
             self.pending.retain(|g| g.id != id);
 
-            // Remove from kitty_images
-            self.kitty_images
-                .retain(|&kitty_id, _| GraphicId::new(kitty_id as u64) != id);
+            // Remove from kitty_images (check both sixel and kitty ID formats)
+            self.kitty_images.retain(|&kitty_id, _| {
+                GraphicId::new(kitty_id as u64) != id
+                    && GraphicId::new_kitty(kitty_id) != id
+            });
 
             // Remove dangling overlay placements
             self.kitty_placements
