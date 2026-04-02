@@ -509,7 +509,6 @@ enum ImageTexture {
         view: wgpu::TextureView,
     },
     #[cfg(target_os = "macos")]
-    #[allow(dead_code)] // Metal image pipeline TODO
     Metal(metal::Texture),
 }
 

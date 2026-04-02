@@ -3358,7 +3358,7 @@ impl Screen<'_> {
                 let stale_ids: Vec<_> = self
                     .sugarloaf
                     .graphics
-                    .kitty_graphic_ids()
+                    .image_texture_ids()
                     .filter(|id| !active_kitty_ids.contains(id))
                     .collect();
                 for id in stale_ids {
