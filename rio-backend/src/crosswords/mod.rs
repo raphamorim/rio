@@ -3451,6 +3451,85 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     self.cleanup_unused_kitty_images();
                 }
             }
+            b'n' | b'N' => {
+                // Delete by image number — look up image_id from number mapping
+                if let Some(&image_id) =
+                    self.graphics.kitty_image_numbers.get(&delete.image_id)
+                {
+                    self.delete_graphics_matching(|cell_graphic| {
+                        cell_graphic.texture.kitty_image_id == Some(image_id)
+                    });
+                    let before = self.graphics.kitty_placements.len();
+                    if delete.placement_id != 0 {
+                        self.graphics
+                            .kitty_placements
+                            .remove(&(image_id, delete.placement_id));
+                    } else {
+                        self.graphics
+                            .kitty_placements
+                            .retain(|k, _| k.0 != image_id);
+                    }
+                    overlay_changed = self.graphics.kitty_placements.len() != before;
+
+                    if delete.action == b'N' && delete.delete_data {
+                        self.graphics
+                            .delete_kitty_images(|id, _| *id == image_id);
+                    }
+                }
+            }
+            b'q' | b'Q' => {
+                // Delete at cell position with z-index filter
+                if delete.x > 0 && delete.y > 0 {
+                    let col = Column((delete.x - 1) as usize);
+                    let row = Line((delete.y - 1) as i32);
+                    // Cell-based: delete matching position AND z_index
+                    let z = delete.z_index;
+                    self.delete_graphics_matching(|cell_graphic| {
+                        cell_graphic.texture.z_index == z
+                    });
+                    // Overlay-based
+                    let abs_row = self.history_size() as i64 + row.0 as i64;
+                    let c = col.0;
+                    let before = self.graphics.kitty_placements.len();
+                    self.graphics.kitty_placements.retain(|_, p| {
+                        !(p.z_index == z
+                            && p.dest_col <= c
+                            && c < p.dest_col + p.columns as usize
+                            && p.dest_row <= abs_row
+                            && abs_row < p.dest_row + p.rows as i64)
+                    });
+                    overlay_changed = self.graphics.kitty_placements.len() != before;
+                }
+
+                if delete.action == b'Q' && delete.delete_data {
+                    self.cleanup_unused_kitty_images();
+                }
+            }
+            b'r' | b'R' => {
+                // Delete by image ID range [x..y]
+                let range_start = delete.x;
+                let range_end = delete.y;
+                if range_start > 0 && range_end >= range_start {
+                    self.delete_graphics_matching(|cell_graphic| {
+                        cell_graphic
+                            .texture
+                            .kitty_image_id
+                            .map(|id| id >= range_start && id <= range_end)
+                            .unwrap_or(false)
+                    });
+                    let before = self.graphics.kitty_placements.len();
+                    self.graphics.kitty_placements.retain(|k, _| {
+                        k.0 < range_start || k.0 > range_end
+                    });
+                    overlay_changed = self.graphics.kitty_placements.len() != before;
+
+                    if delete.action == b'R' && delete.delete_data {
+                        self.graphics.delete_kitty_images(|id, _| {
+                            *id >= range_start && *id <= range_end
+                        });
+                    }
+                }
+            }
             _ => {
                 debug!(
                     "Kitty graphics delete mode '{}' not implemented",

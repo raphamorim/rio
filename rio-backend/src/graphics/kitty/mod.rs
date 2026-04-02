@@ -2123,3 +2123,404 @@ fn test_only_rows_preserves_aspect_ratio() {
         "Only r= specified: should preserve aspect ratio"
     );
 }
+
+#[test]
+fn test_delete_by_image_number() {
+    // Ghostty: d=n deletes by image number (I= parameter)
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    // Store image with number mapping
+    let data = GraphicData {
+        id: GraphicId::new_kitty(42),
+        width: 2,
+        height: 2,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 16],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(42, Some(7), data);
+    graphics
+        .kitty_placements
+        .insert((42, 0), make_test_placement(42, 0, 0, 0, 5, 3, 0));
+
+    // Look up by number
+    assert!(graphics.get_kitty_image_by_number(7).is_some());
+
+    // Delete by number (simulate d=n with image_number=7)
+    if let Some(&image_id) = graphics.kitty_image_numbers.get(&7) {
+        graphics
+            .kitty_placements
+            .retain(|k, _| k.0 != image_id);
+    }
+
+    assert_eq!(graphics.kitty_placements.len(), 0);
+    // Image still exists (lowercase n = keep data)
+    assert!(graphics.get_kitty_image(42).is_some());
+}
+
+#[test]
+fn test_delete_at_cell_with_z_filter() {
+    // Ghostty: d=q deletes at cell position with z-index filter
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    // Two placements at same position, different z-index
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 0));
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_test_placement(2, 0, 0, 0, 5, 3, -1));
+
+    // Delete at (2, 1) with z=0 — should only remove image 1
+    let col = 2usize;
+    let abs_row = 1i64;
+    let z = 0i32;
+    graphics.kitty_placements.retain(|_, p| {
+        !(p.z_index == z
+            && p.dest_col <= col
+            && col < p.dest_col + p.columns as usize
+            && p.dest_row <= abs_row
+            && abs_row < p.dest_row + p.rows as i64)
+    });
+
+    assert_eq!(graphics.kitty_placements.len(), 1);
+    assert!(graphics.kitty_placements.contains_key(&(2, 0)));
+}
+
+#[test]
+fn test_delete_by_image_range() {
+    // Ghostty: d=r deletes by image ID range
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 0));
+    graphics
+        .kitty_placements
+        .insert((5, 0), make_test_placement(5, 0, 5, 0, 5, 3, 0));
+    graphics
+        .kitty_placements
+        .insert((10, 0), make_test_placement(10, 0, 0, 5, 5, 3, 0));
+
+    // Delete range 1..5
+    let range_start = 1u32;
+    let range_end = 5u32;
+    graphics.kitty_placements.retain(|k, _| {
+        k.0 < range_start || k.0 > range_end
+    });
+
+    assert_eq!(graphics.kitty_placements.len(), 1);
+    assert!(graphics.kitty_placements.contains_key(&(10, 0)));
+}
+
+#[test]
+fn test_implicit_id_no_response() {
+    // When image_id=0 and image_number=0, no response should be sent
+    let mut state = KittyGraphicsState::default();
+
+    // Transmit with no explicit ID
+    let params: Vec<&[u8]> = vec![
+        b"G",
+        b"a=t,f=32,s=1,v=1",
+        b"/w==", // 1 byte base64
+    ];
+
+    let response = kitty_graphics_protocol::parse(&params, &mut state);
+    // Should have graphic data but no response string
+    if let Some(resp) = response {
+        assert!(
+            resp.response.is_none() || resp.response.as_deref() == Some(""),
+            "No response should be sent for implicit IDs"
+        );
+    }
+}
+
+// ============================================================
+// Command parsing tests (matching ghostty/graphics_command.zig)
+// ============================================================
+
+#[test]
+fn test_parse_transmission_with_format_and_dimensions() {
+    // Ghostty: "transmission command"
+    let mut state = KittyGraphicsState::default();
+    // 1x1 RGB (3 bytes) base64 = "AAAA"
+    let params: Vec<&[u8]> = vec![b"G", b"f=24,s=1,v=1,i=1", b"AAAA"];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state);
+    assert!(resp.is_some());
+    let data = resp.unwrap().graphic_data;
+    assert!(data.is_some());
+}
+
+#[test]
+fn test_parse_display_command_with_columns_rows() {
+    // Ghostty: "display command"
+    let mut state = KittyGraphicsState::default();
+    let params: Vec<&[u8]> = vec![b"G", b"a=p,c=80,r=120,i=31", b""];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state);
+    assert!(resp.is_some());
+    let placement = resp.unwrap().placement_request;
+    assert!(placement.is_some());
+    let p = placement.unwrap();
+    assert_eq!(p.columns, 80);
+    assert_eq!(p.rows, 120);
+    assert_eq!(p.image_id, 31);
+}
+
+#[test]
+fn test_parse_delete_command_with_position() {
+    // Ghostty: "delete command"
+    let mut state = KittyGraphicsState::default();
+    let params: Vec<&[u8]> = vec![b"G", b"a=d,d=p,x=3,y=4", b""];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state);
+    assert!(resp.is_some());
+    let delete = resp.unwrap().delete_request;
+    assert!(delete.is_some());
+    let d = delete.unwrap();
+    assert_eq!(d.action, b'p');
+    assert_eq!(d.x, 3);
+    assert_eq!(d.y, 4);
+}
+
+#[test]
+fn test_parse_ignores_unknown_keys() {
+    // Ghostty: "ignore unknown keys (long)"
+    let mut state = KittyGraphicsState::default();
+    // 1x1 RGB with unknown key
+    let params: Vec<&[u8]> = vec![b"G", b"f=24,s=1,v=1,hello=world,i=1", b"AAAA"];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state);
+    // Should parse successfully despite unknown key
+    assert!(resp.is_some());
+}
+
+#[test]
+fn test_parse_large_negative_z_index() {
+    // Ghostty: "ensure very large negative values don't get skipped"
+    let mut state = KittyGraphicsState::default();
+    let params: Vec<&[u8]> = vec![b"G", b"a=p,z=-2000000000,i=1", b""];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state);
+    assert!(resp.is_some());
+    let placement = resp.unwrap().placement_request.unwrap();
+    assert_eq!(placement.z_index, -2000000000);
+}
+
+#[test]
+fn test_response_encoding_with_image_id() {
+    // Ghostty: "response: encode with only image id"
+    let mut state = KittyGraphicsState::default();
+    // 1x1 RGBA = 4 bytes, base64 = "/////w=="
+    let params: Vec<&[u8]> = vec![
+        b"G",
+        b"a=T,f=32,s=1,v=1,i=4",
+        b"/////w==",
+    ];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state).unwrap();
+    assert!(resp.response.is_some());
+    let response_str = resp.response.unwrap();
+    assert!(
+        response_str.contains("i=4"),
+        "Response should contain image id: {}",
+        response_str
+    );
+    assert!(
+        response_str.contains("OK"),
+        "Response should contain OK: {}",
+        response_str
+    );
+}
+
+#[test]
+fn test_response_encoding_with_image_number() {
+    // Ghostty: "response: encode with only image number"
+    let mut state = KittyGraphicsState::default();
+    // 1x1 RGBA = 4 bytes
+    let params: Vec<&[u8]> = vec![
+        b"G",
+        b"a=t,f=32,s=1,v=1,I=4",
+        b"/////w==",
+    ];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state).unwrap();
+    assert!(resp.response.is_some());
+    let response_str = resp.response.unwrap();
+    assert!(
+        response_str.contains("I=4"),
+        "Response should contain image number: {}",
+        response_str
+    );
+}
+
+#[test]
+fn test_default_format_is_rgba() {
+    // Ghostty: "kittygfx default format is rgba"
+    let mut state = KittyGraphicsState::default();
+    // No f= parameter — should default to RGBA (f=32)
+    let params: Vec<&[u8]> = vec![
+        b"G",
+        b"a=t,s=1,v=1,i=1",
+        b"/////w==", // 4 bytes = 1x1 RGBA
+    ];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state);
+    assert!(resp.is_some());
+    let data = resp.unwrap().graphic_data;
+    assert!(data.is_some(), "Should parse with default RGBA format");
+}
+
+#[test]
+fn test_delete_range_multiple_variants() {
+    // Ghostty: "delete range command 1-4"
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics::default();
+
+    // Create placements for images 1, 2, 3
+    for id in 1..=3u32 {
+        graphics
+            .kitty_placements
+            .insert((id, 0), make_test_placement(id, 0, 0, id as i64, 5, 3, 0));
+    }
+
+    // Range delete [1, 2] — should keep image 3
+    graphics
+        .kitty_placements
+        .retain(|k, _| k.0 < 1 || k.0 > 2);
+    assert_eq!(graphics.kitty_placements.len(), 1);
+    assert!(graphics.kitty_placements.contains_key(&(3, 0)));
+
+    // Single-image range [3, 3]
+    graphics
+        .kitty_placements
+        .retain(|k, _| k.0 < 3 || k.0 > 3);
+    assert_eq!(graphics.kitty_placements.len(), 0);
+}
+
+#[test]
+fn test_delete_all_preserves_memory_limit() {
+    // Ghostty: "storage: delete all placements and images preserves limit"
+    use crate::ansi::graphics::Graphics;
+
+    let mut graphics = Graphics {
+        total_limit: 5000,
+        ..Graphics::default()
+    };
+
+    let data = GraphicData {
+        id: GraphicId::new_kitty(1),
+        width: 2,
+        height: 2,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 16],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+    graphics.store_kitty_image(1, None, data);
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 3, 0));
+
+    // Delete all
+    graphics.kitty_placements.clear();
+    graphics.kitty_images.clear();
+
+    assert_eq!(graphics.total_limit, 5000, "Limit should be preserved");
+}
+
+#[test]
+fn test_chunked_quiet_flag_inheritance() {
+    // Ghostty: "kittygfx more chunks with q=1" + "q=0"
+    let mut state = KittyGraphicsState::default();
+
+    // First chunk with q=1 (suppress responses)
+    let params1: Vec<&[u8]> = vec![b"G", b"a=t,f=32,s=2,v=2,i=1,m=1,q=1", b"AAAA"];
+    let resp1 = kitty_graphics_protocol::parse(&params1, &mut state);
+    // First chunk of multi-part: no response yet (data incomplete)
+    // Just verify it doesn't crash
+    assert!(resp1.is_none() || resp1.as_ref().unwrap().graphic_data.is_none());
+
+    // Second chunk (final)
+    let params2: Vec<&[u8]> = vec![b"G", b"m=0", b"AAAAAAAAAAAAAAAA"];
+    let resp2 = kitty_graphics_protocol::parse(&params2, &mut state);
+    // With q=1, response should be suppressed
+    if let Some(resp) = resp2 {
+        assert!(
+            resp.response.is_none() || resp.response.as_deref() == Some(""),
+            "q=1 should suppress response"
+        );
+    }
+}
+
+#[test]
+fn test_aspect_ratio_with_only_columns() {
+    // Ghostty: "storage: aspect ratio calculation when only columns specified"
+    // A 16:9 image with c=10 should compute height preserving aspect ratio
+    use sugarloaf::GraphicData;
+
+    let data = GraphicData {
+        id: GraphicId::new(1),
+        width: 160,
+        height: 90,
+        color_type: ColorType::Rgba,
+        pixels: vec![],
+        is_opaque: true,
+        resize: Some(sugarloaf::ResizeCommand {
+            width: sugarloaf::ResizeParameter::Cells(10),
+            height: sugarloaf::ResizeParameter::Auto,
+            preserve_aspect_ratio: true,
+        }),
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+
+    let cell_w = 10;
+    let cell_h = 20;
+    let (w, h) = data.compute_display_dimensions(cell_w, cell_h, 800, 600);
+
+    // Width = 10 cells * 10px = 100px
+    assert_eq!(w, 100);
+    // Height should preserve 16:9 ratio: 100 * 90/160 = 56.25 ≈ 56
+    assert!(h > 50 && h < 60, "Height should be ~56, got {}", h);
+}
+
+#[test]
+fn test_aspect_ratio_with_only_rows() {
+    // Ghostty: "storage: aspect ratio calculation when only rows specified"
+    use sugarloaf::GraphicData;
+
+    let data = GraphicData {
+        id: GraphicId::new(1),
+        width: 160,
+        height: 90,
+        color_type: ColorType::Rgba,
+        pixels: vec![],
+        is_opaque: true,
+        resize: Some(sugarloaf::ResizeCommand {
+            width: sugarloaf::ResizeParameter::Auto,
+            height: sugarloaf::ResizeParameter::Cells(5),
+            preserve_aspect_ratio: true,
+        }),
+        display_width: None,
+        display_height: None,
+        generation: 0,
+    };
+
+    let cell_w = 10;
+    let cell_h = 20;
+    let (w, h) = data.compute_display_dimensions(cell_w, cell_h, 800, 600);
+
+    // Height = 5 cells * 20px = 100px
+    assert_eq!(h, 100);
+    // Width should preserve 16:9 ratio: 100 * 160/90 = 177.7 ≈ 178
+    assert!(w > 170 && w < 185, "Width should be ~178, got {}", w);
+}

@@ -939,21 +939,9 @@ impl BatchManager {
         coords: &[f32; 4],
         atlas_layer: i32,
     ) {
-        self.add_image_rect_with_order(rect, depth, color, coords, atlas_layer, 0);
-    }
-
-    pub fn add_image_rect_with_order(
-        &mut self,
-        rect: &Rect,
-        depth: f32,
-        color: &[f32; 4],
-        coords: &[f32; 4],
-        atlas_layer: i32,
-        order: u8,
-    ) {
         let cr = self.clip_rect;
         for batch in self.active.iter_mut() {
-            if batch.order == order
+            if batch.order == 0
                 && batch.rect(
                     rect,
                     depth,
@@ -968,7 +956,7 @@ impl BatchManager {
                 return;
             }
         }
-        self.alloc_batch(order).rect(
+        self.alloc_batch(0).rect(
             rect,
             depth,
             color,

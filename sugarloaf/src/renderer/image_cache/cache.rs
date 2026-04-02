@@ -691,35 +691,6 @@ impl ImageCache {
         );
     }
 
-    /// Returns the number of color atlases currently allocated.
-    pub fn color_atlas_count(&self) -> usize {
-        self.color_atlases.len()
-    }
-
-    /// Clear color atlases to reclaim GPU memory from kitty images.
-    /// Keeps the mask atlas (used for text glyphs) intact.
-    /// All color entries become invalid and must be re-uploaded.
-    pub fn clear_color_atlases(&mut self) {
-        // Invalidate all color entries
-        for entry in &mut self.entries {
-            if entry.allocated && entry.atlas_kind == AtlasKind::Color {
-                entry.allocated = false;
-            }
-        }
-
-        // Reset all color atlases to one, freeing GPU textures for extras
-        if let Some(first) = self.color_atlases.first_mut() {
-            first.atlas = Atlas::new(AtlasKind::Color, self.max_texture_size);
-        }
-        // Drop extra atlases (frees their GPU textures)
-        self.color_atlases.truncate(1);
-
-        tracing::info!(
-            "Color atlases cleared, {} remaining",
-            self.color_atlases.len()
-        );
-    }
-
     /// Returns true if the image is valid.
     pub fn is_valid(&self, image: ImageId) -> bool {
         // Empty images are always valid (for zero-sized glyphs)
