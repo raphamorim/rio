@@ -1249,9 +1249,7 @@ fn test_collect_active_ids_uses_weak_refs() {
     );
 }
 
-// ============================================================
 // Overlay placement tests
-// ============================================================
 
 #[test]
 fn test_graphic_id_kitty_vs_sixel_no_collision() {
@@ -2244,9 +2242,7 @@ fn test_implicit_id_no_response() {
     }
 }
 
-// ============================================================
 // Command parsing tests
-// ============================================================
 
 #[test]
 fn test_parse_transmission_with_format_and_dimensions() {
@@ -2524,9 +2520,7 @@ fn test_aspect_ratio_with_only_rows() {
     assert!(w > 170 && w < 185, "Width should be ~178, got {}", w);
 }
 
-// ============================================================
 // Format conversion tests
-// ============================================================
 
 #[test]
 fn test_grayscale_format_conversion() {
