@@ -1664,7 +1664,7 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
 
 /// Process XTGETTCAP request and return DCS response.
 /// Multiple capability queries can be separated by `;` in a single request.
-/// Each capability gets its own DCS response (like Ghostty/xterm).
+/// Each capability gets its own DCS response (like xterm).
 fn process_xtgettcap_request(buffer: &[u8]) -> String {
     debug!("Processing XTGETTCAP request: {:?}", buffer);
 
@@ -1712,7 +1712,7 @@ fn process_xtgettcap_request(buffer: &[u8]) -> String {
 /// Converts `\\E` to ESC (0x1b), `\\n` to newline, `\\r` to CR, etc.
 /// Values containing `%` (parameterized) are returned as-is in source format.
 fn decode_terminfo_value(value: &str) -> Vec<u8> {
-    // Parameterized values are kept in source format (like Ghostty/Kitty)
+    // Parameterized values are kept in source format (like Kitty)
     if value.contains('%') {
         return value.as_bytes().to_vec();
     }

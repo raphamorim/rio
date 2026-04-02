@@ -1533,7 +1533,7 @@ fn make_test_placement(
 
 #[test]
 fn test_placement_id_zero_creates_multiple() {
-    // Ghostty test: "storage: add placement with zero placement id"
+    // Test: add placement with zero placement id"
     // When placement_id=0, each insertion should use a unique key
     use crate::ansi::graphics::Graphics;
 
@@ -1627,7 +1627,7 @@ fn test_delete_all_placements_and_images() {
 
 #[test]
 fn test_delete_by_specific_placement_id() {
-    // Ghostty test: "storage: delete placement by specific id"
+    // Test: delete placement by specific id"
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -1655,7 +1655,7 @@ fn test_delete_by_specific_placement_id() {
 
 #[test]
 fn test_delete_by_image_id_removes_all_placements_for_image() {
-    // Ghostty test: "storage: delete all placements by image id"
+    // Test: delete all placements by image id"
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -1679,7 +1679,7 @@ fn test_delete_by_image_id_removes_all_placements_for_image() {
 
 #[test]
 fn test_delete_intersecting_cursor() {
-    // Ghostty test: "storage: delete intersecting cursor"
+    // Test: delete intersecting cursor"
     // Kitty test: "test_gr_delete" d=C
     use crate::ansi::graphics::Graphics;
 
@@ -1710,7 +1710,7 @@ fn test_delete_intersecting_cursor() {
 
 #[test]
 fn test_delete_intersecting_cursor_hits_multiple() {
-    // Ghostty test: "storage: delete intersecting cursor hits multiple"
+    // Test: delete intersecting cursor hits multiple"
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -1741,7 +1741,7 @@ fn test_delete_intersecting_cursor_hits_multiple() {
 
 #[test]
 fn test_delete_by_column() {
-    // Ghostty test: "storage: delete by column"
+    // Test: delete by column"
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -1774,7 +1774,7 @@ fn test_delete_by_column() {
 
 #[test]
 fn test_delete_by_row() {
-    // Ghostty test: "storage: delete by row"
+    // Test: delete by row"
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -1800,7 +1800,7 @@ fn test_delete_by_row() {
 
 #[test]
 fn test_delete_by_column_1x1() {
-    // Ghostty test: "storage: delete by column 1x1"
+    // Test: delete by column 1x1"
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -1829,7 +1829,7 @@ fn test_delete_by_column_1x1() {
 
 #[test]
 fn test_delete_by_row_1x1() {
-    // Ghostty test: "storage: delete by row 1x1"
+    // Test: delete by row 1x1"
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -1977,7 +1977,7 @@ fn test_image_number_remapping_on_retransmit() {
 
 #[test]
 fn test_placement_source_rect_tracking() {
-    // Kitty/Ghostty: placements track source rectangle for partial image display
+    // placements track source rectangle for partial image display
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -1999,7 +1999,7 @@ fn test_placement_source_rect_tracking() {
 
 #[test]
 fn test_placement_z_ordering_sort() {
-    // Kitty/Ghostty: placements sorted by z-index for layered rendering
+    // placements sorted by z-index for layered rendering
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -2056,8 +2056,7 @@ fn test_delete_kitty_images_cleans_number_mapping() {
 
 #[test]
 fn test_both_columns_and_rows_no_aspect_ratio() {
-    // Ghostty: when both c= and r= specified, stretch to fill (no aspect ratio)
-    // This is what psone relies on for correct width rendering.
+    // When both c= and r= specified, stretch to fill (no aspect ratio).
     let mut state = KittyGraphicsState::default();
 
     // 2x2 RGBA = 16 bytes, base64("/////w==" is 4 bytes, need 16 bytes)
@@ -2126,7 +2125,7 @@ fn test_only_rows_preserves_aspect_ratio() {
 
 #[test]
 fn test_delete_by_image_number() {
-    // Ghostty: d=n deletes by image number (I= parameter)
+    // d=n deletes by image number (I= parameter).
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -2166,7 +2165,7 @@ fn test_delete_by_image_number() {
 
 #[test]
 fn test_delete_at_cell_with_z_filter() {
-    // Ghostty: d=q deletes at cell position with z-index filter
+    // d=q deletes at cell position with z-index filter.
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -2197,7 +2196,7 @@ fn test_delete_at_cell_with_z_filter() {
 
 #[test]
 fn test_delete_by_image_range() {
-    // Ghostty: d=r deletes by image ID range
+    // d=r deletes by image ID range.
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -2246,12 +2245,12 @@ fn test_implicit_id_no_response() {
 }
 
 // ============================================================
-// Command parsing tests (matching ghostty/graphics_command.zig)
+// Command parsing tests
 // ============================================================
 
 #[test]
 fn test_parse_transmission_with_format_and_dimensions() {
-    // Ghostty: "transmission command"
+    // Test: transmission command
     let mut state = KittyGraphicsState::default();
     // 1x1 RGB (3 bytes) base64 = "AAAA"
     let params: Vec<&[u8]> = vec![b"G", b"f=24,s=1,v=1,i=1", b"AAAA"];
@@ -2263,7 +2262,7 @@ fn test_parse_transmission_with_format_and_dimensions() {
 
 #[test]
 fn test_parse_display_command_with_columns_rows() {
-    // Ghostty: "display command"
+    // Test: display command
     let mut state = KittyGraphicsState::default();
     let params: Vec<&[u8]> = vec![b"G", b"a=p,c=80,r=120,i=31", b""];
     let resp = kitty_graphics_protocol::parse(&params, &mut state);
@@ -2278,7 +2277,7 @@ fn test_parse_display_command_with_columns_rows() {
 
 #[test]
 fn test_parse_delete_command_with_position() {
-    // Ghostty: "delete command"
+    // Test: delete command
     let mut state = KittyGraphicsState::default();
     let params: Vec<&[u8]> = vec![b"G", b"a=d,d=p,x=3,y=4", b""];
     let resp = kitty_graphics_protocol::parse(&params, &mut state);
@@ -2293,7 +2292,7 @@ fn test_parse_delete_command_with_position() {
 
 #[test]
 fn test_parse_ignores_unknown_keys() {
-    // Ghostty: "ignore unknown keys (long)"
+    // Test: ignore unknown keys
     let mut state = KittyGraphicsState::default();
     // 1x1 RGB with unknown key
     let params: Vec<&[u8]> = vec![b"G", b"f=24,s=1,v=1,hello=world,i=1", b"AAAA"];
@@ -2304,7 +2303,7 @@ fn test_parse_ignores_unknown_keys() {
 
 #[test]
 fn test_parse_large_negative_z_index() {
-    // Ghostty: "ensure very large negative values don't get skipped"
+    // Test: large negative z-index values
     let mut state = KittyGraphicsState::default();
     let params: Vec<&[u8]> = vec![b"G", b"a=p,z=-2000000000,i=1", b""];
     let resp = kitty_graphics_protocol::parse(&params, &mut state);
@@ -2315,7 +2314,7 @@ fn test_parse_large_negative_z_index() {
 
 #[test]
 fn test_response_encoding_with_image_id() {
-    // Ghostty: "response: encode with only image id"
+    // Test: response encoding with image id
     let mut state = KittyGraphicsState::default();
     // 1x1 RGBA = 4 bytes, base64 = "/////w=="
     let params: Vec<&[u8]> = vec![
@@ -2340,7 +2339,7 @@ fn test_response_encoding_with_image_id() {
 
 #[test]
 fn test_response_encoding_with_image_number() {
-    // Ghostty: "response: encode with only image number"
+    // Test: response encoding with image number
     let mut state = KittyGraphicsState::default();
     // 1x1 RGBA = 4 bytes
     let params: Vec<&[u8]> = vec![
@@ -2360,7 +2359,7 @@ fn test_response_encoding_with_image_number() {
 
 #[test]
 fn test_default_format_is_rgba() {
-    // Ghostty: "kittygfx default format is rgba"
+    // Test: default format is RGBA
     let mut state = KittyGraphicsState::default();
     // No f= parameter — should default to RGBA (f=32)
     let params: Vec<&[u8]> = vec![
@@ -2376,7 +2375,7 @@ fn test_default_format_is_rgba() {
 
 #[test]
 fn test_delete_range_multiple_variants() {
-    // Ghostty: "delete range command 1-4"
+    // Test: delete range variants
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics::default();
@@ -2404,7 +2403,7 @@ fn test_delete_range_multiple_variants() {
 
 #[test]
 fn test_delete_all_preserves_memory_limit() {
-    // Ghostty: "storage: delete all placements and images preserves limit"
+    // Test: delete all preserves memory limit
     use crate::ansi::graphics::Graphics;
 
     let mut graphics = Graphics {
@@ -2438,7 +2437,7 @@ fn test_delete_all_preserves_memory_limit() {
 
 #[test]
 fn test_chunked_quiet_flag_inheritance() {
-    // Ghostty: "kittygfx more chunks with q=1" + "q=0"
+    // Test: chunked quiet flag inheritance
     let mut state = KittyGraphicsState::default();
 
     // First chunk with q=1 (suppress responses)
@@ -2462,7 +2461,7 @@ fn test_chunked_quiet_flag_inheritance() {
 
 #[test]
 fn test_aspect_ratio_with_only_columns() {
-    // Ghostty: "storage: aspect ratio calculation when only columns specified"
+    // Test: aspect ratio with only columns
     // A 16:9 image with c=10 should compute height preserving aspect ratio
     use sugarloaf::GraphicData;
 
@@ -2495,7 +2494,7 @@ fn test_aspect_ratio_with_only_columns() {
 
 #[test]
 fn test_aspect_ratio_with_only_rows() {
-    // Ghostty: "storage: aspect ratio calculation when only rows specified"
+    // Test: aspect ratio with only rows
     use sugarloaf::GraphicData;
 
     let data = GraphicData {
@@ -2523,4 +2522,46 @@ fn test_aspect_ratio_with_only_rows() {
     assert_eq!(h, 100);
     // Width should preserve 16:9 ratio: 100 * 160/90 = 177.7 ≈ 178
     assert!(w > 170 && w < 185, "Width should be ~178, got {}", w);
+}
+
+// ============================================================
+// Format conversion tests
+// ============================================================
+
+#[test]
+fn test_grayscale_format_conversion() {
+    // Test: gray (1 bpp) to RGBA conversion
+    let mut state = KittyGraphicsState::default();
+    // 2x1 grayscale: 2 bytes, base64 of [128, 255] = "gP8="
+    let params: Vec<&[u8]> = vec![b"G", b"a=t,f=8,s=2,v=1,i=1", b"gP8="];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state);
+    assert!(resp.is_some());
+    let data = resp.unwrap().graphic_data.unwrap();
+    assert_eq!(data.pixels.len(), 8); // 2 pixels * 4 bytes RGBA
+    // First pixel: gray=128 → [128, 128, 128, 255]
+    assert_eq!(data.pixels[0], 128);
+    assert_eq!(data.pixels[1], 128);
+    assert_eq!(data.pixels[2], 128);
+    assert_eq!(data.pixels[3], 255);
+    // Second pixel: gray=255 → [255, 255, 255, 255]
+    assert_eq!(data.pixels[4], 255);
+    assert_eq!(data.pixels[7], 255);
+}
+
+#[test]
+fn test_gray_alpha_format_conversion() {
+    // Test: gray+alpha (2 bpp) to RGBA conversion
+    let mut state = KittyGraphicsState::default();
+    // 1x1 gray+alpha: 2 bytes [128, 200], base64 = "gMg="
+    let params: Vec<&[u8]> = vec![b"G", b"a=t,f=16,s=1,v=1,i=1", b"gMg="];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state);
+    assert!(resp.is_some());
+    let data = resp.unwrap().graphic_data.unwrap();
+    assert_eq!(data.pixels.len(), 4); // 1 pixel * 4 bytes RGBA
+    // gray=128, alpha=200 → [128, 128, 128, 200]
+    assert_eq!(data.pixels[0], 128);
+    assert_eq!(data.pixels[1], 128);
+    assert_eq!(data.pixels[2], 128);
+    assert_eq!(data.pixels[3], 200);
+    assert!(!data.is_opaque); // alpha != 255
 }

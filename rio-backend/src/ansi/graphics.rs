@@ -184,7 +184,7 @@ pub struct Graphics {
     /// Includes both pending graphics and stored Kitty images
     pub total_bytes: usize,
 
-    /// Memory limit for graphics storage (default 320MB like Ghostty)
+    /// Memory limit for graphics storage (default 320MB per kitty spec)
     /// If this is exceeded, oldest/unused images will be evicted
     pub total_limit: usize,
 
@@ -226,7 +226,7 @@ impl Default for Graphics {
             kitty_chunking_state:
                 crate::ansi::kitty_graphics_protocol::KittyGraphicsState::default(),
             total_bytes: 0,
-            total_limit: 320 * 1024 * 1024, // 320MB like Ghostty
+            total_limit: 320 * 1024 * 1024, // 320MB per kitty spec
             image_timestamps: FxHashMap::default(),
             placed_textures: FxHashMap::default(),
             kitty_placements: FxHashMap::default(),
@@ -346,7 +346,7 @@ impl Graphics {
     /// Evict images to make space for required_bytes.
     /// Returns true if enough space was freed, false otherwise.
     ///
-    /// Eviction priority (like Ghostty):
+    /// Eviction priority (per kitty spec):
     /// 1. Unused images (no active placements/references)
     /// 2. Oldest images by timestamp
     pub fn evict_images(
@@ -730,7 +730,7 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
     used_ids.insert(1); // Mark as used
 
     // Try to add another 90KB (total would be 180KB, exceeds limit)
-    // Will evict the first one even though it's in use (like Ghostty)
+    // Will evict the first one even though it's in use (per kitty spec)
     let pixels2_len = 90_000;
     let success = graphics.evict_images(pixels2_len, &used_ids);
 
