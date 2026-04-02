@@ -3350,6 +3350,22 @@ impl Screen<'_> {
                     });
                 }
 
+                // Collect active kitty graphic IDs from current placements
+                let active_kitty_ids: std::collections::HashSet<_> =
+                    placements.iter().map(|p| p.graphic_id).collect();
+
+                // Remove stale kitty images from sugarloaf GPU store
+                // (images no longer referenced by any placement)
+                let stale_ids: Vec<_> = self
+                    .sugarloaf
+                    .graphics
+                    .kitty_graphic_ids()
+                    .filter(|id| !active_kitty_ids.contains(id))
+                    .collect();
+                for id in stale_ids {
+                    self.sugarloaf.graphics.remove(&id);
+                }
+
                 self.sugarloaf.graphic_overlays = overlays;
             } else {
                 self.sugarloaf.graphic_overlays.clear();

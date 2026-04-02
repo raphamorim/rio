@@ -58,6 +58,12 @@ impl Graphics {
     pub fn remove(&mut self, graphic_id: &GraphicId) {
         self.inner.remove(graphic_id);
     }
+
+    /// Iterate over all kitty graphic IDs in the store.
+    #[inline]
+    pub fn kitty_graphic_ids(&self) -> impl Iterator<Item = GraphicId> + '_ {
+        self.inner.keys().copied().filter(|id| id.is_kitty())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]

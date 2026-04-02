@@ -297,6 +297,7 @@ impl MetalRenderer {
         images: &ImageCache,
         render_encoder: &RenderCommandEncoderRef,
         context: &MetalContext,
+        image_textures: &FxHashMap<GraphicId, ImageTextureEntry>,
     ) {
         if vertices.is_empty() {
             return;
@@ -364,7 +365,22 @@ impl MetalRenderer {
             }
 
             // Bind appropriate textures for this batch
-            if current_color_layer > 0 {
+            if current_color_layer >= KITTY_LAYER_BASE {
+                // Per-image kitty texture on Metal
+                let mtl_tex = image_textures
+                    .values()
+                    .find(|img| img.layer_id == current_color_layer)
+                    .and_then(|img| match &img.gpu {
+                        #[cfg(target_os = "macos")]
+                        ImageTexture::Metal(tex) => Some(tex),
+                        _ => None,
+                    });
+                if let Some(tex) = mtl_tex {
+                    render_encoder.set_fragment_texture(0, Some(tex));
+                } else {
+                    render_encoder.set_fragment_texture(0, None);
+                }
+            } else if current_color_layer > 0 {
                 // Use color atlas (current_color_layer is 1-based, so subtract 1 for 0-based index)
                 let atlas_index = (current_color_layer - 1) as usize;
                 if atlas_index < color_textures.len() {
@@ -408,9 +424,29 @@ struct CachedGraphic {
     last_used_frame: u64,
     /// Atlas layer index (1-based, 0 = no texture)
     atlas_layer: i32,
-    /// Generation counter for cache invalidation on re-transmission.
-    generation: u64,
 }
+
+/// Backend-agnostic per-image GPU texture for kitty graphics.
+/// Dropped when removed from the map → GPU memory freed immediately.
+enum ImageTexture {
+    Wgpu {
+        _texture: wgpu::Texture, // kept alive so `view` stays valid
+        view: wgpu::TextureView,
+    },
+    #[cfg(target_os = "macos")]
+    Metal(metal::Texture),
+}
+
+/// Per-image texture entry stored in the renderer.
+pub(crate) struct ImageTextureEntry {
+    gpu: ImageTexture,
+    generation: u64,
+    /// Unique layer ID for batch rendering (>= KITTY_LAYER_BASE).
+    layer_id: i32,
+}
+
+/// Layer IDs >= this value are per-image kitty textures, not atlas indices.
+const KITTY_LAYER_BASE: i32 = 1000;
 
 pub struct Renderer {
     brush_type: RendererType,
@@ -421,6 +457,10 @@ pub struct Renderer {
     text_run_manager: TextRunManager,
     graphic_cache: FxHashMap<GraphicId, CachedGraphic>,
     current_frame: u64,
+    /// Per-image GPU textures for kitty graphics (one map, any backend).
+    image_textures: FxHashMap<GraphicId, ImageTextureEntry>,
+    /// Next layer ID to assign to a kitty texture.
+    next_image_texture_id: i32,
 }
 
 impl Renderer {
@@ -444,6 +484,8 @@ impl Renderer {
             text_run_manager: TextRunManager::new(),
             graphic_cache: FxHashMap::default(),
             current_frame: 0,
+            image_textures: FxHashMap::default(),
+            next_image_texture_id: KITTY_LAYER_BASE,
         }
     }
 
@@ -653,7 +695,10 @@ impl Renderer {
 
         // Render kitty graphics overlays
         if !overlays.is_empty() {
-            self.render_graphic_overlays(graphics, overlays);
+            self.render_graphic_overlays(context, graphics, overlays);
+        } else {
+            // No overlays — clean up any stale kitty textures
+            self.image_textures.clear();
         }
 
         self.vertices.clear();
@@ -842,7 +887,6 @@ impl Renderer {
                                             height: entry.height,
                                             last_used_frame: self.current_frame,
                                             atlas_layer,
-                                            generation: entry.generation,
                                         },
                                     );
                                 }
@@ -1177,111 +1221,141 @@ impl Renderer {
         // println!("[PERF] draw_layout() total: {:?}", screen_render_duration);
     }
 
-    /// Render kitty graphics overlays on top of (or behind) terminal content.
+    /// Render kitty graphics overlays using per-image GPU textures.
+    /// Each kitty image gets its own wgpu texture (not the shared atlas).
+    /// Render kitty graphics overlays using per-image GPU textures.
     fn render_graphic_overlays(
         &mut self,
+        context: &mut crate::context::Context,
         graphics: &mut Graphics,
         overlays: &[crate::sugarloaf::graphics::GraphicOverlay],
     ) {
-        // Upload overlay graphics to atlas
+        // Clean up textures no longer referenced by any overlay
+        let active_ids: std::collections::HashSet<GraphicId> =
+            overlays.iter().map(|o| o.graphic_id).collect();
+        self.image_textures
+            .retain(|id, _| active_ids.contains(id));
+
+        // Upload/update per-image textures
         for overlay in overlays {
-            // Check if cached and generation still matches
-            let needs_upload = match self.graphic_cache.get_mut(&overlay.graphic_id) {
-                Some(cached) => {
-                    // Check if generation changed (re-transmission)
-                    let stale = graphics
-                        .get(&overlay.graphic_id)
-                        .map(|e| e.generation != cached.generation)
-                        .unwrap_or(false);
-                    if stale {
-                        // Deallocate old atlas entry before re-uploading
-                        if let Some(old) = self.graphic_cache.remove(&overlay.graphic_id) {
-                            self.images.deallocate(old.image_id);
-                        }
-                        true
-                    } else {
-                        cached.last_used_frame = self.current_frame;
-                        false
-                    }
-                }
-                None => true,
+            let entry = match graphics.get(&overlay.graphic_id) {
+                Some(e) => e,
+                None => continue,
             };
-            if !needs_upload {
+
+            // Skip if texture is current
+            if let Some(existing) = self.image_textures.get(&overlay.graphic_id) {
+                if existing.generation == entry.generation {
+                    continue;
+                }
+            }
+
+            let (width, height, pixels) = match &entry.handle.data {
+                crate::components::core::image::Data::Rgba {
+                    width,
+                    height,
+                    pixels,
+                } => (*width, *height, pixels.as_ref()),
+                _ => continue,
+            };
+
+            if width == 0 || height == 0 {
                 continue;
             }
 
-            // Not cached — upload to atlas
-            if let Some(entry) = graphics.get(&overlay.graphic_id) {
-                if let crate::components::core::image::Data::Rgba {
-                    width,
-                    height,
-                    ref pixels,
-                } = entry.handle.data
-                {
-                    let add_image = image_cache::AddImage {
-                        width: width as u16,
-                        height: height as u16,
-                        has_alpha: true,
-                        data: image_cache::ImageData::Borrowed(pixels.as_ref()),
-                        content_type: image_cache::ContentType::Color,
-                    };
+            let layer_id = self.next_image_texture_id;
+            self.next_image_texture_id += 1;
 
-                    let mut image_id = self.images.allocate(add_image.clone());
-
-                    if image_id.is_none() {
-                        let mut evicted = 0;
-                        while evicted < 5 {
-                            if let Some(oldest_id) = self.find_oldest_graphic() {
-                                self.evict_graphic(oldest_id);
-                                evicted += 1;
-                                image_id = self.images.allocate(add_image.clone());
-                                if image_id.is_some() {
-                                    break;
-                                }
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-
-                    if let Some(id) = image_id {
-                        if let Some(location) = self.images.get(&id) {
-                            let atlas_layer = self
-                                .images
-                                .get_atlas_index(id)
-                                .map(|idx| (idx + 1) as i32)
-                                .unwrap_or(1);
-
-                            self.graphic_cache.insert(
-                                overlay.graphic_id,
-                                CachedGraphic {
-                                    location,
-                                    image_id: id,
-                                    width: entry.width,
-                                    height: entry.height,
-                                    last_used_frame: self.current_frame,
-                                    atlas_layer,
-                                    generation: entry.generation,
-                                },
-                            );
-                        }
+            let gpu = match &context.inner {
+                crate::context::ContextType::Wgpu(ctx) => {
+                    let texture = ctx.device.create_texture(
+                        &wgpu::TextureDescriptor {
+                            label: Some("kitty image"),
+                            size: wgpu::Extent3d {
+                                width,
+                                height,
+                                depth_or_array_layers: 1,
+                            },
+                            mip_level_count: 1,
+                            sample_count: 1,
+                            dimension: wgpu::TextureDimension::D2,
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            usage: wgpu::TextureUsages::COPY_DST
+                                | wgpu::TextureUsages::TEXTURE_BINDING,
+                            view_formats: &[],
+                        },
+                    );
+                    ctx.queue.write_texture(
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &texture,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        pixels,
+                        wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(width * 4),
+                            rows_per_image: Some(height),
+                        },
+                        wgpu::Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                    let view =
+                        texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    ImageTexture::Wgpu {
+                        _texture: texture,
+                        view,
                     }
                 }
-            }
+                #[cfg(target_os = "macos")]
+                crate::context::ContextType::Metal(ctx) => {
+                    let desc = metal::TextureDescriptor::new();
+                    desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
+                    desc.set_width(width as u64);
+                    desc.set_height(height as u64);
+                    desc.set_usage(
+                        metal::MTLTextureUsage::ShaderRead
+                            | metal::MTLTextureUsage::ShaderWrite,
+                    );
+                    let mtl_tex = ctx.device.new_texture(&desc);
+                    mtl_tex.set_label("kitty image");
+                    mtl_tex.replace_region(
+                        metal::MTLRegion {
+                            origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                            size: metal::MTLSize {
+                                width: width as u64,
+                                height: height as u64,
+                                depth: 1,
+                            },
+                        },
+                        0,
+                        pixels.as_ptr() as *const std::ffi::c_void,
+                        (width * 4) as u64,
+                    );
+                    ImageTexture::Metal(mtl_tex)
+                }
+            };
+
+            self.image_textures.insert(
+                overlay.graphic_id,
+                ImageTextureEntry {
+                    gpu,
+                    generation: entry.generation,
+                    layer_id,
+                },
+            );
         }
 
-        // Draw overlays in z-index layers (matching kitty/ghostty):
-        //   z < i32::MIN/2   → order 0, unmasked (drawn with/after cell backgrounds)
-        //   i32::MIN/2 ≤ z<0 → order 0, unmasked (between bg and text, since
-        //                       batch sort puts unmasked before masked at same order)
-        //   z ≥ 0            → order 1 (above text: after all order-0 batches)
-        //
-        // Overlays arrive sorted by z_index from the snapshot. Within the same
-        // order bucket, later draws paint on top (painter's algorithm).
+        // Draw overlays in z-index layers:
+        //   z < 0 → order 0 (between bg and text)
+        //   z ≥ 0 → order 1 (above text)
         for overlay in overlays {
-            if let Some(cached) = self.graphic_cache.get(&overlay.graphic_id) {
+            if let Some(img) = self.image_textures.get(&overlay.graphic_id) {
                 let order: u8 = if overlay.z_index >= 0 { 1 } else { 0 };
-
                 self.comp.batches.add_image_rect_with_order(
                     &compositor::Rect::new(
                         overlay.x,
@@ -1291,13 +1365,8 @@ impl Renderer {
                     ),
                     0.0,
                     &[1.0, 1.0, 1.0, 1.0],
-                    &[
-                        cached.location.min.0,
-                        cached.location.min.1,
-                        cached.location.max.0,
-                        cached.location.max.1,
-                    ],
-                    cached.atlas_layer,
+                    &[0.0, 0.0, 1.0, 1.0],
+                    img.layer_id,
                     order,
                 );
             }
@@ -1333,6 +1402,8 @@ impl Renderer {
         self.glyphs = GlyphCache::new();
         self.text_run_manager.clear_all();
         self.graphic_cache.clear();
+        self.image_textures.clear();
+        self.next_image_texture_id = KITTY_LAYER_BASE;
     }
 
     #[inline]
@@ -1341,6 +1412,8 @@ impl Renderer {
         self.glyphs = GlyphCache::new();
         self.text_run_manager.clear_all();
         self.graphic_cache.clear();
+        self.image_textures.clear();
+        self.next_image_texture_id = KITTY_LAYER_BASE;
         tracing::info!(
             "Renderer atlas, glyph cache, text run cache, and graphic cache cleared"
         );
@@ -1564,7 +1637,18 @@ impl Renderer {
                 }
 
                 // Bind appropriate textures for this batch
-                let color_view = if current_color_layer > 0 {
+                let color_view = if current_color_layer >= KITTY_LAYER_BASE {
+                    // Per-image kitty texture
+                    self.image_textures
+                        .values()
+                        .find(|img| img.layer_id == current_color_layer)
+                        .and_then(|img| match &img.gpu {
+                            ImageTexture::Wgpu { view, .. } => Some(view),
+                            #[cfg(target_os = "macos")]
+                            _ => None,
+                        })
+                        .unwrap_or(&color_views[0])
+                } else if current_color_layer > 0 {
                     // Use color atlas (current_color_layer is 1-based, so subtract 1 for 0-based index)
                     let atlas_index = (current_color_layer - 1) as usize;
                     color_views.get(atlas_index).unwrap_or(&color_views[0])
@@ -1591,11 +1675,17 @@ impl Renderer {
     #[cfg(target_os = "macos")]
     pub fn render_metal(
         &mut self,
-        context: &MetalContext, // Add context parameter
+        context: &MetalContext,
         render_encoder: &metal::RenderCommandEncoderRef,
     ) {
         if let RendererType::Metal(brush) = &mut self.brush_type {
-            brush.render(&self.vertices, &self.images, render_encoder, context);
+            brush.render(
+                &self.vertices,
+                &self.images,
+                render_encoder,
+                context,
+                &self.image_textures,
+            );
         }
     }
 
@@ -2141,7 +2231,6 @@ mod rect_positioning_tests {
                 height: 100.0,
                 last_used_frame: 10,
                 atlas_layer: 1,
-                generation: 0,
             },
         );
 
@@ -2157,7 +2246,6 @@ mod rect_positioning_tests {
                 height: 100.0,
                 last_used_frame: 5, // Oldest
                 atlas_layer: 1,
-                generation: 0,
             },
         );
 
@@ -2173,7 +2261,6 @@ mod rect_positioning_tests {
                 height: 100.0,
                 last_used_frame: 15, // Newest
                 atlas_layer: 1,
-                generation: 0,
             },
         );
 
@@ -2208,7 +2295,6 @@ mod rect_positioning_tests {
                 height: 100.0,
                 last_used_frame: 50,
                 atlas_layer: 1,
-                generation: 0,
             },
         );
 
