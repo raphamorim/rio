@@ -335,7 +335,7 @@ pub fn rgb_to_id(rgb: ColorRgb) -> u32 {
 
 /// Encode virtual placement data into a string with placeholder + diacritics
 ///
-/// Encoding scheme (matching Ghostty/Kitty):
+/// Encoding scheme per kitty spec:
 /// - Base character: U+10EEEE (placeholder)
 /// - 1st diacritic: Row index (0-based)
 /// - 2nd diacritic: Column index (0-based)

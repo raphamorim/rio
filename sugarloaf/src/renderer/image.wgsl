@@ -1,5 +1,5 @@
 // Image rendering shader — instanced, one instance per image placement.
-// Matches Ghostty's approach: vertex_id generates quad corners,
+// Instanced rendering: vertex_id generates quad corners,
 // per-instance data provides position and source rect.
 
 struct Globals {
