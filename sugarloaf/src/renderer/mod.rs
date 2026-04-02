@@ -1333,8 +1333,7 @@ impl Renderer {
         // Clean up textures no longer referenced by any overlay
         let active_ids: std::collections::HashSet<GraphicId> =
             overlays.iter().map(|o| o.graphic_id).collect();
-        self.image_textures
-            .retain(|id, _| active_ids.contains(id));
+        self.image_textures.retain(|id, _| active_ids.contains(id));
 
         // Upload/update per-image textures
         for overlay in overlays {
@@ -1365,23 +1364,21 @@ impl Renderer {
 
             let gpu = match &context.inner {
                 crate::context::ContextType::Wgpu(ctx) => {
-                    let texture = ctx.device.create_texture(
-                        &wgpu::TextureDescriptor {
-                            label: Some("kitty image"),
-                            size: wgpu::Extent3d {
-                                width,
-                                height,
-                                depth_or_array_layers: 1,
-                            },
-                            mip_level_count: 1,
-                            sample_count: 1,
-                            dimension: wgpu::TextureDimension::D2,
-                            format: wgpu::TextureFormat::Rgba8Unorm,
-                            usage: wgpu::TextureUsages::COPY_DST
-                                | wgpu::TextureUsages::TEXTURE_BINDING,
-                            view_formats: &[],
+                    let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("kitty image"),
+                        size: wgpu::Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: 1,
                         },
-                    );
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        usage: wgpu::TextureUsages::COPY_DST
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    });
                     ctx.queue.write_texture(
                         wgpu::TexelCopyTextureInfo {
                             texture: &texture,
@@ -1777,24 +1774,40 @@ impl Renderer {
             }
 
             // --- BelowText images (z < 0): render before text ---
-            if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::BelowText) {
+            if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::BelowText)
+            {
                 rpass.set_pipeline(&brush.image_pipeline);
                 rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
                 for draw in image_draws.iter() {
-                    if draw.layer != ImageLayer::BelowText { continue; }
+                    if draw.layer != ImageLayer::BelowText {
+                        continue;
+                    }
                     if let Some(img) = image_textures.get(&draw.graphic_id) {
                         if let ImageTexture::Wgpu { view, .. } = &img.gpu {
-                            let bg = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                                label: None,
-                                layout: &brush.image_bind_group_layout,
-                                entries: &[wgpu::BindGroupEntry {
-                                    binding: 0,
-                                    resource: wgpu::BindingResource::TextureView(view),
-                                }],
-                            });
-                            ctx.queue.write_buffer(&brush.image_vertex_buffer, 0, bytemuck::bytes_of(&draw.instance));
+                            let bg = ctx.device.create_bind_group(
+                                &wgpu::BindGroupDescriptor {
+                                    label: None,
+                                    layout: &brush.image_bind_group_layout,
+                                    entries: &[wgpu::BindGroupEntry {
+                                        binding: 0,
+                                        resource: wgpu::BindingResource::TextureView(
+                                            view,
+                                        ),
+                                    }],
+                                },
+                            );
+                            ctx.queue.write_buffer(
+                                &brush.image_vertex_buffer,
+                                0,
+                                bytemuck::bytes_of(&draw.instance),
+                            );
                             rpass.set_bind_group(1, &bg, &[]);
-                            rpass.set_vertex_buffer(0, brush.image_vertex_buffer.slice(..std::mem::size_of::<ImageInstance>() as u64));
+                            rpass.set_vertex_buffer(
+                                0,
+                                brush
+                                    .image_vertex_buffer
+                                    .slice(..std::mem::size_of::<ImageInstance>() as u64),
+                            );
                             rpass.draw(0..4, 0..1);
                         }
                     }
@@ -1842,24 +1855,40 @@ impl Renderer {
             }
 
             // --- AboveText images (z >= 0): render after text ---
-            if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::AboveText) {
+            if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::AboveText)
+            {
                 rpass.set_pipeline(&brush.image_pipeline);
                 rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
                 for draw in image_draws.iter() {
-                    if draw.layer != ImageLayer::AboveText { continue; }
+                    if draw.layer != ImageLayer::AboveText {
+                        continue;
+                    }
                     if let Some(img) = image_textures.get(&draw.graphic_id) {
                         if let ImageTexture::Wgpu { view, .. } = &img.gpu {
-                            let bg = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                                label: None,
-                                layout: &brush.image_bind_group_layout,
-                                entries: &[wgpu::BindGroupEntry {
-                                    binding: 0,
-                                    resource: wgpu::BindingResource::TextureView(view),
-                                }],
-                            });
-                            ctx.queue.write_buffer(&brush.image_vertex_buffer, 0, bytemuck::bytes_of(&draw.instance));
+                            let bg = ctx.device.create_bind_group(
+                                &wgpu::BindGroupDescriptor {
+                                    label: None,
+                                    layout: &brush.image_bind_group_layout,
+                                    entries: &[wgpu::BindGroupEntry {
+                                        binding: 0,
+                                        resource: wgpu::BindingResource::TextureView(
+                                            view,
+                                        ),
+                                    }],
+                                },
+                            );
+                            ctx.queue.write_buffer(
+                                &brush.image_vertex_buffer,
+                                0,
+                                bytemuck::bytes_of(&draw.instance),
+                            );
                             rpass.set_bind_group(1, &bg, &[]);
-                            rpass.set_vertex_buffer(0, brush.image_vertex_buffer.slice(..std::mem::size_of::<ImageInstance>() as u64));
+                            rpass.set_vertex_buffer(
+                                0,
+                                brush
+                                    .image_vertex_buffer
+                                    .slice(..std::mem::size_of::<ImageInstance>() as u64),
+                            );
                             rpass.draw(0..4, 0..1);
                         }
                     }
@@ -1889,12 +1918,7 @@ impl Renderer {
             }
 
             // Text pipeline
-            brush.render(
-                &self.vertices,
-                &self.images,
-                render_encoder,
-                context,
-            );
+            brush.render(&self.vertices, &self.images, render_encoder, context);
 
             // AboveText images (z >= 0): after text
             if has_images {
@@ -2299,13 +2323,12 @@ impl WgpuRenderer {
                     multiview_mask: None,
                 });
 
-        let image_vertex_buffer =
-            context.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("image instance buffer"),
-                size: mem::size_of::<ImageInstance>() as u64 * 64, // 64 images max
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+        let image_vertex_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("image instance buffer"),
+            size: mem::size_of::<ImageInstance>() as u64 * 64, // 64 images max
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         WgpuRenderer {
             layout_bind_group,
@@ -2557,7 +2580,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
-                image_id: image_cache::ImageId::empty(),
+                image_id: super::image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 10,
@@ -2572,7 +2595,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
-                image_id: image_cache::ImageId::empty(),
+                image_id: super::image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 5, // Oldest
@@ -2587,7 +2610,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
-                image_id: image_cache::ImageId::empty(),
+                image_id: super::image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 15, // Newest
@@ -2621,7 +2644,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
-                image_id: image_cache::ImageId::empty(),
+                image_id: super::image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 50,
