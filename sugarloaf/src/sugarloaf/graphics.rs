@@ -59,9 +59,9 @@ impl Graphics {
         self.inner.remove(graphic_id);
     }
 
-    /// Iterate over all kitty graphic IDs in the store.
+    /// Iterate over all image texture IDs (non-atlas) in the store.
     #[inline]
-    pub fn kitty_graphic_ids(&self) -> impl Iterator<Item = GraphicId> + '_ {
+    pub fn image_texture_ids(&self) -> impl Iterator<Item = GraphicId> + '_ {
         self.inner.keys().copied().filter(|id| id.is_kitty())
     }
 }
