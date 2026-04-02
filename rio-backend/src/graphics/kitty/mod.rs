@@ -1,13 +1,13 @@
 // Kitty Graphics Protocol Tests
 // Combined test suite for Kitty graphics functionality
 
+use crate::ansi::graphics::KittyPlacement;
 use crate::ansi::kitty_graphics_protocol::{
     self, DeleteRequest, KittyGraphicsState, PlacementRequest,
 };
 use crate::crosswords::Crosswords;
 use crate::event::{EventListener, RioEvent, WindowId};
 use crate::performer::handler::Handler;
-use crate::ansi::graphics::KittyPlacement;
 use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 
 // Common test utilities
@@ -1345,9 +1345,7 @@ fn test_kitty_placement_insert_and_delete() {
     assert_eq!(graphics.kitty_placements.len(), 1);
 
     // Delete by image_id
-    graphics
-        .kitty_placements
-        .retain(|k, _| k.0 != 1);
+    graphics.kitty_placements.retain(|k, _| k.0 != 1);
     assert_eq!(graphics.kitty_placements.len(), 0);
 }
 
@@ -1377,9 +1375,15 @@ fn test_kitty_placement_delete_by_z_index() {
         transmit_generation: 1,
     };
 
-    graphics.kitty_placements.insert((1, 0), make_placement(1, 0));
-    graphics.kitty_placements.insert((2, 0), make_placement(2, -1));
-    graphics.kitty_placements.insert((3, 0), make_placement(3, 0));
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_placement(1, 0));
+    graphics
+        .kitty_placements
+        .insert((2, 0), make_placement(2, -1));
+    graphics
+        .kitty_placements
+        .insert((3, 0), make_placement(3, 0));
     assert_eq!(graphics.kitty_placements.len(), 3);
 
     // Delete z=0 placements
@@ -1486,8 +1490,10 @@ fn test_eviction_removes_dangling_placements() {
 fn test_next_id_stays_below_kitty_space() {
     use crate::ansi::graphics::Graphics;
 
-    let mut graphics = Graphics::default();
-    graphics.last_id = (1u64 << 63) - 2;
+    let mut graphics = Graphics {
+        last_id: (1u64 << 63) - 2,
+        ..Graphics::default()
+    };
 
     let id1 = graphics.next_id();
     assert!(!id1.is_kitty(), "Sixel ID must not enter kitty space");
@@ -1788,9 +1794,9 @@ fn test_delete_by_row() {
 
     // Delete placements intersecting row 1
     let abs_row = 1i64;
-    graphics.kitty_placements.retain(|_, p| {
-        !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64)
-    });
+    graphics
+        .kitty_placements
+        .retain(|_, p| !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64));
 
     assert_eq!(graphics.kitty_placements.len(), 1);
     assert!(graphics.kitty_placements.contains_key(&(2, 0)));
@@ -1844,9 +1850,9 @@ fn test_delete_by_row_1x1() {
 
     // Delete row 1
     let abs_row = 1i64;
-    graphics.kitty_placements.retain(|_, p| {
-        !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64)
-    });
+    graphics
+        .kitty_placements
+        .retain(|_, p| !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64));
 
     assert_eq!(graphics.kitty_placements.len(), 2);
     assert!(graphics.kitty_placements.contains_key(&(1, 0)));
@@ -2151,9 +2157,7 @@ fn test_delete_by_image_number() {
 
     // Delete by number (simulate d=n with image_number=7)
     if let Some(&image_id) = graphics.kitty_image_numbers.get(&7) {
-        graphics
-            .kitty_placements
-            .retain(|k, _| k.0 != image_id);
+        graphics.kitty_placements.retain(|k, _| k.0 != image_id);
     }
 
     assert_eq!(graphics.kitty_placements.len(), 0);
@@ -2212,9 +2216,9 @@ fn test_delete_by_image_range() {
     // Delete range 1..5
     let range_start = 1u32;
     let range_end = 5u32;
-    graphics.kitty_placements.retain(|k, _| {
-        k.0 < range_start || k.0 > range_end
-    });
+    graphics
+        .kitty_placements
+        .retain(|k, _| k.0 < range_start || k.0 > range_end);
 
     assert_eq!(graphics.kitty_placements.len(), 1);
     assert!(graphics.kitty_placements.contains_key(&(10, 0)));
@@ -2313,11 +2317,7 @@ fn test_response_encoding_with_image_id() {
     // Test: response encoding with image id
     let mut state = KittyGraphicsState::default();
     // 1x1 RGBA = 4 bytes, base64 = "/////w=="
-    let params: Vec<&[u8]> = vec![
-        b"G",
-        b"a=T,f=32,s=1,v=1,i=4",
-        b"/////w==",
-    ];
+    let params: Vec<&[u8]> = vec![b"G", b"a=T,f=32,s=1,v=1,i=4", b"/////w=="];
     let resp = kitty_graphics_protocol::parse(&params, &mut state).unwrap();
     assert!(resp.response.is_some());
     let response_str = resp.response.unwrap();
@@ -2338,11 +2338,7 @@ fn test_response_encoding_with_image_number() {
     // Test: response encoding with image number
     let mut state = KittyGraphicsState::default();
     // 1x1 RGBA = 4 bytes
-    let params: Vec<&[u8]> = vec![
-        b"G",
-        b"a=t,f=32,s=1,v=1,I=4",
-        b"/////w==",
-    ];
+    let params: Vec<&[u8]> = vec![b"G", b"a=t,f=32,s=1,v=1,I=4", b"/////w=="];
     let resp = kitty_graphics_protocol::parse(&params, &mut state).unwrap();
     assert!(resp.response.is_some());
     let response_str = resp.response.unwrap();
@@ -2384,16 +2380,12 @@ fn test_delete_range_multiple_variants() {
     }
 
     // Range delete [1, 2] — should keep image 3
-    graphics
-        .kitty_placements
-        .retain(|k, _| k.0 < 1 || k.0 > 2);
+    graphics.kitty_placements.retain(|k, _| k.0 < 1 || k.0 > 2);
     assert_eq!(graphics.kitty_placements.len(), 1);
     assert!(graphics.kitty_placements.contains_key(&(3, 0)));
 
     // Single-image range [3, 3]
-    graphics
-        .kitty_placements
-        .retain(|k, _| k.0 < 3 || k.0 > 3);
+    graphics.kitty_placements.retain(|k, _| k.0 != 3);
     assert_eq!(graphics.kitty_placements.len(), 0);
 }
 
@@ -2532,7 +2524,7 @@ fn test_grayscale_format_conversion() {
     assert!(resp.is_some());
     let data = resp.unwrap().graphic_data.unwrap();
     assert_eq!(data.pixels.len(), 8); // 2 pixels * 4 bytes RGBA
-    // First pixel: gray=128 → [128, 128, 128, 255]
+                                      // First pixel: gray=128 → [128, 128, 128, 255]
     assert_eq!(data.pixels[0], 128);
     assert_eq!(data.pixels[1], 128);
     assert_eq!(data.pixels[2], 128);
@@ -2552,7 +2544,7 @@ fn test_gray_alpha_format_conversion() {
     assert!(resp.is_some());
     let data = resp.unwrap().graphic_data.unwrap();
     assert_eq!(data.pixels.len(), 4); // 1 pixel * 4 bytes RGBA
-    // gray=128, alpha=200 → [128, 128, 128, 200]
+                                      // gray=128, alpha=200 → [128, 128, 128, 200]
     assert_eq!(data.pixels[0], 128);
     assert_eq!(data.pixels[1], 128);
     assert_eq!(data.pixels[2], 128);

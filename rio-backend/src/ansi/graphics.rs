@@ -430,8 +430,7 @@ impl Graphics {
             });
 
             // Remove dangling overlay placements
-            self.kitty_placements
-                .retain(|_, p| p.graphic_id != id);
+            self.kitty_placements.retain(|_, p| p.graphic_id != id);
 
             // Remove timestamp
             self.image_timestamps.remove(&id);

@@ -3326,8 +3326,7 @@ impl Screen<'_> {
 
                 for p in placements {
                     // Convert absolute row to screen-relative
-                    let screen_row =
-                        p.dest_row - (history_size - display_offset);
+                    let screen_row = p.dest_row - (history_size - display_offset);
                     if screen_row < 0 || screen_row >= screen_lines {
                         continue; // Off-screen
                     }

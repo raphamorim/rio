@@ -3426,8 +3426,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     let abs_row = self.history_size() as i64 + row.0 as i64;
                     let before = self.graphics.kitty_placements.len();
                     self.graphics.kitty_placements.retain(|_, p| {
-                        !(p.dest_row <= abs_row
-                            && abs_row < p.dest_row + p.rows as i64)
+                        !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64)
                     });
                     overlay_changed = self.graphics.kitty_placements.len() != before;
                 }
@@ -3442,9 +3441,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     cell_graphic.texture.z_index == z
                 });
                 let before = self.graphics.kitty_placements.len();
-                self.graphics
-                    .kitty_placements
-                    .retain(|_, p| p.z_index != z);
+                self.graphics.kitty_placements.retain(|_, p| p.z_index != z);
                 overlay_changed = self.graphics.kitty_placements.len() != before;
 
                 if delete.action == b'Z' && delete.delete_data {
@@ -3472,8 +3469,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     overlay_changed = self.graphics.kitty_placements.len() != before;
 
                     if delete.action == b'N' && delete.delete_data {
-                        self.graphics
-                            .delete_kitty_images(|id, _| *id == image_id);
+                        self.graphics.delete_kitty_images(|id, _| *id == image_id);
                     }
                 }
             }
@@ -3518,9 +3514,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                             .unwrap_or(false)
                     });
                     let before = self.graphics.kitty_placements.len();
-                    self.graphics.kitty_placements.retain(|k, _| {
-                        k.0 < range_start || k.0 > range_end
-                    });
+                    self.graphics
+                        .kitty_placements
+                        .retain(|k, _| k.0 < range_start || k.0 > range_end);
                     overlay_changed = self.graphics.kitty_placements.len() != before;
 
                     if delete.action == b'R' && delete.delete_data {
@@ -3708,7 +3704,7 @@ impl<U: EventListener> Crosswords<U> {
         if let Some(&old_ts) = self.graphics.image_timestamps.get(&graphic_id) {
             // Same graphic_id being re-transmitted; untrack old bytes first
             let _ = old_ts; // just used for existence check
-            // Estimate old bytes from stored image if available
+                            // Estimate old bytes from stored image if available
             if let Some(stored) = self.graphics.get_kitty_image(image_id) {
                 let old_bytes = stored.data.pixels.len();
                 self.graphics.untrack_graphic(graphic_id, old_bytes);
@@ -3738,12 +3734,12 @@ impl<U: EventListener> Crosswords<U> {
         let columns = if placement.columns > 0 {
             placement.columns
         } else {
-            ((display_w + cell_width - 1) / cell_width) as u32
+            display_w.div_ceil(cell_width) as u32
         };
         let rows = if placement.rows > 0 {
             placement.rows
         } else {
-            ((display_h + cell_height - 1) / cell_height) as u32
+            display_h.div_ceil(cell_height) as u32
         };
 
         // Create overlay placement
@@ -3770,7 +3766,11 @@ impl<U: EventListener> Crosswords<U> {
 
         // Check if this placement already exists with the same generation
         // (avoids re-uploading identical pixel data to GPU every frame)
-        let needs_upload = match self.graphics.kitty_placements.get(&(image_id, placement_id)) {
+        let needs_upload = match self
+            .graphics
+            .kitty_placements
+            .get(&(image_id, placement_id))
+        {
             Some(existing) => existing.transmit_generation != generation,
             None => true,
         };
