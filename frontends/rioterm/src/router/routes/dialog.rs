@@ -23,8 +23,8 @@ pub fn screen(
     let text_h = 16.0;
     let box_w = full_text.len() as f32 * 7.5 + padding_x * 2.0;
     let box_h = text_h + padding_y * 2.0;
-    let box_x = win_w - box_w - 16.0;
-    let box_y = win_h - box_h - 16.0;
+    let box_x = (win_w - box_w) / 2.0;
+    let box_y = (win_h - box_h) / 2.0;
 
     // Tooltip background
     sugarloaf.rect(
