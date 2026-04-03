@@ -1010,7 +1010,7 @@ impl Renderer {
                 snapshot
             };
 
-            // Rebuild image overlays only when dirty (like Ghostty's kittyUpdate)
+            // Rebuild image overlays only when dirty
             if terminal_snapshot.kitty_graphics_dirty {
                 let line_height = sugarloaf.style().line_height;
                 let content = sugarloaf.content();
