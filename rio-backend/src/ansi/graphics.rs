@@ -27,14 +27,6 @@ pub struct TextureRef {
     /// Graphic identifier.
     pub id: GraphicId,
 
-    /// The kitty protocol image_id (i= parameter), if this graphic was placed
-    /// via the kitty graphics protocol. Used for delete-by-image-id (d=i).
-    pub kitty_image_id: Option<u32>,
-
-    /// Z-index layer for this graphic (kitty z= parameter).
-    /// Used for delete-by-z-index (d=z).
-    pub z_index: i32,
-
     /// Width, in pixels, of the graphic.
     pub width: u16,
 

@@ -2932,7 +2932,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             match parser.finish() {
                 // Sixel uses None to indicate traditional Sixel cursor behavior
                 Ok((graphic, palette)) => {
-                    self.insert_graphic(graphic, Some(palette), None, None, 0)
+                    self.insert_graphic(graphic, Some(palette), None)
                 }
                 Err(err) => warn!("Failed to parse Sixel data: {}", err),
             }
@@ -2947,8 +2947,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         graphic: GraphicData,
         palette: Option<Vec<ColorRgb>>,
         cursor_movement: Option<u8>,
-        kitty_image_id: Option<u32>,
-        z_index: i32,
     ) {
         debug!(
             "insert_graphic called: id={}, {}x{}, format={:?}, cursor_movement={:?}",
@@ -3096,8 +3094,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let texture = Arc::new(TextureRef {
             id: graphic_id,
-            kitty_image_id,
-            z_index,
             width,
             height,
             cell_height,
@@ -3316,10 +3312,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             b'i' | b'I' => {
                 let image_id_to_match = delete.image_id;
-                // Delete cell-based
-                self.delete_graphics_matching(|cell_graphic| {
-                    cell_graphic.texture.kitty_image_id == Some(image_id_to_match)
-                });
                 // Delete overlay placements for this image
                 let before = self.graphics.kitty_placements.len();
                 if delete.placement_id != 0 {
@@ -3413,9 +3405,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             b'z' | b'Z' => {
                 let z = delete.z_index;
-                self.delete_graphics_matching(|cell_graphic| {
-                    cell_graphic.texture.z_index == z
-                });
                 let before = self.graphics.kitty_placements.len();
                 self.graphics.kitty_placements.retain(|_, p| p.z_index != z);
                 overlay_changed = self.graphics.kitty_placements.len() != before;
@@ -3429,9 +3418,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 if let Some(&image_id) =
                     self.graphics.kitty_image_numbers.get(&delete.image_id)
                 {
-                    self.delete_graphics_matching(|cell_graphic| {
-                        cell_graphic.texture.kitty_image_id == Some(image_id)
-                    });
                     let before = self.graphics.kitty_placements.len();
                     if delete.placement_id != 0 {
                         self.graphics
@@ -3454,12 +3440,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 if delete.x > 0 && delete.y > 0 {
                     let col = Column((delete.x - 1) as usize);
                     let row = Line((delete.y - 1) as i32);
-                    // Cell-based: delete matching position AND z_index
+                    // Delete overlays at position with z-index filter
                     let z = delete.z_index;
-                    self.delete_graphics_matching(|cell_graphic| {
-                        cell_graphic.texture.z_index == z
-                    });
-                    // Overlay-based
                     let abs_row = self.history_size() as i64 + row.0 as i64;
                     let c = col.0;
                     let before = self.graphics.kitty_placements.len();
@@ -3482,13 +3464,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let range_start = delete.x;
                 let range_end = delete.y;
                 if range_start > 0 && range_end >= range_start {
-                    self.delete_graphics_matching(|cell_graphic| {
-                        cell_graphic
-                            .texture
-                            .kitty_image_id
-                            .map(|id| id >= range_start && id <= range_end)
-                            .unwrap_or(false)
-                    });
                     let before = self.graphics.kitty_placements.len();
                     self.graphics
                         .kitty_placements

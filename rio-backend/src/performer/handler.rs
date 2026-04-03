@@ -395,15 +395,13 @@ pub trait Handler {
     fn sixel_graphic_reset(&mut self) {}
     fn sixel_graphic_finish(&mut self) {}
 
-    /// Insert a new graphic item (displays immediately at cursor).
-    /// cursor_movement: None = Sixel (move to next line), Some(0) = Kitty stay on last row, Some(1) = don't move
+    /// Insert a new graphic item into grid cells (for sixel/iTerm2).
+    /// cursor_movement: None = Sixel (move to next line), Some(0) = stay on last row
     fn insert_graphic(
         &mut self,
         _data: GraphicData,
         _palette: Option<Vec<ColorRgb>>,
         _cursor_movement: Option<u8>,
-        _kitty_image_id: Option<u32>,
-        _z_index: i32,
     ) {
     }
 
@@ -1217,7 +1215,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             b"1337" => {
                 if let Some(graphic) = iterm2_image_protocol::parse(params) {
                     // iTerm2 protocol uses None (traditional behavior like Sixel)
-                    self.handler.insert_graphic(graphic, None, None, None, 0);
+                    self.handler.insert_graphic(graphic, None, None);
                 }
             }
 
