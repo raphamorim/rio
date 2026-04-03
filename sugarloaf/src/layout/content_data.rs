@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use crate::layout::content::BuilderState;
+use crate::sugarloaf::graphics::GraphicOverlay;
 use smallvec::SmallVec;
 
 /// Unified content data for all shape types
@@ -165,6 +166,7 @@ impl ContentRenderData {
 pub struct ContentState {
     pub data: ContentData,
     pub render_data: ContentRenderData,
+    pub image_overlays: SmallVec<[GraphicOverlay; 4]>,
 }
 
 impl ContentState {
@@ -172,6 +174,7 @@ impl ContentState {
         Self {
             data,
             render_data: ContentRenderData::default(),
+            image_overlays: SmallVec::new(),
         }
     }
 

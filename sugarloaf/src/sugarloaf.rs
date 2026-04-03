@@ -7,7 +7,7 @@ use crate::components::filters::{Filter, FiltersBrush};
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::{RootStyle, TextLayout};
 use crate::renderer::Renderer;
-use crate::sugarloaf::graphics::{GraphicDataEntry, GraphicOverlay, Graphics};
+use crate::sugarloaf::graphics::{GraphicDataEntry, Graphics};
 
 use crate::context::Context;
 use crate::Content;
@@ -27,8 +27,6 @@ pub struct Sugarloaf<'a> {
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
     filters_brush: Option<FiltersBrush>,
-    /// Overlay placements to render this frame.
-    pub graphic_overlays: Vec<GraphicOverlay>,
     /// Pixel data for standalone image textures, keyed by ImageId.
     pub image_data: rustc_hash::FxHashMap<u32, GraphicDataEntry>,
 }
@@ -167,7 +165,6 @@ impl Sugarloaf<'_> {
             renderer,
             graphics: Graphics::default(),
             filters_brush: None,
-            graphic_overlays: Vec::new(),
             image_data: rustc_hash::FxHashMap::default(),
         };
 
@@ -827,7 +824,6 @@ impl Sugarloaf<'_> {
             &mut self.renderer,
             &mut self.ctx,
             &mut self.graphics,
-            &self.graphic_overlays,
             &mut self.image_data,
         );
 
@@ -840,9 +836,6 @@ impl Sugarloaf<'_> {
                 self.render_metal();
             }
         }
-
-        // Overlays consumed — clear for next frame
-        self.graphic_overlays.clear();
     }
 
     #[inline]

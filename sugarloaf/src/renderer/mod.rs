@@ -594,7 +594,6 @@ impl Renderer {
         context: &mut crate::context::Context,
         state: &crate::sugarloaf::state::SugarState,
         graphics: &mut Graphics,
-        overlays: &[crate::sugarloaf::graphics::GraphicOverlay],
         image_data: &mut rustc_hash::FxHashMap<
             u32,
             crate::sugarloaf::graphics::GraphicDataEntry,
@@ -796,11 +795,21 @@ impl Renderer {
         // Reset clip_rect after rendering all content
         self.comp.batches.clip_rect = [0.0; 4];
 
-        // Render image overlays
-        if !overlays.is_empty() {
-            self.render_graphic_overlays(context, image_data, overlays);
+        // Render image overlays from content states
+        let has_overlays = state
+            .content
+            .states
+            .values()
+            .any(|cs| !cs.image_overlays.is_empty());
+        if has_overlays {
+            let overlays: Vec<_> = state
+                .content
+                .states
+                .values()
+                .flat_map(|cs| cs.image_overlays.iter())
+                .collect();
+            self.render_graphic_overlays(context, image_data, &overlays);
         } else {
-            // No overlays — clean up stale GPU textures and pixel data
             self.image_textures.clear();
             image_data.clear();
         }
@@ -1333,7 +1342,7 @@ impl Renderer {
             u32,
             crate::sugarloaf::graphics::GraphicDataEntry,
         >,
-        overlays: &[crate::sugarloaf::graphics::GraphicOverlay],
+        overlays: &[&crate::sugarloaf::graphics::GraphicOverlay],
     ) {
         // Clean up textures no longer referenced by any overlay
         let active_ids: std::collections::HashSet<u32> =

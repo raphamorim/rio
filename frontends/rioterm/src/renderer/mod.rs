@@ -1001,14 +1001,8 @@ impl Renderer {
                         placements.sort_by_key(|p| p.z_index);
                         placements
                     },
+                    kitty_graphics_dirty: terminal.graphics.kitty_graphics_dirty,
                 };
-                // Clean up orphaned placements (image deleted but placement remains)
-                let valid_ids: std::collections::HashSet<u32> =
-                    terminal.graphics.kitty_images.keys().copied().collect();
-                terminal
-                    .graphics
-                    .kitty_placements
-                    .retain(|_, p| valid_ids.contains(&p.image_id));
                 terminal.graphics.kitty_graphics_dirty = false;
                 terminal.reset_damage();
                 drop(terminal);
@@ -1016,42 +1010,39 @@ impl Renderer {
                 snapshot
             };
 
-            // Build image overlays from kitty placements
-            if !terminal_snapshot.kitty_placements.is_empty() {
-                let layout = context.dimension;
-                let cell_width = layout.dimension.width;
+            // Rebuild image overlays only when dirty (like Ghostty's kittyUpdate)
+            if terminal_snapshot.kitty_graphics_dirty {
                 let line_height = sugarloaf.style().line_height;
-                let cell_height = layout.dimension.height * line_height;
-                let origin_x = panel_rect[0] + grid_scaled_margin.left;
-                let origin_y = panel_rect[1] + grid_scaled_margin.top;
-                let history_size = terminal_snapshot.history_size as i64;
-                let display_offset = terminal_snapshot.display_offset as i64;
-                let screen_lines = terminal_snapshot.screen_lines as i64;
+                let content = sugarloaf.content();
+                content.sel(context.rich_text_id);
+                content.clear_image_overlays();
+                if !terminal_snapshot.kitty_placements.is_empty() {
+                    let layout = context.dimension;
+                    let cell_width = layout.dimension.width;
+                    let cell_height = layout.dimension.height * line_height;
+                    let origin_x = panel_rect[0] + grid_scaled_margin.left;
+                    let origin_y = panel_rect[1] + grid_scaled_margin.top;
+                    let history_size = terminal_snapshot.history_size as i64;
+                    let display_offset = terminal_snapshot.display_offset as i64;
+                    let screen_lines = terminal_snapshot.screen_lines as i64;
 
-                let mut overlays =
-                    Vec::with_capacity(terminal_snapshot.kitty_placements.len());
-                for p in &terminal_snapshot.kitty_placements {
-                    let screen_row = p.dest_row - (history_size - display_offset);
-                    if screen_row < 0 || screen_row >= screen_lines {
-                        continue;
+                    for p in &terminal_snapshot.kitty_placements {
+                        let screen_row = p.dest_row - (history_size - display_offset);
+                        if screen_row < 0 || screen_row >= screen_lines {
+                            continue;
+                        }
+                        content.push_image_overlay(
+                            rio_backend::sugarloaf::GraphicOverlay {
+                                image_id: p.image_id,
+                                x: origin_x + p.dest_col as f32 * cell_width,
+                                y: origin_y + screen_row as f32 * cell_height,
+                                width: p.pixel_width as f32,
+                                height: p.pixel_height as f32,
+                                z_index: p.z_index,
+                            },
+                        );
                     }
-                    overlays.push(rio_backend::sugarloaf::GraphicOverlay {
-                        image_id: p.image_id,
-                        x: origin_x + p.dest_col as f32 * cell_width,
-                        y: origin_y + screen_row as f32 * cell_height,
-                        width: p.pixel_width as f32,
-                        height: p.pixel_height as f32,
-                        z_index: p.z_index,
-                    });
                 }
-
-                let active_ids: std::collections::HashSet<u32> = terminal_snapshot
-                    .kitty_placements
-                    .iter()
-                    .map(|p| p.image_id)
-                    .collect();
-                sugarloaf.image_data.retain(|id, _| active_ids.contains(id));
-                sugarloaf.graphic_overlays = overlays;
             }
 
             // Get hint matches from renderable content
