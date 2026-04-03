@@ -619,6 +619,10 @@ impl<U: EventListener> Crosswords<U> {
         // Damage everything if display offset changed.
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
+            // Scrolling changes image positions on screen
+            if !self.graphics.kitty_placements.is_empty() {
+                self.graphics.kitty_graphics_dirty = true;
+            }
         }
     }
 
@@ -984,6 +988,9 @@ impl<U: EventListener> Crosswords<U> {
         // Scroll between origin and bottom
         self.grid.scroll_down(&region, lines);
         self.mark_fully_damaged();
+        if !self.graphics.kitty_placements.is_empty() {
+            self.graphics.kitty_graphics_dirty = true;
+        }
     }
 
     #[inline]
@@ -1017,6 +1024,9 @@ impl<U: EventListener> Crosswords<U> {
             *line = std::cmp::max(*line - lines, top);
         }
         self.mark_fully_damaged();
+        if !self.graphics.kitty_placements.is_empty() {
+            self.graphics.kitty_graphics_dirty = true;
+        }
     }
 
     #[inline(always)]
@@ -1217,6 +1227,9 @@ impl<U: EventListener> Crosswords<U> {
         mem::swap(&mut self.grid, &mut self.inactive_grid);
         self.mode ^= Mode::ALT_SCREEN;
         self.selection = None;
+
+        // Mark kitty graphics dirty so overlays rebuild for the new screen
+        self.graphics.kitty_graphics_dirty = true;
         self.mark_fully_damaged();
     }
 
@@ -1939,6 +1952,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[start..end] {
             *cell = bg.into();
         }
+        if !self.graphics.kitty_placements.is_empty() {
+            self.graphics.kitty_graphics_dirty = true;
+        }
     }
 
     #[inline]
@@ -2505,6 +2521,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         self.mark_fully_damaged();
+        if !self.graphics.kitty_placements.is_empty() {
+            self.graphics.kitty_graphics_dirty = true;
+        }
     }
 
     #[inline]
@@ -2714,6 +2733,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
         self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+        if !self.graphics.kitty_placements.is_empty() {
+            self.graphics.kitty_graphics_dirty = true;
+        }
     }
 
     #[inline]
@@ -3653,13 +3675,7 @@ impl<U: EventListener> Crosswords<U> {
             .unwrap_or_else(std::time::Instant::now);
         graphic_data.transmit_time = transmit_time;
 
-        // Memory management
-        let graphic_bytes = graphic_data.pixels.len();
-        if self.graphics.total_bytes + graphic_bytes > self.graphics.total_limit {
-            let used_ids = self.collect_used_graphic_ids();
-            self.graphics.evict_images(graphic_bytes, &used_ids);
-        }
-        self.graphics.total_bytes += graphic_bytes;
+        // Memory is managed in store_kitty_image (eviction happens there)
 
         // Compute cursor position for placement
         let dest_col = if placement.x > 0 {

@@ -120,6 +120,8 @@ pub struct TerminalSnapshot {
     pub kitty_images: FxHashMap<u32, StoredImage>,
     // Kitty graphics overlay placements (sorted by z_index for layered rendering)
     pub kitty_placements: Vec<KittyPlacement>,
+    // Whether kitty graphics state changed since last frame
+    pub kitty_graphics_dirty: bool,
 }
 
 #[derive(Debug, Default)]

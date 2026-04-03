@@ -286,7 +286,8 @@ impl Graphics {
         self.cell_width = size.square_width();
     }
 
-    /// Store a kitty graphics image for later placement
+    /// Store a kitty graphics image for later placement.
+    /// Evicts old images if over memory limit (like Ghostty's addImage).
     pub fn store_kitty_image(
         &mut self,
         image_id: u32,
@@ -296,6 +297,24 @@ impl Graphics {
         let now = std::time::Instant::now();
         data.transmit_time = now;
 
+        // Evict before storing (matches Ghostty's addImage)
+        let new_bytes = data.pixels.len();
+        if self.total_bytes + new_bytes > self.total_limit {
+            // Collect active IDs — images with placements are protected
+            let mut active = std::collections::HashSet::new();
+            for placement in self.kitty_placements.values() {
+                active.insert(placement.image_id as u64);
+            }
+            // Also protect the image we're about to store
+            active.insert(image_id as u64);
+            self.evict_images(new_bytes, &active);
+        }
+
+        // If replacing an existing image, subtract its bytes first
+        if let Some(old) = self.kitty_images.get(&image_id) {
+            self.total_bytes = self.total_bytes.saturating_sub(old.data.pixels.len());
+        }
+
         self.kitty_images.insert(
             image_id,
             StoredImage {
@@ -303,6 +322,7 @@ impl Graphics {
                 transmission_time: now,
             },
         );
+        self.total_bytes += new_bytes;
 
         // Update image number mapping if provided
         if let Some(number) = image_number {
