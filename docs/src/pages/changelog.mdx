@@ -41,6 +41,7 @@ language: 'en'
   - Works per-panel in split views
   - Draggable thumb with click-on-track jump scrolling
   - Configure via `enable-scroll-bar` (enabled by default)
+- **Tab Title `RELATIVE_PATH` variable**: New template variable that shows a home-relative shortened path (e.g. `~/Documents/a/rio` or `…/a/psone/starpsx`). Default tab title on macOS/Linux changed to `{{ TITLE || RELATIVE_PATH }}`.
 - Wgpu now is always f32.
   - This fixes non arm chip macos use cases.
 
