@@ -27,8 +27,6 @@ impl Handler for TestHandler {
         data: GraphicData,
         _palette: Option<Vec<crate::config::colors::ColorRgb>>,
         _cursor_movement: Option<u8>,
-        _kitty_image_id: Option<u32>,
-        _z_index: i32,
     ) {
         self.graphics.push(data);
     }
@@ -986,132 +984,10 @@ fn test_delete_by_z_index_only_deletes_matching() {
     );
 }
 
-#[test]
-fn test_delete_by_kitty_image_id() {
-    let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
-
-    let mut term: Crosswords<TestEventListener> = Crosswords::new(
-        crate::crosswords::CrosswordsSize::new(80, 24),
-        crate::ansi::CursorShape::Block,
-        event_listener,
-        window_id,
-        0,
-    );
-
-    term.graphics.cell_width = 10.0;
-    term.graphics.cell_height = 20.0;
-
-    // Insert graphic with kitty_image_id=42
-    let pixels = vec![255u8; 10 * 20 * 4];
-    let graphic = GraphicData {
-        id: GraphicId::new(42),
-        width: 10,
-        height: 20,
-        color_type: ColorType::Rgba,
-        pixels,
-        is_opaque: true,
-        resize: None,
-        display_width: None,
-        display_height: None,
-        generation: 0,
-    };
-    // insert_graphic assigns a NEW internal GraphicId (via next_id()),
-    // but we pass kitty_image_id=42 so delete-by-id can find it.
-    term.insert_graphic(graphic, None, Some(0), Some(42), 0);
-
-    // Verify it was placed
-    let cell =
-        &term.grid[crate::crosswords::pos::Line(0)][crate::crosswords::pos::Column(0)];
-    assert!(cell.graphics().is_some(), "Graphic should be placed");
-
-    // The internal GraphicId should NOT be 42 (it's assigned by next_id)
-    let internal_id = cell.graphics().unwrap()[0].texture.id;
-    assert_ne!(
-        internal_id.get(),
-        42,
-        "Internal ID should differ from kitty image_id"
-    );
-
-    // But kitty_image_id should be 42
-    assert_eq!(
-        cell.graphics().unwrap()[0].texture.kitty_image_id,
-        Some(42),
-        "kitty_image_id should be stored in TextureRef"
-    );
-
-    // Delete by image_id=42 (d=i)
-    let delete = DeleteRequest {
-        action: b'i',
-        image_id: 42,
-        placement_id: 0,
-        x: 0,
-        y: 0,
-        z_index: 0,
-        delete_data: false,
-    };
-    term.delete_graphics(delete);
-
-    // Graphic should be gone
-    let cell =
-        &term.grid[crate::crosswords::pos::Line(0)][crate::crosswords::pos::Column(0)];
-    assert!(
-        cell.graphics().is_none(),
-        "Delete by image_id should remove the placed graphic"
-    );
-}
-
-#[test]
-fn test_delete_by_image_id_does_not_delete_wrong_id() {
-    let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
-
-    let mut term: Crosswords<TestEventListener> = Crosswords::new(
-        crate::crosswords::CrosswordsSize::new(80, 24),
-        crate::ansi::CursorShape::Block,
-        event_listener,
-        window_id,
-        0,
-    );
-
-    term.graphics.cell_width = 10.0;
-    term.graphics.cell_height = 20.0;
-
-    // Insert graphic with kitty_image_id=42
-    let pixels = vec![255u8; 10 * 20 * 4];
-    let graphic = GraphicData {
-        id: GraphicId::new(42),
-        width: 10,
-        height: 20,
-        color_type: ColorType::Rgba,
-        pixels,
-        is_opaque: true,
-        resize: None,
-        display_width: None,
-        display_height: None,
-        generation: 0,
-    };
-    term.insert_graphic(graphic, None, Some(0), Some(42), 0);
-
-    // Try to delete image_id=99 — should NOT delete the image_id=42 graphic
-    let delete = DeleteRequest {
-        action: b'i',
-        image_id: 99,
-        placement_id: 0,
-        x: 0,
-        y: 0,
-        z_index: 0,
-        delete_data: false,
-    };
-    term.delete_graphics(delete);
-
-    let cell =
-        &term.grid[crate::crosswords::pos::Line(0)][crate::crosswords::pos::Column(0)];
-    assert!(
-        cell.graphics().is_some(),
-        "Delete with wrong image_id should NOT remove the graphic"
-    );
-}
+// test_delete_by_kitty_image_id and test_delete_by_image_id_does_not_delete_wrong_id
+// were removed: kitty images no longer go into grid cells (overlay path only).
+// Equivalent tests exist as test_delete_by_image_id_removes_all_placements_for_image
+// and test_delete_by_specific_placement_id.
 
 #[test]
 fn test_no_double_push_on_graphic_cell_drop() {
@@ -1123,8 +999,6 @@ fn test_no_double_push_on_graphic_cell_drop() {
 
     let texture = Arc::new(TextureRef {
         id: GraphicId::new(99),
-        kitty_image_id: None,
-        z_index: 0,
         width: 10,
         height: 20,
         cell_height: 20,
@@ -1218,8 +1092,6 @@ fn test_collect_active_ids_uses_weak_refs() {
     let texture_ops = graphics.texture_operations.clone();
     let texture = Arc::new(TextureRef {
         id: GraphicId::new(1),
-        kitty_image_id: None,
-        z_index: 0,
         width: 10,
         height: 20,
         cell_height: 20,
