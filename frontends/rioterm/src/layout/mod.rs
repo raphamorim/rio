@@ -614,13 +614,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Find the parent of the current node
         let parent_node = self.tree.parent(current_node).unwrap_or(self.root_node);
 
-        // Create a container node with the split direction
+        // Inherit the current panel's flex properties so the container
+        // keeps the same proportion in its parent (e.g. 80/20 split).
+        let current_style = self.tree.style(current_node)?.clone();
         let scale = self.scale;
         let container_style = Style {
             display: Display::Flex,
             flex_direction: direction,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
+            flex_basis: current_style.flex_basis,
+            flex_grow: current_style.flex_grow,
+            flex_shrink: current_style.flex_shrink,
             gap: geometry::Size {
                 width: length(self.panel_config.column_gap * scale),
                 height: length(self.panel_config.row_gap * scale),
@@ -628,6 +631,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             ..Default::default()
         };
         let container_node = self.tree.new_leaf(container_style)?;
+
+        // Reset the current panel to flexible sizing inside the new container
+        let mut reset_style = current_style;
+        reset_style.flex_basis = taffy::Dimension::auto();
+        reset_style.flex_grow = 1.0;
+        reset_style.flex_shrink = 1.0;
+        self.tree.set_style(current_node, reset_style)?;
 
         // Create the new panel node
         let new_node = self.tree.new_leaf(self.create_panel_style())?;
@@ -662,14 +672,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     ) -> Result<(), TaffyError> {
         let mut style = self.tree.style(node)?.clone();
 
+        // Use flex_grow proportional to the desired size so panels
+        // scale correctly when the window is resized.
         if let Some(w) = width {
-            style.flex_basis = length(w);
-            style.flex_grow = 0.0;
-            style.flex_shrink = 0.0;
+            style.flex_basis = length(0.0);
+            style.flex_grow = w;
+            style.flex_shrink = 1.0;
         } else if let Some(h) = height {
-            style.flex_basis = length(h);
-            style.flex_grow = 0.0;
-            style.flex_shrink = 0.0;
+            style.flex_basis = length(0.0);
+            style.flex_grow = h;
+            style.flex_shrink = 1.0;
         }
 
         self.tree.set_style(node, style)?;
