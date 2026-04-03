@@ -58,12 +58,6 @@ impl Graphics {
     pub fn remove(&mut self, graphic_id: &GraphicId) {
         self.inner.remove(graphic_id);
     }
-
-    /// Iterate over all image texture IDs (non-atlas) in the store.
-    #[inline]
-    pub fn image_texture_ids(&self) -> impl Iterator<Item = GraphicId> + '_ {
-        self.inner.keys().copied().filter(|id| id.is_kitty())
-    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
@@ -73,16 +67,16 @@ pub struct Graphic {
     pub offset_y: u16,
 }
 
-/// An overlay placement for a kitty graphics image.
+/// An overlay image placement.
 /// Used by the renderer to draw images on top of (or behind) terminal content.
 #[derive(Debug, Clone)]
 pub struct GraphicOverlay {
-    /// Internal graphic ID for looking up in the Graphics store.
-    pub graphic_id: GraphicId,
-    /// Screen-relative position (in logical pixels).
+    /// Image identifier (kitty protocol image_id).
+    pub image_id: u32,
+    /// Screen position (physical pixels).
     pub x: f32,
     pub y: f32,
-    /// Display dimensions (in logical pixels).
+    /// Display dimensions (physical pixels).
     pub width: f32,
     pub height: f32,
     /// Z-index for layering.
@@ -96,26 +90,10 @@ pub struct GraphicOverlay {
 pub struct GraphicId(pub u64);
 
 impl GraphicId {
-    /// Bit flag to distinguish kitty IDs from sixel IDs.
-    const KITTY_TAG: u64 = 1u64 << 63;
-
-    /// Create a new GraphicId from a u64 value (for sixel/general use).
+    /// Create a new GraphicId from a u64 value.
     #[inline]
     pub const fn new(value: u64) -> Self {
         Self(value)
-    }
-
-    /// Create a GraphicId for a kitty protocol image.
-    /// Uses bit 63 as a tag to avoid collision with sixel IDs.
-    #[inline]
-    pub const fn new_kitty(image_id: u32) -> Self {
-        Self((image_id as u64) | Self::KITTY_TAG)
-    }
-
-    /// Returns true if this ID belongs to a kitty protocol image.
-    #[inline]
-    pub const fn is_kitty(self) -> bool {
-        self.0 & Self::KITTY_TAG != 0
     }
 
     /// Get the inner u64 value.

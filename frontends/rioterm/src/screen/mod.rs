@@ -3340,7 +3340,7 @@ impl Screen<'_> {
                     let height = p.pixel_height as f32;
 
                     overlays.push(rio_backend::sugarloaf::GraphicOverlay {
-                        graphic_id: p.graphic_id,
+                        image_id: p.image_id,
                         x,
                         y,
                         width,
@@ -3349,21 +3349,12 @@ impl Screen<'_> {
                     });
                 }
 
-                // Collect active kitty graphic IDs from current placements
-                let active_kitty_ids: std::collections::HashSet<_> =
-                    placements.iter().map(|p| p.graphic_id).collect();
-
-                // Remove stale kitty images from sugarloaf GPU store
-                // (images no longer referenced by any placement)
-                let stale_ids: Vec<_> = self
-                    .sugarloaf
-                    .graphics
-                    .image_texture_ids()
-                    .filter(|id| !active_kitty_ids.contains(id))
-                    .collect();
-                for id in stale_ids {
-                    self.sugarloaf.graphics.remove(&id);
-                }
+                // Remove stale image data no longer referenced by any placement
+                let active_ids: std::collections::HashSet<u32> =
+                    placements.iter().map(|p| p.image_id).collect();
+                self.sugarloaf
+                    .image_data
+                    .retain(|id, _| active_ids.contains(id));
 
                 self.sugarloaf.graphic_overlays = overlays;
             } else {
