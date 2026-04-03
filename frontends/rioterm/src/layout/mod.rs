@@ -120,8 +120,7 @@ pub struct ContextGrid<T: EventListener> {
 pub struct ContextGridItem<T: EventListener> {
     pub val: Context<T>,
     rich_text_object: Object,
-    /// Cached absolute layout: [x, y, width, height] in physical pixels
-    layout_rect: [f32; 4],
+    pub layout_rect: [f32; 4],
 }
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
@@ -142,12 +141,6 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
             rich_text_object,
             layout_rect: [0.0; 4],
         }
-    }
-
-    /// Returns the cached absolute layout rect [x, y, width, height] in physical pixels.
-    #[inline]
-    pub fn layout_rect(&self) -> [f32; 4] {
-        self.layout_rect
     }
 
     #[inline]

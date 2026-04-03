@@ -874,6 +874,7 @@ impl Renderer {
 
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
+        let grid_scaled_margin = grid.get_scaled_margin();
         let mut has_active_changed = false;
         if self.last_active != Some(active_key) {
             has_active_changed = true;
@@ -884,7 +885,7 @@ impl Renderer {
         if self.scrollbar.is_enabled() {
             self.scrollbar.clear_panel_states();
             for grid_context in grid.contexts_mut().values() {
-                let panel_rect = grid_context.layout_rect();
+                let panel_rect = grid_context.layout_rect;
                 let ctx = grid_context.context();
                 let terminal = ctx.terminal.lock();
                 self.scrollbar
@@ -900,6 +901,7 @@ impl Renderer {
 
         for (key, grid_context) in grid.contexts_mut().iter_mut() {
             let is_active = &active_key == key;
+            let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
 
             let mut has_ime = false;
@@ -1004,9 +1006,45 @@ impl Renderer {
                 snapshot
             };
 
-            // Store kitty placements for later overlay rendering
-            context.renderable_content.terminal_snapshot_placements =
-                terminal_snapshot.kitty_placements.clone();
+            // Build image overlays from kitty placements
+            if !terminal_snapshot.kitty_placements.is_empty() {
+                let layout = context.dimension;
+                let cell_width = layout.dimension.width;
+                let line_height = sugarloaf.style().line_height;
+                let cell_height = layout.dimension.height * line_height;
+                let origin_x = panel_rect[0] + grid_scaled_margin.left;
+                let origin_y = panel_rect[1] + grid_scaled_margin.top;
+                let history_size = terminal_snapshot.history_size as i64;
+                let display_offset = terminal_snapshot.display_offset as i64;
+                let screen_lines = terminal_snapshot.screen_lines as i64;
+
+                let mut overlays =
+                    Vec::with_capacity(terminal_snapshot.kitty_placements.len());
+                for p in &terminal_snapshot.kitty_placements {
+                    let screen_row = p.dest_row - (history_size - display_offset);
+                    if screen_row < 0 || screen_row >= screen_lines {
+                        continue;
+                    }
+                    overlays.push(rio_backend::sugarloaf::GraphicOverlay {
+                        image_id: p.image_id,
+                        x: origin_x + p.dest_col as f32 * cell_width,
+                        y: origin_y + screen_row as f32 * cell_height,
+                        width: p.pixel_width as f32,
+                        height: p.pixel_height as f32,
+                        z_index: p.z_index,
+                    });
+                }
+
+                let active_ids: std::collections::HashSet<u32> = terminal_snapshot
+                    .kitty_placements
+                    .iter()
+                    .map(|p| p.image_id)
+                    .collect();
+                sugarloaf.image_data.retain(|id, _| active_ids.contains(id));
+                sugarloaf.graphic_overlays = overlays;
+            } else {
+                sugarloaf.graphic_overlays.clear();
+            }
 
             // Get hint matches from renderable content
             let hint_matches = context.renderable_content.hint_matches.as_deref();

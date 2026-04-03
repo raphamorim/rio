@@ -71,9 +71,6 @@ pub struct RenderableContent {
     pub last_blink_toggle: Option<Instant>,
     pub pending_update: PendingUpdate,
     pub background: Option<BackgroundState>,
-    /// Kitty graphics overlay placements from the last terminal snapshot.
-    /// Updated by the renderer each frame, consumed by screen for overlay rendering.
-    pub terminal_snapshot_placements: Vec<KittyPlacement>,
 }
 
 impl RenderableContent {
@@ -91,7 +88,6 @@ impl RenderableContent {
             pending_update: PendingUpdate::default(),
             is_blinking_cursor_visible: false,
             background: None,
-            terminal_snapshot_placements: Vec::new(),
         }
     }
 
