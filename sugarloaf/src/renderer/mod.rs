@@ -800,8 +800,9 @@ impl Renderer {
         if !overlays.is_empty() {
             self.render_graphic_overlays(context, image_data, overlays);
         } else {
-            // No overlays — clean up any stale kitty textures
+            // No overlays — clean up stale GPU textures and pixel data
             self.image_textures.clear();
+            image_data.clear();
         }
 
         self.vertices.clear();

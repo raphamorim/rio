@@ -993,12 +993,22 @@ impl Renderer {
                             .graphics
                             .kitty_placements
                             .values()
+                            .filter(|p| {
+                                terminal.graphics.kitty_images.contains_key(&p.image_id)
+                            })
                             .cloned()
                             .collect();
                         placements.sort_by_key(|p| p.z_index);
                         placements
                     },
                 };
+                // Clean up orphaned placements (image deleted but placement remains)
+                let valid_ids: std::collections::HashSet<u32> =
+                    terminal.graphics.kitty_images.keys().copied().collect();
+                terminal
+                    .graphics
+                    .kitty_placements
+                    .retain(|_, p| valid_ids.contains(&p.image_id));
                 terminal.graphics.kitty_graphics_dirty = false;
                 terminal.reset_damage();
                 drop(terminal);
@@ -1042,8 +1052,6 @@ impl Renderer {
                     .collect();
                 sugarloaf.image_data.retain(|id, _| active_ids.contains(id));
                 sugarloaf.graphic_overlays = overlays;
-            } else {
-                sugarloaf.graphic_overlays.clear();
             }
 
             // Get hint matches from renderable content
