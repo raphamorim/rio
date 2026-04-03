@@ -1421,7 +1421,8 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
-    /// Delete graphics matching a predicate
+    /// Delete cell-based graphics matching a predicate (for sixel/iTerm2)
+    #[allow(dead_code)]
     fn delete_graphics_matching<F>(&mut self, mut predicate: F)
     where
         F: FnMut(&GraphicCell) -> bool,
@@ -3662,13 +3663,9 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
 
-        // Use kitty-tagged GraphicId to avoid collision with sixel
-        let graphic_id = sugarloaf::GraphicId::new_kitty(image_id);
-
         // Set display dimensions for GPU scaling
         graphic_data.display_width = Some(display_w);
         graphic_data.display_height = Some(display_h);
-        graphic_data.id = graphic_id;
 
         // Get generation from stored image (or current generation if freshly transmitted)
         let generation = self
@@ -3678,22 +3675,13 @@ impl<U: EventListener> Crosswords<U> {
             .unwrap_or(self.graphics.kitty_transmit_generation);
         graphic_data.generation = generation;
 
-        // Memory management — untrack old allocation before tracking new one
+        // Memory management
         let graphic_bytes = graphic_data.pixels.len();
-        if let Some(&old_ts) = self.graphics.image_timestamps.get(&graphic_id) {
-            // Same graphic_id being re-transmitted; untrack old bytes first
-            let _ = old_ts; // just used for existence check
-                            // Estimate old bytes from stored image if available
-            if let Some(stored) = self.graphics.get_kitty_image(image_id) {
-                let old_bytes = stored.data.pixels.len();
-                self.graphics.untrack_graphic(graphic_id, old_bytes);
-            }
-        }
         if self.graphics.total_bytes + graphic_bytes > self.graphics.total_limit {
             let used_ids = self.collect_used_graphic_ids();
             self.graphics.evict_images(graphic_bytes, &used_ids);
         }
-        self.graphics.track_graphic(graphic_id, graphic_bytes);
+        self.graphics.total_bytes += graphic_bytes;
 
         // Compute cursor position for placement
         let dest_col = if placement.x > 0 {
@@ -3726,7 +3714,6 @@ impl<U: EventListener> Crosswords<U> {
         let kitty_placement = KittyPlacement {
             image_id,
             placement_id,
-            graphic_id,
             source_x: placement.x,
             source_y: placement.y,
             source_width: placement.width,
