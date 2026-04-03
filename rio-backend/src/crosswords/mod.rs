@@ -3748,7 +3748,7 @@ impl<U: EventListener> Crosswords<U> {
 
         // Only push pixel data when image data actually changed
         if needs_upload {
-            self.graphics.pending.push(graphic_data);
+            self.graphics.pending_images.push((image_id, graphic_data));
             self.send_graphics_updates();
         }
 

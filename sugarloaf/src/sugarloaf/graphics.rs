@@ -17,6 +17,24 @@ pub struct GraphicDataEntry {
     pub transmit_time: std::time::Instant,
 }
 
+impl GraphicDataEntry {
+    /// Create from a GraphicData, taking ownership of pixel data.
+    pub fn from_graphic_data(data: GraphicData) -> Self {
+        let display_w = data.display_width.unwrap_or(data.width) as f32;
+        let display_h = data.display_height.unwrap_or(data.height) as f32;
+        Self {
+            handle: Handle::from_pixels(
+                data.width as u32,
+                data.height as u32,
+                data.pixels,
+            ),
+            width: display_w,
+            height: display_h,
+            transmit_time: data.transmit_time,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Graphics {
     inner: FxHashMap<GraphicId, GraphicDataEntry>,

@@ -331,14 +331,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 
+                    // Atlas graphics (sixel/iTerm2)
                     for graphic_data in queues.pending {
-                        tracing::info!(
-                            "Inserting graphic: id={}, width={}, height={}",
-                            graphic_data.id.get(),
-                            graphic_data.width,
-                            graphic_data.height
-                        );
                         sugarloaf.graphics.insert(graphic_data);
+                    }
+
+                    // Image textures (kitty) → separate store, no clone
+                    for (image_id, graphic_data) in queues.pending_images {
+                        sugarloaf.image_data.insert(
+                            image_id,
+                            rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
+                                graphic_data,
+                            ),
+                        );
                     }
 
                     for graphic_data in queues.remove_queue {
