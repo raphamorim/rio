@@ -515,7 +515,7 @@ enum ImageTexture {
 /// Per-image texture entry stored in the renderer.
 struct ImageTextureEntry {
     gpu: ImageTexture,
-    generation: u64,
+    transmit_time: std::time::Instant,
 }
 
 /// Per-instance data for image rendering (one instance = one image placement).
@@ -1348,7 +1348,7 @@ impl Renderer {
 
             // Skip if texture is current
             if let Some(existing) = self.image_textures.get(&overlay.image_id) {
-                if existing.generation == entry.generation {
+                if existing.transmit_time == entry.transmit_time {
                     continue;
                 }
             }
@@ -1442,7 +1442,7 @@ impl Renderer {
                 overlay.image_id,
                 ImageTextureEntry {
                     gpu,
-                    generation: entry.generation,
+                    transmit_time: entry.transmit_time,
                 },
             );
         }

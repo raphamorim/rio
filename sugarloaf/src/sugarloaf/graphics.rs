@@ -14,7 +14,7 @@ pub struct GraphicDataEntry {
     pub handle: Handle,
     pub width: f32,
     pub height: f32,
-    pub generation: u64,
+    pub transmit_time: std::time::Instant,
 }
 
 #[derive(Default)]
@@ -32,7 +32,7 @@ impl Graphics {
     pub fn insert(&mut self, graphic_data: GraphicData) {
         // Check if existing entry has the same generation (skip re-upload)
         if let Some(existing) = self.inner.get(&graphic_data.id) {
-            if existing.generation == graphic_data.generation {
+            if existing.transmit_time == graphic_data.transmit_time {
                 return;
             }
         }
@@ -49,7 +49,7 @@ impl Graphics {
                 ),
                 width: display_w,
                 height: display_h,
-                generation: graphic_data.generation,
+                transmit_time: graphic_data.transmit_time,
             },
         );
     }
@@ -147,7 +147,7 @@ pub struct GraphicData {
 
     /// Generation counter for cache invalidation.
     /// Incremented when image data changes (re-transmission with same ID).
-    pub generation: u64,
+    pub transmit_time: std::time::Instant,
 }
 
 impl GraphicData {
@@ -230,7 +230,7 @@ impl GraphicData {
             resize: None,
             display_width: None,
             display_height: None,
-            generation: 0,
+            transmit_time: std::time::Instant::now(),
         }
     }
 
@@ -429,7 +429,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -455,7 +455,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));
