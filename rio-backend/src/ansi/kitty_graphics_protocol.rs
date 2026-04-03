@@ -966,7 +966,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 resize,
                 display_width: None,
                 display_height: None,
-                generation: 0,
+                transmit_time: std::time::Instant::now(),
             })
         }
         Format::Gray | Format::GrayAlpha | Format::Rgb24 | Format::Rgba32 => {
@@ -1072,7 +1072,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 resize,
                 display_width: None,
                 display_height: None,
-                generation: 0,
+                transmit_time: std::time::Instant::now(),
             })
         }
     }

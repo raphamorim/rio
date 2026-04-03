@@ -3243,7 +3243,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             image_id, graphic_data.width, graphic_data.height
         );
 
-        // Store takes ownership and bumps generation.
+        // Store takes ownership and sets transmit_time.
         self.graphics
             .store_kitty_image(image_id, None, graphic_data);
 
@@ -3667,13 +3667,13 @@ impl<U: EventListener> Crosswords<U> {
         graphic_data.display_width = Some(display_w);
         graphic_data.display_height = Some(display_h);
 
-        // Get generation from stored image (or current generation if freshly transmitted)
-        let generation = self
+        // Get transmit_time from stored image for cache invalidation
+        let transmit_time = self
             .graphics
             .get_kitty_image(image_id)
-            .map(|s| s.generation)
-            .unwrap_or(self.graphics.kitty_transmit_generation);
-        graphic_data.generation = generation;
+            .map(|s| s.transmission_time)
+            .unwrap_or_else(std::time::Instant::now);
+        graphic_data.transmit_time = transmit_time;
 
         // Memory management
         let graphic_bytes = graphic_data.pixels.len();
@@ -3727,17 +3727,17 @@ impl<U: EventListener> Crosswords<U> {
             cell_x_offset: 0,
             cell_y_offset: 0,
             z_index: placement.z_index,
-            transmit_generation: generation,
+            transmit_time,
         };
 
-        // Check if this placement already exists with the same generation
+        // Check if this placement already exists with the same transmit_time
         // (avoids re-uploading identical pixel data to GPU every frame)
         let needs_upload = match self
             .graphics
             .kitty_placements
             .get(&(image_id, placement_id))
         {
-            Some(existing) => existing.transmit_generation != generation,
+            Some(existing) => existing.transmit_time != transmit_time,
             None => true,
         };
 
