@@ -80,10 +80,7 @@ pub const KITTY_PLACEHOLDER: char = '\u{10EEEE}';
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredImage {
     pub data: GraphicData,
-    #[allow(dead_code)]
     pub transmission_time: std::time::Instant,
-    /// Generation counter for cache invalidation on re-transmission.
-    pub generation: u64,
 }
 
 /// Overlay placement for a kitty graphics image.
@@ -121,8 +118,8 @@ pub struct KittyPlacement {
     pub cell_y_offset: u32,
     /// Z-index layer for rendering order.
     pub z_index: i32,
-    /// Generation counter — matches StoredImage.generation for cache invalidation.
-    pub transmit_generation: u64,
+    /// Transmission timestamp for cache invalidation (matches Ghostty's approach).
+    pub transmit_time: std::time::Instant,
 }
 
 /// Virtual placement metadata for Kitty graphics protocol
@@ -201,10 +198,6 @@ pub struct Graphics {
 
     /// Signals the renderer that overlay placements have changed.
     pub kitty_graphics_dirty: bool,
-
-    /// Monotonic counter, incremented on each kitty image transmission.
-    /// Used for cache invalidation when an image is re-transmitted.
-    pub kitty_transmit_generation: u64,
 }
 
 impl Default for Graphics {
@@ -228,7 +221,6 @@ impl Default for Graphics {
             placed_textures: FxHashMap::default(),
             kitty_placements: FxHashMap::default(),
             kitty_graphics_dirty: false,
-            kitty_transmit_generation: 0,
         }
     }
 }
@@ -288,16 +280,14 @@ impl Graphics {
         image_number: Option<u32>,
         mut data: GraphicData,
     ) {
-        self.kitty_transmit_generation += 1;
-        let generation = self.kitty_transmit_generation;
-        data.generation = generation;
+        let now = std::time::Instant::now();
+        data.transmit_time = now;
 
         self.kitty_images.insert(
             image_id,
             StoredImage {
                 data,
-                transmission_time: std::time::Instant::now(),
-                generation,
+                transmission_time: now,
             },
         );
 
@@ -513,7 +503,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -539,7 +529,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));
@@ -563,7 +553,7 @@ fn test_graphics_memory_tracking() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     let bytes = Graphics::calculate_graphic_bytes(&graphic);
@@ -603,7 +593,7 @@ fn test_graphics_eviction_unused_first() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -623,7 +613,7 @@ fn test_graphics_eviction_unused_first() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic2);
     graphics.track_graphic(GraphicId::new(2), pixels2.len());
@@ -664,7 +654,7 @@ fn test_graphics_eviction_oldest_first() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -683,7 +673,7 @@ fn test_graphics_eviction_oldest_first() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic2);
     graphics.track_graphic(GraphicId::new(2), pixels2.len());
@@ -720,7 +710,7 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -761,7 +751,7 @@ fn test_graphics_no_eviction_when_under_limit() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());

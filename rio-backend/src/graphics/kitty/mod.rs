@@ -394,7 +394,7 @@ fn test_cursor_movement_default() {
         }),
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     term.store_graphic(graphic);
@@ -470,7 +470,7 @@ fn test_cursor_movement_no_move() {
         }),
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     term.store_graphic(graphic);
@@ -573,7 +573,7 @@ fn test_image_row_occupation_exact_fit() {
         }),
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     term.store_graphic(graphic);
@@ -640,7 +640,7 @@ fn test_image_row_occupation_single_row() {
         }),
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     term.store_graphic(graphic);
@@ -705,7 +705,7 @@ fn test_image_row_occupation_three_rows() {
         }),
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     term.store_graphic(graphic);
@@ -775,7 +775,7 @@ fn test_image_row_occupation_from_middle() {
         }),
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     term.store_graphic(graphic);
@@ -862,7 +862,7 @@ fn test_store_graphic() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     // Store without displaying
@@ -991,7 +991,7 @@ fn test_placed_textures_tracks_inserts() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     term.insert_graphic(graphic, None, Some(0));
 
@@ -1065,10 +1065,13 @@ fn test_store_kitty_image_increments_generation() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, None, data1);
-    let gen1 = graphics.get_kitty_image(1).unwrap().generation;
+    let time1 = graphics.get_kitty_image(1).unwrap().transmission_time;
+
+    // Small sleep to ensure different timestamps
+    std::thread::sleep(std::time::Duration::from_millis(1));
 
     let data2 = GraphicData {
         id: GraphicId::new(1),
@@ -1080,12 +1083,15 @@ fn test_store_kitty_image_increments_generation() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, None, data2);
-    let gen2 = graphics.get_kitty_image(1).unwrap().generation;
+    let time2 = graphics.get_kitty_image(1).unwrap().transmission_time;
 
-    assert!(gen2 > gen1, "Generation must increase on re-transmission");
+    assert!(
+        time2 > time1,
+        "Transmit time must increase on re-transmission"
+    );
 }
 
 #[test]
@@ -1110,7 +1116,7 @@ fn test_kitty_placement_insert_and_delete() {
         cell_x_offset: 0,
         cell_y_offset: 0,
         z_index: 0,
-        transmit_generation: 1,
+        transmit_time: std::time::Instant::now(),
     };
 
     graphics.kitty_placements.insert((1, 0), placement);
@@ -1143,7 +1149,7 @@ fn test_kitty_placement_delete_by_z_index() {
         cell_x_offset: 0,
         cell_y_offset: 0,
         z_index: z,
-        transmit_generation: 1,
+        transmit_time: std::time::Instant::now(),
     };
 
     graphics
@@ -1185,7 +1191,7 @@ fn test_collect_active_ids_includes_overlay_placements() {
         cell_x_offset: 0,
         cell_y_offset: 0,
         z_index: 0,
-        transmit_generation: 1,
+        transmit_time: std::time::Instant::now(),
     };
 
     graphics.kitty_placements.insert((42, 0), placement);
@@ -1218,7 +1224,7 @@ fn test_eviction_removes_dangling_placements() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(data);
     graphics.track_graphic(GraphicId::new(1), 200);
@@ -1240,7 +1246,7 @@ fn test_eviction_removes_dangling_placements() {
         cell_x_offset: 0,
         cell_y_offset: 0,
         z_index: 0,
-        transmit_generation: 1,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.kitty_placements.insert((1, 0), placement);
 
@@ -1281,7 +1287,7 @@ fn make_test_placement(
         cell_x_offset: 0,
         cell_y_offset: 0,
         z_index,
-        transmit_generation: 1,
+        transmit_time: std::time::Instant::now(),
     }
 }
 
@@ -1324,7 +1330,7 @@ fn test_delete_all_placements_preserves_images() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, None, data);
 
@@ -1363,7 +1369,7 @@ fn test_delete_all_placements_and_images() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, None, data);
     graphics
@@ -1627,10 +1633,10 @@ fn test_retransmit_same_image_id_updates_data() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, None, data1);
-    let gen1 = graphics.get_kitty_image(1).unwrap().generation;
+    let gen1 = graphics.get_kitty_image(1).unwrap().transmission_time;
     let pixels1 = graphics.get_kitty_image(1).unwrap().data.pixels[0];
 
     // Re-transmit with different pixel data
@@ -1644,10 +1650,10 @@ fn test_retransmit_same_image_id_updates_data() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, None, data2);
-    let gen2 = graphics.get_kitty_image(1).unwrap().generation;
+    let gen2 = graphics.get_kitty_image(1).unwrap().transmission_time;
     let pixels2 = graphics.get_kitty_image(1).unwrap().data.pixels[0];
 
     assert!(gen2 > gen1, "Generation must increase");
@@ -1672,7 +1678,7 @@ fn test_image_number_mapping() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     // Store with image_number=7
     graphics.store_kitty_image(42, Some(7), data);
@@ -1703,7 +1709,7 @@ fn test_image_number_remapping_on_retransmit() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, Some(100), data1);
 
@@ -1718,7 +1724,7 @@ fn test_image_number_remapping_on_retransmit() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, Some(100), data2);
 
@@ -1793,7 +1799,7 @@ fn test_delete_kitty_images_cleans_number_mapping() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, Some(7), data);
 
@@ -1895,7 +1901,7 @@ fn test_delete_by_image_number() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(42, Some(7), data);
     graphics
@@ -2159,7 +2165,7 @@ fn test_delete_all_preserves_memory_limit() {
         resize: None,
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, None, data);
     graphics
@@ -2217,7 +2223,7 @@ fn test_aspect_ratio_with_only_columns() {
         }),
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     let cell_w = 10;
@@ -2249,7 +2255,7 @@ fn test_aspect_ratio_with_only_rows() {
         }),
         display_width: None,
         display_height: None,
-        generation: 0,
+        transmit_time: std::time::Instant::now(),
     };
 
     let cell_w = 10;
