@@ -2047,6 +2047,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.keyboard_mode_stack = Default::default();
         self.inactive_keyboard_mode_stack = Default::default();
 
+        // Clear kitty graphics on full reset
+        self.graphics.kitty_placements.clear();
+        self.graphics.kitty_images.clear();
+        self.graphics.kitty_image_numbers.clear();
+        self.graphics.kitty_graphics_dirty = true;
+
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
         self.mode.insert(Mode::default());

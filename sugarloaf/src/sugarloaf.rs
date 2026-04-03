@@ -840,6 +840,9 @@ impl Sugarloaf<'_> {
                 self.render_metal();
             }
         }
+
+        // Overlays consumed — clear for next frame
+        self.graphic_overlays.clear();
     }
 
     #[inline]
