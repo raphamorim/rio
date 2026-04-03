@@ -121,7 +121,7 @@ pub struct KittyPlacement {
     pub cell_y_offset: u32,
     /// Z-index layer for rendering order.
     pub z_index: i32,
-    /// Transmission timestamp for cache invalidation .
+    /// Transmission timestamp for cache invalidation.
     pub transmit_time: std::time::Instant,
 }
 
@@ -287,7 +287,7 @@ impl Graphics {
     }
 
     /// Store a kitty graphics image for later placement.
-    /// Evicts old images if over memory limit .
+    /// Evicts old images if over memory limit.
     pub fn store_kitty_image(
         &mut self,
         image_id: u32,
