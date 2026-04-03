@@ -17,8 +17,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ko/assets/css/styles.5591d8de.css">
-<script src="/ko/assets/js/runtime~main.5e8b5307.js" defer="defer"></script>
-<script src="/ko/assets/js/main.3b295c57.js" defer="defer"></script>
+<script src="/ko/assets/js/runtime~main.09b642f6.js" defer="defer"></script>
+<script src="/ko/assets/js/main.20e0ad8e.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -804,15 +804,16 @@ will always look for regular font bounds whene</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token comment" style="color:rgb(98, 114, 164)"># ~/.config/rio/config.toml</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;foobar&quot;</span><br></span></code></pre></div></div>
 <p>Proud of your new theme? Why not share it on the <a href="https://discord.gg/zRvJjmKGwS" target="_blank" rel="noopener noreferrer" class="">Rio Discord</a>!</p>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="titlecontent">title.content<a href="#titlecontent" class="hash-link" aria-label="title.content에 대한 직접 링크" title="title.content에 대한 직접 링크" translate="no">​</a></h2>
-<p>Configure window title using template. Default: <code>{{ title || program }}</code></p>
+<p>Configure window title using template.</p>
+<p>Default on macOS/Linux: <code>{{ title || relative_path }}</code>
+Default on Windows: <code>{{ title || program }}</code></p>
 <p>Note: <strong>Variables are not case sensitive.</strong></p>
 <p>Possible options:</p>
 <ul>
 <li class=""><code>TITLE</code>: terminal title via OSC sequences for setting terminal title</li>
 <li class=""><code>PROGRAM</code>: (e.g <code>fish</code>, <code>zsh</code>, <code>bash</code>, <code>vim</code>, etc...)</li>
 <li class=""><code>ABSOLUTE_PATH</code>: (e.g <code>/Users/rapha/Documents/a/rio</code>)</li>
-</ul>
-<ul>
+<li class=""><code>RELATIVE_PATH</code>: home-relative path, shortened when deep (e.g <code>~/Documents/a/rio</code> or <code>…/a/psone/starpsx</code>)</li>
 <li class=""><code>COLUMNS</code>: current columns</li>
 <li class=""><code>LINES</code>: current lines</li>
 </ul>
@@ -824,9 +825,9 @@ will always look for regular font bounds whene</p>
 <p>Result: <code>fish (85x23)</code>.</p>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="example-3">Example 3:<a href="#example-3" class="hash-link" aria-label="Example 3:에 대한 직접 링크" title="Example 3:에 대한 직접 링크" translate="no">​</a></h4>
 <p>You can use <code>||</code> operator, in case the value is empty or non-existent it will use the following:</p>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">title</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">content</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;{{ TITLE || PROGRAM }}&quot;</span><br></span></code></pre></div></div>
-<p>In this case, <code>TITLE</code> is non-existent so will use <code>PROGRAM</code>.</p>
-<p>Result: <code>zsh</code></p>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">title</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">content</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;{{ TITLE || RELATIVE_PATH }}&quot;</span><br></span></code></pre></div></div>
+<p>In this case, <code>TITLE</code> is non-existent so will use <code>RELATIVE_PATH</code>.</p>
+<p>Result: <code>~/Documents/a/rio</code></p>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="titleplaceholder">title.placeholder<a href="#titleplaceholder" class="hash-link" aria-label="title.placeholder에 대한 직접 링크" title="title.placeholder에 대한 직접 링크" translate="no">​</a></h2>
 <p>Configure initial title.</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">title</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">placeholder</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;▲&quot;</span><br></span></code></pre></div></div>
@@ -877,7 +878,7 @@ will always look for regular font bounds whene</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">window</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">opacity</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">0.5</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">decorations</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;enabled&quot;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">blur</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre></div></div>
 <p><img decoding="async" loading="lazy" alt="Demo blur and background opacity" src="/ko/assets/images/demo-macos-blur-ebfc5442d2e668dd82f6be67a561a4bd.png" width="1592" height="1152" class="img_ev3q"></p>
 <p><img decoding="async" loading="lazy" alt="Demo blur and background opacity 2" src="/ko/assets/images/demos-nixos-blur-dfa4b67dda6acce0ed64d810d3276bac.png" width="1922" height="1080" class="img_ev3q"></p>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="windowbackground-image">window.background-image<a href="#windowbackground-image" class="hash-link" aria-label="window.background-image에 대한 직접 링크" title="window.background-image에 대한 직접 링  크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="windowbackground-image">window.background-image<a href="#windowbackground-image" class="hash-link" aria-label="window.background-image에 대한 직접 링크" title="window.background-image에 대한 직접 링크" translate="no">​</a></h2>
 <p>Set an image as background.</p>
 <ul>
 <li class="">Default: <code>None</code></li>

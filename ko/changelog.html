@@ -17,8 +17,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ko/assets/css/styles.5591d8de.css">
-<script src="/ko/assets/js/runtime~main.5e8b5307.js" defer="defer"></script>
-<script src="/ko/assets/js/main.3b295c57.js" defer="defer"></script>
+<script src="/ko/assets/js/runtime~main.09b642f6.js" defer="defer"></script>
+<script src="/ko/assets/js/main.20e0ad8e.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -76,6 +76,7 @@
 <li class="">Configure via <code>enable-scroll-bar</code> (enabled by default)</li>
 </ul>
 </li>
+<li class=""><strong>Tab Title <code>RELATIVE_PATH</code> variable</strong>: New template variable that shows a home-relative shortened path (e.g. <code>~/Documents/a/rio</code> or <code>…/a/psone/starpsx</code>). Default tab title on macOS/Linux changed to <code>{{ TITLE || RELATIVE_PATH }}</code>.</li>
 <li class="">Wgpu now is always f32.<!-- -->
 <ul>
 <li class="">This fixes non arm chip macos use cases.</li>
@@ -140,7 +141,7 @@
 <ul>
 <li class="">Fix issue for finding fonts introduced with the v0.2.33 new font loader.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0233">0.2.33<a href="#0233" class="hash-link" aria-label="0.2.33에 대한 직접 링크" title="0.2.33에 대한   직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0233">0.2.33<a href="#0233" class="hash-link" aria-label="0.2.33에 대한 직접 링크" title="0.2.33에 대한 직접 링크" translate="no">​</a></h2>
 <ul>
 <li class=""><strong>Platform-specific configuration improvements</strong> <a href="https://github.com/raphamorim/rio/issues/1341" target="_blank" rel="noopener noreferrer" class="">#1341</a>:<!-- -->
 <ul>
@@ -159,7 +160,7 @@
 <li class="">Fix kitty keyboard protocol.</li>
 <li class="">Support reporting terminal version via XTVERSION.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0232">0.2.32<a href="#0232" class="hash-link" aria-label="0.2.32에 대한 직접 링크" title="0.2.32에 대 한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0232">0.2.32<a href="#0232" class="hash-link" aria-label="0.2.32에 대한 직접 링크" title="0.2.32에 대한 직접 링크" translate="no">​</a></h2>
 <ul>
 <li class="">Updated WGPU to v27.0.1.</li>
 <li class="">Fix No backend are enabled on FreeBSD #1235.</li>
@@ -293,7 +294,7 @@
 <ul>
 <li class="">Fix some regressions introduced by 0.2.21.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0221">0.2.21<a href="#0221" class="hash-link" aria-label="0.2.21에 대 한 직접 링크" title="0.2.21에 대한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0221">0.2.21<a href="#0221" class="hash-link" aria-label="0.2.21에 대한 직접 링크" title="0.2.21에 대한 직접 링크" translate="no">​</a></h2>
 <ul>
 <li class="">Breaking: <code>navigation.use-current-directory</code> has been renamed to <code>navigation.current-working-directory</code>.</li>
 </ul>
@@ -578,7 +579,7 @@
 <ul>
 <li class="">Fix crash regarding fonts not found whenever trying to run Rio.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0211">0.2.11<a href="#0211" class="hash-link" aria-label="0.2.11에 대한 직접 링크" title="0.2.11에 대한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0211">0.2.11<a href="#0211" class="hash-link" aria-label="0.2.11에 대한   직접 링크" title="0.2.11에 대한 직접 링크" translate="no">​</a></h2>
 <ul>
 <li class="">Fix filter scanlines not appearing.</li>
 <li class="">rt(wgpu): clamp texture size to device limits by <a href="https://github.com/chyyran" target="_blank" rel="noopener noreferrer" class="">@chyyran</a>.</li>
@@ -634,7 +635,7 @@
 <li class="">fix: CMD+W open new tab but not new window occasionally <a href="https://github.com/raphamorim/rio/issues/756" target="_blank" rel="noopener noreferrer" class="">#756</a>.</li>
 <li class="">fix: Error getting window dimensions on Wayland <a href="https://github.com/raphamorim/rio/issues/768" target="_blank" rel="noopener noreferrer" class="">#768</a>.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="025">0.2.5<a href="#025" class="hash-link" aria-label="0.2.5에 대한 직접 링크" title="0.2.5에 대한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="025">0.2.5<a href="#025" class="hash-link" aria-label="0.2.5에 대한 직  접 링크" title="0.2.5에 대한 직접 링크" translate="no">​</a></h2>
 <ul>
 <li class="">Introduced <code>draw-bold-text-with-light-colors</code> config, default is <code>false</code>.</li>
 <li class="">If light or dark colors are not specified Rio will try to convert it based on the regular color.</li>
@@ -787,7 +788,7 @@
 <li class=""><code>keyboard.use-kitty-keyboard-protocol</code> is now <code>false</code> by default.</li>
 <li class="">Add support for msys2/mingw builds release <a href="https://github.com/raphamorim/rio/issues/635" target="_blank" rel="noopener noreferrer" class="">#635</a> by <a href="https://github.com/Kreijstal" target="_blank" rel="noopener noreferrer" class="">@Kreijstal</a>.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0114">0.1.14<a href="#0114" class="hash-link" aria-label="0.1.14 에 대한 직접 링크" title="0.1.14에 대한 직접 링크" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0114">0.1.14<a href="#0114" class="hash-link" aria-label="0.1.14에 대한 직접 링크" title="0.1.14에 대한 직접 링크" translate="no">​</a></h2>
 <ul>
 <li class=""><code>developer.log-file</code> has been renamed to <code>developer.enable-log-file</code>.</li>
 <li class=""><strong>breaking</strong>: <code>CollapsedTab</code> has been renamed to <code>Bookmark</code>.</li>
