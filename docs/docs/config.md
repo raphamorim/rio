@@ -1587,7 +1587,10 @@ Proud of your new theme? Why not share it on the [Rio Discord](https://discord.g
 
 ## title.content
 
-Configure window title using template. Default: `{{ title || program }}`
+Configure window title using template.
+
+Default on macOS/Linux: `{{ title || relative_path }}`
+Default on Windows: `{{ title || program }}`
 
 Note: **Variables are not case sensitive.**
 
@@ -1596,7 +1599,7 @@ Possible options:
 - `TITLE`: terminal title via OSC sequences for setting terminal title
 - `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
 - `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
-<!-- - `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`) -->
+- `RELATIVE_PATH`: home-relative path, shortened when deep (e.g `~/Documents/a/rio` or `…/a/psone/starpsx`)
 - `COLUMNS`: current columns
 - `LINES`: current lines
 
@@ -1624,12 +1627,12 @@ You can use `||` operator, in case the value is empty or non-existent it will us
 
 ```toml
 [title]
-content = "{{ TITLE || PROGRAM }}"
+content = "{{ TITLE || RELATIVE_PATH }}"
 ```
 
-In this case, `TITLE` is non-existent so will use `PROGRAM`.
+In this case, `TITLE` is non-existent so will use `RELATIVE_PATH`.
 
-Result: `zsh`
+Result: `~/Documents/a/rio`
 
 ## title.placeholder
 
