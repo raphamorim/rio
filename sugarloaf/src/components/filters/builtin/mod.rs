@@ -1,4 +1,4 @@
-use librashader::presets::{ParsePresetError, ShaderFeatures, ShaderPreset};
+use librashader_presets::{ParsePresetError, ShaderFeatures, ShaderPreset};
 use std::fs;
 use std::io::Write;
 use std::path::Path;

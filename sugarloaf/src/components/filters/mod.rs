@@ -1,5 +1,5 @@
 mod builtin;
-// mod runtime;
+mod runtime;
 
 use crate::context::webgpu::WgpuContext;
 use librashader::{
@@ -13,7 +13,7 @@ pub type Filter = String;
 /// A brush for applying RetroArch filters.
 #[derive(Default)]
 pub struct FiltersBrush {
-    filter_chains: Vec<librashader::runtime::wgpu::FilterChain>,
+    filter_chains: Vec<crate::components::filters::runtime::FilterChain>,
     filter_intermediates: Vec<Arc<wgpu::Texture>>,
     framecount: usize,
 }
@@ -54,7 +54,7 @@ impl FiltersBrush {
 
                     match builtin_filter() {
                         Ok(shader_preset) => {
-                            match librashader::runtime::wgpu::FilterChain::load_from_preset(
+                            match crate::components::filters::runtime::FilterChain::load_from_preset(
                                 shader_preset,
                                 &ctx.device,
                                 &ctx.queue,
@@ -72,7 +72,7 @@ impl FiltersBrush {
                 _ => {
                     tracing::debug!("Loading filter {}", filter);
 
-                    match librashader::runtime::wgpu::FilterChain::load_from_path(
+                    match crate::components::filters::runtime::FilterChain::load_from_path(
                         filter,
                         ShaderFeatures::NONE,
                         &ctx.device,
@@ -199,7 +199,7 @@ impl FiltersBrush {
             let dst_texture_view =
                 filter_dst_texture.create_view(&wgpu::TextureViewDescriptor::default());
             let dst_output_view =
-                librashader::runtime::wgpu::WgpuOutputView::new_from_raw(
+                crate::components::filters::runtime::WgpuOutputView::new_from_raw(
                     &dst_texture_view,
                     view_size,
                     ctx.format,
@@ -210,11 +210,12 @@ impl FiltersBrush {
             // Framecount should be added forever: https://github.com/raphamorim/rio/issues/753
             self.framecount = self.framecount.wrapping_add(1);
             if let Err(err) = filter.frame(
-                &filter_src_texture,
+                filter_src_texture,
                 &dst_viewport,
                 encoder,
                 self.framecount,
                 None,
+                ctx,
             ) {
                 tracing::error!("Filter rendering failed: {err}");
             }
