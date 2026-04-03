@@ -534,7 +534,7 @@ version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfd1e3f8955a5d7de9fab72fc8373fade9fb8a703968cb200ae3dc6cf08e185a"
 dependencies = [
- "bytes 1.11.1",
+ "bytes",
  "cfg_aliases",
 ]
 
@@ -587,12 +587,6 @@ name = "byteorder-lite"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
-
-[[package]]
-name = "bytes"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c129aff112dcc562970abb69e2508b40850dd24c274761bb50fb8a0067ba6c27"
 
 [[package]]
 name = "bytes"
@@ -818,7 +812,7 @@ version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
 dependencies = [
- "bytes 1.11.1",
+ "bytes",
  "memchr",
 ]
 
@@ -887,7 +881,7 @@ dependencies = [
 name = "corcovado"
 version = "0.3.0"
 dependencies = [
- "bytes 0.3.0",
+ "bytes",
  "cfg-if 0.1.10",
  "criterion",
  "env_logger",
