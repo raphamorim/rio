@@ -1636,7 +1636,7 @@ fn test_retransmit_same_image_id_updates_data() {
         transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, None, data1);
-    let gen1 = graphics.get_kitty_image(1).unwrap().transmission_time;
+    let time1 = graphics.get_kitty_image(1).unwrap().transmission_time;
     let pixels1 = graphics.get_kitty_image(1).unwrap().data.pixels[0];
 
     // Re-transmit with different pixel data
@@ -1653,10 +1653,10 @@ fn test_retransmit_same_image_id_updates_data() {
         transmit_time: std::time::Instant::now(),
     };
     graphics.store_kitty_image(1, None, data2);
-    let gen2 = graphics.get_kitty_image(1).unwrap().transmission_time;
+    let time2 = graphics.get_kitty_image(1).unwrap().transmission_time;
     let pixels2 = graphics.get_kitty_image(1).unwrap().data.pixels[0];
 
-    assert!(gen2 > gen1, "Generation must increase");
+    assert!(time2 > time1, "Transmit time must increase");
     assert_ne!(pixels1, pixels2, "Pixel data must be replaced");
     assert_eq!(pixels2, 128);
 }

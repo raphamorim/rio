@@ -1421,34 +1421,6 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
-    /// Delete cell-based graphics matching a predicate (for sixel/iTerm2)
-    #[allow(dead_code)]
-    fn delete_graphics_matching<F>(&mut self, mut predicate: F)
-    where
-        F: FnMut(&GraphicCell) -> bool,
-    {
-        for line_idx in 0..self.grid.screen_lines() {
-            let line = Line(line_idx as i32);
-            for col_idx in 0..self.grid.columns() {
-                let col = Column(col_idx);
-                let cell = &mut self.grid[line][col];
-                if cell.flags.contains(Flags::GRAPHICS) {
-                    if let Some(graphics) = cell.take_graphics() {
-                        let filtered: smallvec::SmallVec<[GraphicCell; 1]> =
-                            graphics.into_iter().filter(|g| !predicate(g)).collect();
-
-                        if filtered.is_empty() {
-                            cell.flags.remove(Flags::GRAPHICS);
-                        } else {
-                            cell.set_graphics(filtered);
-                        }
-                    }
-                }
-            }
-            self.mark_line_damaged(line);
-        }
-    }
-
     /// Delete graphic at a specific position
     fn delete_graphic_at_position(&mut self, col: Column, row: Line) {
         if row.0 >= 0
