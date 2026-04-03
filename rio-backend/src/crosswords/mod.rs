@@ -3225,14 +3225,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn store_graphic(&mut self, graphic: GraphicData) {
-        // Store graphic without displaying (a=t transmit-only)
+        // a=t: Store graphic without displaying.
+        // No GPU upload here — pixel data is sent to GPU when a=p placement arrives.
         let image_id = graphic.id.get() as u32;
         debug!(
             "Storing kitty graphic: id={}, {}x{}",
             image_id, graphic.width, graphic.height
         );
-
-        // Store in cache
         self.graphics.store_kitty_image(image_id, None, graphic);
     }
 
@@ -3247,15 +3246,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
             image_id, graphic_data.width, graphic_data.height
         );
 
-        // Store the image first (this takes ownership and bumps generation)
+        // Store takes ownership and bumps generation.
         self.graphics
             .store_kitty_image(image_id, None, graphic_data);
 
-        // Place as overlay using the stored image data
-        if let Some(stored) = self.graphics.get_kitty_image(image_id) {
-            let data = stored.data.clone();
-            self.place_kitty_overlay(image_id, &placement, data);
-        }
+        // Place as overlay — handles GPU upload internally.
+        self.place_kitty_overlay(image_id, &placement);
     }
 
     #[inline]
@@ -3283,28 +3279,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         // Direct placement: use overlay path
         let image_id = placement.image_id;
-        if let Some(stored) = self.graphics.get_kitty_image(image_id) {
-            let mut graphic_data = stored.data.clone();
-
-            // Update resize parameters based on placement
-            if placement.columns > 0 || placement.rows > 0 {
-                let both_specified = placement.columns > 0 && placement.rows > 0;
-                graphic_data.resize = Some(sugarloaf::ResizeCommand {
-                    width: if placement.columns > 0 {
-                        sugarloaf::ResizeParameter::Cells(placement.columns)
-                    } else {
-                        sugarloaf::ResizeParameter::Auto
-                    },
-                    height: if placement.rows > 0 {
-                        sugarloaf::ResizeParameter::Cells(placement.rows)
-                    } else {
-                        sugarloaf::ResizeParameter::Auto
-                    },
-                    preserve_aspect_ratio: !both_specified,
-                });
-            }
-
-            self.place_kitty_overlay(image_id, &placement, graphic_data);
+        if self.graphics.get_kitty_image(image_id).is_some() {
+            self.place_kitty_overlay(image_id, &placement);
         } else {
             warn!(
                 "Attempted to place non-existent kitty graphic: id={}",
@@ -3656,8 +3632,36 @@ impl<U: EventListener> Crosswords<U> {
         &mut self,
         image_id: u32,
         placement: &crate::ansi::kitty_graphics_protocol::PlacementRequest,
-        mut graphic_data: GraphicData,
     ) {
+        // Read image data from the store (clone needed: one copy for
+        // metadata/dimensions, consumed by pending push for GPU upload)
+        let stored = match self.graphics.get_kitty_image(image_id) {
+            Some(s) => s,
+            None => {
+                warn!("place_kitty_overlay: image {} not found", image_id);
+                return;
+            }
+        };
+        let mut graphic_data = stored.data.clone();
+
+        // Apply resize from placement parameters
+        if placement.columns > 0 || placement.rows > 0 {
+            let both_specified = placement.columns > 0 && placement.rows > 0;
+            graphic_data.resize = Some(sugarloaf::ResizeCommand {
+                width: if placement.columns > 0 {
+                    sugarloaf::ResizeParameter::Cells(placement.columns)
+                } else {
+                    sugarloaf::ResizeParameter::Auto
+                },
+                height: if placement.rows > 0 {
+                    sugarloaf::ResizeParameter::Cells(placement.rows)
+                } else {
+                    sugarloaf::ResizeParameter::Auto
+                },
+                preserve_aspect_ratio: !both_specified,
+            });
+        }
+
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
 
