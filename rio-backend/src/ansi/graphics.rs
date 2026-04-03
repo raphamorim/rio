@@ -15,8 +15,11 @@ use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct UpdateQueues {
-    /// Graphics read from the PTY.
+    /// Atlas graphics (sixel/iTerm2) read from the PTY.
     pub pending: Vec<GraphicData>,
+
+    /// Image textures (kitty) keyed by image_id.
+    pub pending_images: Vec<(u32, GraphicData)>,
 
     /// Graphics removed from the grid.
     pub remove_queue: Vec<GraphicId>,
@@ -140,8 +143,11 @@ pub struct Graphics {
     /// Last generated identifier.
     pub last_id: u64,
 
-    /// New graphics, received from the PTY.
+    /// New atlas graphics (sixel/iTerm2), received from the PTY.
     pub pending: Vec<GraphicData>,
+
+    /// New image textures (kitty), keyed by image_id.
+    pub pending_images: Vec<(u32, GraphicData)>,
 
     /// Graphics removed from the grid.
     pub texture_operations: Arc<Mutex<Vec<GraphicId>>>,
@@ -205,6 +211,7 @@ impl Default for Graphics {
         Self {
             last_id: 0,
             pending: Vec::new(),
+            pending_images: Vec::new(),
             texture_operations: Arc::new(Mutex::new(Vec::new())),
             sixel_shared_palette: None,
             cell_height: 0.0,
@@ -244,7 +251,9 @@ impl Graphics {
     ///
     /// If all queues are empty, it returns `None`.
     pub fn has_pending_updates(&self) -> bool {
-        !self.pending.is_empty() || !self.texture_operations.lock().is_empty()
+        !self.pending.is_empty()
+            || !self.pending_images.is_empty()
+            || !self.texture_operations.lock().is_empty()
     }
 
     pub fn take_queues(&mut self) -> Option<UpdateQueues> {
@@ -257,12 +266,16 @@ impl Graphics {
             }
         };
 
-        if remove_queue.is_empty() && self.pending.is_empty() {
+        if remove_queue.is_empty()
+            && self.pending.is_empty()
+            && self.pending_images.is_empty()
+        {
             return None;
         }
 
         Some(UpdateQueues {
             pending: mem::take(&mut self.pending),
+            pending_images: mem::take(&mut self.pending_images),
             remove_queue,
         })
     }
