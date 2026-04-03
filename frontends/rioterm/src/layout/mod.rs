@@ -1133,12 +1133,26 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn grid_dimension(&self) -> ContextDimension {
         if let Some(current_item) = self.inner.get(&self.current) {
             let current_context_dimension = current_item.val.dimension;
+            let scale = current_context_dimension.dimension.scale;
+            // scaled_margin is already in physical pixels, but
+            // ContextDimension::build scales the margin again via compute(),
+            // so unscale it here to avoid double-scaling.
+            let unscaled_margin = if scale > 0.0 {
+                Margin::new(
+                    self.scaled_margin.top / scale,
+                    self.scaled_margin.right / scale,
+                    self.scaled_margin.bottom / scale,
+                    self.scaled_margin.left / scale,
+                )
+            } else {
+                self.scaled_margin
+            };
             ContextDimension::build(
                 self.width,
                 self.height,
                 current_context_dimension.dimension,
                 current_context_dimension.line_height,
-                self.scaled_margin,
+                unscaled_margin,
             )
         } else {
             tracing::error!("Current key {:?} not found in grid", self.current);
