@@ -121,7 +121,7 @@ pub struct KittyPlacement {
     pub cell_y_offset: u32,
     /// Z-index layer for rendering order.
     pub z_index: i32,
-    /// Transmission timestamp for cache invalidation (matches Ghostty's approach).
+    /// Transmission timestamp for cache invalidation .
     pub transmit_time: std::time::Instant,
 }
 
@@ -287,7 +287,7 @@ impl Graphics {
     }
 
     /// Store a kitty graphics image for later placement.
-    /// Evicts old images if over memory limit (like Ghostty's addImage).
+    /// Evicts old images if over memory limit .
     pub fn store_kitty_image(
         &mut self,
         image_id: u32,
@@ -297,7 +297,7 @@ impl Graphics {
         let now = std::time::Instant::now();
         data.transmit_time = now;
 
-        // Evict before storing (matches Ghostty's addImage)
+        // Evict before storing to protect images with active placements
         let new_bytes = data.pixels.len();
         if self.total_bytes + new_bytes > self.total_limit {
             // Collect active IDs — images with placements are protected
