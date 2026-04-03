@@ -71,7 +71,7 @@ fn test_direct_parse_transmit() {
 
     if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
-            handler.insert_graphic(graphic_data, None, Some(0), None, 0);
+            handler.insert_graphic(graphic_data, None, Some(0));
         }
     }
 
@@ -103,7 +103,7 @@ fn test_parse_png_format() {
 
     if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
-            handler.insert_graphic(graphic_data, None, Some(0), None, 0);
+            handler.insert_graphic(graphic_data, None, Some(0));
         }
     }
 
@@ -157,7 +157,7 @@ fn test_png_transmit_and_display() {
                 term.place_graphic(placement);
             } else {
                 // Direct display without placement request
-                term.insert_graphic(graphic_data, None, Some(0), None, 0);
+                term.insert_graphic(graphic_data, None, Some(0));
             }
         }
     }
@@ -188,7 +188,7 @@ fn test_png_format_support() {
 
     if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
-            handler.insert_graphic(graphic_data, None, Some(0), None, 0);
+            handler.insert_graphic(graphic_data, None, Some(0));
 
             let graphic = &handler.graphics[0];
             assert_eq!(graphic.width, 1, "PNG should decode to 1x1");
@@ -295,7 +295,7 @@ fn test_chunked_transfer() {
     ];
     if let Some(response) = kitty_graphics_protocol::parse(&params3, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
-            handler.insert_graphic(graphic_data, None, Some(0), None, 0);
+            handler.insert_graphic(graphic_data, None, Some(0));
         }
     }
 
@@ -343,7 +343,7 @@ fn test_multiple_graphics_in_sequence() {
     for (params, _) in &graphics_params {
         if let Some(response) = kitty_graphics_protocol::parse(params, &mut state) {
             if let Some(graphic_data) = response.graphic_data {
-                handler.insert_graphic(graphic_data, None, Some(0), None, 0);
+                handler.insert_graphic(graphic_data, None, Some(0));
             }
         }
     }
@@ -905,85 +905,6 @@ fn test_place_nonexistent_graphic() {
     term.place_graphic(placement);
 }
 
-#[test]
-fn test_delete_by_z_index_only_deletes_matching() {
-    let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
-
-    let mut term: Crosswords<TestEventListener> = Crosswords::new(
-        crate::crosswords::CrosswordsSize::new(80, 24),
-        crate::ansi::CursorShape::Block,
-        event_listener,
-        window_id,
-        0,
-    );
-
-    term.graphics.cell_width = 10.0;
-    term.graphics.cell_height = 20.0;
-
-    // Insert a graphic with z_index=5
-    let pixels = vec![255u8; 10 * 20 * 4]; // 1 cell
-    let graphic = GraphicData {
-        id: GraphicId::new(1),
-        width: 10,
-        height: 20,
-        color_type: ColorType::Rgba,
-        pixels,
-        is_opaque: true,
-        resize: None,
-        display_width: None,
-        display_height: None,
-        generation: 0,
-    };
-    term.insert_graphic(graphic, None, Some(0), Some(1), 5);
-
-    // Insert another graphic with z_index=10
-    term.grid.cursor.pos.col = crate::crosswords::pos::Column(1);
-    term.grid.cursor.pos.row = crate::crosswords::pos::Line(0);
-    let pixels2 = vec![255u8; 10 * 20 * 4];
-    let graphic2 = GraphicData {
-        id: GraphicId::new(2),
-        width: 10,
-        height: 20,
-        color_type: ColorType::Rgba,
-        pixels: pixels2,
-        is_opaque: true,
-        resize: None,
-        display_width: None,
-        display_height: None,
-        generation: 0,
-    };
-    term.insert_graphic(graphic2, None, Some(0), Some(2), 10);
-
-    // Delete by z_index=5 — should only remove the first graphic
-    let delete = DeleteRequest {
-        action: b'z',
-        image_id: 0,
-        placement_id: 0,
-        x: 0,
-        y: 0,
-        z_index: 5,
-        delete_data: false,
-    };
-    term.delete_graphics(delete);
-
-    // Cell at col 0 should have no graphics (z=5 was deleted)
-    let cell0 =
-        &term.grid[crate::crosswords::pos::Line(0)][crate::crosswords::pos::Column(0)];
-    assert!(
-        cell0.graphics().is_none(),
-        "z=5 graphic should have been deleted"
-    );
-
-    // Cell at col 1 should still have graphics (z=10 was not deleted)
-    let cell1 =
-        &term.grid[crate::crosswords::pos::Line(0)][crate::crosswords::pos::Column(1)];
-    assert!(
-        cell1.graphics().is_some(),
-        "z=10 graphic should NOT have been deleted"
-    );
-}
-
 // test_delete_by_kitty_image_id and test_delete_by_image_id_does_not_delete_wrong_id
 // were removed: kitty images no longer go into grid cells (overlay path only).
 // Equivalent tests exist as test_delete_by_image_id_removes_all_placements_for_image
@@ -1072,7 +993,7 @@ fn test_placed_textures_tracks_inserts() {
         display_height: None,
         generation: 0,
     };
-    term.insert_graphic(graphic, None, Some(0), None, 0);
+    term.insert_graphic(graphic, None, Some(0));
 
     assert_eq!(
         term.graphics.placed_textures.len(),
@@ -1123,29 +1044,9 @@ fn test_collect_active_ids_uses_weak_refs() {
 
 // Overlay placement tests
 
-#[test]
-fn test_graphic_id_kitty_vs_sixel_no_collision() {
-    let kitty_id = GraphicId::new_kitty(1);
-    let sixel_id = GraphicId::new(1);
-
-    assert_ne!(kitty_id, sixel_id, "Kitty and sixel IDs must not collide");
-    assert!(kitty_id.is_kitty());
-    assert!(!sixel_id.is_kitty());
-
-    // High bit set for kitty
-    assert!(kitty_id.get() & (1u64 << 63) != 0);
-    assert!(sixel_id.get() & (1u64 << 63) == 0);
-}
-
-#[test]
-fn test_graphic_id_kitty_different_images() {
-    let id1 = GraphicId::new_kitty(1);
-    let id2 = GraphicId::new_kitty(2);
-    let id1_again = GraphicId::new_kitty(1);
-
-    assert_ne!(id1, id2);
-    assert_eq!(id1, id1_again);
-}
+// test_graphic_id_kitty_vs_sixel_no_collision and test_graphic_id_kitty_different_images
+// removed: kitty images no longer use GraphicId. They use u32 image_id directly,
+// in a completely separate rendering path from sixel/iTerm2 atlas graphics.
 
 #[test]
 fn test_store_kitty_image_increments_generation() {
@@ -1196,7 +1097,6 @@ fn test_kitty_placement_insert_and_delete() {
     let placement = KittyPlacement {
         image_id: 1,
         placement_id: 0,
-        graphic_id: GraphicId::new_kitty(1),
         source_x: 0,
         source_y: 0,
         source_width: 0,
@@ -1230,7 +1130,6 @@ fn test_kitty_placement_delete_by_z_index() {
     let make_placement = |image_id: u32, z: i32| KittyPlacement {
         image_id,
         placement_id: 0,
-        graphic_id: GraphicId::new_kitty(image_id),
         source_x: 0,
         source_y: 0,
         source_width: 0,
@@ -1273,7 +1172,6 @@ fn test_collect_active_ids_includes_overlay_placements() {
     let placement = KittyPlacement {
         image_id: 42,
         placement_id: 0,
-        graphic_id: GraphicId::new_kitty(42),
         source_x: 0,
         source_y: 0,
         source_width: 0,
@@ -1294,7 +1192,7 @@ fn test_collect_active_ids_includes_overlay_placements() {
 
     let active = graphics.collect_active_graphic_ids();
     assert!(
-        active.contains(&GraphicId::new_kitty(42).get()),
+        active.contains(&42u64),
         "Overlay placements should be counted as active"
     );
 }
@@ -1311,7 +1209,7 @@ fn test_eviction_removes_dangling_placements() {
     // Add a graphic that will be evicted
     let pixels = vec![255u8; 200]; // 200 bytes, exceeds 100 limit
     let data = GraphicData {
-        id: GraphicId::new_kitty(1),
+        id: GraphicId::new(1),
         width: 10,
         height: 5,
         color_type: ColorType::Rgba,
@@ -1323,13 +1221,12 @@ fn test_eviction_removes_dangling_placements() {
         generation: 0,
     };
     graphics.pending.push(data);
-    graphics.track_graphic(GraphicId::new_kitty(1), 200);
+    graphics.track_graphic(GraphicId::new(1), 200);
 
     // Add an overlay placement referencing this graphic
     let placement = KittyPlacement {
         image_id: 1,
         placement_id: 0,
-        graphic_id: GraphicId::new_kitty(1),
         source_x: 0,
         source_y: 0,
         source_width: 0,
@@ -1358,24 +1255,6 @@ fn test_eviction_removes_dangling_placements() {
     );
 }
 
-#[test]
-fn test_next_id_stays_below_kitty_space() {
-    use crate::ansi::graphics::Graphics;
-
-    let mut graphics = Graphics {
-        last_id: (1u64 << 63) - 2,
-        ..Graphics::default()
-    };
-
-    let id1 = graphics.next_id();
-    assert!(!id1.is_kitty(), "Sixel ID must not enter kitty space");
-
-    let id2 = graphics.next_id();
-    // After wrapping, should be back to 1
-    assert_eq!(id2.get(), 1);
-    assert!(!id2.is_kitty());
-}
-
 /// Helper to create a KittyPlacement for tests.
 fn make_test_placement(
     image_id: u32,
@@ -1389,7 +1268,6 @@ fn make_test_placement(
     KittyPlacement {
         image_id,
         placement_id,
-        graphic_id: GraphicId::new_kitty(image_id),
         source_x: 0,
         source_y: 0,
         source_width: 0,
@@ -1437,7 +1315,7 @@ fn test_delete_all_placements_preserves_images() {
 
     // Store an image
     let data = GraphicData {
-        id: GraphicId::new_kitty(1),
+        id: GraphicId::new(1),
         width: 4,
         height: 4,
         color_type: ColorType::Rgba,
@@ -1476,7 +1354,7 @@ fn test_delete_all_placements_and_images() {
     let mut graphics = Graphics::default();
 
     let data = GraphicData {
-        id: GraphicId::new_kitty(1),
+        id: GraphicId::new(1),
         width: 4,
         height: 4,
         color_type: ColorType::Rgba,
@@ -1740,7 +1618,7 @@ fn test_retransmit_same_image_id_updates_data() {
     let mut graphics = Graphics::default();
 
     let data1 = GraphicData {
-        id: GraphicId::new_kitty(1),
+        id: GraphicId::new(1),
         width: 4,
         height: 4,
         color_type: ColorType::Rgba,
@@ -1757,7 +1635,7 @@ fn test_retransmit_same_image_id_updates_data() {
 
     // Re-transmit with different pixel data
     let data2 = GraphicData {
-        id: GraphicId::new_kitty(1),
+        id: GraphicId::new(1),
         width: 4,
         height: 4,
         color_type: ColorType::Rgba,
@@ -1785,7 +1663,7 @@ fn test_image_number_mapping() {
     let mut graphics = Graphics::default();
 
     let data = GraphicData {
-        id: GraphicId::new_kitty(42),
+        id: GraphicId::new(42),
         width: 2,
         height: 2,
         color_type: ColorType::Rgba,
@@ -1802,7 +1680,7 @@ fn test_image_number_mapping() {
     // Lookup by number
     let stored = graphics.get_kitty_image_by_number(7);
     assert!(stored.is_some(), "Should find image by number");
-    assert_eq!(stored.unwrap().data.id, GraphicId::new_kitty(42));
+    assert_eq!(stored.unwrap().data.id, GraphicId::new(42));
 
     // Non-existent number
     assert!(graphics.get_kitty_image_by_number(99).is_none());
@@ -1816,7 +1694,7 @@ fn test_image_number_remapping_on_retransmit() {
     let mut graphics = Graphics::default();
 
     let data1 = GraphicData {
-        id: GraphicId::new_kitty(1),
+        id: GraphicId::new(1),
         width: 2,
         height: 2,
         color_type: ColorType::Rgba,
@@ -1831,7 +1709,7 @@ fn test_image_number_remapping_on_retransmit() {
 
     // Re-transmit same image_id with same number
     let data2 = GraphicData {
-        id: GraphicId::new_kitty(1),
+        id: GraphicId::new(1),
         width: 2,
         height: 2,
         color_type: ColorType::Rgba,
@@ -1906,7 +1784,7 @@ fn test_delete_kitty_images_cleans_number_mapping() {
     let mut graphics = Graphics::default();
 
     let data = GraphicData {
-        id: GraphicId::new_kitty(1),
+        id: GraphicId::new(1),
         width: 2,
         height: 2,
         color_type: ColorType::Rgba,
@@ -2008,7 +1886,7 @@ fn test_delete_by_image_number() {
 
     // Store image with number mapping
     let data = GraphicData {
-        id: GraphicId::new_kitty(42),
+        id: GraphicId::new(42),
         width: 2,
         height: 2,
         color_type: ColorType::Rgba,
@@ -2272,7 +2150,7 @@ fn test_delete_all_preserves_memory_limit() {
     };
 
     let data = GraphicData {
-        id: GraphicId::new_kitty(1),
+        id: GraphicId::new(1),
         width: 2,
         height: 2,
         color_type: ColorType::Rgba,

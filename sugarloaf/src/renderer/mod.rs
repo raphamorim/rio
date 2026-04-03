@@ -542,7 +542,7 @@ enum ImageLayer {
 
 /// A single image draw command for the image pipeline.
 struct ImageDraw {
-    graphic_id: GraphicId,
+    image_id: u32,
     instance: ImageInstance,
     layer: ImageLayer,
 }
@@ -557,7 +557,7 @@ pub struct Renderer {
     graphic_cache: FxHashMap<GraphicId, CachedGraphic>,
     current_frame: u64,
     /// Per-image GPU textures (one map, any backend).
-    image_textures: FxHashMap<GraphicId, ImageTextureEntry>,
+    image_textures: FxHashMap<u32, ImageTextureEntry>,
     /// Image draw commands for the current frame.
     image_draws: Vec<ImageDraw>,
 }
@@ -595,6 +595,10 @@ impl Renderer {
         state: &crate::sugarloaf::state::SugarState,
         graphics: &mut Graphics,
         overlays: &[crate::sugarloaf::graphics::GraphicOverlay],
+        image_data: &mut rustc_hash::FxHashMap<
+            u32,
+            crate::sugarloaf::graphics::GraphicDataEntry,
+        >,
     ) {
         // Always clear vertices first
         self.vertices.clear();
@@ -792,9 +796,9 @@ impl Renderer {
         // Reset clip_rect after rendering all content
         self.comp.batches.clip_rect = [0.0; 4];
 
-        // Render kitty graphics overlays
+        // Render image overlays
         if !overlays.is_empty() {
-            self.render_graphic_overlays(context, graphics, overlays);
+            self.render_graphic_overlays(context, image_data, overlays);
         } else {
             // No overlays — clean up any stale kitty textures
             self.image_textures.clear();
@@ -1320,29 +1324,30 @@ impl Renderer {
         // println!("[PERF] draw_layout() total: {:?}", screen_render_duration);
     }
 
-    /// Render kitty graphics overlays using per-image GPU textures.
-    /// Each kitty image gets its own wgpu texture (not the shared atlas).
-    /// Render kitty graphics overlays using per-image GPU textures.
+    /// Render image overlays using per-image GPU textures.
     fn render_graphic_overlays(
         &mut self,
         context: &mut crate::context::Context,
-        graphics: &mut Graphics,
+        image_data: &mut rustc_hash::FxHashMap<
+            u32,
+            crate::sugarloaf::graphics::GraphicDataEntry,
+        >,
         overlays: &[crate::sugarloaf::graphics::GraphicOverlay],
     ) {
         // Clean up textures no longer referenced by any overlay
-        let active_ids: std::collections::HashSet<GraphicId> =
-            overlays.iter().map(|o| o.graphic_id).collect();
+        let active_ids: std::collections::HashSet<u32> =
+            overlays.iter().map(|o| o.image_id).collect();
         self.image_textures.retain(|id, _| active_ids.contains(id));
 
         // Upload/update per-image textures
         for overlay in overlays {
-            let entry = match graphics.get(&overlay.graphic_id) {
+            let entry = match image_data.get(&overlay.image_id) {
                 Some(e) => e,
                 None => continue,
             };
 
             // Skip if texture is current
-            if let Some(existing) = self.image_textures.get(&overlay.graphic_id) {
+            if let Some(existing) = self.image_textures.get(&overlay.image_id) {
                 if existing.generation == entry.generation {
                     continue;
                 }
@@ -1434,7 +1439,7 @@ impl Renderer {
             };
 
             self.image_textures.insert(
-                overlay.graphic_id,
+                overlay.image_id,
                 ImageTextureEntry {
                     gpu,
                     generation: entry.generation,
@@ -1445,11 +1450,11 @@ impl Renderer {
         // Build image draw commands (one instance per image placement)
         self.image_draws.clear();
         for overlay in overlays {
-            if !self.image_textures.contains_key(&overlay.graphic_id) {
+            if !self.image_textures.contains_key(&overlay.image_id) {
                 continue;
             }
             self.image_draws.push(ImageDraw {
-                graphic_id: overlay.graphic_id,
+                image_id: overlay.image_id,
                 instance: ImageInstance {
                     dest_pos: [overlay.x, overlay.y],
                     dest_size: [overlay.width, overlay.height],
@@ -1468,7 +1473,7 @@ impl Renderer {
     #[cfg(target_os = "macos")]
     fn draw_images_metal(
         image_draws: &[ImageDraw],
-        image_textures: &FxHashMap<GraphicId, ImageTextureEntry>,
+        image_textures: &FxHashMap<u32, ImageTextureEntry>,
         brush: &MetalRenderer,
         render_encoder: &metal::RenderCommandEncoderRef,
         layer: ImageLayer,
@@ -1486,7 +1491,7 @@ impl Renderer {
             if draw.layer != layer {
                 continue;
             }
-            let img = match image_textures.get(&draw.graphic_id) {
+            let img = match image_textures.get(&draw.image_id) {
                 Some(e) => e,
                 None => continue,
             };
@@ -1781,7 +1786,7 @@ impl Renderer {
                     if draw.layer != ImageLayer::BelowText {
                         continue;
                     }
-                    if let Some(img) = image_textures.get(&draw.graphic_id) {
+                    if let Some(img) = image_textures.get(&draw.image_id) {
                         if let ImageTexture::Wgpu { view, .. } = &img.gpu {
                             let bg = ctx.device.create_bind_group(
                                 &wgpu::BindGroupDescriptor {
@@ -1862,7 +1867,7 @@ impl Renderer {
                     if draw.layer != ImageLayer::AboveText {
                         continue;
                     }
-                    if let Some(img) = image_textures.get(&draw.graphic_id) {
+                    if let Some(img) = image_textures.get(&draw.image_id) {
                         if let ImageTexture::Wgpu { view, .. } = &img.gpu {
                             let bg = ctx.device.create_bind_group(
                                 &wgpu::BindGroupDescriptor {

@@ -88,14 +88,19 @@ pub struct StoredImage {
 
 /// Overlay placement for a kitty graphics image.
 /// Stored separately from grid cells — rendered as an overlay layer.
+///
+/// Kitty images use the protocol's `image_id: u32` directly, not `GraphicId`.
+/// `GraphicId` is for atlas-based graphics (sixel/iTerm2) which share a
+/// sequential ID space. Kitty image_ids come from the protocol and would
+/// collide with atlas IDs. They also use a completely separate rendering
+/// pipeline (per-image GPU textures, not atlas), so there's no reason to
+/// wrap them in `GraphicId`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KittyPlacement {
     /// Kitty protocol image ID (i= parameter).
     pub image_id: u32,
     /// Kitty protocol placement ID (p= parameter).
     pub placement_id: u32,
-    /// Internal graphic ID for sugarloaf lookup.
-    pub graphic_id: GraphicId,
     /// Source rectangle within the image (pixels).
     pub source_x: u32,
     pub source_y: u32,
@@ -237,13 +242,9 @@ impl Graphics {
         graphics
     }
 
-    /// Generate a new graphic identifier (for sixel/general use).
-    /// Capped below bit 63 to avoid collision with kitty ID space.
+    /// Generate a new graphic identifier (for sixel/iTerm2 atlas graphics).
     pub fn next_id(&mut self) -> GraphicId {
         self.last_id += 1;
-        if self.last_id >= (1u64 << 63) {
-            self.last_id = 1;
-        }
         GraphicId::new(self.last_id)
     }
 
@@ -369,12 +370,18 @@ impl Graphics {
             }
         }
 
-        // Check stored kitty images
+        // Check stored kitty images (use image_id as u64 for unified candidate list)
         for (&kitty_id, stored) in &self.kitty_images {
-            let graphic_id = GraphicId::new_kitty(kitty_id);
-            let is_used = used_ids.contains(&graphic_id.get());
+            let id_as_u64 = kitty_id as u64;
+            let is_used = used_ids.contains(&id_as_u64);
             let bytes = Self::calculate_graphic_bytes(&stored.data);
-            candidates.push((graphic_id, stored.transmission_time, is_used, bytes));
+            // Use a sentinel GraphicId — these will be matched by kitty_id in removal
+            candidates.push((
+                GraphicId::new(id_as_u64),
+                stored.transmission_time,
+                is_used,
+                bytes,
+            ));
         }
 
         if candidates.is_empty() {
@@ -415,14 +422,13 @@ impl Graphics {
             // Remove from pending
             self.pending.retain(|g| g.id != id);
 
-            // Remove from kitty_images (check both sixel and kitty ID formats)
-            self.kitty_images.retain(|&kitty_id, _| {
-                GraphicId::new(kitty_id as u64) != id
-                    && GraphicId::new_kitty(kitty_id) != id
-            });
+            // Remove from kitty_images if the evicted id matches
+            let evicted_u32 = id.get() as u32;
+            self.kitty_images.remove(&evicted_u32);
 
             // Remove dangling overlay placements
-            self.kitty_placements.retain(|_, p| p.graphic_id != id);
+            self.kitty_placements
+                .retain(|_, p| p.image_id != evicted_u32);
 
             // Remove timestamp
             self.image_timestamps.remove(&id);
@@ -465,9 +471,9 @@ impl Graphics {
                 false
             }
         });
-        // Overlay-based (kitty) liveness
+        // Overlay-based (kitty) liveness — use image_id directly
         for placement in self.kitty_placements.values() {
-            active.insert(placement.graphic_id.get());
+            active.insert(placement.image_id as u64);
         }
         active
     }
