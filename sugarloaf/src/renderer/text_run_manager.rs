@@ -24,15 +24,8 @@ impl TextRunManager {
         }
     }
 
-    /// Get cached shaping data for a text run
-    pub fn get_cached_data(
-        &mut self,
-        text: &str,
-        font_id: usize,
-        font_size: f32,
-    ) -> CacheResult {
-        let key = create_text_run_key(text, font_id, font_size);
-
+    /// Get cached shaping data for a text run using a pre-computed key
+    pub fn get_cached_data_by_key(&mut self, key: u64) -> CacheResult {
         match self.unified_cache.get(&key) {
             Some(cached_run) => CacheResult::Hit {
                 glyphs: cached_run.glyphs.clone(),
@@ -44,7 +37,31 @@ impl TextRunManager {
         }
     }
 
-    /// Cache shaping data for a text run
+    /// Cache shaping data using a pre-computed key
+    pub fn cache_shaping_data_by_key(
+        &mut self,
+        key: u64,
+        font_id: usize,
+        font_size: f32,
+        glyphs: Vec<ShapedGlyph>,
+        has_emoji: bool,
+    ) {
+        let cached_run = create_cached_text_run(glyphs, font_id, font_size, has_emoji);
+        self.unified_cache.insert(key, cached_run);
+    }
+
+    /// Get cached shaping data for a text run (legacy string-based API)
+    pub fn get_cached_data(
+        &mut self,
+        text: &str,
+        font_id: usize,
+        font_size: f32,
+    ) -> CacheResult {
+        let key = create_text_run_key(text, font_id, font_size);
+        self.get_cached_data_by_key(key)
+    }
+
+    /// Cache shaping data for a text run (legacy string-based API)
     pub fn cache_shaping_data(
         &mut self,
         text: &str,
@@ -54,10 +71,7 @@ impl TextRunManager {
         has_emoji: bool,
     ) {
         let key = create_text_run_key(text, font_id, font_size);
-
-        let cached_run = create_cached_text_run(glyphs, font_id, font_size, has_emoji);
-
-        self.unified_cache.insert(key, cached_run);
+        self.cache_shaping_data_by_key(key, font_id, font_size, glyphs, has_emoji);
     }
 
     /// Apply cached vertices to output, adjusting for new position

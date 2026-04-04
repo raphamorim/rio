@@ -18,6 +18,23 @@ use crate::layout::content::{SpanStyleDecoration, WordCache};
 use crate::layout::SpanStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
+use std::hash::Hasher;
+use wyhash::WyHash;
+
+/// Compute a cache key from glyph IDs, font_id and size.
+/// Position-independent: same glyphs at different screen positions produce the same key.
+#[inline]
+fn compute_cache_key(glyphs: &[GlyphData], font_id: usize, size: f32) -> u64 {
+    let mut hasher = WyHash::with_seed(0);
+    for (i, g) in glyphs.iter().enumerate() {
+        hasher.write_u16(g.simple_data().0);
+        hasher.write_usize(i);
+    }
+    hasher.write_usize(glyphs.len());
+    hasher.write_usize(font_id);
+    hasher.write_u32((size * 100.0) as u32);
+    hasher.finish()
+}
 
 /// Collection of text, organized into lines, runs and clusters.
 #[derive(Clone, Debug, Default)]
@@ -117,23 +134,22 @@ impl RenderData {
             self.graphics.insert(graphic.id);
         }
 
+        let cache_key = compute_cache_key(&glyphs, style.font_id, size);
         let run_data = RunData {
             span: style,
             line,
             size,
             detailed_glyphs,
             glyphs,
-            // ascent: metrics.ascent * span_data.line_spacing,
             ascent: metrics.ascent,
-            // descent: metrics.descent * span_data.line_spacing,
             descent: metrics.descent,
-            // leading: metrics.leading * span_data.line_spacing,
             leading: metrics.leading,
             underline_offset: metrics.underline_offset,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             x_height: metrics.x_height,
             advance,
+            cache_key,
         };
         self.runs.push(run_data);
     }
@@ -181,23 +197,22 @@ impl RenderData {
         if let Some(graphic) = style.media {
             self.graphics.insert(graphic.id);
         }
+        let cache_key = compute_cache_key(&glyphs, style.font_id, size);
         let run_data = RunData {
             span: style,
             line,
             size,
             detailed_glyphs,
             glyphs,
-            // ascent: metrics.ascent * span_data.line_spacing,
             ascent: metrics.ascent,
-            // descent: metrics.descent * span_data.line_spacing,
             descent: metrics.descent,
-            // leading: metrics.leading * span_data.line_spacing,
             leading: metrics.leading,
             underline_offset: metrics.underline_offset,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             x_height: metrics.x_height,
             advance,
+            cache_key,
         };
         self.runs.push(run_data);
         true
@@ -226,6 +241,7 @@ impl RenderData {
             strikeout_size: metrics.stroke_size,
             x_height: metrics.x_height,
             advance: 0.,
+            cache_key: 0,
         };
         self.runs.push(run_data);
     }
