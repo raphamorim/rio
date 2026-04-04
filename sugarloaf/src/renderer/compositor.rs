@@ -242,29 +242,28 @@ impl Compositor {
                         let gy = (glyph.y + subpx_bias.1).floor() - entry.top as f32;
 
                         // Scale PUA glyphs to fit constraint width
-                        let glyph_rect = if let Some((cell_w, cells)) =
-                            style.scale_constraint
-                        {
-                            let target_w = cell_w * cells as f32;
-                            let target_h = style.line_height;
-                            let orig_w = entry.width as f32;
-                            let orig_h = entry.height as f32;
+                        let glyph_rect =
+                            if let Some((cell_w, cells)) = style.scale_constraint {
+                                let target_w = cell_w * cells as f32;
+                                let target_h = style.line_height;
+                                let orig_w = entry.width as f32;
+                                let orig_h = entry.height as f32;
 
-                            // Fit proportionally within the target area
-                            let scale =
-                                (target_w / orig_w).min(target_h / orig_h).min(1.0);
-                            let sw = orig_w * scale;
-                            let sh = orig_h * scale;
+                                // Fit proportionally within the target area
+                                let scale =
+                                    (target_w / orig_w).min(target_h / orig_h).min(1.0);
+                                let sw = orig_w * scale;
+                                let sh = orig_h * scale;
 
-                            // Center horizontally within constraint width
-                            let cx = glyph.x + (target_w - sw) / 2.0;
-                            // Align vertically from the baseline
-                            let cy = gy + (orig_h - sh) / 2.0;
+                                // Center horizontally within constraint width
+                                let cx = glyph.x + (target_w - sw) / 2.0;
+                                // Align vertically from the baseline
+                                let cy = gy + (orig_h - sh) / 2.0;
 
-                            Rect::new(cx, cy, sw, sh)
-                        } else {
-                            Rect::new(gx, gy, entry.width as f32, entry.height as f32)
-                        };
+                                Rect::new(cx, cy, sw, sh)
+                            } else {
+                                Rect::new(gx, gy, entry.width as f32, entry.height as f32)
+                            };
                         let coords = [img.min.0, img.min.1, img.max.0, img.max.1];
 
                         if entry.is_bitmap {
