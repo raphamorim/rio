@@ -954,7 +954,7 @@ impl Renderer {
         context_manager: &mut ContextManager<EventProxy>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) -> Option<crate::context::renderable::WindowUpdate> {
-        // let start = std::time::Instant::now();
+        let start = std::time::Instant::now();
 
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
@@ -1397,7 +1397,8 @@ impl Renderer {
             None
         };
 
-        // let _duration = start.elapsed();
+        let duration = start.elapsed();
+        println!("[renderer] render took {:?}", duration);
         window_update
     }
 
