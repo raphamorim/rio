@@ -18,6 +18,8 @@ use std::{mem, panic, ptr};
 
 use crate::utils::Lazy;
 
+use windows_sys::core::PCWSTR;
+use windows_sys::w;
 use windows_sys::Win32::Foundation::{
     GetLastError, FALSE, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WAIT_FAILED, WPARAM,
 };
@@ -50,7 +52,7 @@ use windows_sys::Win32::UI::Input::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
     GetCursorPos, GetMenu, LoadCursorW, MsgWaitForMultipleObjectsEx, PeekMessageW,
-    PostMessageW, RegisterClassExW, RegisterWindowMessageA, SetCursor, SetWindowPos,
+    PostMessageW, RegisterClassExW, RegisterWindowMessageW, SetCursor, SetWindowPos,
     TranslateMessage, CREATESTRUCTW, GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE, GWL_USERDATA,
     HTCAPTION, HTCLIENT, MINMAXINFO, MNC_CLOSE, MSG, MWMO_INPUTAVAILABLE,
     NCCALCSIZE_PARAMS, PM_REMOVE, PT_PEN, PT_TOUCH, QS_ALLINPUT, RI_MOUSE_HWHEEL,
@@ -898,7 +900,7 @@ pub struct LazyMessageId {
     id: AtomicU32,
 
     /// The name of the message.
-    name: &'static str,
+    name: PCWSTR,
 }
 
 /// An invalid custom window ID.
@@ -906,7 +908,7 @@ const INVALID_ID: u32 = 0x0;
 
 impl LazyMessageId {
     /// Create a new `LazyId`.
-    const fn new(name: &'static str) -> Self {
+    const fn new(name: PCWSTR) -> Self {
         Self {
             id: AtomicU32::new(INVALID_ID),
             name,
@@ -923,15 +925,20 @@ impl LazyMessageId {
         }
 
         // Register the message.
-        // SAFETY: We are sure that the pointer is a valid C string ending with '\0'.
-        assert!(self.name.ends_with('\0'));
-        let new_id = unsafe { RegisterWindowMessageA(self.name.as_ptr()) };
+        // assert!(self.name.ends_with('\0'));
+        let new_id = unsafe { RegisterWindowMessageW(self.name) };
 
         assert_ne!(
             new_id,
             0,
-            "RegisterWindowMessageA returned zero for '{}': {}",
-            self.name,
+            "RegisterWindowMessageW returned zero for '{}': {}",
+            unsafe {
+                let mut len = 0;
+                while *self.name.add(len) != 0 {
+                    len += 1;
+                }
+                String::from_utf16_lossy(std::slice::from_raw_parts(self.name, len))
+            },
             std::io::Error::last_os_error()
         );
 
@@ -944,27 +951,30 @@ impl LazyMessageId {
         new_id
     }
 }
+// SAFETY: PCWSTR is read-only in this context
+unsafe impl Sync for LazyMessageId {}
 
 // Message sent by the `EventLoopProxy` when we want to wake up the thread.
 // WPARAM and LPARAM are unused.
-static USER_EVENT_MSG_ID: LazyMessageId = LazyMessageId::new("Winit::WakeupMsg\0");
+static USER_EVENT_MSG_ID: LazyMessageId = LazyMessageId::new(w!("Winit::WakeupMsg"));
 // Message sent when we want to execute a closure in the thread.
 // WPARAM contains a Box<Box<dyn FnMut()>> that must be retrieved with `Box::from_raw`,
 // and LPARAM is unused.
-static EXEC_MSG_ID: LazyMessageId = LazyMessageId::new("Winit::ExecMsg\0");
+static EXEC_MSG_ID: LazyMessageId = LazyMessageId::new(w!("Winit::ExecMsg"));
 // Message sent by a `Window` when it wants to be destroyed by the main thread.
 // WPARAM and LPARAM are unused.
 pub(crate) static DESTROY_MSG_ID: LazyMessageId =
-    LazyMessageId::new("Winit::DestroyMsg\0");
+    LazyMessageId::new(w!("Winit::DestroyMsg"));
 // WPARAM is a bool specifying the `WindowFlags::MARKER_RETAIN_STATE_ON_SIZE` flag. See the
 // documentation in the `window_state` module for more information.
 pub(crate) static SET_RETAIN_STATE_ON_SIZE_MSG_ID: LazyMessageId =
-    LazyMessageId::new("Winit::SetRetainMaximized\0");
+    LazyMessageId::new(w!("Winit::SetRetainMaximized"));
 static THREAD_EVENT_TARGET_WINDOW_CLASS: Lazy<Vec<u16>> =
     Lazy::new(|| util::encode_wide("Winit Thread Event Target"));
 /// When the taskbar is created, it registers a message with the "TaskbarCreated" string and then
 /// broadcasts this message to all top-level windows <https://docs.microsoft.com/en-us/windows/win32/shell/taskbar#taskbar-creation-notification>
-pub(crate) static TASKBAR_CREATED: LazyMessageId = LazyMessageId::new("TaskbarCreated\0");
+pub(crate) static TASKBAR_CREATED: LazyMessageId =
+    LazyMessageId::new(w!("TaskbarCreated"));
 
 fn create_event_target_window() -> HWND {
     use windows_sys::Win32::UI::WindowsAndMessaging::{CS_HREDRAW, CS_VREDRAW};
