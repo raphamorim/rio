@@ -1058,7 +1058,6 @@ impl Renderer {
                 .take(take_count)
             {
                 if line.render_data.runs.is_empty() {
-                    line_y += line_height;
                     continue;
                 }
 
