@@ -655,7 +655,7 @@ impl Renderer {
                     if let Some(line) = line_opt {
                         builder.add_span_as_rect_on_line(line, style);
                     }
-                    last_char_was_space = true;
+                    last_char_was_space = false;
                     last_style = style;
                 } else if square_content == ' ' {
                     if !last_char_was_space {
@@ -701,7 +701,9 @@ impl Renderer {
                     last_style = style;
                 }
 
-                content.push(square_content);
+                if square_content != '\0' {
+                    content.push(square_content);
+                }
             }
 
             // Render last column and break row
