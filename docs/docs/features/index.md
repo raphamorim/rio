@@ -19,7 +19,6 @@ Short introduction of Rio terminal features.
 - [Adaptive theme](/docs/features/adaptive-theme)
 - [Multi windows](/docs/features/multi-windows)
 - [Navigation](/docs/config#navigation)
-- [Color automation for navigation](/docs/features/color-automation-for-navigation)
 - [Shell integration](/docs/features/shell-integration)
 - [Sixel protocol](/docs/features/sixel-protocol)
 - [Spawn or Fork](/docs/features/spawn-or-fork)
