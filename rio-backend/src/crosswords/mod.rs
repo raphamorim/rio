@@ -1322,7 +1322,7 @@ impl<U: EventListener> Crosswords<U> {
 
             // Skip over cells until next tab-stop once a tab was found.
             if tab_mode {
-                if self.tabs[column] || cell.c != ' ' {
+                if self.tabs[column] || cell.c != '\0' {
                     tab_mode = false;
                 } else {
                     continue;
@@ -2644,7 +2644,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
             let c = self.grid.cursor.charsets[self.active_charset].map('\t');
             let cell = self.grid.cursor_square();
-            if cell.c == ' ' {
+            if cell.c == '\0' {
                 cell.c = c;
             }
 
@@ -3918,9 +3918,9 @@ mod tests {
         assert_eq!(cw.grid[Line(6)].occ, 1);
         assert_eq!(cw.grid[Line(7)][Column(0)].c, '\u{9}');
         assert_eq!(cw.grid[Line(7)].occ, 1);
-        assert_eq!(cw.grid[Line(8)][Column(0)].c, ' '); // was 0.
+        assert_eq!(cw.grid[Line(8)][Column(0)].c, '\0'); // was 0.
         assert_eq!(cw.grid[Line(8)].occ, 0);
-        assert_eq!(cw.grid[Line(9)][Column(0)].c, ' '); // was 1.
+        assert_eq!(cw.grid[Line(9)][Column(0)].c, '\0'); // was 1.
         assert_eq!(cw.grid[Line(9)].occ, 0);
     }
 
@@ -3980,10 +3980,10 @@ mod tests {
         assert_eq!(cw.grid[Line(0)][Column(1)].c, '\u{1}');
         assert_eq!(cw.grid[Line(0)][Column(2)].c, '\u{2}');
         assert_eq!(cw.grid[Line(0)][Column(3)].c, '\u{3}');
-        assert_eq!(cw.grid[Line(0)][Column(4)].c, ' ');
-        assert_eq!(cw.grid[Line(1)][Column(2)].c, ' ');
+        assert_eq!(cw.grid[Line(0)][Column(4)].c, '\0');
+        assert_eq!(cw.grid[Line(1)][Column(2)].c, '\0');
         assert_eq!(cw.grid[Line(1)][Column(3)].c, 'b');
-        assert_eq!(cw.grid[Line(0)][Column(4)].c, ' ');
+        assert_eq!(cw.grid[Line(0)][Column(4)].c, '\0');
     }
 
     #[test]
@@ -4049,7 +4049,7 @@ mod tests {
         for col in 0..test_text.len() {
             assert_eq!(
                 cw.grid[cursor_line][Column(col)].c,
-                ' ',
+                '\0',
                 "Line should be cleared after Control+C"
             );
         }
@@ -4114,7 +4114,7 @@ mod tests {
         for col in 5..10 {
             assert_eq!(
                 cw.grid[Line(2)][Column(col)].c,
-                ' ',
+                '\0',
                 "Characters from cursor to end should be cleared"
             );
         }
@@ -4171,7 +4171,7 @@ mod tests {
         for col in 2..8 {
             assert_eq!(
                 cw.grid[cw.grid.cursor.pos.row][Column(col)].c,
-                ' ',
+                '\0',
                 "Old command should be cleared"
             );
         }
