@@ -1149,7 +1149,9 @@ impl Renderer {
                                 x_height: run.x_height,
                                 ascent: run.ascent,
                                 descent: run.descent,
-                                scale_constraint: run.span.pua_constraint.and_then(|c| rte_layout.map(|l| (l.dimensions.width, c as u8))),
+                                scale_constraint: run.span.pua_constraint.and_then(|c| {
+                                    rte_layout.map(|l| (l.dimensions.width, c as u8))
+                                }),
                             };
 
                             // Update font session if needed
@@ -1249,7 +1251,9 @@ impl Renderer {
                                 x_height: run.x_height,
                                 ascent: run.ascent,
                                 descent: run.descent,
-                                scale_constraint: run.span.pua_constraint.and_then(|c| rte_layout.map(|l| (l.dimensions.width, c as u8))),
+                                scale_constraint: run.span.pua_constraint.and_then(|c| {
+                                    rte_layout.map(|l| (l.dimensions.width, c as u8))
+                                }),
                             };
 
                             // Update font session if needed

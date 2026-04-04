@@ -3780,12 +3780,7 @@ mod tests {
             ..Default::default()
         };
 
-        render_data.push_empty_run(
-            SpanStyle::default(),
-            16.0,
-            0,
-            &metrics,
-        );
+        render_data.push_empty_run(SpanStyle::default(), 16.0, 0, &metrics);
 
         assert_eq!(render_data.runs.len(), 1);
         assert!(render_data.runs[0].glyphs.is_empty());
@@ -3896,7 +3891,10 @@ mod tests {
         }
 
         assert_eq!(line.fragments.len(), 3);
-        assert!(line.render_data.runs.is_empty(), "runs should be empty before build");
+        assert!(
+            line.render_data.runs.is_empty(),
+            "runs should be empty before build"
+        );
 
         // Simulate what process_text_line does for None fragments
         let metrics = crate::font_introspector::Metrics {
@@ -3907,18 +3905,21 @@ mod tests {
         };
         for frag in &line.fragments {
             if frag.content.is_none() {
-                line.render_data.push_empty_run(
-                    frag.style,
-                    16.0,
-                    0,
-                    &metrics,
-                );
+                line.render_data
+                    .push_empty_run(frag.style, 16.0, 0, &metrics);
             }
         }
 
-        assert_eq!(line.render_data.runs.len(), 3, "should have 3 empty runs after build");
+        assert_eq!(
+            line.render_data.runs.len(),
+            3,
+            "should have 3 empty runs after build"
+        );
         assert!(line.render_data.runs[0].glyphs.is_empty());
-        assert_eq!(line.render_data.runs[0].span.background_color, Some([1.0, 0.0, 0.0, 1.0]));
+        assert_eq!(
+            line.render_data.runs[0].span.background_color,
+            Some([1.0, 0.0, 0.0, 1.0])
+        );
 
         // Now simulate "next frame" — line is NOT damaged, so fragments are
         // cleared and re-added, but render_data should persist until rebuild.
@@ -3931,7 +3932,10 @@ mod tests {
         line.fragments.clear();
         line.render_data.clear();
 
-        assert!(line.render_data.runs.is_empty(), "runs cleared after clear_line");
+        assert!(
+            line.render_data.runs.is_empty(),
+            "runs cleared after clear_line"
+        );
 
         // Simulate re-adding same fragments
         for _ in 0..3 {
@@ -3944,17 +3948,20 @@ mod tests {
         // Simulate process_text_line again
         for frag in &line.fragments {
             if frag.content.is_none() {
-                line.render_data.push_empty_run(
-                    frag.style,
-                    16.0,
-                    0,
-                    &metrics,
-                );
+                line.render_data
+                    .push_empty_run(frag.style, 16.0, 0, &metrics);
             }
         }
 
-        assert_eq!(line.render_data.runs.len(), 3, "runs should be restored after rebuild");
-        assert_eq!(line.render_data.runs[0].span.background_color, Some([1.0, 0.0, 0.0, 1.0]));
+        assert_eq!(
+            line.render_data.runs.len(),
+            3,
+            "runs should be restored after rebuild"
+        );
+        assert_eq!(
+            line.render_data.runs[0].span.background_color,
+            Some([1.0, 0.0, 0.0, 1.0])
+        );
     }
 
     #[test]
@@ -3983,7 +3990,8 @@ mod tests {
         // First build
         for frag in &line.fragments {
             if frag.content.is_none() {
-                line.render_data.push_empty_run(frag.style, 16.0, 0, &metrics);
+                line.render_data
+                    .push_empty_run(frag.style, 16.0, 0, &metrics);
             }
         }
         assert_eq!(line.render_data.runs.len(), 1);
@@ -3991,10 +3999,15 @@ mod tests {
         // Second build WITHOUT clearing — this simulates calling build() twice
         for frag in &line.fragments {
             if frag.content.is_none() {
-                line.render_data.push_empty_run(frag.style, 16.0, 0, &metrics);
+                line.render_data
+                    .push_empty_run(frag.style, 16.0, 0, &metrics);
             }
         }
         // BUG: runs accumulate! This is the issue.
-        assert_eq!(line.render_data.runs.len(), 2, "runs duplicated without clear — this is the bug");
+        assert_eq!(
+            line.render_data.runs.len(),
+            2,
+            "runs duplicated without clear — this is the bug"
+        );
     }
 }
