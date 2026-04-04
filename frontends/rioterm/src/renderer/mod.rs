@@ -97,11 +97,7 @@ fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
 /// Compute the constraint width for a PUA (Nerd Font) glyph based on adjacent cells.
 /// Returns 1.0 (fit in 1 cell) or 2.0 (expand to 2 cells).
 /// Mirrors Ghostty's constraintWidth logic.
-fn pua_constraint_width(
-    row: &Row<Square>,
-    col: usize,
-    cols: usize,
-) -> f32 {
+fn pua_constraint_width(row: &Row<Square>, col: usize, cols: usize) -> f32 {
     // At end of line -> constrain to 1 cell
     if col + 1 >= cols {
         return 1.0;
@@ -116,10 +112,10 @@ fn pua_constraint_width(
         }
     }
 
-    // If next cell is space/empty or wide char spacer, expand to 2 cells.
-    // Matches Ghostty: both unwritten (codepoint 0) and typed space expand.
+    // If next cell is a typed space or wide char spacer, expand to 2 cells.
+    // '\0' is unwritten/empty — don't expand into it.
     let next = &row.inner[col + 1];
-    if next.c == ' ' || next.c == '\0' || next.flags.contains(Flags::WIDE_CHAR_SPACER) {
+    if next.c == ' ' || next.flags.contains(Flags::WIDE_CHAR_SPACER) {
         return 2.0;
     }
 
@@ -357,6 +353,11 @@ impl Renderer {
                     self.create_style(square, term_colors)
                 };
 
+            if square_content == '\0' {
+                styles_and_chars.push((style, square_content, column));
+                continue;
+            }
+
             // Apply underline for hyperlinks (OSC 8) or highlighted hints (hover)
             let should_underline = square.hyperlink().is_some() || {
                 if let Some(highlighted_hint) = &renderable_content.highlighted_hint {
@@ -574,9 +575,8 @@ impl Renderer {
                     style.font_id = cached.font_id;
                     style.width = cached.width;
                     if cached.is_pua {
-                        style.pua_constraint = Some(
-                            pua_constraint_width(row, column, columns),
-                        );
+                        style.pua_constraint =
+                            Some(pua_constraint_width(row, column, columns));
                     }
                 } else {
                     // Mark this character for font lookup
@@ -620,9 +620,8 @@ impl Renderer {
                 );
 
                 if is_pua {
-                    style.pua_constraint = Some(
-                        pua_constraint_width(row, column, columns),
-                    );
+                    style.pua_constraint =
+                        Some(pua_constraint_width(row, column, columns));
                 }
             }
         }
@@ -643,7 +642,22 @@ impl Renderer {
                 last_style = style;
                 content.push(' '); // Ignore font shaping
             } else {
-                if square_content == ' ' {
+                if square_content == '\0' {
+                    // Unwritten cell — advance position without shaping
+                    if !content.is_empty() {
+                        if let Some(line) = line_opt {
+                            builder.add_span_on_line(line, &content, last_style);
+                        } else {
+                            builder.add_span(&content, last_style);
+                        }
+                        content.clear();
+                    }
+                    if let Some(line) = line_opt {
+                        builder.add_span_as_rect_on_line(line, style);
+                    }
+                    last_char_was_space = true;
+                    last_style = style;
+                } else if square_content == ' ' {
                     if !last_char_was_space {
                         if !content.is_empty() {
                             if let Some(line) = line_opt {
@@ -821,6 +835,8 @@ impl Renderer {
         // If IME is enabled we get the current content to cursor
         let content = if cursor.is_ime_enabled {
             cursor.content
+        } else if square.c == '\0' {
+            ' '
         } else {
             square.c
         };
@@ -1577,9 +1593,9 @@ mod tests {
 
     #[test]
     fn test_pua_icon_then_nothing() {
-        // symbol→nothing: 2 (matches Ghostty)
+        // symbol→nothing ('\0'): 1 (unwritten cells don't expand)
         let row = make_row(&[ICON], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
     }
 
     #[test]
@@ -1613,16 +1629,23 @@ mod tests {
 
     #[test]
     fn test_pua_icon_space_icon() {
-        // symbol→space→symbol: 2, 2
+        // symbol→space→symbol: first 2, second 1 (next is '\0')
         let row = make_row(&[ICON, ' ', ICON], 4);
         assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
-        assert_eq!(pua_constraint_width(&row, 2, 4), 2.0);
+        assert_eq!(pua_constraint_width(&row, 2, 4), 1.0);
     }
 
     #[test]
-    fn test_pua_char_then_icon() {
-        // character→symbol: 2
+    fn test_pua_char_then_icon_then_nothing() {
+        // character→symbol→nothing: 1 (next is '\0')
         let row = make_row(&['z', ICON], 4);
+        assert_eq!(pua_constraint_width(&row, 1, 4), 1.0);
+    }
+
+    #[test]
+    fn test_pua_char_then_icon_then_space() {
+        // character→symbol→space: 2
+        let row = make_row(&['z', ICON, ' '], 4);
         assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
     }
 }
