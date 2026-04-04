@@ -846,6 +846,23 @@ impl Content {
         self
     }
 
+    /// Add an empty span that only advances position (no shaping).
+    #[inline]
+    pub fn add_span_as_rect(&mut self, style: SpanStyle) -> &mut Content {
+        if let Some(selector) = self.selector {
+            if let Some(text_state) = self.get_state_mut(&selector) {
+                let current_line = text_state.current_line();
+                if let Some(line) = text_state.lines.get_mut(current_line) {
+                    line.fragments.push(FragmentData {
+                        content: None,
+                        style,
+                    });
+                }
+            }
+        }
+        self
+    }
+
     #[inline]
     pub fn add_span_on_line(
         &mut self,
@@ -3726,5 +3743,258 @@ mod tests {
             along_hash, clone_hash,
             "Content hashes should be different for 'along' and 'clone'"
         );
+    }
+
+    #[test]
+    fn test_empty_span_creates_fragment_with_none_content() {
+        // Simulates '\0' cells: None content means advance-only
+        let mut line = BuilderLine::default();
+
+        line.fragments.push(FragmentData {
+            content: Some("A".to_string()),
+            style: SpanStyle::default(),
+        });
+        line.fragments.push(FragmentData {
+            content: None, // empty span (like '\0' cell)
+            style: SpanStyle::default(),
+        });
+        line.fragments.push(FragmentData {
+            content: Some("B".to_string()),
+            style: SpanStyle::default(),
+        });
+
+        assert_eq!(line.fragments.len(), 3);
+        assert!(line.fragments[0].content.is_some());
+        assert!(line.fragments[1].content.is_none());
+        assert!(line.fragments[2].content.is_some());
+    }
+
+    #[test]
+    fn test_empty_run_has_no_glyphs() {
+        // Verify push_empty_run creates a run with empty glyphs
+        let mut render_data = RenderData::new();
+        let metrics = crate::font_introspector::Metrics {
+            ascent: 12.0,
+            descent: 4.0,
+            leading: 0.0,
+            ..Default::default()
+        };
+
+        render_data.push_empty_run(
+            SpanStyle::default(),
+            16.0,
+            0,
+            &metrics,
+        );
+
+        assert_eq!(render_data.runs.len(), 1);
+        assert!(render_data.runs[0].glyphs.is_empty());
+        assert_eq!(render_data.runs[0].span.width, 1.0);
+    }
+
+    #[test]
+    fn test_mixed_text_and_empty_runs_ordering() {
+        // Simulates a line like: "ABC" + [empty] + [empty] + "DEF"
+        // All runs should be in order and empty runs between text runs
+        let mut render_data = RenderData::new();
+        let metrics = crate::font_introspector::Metrics {
+            ascent: 12.0,
+            descent: 4.0,
+            leading: 0.0,
+            ..Default::default()
+        };
+
+        // Simulate text run "ABC" with 3 glyphs
+        let clusters = vec![
+            create_test_cluster(0, 1, create_test_glyph(65, 0.0, 0.0, 8.0)),
+            create_test_cluster(1, 2, create_test_glyph(66, 0.0, 0.0, 8.0)),
+            create_test_cluster(2, 3, create_test_glyph(67, 0.0, 0.0, 8.0)),
+        ];
+        render_data.push_run_without_shaper(
+            SpanStyle::default(),
+            16.0,
+            0,
+            &clusters,
+            &metrics,
+        );
+
+        // Two empty runs (simulating '\0' cells)
+        render_data.push_empty_run(SpanStyle::default(), 16.0, 0, &metrics);
+        render_data.push_empty_run(SpanStyle::default(), 16.0, 0, &metrics);
+
+        // Another text run "DEF"
+        let clusters2 = vec![
+            create_test_cluster(0, 1, create_test_glyph(68, 0.0, 0.0, 8.0)),
+            create_test_cluster(1, 2, create_test_glyph(69, 0.0, 0.0, 8.0)),
+            create_test_cluster(2, 3, create_test_glyph(70, 0.0, 0.0, 8.0)),
+        ];
+        render_data.push_run_without_shaper(
+            SpanStyle::default(),
+            16.0,
+            0,
+            &clusters2,
+            &metrics,
+        );
+
+        // Should have 4 runs total in order
+        assert_eq!(render_data.runs.len(), 4);
+        // First run: 3 glyphs (ABC)
+        assert_eq!(render_data.runs[0].glyphs.len(), 3);
+        // Second run: empty
+        assert!(render_data.runs[1].glyphs.is_empty());
+        // Third run: empty
+        assert!(render_data.runs[2].glyphs.is_empty());
+        // Fourth run: 3 glyphs (DEF)
+        assert_eq!(render_data.runs[3].glyphs.len(), 3);
+    }
+
+    #[test]
+    fn test_empty_run_preserves_background_color() {
+        // '\0' cells with colored background (like from \033[K) should preserve bg
+        let mut render_data = RenderData::new();
+        let metrics = crate::font_introspector::Metrics {
+            ascent: 12.0,
+            descent: 4.0,
+            leading: 0.0,
+            ..Default::default()
+        };
+
+        let style_with_bg = SpanStyle {
+            background_color: Some([1.0, 0.0, 0.0, 1.0]), // red
+            ..SpanStyle::default()
+        };
+
+        render_data.push_empty_run(style_with_bg, 16.0, 0, &metrics);
+
+        assert_eq!(render_data.runs.len(), 1);
+        assert!(render_data.runs[0].glyphs.is_empty());
+        assert_eq!(
+            render_data.runs[0].span.background_color,
+            Some([1.0, 0.0, 0.0, 1.0])
+        );
+    }
+
+    #[test]
+    fn test_empty_runs_survive_rebuild() {
+        // Simulates: printf '\033[41m\033[K\n\033[0m'
+        // Line with only empty fragments (None content) with colored bg.
+        // First build should create runs. Second build (simulating next frame
+        // where line is undamaged) should preserve them.
+
+        let mut line = BuilderLine::default();
+
+        // Add 3 empty fragments with red bg (like \033[K erase with color)
+        let style_red_bg = SpanStyle {
+            background_color: Some([1.0, 0.0, 0.0, 1.0]),
+            ..SpanStyle::default()
+        };
+        for _ in 0..3 {
+            line.fragments.push(FragmentData {
+                content: None,
+                style: style_red_bg,
+            });
+        }
+
+        assert_eq!(line.fragments.len(), 3);
+        assert!(line.render_data.runs.is_empty(), "runs should be empty before build");
+
+        // Simulate what process_text_line does for None fragments
+        let metrics = crate::font_introspector::Metrics {
+            ascent: 12.0,
+            descent: 4.0,
+            leading: 0.0,
+            ..Default::default()
+        };
+        for frag in &line.fragments {
+            if frag.content.is_none() {
+                line.render_data.push_empty_run(
+                    frag.style,
+                    16.0,
+                    0,
+                    &metrics,
+                );
+            }
+        }
+
+        assert_eq!(line.render_data.runs.len(), 3, "should have 3 empty runs after build");
+        assert!(line.render_data.runs[0].glyphs.is_empty());
+        assert_eq!(line.render_data.runs[0].span.background_color, Some([1.0, 0.0, 0.0, 1.0]));
+
+        // Now simulate "next frame" — line is NOT damaged, so fragments are
+        // cleared and re-added, but render_data should persist until rebuild.
+        // This is what happens in the partial update path:
+        // 1. clear_line clears fragments + render_data
+        // 2. create_line re-adds fragments
+        // 3. build_line re-processes
+
+        // Simulate clear_line
+        line.fragments.clear();
+        line.render_data.clear();
+
+        assert!(line.render_data.runs.is_empty(), "runs cleared after clear_line");
+
+        // Simulate re-adding same fragments
+        for _ in 0..3 {
+            line.fragments.push(FragmentData {
+                content: None,
+                style: style_red_bg,
+            });
+        }
+
+        // Simulate process_text_line again
+        for frag in &line.fragments {
+            if frag.content.is_none() {
+                line.render_data.push_empty_run(
+                    frag.style,
+                    16.0,
+                    0,
+                    &metrics,
+                );
+            }
+        }
+
+        assert_eq!(line.render_data.runs.len(), 3, "runs should be restored after rebuild");
+        assert_eq!(line.render_data.runs[0].span.background_color, Some([1.0, 0.0, 0.0, 1.0]));
+    }
+
+    #[test]
+    fn test_empty_runs_not_duplicated_on_full_rebuild() {
+        // Simulates the full rebuild path (content.build()) being called
+        // multiple times without clearing. Runs should NOT accumulate.
+
+        let mut line = BuilderLine::default();
+
+        let style = SpanStyle {
+            background_color: Some([0.0, 1.0, 0.0, 1.0]),
+            ..SpanStyle::default()
+        };
+        line.fragments.push(FragmentData {
+            content: None,
+            style,
+        });
+
+        let metrics = crate::font_introspector::Metrics {
+            ascent: 12.0,
+            descent: 4.0,
+            leading: 0.0,
+            ..Default::default()
+        };
+
+        // First build
+        for frag in &line.fragments {
+            if frag.content.is_none() {
+                line.render_data.push_empty_run(frag.style, 16.0, 0, &metrics);
+            }
+        }
+        assert_eq!(line.render_data.runs.len(), 1);
+
+        // Second build WITHOUT clearing — this simulates calling build() twice
+        for frag in &line.fragments {
+            if frag.content.is_none() {
+                line.render_data.push_empty_run(frag.style, 16.0, 0, &metrics);
+            }
+        }
+        // BUG: runs accumulate! This is the issue.
+        assert_eq!(line.render_data.runs.len(), 2, "runs duplicated without clear — this is the bug");
     }
 }
