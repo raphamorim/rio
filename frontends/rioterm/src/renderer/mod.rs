@@ -334,7 +334,6 @@ impl Renderer {
         let selection_range = renderable_content.selection_range;
         let columns: usize = row.len();
         let mut content = String::with_capacity(columns);
-        let mut last_char_was_space = false;
         let mut last_style = SpanStyle::default();
 
         // Collect all characters that need font lookups to batch them
@@ -630,24 +629,27 @@ impl Renderer {
         }
 
         // Second pass: render the line using the resolved styles
-        // Track consecutive '\0' cells to batch into a single rect
-        let mut pending_null_width: f32 = 0.0;
-        let mut pending_null_style = SpanStyle::default();
+        // Track consecutive blank cells ('\0' and ' ') to batch into a single rect
+        let mut pending_blank_width: f32 = 0.0;
+        let mut pending_blank_style = SpanStyle::default();
 
         for (style, square_content, column) in styles_and_chars {
-            // Flush pending null run if this cell is not '\0' or bg changed
-            if pending_null_width > 0.0
-                && (square_content != '\0'
-                    || style.background_color != pending_null_style.background_color)
+            let is_blank = square_content == '\0' || square_content == ' ';
+
+            // Flush pending blank run if this cell breaks the batch
+            if pending_blank_width > 0.0
+                && (!is_blank
+                    || style.background_color != pending_blank_style.background_color
+                    || style.cursor != pending_blank_style.cursor)
             {
-                let mut rect_style = pending_null_style;
-                rect_style.width = pending_null_width;
+                let mut rect_style = pending_blank_style;
+                rect_style.width = pending_blank_width;
                 if let Some(line) = line_opt {
                     builder.add_span_as_rect_on_line(line, rect_style);
                 } else {
                     builder.add_span_as_rect(rect_style);
                 }
-                pending_null_width = 0.0;
+                pending_blank_width = 0.0;
             }
 
             // Handle drawable characters
@@ -664,8 +666,8 @@ impl Renderer {
                 last_style = style;
                 content.push(' '); // Ignore font shaping
             } else {
-                if square_content == '\0' {
-                    // Accumulate into pending null run
+                if is_blank {
+                    // Accumulate into pending blank run
                     if !content.is_empty() {
                         if let Some(line) = line_opt {
                             builder.add_span_on_line(line, &content, last_style);
@@ -674,14 +676,17 @@ impl Renderer {
                         }
                         content.clear();
                     }
-                    if pending_null_width == 0.0 {
-                        pending_null_style = style;
+                    if pending_blank_width == 0.0 {
+                        pending_blank_style = style;
                     }
-                    pending_null_width += 1.0;
-                    last_char_was_space = false;
+                    pending_blank_width += 1.0;
                     last_style = style;
-                } else if square_content == ' ' {
-                    if !last_char_was_space {
+                } else {
+                    // Break runs when styles differ in ways that affect shaping
+                    // or when background color changes (for search highlights, etc.)
+                    if !styles_are_compatible_for_shaping(&last_style, &style)
+                        || last_style.background_color != style.background_color
+                    {
                         if !content.is_empty() {
                             if let Some(line) = line_opt {
                                 builder.add_span_on_line(line, &content, last_style);
@@ -691,40 +696,9 @@ impl Renderer {
                             content.clear();
                         }
 
-                        last_char_was_space = true;
                         last_style = style;
                     }
-                } else {
-                    if last_char_was_space && !content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_span_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_span(&content, last_style);
-                        }
-                        content.clear();
-                    }
 
-                    last_char_was_space = false;
-                }
-
-                // Break runs when styles differ in ways that affect shaping
-                // or when background color changes (for search highlights, etc.)
-                if !styles_are_compatible_for_shaping(&last_style, &style)
-                    || last_style.background_color != style.background_color
-                {
-                    if !content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_span_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_span(&content, last_style);
-                        }
-                        content.clear();
-                    }
-
-                    last_style = style;
-                }
-
-                if square_content != '\0' {
                     content.push(square_content);
                 }
             }
@@ -739,10 +713,10 @@ impl Renderer {
                     }
                 }
 
-                // Flush any remaining pending null cells
-                if pending_null_width > 0.0 {
-                    let mut rect_style = pending_null_style;
-                    rect_style.width = pending_null_width;
+                // Flush any remaining pending blank cells
+                if pending_blank_width > 0.0 {
+                    let mut rect_style = pending_blank_style;
+                    rect_style.width = pending_blank_width;
                     if let Some(line) = line_opt {
                         builder.add_span_as_rect_on_line(line, rect_style);
                     } else {
