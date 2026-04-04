@@ -417,10 +417,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             #[cfg(not(target_os = "windows"))]
             use_fork: true,
             working_dir: None,
-            shell: Shell {
-                program: std::env::var("SHELL").unwrap_or("bash".to_string()),
-                args: vec![],
-            },
+            shell: rio_backend::config::defaults::default_shell(),
             spawn_performer: false,
             is_native: false,
             should_update_title_extra: false,
