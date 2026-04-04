@@ -1149,6 +1149,7 @@ impl Renderer {
                                 x_height: run.x_height,
                                 ascent: run.ascent,
                                 descent: run.descent,
+                                constraint_width: run.span.pua_constraint,
                             };
 
                             // Update font session if needed
@@ -1248,6 +1249,7 @@ impl Renderer {
                                 x_height: run.x_height,
                                 ascent: run.ascent,
                                 descent: run.descent,
+                                constraint_width: run.span.pua_constraint,
                             };
 
                             // Update font session if needed
