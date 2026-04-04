@@ -9,7 +9,7 @@ pub mod trail_cursor;
 pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;
-use crate::renderer::font_cache::FontCache;
+use crate::renderer::font_cache::{FontCache, FontCacheData};
 use rio_backend::crosswords::LineDamage;
 use rio_backend::event::TerminalDamage;
 use taffy::NodeId;
@@ -29,8 +29,9 @@ use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, CursorKind, Graphic, SpanStyle, SpanStyleDecoration,
-    Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    drawable_character, is_private_user_area, Content, CursorKind, Graphic, SpanStyle,
+    SpanStyleDecoration, Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo,
+    UnderlineShape, Weight,
 };
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
@@ -75,6 +76,11 @@ pub struct Renderer {
 /// This allows runs with varying background colors to share cache entries,
 /// dramatically improving cache hit rates for highlighted/selected text.
 fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
+    // PUA glyphs must each be in their own run so they can be
+    // individually constrained/scaled by the compositor.
+    if a.pua_constraint.is_some() || b.pua_constraint.is_some() {
+        return false;
+    }
     a.font_id == b.font_id
         && a.color == b.color
         && a.font_attrs == b.font_attrs
@@ -86,6 +92,39 @@ fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
         && a.font_vars == b.font_vars
         && a.width == b.width
     // note: background_color is intentionally excluded
+}
+
+/// Compute the constraint width for a PUA (Nerd Font) glyph based on adjacent cells.
+/// Returns 1.0 (fit in 1 cell) or 2.0 (expand to 2 cells).
+/// Mirrors Ghostty's constraintWidth logic.
+fn pua_constraint_width(
+    row: &Row<Square>,
+    col: usize,
+    cols: usize,
+) -> f32 {
+    // At end of line -> constrain to 1 cell
+    if col + 1 >= cols {
+        return 1.0;
+    }
+
+    // If previous cell is also a PUA glyph, constrain to 1
+    // so consecutive Nerd Font icons align properly
+    if col > 0 {
+        let prev = row.inner[col - 1].c;
+        if is_private_user_area(&prev) {
+            return 1.0;
+        }
+    }
+
+    // If next cell is space/empty or wide char spacer, expand to 2 cells.
+    // Matches Ghostty: both unwritten (codepoint 0) and typed space expand.
+    let next = &row.inner[col + 1];
+    if next.c == ' ' || next.c == '\0' || next.flags.contains(Flags::WIDE_CHAR_SPACER) {
+        return 2.0;
+    }
+
+    // Next cell is occupied -> constrain to 1 cell
+    1.0
 }
 
 impl Renderer {
@@ -529,11 +568,16 @@ impl Renderer {
 
             let has_drawable_char = style.drawable_char.is_some();
             if !has_drawable_char {
-                if let Some((font_id, width)) =
+                if let Some(cached) =
                     self.font_cache.get(&(square_content, style.font_attrs))
                 {
-                    style.font_id = *font_id;
-                    style.width = *width;
+                    style.font_id = cached.font_id;
+                    style.width = cached.width;
+                    if cached.is_pua {
+                        style.pua_constraint = Some(
+                            pua_constraint_width(row, column, columns),
+                        );
+                    }
                 } else {
                     // Mark this character for font lookup
                     font_lookups.push((
@@ -552,6 +596,7 @@ impl Renderer {
             let font_ctx = self.font_context.inner.read();
             for (style_index, square_content, font_attrs) in font_lookups {
                 let mut width = square_content.width().unwrap_or(1) as f32;
+                let column = styles_and_chars[style_index].2;
                 let style = &mut styles_and_chars[style_index].0;
 
                 if let Some((font_id, is_emoji)) =
@@ -564,8 +609,21 @@ impl Renderer {
                 }
                 style.width = width;
 
-                self.font_cache
-                    .insert((square_content, font_attrs), (style.font_id, style.width));
+                let is_pua = is_private_user_area(&square_content);
+                self.font_cache.insert(
+                    (square_content, font_attrs),
+                    FontCacheData {
+                        font_id: style.font_id,
+                        width: style.width,
+                        is_pua,
+                    },
+                );
+
+                if is_pua {
+                    style.pua_constraint = Some(
+                        pua_constraint_width(row, column, columns),
+                    );
+                }
             }
         }
 
@@ -1498,5 +1556,73 @@ mod tests {
             &matches,
             Pos::new(Line(2), Column(12))
         ));
+    }
+
+    /// Helper: create a row and set specific characters.
+    /// All written cells get a non-default fg so they are NOT is_empty().
+    /// Unwritten cells (beyond chars.len()) remain default (is_empty() == true).
+    fn make_row(chars: &[char], cols: usize) -> Row<Square> {
+        use rio_backend::config::colors::{AnsiColor, NamedColor};
+        let mut row = Row::<Square>::new(cols);
+        for (i, &ch) in chars.iter().enumerate() {
+            row[Column(i)].c = ch;
+            // Mark as written by setting non-default fg
+            row[Column(i)].fg = AnsiColor::Named(NamedColor::White);
+        }
+        row
+    }
+
+    // PUA icon = U+F115 (Nerd Font file icon)
+    const ICON: char = '\u{F115}';
+
+    #[test]
+    fn test_pua_icon_then_nothing() {
+        // symbol→nothing: 2 (matches Ghostty)
+        let row = make_row(&[ICON], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
+    }
+
+    #[test]
+    fn test_pua_icon_followed_by_char() {
+        // symbol→character: 1
+        let row = make_row(&[ICON, 'a'], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
+    }
+
+    #[test]
+    fn test_pua_icon_followed_by_space() {
+        // symbol→space: 2
+        let row = make_row(&[ICON, ' ', 'a'], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
+    }
+
+    #[test]
+    fn test_pua_two_icons() {
+        // symbol→symbol: 1, 1
+        let row = make_row(&[ICON, ICON], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
+        assert_eq!(pua_constraint_width(&row, 1, 10), 1.0);
+    }
+
+    #[test]
+    fn test_pua_icon_at_end_of_row() {
+        // symbol at end of row: 1
+        let row = make_row(&[' ', ' ', ICON], 3);
+        assert_eq!(pua_constraint_width(&row, 2, 3), 1.0);
+    }
+
+    #[test]
+    fn test_pua_icon_space_icon() {
+        // symbol→space→symbol: 2, 2
+        let row = make_row(&[ICON, ' ', ICON], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
+        assert_eq!(pua_constraint_width(&row, 2, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_char_then_icon() {
+        // character→symbol: 2
+        let row = make_row(&['z', ICON], 4);
+        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
     }
 }
