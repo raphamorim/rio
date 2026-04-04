@@ -386,7 +386,7 @@ fn is_space<T: EventListener>(term: &Crosswords<T>, pos: Pos) -> bool {
     !cell
         .flags()
         .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
-        && (cell.c == ' ' || cell.c == '\t')
+        && (cell.c == '\0' || cell.c == ' ' || cell.c == '\t')
 }
 
 /// Check if the cell at a pos contains the WRAPLINE flag.
@@ -580,7 +580,7 @@ mod tests {
         assert_eq!(cursor.pos, Pos::new(Line(0), Column(13)));
 
         cursor = cursor.motion(&mut term, ViMotion::SemanticRightEnd);
-        assert_eq!(cursor.pos, Pos::new(Line(0), Column(15)));
+        assert_eq!(cursor.pos, Pos::new(Line(0), Column(19)));
     }
 
     #[test]

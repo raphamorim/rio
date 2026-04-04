@@ -202,6 +202,33 @@ impl RenderData {
         self.runs.push(run_data);
         true
     }
+
+    /// Push an empty run that advances position without any glyphs.
+    /// Used for unwritten cells ('\0') that need to occupy space.
+    pub(super) fn push_empty_run(
+        &mut self,
+        style: SpanStyle,
+        size: f32,
+        line: u32,
+        metrics: &Metrics,
+    ) {
+        let run_data = RunData {
+            span: style,
+            line,
+            size,
+            detailed_glyphs: vec![],
+            glyphs: vec![],
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+            leading: metrics.leading,
+            underline_offset: metrics.underline_offset,
+            strikeout_offset: metrics.strikeout_offset,
+            strikeout_size: metrics.stroke_size,
+            x_height: metrics.x_height,
+            advance: 0.,
+        };
+        self.runs.push(run_data);
+    }
 }
 
 /// Sequence of clusters sharing the same font, size and span.

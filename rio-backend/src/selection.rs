@@ -648,8 +648,8 @@ mod tests {
         assert_eq!(
             selection.to_range(&term(size.0, size.1)).unwrap(),
             SelectionRange {
-                start: Pos::new(Line(0), Column(1)),
-                end: Pos::new(Line(5), Column(3)),
+                start: Pos::new(Line(0), Column(0)),
+                end: Pos::new(Line(5), Column(4)),
                 is_block: false,
             }
         );

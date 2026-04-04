@@ -929,6 +929,7 @@ mod tests {
             x_height,
             ascent,
             descent,
+            scale_constraint: None,
         };
 
         let _rect = Rect::new(0.0, 0.0, 100.0, line_height);

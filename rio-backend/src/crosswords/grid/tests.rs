@@ -234,7 +234,7 @@ fn shrink_reflow_empty_cell_inside_line() {
 
     assert_eq!(grid[Line(-1)].len(), 2);
     assert_eq!(grid[Line(-1)][Column(0)], cell('1'));
-    assert_eq!(grid[Line(-1)][Column(1)], wrap_cell(' '));
+    assert_eq!(grid[Line(-1)][Column(1)], wrap_cell('\0'));
 
     assert_eq!(grid[Line(0)].len(), 2);
     assert_eq!(grid[Line(0)][Column(0)], cell('3'));
@@ -248,7 +248,7 @@ fn shrink_reflow_empty_cell_inside_line() {
     assert_eq!(grid[Line(-3)][Column(0)], wrap_cell('1'));
 
     assert_eq!(grid[Line(-2)].len(), 1);
-    assert_eq!(grid[Line(-2)][Column(0)], wrap_cell(' '));
+    assert_eq!(grid[Line(-2)][Column(0)], wrap_cell('\0'));
 
     assert_eq!(grid[Line(-1)].len(), 1);
     assert_eq!(grid[Line(-1)][Column(0)], wrap_cell('3'));

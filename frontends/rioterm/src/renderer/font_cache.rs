@@ -138,11 +138,14 @@ impl FontCache {
                             if is_emoji {
                                 width = 2.0;
                             }
-                            self.insert(key, FontCacheData {
-                                font_id,
-                                width,
-                                is_pua: false, // ASCII chars are never PUA
-                            });
+                            self.insert(
+                                key,
+                                FontCacheData {
+                                    font_id,
+                                    width,
+                                    is_pua: false, // ASCII chars are never PUA
+                                },
+                            );
                         }
                     }
                 }

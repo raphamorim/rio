@@ -77,7 +77,8 @@ impl CachedContent {
 
 #[derive(Debug, Clone)]
 pub struct FragmentData {
-    pub content: String,
+    /// Text content to shape. None means advance position only (no shaping).
+    pub content: Option<String>,
     pub style: SpanStyle,
 }
 
@@ -166,7 +167,7 @@ impl BuilderState {
         let current_line = self.current_line();
         if let Some(line) = self.lines.get_mut(current_line) {
             line.fragments.push(FragmentData {
-                content: text.to_string(),
+                content: Some(text.to_string()),
                 style,
             });
         }
@@ -202,7 +203,41 @@ impl BuilderState {
     ) -> &mut Self {
         if let Some(line) = self.lines.get_mut(line_number) {
             line.fragments.push(FragmentData {
-                content: text.to_string(),
+                content: Some(text.to_string()),
+                style,
+            });
+        }
+        self
+    }
+
+    /// Add an empty span to a specific line that only advances position
+    /// (renders background rect if set, but no text shaping).
+    #[inline]
+    pub fn add_span_as_rect_on_line(
+        &mut self,
+        line_number: usize,
+        style: SpanStyle,
+    ) -> &mut Self {
+        if let Some(line) = self.lines.get_mut(line_number) {
+            line.fragments.push(FragmentData {
+                content: None,
+                style,
+            });
+        }
+        self
+    }
+
+    /// Add an empty span that only advances position
+    /// (renders background rect if set, but no text shaping).
+    #[inline]
+    pub fn add_span_as_rect(&mut self, style: SpanStyle) -> &mut Self {
+        if self.lines.is_empty() {
+            self.lines.push(BuilderLine::default());
+        }
+        let current_line = self.current_line();
+        if let Some(line) = self.lines.get_mut(current_line) {
+            line.fragments.push(FragmentData {
+                content: None,
                 style,
             });
         }
@@ -823,13 +858,34 @@ impl Content {
                 text_state.mark_line_dirty(line_idx);
                 if let Some(line) = text_state.lines.get_mut(line_idx) {
                     line.fragments.push(FragmentData {
-                        content: text.to_string(),
+                        content: Some(text.to_string()),
                         style,
                     });
                 }
             }
         }
 
+        self
+    }
+
+    /// Add an empty span to advance position without shaping.
+    #[inline]
+    pub fn add_span_as_rect_on_line(
+        &mut self,
+        line_idx: usize,
+        style: SpanStyle,
+    ) -> &mut Content {
+        if let Some(selector) = self.selector {
+            if let Some(text_state) = self.get_state_mut(&selector) {
+                text_state.mark_line_dirty(line_idx);
+                if let Some(line) = text_state.lines.get_mut(line_idx) {
+                    line.fragments.push(FragmentData {
+                        content: None,
+                        style,
+                    });
+                }
+            }
+        }
         self
     }
 
@@ -844,7 +900,7 @@ impl Content {
             let current_line = text_state.current_line();
             if let Some(line) = &mut text_state.lines.get_mut(current_line) {
                 line.fragments.push(FragmentData {
-                    content: text.to_string(),
+                    content: Some(text.to_string()),
                     style,
                 });
             }
@@ -921,8 +977,34 @@ impl Content {
             let item = &line.fragments[fragment_idx];
             let font_id = item.style.font_id;
             let font_vars = item.style.font_vars;
-            let content = &item.content;
             let style = item.style;
+
+            // None content = advance-only fragment (no shaping)
+            let content = match &item.content {
+                Some(c) => c,
+                None => {
+                    // Create an empty run that just advances position
+                    if let Some((ascent, descent, leading)) = fonts
+                        .inner
+                        .write()
+                        .get_font_metrics(&font_id, scaled_font_size)
+                    {
+                        let metrics = crate::font_introspector::Metrics {
+                            ascent,
+                            descent,
+                            leading,
+                            ..Default::default()
+                        };
+                        line.render_data.push_empty_run(
+                            style,
+                            scaled_font_size,
+                            line_number as u32,
+                            &metrics,
+                        );
+                    }
+                    continue;
+                }
+            };
 
             // Get vars for this fragment
             let vars: Vec<_> = text_state.vars.get(font_vars).to_vec();

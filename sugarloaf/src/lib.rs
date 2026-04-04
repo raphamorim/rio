@@ -18,9 +18,8 @@ pub use crate::sugarloaf::{
     },
     primitives::{
         contains_braille_dot, drawable_character, is_private_user_area, BorderStyle,
-        Corners, CursorKind,
-        DrawableChar, Edges, ImageProperties, Object, Quad, Rect, RichText,
-        RichTextLinesRange, RichTextRenderData, SugarCursor,
+        Corners, CursorKind, DrawableChar, Edges, ImageProperties, Object, Quad, Rect,
+        RichText, RichTextLinesRange, RichTextRenderData, SugarCursor,
     },
     Colorspace, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,
