@@ -4,6 +4,7 @@ use std::{ffi::c_void, ptr};
 
 use crate::utils::Lazy;
 use windows_sys::core::PCSTR;
+use windows_sys::s;
 use windows_sys::Win32::Foundation::{BOOL, HWND, NTSTATUS, S_OK};
 use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 use windows_sys::Win32::System::SystemInformation::OSVERSIONINFOW;
@@ -146,7 +147,7 @@ fn should_apps_use_dark_mode() -> bool {
                 return None;
             }
 
-            let module = LoadLibraryA("uxtheme.dll\0".as_ptr());
+            let module = LoadLibraryA(s!("uxtheme.dll"));
 
             if module.is_null() {
                 return None;
