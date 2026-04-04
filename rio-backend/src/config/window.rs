@@ -119,6 +119,10 @@ pub struct Window {
     pub windows_corner_preference: Option<WindowsCornerPreference>,
     #[serde(default = "Colorspace::default")]
     pub colorspace: Colorspace,
+    #[serde(rename = "columns", default = "Option::default")]
+    pub columns: Option<i32>,
+    #[serde(rename = "rows", default = "Option::default")]
+    pub rows: Option<i32>,
 }
 
 impl Default for Window {
@@ -141,6 +145,8 @@ impl Default for Window {
             windows_use_no_redirection_bitmap: None,
             windows_corner_preference: None,
             colorspace: Colorspace::default(),
+            columns: None,
+            rows: None,
         }
     }
 }
