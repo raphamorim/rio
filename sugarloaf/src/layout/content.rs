@@ -362,6 +362,10 @@ pub struct SpanStyle {
     pub media: Option<Graphic>,
     /// Drawable character
     pub drawable_char: Option<DrawableChar>,
+    /// PUA constraint width: how many cells the glyph should visually fill.
+    /// None for normal glyphs, Some(1.0) or Some(2.0) for PUA glyphs.
+    /// Does NOT affect positioning/advance — only compositor scaling.
+    pub pua_constraint: Option<f32>,
 }
 
 impl Default for SpanStyle {
@@ -381,6 +385,7 @@ impl Default for SpanStyle {
             decoration_color: None,
             media: None,
             drawable_char: None,
+            pua_constraint: None,
         }
     }
 }

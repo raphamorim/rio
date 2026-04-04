@@ -51,6 +51,9 @@ pub struct TextRunStyle<'a> {
     /// Font ascent and descent for cursor positioning
     pub ascent: f32,
     pub descent: f32,
+    /// PUA glyph constraint: scales glyph to fit within this many cells.
+    /// None for normal glyphs, Some(1.0) or Some(2.0) for PUA glyphs.
+    pub constraint_width: Option<f32>,
 }
 
 /// Positioned glyph in a text run.
