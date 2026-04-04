@@ -1600,9 +1600,9 @@ mod tests {
 
     #[test]
     fn test_pua_icon_then_nothing() {
-        // symbol→nothing ('\0'): 1 (unwritten cells don't expand)
+        // symbol→nothing: 2
         let row = make_row(&[ICON], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
     }
 
     #[test]
@@ -1636,17 +1636,17 @@ mod tests {
 
     #[test]
     fn test_pua_icon_space_icon() {
-        // symbol→space→symbol: first 2, second 1 (next is '\0')
+        // symbol→space→symbol: 2, 2
         let row = make_row(&[ICON, ' ', ICON], 4);
         assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
-        assert_eq!(pua_constraint_width(&row, 2, 4), 1.0);
+        assert_eq!(pua_constraint_width(&row, 2, 4), 2.0);
     }
 
     #[test]
     fn test_pua_char_then_icon_then_nothing() {
-        // character→symbol→nothing: 1 (next is '\0')
+        // character→symbol→nothing: 2
         let row = make_row(&['z', ICON], 4);
-        assert_eq!(pua_constraint_width(&row, 1, 4), 1.0);
+        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
     }
 
     #[test]
