@@ -630,7 +630,26 @@ impl Renderer {
         }
 
         // Second pass: render the line using the resolved styles
+        // Track consecutive '\0' cells to batch into a single rect
+        let mut pending_null_width: f32 = 0.0;
+        let mut pending_null_style = SpanStyle::default();
+
         for (style, square_content, column) in styles_and_chars {
+            // Flush pending null run if this cell is not '\0' or bg changed
+            if pending_null_width > 0.0
+                && (square_content != '\0'
+                    || style.background_color != pending_null_style.background_color)
+            {
+                let mut rect_style = pending_null_style;
+                rect_style.width = pending_null_width;
+                if let Some(line) = line_opt {
+                    builder.add_span_as_rect_on_line(line, rect_style);
+                } else {
+                    builder.add_span_as_rect(rect_style);
+                }
+                pending_null_width = 0.0;
+            }
+
             // Handle drawable characters
             if style.drawable_char.is_some() {
                 if !content.is_empty() {
@@ -646,7 +665,7 @@ impl Renderer {
                 content.push(' '); // Ignore font shaping
             } else {
                 if square_content == '\0' {
-                    // Unwritten cell — advance position without shaping
+                    // Accumulate into pending null run
                     if !content.is_empty() {
                         if let Some(line) = line_opt {
                             builder.add_span_on_line(line, &content, last_style);
@@ -655,11 +674,10 @@ impl Renderer {
                         }
                         content.clear();
                     }
-                    if let Some(line) = line_opt {
-                        builder.add_span_as_rect_on_line(line, style);
-                    } else {
-                        builder.add_span_as_rect(style);
+                    if pending_null_width == 0.0 {
+                        pending_null_style = style;
                     }
+                    pending_null_width += 1.0;
                     last_char_was_space = false;
                     last_style = style;
                 } else if square_content == ' ' {
@@ -718,6 +736,17 @@ impl Renderer {
                         builder.add_span_on_line(line, &content, last_style);
                     } else {
                         builder.add_span(&content, last_style);
+                    }
+                }
+
+                // Flush any remaining pending null cells
+                if pending_null_width > 0.0 {
+                    let mut rect_style = pending_null_style;
+                    rect_style.width = pending_null_width;
+                    if let Some(line) = line_opt {
+                        builder.add_span_as_rect_on_line(line, rect_style);
+                    } else {
+                        builder.add_span_as_rect(rect_style);
                     }
                 }
 
