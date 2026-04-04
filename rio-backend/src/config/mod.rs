@@ -497,6 +497,12 @@ impl Config {
             if let Some(height) = window_overwrite.height {
                 self.window.height = height;
             }
+            if let Some(columns) = window_overwrite.columns {
+                self.window.columns = Some(columns);
+            }
+            if let Some(rows) = window_overwrite.rows {
+                self.window.rows = Some(rows);
+            }
             if let Some(mode) = window_overwrite.mode {
                 self.window.mode = mode;
             }

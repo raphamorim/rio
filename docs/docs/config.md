@@ -1563,6 +1563,32 @@ Example:
 height = 400
 ```
 
+## window.columns
+
+Define the initial number of columns. When set, this takes precedence over `window.width`.
+
+- Default: not set
+
+Example:
+
+```toml
+[window]
+columns = 80
+```
+
+## window.rows
+
+Define the initial number of rows. When set, this takes precedence over `window.height`.
+
+- Default: not set
+
+Example:
+
+```toml
+[window]
+rows = 24
+```
+
 ## window.mode
 
 Define how the window will be created

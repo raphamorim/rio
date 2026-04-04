@@ -76,6 +76,10 @@ pub struct PlatformWindow {
     pub windows_corner_preference: Option<window::WindowsCornerPreference>,
     #[serde(default = "Option::default")]
     pub colorspace: Option<window::Colorspace>,
+    #[serde(default = "Option::default", rename = "columns")]
+    pub columns: Option<i32>,
+    #[serde(default = "Option::default", rename = "rows")]
+    pub rows: Option<i32>,
 }
 
 /// Platform-specific navigation config with optional fields for selective override

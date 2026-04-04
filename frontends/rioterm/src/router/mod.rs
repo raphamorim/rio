@@ -9,6 +9,7 @@ use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 
+use rio_window::dpi::PhysicalSize;
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -664,6 +665,67 @@ impl<'a> RouteWindow<'a> {
         )
         .expect("Screen not created");
 
+        if config.window.columns.is_some() || config.window.rows.is_some() {
+            let dim = screen.ctx().current().dimension;
+            let scale = dim.dimension.scale;
+
+            // On Retina (HiDPI) displays, macOS snaps window sizes to multiples of
+            // the scale factor (e.g. 2 on 2x displays). Using PhysicalSize and
+            // rounding up to the nearest multiple of scale ensures we never end up
+            // one physical pixel short, which would cause the renderer to truncate
+            // one column or row.
+            let scale_u32 = scale.round() as u32;
+
+            let mut physical_width = (config.window.width as f32 * scale).round() as u32;
+            let mut physical_height =
+                (config.window.height as f32 * scale).round() as u32;
+
+            // Taffy reserves `config.panel` padding and margin inside the window margin.
+            // Startup sizing must include that frame or the first layout reports fewer
+            // cols/rows than requested.
+            let panel_horizontal = scaled_panel_edge(
+                config.panel.padding.left,
+                config.panel.padding.right,
+                config.panel.margin.left,
+                config.panel.margin.right,
+                scale,
+            );
+            let panel_vertical = scaled_panel_edge(
+                config.panel.padding.top,
+                config.panel.padding.bottom,
+                config.panel.margin.top,
+                config.panel.margin.bottom,
+                scale,
+            );
+
+            if let Some(columns) = config.window.columns {
+                let cell_width = dim.dimension.width;
+                let margin_physical = (dim.margin.left + dim.margin.right) * scale;
+                let raw = (columns as f32 * cell_width).ceil() as u32
+                    + margin_physical as u32
+                    + panel_horizontal as u32;
+
+                // Round up to nearest multiple of scale factor so macOS Retina
+                // snapping never drops us below the target column count.
+                physical_width = raw.next_multiple_of(scale_u32);
+            }
+
+            if let Some(rows) = config.window.rows {
+                let cell_height = dim.dimension.height;
+                let margin_physical = (dim.margin.top + dim.margin.bottom) * scale;
+                let raw = (rows as f32 * cell_height).ceil() as u32
+                    + margin_physical as u32
+                    + panel_vertical as u32;
+
+                physical_height = raw.next_multiple_of(scale_u32);
+            }
+
+            let _ = winit_window.request_inner_size(PhysicalSize {
+                width: physical_width,
+                height: physical_height,
+            });
+        }
+
         #[cfg(target_os = "windows")]
         {
             // On windows cloak (hide) the window initially, we later reveal it after the first draw.
@@ -701,4 +763,15 @@ impl<'a> RouteWindow<'a> {
             screen,
         }
     }
+}
+
+/// Sum of logical padding and margin on one axis, scaled to physical pixels.
+fn scaled_panel_edge(
+    padding_start: f32,
+    padding_end: f32,
+    margin_start: f32,
+    margin_end: f32,
+    scale: f32,
+) -> f32 {
+    (padding_start + padding_end + margin_start + margin_end) * scale
 }
