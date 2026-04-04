@@ -925,19 +925,15 @@ hide-mouse-cursor-when-typing = false
 
 Rio has multiple styles of showing navigation/tabs.
 
-#### Bookmark
+#### Tab
 
-Note: The example below is using the [Dracula](https://github.com/dracula/rio-terminal) color scheme instead of Rio default colors.
-
-`Bookmark` is the default navigation mode.
-
-<img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gMLWcZkniSHUT6Cb7L06Gg.png" width="60%" />
+`Tab` is the default navigation mode.
 
 Usage:
 
 ```toml
 [navigation]
-mode = "Bookmark"
+mode = "Tab"
 ```
 
 #### NativeTab (MacOS only)
@@ -949,38 +945,6 @@ Usage:
 ```toml
 [navigation]
 mode = "NativeTab"
-```
-
-#### BottomTab
-
-Note: `BottomTab` does not support click mode yet.
-
-<img alt="Demo BottomTab" src="/assets/features/demo-bottom-tab.png" width="58%"/>
-
-Usage:
-
-```toml
-[colors]
-tabs = "#000000"
-
-[navigation]
-mode = "BottomTab"
-```
-
-#### TopTab
-
-Note: `TopTab` does not support click mode yet.
-
-<img alt="Demo TopTab" src="/assets/features/demo-top-tab.png" width="70%"/>
-
-Usage:
-
-```toml
-[colors]
-tabs = "#000000"
-
-[navigation]
-mode = "TopTab"
 ```
 
 #### Plain
@@ -1016,87 +980,6 @@ navigation.unfocused-split-opacity = 0.8
 ## navigation.open-config-with-split
 
 Enable split for open configuration file.
-
-## navigation.color-automation
-
-Rio supports specifying the color of tabs using the `program` and `path` options.
-
-Note: `path` is only available for MacOS, BSD and Linux.
-
-```toml
-[navigation]
-color-automation = [
-  # Set tab to red (#FF0000) when NeoVim is open.
-  { program = "nvim", color = "#FF0000" },
-  # Set tab to green  (#00FF00) when in the projects folder
-  { path = "/home/YOUR_USERNAME/projects", color = "#00FF00" },
-    # Set tab to blue (#0000FF) when in the Rio folder AND vim is open
-  { program = "vim", path = "/home/YOUR_USERNAME/projects/rio", color = "#0000FF" },
-]
-```
-
-#### Program
-
-The example below sets `#FFFF00` as color background whenever `nvim` is running.
-
-<p>
-<img alt="example navigation with program color automation using BottomTab" src="/assets/features/demo-colorized-navigation.png" width="48%"/>
-
-<img alt="example navigation with program color automation using Bookmark" src="/assets/features/demo-colorized-navigation-2.png" width="48%"/>
-</p>
-
-The configuration would be like:
-
-```toml
-[navigation]
-color-automation = [
-  { program = "nvim", color = "#FFFF00" }
-]
-```
-
-#### Path
-
-The example below sets `#FFFF00` as color background when in the `/home/geg/.config/rio` path.
-
-Note: `path` is only available for MacOS, BSD and Linux.
-
-The configuration would be like:
-
-```toml
-[navigation]
-color-automation = [
-  { path = "/home/geg/.config/rio", color = "#FFFF00" }
-]
-```
-
-<p>
-<img alt="example navigation with path color automation using TopTab" src="/assets/features/demo-colorized-navigation-path-1.png" width="48%"/>
-
-<img alt="example navigation with path color automation using Bookmark" src="/assets/features/demo-colorized-navigation-path-2.png" width="48%"/>
-</p>
-
-#### Program and path
-
-It is possible to use both `path` and `program` at the same time.
-
-The example below sets `#FFFF00` as color background when in the `/home` path and `nvim` is open.
-
-Note: `path` is only available for MacOS, BSD and Linux.
-
-The configuration would be like:
-
-```toml
-[navigation]
-color-automation = [
-  { program = "nvim", path = "/home", color = "#FFFF00" }
-]
-```
-
-<p>
-<img alt="example navigation with program and path color automation using TopTab" src="/assets/features/demo-colorized-navigation-program-and-path-1.png" width="48%"/>
-
-<img alt="example navigation with program and path color automation using Bookmark" src="/assets/features/demo-colorized-navigation-program-and-path-2.png" width="48%"/>
-</p>
 
 ## navigation.hide-if-single
 
