@@ -94,28 +94,31 @@ fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
     // note: background_color is intentionally excluded
 }
 
+#[inline]
+fn is_powerline(c: char) -> bool {
+    ('\u{E0B0}'..='\u{E0D7}').contains(&c)
+}
+
 /// Compute the constraint width for a PUA (Nerd Font) glyph based on adjacent cells.
 /// Returns 1.0 (fit in 1 cell) or 2.0 (expand to 2 cells).
-/// Mirrors Ghostty's constraintWidth logic.
 fn pua_constraint_width(row: &Row<Square>, col: usize, cols: usize) -> f32 {
     // At end of line -> constrain to 1 cell
     if col + 1 >= cols {
         return 1.0;
     }
 
-    // If previous cell is also a PUA glyph, constrain to 1
-    // so consecutive Nerd Font icons align properly
+    // If previous cell is also a PUA glyph (but not a graphics element
+    // like powerline), constrain to 1 so consecutive icons align properly.
     if col > 0 {
         let prev = row.inner[col - 1].c;
-        if is_private_user_area(&prev) {
+        if is_private_user_area(&prev) && !is_powerline(prev) {
             return 1.0;
         }
     }
 
-    // If next cell is a typed space or wide char spacer, expand to 2 cells.
-    // '\0' is unwritten/empty — don't expand into it.
+    // If next cell is empty, space, or wide char spacer, expand to 2 cells.
     let next = &row.inner[col + 1];
-    if next.c == ' ' || next.flags.contains(Flags::WIDE_CHAR_SPACER) {
+    if next.c == '\0' || next.c == ' ' || next.flags.contains(Flags::WIDE_CHAR_SPACER) {
         return 2.0;
     }
 
@@ -1651,5 +1654,44 @@ mod tests {
         // character→symbol→space: 2
         let row = make_row(&['z', ICON, ' '], 4);
         assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_icon_followed_by_no_break_space() {
+        // symbol→no-break space (U+00A0): 1 (not a regular space)
+        let row = make_row(&[ICON, '\u{00A0}', 'z'], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
+    }
+
+    // Powerline U+E0B0 is in PUA range but is a graphics element.
+    // Our is_private_user_area includes it, so it gets PUA treatment.
+    const POWERLINE: char = '\u{E0B0}';
+
+    #[test]
+    fn test_pua_icon_then_powerline() {
+        // symbol→powerline: 1 (next is not space/empty)
+        let row = make_row(&[ICON, POWERLINE], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 1.0);
+    }
+
+    #[test]
+    fn test_pua_powerline_then_icon() {
+        // powerline→symbol: 2 (powerline is a graphics element, excluded from prev check)
+        let row = make_row(&[POWERLINE, ICON], 4);
+        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_powerline_then_nothing() {
+        // powerline→nothing: 2
+        let row = make_row(&[POWERLINE], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_powerline_then_space() {
+        // powerline→space: 2
+        let row = make_row(&[POWERLINE, ' ', 'z'], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
     }
 }
