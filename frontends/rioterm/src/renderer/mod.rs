@@ -654,6 +654,8 @@ impl Renderer {
                     }
                     if let Some(line) = line_opt {
                         builder.add_span_as_rect_on_line(line, style);
+                    } else {
+                        builder.add_span_as_rect(style);
                     }
                     last_char_was_space = false;
                     last_style = style;
