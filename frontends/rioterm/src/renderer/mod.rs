@@ -665,9 +665,27 @@ impl Renderer {
 
                 last_style = style;
                 content.push(' '); // Ignore font shaping
+            } else if is_blank {
+                // Accumulate into pending blank run
+                if !content.is_empty() {
+                    if let Some(line) = line_opt {
+                        builder.add_span_on_line(line, &content, last_style);
+                    } else {
+                        builder.add_span(&content, last_style);
+                    }
+                    content.clear();
+                }
+                if pending_blank_width == 0.0 {
+                    pending_blank_style = style;
+                }
+                pending_blank_width += 1.0;
+                last_style = style;
             } else {
-                if is_blank {
-                    // Accumulate into pending blank run
+                // Break runs when styles differ in ways that affect shaping
+                // or when background color changes (for search highlights, etc.)
+                if !styles_are_compatible_for_shaping(&last_style, &style)
+                    || last_style.background_color != style.background_color
+                {
                     if !content.is_empty() {
                         if let Some(line) = line_opt {
                             builder.add_span_on_line(line, &content, last_style);
@@ -676,31 +694,11 @@ impl Renderer {
                         }
                         content.clear();
                     }
-                    if pending_blank_width == 0.0 {
-                        pending_blank_style = style;
-                    }
-                    pending_blank_width += 1.0;
+
                     last_style = style;
-                } else {
-                    // Break runs when styles differ in ways that affect shaping
-                    // or when background color changes (for search highlights, etc.)
-                    if !styles_are_compatible_for_shaping(&last_style, &style)
-                        || last_style.background_color != style.background_color
-                    {
-                        if !content.is_empty() {
-                            if let Some(line) = line_opt {
-                                builder.add_span_on_line(line, &content, last_style);
-                            } else {
-                                builder.add_span(&content, last_style);
-                            }
-                            content.clear();
-                        }
-
-                        last_style = style;
-                    }
-
-                    content.push(square_content);
                 }
+
+                content.push(square_content);
             }
 
             // Render last column and break row

@@ -97,11 +97,6 @@ impl TextRunCache {
     }
 
     #[inline]
-    fn bucket_ptr(&self, idx: usize) -> *const Entry {
-        self.buckets[idx].as_ptr() as *const Entry
-    }
-
-    #[inline]
     fn bucket_ptr_mut(&mut self, idx: usize) -> *mut Entry {
         self.buckets[idx].as_mut_ptr() as *mut Entry
     }
