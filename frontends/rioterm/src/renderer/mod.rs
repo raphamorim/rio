@@ -1018,43 +1018,28 @@ impl Renderer {
                 .pending_update
                 .take_terminal_damage();
             let _ui_damage = context.renderable_content.pending_update.take_ui_damage();
-            // Note: ui_damage is extracted but not currently used for selective rendering.
-            // In the future, we can optimize by only re-rendering specific UI elements
-            // (island, search) when ui_damage.island or ui_damage.search is true.
             context.renderable_content.pending_update.reset();
 
             // Compute snapshot at render time
             let terminal_snapshot = {
                 let mut terminal = context.terminal.lock();
 
-                // Get damage from terminal itself
-                let terminal_damage = if force_full_damage {
-                    Some(TerminalDamage::Full)
+                // Resolve damage: prefer damage from TerminalDamaged event (avoids
+                // re-computing inside lock), fall back to peeking terminal state
+                let damage = if force_full_damage {
+                    TerminalDamage::Full
+                } else if let Some(damage) = pending_terminal_damage {
+                    // Damage already extracted by PTY thread — use directly
+                    damage
                 } else {
-                    terminal.peek_damage_event()
-                };
-
-                // Merge terminal damage from the terminal with pending terminal damage (selections, hints, etc.)
-                let damage = match (terminal_damage, pending_terminal_damage) {
-                    (Some(TerminalDamage::Full), _) | (_, Some(TerminalDamage::Full)) => {
-                        TerminalDamage::Full
-                    }
-                    (Some(term), Some(pending)) => {
-                        // Merge partial damages
-                        match (term, pending) {
-                            (
-                                TerminalDamage::Partial(mut lines1),
-                                TerminalDamage::Partial(lines2),
-                            ) => {
-                                lines1.extend(lines2);
-                                TerminalDamage::Partial(lines1)
-                            }
-                            _ => TerminalDamage::Full,
+                    // No event damage (e.g. scroll, selection) — check terminal
+                    match terminal.peek_damage_event() {
+                        Some(d) => d,
+                        None => {
+                            drop(terminal);
+                            continue;
                         }
                     }
-                    (Some(damage), None) => damage,
-                    (None, Some(damage)) => damage,
-                    (None, None) => TerminalDamage::Full,
                 };
 
                 let snapshot = TerminalSnapshot {
@@ -1145,7 +1130,12 @@ impl Renderer {
             // Check for partial damage to optimize rendering
             if !force_full_damage {
                 match &terminal_snapshot.damage {
+                    TerminalDamage::Noop => {
+                        // Should not reach here — Noop is handled before snapshot
+                        continue;
+                    }
                     TerminalDamage::Full => {
+                        println!("full");
                         // Full damage, render everything
                     }
                     TerminalDamage::Partial(lines) => {
