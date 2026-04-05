@@ -1145,8 +1145,7 @@ impl Renderer {
                     // Use pre-computed cache key — no String allocation needed
                     let t1 = std::time::Instant::now();
                     let cached_result = if run.cache_key != 0 {
-                        self.text_run_manager
-                            .get_cached_data_by_key(run.cache_key)
+                        self.text_run_manager.get_cached_data_by_key(run.cache_key)
                     } else {
                         CacheResult::Miss
                     };
@@ -1390,7 +1389,7 @@ impl Renderer {
             }
 
             let t_lines_total = t_lines_start.elapsed();
-            let t_graphics = t_after_graphics.elapsed() - t_lines_total;
+            let _t_graphics = t_after_graphics.elapsed() - t_lines_total;
             println!(
                 "[draw_layout] lines: {:?} | empty: {} text: {} | cache: {}µs glyphs: {}µs draw_run: {}µs",
                 t_lines_total,

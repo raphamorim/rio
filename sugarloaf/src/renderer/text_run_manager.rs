@@ -6,7 +6,7 @@
 // Unified text run manager - replaces separate line cache and shaping cache
 
 use crate::font::text_run_cache::{
-    create_cached_text_run, create_text_run_key, ShapedGlyph, TextRunCache,
+    create_cached_text_run, ShapedGlyph, TextRunCache,
 };
 use std::sync::Arc;
 use tracing::debug;
@@ -48,30 +48,6 @@ impl TextRunManager {
     ) {
         let cached_run = create_cached_text_run(glyphs, font_id, font_size, has_emoji);
         self.unified_cache.insert(key, cached_run);
-    }
-
-    /// Get cached shaping data for a text run (legacy string-based API)
-    pub fn get_cached_data(
-        &mut self,
-        text: &str,
-        font_id: usize,
-        font_size: f32,
-    ) -> CacheResult {
-        let key = create_text_run_key(text, font_id, font_size);
-        self.get_cached_data_by_key(key)
-    }
-
-    /// Cache shaping data for a text run (legacy string-based API)
-    pub fn cache_shaping_data(
-        &mut self,
-        text: &str,
-        font_id: usize,
-        font_size: f32,
-        glyphs: Vec<ShapedGlyph>,
-        has_emoji: bool,
-    ) {
-        let key = create_text_run_key(text, font_id, font_size);
-        self.cache_shaping_data_by_key(key, font_id, font_size, glyphs, has_emoji);
     }
 
     /// Apply cached vertices to output, adjusting for new position

@@ -3346,7 +3346,10 @@ impl Screen<'_> {
         self.sugarloaf.render();
         let sugarloaf_duration = sugarloaf_start.elapsed();
         let total_duration = screen_render_start.elapsed();
-        println!("[screen] sugarloaf.render: {:?} | total: {:?}", sugarloaf_duration, total_duration);
+        println!(
+            "[screen] sugarloaf.render: {:?} | total: {:?}",
+            sugarloaf_duration, total_duration
+        );
 
         // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
         if self.renderer.needs_redraw() {

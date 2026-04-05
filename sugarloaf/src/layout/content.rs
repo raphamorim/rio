@@ -1015,8 +1015,7 @@ impl Content {
 
             // Process the font data directly without cloning FontRef
             let font_library = &fonts.inner.read();
-            if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
-            {
+            if let Some((shared_data, offset, key)) = font_library.get_data(&font_id) {
                 let font_ref = FontRef {
                     data: shared_data.as_ref(),
                     offset,
