@@ -215,18 +215,20 @@ where
             }
         }
 
-        // Queue terminal update processing unless all processed bytes were synchronized.
-        // For non-synchronized updates, we send a Wakeup event which will coalesce
-        // multiple rapid updates into a single render pass.
+        // Send damage event so the renderer knows what changed without locking.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
-            tracing::trace!(
-                "PTY read: Sending Wakeup event for {} bytes of non-sync data",
-                processed
-            );
-            // Send a Wakeup event to coalesce renders
-            self.event_proxy
-                .send_event(RioEvent::Wakeup(self.route_id), self.window_id);
-            // }
+            if let Some(ref mut term) = terminal {
+                if let Some(damage) = term.peek_damage_event() {
+                    term.reset_damage();
+                    self.event_proxy.send_event(
+                        RioEvent::TerminalDamaged {
+                            route_id: self.route_id,
+                            damage,
+                        },
+                        self.window_id,
+                    );
+                }
+            }
         }
 
         Ok(())
@@ -354,9 +356,17 @@ where
                     let mut terminal = self.terminal.lock();
                     state.parser.stop_sync(&mut *terminal);
 
-                    // Emit damage event if there's any damage after processing sync buffer
-                    self.event_proxy
-                        .send_event(RioEvent::Wakeup(self.route_id), self.window_id);
+                    // Extract damage while locked, send via event
+                    if let Some(damage) = terminal.peek_damage_event() {
+                        terminal.reset_damage();
+                        self.event_proxy.send_event(
+                            RioEvent::TerminalDamaged {
+                                route_id: self.route_id,
+                                damage,
+                            },
+                            self.window_id,
+                        );
+                    }
 
                     continue;
                 }

@@ -1023,7 +1023,10 @@ impl<U: EventListener> Crosswords<U> {
         if (top <= *line) && region.end > *line {
             *line = std::cmp::max(*line - lines, top);
         }
-        self.mark_fully_damaged();
+        // Mark all lines in the scroll region as damaged (not full damage)
+        for line in region.start.0..region.end.0 {
+            self.damage.damage_line(line as usize);
+        }
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
         }
@@ -1136,6 +1139,9 @@ impl<U: EventListener> Crosswords<U> {
                         damaged_lines.push(i);
                     }
                 }
+            }
+            TerminalDamage::Noop => {
+                // Nothing changed
             }
         }
 
@@ -2317,6 +2323,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 .remove(square::Flags::WIDE_CHAR_SPACER);
         }
 
+        // Mark cursor line as damaged for partial rendering
+        let cursor_line = self.grid.cursor.pos.row.0 as usize;
+        self.damage.damage_line(cursor_line);
+
         if self.grid.cursor.pos.col + 1 < columns {
             self.grid.cursor.pos.col += 1;
         } else {
@@ -2520,7 +2530,24 @@ impl<U: EventListener> Handler for Crosswords<U> {
             ClearMode::Saved => (),
         }
 
-        self.mark_fully_damaged();
+        // Mark affected lines as damaged based on clear mode
+        match mode {
+            ClearMode::Above => {
+                let cursor_row = self.grid.cursor.pos.row.0 as usize;
+                for line in 0..=cursor_row {
+                    self.damage.damage_line(line);
+                }
+            }
+            ClearMode::Below => {
+                let cursor_row = self.grid.cursor.pos.row.0 as usize;
+                for line in cursor_row..screen_lines {
+                    self.damage.damage_line(line);
+                }
+            }
+            ClearMode::All | ClearMode::Saved => {
+                self.mark_fully_damaged();
+            }
+        }
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
         }
