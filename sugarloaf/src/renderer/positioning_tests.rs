@@ -74,9 +74,10 @@ impl PositioningTestHelper {
 
         if use_cache {
             // Try to get cached data
-            let cached_result = self
-                .text_run_manager
-                .get_cached_data(text, font_id, font_size);
+            let key = crate::font::text_run_cache::create_text_run_key(
+                text, font_id, font_size,
+            );
+            let cached_result = self.text_run_manager.get_cached_data_by_key(key);
 
             match cached_result {
                 CacheResult::Hit {
@@ -162,8 +163,9 @@ impl PositioningTestHelper {
         }
 
         // Cache the shaped data for future use
-        self.text_run_manager.cache_shaping_data(
-            text,
+        let key = crate::font::text_run_cache::create_text_run_key(text, 0, 12.0);
+        self.text_run_manager.cache_shaping_data_by_key(
+            key,
             0,    // font_id
             12.0, // font_size
             shaped_glyphs,
