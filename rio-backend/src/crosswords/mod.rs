@@ -4061,7 +4061,7 @@ mod tests {
             Some(TerminalDamage::Partial(_)) | Some(TerminalDamage::Full) => {
                 // Good - line damage was registered
             }
-            Some(TerminalDamage::CursorOnly) => {
+            Some(TerminalDamage::CursorOnly) | Some(TerminalDamage::Noop) => {
                 panic!(
                     "Clear line should register line damage, not just cursor movement"
                 );
