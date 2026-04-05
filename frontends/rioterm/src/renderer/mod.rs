@@ -952,8 +952,6 @@ impl Renderer {
         context_manager: &mut ContextManager<EventProxy>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) -> Option<crate::context::renderable::WindowUpdate> {
-        let start = std::time::Instant::now();
-
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
         let grid_scaled_margin = grid.get_scaled_margin();
@@ -1128,7 +1126,6 @@ impl Renderer {
                         continue;
                     }
                     TerminalDamage::Full => {
-                        println!("full");
                         // Full damage, render everything
                     }
                     TerminalDamage::Partial(lines) => {
@@ -1385,8 +1382,6 @@ impl Renderer {
             None
         };
 
-        let duration = start.elapsed();
-        println!("[renderer] render took {:?}", duration);
         window_update
     }
 

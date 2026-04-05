@@ -3205,7 +3205,6 @@ impl Screen<'_> {
     }
 
     pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
-        let screen_render_start = std::time::Instant::now();
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -3298,14 +3297,7 @@ impl Screen<'_> {
             }
         }
 
-        let sugarloaf_start = std::time::Instant::now();
         self.sugarloaf.render();
-        let sugarloaf_duration = sugarloaf_start.elapsed();
-        let total_duration = screen_render_start.elapsed();
-        println!(
-            "[screen] sugarloaf.render: {:?} | total: {:?}",
-            sugarloaf_duration, total_duration
-        );
 
         // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
         if self.renderer.needs_redraw() {
@@ -3334,13 +3326,6 @@ impl Screen<'_> {
                 .blink_cursor(self.renderer.config_blinking_interval);
         }
 
-        // let _screen_render_duration = screen_render_start.elapsed();
-        // if self.renderer.enable_performance_logging {
-        // println!(
-        //     "[PERF] Screen render() total: {:?}\n",
-        //     screen_render_duration
-        // );
-        // }
         window_update
     }
 

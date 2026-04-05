@@ -1010,7 +1010,6 @@ impl Renderer {
             }
         }
 
-        let t_after_graphics = std::time::Instant::now();
         // Now set up rendering - borrow comp and caches
         let comp = &mut self.comp;
         let caches = (&mut self.images, &mut self.glyphs);
@@ -1050,13 +1049,6 @@ impl Renderer {
             let take_count = selected_lines
                 .map_or(lines_to_process.len(), |range| range.end - range.start);
 
-            let t_lines_start = std::time::Instant::now();
-            let mut perf_cache_lookup_ns: u64 = 0;
-            let mut perf_draw_run_ns: u64 = 0;
-            let mut perf_glyph_build_ns: u64 = 0;
-            let mut perf_empty_runs: u32 = 0;
-            let mut perf_text_runs: u32 = 0;
-
             for (_line_idx, line) in lines_to_process
                 .iter()
                 .enumerate()
@@ -1093,7 +1085,6 @@ impl Renderer {
                     // Fast path: empty run (blanks/spaces) — just advance
                     // and optionally paint background/cursor
                     if run.glyphs.is_empty() {
-                        perf_empty_runs += 1;
                         let advance = cell_width * char_width;
                         let run_x = px;
                         px += advance;
@@ -1136,18 +1127,15 @@ impl Renderer {
                         continue;
                     }
 
-                    perf_text_runs += 1;
                     let font = run.span.font_id;
                     let run_x = px;
 
                     // Use pre-computed cache key — no String allocation needed
-                    let t1 = std::time::Instant::now();
                     let cached_result = if run.cache_key != 0 {
                         self.text_run_manager.get_cached_data_by_key(run.cache_key)
                     } else {
                         CacheResult::Miss
                     };
-                    perf_cache_lookup_ns += t1.elapsed().as_nanos() as u64;
 
                     match cached_result {
                         CacheResult::Hit {
@@ -1155,7 +1143,6 @@ impl Renderer {
                             ..
                         } => {
                             // Use cached glyph data but need to render
-                            let tg = std::time::Instant::now();
                             glyphs.clear();
                             for shaped_glyph in cached_glyphs.iter() {
                                 let x = px;
@@ -1173,7 +1160,6 @@ impl Renderer {
                                     y,
                                 });
                             }
-                            perf_glyph_build_ns += tg.elapsed().as_nanos() as u64;
 
                             // Render using cached glyph data
                             let style = TextRunStyle {
@@ -1218,7 +1204,6 @@ impl Renderer {
                                 );
                             }
 
-                            let td = std::time::Instant::now();
                             comp.draw_run(
                                 &mut session,
                                 Rect::new(run_x, py, px - run_x, 1.),
@@ -1227,7 +1212,6 @@ impl Renderer {
                                 &glyphs,
                                 order,
                             );
-                            perf_draw_run_ns += td.elapsed().as_nanos() as u64;
                         }
                         CacheResult::Miss => {
                             // No cached data - need to shape and render from scratch
@@ -1316,7 +1300,6 @@ impl Renderer {
                                 );
                             }
 
-                            let td = std::time::Instant::now();
                             comp.draw_run(
                                 &mut session,
                                 Rect::new(run_x, py, px - run_x, 1.),
@@ -1325,7 +1308,6 @@ impl Renderer {
                                 &glyphs,
                                 order,
                             );
-                            perf_draw_run_ns += td.elapsed().as_nanos() as u64;
                         }
                     }
 
@@ -1379,18 +1361,6 @@ impl Renderer {
                 // Advance line_y for the next line
                 line_y += line_height;
             }
-
-            let t_lines_total = t_lines_start.elapsed();
-            let _t_graphics = t_after_graphics.elapsed() - t_lines_total;
-            println!(
-                "[draw_layout] lines: {:?} | empty: {} text: {} | cache: {}µs glyphs: {}µs draw_run: {}µs",
-                t_lines_total,
-                perf_empty_runs,
-                perf_text_runs,
-                perf_cache_lookup_ns / 1000,
-                perf_glyph_build_ns / 1000,
-                perf_draw_run_ns / 1000,
-            );
         }
     }
 

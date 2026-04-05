@@ -5,9 +5,7 @@
 //
 // Unified text run manager - replaces separate line cache and shaping cache
 
-use crate::font::text_run_cache::{
-    create_cached_text_run, ShapedGlyph, TextRunCache,
-};
+use crate::font::text_run_cache::{create_cached_text_run, ShapedGlyph, TextRunCache};
 use std::sync::Arc;
 use tracing::debug;
 
