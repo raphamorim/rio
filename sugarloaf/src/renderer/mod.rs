@@ -1124,6 +1124,7 @@ impl Renderer {
                                 order,
                             );
                         }
+
                         continue;
                     }
 
