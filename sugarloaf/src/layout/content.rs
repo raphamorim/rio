@@ -945,10 +945,7 @@ impl Content {
         shaping_cache: &mut ShapingCache,
     ) {
         // Cache primary font metrics at line level to avoid repeated lock acquisition
-        let metrics_result = fonts
-            .inner
-            .write()
-            .get_font_metrics(&0, scaled_font_size);
+        let metrics_result = fonts.inner.write().get_font_metrics(&0, scaled_font_size);
 
         let line = &mut text_state.lines[line_number];
 
@@ -965,7 +962,10 @@ impl Content {
                     if let Some((ascent, descent, leading)) = if font_id == 0 {
                         metrics_result
                     } else {
-                        fonts.inner.write().get_font_metrics(&font_id, scaled_font_size)
+                        fonts
+                            .inner
+                            .write()
+                            .get_font_metrics(&font_id, scaled_font_size)
                     } {
                         let metrics = crate::font_introspector::Metrics {
                             ascent,
@@ -989,7 +989,10 @@ impl Content {
                 if let Some((ascent, descent, leading)) = if font_id == 0 {
                     metrics_result
                 } else {
-                    fonts.inner.write().get_font_metrics(&font_id, scaled_font_size)
+                    fonts
+                        .inner
+                        .write()
+                        .get_font_metrics(&font_id, scaled_font_size)
                 } {
                     line.render_data.push_cached_run(
                         style,
@@ -1371,11 +1374,7 @@ impl ShapingCache {
 
     /// Look up a pre-packed cached run.
     #[inline]
-    pub fn get(
-        &mut self,
-        font_id: &usize,
-        content: &str,
-    ) -> Option<&CachedRun> {
+    pub fn get(&mut self, font_id: &usize, content: &str) -> Option<&CachedRun> {
         let key = Self::cache_key(content, *font_id);
         if let Some(cache) = self.inner.get_mut(font_id) {
             return cache.get(&key);
@@ -1398,8 +1397,7 @@ impl ShapingCache {
                 cache.put(self.content_hash, cached_run);
             } else {
                 let size = if self.font_id == 0 { 512 } else { 256 };
-                let mut cache =
-                    LruCache::new(NonZeroUsize::new(size).unwrap());
+                let mut cache = LruCache::new(NonZeroUsize::new(size).unwrap());
                 cache.put(self.content_hash, cached_run);
                 self.inner.insert(self.font_id, cache);
             }
@@ -1487,7 +1485,11 @@ mod tests {
         // Store a pre-packed run for "hello"
         cache.set_content(font_id, "hello");
         cache.finish_with_run(make_cached_run(&[
-            (104, 8.0), (101, 8.0), (108, 8.0), (108, 8.0), (111, 8.0),
+            (104, 8.0),
+            (101, 8.0),
+            (108, 8.0),
+            (108, 8.0),
+            (111, 8.0),
         ]));
 
         // Same run: hit

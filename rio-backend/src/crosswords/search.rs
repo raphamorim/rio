@@ -605,9 +605,7 @@ impl<T: event::EventListener> Crosswords<T> {
 
             point = cell.pos;
 
-            if !cell.flags.intersects(wide_spacer)
-                && needles.contains(cell.c)
-            {
+            if !cell.flags.intersects(wide_spacer) && needles.contains(cell.c) {
                 return Ok(point);
             }
         }
@@ -631,9 +629,7 @@ impl<T: event::EventListener> Crosswords<T> {
         for cell in self.grid.iter_from(point) {
             point = cell.pos;
 
-            if !cell.flags.intersects(wide_spacer)
-                && needles.contains(cell.c)
-            {
+            if !cell.flags.intersects(wide_spacer) && needles.contains(cell.c) {
                 return Ok(point);
             }
 
