@@ -6,10 +6,9 @@
 #![allow(clippy::uninlined_format_args)]
 
 use crate::font::FontLibrary;
-use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::Script;
-use crate::font_introspector::{shape::cluster::GlyphCluster, FontRef};
+use crate::font_introspector::FontRef;
 use crate::layout::content_data::{ContentData, ContentState};
 use crate::layout::render_data::RenderData;
 use crate::layout::TextLayout;
@@ -25,7 +24,15 @@ use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
 use crate::{sugarloaf::primitives::SugarCursor, DrawableChar, Graphic};
 
-pub type CachedContent = Vec<OwnedGlyphCluster>;
+/// Pre-packed shaping result ready to push directly as a RunData.
+/// Avoids re-packing OwnedGlyphClusters on every cache hit.
+#[derive(Clone, Debug)]
+pub struct CachedRun {
+    pub glyphs: Vec<crate::layout::glyph::GlyphData>,
+    pub detailed_glyphs: Vec<crate::layout::glyph::Glyph>,
+    pub advance: f32,
+    pub cache_key: u64,
+}
 
 #[derive(Debug, Clone)]
 pub struct FragmentData {
@@ -938,17 +945,19 @@ impl Content {
         shaping_cache: &mut ShapingCache,
     ) {
         let line_start = std::time::Instant::now();
-        let mut tier1_hits = 0u32;
-        let mut tier2_hits = 0u32;
+        let mut cache_hits = 0u32;
         let mut misses = 0u32;
         let mut empty_runs = 0u32;
 
-        // Process fragments in the line
+        // Cache font metrics at line level to avoid repeated lock acquisition
+        let metrics_result = fonts
+            .inner
+            .write()
+            .get_font_metrics(&0, scaled_font_size);
+
         let line = &mut text_state.lines[line_number];
 
-        // Process each fragment
         for fragment_idx in 0..line.fragments.len() {
-            // Get a reference to the current fragment
             let item = &line.fragments[fragment_idx];
             let font_id = item.style.font_id;
             let font_vars = item.style.font_vars;
@@ -958,12 +967,11 @@ impl Content {
             let content = match &item.content {
                 Some(c) => c,
                 None => {
-                    // Create an empty run that just advances position
-                    if let Some((ascent, descent, leading)) = fonts
-                        .inner
-                        .write()
-                        .get_font_metrics(&font_id, scaled_font_size)
-                    {
+                    if let Some((ascent, descent, leading)) = if font_id == 0 {
+                        metrics_result
+                    } else {
+                        fonts.inner.write().get_font_metrics(&font_id, scaled_font_size)
+                    } {
                         let metrics = crate::font_introspector::Metrics {
                             ascent,
                             descent,
@@ -982,70 +990,35 @@ impl Content {
                 }
             };
 
-            // Get vars for this fragment
-            let vars: Vec<_> = text_state.vars.get(font_vars).to_vec();
-
-            // Tier 1: try to compose from per-character cache
-            if let Some(composed) =
-                shaping_cache.try_compose_from_chars(content, font_id)
-            {
-                if let Some((ascent, descent, leading)) = fonts
-                    .inner
-                    .write()
-                    .get_font_metrics(&font_id, scaled_font_size)
-                {
-                    let metrics = crate::font_introspector::Metrics {
-                        ascent,
-                        descent,
-                        leading,
-                        ..Default::default()
-                    };
-                    if line.render_data.push_run_without_shaper(
+            // Check run cache — pre-packed so no re-packing needed
+            if let Some(cached_run) = shaping_cache.get(&font_id, content) {
+                if let Some((ascent, descent, leading)) = if font_id == 0 {
+                    metrics_result
+                } else {
+                    fonts.inner.write().get_font_metrics(&font_id, scaled_font_size)
+                } {
+                    line.render_data.push_cached_run(
                         style,
                         scaled_font_size,
                         line_number as u32,
-                        composed,
-                        &metrics,
-                    ) {
-                        tier1_hits += 1;
-                        continue;
-                    }
-                }
-            }
-
-            // Tier 2: try run cache (for ligature sequences)
-            if let Some(cached_content) =
-                shaping_cache.get_cached_run(&font_id, content)
-            {
-                if let Some((ascent, descent, leading)) = fonts
-                    .inner
-                    .write()
-                    .get_font_metrics(&font_id, scaled_font_size)
-                {
-                    let metrics = crate::font_introspector::Metrics {
+                        cached_run,
                         ascent,
                         descent,
                         leading,
-                        ..Default::default()
-                    };
-                    if line.render_data.push_run_without_shaper(
-                        style,
-                        scaled_font_size,
-                        line_number as u32,
-                        cached_content,
-                        &metrics,
-                    ) {
-                        tier2_hits += 1;
-                        continue;
-                    }
+                    );
+                    cache_hits += 1;
+                    continue;
                 } else {
                     debug!("Font metrics not available for font_id={}", font_id);
                 }
             }
 
-            // Cache miss: shape the text and populate appropriate tier
+            // Cache miss: shape the full run and store result
             misses += 1;
             shaping_cache.set_content(font_id, content);
+
+            // Only allocate vars on the miss path
+            let vars: Vec<_> = text_state.vars.get(font_vars).to_vec();
 
             let font_library = &fonts.inner.read();
             if let Some((shared_data, offset, key)) = font_library.get_data(&font_id) {
@@ -1075,18 +1048,16 @@ impl Content {
         }
 
         let elapsed = line_start.elapsed();
-        let total = tier1_hits + tier2_hits + misses;
+        let total = cache_hits + misses;
         if total > 0 {
             println!(
-                "[PERF] line {} | {:.1}µs | frags={} t1={} t2={} miss={} empty={} | chars_cached={}",
+                "[PERF] line {} | {:.1}µs | frags={} hit={} miss={} empty={}",
                 line_number,
                 elapsed.as_secs_f64() * 1_000_000.0,
                 line.fragments.len(),
-                tier1_hits,
-                tier2_hits,
+                cache_hits,
                 misses,
                 empty_runs,
-                shaping_cache.char_cache.len(),
             );
         }
     }
@@ -1392,86 +1363,38 @@ impl Content {
     }
 }
 
-#[derive(Default)]
-/// Two-tier shaping cache inspired by Chrome's CachingWordShaper.
+/// Run-level shaping cache (like Ghostty's ShaperCache).
 ///
-/// **Tier 1 (Character Cache):** Caches shaped results per individual character.
-/// For monospace terminal fonts, most characters shape independently — same glyph
-/// output regardless of neighbors. This gives maximum reuse: any character appearing
-/// anywhere in the terminal shares one shaped result.
-///
-/// **Tier 2 (Run Cache):** LRU cache for multi-character runs where ligatures
-/// were detected (e.g., `=>`, `->`, `!=`). Falls back here when Tier 1 can't
-/// compose the result (N:1 char-to-glyph mappings).
+/// Caches pre-packed shaped runs per text run, keyed by (content + font_id).
+/// The shaper always sees the full run so ligatures are handled naturally.
+/// Stores packed GlyphData directly so cache hits avoid re-packing.
 pub struct ShapingCache {
-    /// Tier 1: per-character cache keyed by (char, font_id)
-    char_cache: FxHashMap<(char, usize), OwnedGlyphCluster>,
-    /// Tier 2: run cache for ligature sequences (LRU per font_id)
-    run_cache: FxHashMap<usize, LruCache<u64, CachedContent>>,
-    /// Temporary stash for clusters during active shaping
-    stash: Vec<OwnedGlyphCluster>,
-    /// Reusable scratch buffer for composing Tier 1 results
-    composed: Vec<OwnedGlyphCluster>,
+    /// LRU cache per font_id: hash(content + font_id) → pre-packed run
+    inner: FxHashMap<usize, LruCache<u64, CachedRun>>,
     /// Current shaping context
     font_id: usize,
     content_hash: u64,
-    /// Characters of the content being shaped (for 1:1 detection in finish)
-    current_chars: Vec<char>,
 }
 
 impl ShapingCache {
     pub fn new() -> Self {
         ShapingCache {
-            char_cache: FxHashMap::default(),
-            run_cache: FxHashMap::default(),
-            stash: Vec::with_capacity(64),
-            composed: Vec::with_capacity(64),
+            inner: FxHashMap::default(),
             font_id: 0,
             content_hash: 0,
-            current_chars: Vec::new(),
         }
     }
 
-    /// Try to compose a full fragment from per-character cache entries (Tier 1).
-    /// Returns `Some` if ALL characters have cached entries, `None` otherwise.
+    /// Look up a pre-packed cached run.
     #[inline]
-    pub fn try_compose_from_chars(
-        &mut self,
-        content: &str,
-        font_id: usize,
-    ) -> Option<&Vec<OwnedGlyphCluster>> {
-        self.composed.clear();
-        let mut byte_offset = 0u32;
-
-        for ch in content.chars() {
-            let len = ch.len_utf8() as u32;
-            let cached = self.char_cache.get(&(ch, font_id))?;
-
-            let mut cluster = cached.clone();
-            // Rewrite source range to match position in this fragment
-            cluster.source = crate::font_introspector::text::cluster::SourceRange {
-                start: byte_offset,
-                end: byte_offset + len,
-            };
-            self.composed.push(cluster);
-            byte_offset += len;
-        }
-
-        Some(&self.composed)
-    }
-
-    /// Look up a full run in the Tier 2 cache (for ligature sequences).
-    #[inline]
-    pub fn get_cached_run(
+    pub fn get(
         &mut self,
         font_id: &usize,
         content: &str,
-    ) -> Option<&CachedContent> {
-        let key = Self::run_cache_key(content, *font_id);
-        if let Some(cache) = self.run_cache.get_mut(font_id) {
-            if let Some(cached_content) = cache.get(&key) {
-                return Some(cached_content);
-            }
+    ) -> Option<&CachedRun> {
+        let key = Self::cache_key(content, *font_id);
+        if let Some(cache) = self.inner.get_mut(font_id) {
+            return cache.get(&key);
         }
         None
     }
@@ -1480,87 +1403,38 @@ impl ShapingCache {
     #[inline]
     pub fn set_content(&mut self, font_id: usize, content: &str) {
         self.font_id = font_id;
-        self.content_hash = Self::run_cache_key(content, font_id);
-        self.current_chars.clear();
-        self.current_chars.extend(content.chars());
+        self.content_hash = Self::cache_key(content, font_id);
     }
 
-    /// Accumulate a shaped glyph cluster (called during shaping).
+    /// Store a pre-packed run in the cache after shaping.
     #[inline]
-    pub fn add_glyph_cluster(&mut self, glyph_cluster: &GlyphCluster) {
-        self.stash.push(glyph_cluster.into());
-    }
-
-    /// Finalize shaping: analyze output and populate the appropriate cache tier.
-    ///
-    /// If the shaped output has a 1:1 mapping (each char → one cluster with one
-    /// glyph, no ligatures), populate Tier 1 (per-character). Otherwise, store
-    /// the whole run in Tier 2.
-    #[inline]
-    pub fn finish(&mut self) {
-        if self.content_hash == 0 || self.stash.is_empty() {
-            self.stash.clear();
-            self.reset_state();
-            return;
-        }
-
-        let char_count = self.current_chars.len();
-        let cluster_count = self.stash.len();
-
-        // Check 1:1 mapping: same number of clusters as characters,
-        // each cluster has exactly one glyph, no ligature components.
-        let is_one_to_one = char_count == cluster_count
-            && self.stash.iter().all(|c| {
-                c.components.is_empty() && c.glyphs.len() == 1
-            });
-
-        if is_one_to_one {
-            // Populate Tier 1 character cache
-            for (ch, cluster) in
-                self.current_chars.drain(..).zip(self.stash.drain(..))
-            {
-                self.char_cache
-                    .entry((ch, self.font_id))
-                    .or_insert(cluster);
-            }
-        } else {
-            // Populate Tier 2 run cache
-            let cached = std::mem::take(&mut self.stash);
-            if let Some(cache) = self.run_cache.get_mut(&self.font_id) {
-                cache.put(self.content_hash, cached);
+    pub fn finish_with_run(&mut self, cached_run: CachedRun) {
+        if self.content_hash != 0 {
+            if let Some(cache) = self.inner.get_mut(&self.font_id) {
+                cache.put(self.content_hash, cached_run);
             } else {
                 let size = if self.font_id == 0 { 512 } else { 256 };
                 let mut cache =
                     LruCache::new(NonZeroUsize::new(size).unwrap());
-                cache.put(self.content_hash, cached);
-                self.run_cache.insert(self.font_id, cache);
+                cache.put(self.content_hash, cached_run);
+                self.inner.insert(self.font_id, cache);
             }
         }
-
-        self.stash.clear();
-        self.reset_state();
+        self.font_id = 0;
+        self.content_hash = 0;
     }
 
-    /// Clear all cache tiers (called when fonts change).
+    /// Clear all caches (called when fonts change).
     pub fn clear(&mut self) {
-        self.char_cache.clear();
-        self.run_cache.clear();
-        self.stash.clear();
-        self.composed.clear();
-        self.reset_state();
+        self.inner.clear();
+        self.font_id = 0;
+        self.content_hash = 0;
         debug!("ShapingCache cleared");
     }
 
+    /// Compute a position-independent cache key from content and font_id.
     #[inline]
-    fn reset_state(&mut self) {
-        self.font_id = 0;
-        self.content_hash = 0;
-        self.current_chars.clear();
-    }
-
-    /// Compute a hash key for the Tier 2 run cache.
-    #[inline]
-    fn run_cache_key(content: &str, font_id: usize) -> u64 {
+    pub fn cache_key(content: &str, font_id: usize) -> u64 {
         let mut hasher = rustc_hash::FxHasher::default();
         content.hash(&mut hasher);
         font_id.hash(&mut hasher);
@@ -1571,7 +1445,7 @@ impl ShapingCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::font_introspector::shape::cluster::Glyph;
+    use crate::font_introspector::shape::cluster::{Glyph, OwnedGlyphCluster};
     use crate::font_introspector::text::cluster::SourceRange;
 
     fn create_test_glyph(id: u16, x: f32, y: f32, advance: f32) -> Glyph {
@@ -1602,87 +1476,59 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_shaping_cache_tier1_ascii() {
-        let mut cache = ShapingCache::new();
-        let font_id = 0;
-
-        // Empty cache: Tier 1 miss
-        assert!(cache.try_compose_from_chars("hello", font_id).is_none());
-
-        // Simulate shaping "hello" — each char produces 1 cluster with 1 glyph
-        cache.set_content(font_id, "hello");
-        for (i, ch) in "hello".chars().enumerate() {
-            let cluster = create_test_cluster(
-                i as u32,
-                i as u32 + 1,
-                create_test_glyph(ch as u16, 0.0, 0.0, 8.0),
-            );
-            cache.stash.push(cluster);
+    fn make_cached_run(glyphs: &[(u16, f32)]) -> CachedRun {
+        use crate::layout::glyph::GlyphData;
+        let glyph_data: Vec<GlyphData> = glyphs
+            .iter()
+            .map(|&(id, advance)| GlyphData::simple(id, advance, 0))
+            .collect();
+        let advance = glyphs.iter().map(|g| g.1).sum();
+        let cache_key = 42; // dummy
+        CachedRun {
+            glyphs: glyph_data,
+            detailed_glyphs: vec![],
+            advance,
+            cache_key,
         }
-        cache.finish();
-
-        // Now Tier 1 should hit for "hello"
-        assert!(cache.try_compose_from_chars("hello", font_id).is_some());
-
-        // And also hit for substrings that share characters
-        assert!(cache.try_compose_from_chars("hell", font_id).is_some());
-        assert!(cache.try_compose_from_chars("lo", font_id).is_some());
-        assert!(cache.try_compose_from_chars("ole", font_id).is_some());
-
-        // Miss for characters not yet cached
-        assert!(cache.try_compose_from_chars("world", font_id).is_none());
     }
 
     #[test]
-    fn test_shaping_cache_tier2_ligatures() {
+    fn test_shaping_cache_hit_and_miss() {
         let mut cache = ShapingCache::new();
         let font_id = 0;
 
-        // Simulate shaping "=>" where 2 chars produce 1 cluster (ligature)
+        // Empty cache: miss
+        assert!(cache.get(&font_id, "hello").is_none());
+
+        // Store a pre-packed run for "hello"
+        cache.set_content(font_id, "hello");
+        cache.finish_with_run(make_cached_run(&[
+            (104, 8.0), (101, 8.0), (108, 8.0), (108, 8.0), (111, 8.0),
+        ]));
+
+        // Same run: hit
+        assert!(cache.get(&font_id, "hello").is_some());
+        assert_eq!(cache.get(&font_id, "hello").unwrap().glyphs.len(), 5);
+
+        // Different run: miss
+        assert!(cache.get(&font_id, "world").is_none());
+
+        // Different font: miss
+        assert!(cache.get(&1, "hello").is_none());
+    }
+
+    #[test]
+    fn test_shaping_cache_ligature_preserved() {
+        let mut cache = ShapingCache::new();
+        let font_id = 0;
+
+        // Store "=>" as a single ligature glyph
         cache.set_content(font_id, "=>");
-        let ligature_cluster = OwnedGlyphCluster {
-            source: SourceRange { start: 0, end: 2 },
-            info: Default::default(),
-            glyphs: vec![create_test_glyph(999, 0.0, 0.0, 16.0)],
-            components: vec![
-                SourceRange { start: 0, end: 1 },
-                SourceRange { start: 1, end: 2 },
-            ],
-            data: Default::default(),
-        };
-        cache.stash.push(ligature_cluster);
-        cache.finish();
+        cache.finish_with_run(make_cached_run(&[(999, 16.0)]));
 
-        // Tier 1 miss (chars not individually cached from this shaping)
-        assert!(cache.try_compose_from_chars("=>", font_id).is_none());
-
-        // Tier 2 hit
-        assert!(cache.get_cached_run(&font_id, "=>").is_some());
-    }
-
-    #[test]
-    fn test_shaping_cache_source_range_adjustment() {
-        let mut cache = ShapingCache::new();
-        let font_id = 0;
-
-        // Cache character 'A'
-        cache.set_content(font_id, "A");
-        cache.stash.push(create_test_cluster(0, 1, create_test_glyph(65, 0.0, 0.0, 8.0)));
-        cache.finish();
-
-        // Cache character 'B'
-        cache.set_content(font_id, "B");
-        cache.stash.push(create_test_cluster(0, 1, create_test_glyph(66, 0.0, 0.0, 8.0)));
-        cache.finish();
-
-        // Compose "AB" — source ranges should be [0,1) and [1,2)
-        let composed = cache.try_compose_from_chars("AB", font_id).unwrap();
-        assert_eq!(composed.len(), 2);
-        assert_eq!(composed[0].source.start, 0);
-        assert_eq!(composed[0].source.end, 1);
-        assert_eq!(composed[1].source.start, 1);
-        assert_eq!(composed[1].source.end, 2);
+        // Should hit and preserve the ligature (1 glyph, not 2)
+        let cached = cache.get(&font_id, "=>").unwrap();
+        assert_eq!(cached.glyphs.len(), 1);
     }
 
     #[test]
@@ -1690,57 +1536,31 @@ mod tests {
         let mut cache = ShapingCache::new();
         let font_id = 0;
 
-        // Populate Tier 1
-        cache.set_content(font_id, "x");
-        cache.stash.push(create_test_cluster(0, 1, create_test_glyph(120, 0.0, 0.0, 8.0)));
-        cache.finish();
+        cache.set_content(font_id, "test");
+        cache.finish_with_run(make_cached_run(&[(1, 8.0)]));
 
-        assert!(cache.try_compose_from_chars("x", font_id).is_some());
-
+        assert!(cache.get(&font_id, "test").is_some());
         cache.clear();
-
-        assert!(cache.try_compose_from_chars("x", font_id).is_none());
+        assert!(cache.get(&font_id, "test").is_none());
     }
 
     #[test]
-    fn test_shaping_cache_run_key_no_collision() {
-        // Verify that run cache keys don't collide for similar words
-        let along_key = ShapingCache::run_cache_key("along", 1);
-        let clone_key = ShapingCache::run_cache_key("clone", 1);
+    fn test_shaping_cache_key_no_collision() {
+        let along_key = ShapingCache::cache_key("along", 1);
+        let clone_key = ShapingCache::cache_key("clone", 1);
         assert_ne!(along_key, clone_key);
 
         // Same content, different font
-        let key_f0 = ShapingCache::run_cache_key("test", 0);
-        let key_f1 = ShapingCache::run_cache_key("test", 1);
-        assert_ne!(key_f0, key_f1);
+        assert_ne!(
+            ShapingCache::cache_key("test", 0),
+            ShapingCache::cache_key("test", 1),
+        );
 
-        // Same content, same font — deterministic
-        let key_a = ShapingCache::run_cache_key("test", 0);
-        let key_b = ShapingCache::run_cache_key("test", 0);
-        assert_eq!(key_a, key_b);
-    }
-
-    #[test]
-    fn test_shaping_cache_char_reuse_across_fragments() {
-        let mut cache = ShapingCache::new();
-        let font_id = 0;
-
-        // Shape "aaabb" — should cache 'a' and 'b' individually
-        cache.set_content(font_id, "aaabb");
-        for (i, ch) in "aaabb".chars().enumerate() {
-            cache.stash.push(create_test_cluster(
-                i as u32,
-                i as u32 + 1,
-                create_test_glyph(ch as u16, 0.0, 0.0, 8.0),
-            ));
-        }
-        cache.finish();
-
-        // Now "aaaabb" should compose entirely from Tier 1 cache
-        // (4 a's + 2 b's — all cached from previous shaping)
-        assert!(cache.try_compose_from_chars("aaaabb", font_id).is_some());
-        assert!(cache.try_compose_from_chars("bba", font_id).is_some());
-        assert!(cache.try_compose_from_chars("abab", font_id).is_some());
+        // Deterministic
+        assert_eq!(
+            ShapingCache::cache_key("test", 0),
+            ShapingCache::cache_key("test", 0),
+        );
     }
 
     #[test]
