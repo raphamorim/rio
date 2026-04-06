@@ -19,7 +19,7 @@ pub use rich_text_render_data::RichTextRenderData;
 
 pub use content::{
     BuilderLine, BuilderState, BuilderStateUpdate, Content, FragmentData, SpanStyle,
-    SpanStyleDecoration, UnderlineInfo, UnderlineShape, WordCache,
+    ShapingCache, SpanStyleDecoration, UnderlineInfo, UnderlineShape,
 };
 pub use content_data::{ContentData, ContentRenderData, ContentState};
 pub use render_data::Run;

@@ -14,7 +14,7 @@ use super::glyph::*;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::Shaper;
 use crate::font_introspector::Metrics;
-use crate::layout::content::{SpanStyleDecoration, WordCache};
+use crate::layout::content::{ShapingCache, SpanStyleDecoration};
 use crate::layout::SpanStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
@@ -92,7 +92,7 @@ impl RenderData {
         size: f32,
         line: u32,
         shaper: Shaper<'_>,
-        shaper_cache: &mut WordCache,
+        shaper_cache: &mut ShapingCache,
     ) {
         // let clusters_start = self.data.clusters.len() as u32;
         let metrics = shaper.metrics();
