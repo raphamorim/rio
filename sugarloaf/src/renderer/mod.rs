@@ -1300,8 +1300,13 @@ impl Renderer {
                                     cached.atlas_layer
                                 );
 
+                                // Clip display size to cell grid boundaries
+                                // so the image never overflows into the next line.
+                                let cw = rte_layout.unwrap().dimensions.width;
+                                let render_w = (cached.width / cw).floor() * cw;
+                                let render_h = (cached.height / line_height).floor() * line_height;
                                 comp.batches.add_image_rect(
-                                    &Rect::new(gx, gy, cached.width, cached.height),
+                                    &Rect::new(gx, gy, render_w, render_h),
                                     depth,
                                     &[1.0, 1.0, 1.0, 1.0],
                                     &[
