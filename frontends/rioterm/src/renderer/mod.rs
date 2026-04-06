@@ -1010,39 +1010,46 @@ impl Renderer {
                 snapshot
             };
 
-            // Rebuild image overlays only when dirty
-            if terminal_snapshot.kitty_graphics_dirty {
+            // Recalculate image overlay positions every frame when placements
+            // exist. Positions depend on display_offset and history_size which
+            // change on scroll and text output (like Ghostty's approach).
+            if !terminal_snapshot.kitty_placements.is_empty() {
                 let line_height = sugarloaf.style().line_height;
                 let content = sugarloaf.content();
                 content.sel(context.rich_text_id);
                 content.clear_image_overlays();
-                if !terminal_snapshot.kitty_placements.is_empty() {
-                    let layout = context.dimension;
-                    let cell_width = layout.dimension.width;
-                    let cell_height = layout.dimension.height * line_height;
-                    let origin_x = panel_rect[0] + grid_scaled_margin.left;
-                    let origin_y = panel_rect[1] + grid_scaled_margin.top;
-                    let history_size = terminal_snapshot.history_size as i64;
-                    let display_offset = terminal_snapshot.display_offset as i64;
-                    let screen_lines = terminal_snapshot.screen_lines as i64;
+                let layout = context.dimension;
+                let cell_width = layout.dimension.width;
+                let cell_height = layout.dimension.height * line_height;
+                let origin_x = panel_rect[0] + grid_scaled_margin.left;
+                let origin_y = panel_rect[1] + grid_scaled_margin.top;
+                let history_size = terminal_snapshot.history_size as i64;
+                let display_offset = terminal_snapshot.display_offset as i64;
+                let screen_lines = terminal_snapshot.screen_lines as i64;
 
-                    for p in &terminal_snapshot.kitty_placements {
-                        let screen_row = p.dest_row - (history_size - display_offset);
-                        if screen_row < 0 || screen_row >= screen_lines {
-                            continue;
-                        }
-                        content.push_image_overlay(
-                            rio_backend::sugarloaf::GraphicOverlay {
-                                image_id: p.image_id,
-                                x: origin_x + p.dest_col as f32 * cell_width,
-                                y: origin_y + screen_row as f32 * cell_height,
-                                width: p.pixel_width as f32,
-                                height: p.pixel_height as f32,
-                                z_index: p.z_index,
-                            },
-                        );
+                for p in &terminal_snapshot.kitty_placements {
+                    let screen_row = p.dest_row - (history_size - display_offset);
+                    let image_bottom_row = screen_row + p.rows as i64;
+                    // Cull only if fully off-screen (like Ghostty)
+                    if image_bottom_row <= 0 || screen_row >= screen_lines {
+                        continue;
                     }
+                    content.push_image_overlay(
+                        rio_backend::sugarloaf::GraphicOverlay {
+                            image_id: p.image_id,
+                            x: origin_x + p.dest_col as f32 * cell_width,
+                            y: origin_y + screen_row as f32 * cell_height,
+                            width: p.pixel_width as f32,
+                            height: p.pixel_height as f32,
+                            z_index: p.z_index,
+                        },
+                    );
                 }
+            } else if terminal_snapshot.kitty_graphics_dirty {
+                // Placements were removed — clear overlays
+                let content = sugarloaf.content();
+                content.sel(context.rich_text_id);
+                content.clear_image_overlays();
             }
 
             // Get hint matches from renderable content
