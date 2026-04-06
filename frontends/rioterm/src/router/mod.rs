@@ -18,8 +18,6 @@ use rio_window::platform::startup_notify::{
 use rio_window::window::{Window, WindowId};
 use routes::{assistant, RoutePath};
 use rustc_hash::FxHashMap;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 // 𜱭𜱭 unicode is not available yet for all OS
@@ -152,7 +150,11 @@ impl Route<'_> {
     }
 
     #[inline]
-    pub fn has_key_wait(&mut self, key_event: &rio_window::event::KeyEvent) -> bool {
+    pub fn has_key_wait(
+        &mut self,
+        key_event: &rio_window::event::KeyEvent,
+        clipboard: &mut Clipboard,
+    ) -> bool {
         use rio_window::event::ElementState;
 
         // Handle island color picker / rename input
@@ -215,7 +217,7 @@ impl Route<'_> {
                                 .renderer
                                 .command_palette
                                 .set_enabled(false);
-                            self.window.screen.execute_palette_action(action);
+                            self.window.screen.execute_palette_action(action, clipboard);
                         }
                         self.window.screen.render();
                     }
@@ -310,7 +312,7 @@ pub struct Router<'a> {
     propagated_report: Option<RioError>,
     pub font_library: Box<rio_backend::sugarloaf::font::FontLibrary>,
     pub config_route: Option<WindowId>,
-    pub clipboard: Rc<RefCell<Clipboard>>,
+    pub clipboard: Clipboard,
     current_tab_id: u64,
 }
 
@@ -330,8 +332,6 @@ impl Router<'_> {
                 level: RioErrorLevel::Warning,
             });
         }
-
-        let clipboard = Rc::new(RefCell::new(clipboard));
 
         Router {
             routes: FxHashMap::default(),
@@ -409,7 +409,6 @@ impl Router<'_> {
             "Rio Settings",
             None,
             None,
-            self.clipboard.clone(),
             None,
         );
         let id = window.winit_window.id();
@@ -473,7 +472,6 @@ impl Router<'_> {
             RIO_TITLE,
             tab_id.as_deref(),
             open_url,
-            self.clipboard.clone(),
             app_id,
         );
         let id = window.winit_window.id();
@@ -510,7 +508,6 @@ impl Router<'_> {
             RIO_TITLE,
             tab_id,
             open_url,
-            self.clipboard.clone(),
             None,
         );
         self.routes.insert(
@@ -627,7 +624,6 @@ impl<'a> RouteWindow<'a> {
         window_name: &str,
         tab_id: Option<&str>,
         open_url: Option<String>,
-        clipboard: Rc<RefCell<Clipboard>>,
         app_id: Option<&str>,
     ) -> RouteWindow<'a> {
         #[allow(unused_mut)]
@@ -654,15 +650,8 @@ impl<'a> RouteWindow<'a> {
             window_id: winit_window.id(),
         };
 
-        let screen = Screen::new(
-            properties,
-            config,
-            event_proxy,
-            font_library,
-            open_url,
-            clipboard,
-        )
-        .expect("Screen not created");
+        let screen = Screen::new(properties, config, event_proxy, font_library, open_url)
+            .expect("Screen not created");
 
         #[cfg(target_os = "windows")]
         {
