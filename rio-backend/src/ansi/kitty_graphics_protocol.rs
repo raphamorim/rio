@@ -757,7 +757,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                         libc::PROT_READ,
                         libc::MAP_SHARED,
                         fd,
-                        cmd.offset as i64,
+                        cmd.offset as libc::off_t,
                     );
 
                     if ptr == libc::MAP_FAILED {
