@@ -355,6 +355,19 @@ impl Renderer {
                     self.create_style(square, term_colors)
                 };
 
+            // Check selection before any early returns so '\0' cells get highlights
+            if let Some(ref range) = selection_range {
+                let pos = Pos::new(line, Column(column));
+                if range.contains(pos) {
+                    style.color = if self.ignore_selection_fg_color {
+                        self.compute_color(&square.fg, square.flags, term_colors)
+                    } else {
+                        self.named_colors.selection_foreground
+                    };
+                    style.background_color = Some(self.named_colors.selection_background);
+                }
+            }
+
             if square_content == '\0' {
                 // Still check for graphics (sixel cells are '\0' with GRAPHICS flag)
                 if square.flags.contains(Flags::GRAPHICS) {
@@ -387,30 +400,23 @@ impl Renderer {
                 }));
             }
 
-            // Check selection more efficiently
-            if let Some(ref range) = selection_range {
-                let pos = Pos::new(line, Column(column));
-                if range.contains(pos) {
-                    style.color = if self.ignore_selection_fg_color {
-                        self.compute_color(&square.fg, square.flags, term_colors)
-                    } else {
-                        self.named_colors.selection_foreground
-                    };
-                    style.background_color = Some(self.named_colors.selection_background);
-                }
-            } else if let Some(matches) = hint_matches {
-                let pos = Pos::new(line, Column(column));
-                if Self::is_position_in_hint_matches(matches, pos) {
-                    let is_focused =
-                        focused_match.as_ref().is_some_and(|fm| fm.contains(&pos));
-                    if is_focused {
-                        style.color = self.named_colors.search_focused_match_foreground;
-                        style.background_color =
-                            Some(self.named_colors.search_focused_match_background);
-                    } else {
-                        style.color = self.named_colors.search_match_foreground;
-                        style.background_color =
-                            Some(self.named_colors.search_match_background);
+            // Check hints (only for non-empty cells, selection already handled above)
+            if selection_range.is_none() {
+                if let Some(matches) = hint_matches {
+                    let pos = Pos::new(line, Column(column));
+                    if Self::is_position_in_hint_matches(matches, pos) {
+                        let is_focused =
+                            focused_match.as_ref().is_some_and(|fm| fm.contains(&pos));
+                        if is_focused {
+                            style.color =
+                                self.named_colors.search_focused_match_foreground;
+                            style.background_color =
+                                Some(self.named_colors.search_focused_match_background);
+                        } else {
+                            style.color = self.named_colors.search_match_foreground;
+                            style.background_color =
+                                Some(self.named_colors.search_match_background);
+                        }
                     }
                 }
             }
