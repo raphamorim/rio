@@ -451,7 +451,7 @@ impl<U: EventListener> Crosswords<U> {
         let alt = Grid::new(rows, cols, 0);
 
         let scroll_region = Line(0)..Line(rows as i32);
-        let semantic_escape_chars = String::from(",│`|:\"' ()[]{}<>\t");
+        let semantic_escape_chars = String::from(",│`|:\"' ()[]{}<>\t\0");
         let term_colors = TermColors::default();
         // Regex used for the default URL hint.
         let _url_regex: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)\

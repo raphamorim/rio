@@ -580,7 +580,7 @@ mod tests {
         assert_eq!(cursor.pos, Pos::new(Line(0), Column(13)));
 
         cursor = cursor.motion(&mut term, ViMotion::SemanticRightEnd);
-        assert_eq!(cursor.pos, Pos::new(Line(0), Column(19)));
+        assert_eq!(cursor.pos, Pos::new(Line(0), Column(15)));
     }
 
     #[test]

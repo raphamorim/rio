@@ -606,7 +606,7 @@ impl<T: event::EventListener> Crosswords<T> {
             point = cell.pos;
 
             if !cell.flags.intersects(wide_spacer)
-                && (cell.c == '\0' || needles.contains(cell.c))
+                && needles.contains(cell.c)
             {
                 return Ok(point);
             }
@@ -632,7 +632,7 @@ impl<T: event::EventListener> Crosswords<T> {
             point = cell.pos;
 
             if !cell.flags.intersects(wide_spacer)
-                && (cell.c == '\0' || needles.contains(cell.c))
+                && needles.contains(cell.c)
             {
                 return Ok(point);
             }
