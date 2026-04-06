@@ -356,6 +356,15 @@ impl Renderer {
                 };
 
             if square_content == '\0' {
+                // Still check for graphics (sixel cells are '\0' with GRAPHICS flag)
+                if square.flags.contains(Flags::GRAPHICS) {
+                    let graphic = &square.graphics().unwrap()[0];
+                    style.media = Some(Graphic {
+                        id: graphic.texture.id,
+                        offset_x: graphic.offset_x,
+                        offset_y: graphic.offset_y,
+                    });
+                }
                 styles_and_chars.push((style, square_content, column));
                 continue;
             }
