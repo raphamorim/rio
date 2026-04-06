@@ -120,9 +120,9 @@ pub struct Window {
     #[serde(default = "Colorspace::default")]
     pub colorspace: Colorspace,
     #[serde(rename = "columns", default = "Option::default")]
-    pub columns: Option<i32>,
+    pub columns: Option<u16>,
     #[serde(rename = "rows", default = "Option::default")]
-    pub rows: Option<i32>,
+    pub rows: Option<u16>,
 }
 
 impl Default for Window {

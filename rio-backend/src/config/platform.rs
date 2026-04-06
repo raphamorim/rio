@@ -77,9 +77,9 @@ pub struct PlatformWindow {
     #[serde(default = "Option::default")]
     pub colorspace: Option<window::Colorspace>,
     #[serde(default = "Option::default", rename = "columns")]
-    pub columns: Option<i32>,
+    pub columns: Option<u16>,
     #[serde(default = "Option::default", rename = "rows")]
-    pub rows: Option<i32>,
+    pub rows: Option<u16>,
 }
 
 /// Platform-specific navigation config with optional fields for selective override
