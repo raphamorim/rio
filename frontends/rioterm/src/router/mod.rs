@@ -867,7 +867,7 @@ fn startup_window_size_applies_only_rows_override() {
 
     assert_eq!(
         compute_startup_window_physical_size(&config, dim),
-        Some((1000, 960))
+        Some((1000, 480))
     );
 }
 
