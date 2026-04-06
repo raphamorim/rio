@@ -385,7 +385,7 @@ pub struct Content {
     pub states: FxHashMap<usize, ContentState>,
     /// Transient text content that gets cleared after each render
     pub transient_texts: Vec<ContentState>,
-    word_cache: WordCache,
+    shaping_cache: ShapingCache,
     selector: Option<usize>,
 }
 
@@ -397,7 +397,7 @@ impl Content {
             scx: ShapeContext::new(),
             states: FxHashMap::default(),
             transient_texts: Vec::new(),
-            word_cache: WordCache::new(),
+            shaping_cache: ShapingCache::new(),
             font_features: vec![],
             selector: None,
         }
@@ -446,7 +446,7 @@ impl Content {
     #[inline]
     pub fn set_font_library(&mut self, font_library: &FontLibrary) {
         self.fonts = font_library.clone();
-        self.word_cache = WordCache::new();
+        self.shaping_cache = ShapingCache::new();
     }
 
     /// Get text state by ID (returns None if ID doesn't exist or is not text)
@@ -678,7 +678,7 @@ impl Content {
                     &self.font_features,
                     &self.fonts,
                     &mut self.scx,
-                    &mut self.word_cache,
+                    &mut self.shaping_cache,
                 );
             }
         }
@@ -922,7 +922,7 @@ impl Content {
             features,
             &self.fonts,
             &mut self.scx,
-            &mut self.word_cache,
+            &mut self.shaping_cache,
         );
     }
 
@@ -935,8 +935,14 @@ impl Content {
         features: &[crate::font_introspector::Setting<u16>],
         fonts: &FontLibrary,
         scx: &mut ShapeContext,
-        word_cache: &mut WordCache,
+        shaping_cache: &mut ShapingCache,
     ) {
+        let line_start = std::time::Instant::now();
+        let mut tier1_hits = 0u32;
+        let mut tier2_hits = 0u32;
+        let mut misses = 0u32;
+        let mut empty_runs = 0u32;
+
         // Process fragments in the line
         let line = &mut text_state.lines[line_number];
 
@@ -971,6 +977,7 @@ impl Content {
                             &metrics,
                         );
                     }
+                    empty_runs += 1;
                     continue;
                 }
             };
@@ -978,23 +985,49 @@ impl Content {
             // Get vars for this fragment
             let vars: Vec<_> = text_state.vars.get(font_vars).to_vec();
 
-            // Check if the shaped text is already in the cache
-            if let Some(cached_content) = word_cache.get_cached_content(&font_id, content)
+            // Tier 1: try to compose from per-character cache
+            if let Some(composed) =
+                shaping_cache.try_compose_from_chars(content, font_id)
             {
-                // Get metrics from FontLibraryData (with caching)
                 if let Some((ascent, descent, leading)) = fonts
                     .inner
                     .write()
                     .get_font_metrics(&font_id, scaled_font_size)
                 {
-                    // Create a minimal font_introspector::Metrics for cached content
                     let metrics = crate::font_introspector::Metrics {
                         ascent,
                         descent,
                         leading,
                         ..Default::default()
                     };
+                    if line.render_data.push_run_without_shaper(
+                        style,
+                        scaled_font_size,
+                        line_number as u32,
+                        composed,
+                        &metrics,
+                    ) {
+                        tier1_hits += 1;
+                        continue;
+                    }
+                }
+            }
 
+            // Tier 2: try run cache (for ligature sequences)
+            if let Some(cached_content) =
+                shaping_cache.get_cached_run(&font_id, content)
+            {
+                if let Some((ascent, descent, leading)) = fonts
+                    .inner
+                    .write()
+                    .get_font_metrics(&font_id, scaled_font_size)
+                {
+                    let metrics = crate::font_introspector::Metrics {
+                        ascent,
+                        descent,
+                        leading,
+                        ..Default::default()
+                    };
                     if line.render_data.push_run_without_shaper(
                         style,
                         scaled_font_size,
@@ -1002,6 +1035,7 @@ impl Content {
                         cached_content,
                         &metrics,
                     ) {
+                        tier2_hits += 1;
                         continue;
                     }
                 } else {
@@ -1009,11 +1043,10 @@ impl Content {
                 }
             }
 
-            // If not in cache, shape the text
-            // Set up cache entry info
-            word_cache.set_content(font_id, content);
+            // Cache miss: shape the text and populate appropriate tier
+            misses += 1;
+            shaping_cache.set_content(font_id, content);
 
-            // Process the font data directly without cloning FontRef
             let font_library = &fonts.inner.read();
             if let Some((shared_data, offset, key)) = font_library.get_data(&font_id) {
                 let font_ref = FontRef {
@@ -1031,15 +1064,30 @@ impl Content {
 
                 shaper.add_str(content);
 
-                // Push run to render data
                 line.render_data.push_run(
                     style,
                     scaled_font_size,
                     line_number as u32,
                     shaper,
-                    word_cache,
+                    shaping_cache,
                 );
             }
+        }
+
+        let elapsed = line_start.elapsed();
+        let total = tier1_hits + tier2_hits + misses;
+        if total > 0 {
+            println!(
+                "[PERF] line {} | {:.1}µs | frags={} t1={} t2={} miss={} empty={} | chars_cached={}",
+                line_number,
+                elapsed.as_secs_f64() * 1_000_000.0,
+                line.fragments.len(),
+                tier1_hits,
+                tier2_hits,
+                misses,
+                empty_runs,
+                shaping_cache.char_cache.len(),
+            );
         }
     }
 
@@ -1345,92 +1393,178 @@ impl Content {
 }
 
 #[derive(Default)]
-pub struct WordCache {
-    pub inner: FxHashMap<usize, LruCache<u64, CachedContent>>,
+/// Two-tier shaping cache inspired by Chrome's CachingWordShaper.
+///
+/// **Tier 1 (Character Cache):** Caches shaped results per individual character.
+/// For monospace terminal fonts, most characters shape independently — same glyph
+/// output regardless of neighbors. This gives maximum reuse: any character appearing
+/// anywhere in the terminal shares one shaped result.
+///
+/// **Tier 2 (Run Cache):** LRU cache for multi-character runs where ligatures
+/// were detected (e.g., `=>`, `->`, `!=`). Falls back here when Tier 1 can't
+/// compose the result (N:1 char-to-glyph mappings).
+pub struct ShapingCache {
+    /// Tier 1: per-character cache keyed by (char, font_id)
+    char_cache: FxHashMap<(char, usize), OwnedGlyphCluster>,
+    /// Tier 2: run cache for ligature sequences (LRU per font_id)
+    run_cache: FxHashMap<usize, LruCache<u64, CachedContent>>,
+    /// Temporary stash for clusters during active shaping
     stash: Vec<OwnedGlyphCluster>,
+    /// Reusable scratch buffer for composing Tier 1 results
+    composed: Vec<OwnedGlyphCluster>,
+    /// Current shaping context
     font_id: usize,
     content_hash: u64,
-    // Track current content being processed
-    current_content: Option<String>,
+    /// Characters of the content being shaped (for 1:1 detection in finish)
+    current_chars: Vec<char>,
 }
 
-impl WordCache {
+impl ShapingCache {
     pub fn new() -> Self {
-        WordCache {
-            inner: FxHashMap::default(),
-            stash: Vec::with_capacity(64), // Pre-allocate stash capacity
+        ShapingCache {
+            char_cache: FxHashMap::default(),
+            run_cache: FxHashMap::default(),
+            stash: Vec::with_capacity(64),
+            composed: Vec::with_capacity(64),
             font_id: 0,
             content_hash: 0,
-            current_content: None,
+            current_chars: Vec::new(),
         }
     }
 
-    /// Generate a hash-based cache key from content and font_id
-    /// Uses direct string hashing to avoid hash collisions from string interning
+    /// Try to compose a full fragment from per-character cache entries (Tier 1).
+    /// Returns `Some` if ALL characters have cached entries, `None` otherwise.
     #[inline]
-    pub fn cache_key_with_interning(&mut self, content: &str, font_id: usize) -> u64 {
-        let mut hasher = rustc_hash::FxHasher::default();
-        // Hash the actual string content directly to avoid atom hash collisions
-        content.hash(&mut hasher);
-        font_id.hash(&mut hasher);
-        hasher.finish()
+    pub fn try_compose_from_chars(
+        &mut self,
+        content: &str,
+        font_id: usize,
+    ) -> Option<&Vec<OwnedGlyphCluster>> {
+        self.composed.clear();
+        let mut byte_offset = 0u32;
+
+        for ch in content.chars() {
+            let len = ch.len_utf8() as u32;
+            let cached = self.char_cache.get(&(ch, font_id))?;
+
+            let mut cluster = cached.clone();
+            // Rewrite source range to match position in this fragment
+            cluster.source = crate::font_introspector::text::cluster::SourceRange {
+                start: byte_offset,
+                end: byte_offset + len,
+            };
+            self.composed.push(cluster);
+            byte_offset += len;
+        }
+
+        Some(&self.composed)
     }
 
-    /// Get cached content
+    /// Look up a full run in the Tier 2 cache (for ligature sequences).
     #[inline]
-    pub fn get_cached_content(
+    pub fn get_cached_run(
         &mut self,
         font_id: &usize,
         content: &str,
     ) -> Option<&CachedContent> {
-        let key = self.cache_key_with_interning(content, *font_id);
-        if let Some(cache) = self.inner.get_mut(font_id) {
+        let key = Self::run_cache_key(content, *font_id);
+        if let Some(cache) = self.run_cache.get_mut(font_id) {
             if let Some(cached_content) = cache.get(&key) {
                 return Some(cached_content);
             }
         }
-
         None
     }
 
+    /// Record which content is about to be shaped (called before shaping).
+    #[inline]
+    pub fn set_content(&mut self, font_id: usize, content: &str) {
+        self.font_id = font_id;
+        self.content_hash = Self::run_cache_key(content, font_id);
+        self.current_chars.clear();
+        self.current_chars.extend(content.chars());
+    }
+
+    /// Accumulate a shaped glyph cluster (called during shaping).
     #[inline]
     pub fn add_glyph_cluster(&mut self, glyph_cluster: &GlyphCluster) {
         self.stash.push(glyph_cluster.into());
     }
 
+    /// Finalize shaping: analyze output and populate the appropriate cache tier.
+    ///
+    /// If the shaped output has a 1:1 mapping (each char → one cluster with one
+    /// glyph, no ligatures), populate Tier 1 (per-character). Otherwise, store
+    /// the whole run in Tier 2.
     #[inline]
-    pub fn set_content(&mut self, font_id: usize, content: &str) {
-        self.font_id = font_id;
-        self.content_hash = self.cache_key_with_interning(content, font_id);
-        self.current_content = Some(content.to_string());
+    pub fn finish(&mut self) {
+        if self.content_hash == 0 || self.stash.is_empty() {
+            self.stash.clear();
+            self.reset_state();
+            return;
+        }
+
+        let char_count = self.current_chars.len();
+        let cluster_count = self.stash.len();
+
+        // Check 1:1 mapping: same number of clusters as characters,
+        // each cluster has exactly one glyph, no ligature components.
+        let is_one_to_one = char_count == cluster_count
+            && self.stash.iter().all(|c| {
+                c.components.is_empty() && c.glyphs.len() == 1
+            });
+
+        if is_one_to_one {
+            // Populate Tier 1 character cache
+            for (ch, cluster) in
+                self.current_chars.drain(..).zip(self.stash.drain(..))
+            {
+                self.char_cache
+                    .entry((ch, self.font_id))
+                    .or_insert(cluster);
+            }
+        } else {
+            // Populate Tier 2 run cache
+            let cached = std::mem::take(&mut self.stash);
+            if let Some(cache) = self.run_cache.get_mut(&self.font_id) {
+                cache.put(self.content_hash, cached);
+            } else {
+                let size = if self.font_id == 0 { 512 } else { 256 };
+                let mut cache =
+                    LruCache::new(NonZeroUsize::new(size).unwrap());
+                cache.put(self.content_hash, cached);
+                self.run_cache.insert(self.font_id, cache);
+            }
+        }
+
+        self.stash.clear();
+        self.reset_state();
+    }
+
+    /// Clear all cache tiers (called when fonts change).
+    pub fn clear(&mut self) {
+        self.char_cache.clear();
+        self.run_cache.clear();
+        self.stash.clear();
+        self.composed.clear();
+        self.reset_state();
+        debug!("ShapingCache cleared");
     }
 
     #[inline]
-    pub fn finish(&mut self) {
-        if self.content_hash != 0 && !self.stash.is_empty() {
-            let cached_content: CachedContent = std::mem::take(&mut self.stash);
-
-            // Store in cache
-            if let Some(cache) = self.inner.get_mut(&self.font_id) {
-                cache.put(self.content_hash, cached_content);
-            } else {
-                // If font id is main
-                let size = if self.font_id == 0 { 512 } else { 256 };
-                let mut cache = LruCache::new(NonZeroUsize::new(size).unwrap());
-                debug!("WordCache creating new cache for font_id={}", self.font_id);
-                cache.put(self.content_hash, cached_content);
-                self.inner.insert(self.font_id, cache);
-            }
-
-            self.font_id = 0;
-            self.content_hash = 0;
-            self.current_content = None;
-            return;
-        }
-        self.stash.clear();
+    fn reset_state(&mut self) {
         self.font_id = 0;
         self.content_hash = 0;
-        self.current_content = None;
+        self.current_chars.clear();
+    }
+
+    /// Compute a hash key for the Tier 2 run cache.
+    #[inline]
+    fn run_cache_key(content: &str, font_id: usize) -> u64 {
+        let mut hasher = rustc_hash::FxHasher::default();
+        content.hash(&mut hasher);
+        font_id.hash(&mut hasher);
+        hasher.finish()
     }
 }
 
@@ -1469,172 +1603,144 @@ mod tests {
     }
 
     #[test]
-    fn test_word_cache_fx_hasher_functionality() {
-        let mut cache = WordCache::new();
+    fn test_shaping_cache_tier1_ascii() {
+        let mut cache = ShapingCache::new();
         let font_id = 0;
 
-        // Test 1: Cache key generation functionality (tests FxHasher)
-        let mut keys = Vec::new();
-        for i in 0..100 {
-            let content = format!("test_word_{}", i);
-            let key = cache.cache_key_with_interning(&content, font_id);
-            keys.push(key);
+        // Empty cache: Tier 1 miss
+        assert!(cache.try_compose_from_chars("hello", font_id).is_none());
+
+        // Simulate shaping "hello" — each char produces 1 cluster with 1 glyph
+        cache.set_content(font_id, "hello");
+        for (i, ch) in "hello".chars().enumerate() {
+            let cluster = create_test_cluster(
+                i as u32,
+                i as u32 + 1,
+                create_test_glyph(ch as u16, 0.0, 0.0, 8.0),
+            );
+            cache.stash.push(cluster);
         }
+        cache.finish();
 
-        // Verify all keys are unique (no hash collisions for different content)
-        let mut unique_keys = keys.clone();
-        unique_keys.sort();
-        unique_keys.dedup();
-        assert_eq!(keys.len(), unique_keys.len(), "Hash collisions detected");
+        // Now Tier 1 should hit for "hello"
+        assert!(cache.try_compose_from_chars("hello", font_id).is_some());
 
-        // Test 2: Cache lookup functionality (misses)
-        let mut miss_count = 0;
-        for i in 0..100 {
-            let content = format!("test_word_{}", i);
-            if cache.get_cached_content(&font_id, &content).is_none() {
-                miss_count += 1;
-            }
-        }
+        // And also hit for substrings that share characters
+        assert!(cache.try_compose_from_chars("hell", font_id).is_some());
+        assert!(cache.try_compose_from_chars("lo", font_id).is_some());
+        assert!(cache.try_compose_from_chars("ole", font_id).is_some());
 
-        assert_eq!(
-            miss_count, 100,
-            "Expected all cache misses, got {} misses out of 100",
-            miss_count
-        );
-
-        // Test 3: Hash consistency for repeated content
-        let content1 = "repeated_content".to_string();
-        let content2 = "repeated_content".to_string();
-
-        let key1 = cache.cache_key_with_interning(&content1, font_id);
-        let key2 = cache.cache_key_with_interning(&content2, font_id);
-
-        // Same content should produce same hash key
-        assert_eq!(key1, key2, "Same content should produce same hash key");
-
-        // Test 4: Hash consistency
-        let content = "test_content";
-        let key1 = cache.cache_key_with_interning(content, font_id);
-        let key2 = cache.cache_key_with_interning(content, font_id);
-
-        assert_eq!(key1, key2, "Same content should produce same hash");
-
-        // Different font_id should produce different hash
-        let key3 = cache.cache_key_with_interning(content, font_id + 1);
-        assert_ne!(
-            key1, key3,
-            "Different font_id should produce different hash"
-        );
-
-        // Different content should produce different hash
-        let key4 = cache.cache_key_with_interning("different_content", font_id);
-        assert_ne!(
-            key1, key4,
-            "Different content should produce different hash"
-        );
+        // Miss for characters not yet cached
+        assert!(cache.try_compose_from_chars("world", font_id).is_none());
     }
 
     #[test]
-    fn test_hash_collision_along_clone() {
-        let mut cache = WordCache::new();
-        let font_id = 1;
+    fn test_shaping_cache_tier2_ligatures() {
+        let mut cache = ShapingCache::new();
+        let font_id = 0;
 
-        // Test the specific case reported: "along" vs "clone"
-        let along_key = cache.cache_key_with_interning("along", font_id);
-        let clone_key = cache.cache_key_with_interning("clone", font_id);
+        // Simulate shaping "=>" where 2 chars produce 1 cluster (ligature)
+        cache.set_content(font_id, "=>");
+        let ligature_cluster = OwnedGlyphCluster {
+            source: SourceRange { start: 0, end: 2 },
+            info: Default::default(),
+            glyphs: vec![create_test_glyph(999, 0.0, 0.0, 16.0)],
+            components: vec![
+                SourceRange { start: 0, end: 1 },
+                SourceRange { start: 1, end: 2 },
+            ],
+            data: Default::default(),
+        };
+        cache.stash.push(ligature_cluster);
+        cache.finish();
 
-        assert_ne!(
-            along_key, clone_key,
-            "Hash collision detected: 'along' and 'clone' produce same hash key! along_key={}, clone_key={}",
-            along_key, clone_key
-        );
+        // Tier 1 miss (chars not individually cached from this shaping)
+        assert!(cache.try_compose_from_chars("=>", font_id).is_none());
 
-        // Test other similar words that might collide
-        let test_words = [
-            "along", "clone", "alone", "close", "clown", "blown", "flown", "grown",
-            "shown", "known", "stone", "phone", "drone", "prone", "throne",
-        ];
+        // Tier 2 hit
+        assert!(cache.get_cached_run(&font_id, "=>").is_some());
+    }
 
-        let mut keys = std::collections::HashMap::new();
-        for word in &test_words {
-            let key = cache.cache_key_with_interning(word, font_id);
-            if let Some(existing_word) = keys.get(&key) {
-                panic!(
-                    "Hash collision detected: '{}' and '{}' produce same hash key {}",
-                    word, existing_word, key
-                );
-            }
-            keys.insert(key, word);
+    #[test]
+    fn test_shaping_cache_source_range_adjustment() {
+        let mut cache = ShapingCache::new();
+        let font_id = 0;
+
+        // Cache character 'A'
+        cache.set_content(font_id, "A");
+        cache.stash.push(create_test_cluster(0, 1, create_test_glyph(65, 0.0, 0.0, 8.0)));
+        cache.finish();
+
+        // Cache character 'B'
+        cache.set_content(font_id, "B");
+        cache.stash.push(create_test_cluster(0, 1, create_test_glyph(66, 0.0, 0.0, 8.0)));
+        cache.finish();
+
+        // Compose "AB" — source ranges should be [0,1) and [1,2)
+        let composed = cache.try_compose_from_chars("AB", font_id).unwrap();
+        assert_eq!(composed.len(), 2);
+        assert_eq!(composed[0].source.start, 0);
+        assert_eq!(composed[0].source.end, 1);
+        assert_eq!(composed[1].source.start, 1);
+        assert_eq!(composed[1].source.end, 2);
+    }
+
+    #[test]
+    fn test_shaping_cache_clear() {
+        let mut cache = ShapingCache::new();
+        let font_id = 0;
+
+        // Populate Tier 1
+        cache.set_content(font_id, "x");
+        cache.stash.push(create_test_cluster(0, 1, create_test_glyph(120, 0.0, 0.0, 8.0)));
+        cache.finish();
+
+        assert!(cache.try_compose_from_chars("x", font_id).is_some());
+
+        cache.clear();
+
+        assert!(cache.try_compose_from_chars("x", font_id).is_none());
+    }
+
+    #[test]
+    fn test_shaping_cache_run_key_no_collision() {
+        // Verify that run cache keys don't collide for similar words
+        let along_key = ShapingCache::run_cache_key("along", 1);
+        let clone_key = ShapingCache::run_cache_key("clone", 1);
+        assert_ne!(along_key, clone_key);
+
+        // Same content, different font
+        let key_f0 = ShapingCache::run_cache_key("test", 0);
+        let key_f1 = ShapingCache::run_cache_key("test", 1);
+        assert_ne!(key_f0, key_f1);
+
+        // Same content, same font — deterministic
+        let key_a = ShapingCache::run_cache_key("test", 0);
+        let key_b = ShapingCache::run_cache_key("test", 0);
+        assert_eq!(key_a, key_b);
+    }
+
+    #[test]
+    fn test_shaping_cache_char_reuse_across_fragments() {
+        let mut cache = ShapingCache::new();
+        let font_id = 0;
+
+        // Shape "aaabb" — should cache 'a' and 'b' individually
+        cache.set_content(font_id, "aaabb");
+        for (i, ch) in "aaabb".chars().enumerate() {
+            cache.stash.push(create_test_cluster(
+                i as u32,
+                i as u32 + 1,
+                create_test_glyph(ch as u16, 0.0, 0.0, 8.0),
+            ));
         }
-    }
+        cache.finish();
 
-    #[test]
-    fn test_string_interning_isolation() {
-        let mut cache = WordCache::new();
-
-        // Test that cache keys are different for different content
-        let content1 = "along";
-        let content2 = "clone";
-
-        // Test that cache keys (which now use direct string hashing) are different
-        let key1 = cache.cache_key_with_interning(content1, 1);
-        let key2 = cache.cache_key_with_interning(content2, 1);
-
-        assert_ne!(key1, key2,
-            "Cache keys should be different for 'along' and 'clone' after fix. key1={}, key2={}",
-            key1, key2);
-
-        // Test that same content produces same key
-        let key1_again = cache.cache_key_with_interning(content1, 1);
-        let key2_again = cache.cache_key_with_interning(content2, 1);
-
-        assert_eq!(
-            key1, key1_again,
-            "Same content should produce same cache key"
-        );
-        assert_eq!(
-            key2, key2_again,
-            "Same content should produce same cache key"
-        );
-    }
-
-    #[test]
-    fn test_cache_content_isolation() {
-        let mut cache = WordCache::new();
-        let font_id = 1;
-
-        // Test that cache keys are different for "along" and "clone"
-        let along_key = cache.cache_key_with_interning("along", font_id);
-        let clone_key = cache.cache_key_with_interning("clone", font_id);
-
-        // Verify keys are different (no collision)
-        assert_ne!(along_key, clone_key,
-            "Cache keys should be different for 'along' and 'clone'. along_key={}, clone_key={}",
-            along_key, clone_key);
-
-        // Test that cache lookup returns None for non-existent entries
-        assert!(
-            cache.get_cached_content(&font_id, "along").is_none(),
-            "Cache should be empty initially for 'along'"
-        );
-        assert!(
-            cache.get_cached_content(&font_id, "clone").is_none(),
-            "Cache should be empty initially for 'clone'"
-        );
-
-        // Test that different content produces different cache behavior
-        cache.set_content(font_id, "along");
-        let along_hash = cache.content_hash;
-        cache.finish(); // Reset state
-
-        cache.set_content(font_id, "clone");
-        let clone_hash = cache.content_hash;
-        cache.finish(); // Reset state
-
-        assert_ne!(
-            along_hash, clone_hash,
-            "Content hashes should be different for 'along' and 'clone'"
-        );
+        // Now "aaaabb" should compose entirely from Tier 1 cache
+        // (4 a's + 2 b's — all cached from previous shaping)
+        assert!(cache.try_compose_from_chars("aaaabb", font_id).is_some());
+        assert!(cache.try_compose_from_chars("bba", font_id).is_some());
+        assert!(cache.try_compose_from_chars("abab", font_id).is_some());
     }
 
     #[test]
