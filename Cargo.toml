@@ -13,7 +13,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -29,16 +29,16 @@ readme = "README.md"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-teletypewriter = { path = "teletypewriter", version = "0.3.0" }
-rio-backend = { path = "rio-backend", version = "0.3.0" }
-rio-window = { path = "rio-window", version = "0.3.0", default-features = false }
-rio-notifier = { path = "rio-notifier", version = "0.3.0" }
-sugarloaf = { path = "sugarloaf", version = "0.3.0" }
+teletypewriter = { path = "teletypewriter", version = "0.3.1" }
+rio-backend = { path = "rio-backend", version = "0.3.1" }
+rio-window = { path = "rio-window", version = "0.3.1", default-features = false }
+rio-notifier = { path = "rio-notifier", version = "0.3.1" }
+sugarloaf = { path = "sugarloaf", version = "0.3.1" }
 
 # Own dependencies
-copa = { path = "copa", default-features = true, version = "0.3.0" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.3.0" }
-corcovado = { path = "corcovado", version = "0.3.0" }
+copa = { path = "copa", default-features = true, version = "0.3.1" }
+rio-proc-macros = { path = "rio-proc-macros", version = "0.3.1" }
+corcovado = { path = "corcovado", version = "0.3.1" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.4", features = [
     "nightly",
@@ -60,7 +60,7 @@ image_rs = { package = "image", version = "0.25.5", default-features = false, fe
     "bmp",
 ] }
 regex = "1.11.1"
-bytemuck = { version = "1.23.1", features = ["derive"] }
+bytemuck = { version = "1.25.0", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
 wgpu = "28.0.0"
 libc = "0.2.174"

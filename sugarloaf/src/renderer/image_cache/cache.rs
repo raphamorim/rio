@@ -290,7 +290,7 @@ impl ImageCache {
             return ImageId::new(entry_index as u32, request.has_alpha);
         }
 
-        // Handle color atlases (multiple atlases, Ghostty-style)
+        // Handle color atlases (multiple atlases)
         // Try all existing color atlases first
         for (atlas_index, atlas_with_texture) in self.color_atlases.iter_mut().enumerate()
         {

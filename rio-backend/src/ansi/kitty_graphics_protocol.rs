@@ -69,8 +69,10 @@ enum Action {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Format {
-    Rgb24,
-    Rgba32,
+    Gray,      // 1 byte per pixel
+    GrayAlpha, // 2 bytes per pixel
+    Rgb24,     // 3 bytes per pixel
+    Rgba32,    // 4 bytes per pixel
     Png,
 }
 
@@ -546,6 +548,8 @@ fn parse_action(value: &str) -> Action {
 
 fn parse_format(value: &str) -> Format {
     match value {
+        "8" => Format::Gray,
+        "16" => Format::GrayAlpha,
         "24" => Format::Rgb24,
         "32" => Format::Rgba32,
         "100" => Format::Png,
@@ -931,7 +935,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             let is_opaque = pixels.chunks(4).all(|chunk| chunk[3] == 255);
 
             // Create resize command if columns/rows specified
+            // When both c= and r= are given, stretch to fill (no aspect ratio).
+            // When only one is given, compute the other preserving aspect ratio.
             let resize = if cmd.columns > 0 || cmd.rows > 0 {
+                let both_specified = cmd.columns > 0 && cmd.rows > 0;
                 Some(ResizeCommand {
                     width: if cmd.columns > 0 {
                         ResizeParameter::Cells(cmd.columns)
@@ -943,7 +950,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     } else {
                         ResizeParameter::Auto
                     },
-                    preserve_aspect_ratio: true,
+                    preserve_aspect_ratio: !both_specified,
                 })
             } else {
                 None
@@ -959,21 +966,24 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 resize,
                 display_width: None,
                 display_height: None,
+                transmit_time: std::time::Instant::now(),
             })
         }
-        Format::Rgb24 | Format::Rgba32 => {
+        Format::Gray | Format::GrayAlpha | Format::Rgb24 | Format::Rgba32 => {
             let bytes_per_pixel = match cmd.format {
+                Format::Gray => 1,
+                Format::GrayAlpha => 2,
                 Format::Rgb24 => 3,
                 Format::Rgba32 => 4,
                 _ => unreachable!(),
             };
 
-            // Validate data size - for shared memory, we may have more data than needed due to padding
+            // Validate data size
             let expected_size =
                 cmd.width as usize * cmd.height as usize * bytes_per_pixel;
             if pixel_data.len() < expected_size {
                 debug!(
-                    "RGB/RGBA data size insufficient: got {} bytes, expected at least {}",
+                    "Pixel data size insufficient: got {} bytes, expected at least {}",
                     pixel_data.len(),
                     expected_size
                 );
@@ -982,41 +992,59 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
 
             // Truncate to expected size if we have extra data (e.g., from shared memory padding)
             let pixel_data = if pixel_data.len() > expected_size {
-                debug!(
-                    "RGB/RGBA data has padding: got {} bytes, using first {} bytes",
-                    pixel_data.len(),
-                    expected_size
-                );
                 pixel_data[..expected_size].to_vec()
             } else {
                 pixel_data
             };
 
-            // Convert RGB24 to RGBA32 if needed (sugarloaf only supports RGBA)
-            let (pixels, is_opaque) = if cmd.format == Format::Rgb24 {
-                // Convert RGB to RGBA by adding alpha=255
-                let mut rgba_pixels =
-                    Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
-                for chunk in pixel_data.chunks_exact(3) {
-                    rgba_pixels.push(chunk[0]); // R
-                    rgba_pixels.push(chunk[1]); // G
-                    rgba_pixels.push(chunk[2]); // B
-                    rgba_pixels.push(255); // A (opaque)
+            // Convert all formats to RGBA (GPU only supports RGBA)
+            let (pixels, is_opaque) = match cmd.format {
+                Format::Gray => {
+                    // 1 bpp: R=G=B=gray, A=255
+                    let mut rgba =
+                        Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
+                    for &g in &pixel_data {
+                        rgba.extend_from_slice(&[g, g, g, 255]);
+                    }
+                    (rgba, true)
                 }
-                debug!(
-                    "Converted RGB24 to RGBA32: {} -> {} bytes",
-                    pixel_data.len(),
-                    rgba_pixels.len()
-                );
-                (rgba_pixels, true) // RGB is always opaque
-            } else {
-                // Already RGBA
-                let is_opaque = pixel_data.chunks(4).all(|chunk| chunk[3] == 255);
-                (pixel_data, is_opaque)
+                Format::GrayAlpha => {
+                    // 2 bpp: R=G=B=gray, A=alpha
+                    let mut rgba =
+                        Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
+                    let mut opaque = true;
+                    for chunk in pixel_data.chunks_exact(2) {
+                        let g = chunk[0];
+                        let a = chunk[1];
+                        if a != 255 {
+                            opaque = false;
+                        }
+                        rgba.extend_from_slice(&[g, g, g, a]);
+                    }
+                    (rgba, opaque)
+                }
+                Format::Rgb24 => {
+                    // 3 bpp: add A=255
+                    let mut rgba =
+                        Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
+                    for chunk in pixel_data.chunks_exact(3) {
+                        rgba.extend_from_slice(&[chunk[0], chunk[1], chunk[2], 255]);
+                    }
+                    (rgba, true)
+                }
+                Format::Rgba32 => {
+                    // Already RGBA
+                    let is_opaque = pixel_data.chunks(4).all(|chunk| chunk[3] == 255);
+                    (pixel_data, is_opaque)
+                }
+                _ => unreachable!(),
             };
 
             // Create resize command if columns/rows specified
+            // When both c= and r= are given, stretch to fill (no aspect ratio).
+            // When only one is given, compute the other preserving aspect ratio.
             let resize = if cmd.columns > 0 || cmd.rows > 0 {
+                let both_specified = cmd.columns > 0 && cmd.rows > 0;
                 Some(ResizeCommand {
                     width: if cmd.columns > 0 {
                         ResizeParameter::Cells(cmd.columns)
@@ -1028,7 +1056,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     } else {
                         ResizeParameter::Auto
                     },
-                    preserve_aspect_ratio: true,
+                    preserve_aspect_ratio: !both_specified,
                 })
             } else {
                 None
@@ -1044,6 +1072,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 resize,
                 display_width: None,
                 display_height: None,
+                transmit_time: std::time::Instant::now(),
             })
         }
     }

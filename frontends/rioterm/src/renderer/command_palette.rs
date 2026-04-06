@@ -4,38 +4,40 @@
 // LICENSE file in the root directory of this source tree.
 
 use crate::context::next_rich_text_id;
+use crate::renderer::font_cache::FontCache;
+use crate::renderer::utils::add_span_with_fallback;
+use rio_backend::sugarloaf::font::FontLibrary;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 use std::time::Instant;
 
 // Layout
-const PALETTE_WIDTH: f32 = 520.0;
-const PALETTE_CORNER_RADIUS: f32 = 10.0;
+const PALETTE_WIDTH: f32 = 480.0;
+const PALETTE_CORNER_RADIUS: f32 = 8.0;
 const PALETTE_MARGIN_TOP: f32 = 80.0;
-const PALETTE_PADDING: f32 = 6.0;
+const PALETTE_PADDING: f32 = 4.0;
 
-const INPUT_HEIGHT: f32 = 36.0;
+const INPUT_HEIGHT: f32 = 40.0;
 const INPUT_FONT_SIZE: f32 = 14.0;
-const INPUT_PADDING_X: f32 = 10.0;
+const INPUT_PADDING_X: f32 = 14.0;
 
-const RESULT_ITEM_HEIGHT: f32 = 28.0;
+const RESULT_ITEM_HEIGHT: f32 = 32.0;
 const RESULT_FONT_SIZE: f32 = 13.0;
 const SHORTCUT_FONT_SIZE: f32 = 11.0;
 const MAX_VISIBLE_RESULTS: usize = 8;
 
 const SEPARATOR_HEIGHT: f32 = 1.0;
-const RESULTS_MARGIN_TOP: f32 = 4.0;
-const CARET_WIDTH: f32 = 2.0;
+const RESULTS_MARGIN_TOP: f32 = 2.0;
+const CARET_WIDTH: f32 = 1.5;
 const CARET_BLINK_MS: u128 = 500;
 
-// Colors
-const BACKDROP_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.35];
-const BG_COLOR: [f32; 4] = [0.12, 0.12, 0.12, 0.98];
-const INPUT_BG_COLOR: [f32; 4] = [0.16, 0.16, 0.16, 1.0];
-const SELECTED_BG_COLOR: [f32; 4] = [0.22, 0.22, 0.25, 1.0];
-const TEXT_COLOR: [f32; 4] = [0.93, 0.93, 0.93, 1.0];
-const DIM_TEXT_COLOR: [f32; 4] = [0.50, 0.50, 0.50, 1.0];
-const SHORTCUT_TEXT_COLOR: [f32; 4] = [0.40, 0.40, 0.45, 1.0];
-const SEPARATOR_COLOR: [f32; 4] = [0.25, 0.25, 0.25, 1.0];
+// Colors — dark minimalist
+const BACKDROP_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.50];
+const BG_COLOR: [f32; 4] = [0.08, 0.08, 0.08, 0.98];
+const SELECTED_BG_COLOR: [f32; 4] = [0.15, 0.15, 0.15, 1.0];
+const TEXT_COLOR: [f32; 4] = [0.85, 0.85, 0.85, 1.0];
+const DIM_TEXT_COLOR: [f32; 4] = [0.35, 0.35, 0.35, 1.0];
+const SHORTCUT_TEXT_COLOR: [f32; 4] = [0.30, 0.30, 0.32, 1.0];
+const SEPARATOR_COLOR: [f32; 4] = [0.15, 0.15, 0.15, 1.0];
 
 // Depth / order
 const DEPTH_BACKDROP: f32 = 0.0;
@@ -469,7 +471,13 @@ impl CommandPalette {
         }
     }
 
-    pub fn render(&mut self, sugarloaf: &mut Sugarloaf, dimensions: (f32, f32, f32)) {
+    pub fn render(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        dimensions: (f32, f32, f32),
+        font_library: &FontLibrary,
+        font_cache: &mut FontCache,
+    ) {
         if !self.enabled {
             self.hide_all_text_ids(sugarloaf);
             return;
@@ -509,21 +517,7 @@ impl CommandPalette {
         let input_y = palette_y + PALETTE_PADDING;
         let input_width = palette_width - PALETTE_PADDING * 2.0;
 
-        // Input bg: top corners rounded, bottom corners flat (meets separator)
-        sugarloaf.quad(
-            None,
-            input_x,
-            input_y,
-            input_width,
-            INPUT_HEIGHT,
-            INPUT_BG_COLOR,
-            [8.0, 8.0, 0.0, 0.0], // top-left, top-right, bottom-right, bottom-left
-            [0.0; 4],
-            [0.0; 4],
-            0,
-            DEPTH_ELEMENT,
-            ORDER,
-        );
+        // No separate input background — blends with palette bg for minimalism
 
         let input_id = self.input_text_id.unwrap();
         let display_text = if self.query.is_empty() {
@@ -537,19 +531,20 @@ impl CommandPalette {
             TEXT_COLOR
         };
 
+        let input_style = SpanStyle {
+            color: text_color,
+            ..SpanStyle::default()
+        };
         let content = sugarloaf.content();
-        content
-            .sel(input_id)
-            .clear()
-            .new_line()
-            .add_span(
-                display_text,
-                SpanStyle {
-                    color: text_color,
-                    ..SpanStyle::default()
-                },
-            )
-            .build();
+        let builder = content.sel(input_id).clear().new_line();
+        add_span_with_fallback(
+            builder,
+            display_text,
+            input_style,
+            font_library,
+            font_cache,
+        );
+        builder.build();
 
         let text_x = input_x + INPUT_PADDING_X;
         let text_y = input_y + (INPUT_HEIGHT - INPUT_FONT_SIZE) / 2.0;
@@ -567,14 +562,15 @@ impl CommandPalette {
             };
 
             let caret_x = text_x + text_width;
-            let caret_y = input_y + (INPUT_HEIGHT - INPUT_FONT_SIZE) / 2.0 + 2.0;
+            let caret_height = INPUT_FONT_SIZE + 4.0;
+            let caret_y = input_y + (INPUT_HEIGHT - caret_height) / 2.0 + 2.0;
 
             sugarloaf.rect(
                 None,
                 caret_x,
                 caret_y,
                 CARET_WIDTH,
-                INPUT_FONT_SIZE,
+                caret_height,
                 TEXT_COLOR,
                 DEPTH_ELEMENT,
                 ORDER,
@@ -621,29 +617,30 @@ impl CommandPalette {
                     RESULT_ITEM_HEIGHT,
                     SELECTED_BG_COLOR,
                     DEPTH_ELEMENT,
-                    6.0,
+                    4.0,
                     ORDER,
                 );
             }
 
             let result_id = self.result_text_ids[display_i];
+            let result_style = SpanStyle {
+                color: if is_selected {
+                    TEXT_COLOR
+                } else {
+                    [0.55, 0.55, 0.55, 1.0]
+                },
+                ..SpanStyle::default()
+            };
             let content = sugarloaf.content();
-            content
-                .sel(result_id)
-                .clear()
-                .new_line()
-                .add_span(
-                    cmd.title,
-                    SpanStyle {
-                        color: if is_selected {
-                            TEXT_COLOR
-                        } else {
-                            [0.80, 0.80, 0.80, 1.0]
-                        },
-                        ..SpanStyle::default()
-                    },
-                )
-                .build();
+            let builder = content.sel(result_id).clear().new_line();
+            add_span_with_fallback(
+                builder,
+                cmd.title,
+                result_style,
+                font_library,
+                font_cache,
+            );
+            builder.build();
 
             let row_text_x = input_x + INPUT_PADDING_X;
             let row_text_y = item_y + (RESULT_ITEM_HEIGHT - RESULT_FONT_SIZE) / 2.0;
@@ -653,19 +650,20 @@ impl CommandPalette {
             // Shortcut text (right-aligned)
             let shortcut_id = self.shortcut_text_ids[display_i];
             if !cmd.shortcut.is_empty() {
+                let shortcut_style = SpanStyle {
+                    color: SHORTCUT_TEXT_COLOR,
+                    ..SpanStyle::default()
+                };
                 let content = sugarloaf.content();
-                content
-                    .sel(shortcut_id)
-                    .clear()
-                    .new_line()
-                    .add_span(
-                        cmd.shortcut,
-                        SpanStyle {
-                            color: SHORTCUT_TEXT_COLOR,
-                            ..SpanStyle::default()
-                        },
-                    )
-                    .build();
+                let builder = content.sel(shortcut_id).clear().new_line();
+                add_span_with_fallback(
+                    builder,
+                    cmd.shortcut,
+                    shortcut_style,
+                    font_library,
+                    font_cache,
+                );
+                builder.build();
 
                 let shortcut_width = cmd.shortcut.len() as f32 * 6.5;
                 let shortcut_x = input_x + input_width - INPUT_PADDING_X - shortcut_width;

@@ -14,6 +14,25 @@ pub struct GraphicDataEntry {
     pub handle: Handle,
     pub width: f32,
     pub height: f32,
+    pub transmit_time: std::time::Instant,
+}
+
+impl GraphicDataEntry {
+    /// Create from a GraphicData, taking ownership of pixel data.
+    pub fn from_graphic_data(data: GraphicData) -> Self {
+        let display_w = data.display_width.unwrap_or(data.width) as f32;
+        let display_h = data.display_height.unwrap_or(data.height) as f32;
+        Self {
+            handle: Handle::from_pixels(
+                data.width as u32,
+                data.height as u32,
+                data.pixels,
+            ),
+            width: display_w,
+            height: display_h,
+            transmit_time: data.transmit_time,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -29,8 +48,11 @@ impl Graphics {
 
     #[inline]
     pub fn insert(&mut self, graphic_data: GraphicData) {
-        if self.inner.contains_key(&graphic_data.id) {
-            return;
+        // Check if existing entry has the same generation (skip re-upload)
+        if let Some(existing) = self.inner.get(&graphic_data.id) {
+            if existing.transmit_time == graphic_data.transmit_time {
+                return;
+            }
         }
 
         let display_w = graphic_data.display_width.unwrap_or(graphic_data.width) as f32;
@@ -45,6 +67,7 @@ impl Graphics {
                 ),
                 width: display_w,
                 height: display_h,
+                transmit_time: graphic_data.transmit_time,
             },
         );
     }
@@ -60,6 +83,22 @@ pub struct Graphic {
     pub id: GraphicId,
     pub offset_x: u16,
     pub offset_y: u16,
+}
+
+/// An overlay image placement.
+/// Used by the renderer to draw images on top of (or behind) terminal content.
+#[derive(Debug, Clone)]
+pub struct GraphicOverlay {
+    /// Image identifier (kitty protocol image_id).
+    pub image_id: u32,
+    /// Screen position (physical pixels).
+    pub x: f32,
+    pub y: f32,
+    /// Display dimensions (physical pixels).
+    pub width: f32,
+    pub height: f32,
+    /// Z-index for layering.
+    pub z_index: i32,
 }
 
 /// Unique identifier for every graphic added to a grid.
@@ -123,6 +162,10 @@ pub struct GraphicData {
     /// Display height in pixels (set when GPU scaling is used instead of CPU resize).
     /// If None, display at the original pixel height.
     pub display_height: Option<usize>,
+
+    /// Generation counter for cache invalidation.
+    /// Incremented when image data changes (re-transmission with same ID).
+    pub transmit_time: std::time::Instant,
 }
 
 impl GraphicData {
@@ -205,6 +248,7 @@ impl GraphicData {
             resize: None,
             display_width: None,
             display_height: None,
+            transmit_time: std::time::Instant::now(),
         }
     }
 
@@ -403,6 +447,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -428,6 +473,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));

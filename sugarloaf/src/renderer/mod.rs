@@ -42,14 +42,12 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     },
 });
 
-#[derive(Debug)]
 pub enum RendererType {
     Wgpu(WgpuRenderer),
     #[cfg(target_os = "macos")]
     Metal(MetalRenderer),
 }
 
-#[derive(Debug)]
 pub struct WgpuRenderer {
     vertex_buffer: wgpu::Buffer,
     constant_bind_group: wgpu::BindGroup,
@@ -59,6 +57,10 @@ pub struct WgpuRenderer {
     pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
     supported_vertex_buffer: usize,
+    // Image pipeline (separate from text)
+    image_pipeline: wgpu::RenderPipeline,
+    image_bind_group_layout: wgpu::BindGroupLayout,
+    image_vertex_buffer: wgpu::Buffer,
 }
 
 #[cfg(target_os = "macos")]
@@ -77,6 +79,9 @@ pub struct MetalRenderer {
     sampler: SamplerState,
     supported_vertex_buffer: usize,
     current_transform: [f32; 16],
+    // Image pipeline (separate from text)
+    image_pipeline_state: RenderPipelineState,
+    image_vertex_buffer: Buffer,
 }
 
 #[cfg(target_os = "macos")]
@@ -270,6 +275,90 @@ impl MetalRenderer {
         sampler_descriptor.set_address_mode_r(MTLSamplerAddressMode::ClampToEdge);
         let sampler = context.device.new_sampler(&sampler_descriptor);
 
+        // --- Image pipeline ---
+        let image_shader_source = include_str!("image.metal");
+        let image_library = context
+            .device
+            .new_library_with_source(image_shader_source, &CompileOptions::new())
+            .expect("Failed to create image shader library");
+
+        let image_vertex_fn = image_library
+            .get_function("image_vs_main", None)
+            .expect("Failed to get image vertex function");
+        let image_fragment_fn = image_library
+            .get_function("image_fs_main", None)
+            .expect("Failed to get image fragment function");
+
+        let image_vertex_descriptor = VertexDescriptor::new();
+        let image_attrs = image_vertex_descriptor.attributes();
+
+        // dest_pos: vec2<f32> at offset 0
+        image_attrs
+            .object_at(0)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float2);
+        image_attrs.object_at(0).unwrap().set_offset(0);
+        image_attrs.object_at(0).unwrap().set_buffer_index(0);
+
+        // dest_size: vec2<f32> at offset 8
+        image_attrs
+            .object_at(1)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float2);
+        image_attrs.object_at(1).unwrap().set_offset(8);
+        image_attrs.object_at(1).unwrap().set_buffer_index(0);
+
+        // source_rect: vec4<f32> at offset 16
+        image_attrs
+            .object_at(2)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float4);
+        image_attrs.object_at(2).unwrap().set_offset(16);
+        image_attrs.object_at(2).unwrap().set_buffer_index(0);
+
+        let image_layouts = image_vertex_descriptor.layouts();
+        image_layouts
+            .object_at(0)
+            .unwrap()
+            .set_stride(mem::size_of::<ImageInstance>() as u64);
+        image_layouts
+            .object_at(0)
+            .unwrap()
+            .set_step_function(MTLVertexStepFunction::PerInstance);
+        image_layouts.object_at(0).unwrap().set_step_rate(1);
+
+        let image_pipeline_descriptor = RenderPipelineDescriptor::new();
+        image_pipeline_descriptor.set_vertex_function(Some(&image_vertex_fn));
+        image_pipeline_descriptor.set_fragment_function(Some(&image_fragment_fn));
+        image_pipeline_descriptor.set_vertex_descriptor(Some(image_vertex_descriptor));
+
+        let image_color_attachment = image_pipeline_descriptor
+            .color_attachments()
+            .object_at(0)
+            .unwrap();
+        image_color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+        image_color_attachment.set_blending_enabled(true);
+        // Premultiplied alpha: One, OneMinusSrcAlpha
+        image_color_attachment.set_source_rgb_blend_factor(MTLBlendFactor::One);
+        image_color_attachment
+            .set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        image_color_attachment.set_rgb_blend_operation(MTLBlendOperation::Add);
+        image_color_attachment.set_source_alpha_blend_factor(MTLBlendFactor::One);
+        image_color_attachment
+            .set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        image_color_attachment.set_alpha_blend_operation(MTLBlendOperation::Add);
+
+        let image_pipeline_state = context
+            .device
+            .new_render_pipeline_state(&image_pipeline_descriptor)
+            .expect("Failed to create image pipeline state");
+
+        let image_vertex_buffer = context.device.new_buffer(
+            (mem::size_of::<ImageInstance>() * 64) as u64, // 64 images max
+            MTLResourceOptions::StorageModeShared,
+        );
+        image_vertex_buffer.set_label("sugarloaf::image instance buffer");
+
         Self {
             pipeline_state,
             vertex_buffer,
@@ -277,6 +366,8 @@ impl MetalRenderer {
             supported_vertex_buffer,
             current_transform: [0.0; 16],
             uniform_buffer,
+            image_pipeline_state,
+            image_vertex_buffer,
         }
     }
 
@@ -401,11 +492,59 @@ impl MetalRenderer {
 
 struct CachedGraphic {
     location: image_cache::ImageLocation,
+    /// Atlas allocation ID for deallocation.
+    image_id: image_cache::ImageId,
     width: f32,
     height: f32,
     last_used_frame: u64,
     /// Atlas layer index (1-based, 0 = no texture)
     atlas_layer: i32,
+}
+
+/// Backend-agnostic per-image GPU texture.
+/// Dropped when removed from the map → GPU memory freed immediately.
+enum ImageTexture {
+    Wgpu {
+        _texture: wgpu::Texture, // kept alive so `view` stays valid
+        view: wgpu::TextureView,
+    },
+    #[cfg(target_os = "macos")]
+    Metal(metal::Texture),
+}
+
+/// Per-image texture entry stored in the renderer.
+struct ImageTextureEntry {
+    gpu: ImageTexture,
+    transmit_time: std::time::Instant,
+}
+
+/// Per-instance data for image rendering (one instance = one image placement).
+/// The vertex shader generates 4 quad corners from vertex_id.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
+struct ImageInstance {
+    /// Screen position of the image top-left (physical pixels).
+    dest_pos: [f32; 2],
+    /// Size of the image on screen (physical pixels).
+    dest_size: [f32; 2],
+    /// Source rectangle in the texture: xy = origin, zw = size (normalized 0..1).
+    source_rect: [f32; 4],
+}
+
+/// Which layer to render the image in (relative to text).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ImageLayer {
+    /// z < 0: rendered before the text pipeline.
+    BelowText,
+    /// z >= 0: rendered after the text pipeline.
+    AboveText,
+}
+
+/// A single image draw command for the image pipeline.
+struct ImageDraw {
+    image_id: u32,
+    instance: ImageInstance,
+    layer: ImageLayer,
 }
 
 pub struct Renderer {
@@ -417,6 +556,10 @@ pub struct Renderer {
     text_run_manager: TextRunManager,
     graphic_cache: FxHashMap<GraphicId, CachedGraphic>,
     current_frame: u64,
+    /// Per-image GPU textures (one map, any backend).
+    image_textures: FxHashMap<u32, ImageTextureEntry>,
+    /// Image draw commands for the current frame.
+    image_draws: Vec<ImageDraw>,
 }
 
 impl Renderer {
@@ -440,6 +583,8 @@ impl Renderer {
             text_run_manager: TextRunManager::new(),
             graphic_cache: FxHashMap::default(),
             current_frame: 0,
+            image_textures: FxHashMap::default(),
+            image_draws: Vec::new(),
         }
     }
 
@@ -449,6 +594,10 @@ impl Renderer {
         context: &mut crate::context::Context,
         state: &crate::sugarloaf::state::SugarState,
         graphics: &mut Graphics,
+        image_data: &mut rustc_hash::FxHashMap<
+            u32,
+            crate::sugarloaf::graphics::GraphicDataEntry,
+        >,
     ) {
         // Always clear vertices first
         self.vertices.clear();
@@ -646,6 +795,25 @@ impl Renderer {
         // Reset clip_rect after rendering all content
         self.comp.batches.clip_rect = [0.0; 4];
 
+        // Render image overlays from content states
+        let has_overlays = state
+            .content
+            .states
+            .values()
+            .any(|cs| !cs.image_overlays.is_empty());
+        if has_overlays {
+            let overlays: Vec<_> = state
+                .content
+                .states
+                .values()
+                .flat_map(|cs| cs.image_overlays.iter())
+                .collect();
+            self.render_graphic_overlays(context, image_data, &overlays);
+        } else {
+            self.image_textures.clear();
+            image_data.clear();
+        }
+
         self.vertices.clear();
         self.images.process_atlases(context);
         self.comp.finish(&mut self.vertices);
@@ -827,6 +995,7 @@ impl Renderer {
                                         graphic.id,
                                         CachedGraphic {
                                             location,
+                                            image_id: id,
                                             width: entry.width,
                                             height: entry.height,
                                             last_used_frame: self.current_frame,
@@ -1131,8 +1300,13 @@ impl Renderer {
                                     cached.atlas_layer
                                 );
 
+                                // Clip display size to cell grid boundaries
+                                // so the image never overflows into the next line.
+                                let cw = rte_layout.unwrap().dimensions.width;
+                                let render_w = (cached.width / cw).floor() * cw;
+                                let render_h = (cached.height / line_height).floor() * line_height;
                                 comp.batches.add_image_rect(
-                                    &Rect::new(gx, gy, cached.width, cached.height),
+                                    &Rect::new(gx, gy, render_w, render_h),
                                     depth,
                                     &[1.0, 1.0, 1.0, 1.0],
                                     &[
@@ -1165,6 +1339,206 @@ impl Renderer {
         // println!("[PERF] draw_layout() total: {:?}", screen_render_duration);
     }
 
+    /// Render image overlays using per-image GPU textures.
+    fn render_graphic_overlays(
+        &mut self,
+        context: &mut crate::context::Context,
+        image_data: &mut rustc_hash::FxHashMap<
+            u32,
+            crate::sugarloaf::graphics::GraphicDataEntry,
+        >,
+        overlays: &[&crate::sugarloaf::graphics::GraphicOverlay],
+    ) {
+        // Clean up textures no longer referenced by any overlay
+        let active_ids: std::collections::HashSet<u32> =
+            overlays.iter().map(|o| o.image_id).collect();
+        self.image_textures.retain(|id, _| active_ids.contains(id));
+
+        // Upload/update per-image textures
+        for overlay in overlays {
+            let entry = match image_data.get(&overlay.image_id) {
+                Some(e) => e,
+                None => continue,
+            };
+
+            // Skip if texture is current
+            if let Some(existing) = self.image_textures.get(&overlay.image_id) {
+                if existing.transmit_time == entry.transmit_time {
+                    continue;
+                }
+            }
+
+            let (width, height, pixels) = match &entry.handle.data {
+                crate::components::core::image::Data::Rgba {
+                    width,
+                    height,
+                    pixels,
+                } => (*width, *height, pixels.as_ref()),
+                _ => continue,
+            };
+
+            if width == 0 || height == 0 {
+                continue;
+            }
+
+            let gpu = match &context.inner {
+                crate::context::ContextType::Wgpu(ctx) => {
+                    let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("kitty image"),
+                        size: wgpu::Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        usage: wgpu::TextureUsages::COPY_DST
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    });
+                    ctx.queue.write_texture(
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &texture,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        pixels,
+                        wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(width * 4),
+                            rows_per_image: Some(height),
+                        },
+                        wgpu::Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                    let view =
+                        texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    ImageTexture::Wgpu {
+                        _texture: texture,
+                        view,
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                crate::context::ContextType::Metal(ctx) => {
+                    let desc = metal::TextureDescriptor::new();
+                    desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
+                    desc.set_width(width as u64);
+                    desc.set_height(height as u64);
+                    desc.set_usage(
+                        metal::MTLTextureUsage::ShaderRead
+                            | metal::MTLTextureUsage::ShaderWrite,
+                    );
+                    let mtl_tex = ctx.device.new_texture(&desc);
+                    mtl_tex.set_label("kitty image");
+                    mtl_tex.replace_region(
+                        metal::MTLRegion {
+                            origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                            size: metal::MTLSize {
+                                width: width as u64,
+                                height: height as u64,
+                                depth: 1,
+                            },
+                        },
+                        0,
+                        pixels.as_ptr() as *const std::ffi::c_void,
+                        (width * 4) as u64,
+                    );
+                    ImageTexture::Metal(mtl_tex)
+                }
+            };
+
+            self.image_textures.insert(
+                overlay.image_id,
+                ImageTextureEntry {
+                    gpu,
+                    transmit_time: entry.transmit_time,
+                },
+            );
+        }
+
+        // Build image draw commands (one instance per image placement)
+        self.image_draws.clear();
+        for overlay in overlays {
+            if !self.image_textures.contains_key(&overlay.image_id) {
+                continue;
+            }
+            self.image_draws.push(ImageDraw {
+                image_id: overlay.image_id,
+                instance: ImageInstance {
+                    dest_pos: [overlay.x, overlay.y],
+                    dest_size: [overlay.width, overlay.height],
+                    source_rect: [0.0, 0.0, 1.0, 1.0],
+                },
+                layer: if overlay.z_index < 0 {
+                    ImageLayer::BelowText
+                } else {
+                    ImageLayer::AboveText
+                },
+            });
+        }
+    }
+
+    /// Draw image overlays for a specific layer using the image pipeline (Metal).
+    #[cfg(target_os = "macos")]
+    fn draw_images_metal(
+        image_draws: &[ImageDraw],
+        image_textures: &FxHashMap<u32, ImageTextureEntry>,
+        brush: &MetalRenderer,
+        render_encoder: &metal::RenderCommandEncoderRef,
+        layer: ImageLayer,
+    ) {
+        let has_any = image_draws.iter().any(|d| d.layer == layer);
+        if !has_any {
+            return;
+        }
+
+        render_encoder.set_render_pipeline_state(&brush.image_pipeline_state);
+        render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
+        render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
+
+        for draw in image_draws {
+            if draw.layer != layer {
+                continue;
+            }
+            let img = match image_textures.get(&draw.image_id) {
+                Some(e) => e,
+                None => continue,
+            };
+            let tex = match &img.gpu {
+                #[cfg(target_os = "macos")]
+                ImageTexture::Metal(tex) => tex,
+                _ => continue,
+            };
+
+            let instance_data =
+                brush.image_vertex_buffer.contents() as *mut ImageInstance;
+            unsafe {
+                *instance_data = draw.instance;
+            }
+
+            render_encoder.set_vertex_buffer(0, Some(&brush.image_vertex_buffer), 0);
+            render_encoder.set_fragment_texture(0, Some(tex));
+            render_encoder.draw_primitives_instanced(
+                metal::MTLPrimitiveType::TriangleStrip,
+                0,
+                4,
+                1,
+            );
+        }
+
+        // Restore text pipeline
+        render_encoder.set_render_pipeline_state(&brush.pipeline_state);
+        render_encoder.set_vertex_buffer(0, Some(&brush.vertex_buffer), 0);
+        render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
+        render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
+    }
+
     /// Find the least recently used graphic ID for eviction.
     /// Returns the GraphicId to evict, or None if cache is empty.
     fn find_oldest_graphic(&self) -> Option<GraphicId> {
@@ -1177,8 +1551,8 @@ impl Renderer {
     /// Evict a specific graphic from the cache.
     fn evict_graphic(&mut self, graphic_id: GraphicId) -> bool {
         if let Some(cached) = self.graphic_cache.remove(&graphic_id) {
-            // Note: ImageCache doesn't currently expose deallocate publicly,
-            // but the entry will be overwritten when atlas space is reused
+            // Deallocate from atlas to free GPU memory
+            self.images.deallocate(cached.image_id);
             tracing::debug!(
                 "Evicted graphic {:?} (last used: frame {})",
                 graphic_id,
@@ -1194,6 +1568,8 @@ impl Renderer {
         self.glyphs = GlyphCache::new();
         self.text_run_manager.clear_all();
         self.graphic_cache.clear();
+        self.image_textures.clear();
+        self.image_draws.clear();
     }
 
     #[inline]
@@ -1202,6 +1578,8 @@ impl Renderer {
         self.glyphs = GlyphCache::new();
         self.text_run_manager.clear_all();
         self.graphic_cache.clear();
+        self.image_textures.clear();
+        self.image_draws.clear();
         tracing::info!(
             "Renderer atlas, glyph cache, text run cache, and graphic cache cleared"
         );
@@ -1394,57 +1772,146 @@ impl Renderer {
         ctx: &mut WgpuContext,
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
-        #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
-        if let RendererType::Wgpu(brush) = &mut self.brush_type {
-            // Get all atlas textures
-            let color_views = self.images.get_texture_views();
-            let mask_texture_view = self.images.get_mask_texture_view();
+        // Destructure to get independent borrows of different fields
+        let Self {
+            brush_type,
+            images,
+            vertices,
+            image_draws,
+            image_textures,
+            ..
+        } = self;
 
-            if color_views.is_empty() || self.vertices.is_empty() {
+        #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
+        if let RendererType::Wgpu(brush) = brush_type {
+            let color_views = images.get_texture_views();
+            let mask_texture_view = images.get_mask_texture_view();
+
+            let has_images = !image_draws.is_empty();
+            if (color_views.is_empty() || vertices.is_empty()) && !has_images {
                 return;
             }
 
-            // Implement proper batching by atlas
-            // Group vertices by their texture binding requirements
-            // layers[0] = color_layer (0 = no color texture, 1+ = color atlas index)
-            // layers[1] = mask_layer (0 = no mask texture, 1 = mask atlas)
+            // --- BelowText images (z < 0): render before text ---
+            if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::BelowText)
+            {
+                rpass.set_pipeline(&brush.image_pipeline);
+                rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
+                for draw in image_draws.iter() {
+                    if draw.layer != ImageLayer::BelowText {
+                        continue;
+                    }
+                    if let Some(img) = image_textures.get(&draw.image_id) {
+                        if let ImageTexture::Wgpu { view, .. } = &img.gpu {
+                            let bg = ctx.device.create_bind_group(
+                                &wgpu::BindGroupDescriptor {
+                                    label: None,
+                                    layout: &brush.image_bind_group_layout,
+                                    entries: &[wgpu::BindGroupEntry {
+                                        binding: 0,
+                                        resource: wgpu::BindingResource::TextureView(
+                                            view,
+                                        ),
+                                    }],
+                                },
+                            );
+                            ctx.queue.write_buffer(
+                                &brush.image_vertex_buffer,
+                                0,
+                                bytemuck::bytes_of(&draw.instance),
+                            );
+                            rpass.set_bind_group(1, &bg, &[]);
+                            rpass.set_vertex_buffer(
+                                0,
+                                brush
+                                    .image_vertex_buffer
+                                    .slice(..std::mem::size_of::<ImageInstance>() as u64),
+                            );
+                            rpass.draw(0..4, 0..1);
+                        }
+                    }
+                }
+                rpass.set_pipeline(&brush.pipeline);
+                rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
+            }
 
+            // Text pipeline: batching by atlas
             let mut current_vertex = 0usize;
-            while current_vertex < self.vertices.len() {
+            while current_vertex < vertices.len() {
                 let start = current_vertex;
-                let current_color_layer = self.vertices[start].layers[0];
-                let current_mask_layer = self.vertices[start].layers[1];
+                let current_color_layer = vertices[start].layers[0];
+                let current_mask_layer = vertices[start].layers[1];
 
                 // Find the end of this batch (consecutive vertices with same layers)
                 let mut end = start;
-                while end < self.vertices.len()
-                    && self.vertices[end].layers[0] == current_color_layer
-                    && self.vertices[end].layers[1] == current_mask_layer
+                while end < vertices.len()
+                    && vertices[end].layers[0] == current_color_layer
+                    && vertices[end].layers[1] == current_mask_layer
                 {
                     end += 1;
                 }
 
                 // Bind appropriate textures for this batch
                 let color_view = if current_color_layer > 0 {
-                    // Use color atlas (current_color_layer is 1-based, so subtract 1 for 0-based index)
                     let atlas_index = (current_color_layer - 1) as usize;
                     color_views.get(atlas_index).unwrap_or(&color_views[0])
                 } else {
-                    &color_views[0] // Doesn't matter, won't be used
+                    &color_views[0]
                 };
 
                 let final_mask_view = if current_mask_layer > 0 {
                     mask_texture_view.unwrap_or(color_views[0])
                 } else {
-                    color_views[0] // Doesn't matter, won't be used
+                    color_views[0]
                 };
 
                 brush.update_bind_group(ctx, color_view, final_mask_view);
 
                 // Draw this batch
-                brush.render_range(ctx, &self.vertices, rpass, start..end);
+                brush.render_range(ctx, vertices, rpass, start..end);
 
                 current_vertex = end;
+            }
+
+            // --- AboveText images (z >= 0): render after text ---
+            if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::AboveText)
+            {
+                rpass.set_pipeline(&brush.image_pipeline);
+                rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
+                for draw in image_draws.iter() {
+                    if draw.layer != ImageLayer::AboveText {
+                        continue;
+                    }
+                    if let Some(img) = image_textures.get(&draw.image_id) {
+                        if let ImageTexture::Wgpu { view, .. } = &img.gpu {
+                            let bg = ctx.device.create_bind_group(
+                                &wgpu::BindGroupDescriptor {
+                                    label: None,
+                                    layout: &brush.image_bind_group_layout,
+                                    entries: &[wgpu::BindGroupEntry {
+                                        binding: 0,
+                                        resource: wgpu::BindingResource::TextureView(
+                                            view,
+                                        ),
+                                    }],
+                                },
+                            );
+                            ctx.queue.write_buffer(
+                                &brush.image_vertex_buffer,
+                                0,
+                                bytemuck::bytes_of(&draw.instance),
+                            );
+                            rpass.set_bind_group(1, &bg, &[]);
+                            rpass.set_vertex_buffer(
+                                0,
+                                brush
+                                    .image_vertex_buffer
+                                    .slice(..std::mem::size_of::<ImageInstance>() as u64),
+                            );
+                            rpass.draw(0..4, 0..1);
+                        }
+                    }
+                }
             }
         }
     }
@@ -1452,11 +1919,36 @@ impl Renderer {
     #[cfg(target_os = "macos")]
     pub fn render_metal(
         &mut self,
-        context: &MetalContext, // Add context parameter
+        context: &MetalContext,
         render_encoder: &metal::RenderCommandEncoderRef,
     ) {
         if let RendererType::Metal(brush) = &mut self.brush_type {
+            let has_images = !self.image_draws.is_empty();
+
+            // BelowText images (z < 0): before text
+            if has_images {
+                Self::draw_images_metal(
+                    &self.image_draws,
+                    &self.image_textures,
+                    brush,
+                    render_encoder,
+                    ImageLayer::BelowText,
+                );
+            }
+
+            // Text pipeline
             brush.render(&self.vertices, &self.images, render_encoder, context);
+
+            // AboveText images (z >= 0): after text
+            if has_images {
+                Self::draw_images_metal(
+                    &self.image_draws,
+                    &self.image_textures,
+                    brush,
+                    render_encoder,
+                    ImageLayer::AboveText,
+                );
+            }
         }
     }
 
@@ -1750,6 +2242,113 @@ impl WgpuRenderer {
             mapped_at_creation: false,
         });
 
+        // --- Image pipeline (separate from text) ---
+        let image_shader_source = include_str!("image.wgsl");
+        let image_shader =
+            context
+                .device
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("image shader"),
+                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(image_shader_source)),
+                });
+
+        let image_bind_group_layout =
+            context
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("image texture layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float {
+                                filterable: true,
+                            },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    }],
+                });
+
+        let image_pipeline_layout =
+            context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("image pipeline layout"),
+                    bind_group_layouts: &[
+                        &constant_bind_group_layout, // group 0: transform + sampler
+                        &image_bind_group_layout,    // group 1: image texture
+                    ],
+                    immediate_size: 0,
+                });
+
+        // Premultiplied alpha blend for images
+        let image_blend = Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        });
+
+        let image_pipeline =
+            context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    cache: None,
+                    label: Some("image pipeline"),
+                    layout: Some(&image_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &image_shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[wgpu::VertexBufferLayout {
+                            array_stride: mem::size_of::<ImageInstance>() as u64,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &wgpu::vertex_attr_array!(
+                                0 => Float32x2, // dest_pos
+                                1 => Float32x2, // dest_size
+                                2 => Float32x4, // source_rect
+                            ),
+                        }],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &image_shader,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: context.format,
+                            blend: image_blend,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleStrip,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: None,
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        unclipped_depth: false,
+                        conservative: false,
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                });
+
+        let image_vertex_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("image instance buffer"),
+            size: mem::size_of::<ImageInstance>() as u64 * 64, // 64 images max
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         WgpuRenderer {
             layout_bind_group,
             layout_bind_group_layout,
@@ -1759,6 +2358,9 @@ impl WgpuRenderer {
             vertex_buffer,
             supported_vertex_buffer,
             current_transform,
+            image_pipeline,
+            image_bind_group_layout,
+            image_vertex_buffer,
         }
     }
 
@@ -1997,6 +2599,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
+                image_id: super::image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 10,
@@ -2011,6 +2614,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
+                image_id: super::image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 5, // Oldest
@@ -2025,6 +2629,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
+                image_id: super::image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 15, // Newest
@@ -2058,6 +2663,7 @@ mod rect_positioning_tests {
                     min: (0.0, 0.0),
                     max: (1.0, 1.0),
                 },
+                image_id: super::image_cache::ImageId::empty(),
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 50,

@@ -874,6 +874,7 @@ impl Renderer {
 
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
+        let grid_scaled_margin = grid.get_scaled_margin();
         let mut has_active_changed = false;
         if self.last_active != Some(active_key) {
             has_active_changed = true;
@@ -884,7 +885,7 @@ impl Renderer {
         if self.scrollbar.is_enabled() {
             self.scrollbar.clear_panel_states();
             for grid_context in grid.contexts_mut().values() {
-                let panel_rect = grid_context.layout_rect();
+                let panel_rect = grid_context.layout_rect;
                 let ctx = grid_context.context();
                 let terminal = ctx.terminal.lock();
                 self.scrollbar
@@ -900,6 +901,7 @@ impl Renderer {
 
         for (key, grid_context) in grid.contexts_mut().iter_mut() {
             let is_active = &active_key == key;
+            let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
 
             let mut has_ime = false;
@@ -986,12 +988,62 @@ impl Renderer {
                         .kitty_virtual_placements
                         .clone(),
                     kitty_images: terminal.graphics.kitty_images.clone(),
+                    kitty_placements: {
+                        let mut placements: Vec<_> = terminal
+                            .graphics
+                            .kitty_placements
+                            .values()
+                            .filter(|p| {
+                                terminal.graphics.kitty_images.contains_key(&p.image_id)
+                            })
+                            .cloned()
+                            .collect();
+                        placements.sort_by_key(|p| p.z_index);
+                        placements
+                    },
+                    kitty_graphics_dirty: terminal.graphics.kitty_graphics_dirty,
                 };
+                terminal.graphics.kitty_graphics_dirty = false;
                 terminal.reset_damage();
                 drop(terminal);
 
                 snapshot
             };
+
+            // Rebuild image overlays only when dirty
+            if terminal_snapshot.kitty_graphics_dirty {
+                let line_height = sugarloaf.style().line_height;
+                let content = sugarloaf.content();
+                content.sel(context.rich_text_id);
+                content.clear_image_overlays();
+                if !terminal_snapshot.kitty_placements.is_empty() {
+                    let layout = context.dimension;
+                    let cell_width = layout.dimension.width;
+                    let cell_height = layout.dimension.height * line_height;
+                    let origin_x = panel_rect[0] + grid_scaled_margin.left;
+                    let origin_y = panel_rect[1] + grid_scaled_margin.top;
+                    let history_size = terminal_snapshot.history_size as i64;
+                    let display_offset = terminal_snapshot.display_offset as i64;
+                    let screen_lines = terminal_snapshot.screen_lines as i64;
+
+                    for p in &terminal_snapshot.kitty_placements {
+                        let screen_row = p.dest_row - (history_size - display_offset);
+                        if screen_row < 0 || screen_row >= screen_lines {
+                            continue;
+                        }
+                        content.push_image_overlay(
+                            rio_backend::sugarloaf::GraphicOverlay {
+                                image_id: p.image_id,
+                                x: origin_x + p.dest_col as f32 * cell_width,
+                                y: origin_y + screen_row as f32 * cell_height,
+                                width: p.pixel_width as f32,
+                                height: p.pixel_height as f32,
+                                z_index: p.z_index,
+                            },
+                        );
+                    }
+                }
+            }
 
             // Get hint matches from renderable content
             let hint_matches = context.renderable_content.hint_matches.as_deref();
@@ -1150,6 +1202,8 @@ impl Renderer {
                 sugarloaf,
                 (window_size.width, window_size.height, scale_factor),
                 context_manager,
+                &self.font_context,
+                &mut self.font_cache,
             );
         }
 
@@ -1161,11 +1215,15 @@ impl Renderer {
         self.search.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
+            &self.font_context,
+            &mut self.font_cache,
         );
 
         self.command_palette.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
+            &self.font_context,
+            &mut self.font_cache,
         );
 
         // Render scrollbars for each panel

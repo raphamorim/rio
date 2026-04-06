@@ -5,7 +5,15 @@ language: 'en'
 
 <h1 style={{fontSize: "2.25rem", fontWeight: 800, letterSpacing: "-0.02em", background: "linear-gradient(-120deg, #fb43fe 30%, #00dbe5)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", borderBottom: "none", paddingBottom: "1rem", marginBottom: "2rem"}}>Changelog</h1>
 
-## 0.3.0 (unreleased)
+## 0.3.2 (unreleased)
+
+- TBD.
+
+## 0.3.1
+
+- Fix crash when filters option is on.
+
+## 0.3.0
 
 - **Quit Confirmation Dialog**: New in-window quit screen with Rio logo, triggered by Cmd+Q / confirm-before-quit
   - Respond with `y` to quit or `n` to cancel
@@ -23,7 +31,6 @@ language: 'en'
   - Fixed duplicate rendering with per-frame deduplication
   - LRU cache with automatic eviction
 - **Native Metal Support** (macOS): Hardware-accelerated rendering with Metal
-- **Native Vulkan Support** (Linux/Windows): Hardware-accelerated rendering with Vulkan
 - **New GPU-Rendered Navigation**: Faster, smoother tab interface
 - **Command Palette**: Quick access to terminal functions
 - **Toggle Appearance Theme**: Switch between dark and light themes at runtime via key binding (`ToggleAppearanceTheme`) or command palette (only available when adaptive theme is configured)
@@ -41,6 +48,7 @@ language: 'en'
   - Works per-panel in split views
   - Draggable thumb with click-on-track jump scrolling
   - Configure via `enable-scroll-bar` (enabled by default)
+- **Tab Title `RELATIVE_PATH` variable**: New template variable that shows a home-relative shortened path (e.g. `~/Documents/a/rio` or `…/a/psone/starpsx`). Default tab title on macOS/Linux changed to `{{ TITLE || RELATIVE_PATH }}`.
 - Wgpu now is always f32.
   - This fixes non arm chip macos use cases.
 

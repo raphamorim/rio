@@ -1379,10 +1379,9 @@ impl Screen<'_> {
         self.context_manager.contexts_mut()[old_index]
             .update_dimensions(&mut self.sugarloaf);
 
-        // Create rich text with initial position accounting for island
-        let current_grid = self.context_manager.current_grid();
-        let (_context, margin) = current_grid.current_context_with_computed_dimension();
-        let padding_x = margin.left;
+        // Use the base scaled_margin for the new tab position, not the
+        // split-panel-aware margin, because the new tab is full-window.
+        let padding_x = self.context_manager.current_grid().scaled_margin.left;
         let padding_y_top = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
@@ -2336,7 +2335,7 @@ impl Screen<'_> {
             None => return false,
         };
 
-        let panel_rect = item.layout_rect();
+        let panel_rect = item.layout_rect;
         let rich_text_id = item.context().rich_text_id;
 
         let terminal = item.context().terminal.lock();
@@ -2417,7 +2416,7 @@ impl Screen<'_> {
             None => return false,
         };
 
-        let panel_rect = item.layout_rect();
+        let panel_rect = item.layout_rect;
 
         let terminal = item.context().terminal.lock();
         let display_offset = terminal.display_offset();
@@ -3281,7 +3280,7 @@ impl Screen<'_> {
                 let cell_height = layout.dimension.height * line_height;
                 let scale_factor = self.sugarloaf.scale_factor();
 
-                let panel_rect = current_item.layout_rect();
+                let panel_rect = current_item.layout_rect;
                 let origin_x = panel_rect[0] + scaled_margin.left;
                 let origin_y = panel_rect[1] + scaled_margin.top;
 
@@ -3389,7 +3388,7 @@ impl Screen<'_> {
 
         // Panel origin: layout_rect is relative to root container,
         // add scaled_margin to get absolute screen position
-        let panel_rect = current_item.layout_rect();
+        let panel_rect = current_item.layout_rect;
         let origin_x = panel_rect[0] + scaled_margin.left;
         let origin_y = panel_rect[1] + scaled_margin.top;
 

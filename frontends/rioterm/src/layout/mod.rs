@@ -120,8 +120,7 @@ pub struct ContextGrid<T: EventListener> {
 pub struct ContextGridItem<T: EventListener> {
     pub val: Context<T>,
     rich_text_object: Object,
-    /// Cached absolute layout: [x, y, width, height] in physical pixels
-    layout_rect: [f32; 4],
+    pub layout_rect: [f32; 4],
 }
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
@@ -142,12 +141,6 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
             rich_text_object,
             layout_rect: [0.0; 4],
         }
-    }
-
-    /// Returns the cached absolute layout rect [x, y, width, height] in physical pixels.
-    #[inline]
-    pub fn layout_rect(&self) -> [f32; 4] {
-        self.layout_rect
     }
 
     #[inline]
@@ -621,13 +614,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Find the parent of the current node
         let parent_node = self.tree.parent(current_node).unwrap_or(self.root_node);
 
-        // Create a container node with the split direction
+        // Inherit the current panel's flex properties so the container
+        // keeps the same proportion in its parent (e.g. 80/20 split).
+        let current_style = self.tree.style(current_node)?.clone();
         let scale = self.scale;
         let container_style = Style {
             display: Display::Flex,
             flex_direction: direction,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
+            flex_basis: current_style.flex_basis,
+            flex_grow: current_style.flex_grow,
+            flex_shrink: current_style.flex_shrink,
             gap: geometry::Size {
                 width: length(self.panel_config.column_gap * scale),
                 height: length(self.panel_config.row_gap * scale),
@@ -635,6 +631,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             ..Default::default()
         };
         let container_node = self.tree.new_leaf(container_style)?;
+
+        // Reset the current panel to flexible sizing inside the new container
+        let mut reset_style = current_style;
+        reset_style.flex_basis = taffy::Dimension::auto();
+        reset_style.flex_grow = 1.0;
+        reset_style.flex_shrink = 1.0;
+        self.tree.set_style(current_node, reset_style)?;
 
         // Create the new panel node
         let new_node = self.tree.new_leaf(self.create_panel_style())?;
@@ -669,14 +672,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     ) -> Result<(), TaffyError> {
         let mut style = self.tree.style(node)?.clone();
 
+        // Use flex_grow proportional to the desired size so panels
+        // scale correctly when the window is resized.
         if let Some(w) = width {
-            style.flex_basis = length(w);
-            style.flex_grow = 0.0;
-            style.flex_shrink = 0.0;
+            style.flex_basis = length(0.0);
+            style.flex_grow = w;
+            style.flex_shrink = 1.0;
         } else if let Some(h) = height {
-            style.flex_basis = length(h);
-            style.flex_grow = 0.0;
-            style.flex_shrink = 0.0;
+            style.flex_basis = length(0.0);
+            style.flex_grow = h;
+            style.flex_shrink = 1.0;
         }
 
         self.tree.set_style(node, style)?;
@@ -1140,12 +1145,26 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn grid_dimension(&self) -> ContextDimension {
         if let Some(current_item) = self.inner.get(&self.current) {
             let current_context_dimension = current_item.val.dimension;
+            let scale = current_context_dimension.dimension.scale;
+            // scaled_margin is already in physical pixels, but
+            // ContextDimension::build scales the margin again via compute(),
+            // so unscale it here to avoid double-scaling.
+            let unscaled_margin = if scale > 0.0 {
+                Margin::new(
+                    self.scaled_margin.top / scale,
+                    self.scaled_margin.right / scale,
+                    self.scaled_margin.bottom / scale,
+                    self.scaled_margin.left / scale,
+                )
+            } else {
+                self.scaled_margin
+            };
             ContextDimension::build(
                 self.width,
                 self.height,
                 current_context_dimension.dimension,
                 current_context_dimension.line_height,
-                self.scaled_margin,
+                unscaled_margin,
             )
         } else {
             tracing::error!("Current key {:?} not found in grid", self.current);

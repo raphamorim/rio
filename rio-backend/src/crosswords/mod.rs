@@ -23,6 +23,7 @@ pub mod vi_mode;
 
 use crate::ansi::graphics::GraphicCell;
 use crate::ansi::graphics::Graphics;
+use crate::ansi::graphics::KittyPlacement;
 use crate::ansi::graphics::TextureRef;
 use crate::ansi::graphics::UpdateQueues;
 use crate::ansi::mode::NamedMode;
@@ -618,6 +619,10 @@ impl<U: EventListener> Crosswords<U> {
         // Damage everything if display offset changed.
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
+            // Scrolling changes image positions on screen
+            if !self.graphics.kitty_placements.is_empty() {
+                self.graphics.kitty_graphics_dirty = true;
+            }
         }
     }
 
@@ -714,6 +719,23 @@ impl<U: EventListener> Crosswords<U> {
 
         // Update size information for graphics.
         self.graphics.resize(&size);
+
+        // Recompute overlay placement pixel dimensions for new cell size
+        let cell_w = self.graphics.cell_width as usize;
+        let cell_h = self.graphics.cell_height as usize;
+        if cell_w > 0 && cell_h > 0 {
+            for p in self.graphics.kitty_placements.values_mut() {
+                if p.columns > 0 {
+                    p.pixel_width = (p.columns as usize * cell_w) as u32;
+                }
+                if p.rows > 0 {
+                    p.pixel_height = (p.rows as usize * cell_h) as u32;
+                }
+            }
+            if !self.graphics.kitty_placements.is_empty() {
+                self.graphics.kitty_graphics_dirty = true;
+            }
+        }
     }
 
     /// Toggle the vi mode.
@@ -966,6 +988,9 @@ impl<U: EventListener> Crosswords<U> {
         // Scroll between origin and bottom
         self.grid.scroll_down(&region, lines);
         self.mark_fully_damaged();
+        if !self.graphics.kitty_placements.is_empty() {
+            self.graphics.kitty_graphics_dirty = true;
+        }
     }
 
     #[inline]
@@ -999,6 +1024,9 @@ impl<U: EventListener> Crosswords<U> {
             *line = std::cmp::max(*line - lines, top);
         }
         self.mark_fully_damaged();
+        if !self.graphics.kitty_placements.is_empty() {
+            self.graphics.kitty_graphics_dirty = true;
+        }
     }
 
     #[inline(always)]
@@ -1199,6 +1227,9 @@ impl<U: EventListener> Crosswords<U> {
         mem::swap(&mut self.grid, &mut self.inactive_grid);
         self.mode ^= Mode::ALT_SCREEN;
         self.selection = None;
+
+        // Mark kitty graphics dirty so overlays rebuild for the new screen
+        self.graphics.kitty_graphics_dirty = true;
         self.mark_fully_damaged();
     }
 
@@ -1397,33 +1428,6 @@ impl<U: EventListener> Crosswords<U> {
                 if cell.flags.contains(Flags::GRAPHICS) {
                     cell.set_graphics(smallvec::SmallVec::new());
                     cell.flags.remove(Flags::GRAPHICS);
-                }
-            }
-            self.mark_line_damaged(line);
-        }
-    }
-
-    /// Delete graphics matching a predicate
-    fn delete_graphics_matching<F>(&mut self, mut predicate: F)
-    where
-        F: FnMut(&GraphicCell) -> bool,
-    {
-        for line_idx in 0..self.grid.screen_lines() {
-            let line = Line(line_idx as i32);
-            for col_idx in 0..self.grid.columns() {
-                let col = Column(col_idx);
-                let cell = &mut self.grid[line][col];
-                if cell.flags.contains(Flags::GRAPHICS) {
-                    if let Some(graphics) = cell.take_graphics() {
-                        let filtered: smallvec::SmallVec<[GraphicCell; 1]> =
-                            graphics.into_iter().filter(|g| !predicate(g)).collect();
-
-                        if filtered.is_empty() {
-                            cell.flags.remove(Flags::GRAPHICS);
-                        } else {
-                            cell.set_graphics(filtered);
-                        }
-                    }
                 }
             }
             self.mark_line_damaged(line);
@@ -1948,6 +1952,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[start..end] {
             *cell = bg.into();
         }
+        if !self.graphics.kitty_placements.is_empty() {
+            self.graphics.kitty_graphics_dirty = true;
+        }
     }
 
     #[inline]
@@ -2055,6 +2062,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.vi_mode_cursor = Default::default();
         self.keyboard_mode_stack = Default::default();
         self.inactive_keyboard_mode_stack = Default::default();
+
+        // Clear kitty graphics on full reset
+        self.graphics.kitty_placements.clear();
+        self.graphics.kitty_images.clear();
+        self.graphics.kitty_image_numbers.clear();
+        self.graphics.kitty_graphics_dirty = true;
 
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
@@ -2508,6 +2521,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         self.mark_fully_damaged();
+        if !self.graphics.kitty_placements.is_empty() {
+            self.graphics.kitty_graphics_dirty = true;
+        }
     }
 
     #[inline]
@@ -2717,6 +2733,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
         self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+        if !self.graphics.kitty_placements.is_empty() {
+            self.graphics.kitty_graphics_dirty = true;
+        }
     }
 
     #[inline]
@@ -2914,7 +2933,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             match parser.finish() {
                 // Sixel uses None to indicate traditional Sixel cursor behavior
                 Ok((graphic, palette)) => {
-                    self.insert_graphic(graphic, Some(palette), None, None, 0)
+                    self.insert_graphic(graphic, Some(palette), None)
                 }
                 Err(err) => warn!("Failed to parse Sixel data: {}", err),
             }
@@ -2929,8 +2948,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         graphic: GraphicData,
         palette: Option<Vec<ColorRgb>>,
         cursor_movement: Option<u8>,
-        kitty_image_id: Option<u32>,
-        z_index: i32,
     ) {
         debug!(
             "insert_graphic called: id={}, {}x{}, format={:?}, cursor_movement={:?}",
@@ -3078,8 +3095,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let texture = Arc::new(TextureRef {
             id: graphic_id,
-            kitty_image_id,
-            z_index,
             width,
             height,
             cell_height,
@@ -3207,15 +3222,33 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn store_graphic(&mut self, graphic: GraphicData) {
-        // Store graphic without displaying (a=t transmit-only)
+        // a=t: Store graphic without displaying.
+        // No GPU upload here — pixel data is sent to GPU when a=p placement arrives.
         let image_id = graphic.id.get() as u32;
         debug!(
             "Storing kitty graphic: id={}, {}x{}",
             image_id, graphic.width, graphic.height
         );
-
-        // Store in cache
         self.graphics.store_kitty_image(image_id, None, graphic);
+    }
+
+    fn kitty_transmit_and_display(
+        &mut self,
+        graphic_data: GraphicData,
+        placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
+    ) {
+        let image_id = graphic_data.id.get() as u32;
+        debug!(
+            "Kitty transmit+display: id={}, {}x{}",
+            image_id, graphic_data.width, graphic_data.height
+        );
+
+        // Store takes ownership and sets transmit_time.
+        self.graphics
+            .store_kitty_image(image_id, None, graphic_data);
+
+        // Place as overlay — handles GPU upload internally.
+        self.place_kitty_overlay(image_id, &placement);
     }
 
     #[inline]
@@ -3241,50 +3274,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             return;
         }
 
-        // Direct placement (U=0): Insert graphic directly into cells
-        // Look up the stored image
-        if let Some(stored) = self.graphics.get_kitty_image(placement.image_id) {
-            // Clone the graphic data and display it at the specified position
-            let mut graphic_data = stored.data.clone();
-
-            // Update resize parameters based on placement
-            if placement.columns > 0 || placement.rows > 0 {
-                graphic_data.resize = Some(sugarloaf::ResizeCommand {
-                    width: if placement.columns > 0 {
-                        sugarloaf::ResizeParameter::Cells(placement.columns)
-                    } else {
-                        sugarloaf::ResizeParameter::Auto
-                    },
-                    height: if placement.rows > 0 {
-                        sugarloaf::ResizeParameter::Cells(placement.rows)
-                    } else {
-                        sugarloaf::ResizeParameter::Auto
-                    },
-                    preserve_aspect_ratio: true,
-                });
-            }
-
-            // Save current cursor position
-            let _saved_cursor = self.grid.cursor.pos;
-
-            // Move cursor to placement position if specified
-            if placement.x > 0 || placement.y > 0 {
-                let col = Column(placement.x as usize);
-                let row = Line(placement.y as i32);
-                self.grid.cursor.pos.col = col;
-                self.grid.cursor.pos.row = row;
-            }
-
-            // Display the graphic at the cursor position with cursor_movement from placement
-            self.insert_graphic(
-                graphic_data,
-                None,
-                Some(placement.cursor_movement),
-                Some(placement.image_id),
-                placement.z_index,
-            );
-
-            // Note: cursor position handling is now controlled by cursor_movement parameter
+        // Direct placement: use overlay path
+        let image_id = placement.image_id;
+        if self.graphics.get_kitty_image(image_id).is_some() {
+            self.place_kitty_overlay(image_id, &placement);
         } else {
             warn!(
                 "Attempted to place non-existent kitty graphic: id={}",
@@ -3303,46 +3296,76 @@ impl<U: EventListener> Handler for Crosswords<U> {
             delete.action as char, delete.image_id, delete.x, delete.y, delete.z_index
         );
 
+        let mut overlay_changed = false;
+
         match delete.action {
             b'a' | b'A' => {
-                // Delete all graphics from visible grid
+                // Delete all graphics from visible grid (cell-based)
                 self.delete_all_graphics();
+                // Delete all overlay placements
+                self.graphics.kitty_placements.clear();
+                overlay_changed = true;
 
-                // If uppercase (A), also delete from stored images cache
                 if delete.action == b'A' && delete.delete_data {
                     self.graphics.kitty_images.clear();
                     self.graphics.kitty_image_numbers.clear();
                 }
             }
             b'i' | b'I' => {
-                // Delete by kitty image ID
                 let image_id_to_match = delete.image_id;
-                self.delete_graphics_matching(|cell_graphic| {
-                    cell_graphic.texture.kitty_image_id == Some(image_id_to_match)
-                });
+                // Delete overlay placements for this image
+                let before = self.graphics.kitty_placements.len();
+                if delete.placement_id != 0 {
+                    self.graphics
+                        .kitty_placements
+                        .remove(&(image_id_to_match, delete.placement_id));
+                } else {
+                    self.graphics
+                        .kitty_placements
+                        .retain(|k, _| k.0 != image_id_to_match);
+                }
+                overlay_changed = self.graphics.kitty_placements.len() != before;
 
-                // If uppercase, also delete from cache
                 if delete.action == b'I' && delete.delete_data {
                     self.graphics
                         .delete_kitty_images(|id, _| *id == image_id_to_match);
                 }
             }
             b'c' | b'C' => {
-                // Delete graphics intersecting cursor position
                 let cursor_pos = self.grid.cursor.pos;
                 self.delete_graphic_at_position(cursor_pos.col, cursor_pos.row);
+                // Delete overlays intersecting cursor
+                let col = cursor_pos.col.0;
+                let abs_row = self.history_size() as i64 + cursor_pos.row.0 as i64;
+                let before = self.graphics.kitty_placements.len();
+                self.graphics.kitty_placements.retain(|_, p| {
+                    !(p.dest_col <= col
+                        && col < p.dest_col + p.columns as usize
+                        && p.dest_row <= abs_row
+                        && abs_row < p.dest_row + p.rows as i64)
+                });
+                overlay_changed = self.graphics.kitty_placements.len() != before;
 
                 if delete.action == b'C' && delete.delete_data {
-                    // Delete unused images from cache
                     self.cleanup_unused_kitty_images();
                 }
             }
             b'p' | b'P' => {
-                // Delete at specific cell position (x, y are column/row)
                 if delete.x > 0 && delete.y > 0 {
-                    let col = Column((delete.x - 1) as usize); // 1-indexed to 0-indexed
+                    let col = Column((delete.x - 1) as usize);
                     let row = Line((delete.y - 1) as i32);
                     self.delete_graphic_at_position(col, row);
+                    // Delete overlays at position
+                    let abs_row = self.history_size() as i64 + row.0 as i64;
+                    let c = col.0;
+                    let before = self.graphics.kitty_placements.len();
+                    self.graphics.kitty_placements.retain(|_, p| {
+                        !(p.dest_col <= c
+                            && c < p.dest_col + p.columns as usize
+                            && p.dest_row <= abs_row
+                            && abs_row < p.dest_row + p.rows as i64)
+                    });
+                    overlay_changed = self.graphics.kitty_placements.len() != before;
                 }
 
                 if delete.action == b'P' && delete.delete_data {
@@ -3350,10 +3373,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
             }
             b'x' | b'X' => {
-                // Delete by column
                 if delete.x > 0 {
                     let col = Column((delete.x - 1) as usize);
                     self.delete_graphics_in_column(col);
+                    let c = col.0;
+                    let before = self.graphics.kitty_placements.len();
+                    self.graphics.kitty_placements.retain(|_, p| {
+                        !(p.dest_col <= c && c < p.dest_col + p.columns as usize)
+                    });
+                    overlay_changed = self.graphics.kitty_placements.len() != before;
                 }
 
                 if delete.action == b'X' && delete.delete_data {
@@ -3361,10 +3389,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
             }
             b'y' | b'Y' => {
-                // Delete by row
                 if delete.y > 0 {
                     let row = Line((delete.y - 1) as i32);
                     self.delete_graphics_in_row(row);
+                    let abs_row = self.history_size() as i64 + row.0 as i64;
+                    let before = self.graphics.kitty_placements.len();
+                    self.graphics.kitty_placements.retain(|_, p| {
+                        !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64)
+                    });
+                    overlay_changed = self.graphics.kitty_placements.len() != before;
                 }
 
                 if delete.action == b'Y' && delete.delete_data {
@@ -3372,14 +3405,77 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
             }
             b'z' | b'Z' => {
-                // Delete by z-index
                 let z = delete.z_index;
-                self.delete_graphics_matching(|cell_graphic| {
-                    cell_graphic.texture.z_index == z
-                });
+                let before = self.graphics.kitty_placements.len();
+                self.graphics.kitty_placements.retain(|_, p| p.z_index != z);
+                overlay_changed = self.graphics.kitty_placements.len() != before;
 
                 if delete.action == b'Z' && delete.delete_data {
                     self.cleanup_unused_kitty_images();
+                }
+            }
+            b'n' | b'N' => {
+                // Delete by image number — look up image_id from number mapping
+                if let Some(&image_id) =
+                    self.graphics.kitty_image_numbers.get(&delete.image_id)
+                {
+                    let before = self.graphics.kitty_placements.len();
+                    if delete.placement_id != 0 {
+                        self.graphics
+                            .kitty_placements
+                            .remove(&(image_id, delete.placement_id));
+                    } else {
+                        self.graphics
+                            .kitty_placements
+                            .retain(|k, _| k.0 != image_id);
+                    }
+                    overlay_changed = self.graphics.kitty_placements.len() != before;
+
+                    if delete.action == b'N' && delete.delete_data {
+                        self.graphics.delete_kitty_images(|id, _| *id == image_id);
+                    }
+                }
+            }
+            b'q' | b'Q' => {
+                // Delete at cell position with z-index filter
+                if delete.x > 0 && delete.y > 0 {
+                    let col = Column((delete.x - 1) as usize);
+                    let row = Line((delete.y - 1) as i32);
+                    // Delete overlays at position with z-index filter
+                    let z = delete.z_index;
+                    let abs_row = self.history_size() as i64 + row.0 as i64;
+                    let c = col.0;
+                    let before = self.graphics.kitty_placements.len();
+                    self.graphics.kitty_placements.retain(|_, p| {
+                        !(p.z_index == z
+                            && p.dest_col <= c
+                            && c < p.dest_col + p.columns as usize
+                            && p.dest_row <= abs_row
+                            && abs_row < p.dest_row + p.rows as i64)
+                    });
+                    overlay_changed = self.graphics.kitty_placements.len() != before;
+                }
+
+                if delete.action == b'Q' && delete.delete_data {
+                    self.cleanup_unused_kitty_images();
+                }
+            }
+            b'r' | b'R' => {
+                // Delete by image ID range [x..y]
+                let range_start = delete.x;
+                let range_end = delete.y;
+                if range_start > 0 && range_end >= range_start {
+                    let before = self.graphics.kitty_placements.len();
+                    self.graphics
+                        .kitty_placements
+                        .retain(|k, _| k.0 < range_start || k.0 > range_end);
+                    overlay_changed = self.graphics.kitty_placements.len() != before;
+
+                    if delete.action == b'R' && delete.delete_data {
+                        self.graphics.delete_kitty_images(|id, _| {
+                            *id >= range_start && *id <= range_end
+                        });
+                    }
                 }
             }
             _ => {
@@ -3390,6 +3486,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
+        if overlay_changed {
+            self.graphics.kitty_graphics_dirty = true;
+        }
         self.send_graphics_updates();
     }
 
@@ -3503,6 +3602,174 @@ impl<T: EventListener> Dimensions for Crosswords<T> {
 
 // Additional Crosswords methods (not part of Handler trait)
 impl<U: EventListener> Crosswords<U> {
+    /// Place a kitty image as an overlay (not in grid cells).
+    /// Used for a=T (transmit+display) and a=p (place stored image).
+    fn place_kitty_overlay(
+        &mut self,
+        image_id: u32,
+        placement: &crate::ansi::kitty_graphics_protocol::PlacementRequest,
+    ) {
+        // Read image data from the store (clone needed: one copy for
+        // metadata/dimensions, consumed by pending push for GPU upload)
+        let stored = match self.graphics.get_kitty_image(image_id) {
+            Some(s) => s,
+            None => {
+                warn!("place_kitty_overlay: image {} not found", image_id);
+                return;
+            }
+        };
+        let mut graphic_data = stored.data.clone();
+
+        // Apply resize from placement parameters
+        if placement.columns > 0 || placement.rows > 0 {
+            let both_specified = placement.columns > 0 && placement.rows > 0;
+            graphic_data.resize = Some(sugarloaf::ResizeCommand {
+                width: if placement.columns > 0 {
+                    sugarloaf::ResizeParameter::Cells(placement.columns)
+                } else {
+                    sugarloaf::ResizeParameter::Auto
+                },
+                height: if placement.rows > 0 {
+                    sugarloaf::ResizeParameter::Cells(placement.rows)
+                } else {
+                    sugarloaf::ResizeParameter::Auto
+                },
+                preserve_aspect_ratio: !both_specified,
+            });
+        }
+
+        let cell_width = self.graphics.cell_width as usize;
+        let cell_height = self.graphics.cell_height as usize;
+
+        if cell_width == 0 || cell_height == 0 {
+            return;
+        }
+
+        // Compute display dimensions
+        let view_width = cell_width * self.grid.columns();
+        let view_height = cell_height * self.grid.screen_lines();
+        let (display_w, display_h) = graphic_data.compute_display_dimensions(
+            cell_width,
+            cell_height,
+            view_width,
+            view_height,
+        );
+
+        if display_w == 0 || display_h == 0 {
+            return;
+        }
+        if display_w > MAX_GRAPHIC_DIMENSIONS[0] || display_h > MAX_GRAPHIC_DIMENSIONS[1]
+        {
+            return;
+        }
+
+        // Set display dimensions for GPU scaling
+        graphic_data.display_width = Some(display_w);
+        graphic_data.display_height = Some(display_h);
+
+        // Get transmit_time from stored image for cache invalidation
+        let transmit_time = self
+            .graphics
+            .get_kitty_image(image_id)
+            .map(|s| s.transmission_time)
+            .unwrap_or_else(std::time::Instant::now);
+        graphic_data.transmit_time = transmit_time;
+
+        // Memory is managed in store_kitty_image (eviction happens there)
+
+        // Compute cursor position for placement
+        let dest_col = if placement.x > 0 {
+            placement.x as usize
+        } else {
+            self.grid.cursor.pos.col.0
+        };
+        let cursor_row = if placement.y > 0 {
+            placement.y as i32
+        } else {
+            self.grid.cursor.pos.row.0
+        };
+        // Absolute row = history_size + screen-relative row
+        let dest_row = self.history_size() as i64 + cursor_row as i64;
+
+        // Compute cell-based size
+        let columns = if placement.columns > 0 {
+            placement.columns
+        } else {
+            display_w.div_ceil(cell_width) as u32
+        };
+        let rows = if placement.rows > 0 {
+            placement.rows
+        } else {
+            display_h.div_ceil(cell_height) as u32
+        };
+
+        // Create overlay placement
+        let placement_id = placement.placement_id;
+        let kitty_placement = KittyPlacement {
+            image_id,
+            placement_id,
+            source_x: placement.x,
+            source_y: placement.y,
+            source_width: placement.width,
+            source_height: placement.height,
+            dest_col,
+            dest_row,
+            columns,
+            rows,
+            pixel_width: display_w as u32,
+            pixel_height: display_h as u32,
+            cell_x_offset: 0,
+            cell_y_offset: 0,
+            z_index: placement.z_index,
+            transmit_time,
+        };
+
+        // Check if this placement already exists with the same transmit_time
+        // (avoids re-uploading identical pixel data to GPU every frame)
+        let needs_upload = match self
+            .graphics
+            .kitty_placements
+            .get(&(image_id, placement_id))
+        {
+            Some(existing) => existing.transmit_time != transmit_time,
+            None => true,
+        };
+
+        self.graphics
+            .kitty_placements
+            .insert((image_id, placement_id), kitty_placement);
+        self.graphics.kitty_graphics_dirty = true;
+
+        // Only push pixel data when image data actually changed
+        if needs_upload {
+            self.graphics.pending_images.push((image_id, graphic_data));
+            self.send_graphics_updates();
+        }
+
+        // Handle cursor movement per kitty spec
+        match placement.cursor_movement {
+            0 => {
+                // C=0: Move cursor to after the image
+                let rows_to_advance = rows.saturating_sub(1) as usize;
+                for _ in 0..rows_to_advance {
+                    self.linefeed();
+                }
+                self.carriage_return();
+            }
+            1 => {
+                // C=1: Don't move cursor
+            }
+            _ => {
+                // Default: treat as C=0
+                let rows_to_advance = rows.saturating_sub(1) as usize;
+                for _ in 0..rows_to_advance {
+                    self.linefeed();
+                }
+                self.carriage_return();
+            }
+        }
+    }
+
     fn place_virtual_graphic(
         &mut self,
         placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,

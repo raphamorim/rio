@@ -13,8 +13,8 @@ pub use font_introspector::{Stretch, Style, Weight};
 
 pub use crate::sugarloaf::{
     graphics::{
-        ColorType, Graphic, GraphicData, GraphicId, Graphics, ResizeCommand,
-        ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
+        ColorType, Graphic, GraphicData, GraphicDataEntry, GraphicId, GraphicOverlay,
+        Graphics, ResizeCommand, ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
     },
     primitives::{
         contains_braille_dot, drawable_character, BorderStyle, Corners, CursorKind,

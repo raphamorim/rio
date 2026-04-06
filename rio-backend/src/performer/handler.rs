@@ -395,20 +395,26 @@ pub trait Handler {
     fn sixel_graphic_reset(&mut self) {}
     fn sixel_graphic_finish(&mut self) {}
 
-    /// Insert a new graphic item (displays immediately at cursor).
-    /// cursor_movement: None = Sixel (move to next line), Some(0) = Kitty stay on last row, Some(1) = don't move
+    /// Insert a new graphic item into grid cells (for sixel/iTerm2).
+    /// cursor_movement: None = Sixel (move to next line), Some(0) = stay on last row
     fn insert_graphic(
         &mut self,
         _data: GraphicData,
         _palette: Option<Vec<ColorRgb>>,
         _cursor_movement: Option<u8>,
-        _kitty_image_id: Option<u32>,
-        _z_index: i32,
     ) {
     }
 
     /// Store a graphic without displaying (for a=t transmit-only).
     fn store_graphic(&mut self, _data: GraphicData) {}
+
+    /// Transmit and display a kitty graphic as an overlay (for a=T).
+    fn kitty_transmit_and_display(
+        &mut self,
+        _data: GraphicData,
+        _placement: kitty_graphics_protocol::PlacementRequest,
+    ) {
+    }
 
     /// Place an existing graphic at a specific location (for a=p).
     fn place_graphic(&mut self, _placement: kitty_graphics_protocol::PlacementRequest) {}
@@ -817,28 +823,6 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
             {
                 debug!("[process_apc_buffer] Kitty graphics parsed successfully");
 
-                let has_graphic = response.graphic_data.is_some();
-                let has_placement = response.placement_request.is_some();
-
-                // Get cursor_movement from placement if available
-                let cursor_movement = response
-                    .placement_request
-                    .as_ref()
-                    .map(|p| p.cursor_movement)
-                    .unwrap_or(0);
-
-                // Extract the kitty image_id and z_index for transmit-and-display
-                let kitty_image_id = response
-                    .placement_request
-                    .as_ref()
-                    .map(|p| p.image_id)
-                    .filter(|&id| id != 0);
-                let z_index = response
-                    .placement_request
-                    .as_ref()
-                    .map(|p| p.z_index)
-                    .unwrap_or(0);
-
                 if let Some(graphic_data) = response.graphic_data {
                     debug!(
                         "[process_apc_buffer] Graphic data present: id={}, {}x{}",
@@ -847,31 +831,22 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                         graphic_data.height
                     );
 
-                    if has_placement {
-                        // a=T: Transmit and display
-                        self.handler.insert_graphic(
-                            graphic_data,
-                            None,
-                            Some(cursor_movement),
-                            kitty_image_id,
-                            z_index,
-                        );
+                    if let Some(placement) = response.placement_request {
+                        // a=T: Transmit and display as overlay
+                        self.handler
+                            .kitty_transmit_and_display(graphic_data, placement);
                     } else {
                         // a=t: Transmit only
                         self.handler.store_graphic(graphic_data);
                     }
-                }
-
-                if let Some(placement) = response.placement_request {
+                } else if let Some(placement) = response.placement_request {
                     debug!(
                         "[process_apc_buffer] Placement request: image_id={}",
                         placement.image_id
                     );
 
-                    if !has_graphic {
-                        // a=p: Display previously stored image
-                        self.handler.place_graphic(placement);
-                    }
+                    // a=p: Display previously stored image
+                    self.handler.place_graphic(placement);
                 }
 
                 if let Some(delete) = response.delete_request {
@@ -1240,7 +1215,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             b"1337" => {
                 if let Some(graphic) = iterm2_image_protocol::parse(params) {
                     // iTerm2 protocol uses None (traditional behavior like Sixel)
-                    self.handler.insert_graphic(graphic, None, None, None, 0);
+                    self.handler.insert_graphic(graphic, None, None);
                 }
             }
 
@@ -1687,7 +1662,7 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
 
 /// Process XTGETTCAP request and return DCS response.
 /// Multiple capability queries can be separated by `;` in a single request.
-/// Each capability gets its own DCS response (like Ghostty/xterm).
+/// Each capability gets its own DCS response (like xterm).
 fn process_xtgettcap_request(buffer: &[u8]) -> String {
     debug!("Processing XTGETTCAP request: {:?}", buffer);
 
@@ -1735,7 +1710,7 @@ fn process_xtgettcap_request(buffer: &[u8]) -> String {
 /// Converts `\\E` to ESC (0x1b), `\\n` to newline, `\\r` to CR, etc.
 /// Values containing `%` (parameterized) are returned as-is in source format.
 fn decode_terminfo_value(value: &str) -> Vec<u8> {
-    // Parameterized values are kept in source format (like Ghostty/Kitty)
+    // Parameterized values are kept in source format (like Kitty)
     if value.contains('%') {
         return value.as_bytes().to_vec();
     }

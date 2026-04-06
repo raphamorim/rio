@@ -22,7 +22,11 @@ pub fn default_title_placeholder() -> Option<String> {
 
 #[inline]
 pub fn default_title_content() -> String {
-    String::from("{{ TITLE || PROGRAM }}")
+    #[cfg(unix)]
+    return String::from("{{ TITLE || RELATIVE_PATH }}");
+
+    #[cfg(not(unix))]
+    return String::from("{{ TITLE || PROGRAM }}");
 }
 
 #[inline]

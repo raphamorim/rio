@@ -15,8 +15,11 @@ use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct UpdateQueues {
-    /// Graphics read from the PTY.
+    /// Atlas graphics (sixel/iTerm2) read from the PTY.
     pub pending: Vec<GraphicData>,
+
+    /// Image textures (kitty) keyed by image_id.
+    pub pending_images: Vec<(u32, GraphicData)>,
 
     /// Graphics removed from the grid.
     pub remove_queue: Vec<GraphicId>,
@@ -26,14 +29,6 @@ pub struct UpdateQueues {
 pub struct TextureRef {
     /// Graphic identifier.
     pub id: GraphicId,
-
-    /// The kitty protocol image_id (i= parameter), if this graphic was placed
-    /// via the kitty graphics protocol. Used for delete-by-image-id (d=i).
-    pub kitty_image_id: Option<u32>,
-
-    /// Z-index layer for this graphic (kitty z= parameter).
-    /// Used for delete-by-z-index (d=z).
-    pub z_index: i32,
 
     /// Width, in pixels, of the graphic.
     pub width: u16,
@@ -88,8 +83,46 @@ pub const KITTY_PLACEHOLDER: char = '\u{10EEEE}';
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredImage {
     pub data: GraphicData,
-    #[allow(dead_code)]
     pub transmission_time: std::time::Instant,
+}
+
+/// Overlay placement for a kitty graphics image.
+/// Stored separately from grid cells — rendered as an overlay layer.
+///
+/// Kitty images use the protocol's `image_id: u32` directly, not `GraphicId`.
+/// `GraphicId` is for atlas-based graphics (sixel/iTerm2) which share a
+/// sequential ID space. Kitty image_ids come from the protocol and would
+/// collide with atlas IDs. They also use a completely separate rendering
+/// pipeline (per-image GPU textures, not atlas), so there's no reason to
+/// wrap them in `GraphicId`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KittyPlacement {
+    /// Kitty protocol image ID (i= parameter).
+    pub image_id: u32,
+    /// Kitty protocol placement ID (p= parameter).
+    pub placement_id: u32,
+    /// Source rectangle within the image (pixels).
+    pub source_x: u32,
+    pub source_y: u32,
+    pub source_width: u32,
+    pub source_height: u32,
+    /// Grid column of the top-left corner.
+    pub dest_col: usize,
+    /// Absolute row (scrollback-aware) of the top-left corner.
+    pub dest_row: i64,
+    /// Display size in cells.
+    pub columns: u32,
+    pub rows: u32,
+    /// Actual display pixel dimensions.
+    pub pixel_width: u32,
+    pub pixel_height: u32,
+    /// Sub-cell pixel offset.
+    pub cell_x_offset: u32,
+    pub cell_y_offset: u32,
+    /// Z-index layer for rendering order.
+    pub z_index: i32,
+    /// Transmission timestamp for cache invalidation.
+    pub transmit_time: std::time::Instant,
 }
 
 /// Virtual placement metadata for Kitty graphics protocol
@@ -110,8 +143,11 @@ pub struct Graphics {
     /// Last generated identifier.
     pub last_id: u64,
 
-    /// New graphics, received from the PTY.
+    /// New atlas graphics (sixel/iTerm2), received from the PTY.
     pub pending: Vec<GraphicData>,
+
+    /// New image textures (kitty), keyed by image_id.
+    pub pending_images: Vec<(u32, GraphicData)>,
 
     /// Graphics removed from the grid.
     pub texture_operations: Arc<Mutex<Vec<GraphicId>>>,
@@ -148,7 +184,7 @@ pub struct Graphics {
     /// Includes both pending graphics and stored Kitty images
     pub total_bytes: usize,
 
-    /// Memory limit for graphics storage (default 320MB like Ghostty)
+    /// Memory limit for graphics storage (default 320MB per kitty spec)
     /// If this is exceeded, oldest/unused images will be evicted
     pub total_limit: usize,
 
@@ -161,6 +197,13 @@ pub struct Graphics {
     /// When the Arc<TextureRef> in grid cells is fully dropped, the Weak
     /// will report strong_count() == 0, meaning the graphic is no longer displayed.
     pub placed_textures: FxHashMap<GraphicId, Weak<TextureRef>>,
+
+    /// Kitty graphics: Overlay placements.
+    /// Key is (image_id, placement_id). Rendered as overlays, not in grid cells.
+    pub kitty_placements: FxHashMap<(u32, u32), KittyPlacement>,
+
+    /// Signals the renderer that overlay placements have changed.
+    pub kitty_graphics_dirty: bool,
 }
 
 impl Default for Graphics {
@@ -168,6 +211,7 @@ impl Default for Graphics {
         Self {
             last_id: 0,
             pending: Vec::new(),
+            pending_images: Vec::new(),
             texture_operations: Arc::new(Mutex::new(Vec::new())),
             sixel_shared_palette: None,
             cell_height: 0.0,
@@ -179,9 +223,11 @@ impl Default for Graphics {
             kitty_chunking_state:
                 crate::ansi::kitty_graphics_protocol::KittyGraphicsState::default(),
             total_bytes: 0,
-            total_limit: 320 * 1024 * 1024, // 320MB like Ghostty
+            total_limit: 320 * 1024 * 1024, // 320MB per kitty spec
             image_timestamps: FxHashMap::default(),
             placed_textures: FxHashMap::default(),
+            kitty_placements: FxHashMap::default(),
+            kitty_graphics_dirty: false,
         }
     }
 }
@@ -195,7 +241,7 @@ impl Graphics {
         graphics
     }
 
-    /// Generate a new graphic identifier.
+    /// Generate a new graphic identifier (for sixel/iTerm2 atlas graphics).
     pub fn next_id(&mut self) -> GraphicId {
         self.last_id += 1;
         GraphicId::new(self.last_id)
@@ -205,7 +251,9 @@ impl Graphics {
     ///
     /// If all queues are empty, it returns `None`.
     pub fn has_pending_updates(&self) -> bool {
-        !self.pending.is_empty() || !self.texture_operations.lock().is_empty()
+        !self.pending.is_empty()
+            || !self.pending_images.is_empty()
+            || !self.texture_operations.lock().is_empty()
     }
 
     pub fn take_queues(&mut self) -> Option<UpdateQueues> {
@@ -218,12 +266,16 @@ impl Graphics {
             }
         };
 
-        if remove_queue.is_empty() && self.pending.is_empty() {
+        if remove_queue.is_empty()
+            && self.pending.is_empty()
+            && self.pending_images.is_empty()
+        {
             return None;
         }
 
         Some(UpdateQueues {
             pending: mem::take(&mut self.pending),
+            pending_images: mem::take(&mut self.pending_images),
             remove_queue,
         })
     }
@@ -234,20 +286,43 @@ impl Graphics {
         self.cell_width = size.square_width();
     }
 
-    /// Store a kitty graphics image for later placement
+    /// Store a kitty graphics image for later placement.
+    /// Evicts old images if over memory limit.
     pub fn store_kitty_image(
         &mut self,
         image_id: u32,
         image_number: Option<u32>,
-        data: GraphicData,
+        mut data: GraphicData,
     ) {
+        let now = std::time::Instant::now();
+        data.transmit_time = now;
+
+        // Evict before storing to protect images with active placements
+        let new_bytes = data.pixels.len();
+        if self.total_bytes + new_bytes > self.total_limit {
+            // Collect active IDs — images with placements are protected
+            let mut active = std::collections::HashSet::new();
+            for placement in self.kitty_placements.values() {
+                active.insert(placement.image_id as u64);
+            }
+            // Also protect the image we're about to store
+            active.insert(image_id as u64);
+            self.evict_images(new_bytes, &active);
+        }
+
+        // If replacing an existing image, subtract its bytes first
+        if let Some(old) = self.kitty_images.get(&image_id) {
+            self.total_bytes = self.total_bytes.saturating_sub(old.data.pixels.len());
+        }
+
         self.kitty_images.insert(
             image_id,
             StoredImage {
                 data,
-                transmission_time: std::time::Instant::now(),
+                transmission_time: now,
             },
         );
+        self.total_bytes += new_bytes;
 
         // Update image number mapping if provided
         if let Some(number) = image_number {
@@ -287,7 +362,7 @@ impl Graphics {
     /// Evict images to make space for required_bytes.
     /// Returns true if enough space was freed, false otherwise.
     ///
-    /// Eviction priority (like Ghostty):
+    /// Eviction priority (per kitty spec):
     /// 1. Unused images (no active placements/references)
     /// 2. Oldest images by timestamp
     pub fn evict_images(
@@ -318,12 +393,18 @@ impl Graphics {
             }
         }
 
-        // Check stored kitty images
+        // Check stored kitty images (use image_id as u64 for unified candidate list)
         for (&kitty_id, stored) in &self.kitty_images {
-            let graphic_id = GraphicId::new(kitty_id as u64);
-            let is_used = used_ids.contains(&graphic_id.get());
+            let id_as_u64 = kitty_id as u64;
+            let is_used = used_ids.contains(&id_as_u64);
             let bytes = Self::calculate_graphic_bytes(&stored.data);
-            candidates.push((graphic_id, stored.transmission_time, is_used, bytes));
+            // Use a sentinel GraphicId — these will be matched by kitty_id in removal
+            candidates.push((
+                GraphicId::new(id_as_u64),
+                stored.transmission_time,
+                is_used,
+                bytes,
+            ));
         }
 
         if candidates.is_empty() {
@@ -364,9 +445,13 @@ impl Graphics {
             // Remove from pending
             self.pending.retain(|g| g.id != id);
 
-            // Remove from kitty_images
-            self.kitty_images
-                .retain(|&kitty_id, _| GraphicId::new(kitty_id as u64) != id);
+            // Remove from kitty_images if the evicted id matches
+            let evicted_u32 = id.get() as u32;
+            self.kitty_images.remove(&evicted_u32);
+
+            // Remove dangling overlay placements
+            self.kitty_placements
+                .retain(|_, p| p.image_id != evicted_u32);
 
             // Remove timestamp
             self.image_timestamps.remove(&id);
@@ -395,11 +480,12 @@ impl Graphics {
         self.placed_textures.insert(graphic_id, weak);
     }
 
-    /// Collect IDs of graphics still displayed in the grid.
+    /// Collect IDs of graphics still displayed in the grid or as overlays.
     /// O(number of placements) instead of O(rows * cols).
     pub fn collect_active_graphic_ids(&mut self) -> std::collections::HashSet<u64> {
         // Clean up stale entries and collect live ones in one pass
         let mut active = std::collections::HashSet::new();
+        // Cell-based (sixel) liveness
         self.placed_textures.retain(|id, weak| {
             if weak.strong_count() > 0 {
                 active.insert(id.get());
@@ -408,6 +494,10 @@ impl Graphics {
                 false
             }
         });
+        // Overlay-based (kitty) liveness — use image_id directly
+        for placement in self.kitty_placements.values() {
+            active.insert(placement.image_id as u64);
+        }
         active
     }
 
@@ -446,6 +536,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -471,6 +562,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));
@@ -494,6 +586,7 @@ fn test_graphics_memory_tracking() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
 
     let bytes = Graphics::calculate_graphic_bytes(&graphic);
@@ -533,6 +626,7 @@ fn test_graphics_eviction_unused_first() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -552,6 +646,7 @@ fn test_graphics_eviction_unused_first() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic2);
     graphics.track_graphic(GraphicId::new(2), pixels2.len());
@@ -592,6 +687,7 @@ fn test_graphics_eviction_oldest_first() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -610,6 +706,7 @@ fn test_graphics_eviction_oldest_first() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic2);
     graphics.track_graphic(GraphicId::new(2), pixels2.len());
@@ -646,13 +743,14 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
     used_ids.insert(1); // Mark as used
 
     // Try to add another 90KB (total would be 180KB, exceeds limit)
-    // Will evict the first one even though it's in use (like Ghostty)
+    // Will evict the first one even though it's in use (per kitty spec)
     let pixels2_len = 90_000;
     let success = graphics.evict_images(pixels2_len, &used_ids);
 
@@ -686,6 +784,7 @@ fn test_graphics_no_eviction_when_under_limit() {
         resize: None,
         display_width: None,
         display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());

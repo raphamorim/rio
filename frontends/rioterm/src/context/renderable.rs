@@ -1,4 +1,4 @@
-use rio_backend::ansi::graphics::{StoredImage, VirtualPlacement};
+use rio_backend::ansi::graphics::{KittyPlacement, StoredImage, VirtualPlacement};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::grid::row::Row;
@@ -118,6 +118,10 @@ pub struct TerminalSnapshot {
     pub kitty_virtual_placements: FxHashMap<(u32, u32), VirtualPlacement>,
     // Kitty graphics stored images
     pub kitty_images: FxHashMap<u32, StoredImage>,
+    // Kitty graphics overlay placements (sorted by z_index for layered rendering)
+    pub kitty_placements: Vec<KittyPlacement>,
+    // Whether kitty graphics state changed since last frame
+    pub kitty_graphics_dirty: bool,
 }
 
 #[derive(Debug, Default)]
