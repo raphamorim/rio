@@ -1306,7 +1306,8 @@ impl Renderer {
                                 // so the image never overflows into the next line.
                                 let cw = rte_layout.unwrap().dimensions.width;
                                 let render_w = (cached.width / cw).floor() * cw;
-                                let render_h = (cached.height / line_height).floor() * line_height;
+                                let render_h =
+                                    (cached.height / line_height).floor() * line_height;
                                 comp.batches.add_image_rect(
                                     &Rect::new(gx, gy, render_w, render_h),
                                     depth,
