@@ -1202,6 +1202,8 @@ impl Renderer {
                 sugarloaf,
                 (window_size.width, window_size.height, scale_factor),
                 context_manager,
+                &self.font_context,
+                &mut self.font_cache,
             );
         }
 
@@ -1213,11 +1215,15 @@ impl Renderer {
         self.search.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
+            &self.font_context,
+            &mut self.font_cache,
         );
 
         self.command_palette.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
+            &self.font_context,
+            &mut self.font_cache,
         );
 
         // Render scrollbars for each panel
