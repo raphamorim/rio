@@ -1,6 +1,6 @@
 use crate::constants;
 use crate::layout::ContextDimension;
-use crate::renderer::font_cache::FontCache;
+use crate::renderer::font_cache::{FontCache, FontCacheData};
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::font::FontLibrary;
@@ -22,14 +22,21 @@ pub fn add_span_with_fallback(
     let mut current_run = String::new();
 
     for ch in text.chars() {
-        let font_id = if let Some(&(fid, _)) = font_cache.get(&(ch, font_attrs)) {
-            fid
+        let font_id = if let Some(cached) = font_cache.get(&(ch, font_attrs)) {
+            cached.font_id
         } else {
             let font_ctx = font_library.inner.read();
             let (fid, _) = font_ctx
                 .find_best_font_match(ch, &base_style)
                 .unwrap_or((0, false));
-            font_cache.insert((ch, font_attrs), (fid, 1.0));
+            font_cache.insert(
+                (ch, font_attrs),
+                FontCacheData {
+                    font_id: fid,
+                    width: 1.0,
+                    is_pua: false,
+                },
+            );
             fid
         };
 
