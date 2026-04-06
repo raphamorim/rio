@@ -1,7 +1,10 @@
 pub mod routes;
 mod window;
 use crate::event::EventProxy;
-use crate::router::window::{configure_window, create_window_builder};
+use crate::router::window::{
+    configure_window, create_window_builder, DEFAULT_MINIMUM_WINDOW_HEIGHT,
+    DEFAULT_MINIMUM_WINDOW_WIDTH,
+};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -665,61 +668,9 @@ impl<'a> RouteWindow<'a> {
         )
         .expect("Screen not created");
 
-        if config.window.columns.is_some() || config.window.rows.is_some() {
-            let dim = screen.ctx().current().dimension;
-            let scale = dim.dimension.scale;
-
-            // On Retina (HiDPI) displays, macOS snaps window sizes to multiples of
-            // the scale factor (e.g. 2 on 2x displays). Using PhysicalSize and
-            // rounding up to the nearest multiple of scale ensures we never end up
-            // one physical pixel short, which would cause the renderer to truncate
-            // one column or row.
-            let scale_u32 = scale.round() as u32;
-
-            let mut physical_width = (config.window.width as f32 * scale).round() as u32;
-            let mut physical_height =
-                (config.window.height as f32 * scale).round() as u32;
-
-            // Taffy reserves `config.panel` padding and margin inside the window margin.
-            // Startup sizing must include that frame or the first layout reports fewer
-            // cols/rows than requested.
-            let panel_horizontal = scaled_panel_edge(
-                config.panel.padding.left,
-                config.panel.padding.right,
-                config.panel.margin.left,
-                config.panel.margin.right,
-                scale,
-            );
-            let panel_vertical = scaled_panel_edge(
-                config.panel.padding.top,
-                config.panel.padding.bottom,
-                config.panel.margin.top,
-                config.panel.margin.bottom,
-                scale,
-            );
-
-            if let Some(columns) = config.window.columns {
-                let cell_width = dim.dimension.width;
-                let margin_physical = (dim.margin.left + dim.margin.right) * scale;
-                let raw = (columns as f32 * cell_width).ceil() as u32
-                    + margin_physical as u32
-                    + panel_horizontal as u32;
-
-                // Round up to nearest multiple of scale factor so macOS Retina
-                // snapping never drops us below the target column count.
-                physical_width = raw.next_multiple_of(scale_u32);
-            }
-
-            if let Some(rows) = config.window.rows {
-                let cell_height = dim.dimension.height;
-                let margin_physical = (dim.margin.top + dim.margin.bottom) * scale;
-                let raw = (rows as f32 * cell_height).ceil() as u32
-                    + margin_physical as u32
-                    + panel_vertical as u32;
-
-                physical_height = raw.next_multiple_of(scale_u32);
-            }
-
+        if let Some((physical_width, physical_height)) =
+            compute_startup_window_physical_size(config, screen.ctx().current().dimension)
+        {
             let _ = winit_window.request_inner_size(PhysicalSize {
                 width: physical_width,
                 height: physical_height,
@@ -774,4 +725,277 @@ fn scaled_panel_edge(
     scale: f32,
 ) -> f32 {
     (padding_start + padding_end + margin_start + margin_end) * scale
+}
+
+fn compute_startup_window_physical_size(
+    config: &RioConfig,
+    dim: crate::layout::ContextDimension,
+) -> Option<(u32, u32)> {
+    if config.window.columns.is_none() && config.window.rows.is_none() {
+        return None;
+    }
+
+    let scale = dim.dimension.scale;
+
+    // On Retina (HiDPI) displays, macOS snaps window sizes to multiples of
+    // the scale factor (e.g. 2 on 2x displays). Using PhysicalSize and
+    // rounding up to the nearest multiple of scale ensures we never end up
+    // one physical pixel short, which would cause the renderer to truncate
+    // one column or row.
+    let scale_u32 = scale.round().max(1.0) as u32;
+
+    let mut physical_width = (config.window.width as f32 * scale).round() as u32;
+    let mut physical_height = (config.window.height as f32 * scale).round() as u32;
+
+    // Taffy reserves `config.panel` padding and margin inside the window margin.
+    // Startup sizing must include that frame or the first layout reports fewer
+    // cols/rows than requested.
+    let panel_horizontal = scaled_panel_edge(
+        config.panel.padding.left,
+        config.panel.padding.right,
+        config.panel.margin.left,
+        config.panel.margin.right,
+        scale,
+    );
+    let panel_vertical = scaled_panel_edge(
+        config.panel.padding.top,
+        config.panel.padding.bottom,
+        config.panel.margin.top,
+        config.panel.margin.bottom,
+        scale,
+    );
+
+    if let Some(columns) = config.window.columns.filter(|columns| *columns > 0) {
+        let margin_horizontal = (dim.margin.left + dim.margin.right) * scale;
+        let raw = (columns as f32 * dim.dimension.width).ceil() as u32
+            + margin_horizontal as u32
+            + panel_horizontal as u32;
+        // Round up to nearest multiple of scale factor so macOS Retina
+        // snapping never drops us below the target column count.
+        physical_width = raw.next_multiple_of(scale_u32);
+    }
+
+    if let Some(rows) = config.window.rows.filter(|rows| *rows > 0) {
+        let margin_vertical = (dim.margin.top + dim.margin.bottom) * scale;
+        let raw = (rows as f32 * dim.dimension.height).ceil() as u32
+            + margin_vertical as u32
+            + panel_vertical as u32;
+        physical_height = raw.next_multiple_of(scale_u32);
+    }
+
+    // Keep startup sizing aligned with the global minimum window constraints.
+    // These constants are defined in logical pixels, so we convert them to
+    // physical pixels using the current scale before clamping.
+    let minimum_physical_width =
+        (DEFAULT_MINIMUM_WINDOW_WIDTH as f32 * scale).ceil() as u32;
+    let minimum_physical_height =
+        (DEFAULT_MINIMUM_WINDOW_HEIGHT as f32 * scale).ceil() as u32;
+
+    physical_width = physical_width.max(minimum_physical_width);
+    physical_height = physical_height.max(minimum_physical_height);
+
+    Some((physical_width, physical_height))
+}
+
+#[test]
+fn startup_window_size_returns_none_without_overrides() {
+    use rio_backend::config::layout::Margin;
+    use rio_backend::sugarloaf::layout::TextDimensions;
+
+    let mut config = RioConfig::default();
+    config.window.columns = None;
+    config.window.rows = None;
+
+    let mut dim = crate::layout::ContextDimension::default();
+    dim.dimension = TextDimensions {
+        width: 10.0,
+        height: 20.0,
+        scale: 2.0,
+    };
+    dim.margin = Margin::all(0.0);
+
+    assert_eq!(compute_startup_window_physical_size(&config, dim), None);
+}
+
+#[test]
+fn startup_window_size_applies_only_columns_override() {
+    use rio_backend::config::layout::Margin;
+    use rio_backend::sugarloaf::layout::TextDimensions;
+
+    let mut config = RioConfig::default();
+    config.window.width = 500;
+    config.window.height = 300;
+    config.window.columns = Some(80);
+    config.window.rows = None;
+    config.panel.padding = Margin::all(0.0);
+    config.panel.margin = Margin::all(0.0);
+
+    let mut dim = crate::layout::ContextDimension::default();
+    dim.dimension = TextDimensions {
+        width: 10.0,
+        height: 20.0,
+        scale: 2.0,
+    };
+    dim.margin = Margin::all(0.0);
+
+    assert_eq!(
+        compute_startup_window_physical_size(&config, dim),
+        Some((800, 600))
+    );
+}
+
+#[test]
+fn startup_window_size_applies_only_rows_override() {
+    use rio_backend::config::layout::Margin;
+    use rio_backend::sugarloaf::layout::TextDimensions;
+
+    let mut config = RioConfig::default();
+    config.window.width = 500;
+    config.window.height = 300;
+    config.window.columns = None;
+    config.window.rows = Some(24);
+    config.panel.padding = Margin::all(0.0);
+    config.panel.margin = Margin::all(0.0);
+
+    let mut dim = crate::layout::ContextDimension::default();
+    dim.dimension = TextDimensions {
+        width: 10.0,
+        height: 20.0,
+        scale: 2.0,
+    };
+    dim.margin = Margin::all(0.0);
+
+    assert_eq!(
+        compute_startup_window_physical_size(&config, dim),
+        Some((1000, 960))
+    );
+}
+
+#[test]
+fn startup_window_size_applies_both_overrides() {
+    use rio_backend::config::layout::Margin;
+    use rio_backend::sugarloaf::layout::TextDimensions;
+
+    let mut config = RioConfig::default();
+    config.window.columns = Some(100);
+    config.window.rows = Some(40);
+    config.panel.padding = Margin::all(0.0);
+    config.panel.margin = Margin::all(0.0);
+
+    let mut dim = crate::layout::ContextDimension::default();
+    dim.dimension = TextDimensions {
+        width: 10.0,
+        height: 20.0,
+        scale: 1.0,
+    };
+    dim.margin = Margin::all(0.0);
+
+    assert_eq!(
+        compute_startup_window_physical_size(&config, dim),
+        Some((1000, 800))
+    );
+}
+
+#[test]
+fn startup_window_size_ignores_zero_overrides_and_falls_back() {
+    use rio_backend::config::layout::Margin;
+    use rio_backend::sugarloaf::layout::TextDimensions;
+
+    let mut config = RioConfig::default();
+    config.window.width = 500;
+    config.window.height = 300;
+    config.window.columns = Some(0);
+    config.window.rows = Some(0);
+    config.panel.padding = Margin::all(0.0);
+    config.panel.margin = Margin::all(0.0);
+
+    let mut dim = crate::layout::ContextDimension::default();
+    dim.dimension = TextDimensions {
+        width: 10.0,
+        height: 20.0,
+        scale: 2.0,
+    };
+    dim.margin = Margin::all(0.0);
+
+    assert_eq!(
+        compute_startup_window_physical_size(&config, dim),
+        Some((1000, 600))
+    );
+}
+
+#[test]
+fn startup_window_size_rounds_up_on_hidpi() {
+    use rio_backend::config::layout::Margin;
+    use rio_backend::sugarloaf::layout::TextDimensions;
+
+    let mut config = RioConfig::default();
+    config.window.columns = Some(80);
+    config.window.rows = Some(24);
+    config.panel.padding = Margin::all(0.0);
+    config.panel.margin = Margin::all(0.0);
+
+    let mut dim = crate::layout::ContextDimension::default();
+    dim.dimension = TextDimensions {
+        width: 16.41,
+        height: 33.0,
+        scale: 2.0,
+    };
+    dim.margin = Margin::all(0.0);
+
+    assert_eq!(
+        compute_startup_window_physical_size(&config, dim),
+        Some((1314, 792))
+    );
+}
+
+#[test]
+fn startup_window_size_includes_terminal_and_panel_margins() {
+    use rio_backend::config::layout::Margin;
+    use rio_backend::sugarloaf::layout::TextDimensions;
+
+    let mut config = RioConfig::default();
+    config.window.columns = Some(10);
+    config.window.rows = Some(5);
+    config.panel.padding = Margin::new(3.0, 2.0, 4.0, 1.0);
+    config.panel.margin = Margin::new(7.0, 6.0, 8.0, 5.0);
+
+    let mut dim = crate::layout::ContextDimension::default();
+    dim.dimension = TextDimensions {
+        width: 10.0,
+        height: 20.0,
+        scale: 1.0,
+    };
+    dim.margin = Margin::new(4.0, 3.0, 5.0, 2.0);
+
+    assert_eq!(
+        compute_startup_window_physical_size(&config, dim),
+        Some((300, 200))
+    );
+}
+
+#[test]
+fn startup_window_size_never_goes_under_minimum() {
+    use rio_backend::config::layout::Margin;
+    use rio_backend::sugarloaf::layout::TextDimensions;
+
+    let mut config = RioConfig::default();
+    config.window.width = 50;
+    config.window.height = 50;
+    config.window.columns = Some(1);
+    config.window.rows = Some(1);
+    config.panel.padding = Margin::all(0.0);
+    config.panel.margin = Margin::all(0.0);
+
+    let mut dim = crate::layout::ContextDimension::default();
+    dim.dimension = TextDimensions {
+        width: 1.0,
+        height: 1.0,
+        scale: 1.0,
+    };
+    dim.margin = Margin::all(0.0);
+
+    assert_eq!(
+        compute_startup_window_physical_size(&config, dim),
+        Some((300, 200))
+    );
 }

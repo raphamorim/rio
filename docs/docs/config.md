@@ -1568,6 +1568,8 @@ height = 400
 Define the initial number of columns. When set, this takes precedence over `window.width`.
 
 - Default: not set
+- Works independently from `window.rows` (you can set only columns).
+- Invalid value `0` is ignored and Rio falls back to `window.width`.
 
 Example:
 
@@ -1581,6 +1583,8 @@ columns = 80
 Define the initial number of rows. When set, this takes precedence over `window.height`.
 
 - Default: not set
+- Works independently from `window.columns` (you can set only rows).
+- Invalid value `0` is ignored and Rio falls back to `window.height`.
 
 Example:
 
