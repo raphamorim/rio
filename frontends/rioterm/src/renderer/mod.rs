@@ -1034,16 +1034,14 @@ impl Renderer {
                     if image_bottom_row <= 0 || screen_row >= screen_lines {
                         continue;
                     }
-                    content.push_image_overlay(
-                        rio_backend::sugarloaf::GraphicOverlay {
-                            image_id: p.image_id,
-                            x: origin_x + p.dest_col as f32 * cell_width,
-                            y: origin_y + screen_row as f32 * cell_height,
-                            width: p.pixel_width as f32,
-                            height: p.pixel_height as f32,
-                            z_index: p.z_index,
-                        },
-                    );
+                    content.push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
+                        image_id: p.image_id,
+                        x: origin_x + p.dest_col as f32 * cell_width,
+                        y: origin_y + screen_row as f32 * cell_height,
+                        width: p.pixel_width as f32,
+                        height: p.pixel_height as f32,
+                        z_index: p.z_index,
+                    });
                 }
             } else if terminal_snapshot.kitty_graphics_dirty {
                 // Placements were removed — clear overlays
