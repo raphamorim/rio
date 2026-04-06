@@ -810,8 +810,10 @@ impl Renderer {
                 .collect();
             self.render_graphic_overlays(context, image_data, &overlays);
         } else {
-            self.image_textures.clear();
-            image_data.clear();
+            // No overlays visible — clear draw commands so stale images
+            // don't keep rendering. Keep image_textures and image_data
+            // so images can be re-rendered when scrolling back.
+            self.image_draws.clear();
         }
 
         self.vertices.clear();
@@ -1349,10 +1351,9 @@ impl Renderer {
         >,
         overlays: &[&crate::sugarloaf::graphics::GraphicOverlay],
     ) {
-        // Clean up textures no longer referenced by any overlay
-        let active_ids: std::collections::HashSet<u32> =
-            overlays.iter().map(|o| o.image_id).collect();
-        self.image_textures.retain(|id, _| active_ids.contains(id));
+        // Note: don't evict textures not in the current overlay set —
+        // images may be temporarily off-screen and need their texture
+        // when scrolling back into view.
 
         // Upload/update per-image textures
         for overlay in overlays {
