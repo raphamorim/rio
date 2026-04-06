@@ -944,12 +944,7 @@ impl Content {
         scx: &mut ShapeContext,
         shaping_cache: &mut ShapingCache,
     ) {
-        let line_start = std::time::Instant::now();
-        let mut cache_hits = 0u32;
-        let mut misses = 0u32;
-        let mut empty_runs = 0u32;
-
-        // Cache font metrics at line level to avoid repeated lock acquisition
+        // Cache primary font metrics at line level to avoid repeated lock acquisition
         let metrics_result = fonts
             .inner
             .write()
@@ -985,7 +980,6 @@ impl Content {
                             &metrics,
                         );
                     }
-                    empty_runs += 1;
                     continue;
                 }
             };
@@ -1006,7 +1000,6 @@ impl Content {
                         descent,
                         leading,
                     );
-                    cache_hits += 1;
                     continue;
                 } else {
                     debug!("Font metrics not available for font_id={}", font_id);
@@ -1014,7 +1007,6 @@ impl Content {
             }
 
             // Cache miss: shape the full run and store result
-            misses += 1;
             shaping_cache.set_content(font_id, content);
 
             // Only allocate vars on the miss path
@@ -1045,20 +1037,6 @@ impl Content {
                     shaping_cache,
                 );
             }
-        }
-
-        let elapsed = line_start.elapsed();
-        let total = cache_hits + misses;
-        if total > 0 {
-            println!(
-                "[PERF] line {} | {:.1}µs | frags={} hit={} miss={} empty={}",
-                line_number,
-                elapsed.as_secs_f64() * 1_000_000.0,
-                line.fragments.len(),
-                cache_hits,
-                misses,
-                empty_runs,
-            );
         }
     }
 
@@ -1374,6 +1352,12 @@ pub struct ShapingCache {
     /// Current shaping context
     font_id: usize,
     content_hash: u64,
+}
+
+impl Default for ShapingCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ShapingCache {
