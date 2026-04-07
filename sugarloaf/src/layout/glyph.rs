@@ -65,6 +65,8 @@ pub struct RunData {
     pub strikeout_size: f32,
     pub x_height: f32,
     pub advance: f32,
+    /// Pre-computed cache key for text run lookup (0 = empty run, skip cache)
+    pub cache_key: u64,
 }
 
 /// Shaped glyph in a paragraph.

@@ -11,13 +11,31 @@
 
 //! RenderData.
 use super::glyph::*;
+#[cfg(test)]
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::Shaper;
 use crate::font_introspector::Metrics;
-use crate::layout::content::{SpanStyleDecoration, WordCache};
+use crate::layout::content::{CachedRun, ShapingCache, SpanStyleDecoration};
 use crate::layout::SpanStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
+use std::hash::Hasher;
+use wyhash::WyHash;
+
+/// Compute a cache key from glyph IDs, font_id and size.
+/// Position-independent: same glyphs at different screen positions produce the same key.
+#[inline]
+fn compute_cache_key(glyphs: &[GlyphData], font_id: usize, size: f32) -> u64 {
+    let mut hasher = WyHash::with_seed(0);
+    for (i, g) in glyphs.iter().enumerate() {
+        hasher.write_u16(g.simple_data().0);
+        hasher.write_usize(i);
+    }
+    hasher.write_usize(glyphs.len());
+    hasher.write_usize(font_id);
+    hasher.write_u32((size * 100.0) as u32);
+    hasher.finish()
+}
 
 /// Collection of text, organized into lines, runs and clusters.
 #[derive(Clone, Debug, Default)]
@@ -75,9 +93,8 @@ impl RenderData {
         size: f32,
         line: u32,
         shaper: Shaper<'_>,
-        shaper_cache: &mut WordCache,
+        shaping_cache: &mut ShapingCache,
     ) {
-        // let clusters_start = self.data.clusters.len() as u32;
         let metrics = shaper.metrics();
 
         let mut glyphs = vec![];
@@ -85,8 +102,6 @@ impl RenderData {
         let mut advance = 0.;
 
         shaper.shape_with(|c| {
-            shaper_cache.add_glyph_cluster(c);
-
             let mut cluster_advance = 0.;
             for glyph in c.glyphs {
                 cluster_advance += glyph.advance;
@@ -94,7 +109,6 @@ impl RenderData {
                 if glyph.x == 0. && glyph.y == 0. {
                     let packed_advance = (glyph.advance * 64.) as u32;
                     if packed_advance <= MAX_SIMPLE_ADVANCE {
-                        // Simple glyph
                         glyphs.push(GlyphData {
                             data: glyph.id as u32 | (packed_advance << 16),
                             size: glyph.data,
@@ -102,7 +116,6 @@ impl RenderData {
                         continue;
                     }
                 }
-                // Complex glyph
                 let detail_index = detailed_glyphs.len() as u32;
                 detailed_glyphs.push(Glyph::new(glyph));
                 glyphs.push(GlyphData {
@@ -112,10 +125,20 @@ impl RenderData {
             }
             advance += cluster_advance;
         });
-        shaper_cache.finish();
+
         if let Some(graphic) = style.media {
             self.graphics.insert(graphic.id);
         }
+
+        let cache_key = compute_cache_key(&glyphs, style.font_id, size);
+
+        // Store pre-packed run in shaping cache
+        shaping_cache.finish_with_run(CachedRun {
+            glyphs: glyphs.clone(),
+            detailed_glyphs: detailed_glyphs.clone(),
+            advance,
+            cache_key,
+        });
 
         let run_data = RunData {
             span: style,
@@ -123,21 +146,54 @@ impl RenderData {
             size,
             detailed_glyphs,
             glyphs,
-            // ascent: metrics.ascent * span_data.line_spacing,
             ascent: metrics.ascent,
-            // descent: metrics.descent * span_data.line_spacing,
             descent: metrics.descent,
-            // leading: metrics.leading * span_data.line_spacing,
             leading: metrics.leading,
             underline_offset: metrics.underline_offset,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             x_height: metrics.x_height,
             advance,
+            cache_key,
         };
         self.runs.push(run_data);
     }
 
+    /// Push a pre-packed cached run — no repacking, no hashing.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn push_cached_run(
+        &mut self,
+        style: SpanStyle,
+        size: f32,
+        line: u32,
+        cached: &CachedRun,
+        ascent: f32,
+        descent: f32,
+        leading: f32,
+    ) {
+        if let Some(graphic) = style.media {
+            self.graphics.insert(graphic.id);
+        }
+        let run_data = RunData {
+            span: style,
+            line,
+            size,
+            glyphs: cached.glyphs.clone(),
+            detailed_glyphs: cached.detailed_glyphs.clone(),
+            ascent,
+            descent,
+            leading,
+            underline_offset: 0.,
+            strikeout_offset: 0.,
+            strikeout_size: 0.,
+            x_height: 0.,
+            advance: cached.advance,
+            cache_key: cached.cache_key,
+        };
+        self.runs.push(run_data);
+    }
+
+    #[cfg(test)]
     pub(super) fn push_run_without_shaper(
         &mut self,
         style: SpanStyle,
@@ -181,26 +237,53 @@ impl RenderData {
         if let Some(graphic) = style.media {
             self.graphics.insert(graphic.id);
         }
+        let cache_key = compute_cache_key(&glyphs, style.font_id, size);
         let run_data = RunData {
             span: style,
             line,
             size,
             detailed_glyphs,
             glyphs,
-            // ascent: metrics.ascent * span_data.line_spacing,
             ascent: metrics.ascent,
-            // descent: metrics.descent * span_data.line_spacing,
             descent: metrics.descent,
-            // leading: metrics.leading * span_data.line_spacing,
             leading: metrics.leading,
             underline_offset: metrics.underline_offset,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             x_height: metrics.x_height,
             advance,
+            cache_key,
         };
         self.runs.push(run_data);
         true
+    }
+
+    /// Push an empty run that advances position without any glyphs.
+    /// Used for unwritten cells ('\0') that need to occupy space.
+    pub(super) fn push_empty_run(
+        &mut self,
+        style: SpanStyle,
+        size: f32,
+        line: u32,
+        metrics: &Metrics,
+    ) {
+        let run_data = RunData {
+            span: style,
+            line,
+            size,
+            detailed_glyphs: vec![],
+            glyphs: vec![],
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+            leading: metrics.leading,
+            underline_offset: metrics.underline_offset,
+            strikeout_offset: metrics.strikeout_offset,
+            strikeout_size: metrics.stroke_size,
+            x_height: metrics.x_height,
+            advance: 0.,
+            cache_key: 0,
+        };
+        self.runs.push(run_data);
     }
 }
 

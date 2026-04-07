@@ -4,6 +4,9 @@
 // LICENSE file in the root directory of this source tree.
 
 use crate::context::next_rich_text_id;
+use crate::renderer::font_cache::FontCache;
+use crate::renderer::utils::add_span_with_fallback;
+use rio_backend::sugarloaf::font::FontLibrary;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 use std::time::Instant;
 
@@ -248,7 +251,13 @@ impl SearchOverlay {
         }
     }
 
-    pub fn render(&mut self, sugarloaf: &mut Sugarloaf, dimensions: (f32, f32, f32)) {
+    pub fn render(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        dimensions: (f32, f32, f32),
+        font_library: &FontLibrary,
+        font_cache: &mut FontCache,
+    ) {
         if !self.is_active() {
             self.hide_all_text_ids(sugarloaf);
             return;
@@ -311,25 +320,32 @@ impl SearchOverlay {
             let chars: Vec<char> = active_search.chars().collect();
             let mut start = 0;
 
-            let set_and_measure = |text: &str, sugarloaf: &mut Sugarloaf| {
-                let content = sugarloaf.content();
-                content
-                    .sel(input_id)
-                    .clear()
-                    .new_line()
-                    .add_span(
-                        text,
-                        SpanStyle {
-                            color: text_color,
-                            ..SpanStyle::default()
-                        },
-                    )
-                    .build();
-                sugarloaf.set_position(input_id, text_x, text_y);
-                sugarloaf.get_text_rendered_width(&input_id)
+            let base_style = SpanStyle {
+                color: text_color,
+                ..SpanStyle::default()
             };
 
-            let full_width = set_and_measure(&active_search, sugarloaf);
+            let set_and_measure =
+                |text: &str,
+                 sugarloaf: &mut Sugarloaf,
+                 font_library: &FontLibrary,
+                 font_cache: &mut FontCache| {
+                    let content = sugarloaf.content();
+                    let builder = content.sel(input_id).clear().new_line();
+                    add_span_with_fallback(
+                        builder,
+                        text,
+                        base_style,
+                        font_library,
+                        font_cache,
+                    );
+                    builder.build();
+                    sugarloaf.set_position(input_id, text_x, text_y);
+                    sugarloaf.get_text_rendered_width(&input_id)
+                };
+
+            let full_width =
+                set_and_measure(&active_search, sugarloaf, font_library, font_cache);
             if full_width > max_text_width {
                 // Binary search for the right start index
                 let mut lo = 0;
@@ -337,7 +353,7 @@ impl SearchOverlay {
                 while lo < hi {
                     let mid = (lo + hi) / 2;
                     let substr: String = chars[mid..].iter().collect();
-                    let w = set_and_measure(&substr, sugarloaf);
+                    let w = set_and_measure(&substr, sugarloaf, font_library, font_cache);
                     if w > max_text_width {
                         lo = mid + 1;
                     } else {
@@ -350,19 +366,20 @@ impl SearchOverlay {
             chars[start..].iter().collect()
         };
 
+        let base_style = SpanStyle {
+            color: text_color,
+            ..SpanStyle::default()
+        };
         let content = sugarloaf.content();
-        content
-            .sel(input_id)
-            .clear()
-            .new_line()
-            .add_span(
-                &display_text,
-                SpanStyle {
-                    color: text_color,
-                    ..SpanStyle::default()
-                },
-            )
-            .build();
+        let builder = content.sel(input_id).clear().new_line();
+        add_span_with_fallback(
+            builder,
+            &display_text,
+            base_style,
+            font_library,
+            font_cache,
+        );
+        builder.build();
 
         sugarloaf.set_position(input_id, text_x, text_y);
         sugarloaf.set_visibility(input_id, true);
@@ -424,19 +441,20 @@ impl SearchOverlay {
                 );
             }
 
+            let btn_style = SpanStyle {
+                color: BUTTON_TEXT_COLOR,
+                ..SpanStyle::default()
+            };
             let content = sugarloaf.content();
-            content
-                .sel(text_ids[i])
-                .clear()
-                .new_line()
-                .add_span(
-                    labels[i],
-                    SpanStyle {
-                        color: BUTTON_TEXT_COLOR,
-                        ..SpanStyle::default()
-                    },
-                )
-                .build();
+            let builder = content.sel(text_ids[i]).clear().new_line();
+            add_span_with_fallback(
+                builder,
+                labels[i],
+                btn_style,
+                font_library,
+                font_cache,
+            );
+            builder.build();
 
             let label_x = bx + (bw - BUTTON_FONT_SIZE * 0.6) / 2.0;
             let label_y = by + (bh - BUTTON_FONT_SIZE) / 2.0;

@@ -9,7 +9,7 @@ pub mod trail_cursor;
 pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;
-use crate::renderer::font_cache::FontCache;
+use crate::renderer::font_cache::{FontCache, FontCacheData};
 use rio_backend::crosswords::LineDamage;
 use rio_backend::event::TerminalDamage;
 use taffy::NodeId;
@@ -29,8 +29,9 @@ use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, CursorKind, Graphic, SpanStyle, SpanStyleDecoration,
-    Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    drawable_character, is_private_user_area, Content, CursorKind, Graphic, SpanStyle,
+    SpanStyleDecoration, Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo,
+    UnderlineShape, Weight,
 };
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
@@ -75,6 +76,11 @@ pub struct Renderer {
 /// This allows runs with varying background colors to share cache entries,
 /// dramatically improving cache hit rates for highlighted/selected text.
 fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
+    // PUA glyphs must each be in their own run so they can be
+    // individually constrained/scaled by the compositor.
+    if a.pua_constraint.is_some() || b.pua_constraint.is_some() {
+        return false;
+    }
     a.font_id == b.font_id
         && a.color == b.color
         && a.font_attrs == b.font_attrs
@@ -86,6 +92,38 @@ fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
         && a.font_vars == b.font_vars
         && a.width == b.width
     // note: background_color is intentionally excluded
+}
+
+#[inline]
+fn is_powerline(c: char) -> bool {
+    ('\u{E0B0}'..='\u{E0D7}').contains(&c)
+}
+
+/// Compute the constraint width for a PUA (Nerd Font) glyph based on adjacent cells.
+/// Returns 1.0 (fit in 1 cell) or 2.0 (expand to 2 cells).
+fn pua_constraint_width(row: &Row<Square>, col: usize, cols: usize) -> f32 {
+    // At end of line -> constrain to 1 cell
+    if col + 1 >= cols {
+        return 1.0;
+    }
+
+    // If previous cell is also a PUA glyph (but not a graphics element
+    // like powerline), constrain to 1 so consecutive icons align properly.
+    if col > 0 {
+        let prev = row.inner[col - 1].c;
+        if is_private_user_area(&prev) && !is_powerline(prev) {
+            return 1.0;
+        }
+    }
+
+    // If next cell is empty, space, or wide char spacer, expand to 2 cells.
+    let next = &row.inner[col + 1];
+    if next.c == '\0' || next.c == ' ' || next.flags.contains(Flags::WIDE_CHAR_SPACER) {
+        return 2.0;
+    }
+
+    // Next cell is occupied -> constrain to 1 cell
+    1.0
 }
 
 impl Renderer {
@@ -296,7 +334,6 @@ impl Renderer {
         let selection_range = renderable_content.selection_range;
         let columns: usize = row.len();
         let mut content = String::with_capacity(columns);
-        let mut last_char_was_space = false;
         let mut last_style = SpanStyle::default();
 
         // Collect all characters that need font lookups to batch them
@@ -318,6 +355,33 @@ impl Renderer {
                     self.create_style(square, term_colors)
                 };
 
+            // Check selection before any early returns so '\0' cells get highlights
+            if let Some(ref range) = selection_range {
+                let pos = Pos::new(line, Column(column));
+                if range.contains(pos) {
+                    style.color = if self.ignore_selection_fg_color {
+                        self.compute_color(&square.fg, square.flags, term_colors)
+                    } else {
+                        self.named_colors.selection_foreground
+                    };
+                    style.background_color = Some(self.named_colors.selection_background);
+                }
+            }
+
+            if square_content == '\0' {
+                // Still check for graphics (sixel cells are '\0' with GRAPHICS flag)
+                if square.flags.contains(Flags::GRAPHICS) {
+                    let graphic = &square.graphics().unwrap()[0];
+                    style.media = Some(Graphic {
+                        id: graphic.texture.id,
+                        offset_x: graphic.offset_x,
+                        offset_y: graphic.offset_y,
+                    });
+                }
+                styles_and_chars.push((style, square_content, column));
+                continue;
+            }
+
             // Apply underline for hyperlinks (OSC 8) or highlighted hints (hover)
             let should_underline = square.hyperlink().is_some() || {
                 if let Some(highlighted_hint) = &renderable_content.highlighted_hint {
@@ -336,30 +400,23 @@ impl Renderer {
                 }));
             }
 
-            // Check selection more efficiently
-            if let Some(ref range) = selection_range {
-                let pos = Pos::new(line, Column(column));
-                if range.contains(pos) {
-                    style.color = if self.ignore_selection_fg_color {
-                        self.compute_color(&square.fg, square.flags, term_colors)
-                    } else {
-                        self.named_colors.selection_foreground
-                    };
-                    style.background_color = Some(self.named_colors.selection_background);
-                }
-            } else if let Some(matches) = hint_matches {
-                let pos = Pos::new(line, Column(column));
-                if Self::is_position_in_hint_matches(matches, pos) {
-                    let is_focused =
-                        focused_match.as_ref().is_some_and(|fm| fm.contains(&pos));
-                    if is_focused {
-                        style.color = self.named_colors.search_focused_match_foreground;
-                        style.background_color =
-                            Some(self.named_colors.search_focused_match_background);
-                    } else {
-                        style.color = self.named_colors.search_match_foreground;
-                        style.background_color =
-                            Some(self.named_colors.search_match_background);
+            // Check hints (only for non-empty cells, selection already handled above)
+            if selection_range.is_none() {
+                if let Some(matches) = hint_matches {
+                    let pos = Pos::new(line, Column(column));
+                    if Self::is_position_in_hint_matches(matches, pos) {
+                        let is_focused =
+                            focused_match.as_ref().is_some_and(|fm| fm.contains(&pos));
+                        if is_focused {
+                            style.color =
+                                self.named_colors.search_focused_match_foreground;
+                            style.background_color =
+                                Some(self.named_colors.search_focused_match_background);
+                        } else {
+                            style.color = self.named_colors.search_match_foreground;
+                            style.background_color =
+                                Some(self.named_colors.search_match_background);
+                        }
                     }
                 }
             }
@@ -529,11 +586,15 @@ impl Renderer {
 
             let has_drawable_char = style.drawable_char.is_some();
             if !has_drawable_char {
-                if let Some((font_id, width)) =
+                if let Some(cached) =
                     self.font_cache.get(&(square_content, style.font_attrs))
                 {
-                    style.font_id = *font_id;
-                    style.width = *width;
+                    style.font_id = cached.font_id;
+                    style.width = cached.width;
+                    if cached.is_pua {
+                        style.pua_constraint =
+                            Some(pua_constraint_width(row, column, columns));
+                    }
                 } else {
                     // Mark this character for font lookup
                     font_lookups.push((
@@ -552,6 +613,7 @@ impl Renderer {
             let font_ctx = self.font_context.inner.read();
             for (style_index, square_content, font_attrs) in font_lookups {
                 let mut width = square_content.width().unwrap_or(1) as f32;
+                let column = styles_and_chars[style_index].2;
                 let style = &mut styles_and_chars[style_index].0;
 
                 if let Some((font_id, is_emoji)) =
@@ -564,13 +626,47 @@ impl Renderer {
                 }
                 style.width = width;
 
-                self.font_cache
-                    .insert((square_content, font_attrs), (style.font_id, style.width));
+                let is_pua = is_private_user_area(&square_content);
+                self.font_cache.insert(
+                    (square_content, font_attrs),
+                    FontCacheData {
+                        font_id: style.font_id,
+                        width: style.width,
+                        is_pua,
+                    },
+                );
+
+                if is_pua {
+                    style.pua_constraint =
+                        Some(pua_constraint_width(row, column, columns));
+                }
             }
         }
 
         // Second pass: render the line using the resolved styles
+        // Track consecutive blank cells ('\0' and ' ') to batch into a single rect
+        let mut pending_blank_width: f32 = 0.0;
+        let mut pending_blank_style = SpanStyle::default();
+
         for (style, square_content, column) in styles_and_chars {
+            let is_blank = square_content == '\0' || square_content == ' ';
+
+            // Flush pending blank run if this cell breaks the batch
+            if pending_blank_width > 0.0
+                && (!is_blank
+                    || style.background_color != pending_blank_style.background_color
+                    || style.cursor != pending_blank_style.cursor)
+            {
+                let mut rect_style = pending_blank_style;
+                rect_style.width = pending_blank_width;
+                if let Some(line) = line_opt {
+                    builder.add_span_as_rect_on_line(line, rect_style);
+                } else {
+                    builder.add_span_as_rect(rect_style);
+                }
+                pending_blank_width = 0.0;
+            }
+
             // Handle drawable characters
             if style.drawable_char.is_some() {
                 if !content.is_empty() {
@@ -584,34 +680,22 @@ impl Renderer {
 
                 last_style = style;
                 content.push(' '); // Ignore font shaping
-            } else {
-                if square_content == ' ' {
-                    if !last_char_was_space {
-                        if !content.is_empty() {
-                            if let Some(line) = line_opt {
-                                builder.add_span_on_line(line, &content, last_style);
-                            } else {
-                                builder.add_span(&content, last_style);
-                            }
-                            content.clear();
-                        }
-
-                        last_char_was_space = true;
-                        last_style = style;
+            } else if is_blank {
+                // Accumulate into pending blank run
+                if !content.is_empty() {
+                    if let Some(line) = line_opt {
+                        builder.add_span_on_line(line, &content, last_style);
+                    } else {
+                        builder.add_span(&content, last_style);
                     }
-                } else {
-                    if last_char_was_space && !content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_span_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_span(&content, last_style);
-                        }
-                        content.clear();
-                    }
-
-                    last_char_was_space = false;
+                    content.clear();
                 }
-
+                if pending_blank_width == 0.0 {
+                    pending_blank_style = style;
+                }
+                pending_blank_width += 1.0;
+                last_style = style;
+            } else {
                 // Break runs when styles differ in ways that affect shaping
                 // or when background color changes (for search highlights, etc.)
                 if !styles_are_compatible_for_shaping(&last_style, &style)
@@ -639,6 +723,17 @@ impl Renderer {
                         builder.add_span_on_line(line, &content, last_style);
                     } else {
                         builder.add_span(&content, last_style);
+                    }
+                }
+
+                // Flush any remaining pending blank cells
+                if pending_blank_width > 0.0 {
+                    let mut rect_style = pending_blank_style;
+                    rect_style.width = pending_blank_width;
+                    if let Some(line) = line_opt {
+                        builder.add_span_as_rect_on_line(line, rect_style);
+                    } else {
+                        builder.add_span_as_rect(rect_style);
                     }
                 }
 
@@ -763,6 +858,8 @@ impl Renderer {
         // If IME is enabled we get the current content to cursor
         let content = if cursor.is_ime_enabled {
             cursor.content
+        } else if square.c == '\0' {
+            ' '
         } else {
             square.c
         };
@@ -870,8 +967,6 @@ impl Renderer {
         context_manager: &mut ContextManager<EventProxy>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) -> Option<crate::context::renderable::WindowUpdate> {
-        // let start = std::time::Instant::now();
-
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
         let grid_scaled_margin = grid.get_scaled_margin();
@@ -934,43 +1029,28 @@ impl Renderer {
                 .pending_update
                 .take_terminal_damage();
             let _ui_damage = context.renderable_content.pending_update.take_ui_damage();
-            // Note: ui_damage is extracted but not currently used for selective rendering.
-            // In the future, we can optimize by only re-rendering specific UI elements
-            // (island, search) when ui_damage.island or ui_damage.search is true.
             context.renderable_content.pending_update.reset();
 
             // Compute snapshot at render time
             let terminal_snapshot = {
                 let mut terminal = context.terminal.lock();
 
-                // Get damage from terminal itself
-                let terminal_damage = if force_full_damage {
-                    Some(TerminalDamage::Full)
+                // Resolve damage: prefer damage from TerminalDamaged event (avoids
+                // re-computing inside lock), fall back to peeking terminal state
+                let damage = if force_full_damage {
+                    TerminalDamage::Full
+                } else if let Some(damage) = pending_terminal_damage {
+                    // Damage already extracted by PTY thread — use directly
+                    damage
                 } else {
-                    terminal.peek_damage_event()
-                };
-
-                // Merge terminal damage from the terminal with pending terminal damage (selections, hints, etc.)
-                let damage = match (terminal_damage, pending_terminal_damage) {
-                    (Some(TerminalDamage::Full), _) | (_, Some(TerminalDamage::Full)) => {
-                        TerminalDamage::Full
-                    }
-                    (Some(term), Some(pending)) => {
-                        // Merge partial damages
-                        match (term, pending) {
-                            (
-                                TerminalDamage::Partial(mut lines1),
-                                TerminalDamage::Partial(lines2),
-                            ) => {
-                                lines1.extend(lines2);
-                                TerminalDamage::Partial(lines1)
-                            }
-                            _ => TerminalDamage::Full,
+                    // No event damage (e.g. scroll, selection) — check terminal
+                    match terminal.peek_damage_event() {
+                        Some(d) => d,
+                        None => {
+                            drop(terminal);
+                            continue;
                         }
                     }
-                    (Some(damage), None) => damage,
-                    (None, Some(damage)) => damage,
-                    (None, None) => TerminalDamage::Full,
                 };
 
                 let snapshot = TerminalSnapshot {
@@ -1010,39 +1090,44 @@ impl Renderer {
                 snapshot
             };
 
-            // Rebuild image overlays only when dirty
-            if terminal_snapshot.kitty_graphics_dirty {
+            // Recalculate image overlay positions every frame when placements
+            // exist. Positions depend on display_offset and history_size which
+            // change on scroll and text output (like Ghostty's approach).
+            if !terminal_snapshot.kitty_placements.is_empty() {
                 let line_height = sugarloaf.style().line_height;
                 let content = sugarloaf.content();
                 content.sel(context.rich_text_id);
                 content.clear_image_overlays();
-                if !terminal_snapshot.kitty_placements.is_empty() {
-                    let layout = context.dimension;
-                    let cell_width = layout.dimension.width;
-                    let cell_height = layout.dimension.height * line_height;
-                    let origin_x = panel_rect[0] + grid_scaled_margin.left;
-                    let origin_y = panel_rect[1] + grid_scaled_margin.top;
-                    let history_size = terminal_snapshot.history_size as i64;
-                    let display_offset = terminal_snapshot.display_offset as i64;
-                    let screen_lines = terminal_snapshot.screen_lines as i64;
+                let layout = context.dimension;
+                let cell_width = layout.dimension.width;
+                let cell_height = layout.dimension.height * line_height;
+                let origin_x = panel_rect[0] + grid_scaled_margin.left;
+                let origin_y = panel_rect[1] + grid_scaled_margin.top;
+                let history_size = terminal_snapshot.history_size as i64;
+                let display_offset = terminal_snapshot.display_offset as i64;
+                let screen_lines = terminal_snapshot.screen_lines as i64;
 
-                    for p in &terminal_snapshot.kitty_placements {
-                        let screen_row = p.dest_row - (history_size - display_offset);
-                        if screen_row < 0 || screen_row >= screen_lines {
-                            continue;
-                        }
-                        content.push_image_overlay(
-                            rio_backend::sugarloaf::GraphicOverlay {
-                                image_id: p.image_id,
-                                x: origin_x + p.dest_col as f32 * cell_width,
-                                y: origin_y + screen_row as f32 * cell_height,
-                                width: p.pixel_width as f32,
-                                height: p.pixel_height as f32,
-                                z_index: p.z_index,
-                            },
-                        );
+                for p in &terminal_snapshot.kitty_placements {
+                    let screen_row = p.dest_row - (history_size - display_offset);
+                    let image_bottom_row = screen_row + p.rows as i64;
+                    // Cull only if fully off-screen (like Ghostty)
+                    if image_bottom_row <= 0 || screen_row >= screen_lines {
+                        continue;
                     }
+                    content.push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
+                        image_id: p.image_id,
+                        x: origin_x + p.dest_col as f32 * cell_width,
+                        y: origin_y + screen_row as f32 * cell_height,
+                        width: p.pixel_width as f32,
+                        height: p.pixel_height as f32,
+                        z_index: p.z_index,
+                    });
                 }
+            } else if terminal_snapshot.kitty_graphics_dirty {
+                // Placements were removed — clear overlays
+                let content = sugarloaf.content();
+                content.sel(context.rich_text_id);
+                content.clear_image_overlays();
             }
 
             // Get hint matches from renderable content
@@ -1056,6 +1141,10 @@ impl Renderer {
             // Check for partial damage to optimize rendering
             if !force_full_damage {
                 match &terminal_snapshot.damage {
+                    TerminalDamage::Noop => {
+                        // Should not reach here — Noop is handled before snapshot
+                        continue;
+                    }
                     TerminalDamage::Full => {
                         // Full damage, render everything
                     }
@@ -1202,6 +1291,8 @@ impl Renderer {
                 sugarloaf,
                 (window_size.width, window_size.height, scale_factor),
                 context_manager,
+                &self.font_context,
+                &mut self.font_cache,
             );
         }
 
@@ -1213,11 +1304,15 @@ impl Renderer {
         self.search.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
+            &self.font_context,
+            &mut self.font_cache,
         );
 
         self.command_palette.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
+            &self.font_context,
+            &mut self.font_cache,
         );
 
         // Render scrollbars for each panel
@@ -1313,7 +1408,6 @@ impl Renderer {
             None
         };
 
-        // let _duration = start.elapsed();
         window_update
     }
 
@@ -1487,5 +1581,119 @@ mod tests {
             &matches,
             Pos::new(Line(2), Column(12))
         ));
+    }
+
+    /// Helper: create a row and set specific characters.
+    /// All written cells get a non-default fg so they are NOT is_empty().
+    /// Unwritten cells (beyond chars.len()) remain default (is_empty() == true).
+    fn make_row(chars: &[char], cols: usize) -> Row<Square> {
+        use rio_backend::config::colors::{AnsiColor, NamedColor};
+        let mut row = Row::<Square>::new(cols);
+        for (i, &ch) in chars.iter().enumerate() {
+            row[Column(i)].c = ch;
+            // Mark as written by setting non-default fg
+            row[Column(i)].fg = AnsiColor::Named(NamedColor::White);
+        }
+        row
+    }
+
+    // PUA icon = U+F115 (Nerd Font file icon)
+    const ICON: char = '\u{F115}';
+
+    #[test]
+    fn test_pua_icon_then_nothing() {
+        // symbol→nothing: 2
+        let row = make_row(&[ICON], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
+    }
+
+    #[test]
+    fn test_pua_icon_followed_by_char() {
+        // symbol→character: 1
+        let row = make_row(&[ICON, 'a'], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
+    }
+
+    #[test]
+    fn test_pua_icon_followed_by_space() {
+        // symbol→space: 2
+        let row = make_row(&[ICON, ' ', 'a'], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
+    }
+
+    #[test]
+    fn test_pua_two_icons() {
+        // symbol→symbol: 1, 1
+        let row = make_row(&[ICON, ICON], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
+        assert_eq!(pua_constraint_width(&row, 1, 10), 1.0);
+    }
+
+    #[test]
+    fn test_pua_icon_at_end_of_row() {
+        // symbol at end of row: 1
+        let row = make_row(&[' ', ' ', ICON], 3);
+        assert_eq!(pua_constraint_width(&row, 2, 3), 1.0);
+    }
+
+    #[test]
+    fn test_pua_icon_space_icon() {
+        // symbol→space→symbol: 2, 2
+        let row = make_row(&[ICON, ' ', ICON], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
+        assert_eq!(pua_constraint_width(&row, 2, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_char_then_icon_then_nothing() {
+        // character→symbol→nothing: 2
+        let row = make_row(&['z', ICON], 4);
+        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_char_then_icon_then_space() {
+        // character→symbol→space: 2
+        let row = make_row(&['z', ICON, ' '], 4);
+        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_icon_followed_by_no_break_space() {
+        // symbol→no-break space (U+00A0): 1 (not a regular space)
+        let row = make_row(&[ICON, '\u{00A0}', 'z'], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
+    }
+
+    // Powerline U+E0B0 is in PUA range but is a graphics element.
+    // Our is_private_user_area includes it, so it gets PUA treatment.
+    const POWERLINE: char = '\u{E0B0}';
+
+    #[test]
+    fn test_pua_icon_then_powerline() {
+        // symbol→powerline: 1 (next is not space/empty)
+        let row = make_row(&[ICON, POWERLINE], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 1.0);
+    }
+
+    #[test]
+    fn test_pua_powerline_then_icon() {
+        // powerline→symbol: 2 (powerline is a graphics element, excluded from prev check)
+        let row = make_row(&[POWERLINE, ICON], 4);
+        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_powerline_then_nothing() {
+        // powerline→nothing: 2
+        let row = make_row(&[POWERLINE], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_powerline_then_space() {
+        // powerline→space: 2
+        let row = make_row(&[POWERLINE, ' ', 'z'], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
     }
 }

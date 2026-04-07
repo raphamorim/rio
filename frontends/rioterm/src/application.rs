@@ -46,7 +46,7 @@ impl Application<'_> {
         app_id: Option<String>,
     ) -> Application<'app> {
         // SAFETY: Since this takes a pointer to the winit event loop, it MUST be dropped first,
-        // which is done in `loop_exiting`.
+        // which is done in `exiting`.
         let clipboard =
             unsafe { Clipboard::new(event_loop.display_handle().unwrap().as_raw()) };
 
@@ -283,37 +283,30 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
 
-            RioEventType::Rio(RioEvent::Wakeup(route_id)) => {
+            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }) => {
                 if self.config.renderer.strategy.is_event_based() {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        // Skip rendering for unfocused windows if configured
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
                         {
-                            tracing::trace!("Wakeup: Skipping unfocused window");
                             return;
                         }
-
-                        // Skip rendering for occluded windows if configured
                         if self.config.renderer.disable_occluded_render
                             && route.window.is_occluded
                             && !route.window.needs_render_after_occlusion
                         {
-                            tracing::trace!("Wakeup: Skipping occluded window");
                             return;
                         }
 
-                        tracing::trace!(
-                            "Wakeup: Marking route {} for damage check",
-                            route_id
-                        );
-
-                        // Mark the renderable content as needing to check for damage
-                        // The actual damage retrieval will happen during render
                         if let Some(ctx_item) =
                             route.window.screen.ctx_mut().get_by_route_id(route_id)
                         {
-                            ctx_item.val.renderable_content.pending_update.set_dirty();
+                            // Store damage directly — no need to lock terminal later
+                            ctx_item
+                                .val
+                                .renderable_content
+                                .pending_update
+                                .set_terminal_damage(damage);
                             route.schedule_redraw(&mut self.scheduler, route_id);
                         }
                     }
@@ -615,15 +608,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::ClipboardLoad(clipboard_type, format)) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                let Router {
+                    routes, clipboard, ..
+                } = &mut self.router;
+                if let Some(route) = routes.get_mut(&window_id) {
                     if route.window.is_focused {
-                        let text = format(
-                            self.router
-                                .clipboard
-                                .borrow_mut()
-                                .get(clipboard_type)
-                                .as_str(),
-                        );
+                        let text = format(clipboard.get(clipboard_type).as_str());
                         route
                             .window
                             .screen
@@ -635,12 +625,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::ClipboardStore(clipboard_type, content)) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                let Router {
+                    routes, clipboard, ..
+                } = &mut self.router;
+                if let Some(route) = routes.get_mut(&window_id) {
                     if route.window.is_focused {
-                        self.router
-                            .clipboard
-                            .borrow_mut()
-                            .set(clipboard_type, content);
+                        clipboard.set(clipboard_type, content);
                     }
                 }
             }
@@ -1029,20 +1019,29 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 return;
                             }
 
-                            if route.window.screen.handle_palette_click() {
-                                route.request_redraw();
-                                return;
-                            }
-
-                            if route.window.screen.handle_search_click() {
-                                route.request_redraw();
-                                return;
-                            }
-
-                            let handled_by_island = route
+                            if route
                                 .window
                                 .screen
-                                .handle_island_click(&route.window.winit_window);
+                                .handle_palette_click(&mut self.router.clipboard)
+                            {
+                                route.request_redraw();
+                                return;
+                            }
+
+                            if route
+                                .window
+                                .screen
+                                .handle_search_click(&mut self.router.clipboard)
+                            {
+                                route.request_redraw();
+                                return;
+                            }
+
+                            let handled_by_island =
+                                route.window.screen.handle_island_click(
+                                    &route.window.winit_window,
+                                    &mut self.router.clipboard,
+                                );
 
                             if handled_by_island {
                                 // Island handled the click, don't process further
@@ -1077,7 +1076,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .screen
                                 .mouse_report(code, ElementState::Pressed);
 
-                            route.window.screen.process_mouse_bindings(button);
+                            route.window.screen.process_mouse_bindings(
+                                button,
+                                &mut self.router.clipboard,
+                            );
                         } else {
                             // In case need to switch grid current
                             route.window.screen.select_current_based_on_mouse();
@@ -1092,12 +1094,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             if let MouseButton::Left = button {
                                 let pos =
                                     route.window.screen.mouse_position(display_offset);
-                                route.window.screen.on_left_click(pos);
+                                route
+                                    .window
+                                    .screen
+                                    .on_left_click(pos, &mut self.router.clipboard);
                             }
 
                             route.request_redraw();
                         }
-                        route.window.screen.process_mouse_bindings(button);
+                        route
+                            .window
+                            .screen
+                            .process_mouse_bindings(button, &mut self.router.clipboard);
                     }
                     ElementState::Released => {
                         // Stop selection auto-scroll on button release.
@@ -1143,17 +1151,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                         // Trigger hints highlighted by the mouse
                         if button == MouseButton::Left
-                            && route.window.screen.trigger_hint()
+                            && route
+                                .window
+                                .screen
+                                .trigger_hint(&mut self.router.clipboard)
                         {
                             return;
                         }
 
                         if let MouseButton::Left | MouseButton::Right = button {
                             if self.config.copy_on_select {
-                                route
-                                    .window
-                                    .screen
-                                    .copy_selection(ClipboardType::Clipboard);
+                                route.window.screen.copy_selection(
+                                    ClipboardType::Clipboard,
+                                    &mut self.router.clipboard,
+                                );
                             }
                         }
                     }
@@ -1509,7 +1520,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 event: key_event,
                 ..
             } => {
-                if route.has_key_wait(&key_event) {
+                if route.has_key_wait(&key_event, &mut self.router.clipboard) {
                     if route.path != RoutePath::Terminal
                         && key_event.state == ElementState::Released
                     {
@@ -1523,7 +1534,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
 
                 route.window.screen.context_manager.set_last_typing();
-                route.window.screen.process_key_event(&key_event);
+                route
+                    .window
+                    .screen
+                    .process_key_event(&key_event, &mut self.router.clipboard);
 
                 if key_event.state == ElementState::Released
                     && self.config.hide_cursor_when_typing
@@ -1583,7 +1597,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             WindowEvent::Touch(touch) => {
-                on_touch(route, touch);
+                on_touch(route, touch, &mut self.router.clipboard);
             }
 
             WindowEvent::Focused(focused) => {
@@ -1803,7 +1817,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         route.window.screen.set_modifiers(*modifiers);
 
         // Process the key event
-        route.window.screen.process_key_event(key);
+        route
+            .window
+            .screen
+            .process_key_event(key, &mut self.router.clipboard);
 
         // Restore the original modifiers
         route.window.screen.set_modifiers(original_modifiers);
@@ -1817,10 +1834,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         // Renderer and contexts ran.
         self.router.routes.clear();
 
-        // SAFETY: The clipboard must be dropped before the event loop, so use the nop clipboard
-        // as a safe placeholder.
-        self.router.clipboard =
-            std::rc::Rc::new(std::cell::RefCell::new(Clipboard::new_nop()));
+        // SAFETY: The clipboard must be dropped before the event loop, so
+        // replace it with a safe no-op placeholder.
+        self.router.clipboard = Clipboard::new_nop();
 
         std::process::exit(0);
     }

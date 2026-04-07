@@ -49,6 +49,8 @@ pub enum ClickState {
 /// Terminal damage information for efficient rendering
 #[derive(Debug, Clone, PartialEq)]
 pub enum TerminalDamage {
+    /// Nothing changed — skip rendering entirely
+    Noop,
     /// The entire terminal needs to be redrawn
     Full,
     /// Only specific lines need to be redrawn
@@ -66,8 +68,12 @@ pub enum RioEvent {
     Render,
     /// New terminal content available per route.
     RenderRoute(usize),
-    /// Wake up and check for terminal updates.
-    Wakeup(usize),
+    /// Terminal content changed with specific damage information.
+    /// Sent from PTY thread so renderer doesn't need to lock terminal for damage.
+    TerminalDamaged {
+        route_id: usize,
+        damage: TerminalDamage,
+    },
     /// Graphics update available from terminal.
     UpdateGraphics {
         route_id: usize,
@@ -210,8 +216,8 @@ impl Debug for RioEvent {
             }
             RioEvent::Render => write!(f, "Render"),
             RioEvent::RenderRoute(route) => write!(f, "Render route {route}"),
-            RioEvent::Wakeup(route) => {
-                write!(f, "Wakeup route {route}")
+            RioEvent::TerminalDamaged { route_id, .. } => {
+                write!(f, "TerminalDamaged route {route_id}")
             }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),

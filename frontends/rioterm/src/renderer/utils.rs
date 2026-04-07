@@ -1,8 +1,72 @@
 use crate::constants;
 use crate::layout::ContextDimension;
+use crate::renderer::font_cache::{FontCache, FontCacheData};
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
+use rio_backend::sugarloaf::font::FontLibrary;
+use rio_backend::sugarloaf::{Content, SpanStyle};
 use rio_window::window::Theme;
+
+/// Add text to a Content builder with per-character font fallback.
+/// Splits the text into spans grouped by resolved font_id.
+#[inline]
+pub fn add_span_with_fallback(
+    builder: &mut Content,
+    text: &str,
+    base_style: SpanStyle,
+    font_library: &FontLibrary,
+    font_cache: &mut FontCache,
+) {
+    let font_attrs = base_style.font_attrs;
+    let mut current_font_id: Option<usize> = None;
+    let mut current_run = String::new();
+
+    for ch in text.chars() {
+        let font_id = if let Some(cached) = font_cache.get(&(ch, font_attrs)) {
+            cached.font_id
+        } else {
+            let font_ctx = font_library.inner.read();
+            let (fid, _) = font_ctx
+                .find_best_font_match(ch, &base_style)
+                .unwrap_or((0, false));
+            font_cache.insert(
+                (ch, font_attrs),
+                FontCacheData {
+                    font_id: fid,
+                    width: 1.0,
+                    is_pua: false,
+                },
+            );
+            fid
+        };
+
+        if current_font_id == Some(font_id) {
+            current_run.push(ch);
+        } else {
+            if !current_run.is_empty() {
+                builder.add_span(
+                    &current_run,
+                    SpanStyle {
+                        font_id: current_font_id.unwrap_or(0),
+                        ..base_style
+                    },
+                );
+                current_run.clear();
+            }
+            current_font_id = Some(font_id);
+            current_run.push(ch);
+        }
+    }
+    if !current_run.is_empty() {
+        builder.add_span(
+            &current_run,
+            SpanStyle {
+                font_id: current_font_id.unwrap_or(0),
+                ..base_style
+            },
+        );
+    }
+}
 
 #[inline]
 pub fn padding_top_from_config(

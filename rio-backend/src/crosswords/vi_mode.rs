@@ -386,7 +386,7 @@ fn is_space<T: EventListener>(term: &Crosswords<T>, pos: Pos) -> bool {
     !cell
         .flags()
         .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
-        && (cell.c == ' ' || cell.c == '\t')
+        && (cell.c == '\0' || cell.c == ' ' || cell.c == '\t')
 }
 
 /// Check if the cell at a pos contains the WRAPLINE flag.

@@ -142,7 +142,7 @@ impl PendingUpdate {
     }
 
     /// Mark as needing to check for damage on next render
-    /// This is used by Wakeup events to defer damage calculation
+    /// This is used by TerminalDamaged events to store damage
     pub fn set_dirty(&mut self) {
         self.dirty = true;
     }
@@ -199,6 +199,8 @@ impl PendingUpdate {
             (TerminalDamage::CursorOnly, TerminalDamage::CursorOnly) => {
                 TerminalDamage::CursorOnly
             }
+            // Noop + anything = the other thing
+            (TerminalDamage::Noop, other) | (other, TerminalDamage::Noop) => other,
         }
     }
 }
