@@ -76,9 +76,9 @@ pub struct PlatformWindow {
     pub windows_corner_preference: Option<window::WindowsCornerPreference>,
     #[serde(default = "Option::default")]
     pub colorspace: Option<window::Colorspace>,
-    #[serde(default = "Option::default", rename = "columns")]
+    #[serde(default = "Option::default")]
     pub columns: Option<u16>,
-    #[serde(default = "Option::default", rename = "rows")]
+    #[serde(default = "Option::default")]
     pub rows: Option<u16>,
 }
 

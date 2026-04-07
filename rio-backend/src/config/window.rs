@@ -119,9 +119,9 @@ pub struct Window {
     pub windows_corner_preference: Option<WindowsCornerPreference>,
     #[serde(default = "Colorspace::default")]
     pub colorspace: Colorspace,
-    #[serde(rename = "columns", default = "Option::default")]
+    #[serde(default = "Option::default")]
     pub columns: Option<u16>,
-    #[serde(rename = "rows", default = "Option::default")]
+    #[serde(default = "Option::default")]
     pub rows: Option<u16>,
 }
 
