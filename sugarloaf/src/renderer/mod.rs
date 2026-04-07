@@ -810,8 +810,10 @@ impl Renderer {
                 .collect();
             self.render_graphic_overlays(context, image_data, &overlays);
         } else {
-            self.image_textures.clear();
-            image_data.clear();
+            // No overlays visible — clear draw commands so stale images
+            // don't keep rendering. Keep image_textures and image_data
+            // so images can be re-rendered when scrolling back.
+            self.image_draws.clear();
         }
 
         self.vertices.clear();
@@ -1077,22 +1079,63 @@ impl Renderer {
 
                 let py = line_y;
 
+                let cell_width = rte_layout.unwrap().dimensions.width;
+
                 for run in &line.render_data.runs {
-                    let font = run.span.font_id;
                     let char_width = run.span.width;
+
+                    // Fast path: empty run (blanks/spaces) — just advance
+                    // and optionally paint background/cursor
+                    if run.glyphs.is_empty() {
+                        let advance = cell_width * char_width;
+                        let run_x = px;
+                        px += advance;
+
+                        if run.span.background_color.is_some()
+                            || run.span.cursor.is_some()
+                        {
+                            let style = TextRunStyle {
+                                font_coords,
+                                font_size: run.size,
+                                color: run.span.color,
+                                cursor: run.span.cursor,
+                                drawable_char: run.span.drawable_char,
+                                background_color: run.span.background_color,
+                                baseline,
+                                topline: py,
+                                line_height,
+                                padding_y,
+                                line_height_without_mod,
+                                advance,
+                                decoration: run.span.decoration,
+                                decoration_color: run.span.decoration_color,
+                                underline_offset: run.underline_offset,
+                                strikeout_offset: run.strikeout_offset,
+                                underline_thickness: run.strikeout_size,
+                                x_height: run.x_height,
+                                ascent: run.ascent,
+                                descent: run.descent,
+                                scale_constraint: None,
+                            };
+                            comp.draw_run(
+                                &mut session,
+                                Rect::new(run_x, py, advance, 1.),
+                                depth,
+                                &style,
+                                &[],
+                                order,
+                            );
+                        }
+
+                        continue;
+                    }
+
+                    let font = run.span.font_id;
                     let run_x = px;
 
-                    // Extract text from the run for caching
-                    let run_text = run
-                        .glyphs
-                        .iter()
-                        .filter_map(|g| char::from_u32(g.simple_data().0 as u32))
-                        .collect::<String>();
-
-                    // Try to get cached data for this text run
-                    let cached_result = if !run_text.is_empty() {
-                        self.text_run_manager
-                            .get_cached_data(&run_text, font, run.size)
+                    // Use pre-computed cache key — no String allocation needed
+                    let cached_result = if run.cache_key != 0 {
+                        self.text_run_manager.get_cached_data_by_key(run.cache_key)
                     } else {
                         CacheResult::Miss
                     };
@@ -1104,27 +1147,21 @@ impl Renderer {
                         } => {
                             // Use cached glyph data but need to render
                             glyphs.clear();
-                            if cached_glyphs.is_empty() {
-                                // No glyphs (graphics-only or whitespace) - advance by char_width
-                                px += rte_layout.unwrap().dimensions.width * char_width;
-                            } else {
-                                for shaped_glyph in cached_glyphs.iter() {
-                                    let x = px;
-                                    let y = baseline;
+                            for shaped_glyph in cached_glyphs.iter() {
+                                let x = px;
+                                let y = baseline;
 
-                                    if use_grid_cell_size {
-                                        px += rte_layout.unwrap().dimensions.width
-                                            * char_width;
-                                    } else {
-                                        px += shaped_glyph.x_advance;
-                                    }
-
-                                    glyphs.push(Glyph {
-                                        id: shaped_glyph.glyph_id as GlyphId,
-                                        x,
-                                        y,
-                                    });
+                                if use_grid_cell_size {
+                                    px += cell_width * char_width;
+                                } else {
+                                    px += shaped_glyph.x_advance;
                                 }
+
+                                glyphs.push(Glyph {
+                                    id: shaped_glyph.glyph_id as GlyphId,
+                                    x,
+                                    y,
+                                });
                             }
 
                             // Render using cached glyph data
@@ -1149,6 +1186,9 @@ impl Renderer {
                                 x_height: run.x_height,
                                 ascent: run.ascent,
                                 descent: run.descent,
+                                scale_constraint: run.span.pua_constraint.and_then(|c| {
+                                    rte_layout.map(|l| (l.dimensions.width, c as u8))
+                                }),
                             };
 
                             // Update font session if needed
@@ -1181,48 +1221,42 @@ impl Renderer {
                             glyphs.clear();
                             let mut shaped_glyphs = Vec::new();
 
-                            if run.glyphs.is_empty() {
-                                // Graphics-only run (no text glyphs) - advance by char_width
-                                px += rte_layout.unwrap().dimensions.width * char_width;
-                            } else {
-                                for glyph in &run.glyphs {
-                                    let x = px;
-                                    let y = baseline;
-                                    let advance = glyph.simple_data().1;
+                            for glyph in &run.glyphs {
+                                let x = px;
+                                let y = baseline;
+                                let advance = glyph.simple_data().1;
 
-                                    if use_grid_cell_size {
-                                        px += rte_layout.unwrap().dimensions.width
-                                            * char_width;
-                                    } else {
-                                        px += advance;
-                                    }
-
-                                    let glyph_id = glyph.simple_data().0;
-
-                                    glyphs.push(Glyph { id: glyph_id, x, y });
-
-                                    // Store for caching
-                                    shaped_glyphs.push(
-                                        crate::font::text_run_cache::ShapedGlyph {
-                                            glyph_id: glyph_id as u32,
-                                            x_advance: advance,
-                                            y_advance: 0.0,
-                                            x_offset: 0.0,
-                                            y_offset: 0.0,
-                                            cluster: 0,
-                                        },
-                                    );
+                                if use_grid_cell_size {
+                                    px += cell_width * char_width;
+                                } else {
+                                    px += advance;
                                 }
+
+                                let glyph_id = glyph.simple_data().0;
+
+                                glyphs.push(Glyph { id: glyph_id, x, y });
+
+                                // Store for caching
+                                shaped_glyphs.push(
+                                    crate::font::text_run_cache::ShapedGlyph {
+                                        glyph_id: glyph_id as u32,
+                                        x_advance: advance,
+                                        y_advance: 0.0,
+                                        x_offset: 0.0,
+                                        y_offset: 0.0,
+                                        cluster: 0,
+                                    },
+                                );
                             }
 
                             // Cache the shaped glyphs for future use
-                            if !run_text.is_empty() {
-                                self.text_run_manager.cache_shaping_data(
-                                    &run_text,
+                            if run.cache_key != 0 {
+                                self.text_run_manager.cache_shaping_data_by_key(
+                                    run.cache_key,
                                     font,
                                     run.size,
                                     shaped_glyphs,
-                                    false, // has_emoji - would need to be detected
+                                    false,
                                 );
                             }
 
@@ -1248,6 +1282,9 @@ impl Renderer {
                                 x_height: run.x_height,
                                 ascent: run.ascent,
                                 descent: run.descent,
+                                scale_constraint: run.span.pua_constraint.and_then(|c| {
+                                    rte_layout.map(|l| (l.dimensions.width, c as u8))
+                                }),
                             };
 
                             // Update font session if needed
@@ -1300,8 +1337,14 @@ impl Renderer {
                                     cached.atlas_layer
                                 );
 
+                                // Clip display size to cell grid boundaries
+                                // so the image never overflows into the next line.
+                                let cw = rte_layout.unwrap().dimensions.width;
+                                let render_w = (cached.width / cw).floor() * cw;
+                                let render_h =
+                                    (cached.height / line_height).floor() * line_height;
                                 comp.batches.add_image_rect(
-                                    &Rect::new(gx, gy, cached.width, cached.height),
+                                    &Rect::new(gx, gy, render_w, render_h),
                                     depth,
                                     &[1.0, 1.0, 1.0, 1.0],
                                     &[
@@ -1328,10 +1371,6 @@ impl Renderer {
                 line_y += line_height;
             }
         }
-
-        // let screen_render_duration = start.elapsed();
-        // if self.renderer.enable_performance_logging {
-        // println!("[PERF] draw_layout() total: {:?}", screen_render_duration);
     }
 
     /// Render image overlays using per-image GPU textures.
@@ -1344,10 +1383,9 @@ impl Renderer {
         >,
         overlays: &[&crate::sugarloaf::graphics::GraphicOverlay],
     ) {
-        // Clean up textures no longer referenced by any overlay
-        let active_ids: std::collections::HashSet<u32> =
-            overlays.iter().map(|o| o.image_id).collect();
-        self.image_textures.retain(|id, _| active_ids.contains(id));
+        // Note: don't evict textures not in the current overlay set —
+        // images may be temporarily off-screen and need their texture
+        // when scrolling back into view.
 
         // Upload/update per-image textures
         for overlay in overlays {

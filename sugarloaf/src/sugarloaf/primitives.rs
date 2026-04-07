@@ -346,6 +346,16 @@ pub enum Object {
     RichText(RichText),
 }
 
+#[inline]
+pub fn is_private_user_area(character: &char) -> bool {
+    matches!(
+        character,
+        '\u{E000}'..='\u{F8FF}'
+            | '\u{F0000}'..='\u{FFFFD}'
+            | '\u{100000}'..='\u{10FFFD}'
+    )
+}
+
 pub fn drawable_character(character: char) -> Option<DrawableChar> {
     match character {
 '\u{2500}'..='\u{259f}'

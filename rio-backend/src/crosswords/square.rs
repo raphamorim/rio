@@ -118,7 +118,7 @@ impl Default for Square {
     #[inline]
     fn default() -> Square {
         Square {
-            c: ' ',
+            c: '\0',
             bg: AnsiColor::Named(NamedColor::Background),
             fg: AnsiColor::Named(NamedColor::Foreground),
             extra: None,
@@ -175,7 +175,7 @@ impl Square {
         if let Some(extra) = self.extra.as_mut() {
             Arc::make_mut(extra).zerowidth = Vec::new();
         }
-        self.c = ' ';
+        self.c = '\0';
     }
 
     pub fn set_underline_color(
@@ -226,7 +226,7 @@ impl Square {
 impl GridSquare for Square {
     #[inline]
     fn is_empty(&self) -> bool {
-        (self.c == ' ' || self.c == '\t')
+        (self.c == '\0' || self.c == '\t')
             && self.bg == AnsiColor::Named(NamedColor::Background)
             && self.fg == AnsiColor::Named(NamedColor::Foreground)
             && !self.flags.intersects(
@@ -274,7 +274,7 @@ impl LineLength for Row<Square> {
         }
 
         for (index, cell) in self[..].iter().rev().enumerate() {
-            if cell.c != ' '
+            if cell.c != '\0'
                 || cell.extra.as_ref().map(|extra| extra.zerowidth.is_empty())
                     == Some(false)
             {

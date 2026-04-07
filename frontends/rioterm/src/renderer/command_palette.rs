@@ -4,6 +4,9 @@
 // LICENSE file in the root directory of this source tree.
 
 use crate::context::next_rich_text_id;
+use crate::renderer::font_cache::FontCache;
+use crate::renderer::utils::add_span_with_fallback;
+use rio_backend::sugarloaf::font::FontLibrary;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 use std::time::Instant;
 
@@ -468,7 +471,13 @@ impl CommandPalette {
         }
     }
 
-    pub fn render(&mut self, sugarloaf: &mut Sugarloaf, dimensions: (f32, f32, f32)) {
+    pub fn render(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        dimensions: (f32, f32, f32),
+        font_library: &FontLibrary,
+        font_cache: &mut FontCache,
+    ) {
         if !self.enabled {
             self.hide_all_text_ids(sugarloaf);
             return;
@@ -522,19 +531,20 @@ impl CommandPalette {
             TEXT_COLOR
         };
 
+        let input_style = SpanStyle {
+            color: text_color,
+            ..SpanStyle::default()
+        };
         let content = sugarloaf.content();
-        content
-            .sel(input_id)
-            .clear()
-            .new_line()
-            .add_span(
-                display_text,
-                SpanStyle {
-                    color: text_color,
-                    ..SpanStyle::default()
-                },
-            )
-            .build();
+        let builder = content.sel(input_id).clear().new_line();
+        add_span_with_fallback(
+            builder,
+            display_text,
+            input_style,
+            font_library,
+            font_cache,
+        );
+        builder.build();
 
         let text_x = input_x + INPUT_PADDING_X;
         let text_y = input_y + (INPUT_HEIGHT - INPUT_FONT_SIZE) / 2.0;
@@ -613,23 +623,24 @@ impl CommandPalette {
             }
 
             let result_id = self.result_text_ids[display_i];
+            let result_style = SpanStyle {
+                color: if is_selected {
+                    TEXT_COLOR
+                } else {
+                    [0.55, 0.55, 0.55, 1.0]
+                },
+                ..SpanStyle::default()
+            };
             let content = sugarloaf.content();
-            content
-                .sel(result_id)
-                .clear()
-                .new_line()
-                .add_span(
-                    cmd.title,
-                    SpanStyle {
-                        color: if is_selected {
-                            TEXT_COLOR
-                        } else {
-                            [0.55, 0.55, 0.55, 1.0]
-                        },
-                        ..SpanStyle::default()
-                    },
-                )
-                .build();
+            let builder = content.sel(result_id).clear().new_line();
+            add_span_with_fallback(
+                builder,
+                cmd.title,
+                result_style,
+                font_library,
+                font_cache,
+            );
+            builder.build();
 
             let row_text_x = input_x + INPUT_PADDING_X;
             let row_text_y = item_y + (RESULT_ITEM_HEIGHT - RESULT_FONT_SIZE) / 2.0;
@@ -639,19 +650,20 @@ impl CommandPalette {
             // Shortcut text (right-aligned)
             let shortcut_id = self.shortcut_text_ids[display_i];
             if !cmd.shortcut.is_empty() {
+                let shortcut_style = SpanStyle {
+                    color: SHORTCUT_TEXT_COLOR,
+                    ..SpanStyle::default()
+                };
                 let content = sugarloaf.content();
-                content
-                    .sel(shortcut_id)
-                    .clear()
-                    .new_line()
-                    .add_span(
-                        cmd.shortcut,
-                        SpanStyle {
-                            color: SHORTCUT_TEXT_COLOR,
-                            ..SpanStyle::default()
-                        },
-                    )
-                    .build();
+                let builder = content.sel(shortcut_id).clear().new_line();
+                add_span_with_fallback(
+                    builder,
+                    cmd.shortcut,
+                    shortcut_style,
+                    font_library,
+                    font_cache,
+                );
+                builder.build();
 
                 let shortcut_width = cmd.shortcut.len() as f32 * 6.5;
                 let shortcut_x = input_x + input_width - INPUT_PADDING_X - shortcut_width;

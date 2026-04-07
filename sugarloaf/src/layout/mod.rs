@@ -18,8 +18,8 @@ pub use render_data::RenderData;
 pub use rich_text_render_data::RichTextRenderData;
 
 pub use content::{
-    BuilderLine, BuilderState, BuilderStateUpdate, Content, FragmentData, SpanStyle,
-    SpanStyleDecoration, UnderlineInfo, UnderlineShape, WordCache,
+    BuilderLine, BuilderState, BuilderStateUpdate, Content, FragmentData, ShapingCache,
+    SpanStyle, SpanStyleDecoration, UnderlineInfo, UnderlineShape,
 };
 pub use content_data::{ContentData, ContentRenderData, ContentState};
 pub use render_data::Run;
