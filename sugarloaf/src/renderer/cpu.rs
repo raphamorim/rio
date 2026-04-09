@@ -29,7 +29,7 @@ use crate::renderer::image_cache::ImageCache;
 use crate::renderer::Renderer;
 use rustc_hash::FxHashMap;
 use std::hash::Hasher;
-use wide::u32x4;
+use wide::{u32x4, u32x8};
 
 #[derive(Default)]
 pub struct CpuCache {
@@ -106,16 +106,11 @@ fn blend_over_swar(src_premul: u32, dst: u32) -> u32 {
     out_rb | (out_g << 8)
 }
 
-/// Vectorized SWAR Porter-Duff source-over for 4 dest pixels at once.
-/// `src_v` is splat of (src_premul & 0x00ff_ffff); `inv_v` is splat of
-/// (255 - src.a). Used by the translucent solid-rect path where the source
-/// color is constant across the entire rect.
+/// SWAR source-over with constant src across all lanes (translucent rect).
+/// `src_v` is splat of `(src_premul & 0x00ff_ffff)`; `inv_v` is splat of
+/// `(255 - src.a)`. 4 dst pixels per call.
 #[inline(always)]
-fn blend_over_simd_constant_src(
-    src_v: u32x4,
-    inv_v: u32x4,
-    dst: u32x4,
-) -> u32x4 {
+fn blend_over_simd_const_src_x4(src_v: u32x4, inv_v: u32x4, dst: u32x4) -> u32x4 {
     let mask_rb = u32x4::splat(0x00ff_00ff);
     let half_rb = u32x4::splat(0x0080_0080);
     let mask_g = u32x4::splat(0xff);
@@ -129,6 +124,52 @@ fn blend_over_simd_constant_src(
     let dg = dg << 8;
 
     src_v + drb + dg
+}
+
+/// 256-bit version of `blend_over_simd_const_src_x4` — 8 dst pixels per call.
+/// Lights up on AVX2 (~all x86_64 since 2013). Falls back gracefully on
+/// older hardware via wide's runtime detection.
+#[inline(always)]
+fn blend_over_simd_const_src_x8(src_v: u32x8, inv_v: u32x8, dst: u32x8) -> u32x8 {
+    let mask_rb = u32x8::splat(0x00ff_00ff);
+    let half_rb = u32x8::splat(0x0080_0080);
+    let mask_g = u32x8::splat(0xff);
+
+    let drb = (dst & mask_rb) * inv_v;
+    let drb = ((drb + half_rb + ((drb >> 8) & mask_rb)) >> 8) & mask_rb;
+
+    let dg = (dst >> 8) & mask_g;
+    let dg = dg * inv_v;
+    let dg = ((dg + u32x8::splat(0x80) + (dg >> 8)) >> 8) & mask_g;
+    let dg = dg << 8;
+
+    src_v + drb + dg
+}
+
+/// SWAR source-over with **per-lane** src and inv_a — used by glyph blit
+/// where each cached glyph pixel has its own premultiplied (a,r,g,b).
+/// Branchless: produces correct result for sa==0 (returns dst) and sa==255
+/// (returns src) without any conditional, so the loop fully vectorizes.
+#[inline(always)]
+fn blend_over_simd_var_src_x4(src: u32x4, dst: u32x4) -> u32x4 {
+    let mask_byte = u32x4::splat(0xff);
+    let mask_rb = u32x4::splat(0x00ff_00ff);
+    let half_rb = u32x4::splat(0x0080_0080);
+    let mask_rgb = u32x4::splat(0x00ff_ffff);
+
+    let sa = (src >> 24) & mask_byte;
+    let inv_v = u32x4::splat(255) - sa;
+    let src_rgb = src & mask_rgb;
+
+    let drb = (dst & mask_rb) * inv_v;
+    let drb = ((drb + half_rb + ((drb >> 8) & mask_rb)) >> 8) & mask_rb;
+
+    let dg = (dst >> 8) & mask_byte;
+    let dg = dg * inv_v;
+    let dg = ((dg + u32x4::splat(0x80) + (dg >> 8)) >> 8) & mask_byte;
+    let dg = dg << 8;
+
+    src_rgb + drb + dg
 }
 
 // ---- Quad parsing & coalescing types ----
@@ -442,25 +483,44 @@ fn fill_translucent_simd(
     let pg = (g as u32 * a_u + 127) / 255;
     let pb = (b as u32 * a_u + 127) / 255;
     let src_premul = pack_premul(pr as u8, pg as u8, pb as u8, a);
-    let src_v = u32x4::splat(src_premul & 0x00ff_ffff);
-    let inv_v = u32x4::splat(255 - a_u);
+    let src_rgb = src_premul & 0x00ff_ffff;
+    let inv = 255 - a_u;
+    let src_v8 = u32x8::splat(src_rgb);
+    let inv_v8 = u32x8::splat(inv);
+    let src_v4 = u32x4::splat(src_rgb);
+    let inv_v4 = u32x4::splat(inv);
+    let mask_rgb_x8 = u32x8::splat(0x00ff_ffff);
+    let mask_rgb_x4 = u32x4::splat(0x00ff_ffff);
 
     let buf_w_us = buf_w as usize;
     for y in y0..y1 {
         let row_start = (y as usize) * buf_w_us + (x0 as usize);
         let row_end = (y as usize) * buf_w_us + (x1 as usize);
         let row = &mut buf[row_start..row_end];
-        let mut chunks = row.chunks_exact_mut(4);
-        for chunk in &mut chunks {
-            let dst = u32x4::new([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            let out = blend_over_simd_constant_src(src_v, inv_v, dst);
+
+        // 256-bit chunks first.
+        let mut chunks8 = row.chunks_exact_mut(8);
+        for chunk in &mut chunks8 {
+            let dst = u32x8::new([
+                chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5],
+                chunk[6], chunk[7],
+            ]);
+            let out = blend_over_simd_const_src_x8(src_v8, inv_v8, dst) & mask_rgb_x8;
             let arr = out.to_array();
-            chunk[0] = arr[0] & 0x00ff_ffff;
-            chunk[1] = arr[1] & 0x00ff_ffff;
-            chunk[2] = arr[2] & 0x00ff_ffff;
-            chunk[3] = arr[3] & 0x00ff_ffff;
+            chunk.copy_from_slice(&arr);
         }
-        for px in chunks.into_remainder() {
+        let tail = chunks8.into_remainder();
+
+        // 128-bit tail.
+        let mut chunks4 = tail.chunks_exact_mut(4);
+        for chunk in &mut chunks4 {
+            let dst = u32x4::new([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            let out = blend_over_simd_const_src_x4(src_v4, inv_v4, dst) & mask_rgb_x4;
+            let arr = out.to_array();
+            chunk.copy_from_slice(&arr);
+        }
+        // Scalar tail.
+        for px in chunks4.into_remainder() {
             *px = blend_over_swar(src_premul, *px);
         }
     }
@@ -563,13 +623,30 @@ fn draw_glyph(
     let buf_w_us = buf_w as usize;
     let g_w_us = glyph.w as usize;
 
+    let mask_rgb_x4 = u32x4::splat(0x00ff_ffff);
+
     for yy in 0..glyph.h as usize {
         let dst_y = y0 as usize + yy;
         let dst_row_off = dst_y * buf_w_us + x0 as usize;
         let src_row_off = yy * g_w_us;
         let dst_row = &mut buf[dst_row_off..dst_row_off + g_w_us];
         let src_row = &glyph.pixels[src_row_off..src_row_off + g_w_us];
-        for (d, &s) in dst_row.iter_mut().zip(src_row) {
+
+        // SIMD: 4 pixels at a time, branchless blend (handles sa==0/255
+        // correctly as a side effect of the formula).
+        let mut dst_chunks = dst_row.chunks_exact_mut(4);
+        let mut src_chunks = src_row.chunks_exact(4);
+        for (dchunk, schunk) in (&mut dst_chunks).zip(&mut src_chunks) {
+            let dst = u32x4::new([dchunk[0], dchunk[1], dchunk[2], dchunk[3]]);
+            let src = u32x4::new([schunk[0], schunk[1], schunk[2], schunk[3]]);
+            let out = blend_over_simd_var_src_x4(src, dst) & mask_rgb_x4;
+            let arr = out.to_array();
+            dchunk.copy_from_slice(&arr);
+        }
+        // Scalar tail keeps the early-out branches.
+        let dst_tail = dst_chunks.into_remainder();
+        let src_tail = src_chunks.remainder();
+        for (d, &s) in dst_tail.iter_mut().zip(src_tail) {
             *d = blend_over_swar(s, *d);
         }
     }
