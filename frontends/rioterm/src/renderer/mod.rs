@@ -649,7 +649,13 @@ impl Renderer {
         let mut pending_blank_style = SpanStyle::default();
 
         for (style, square_content, column) in styles_and_chars {
-            let is_blank = square_content == '\0' || square_content == ' ';
+            // Cells carrying a graphic (sixel/iTerm2/Kitty) must go
+            // through the normal text path so the renderer paints
+            // their image. They are NOT blank — even when their
+            // character slot is `'\0'` or `' '`.
+            let has_media = style.media.is_some();
+            let is_blank =
+                (square_content == '\0' || square_content == ' ') && !has_media;
 
             // Flush pending blank run if this cell breaks the batch
             if pending_blank_width > 0.0
@@ -713,7 +719,15 @@ impl Renderer {
                     last_style = style;
                 }
 
-                content.push(square_content);
+                // A '\0' cell with a graphic still needs a glyph to
+                // anchor the image draw. Substitute a space so the
+                // shaper produces a real run.
+                let push_char = if has_media && square_content == '\0' {
+                    ' '
+                } else {
+                    square_content
+                };
+                content.push(push_char);
             }
 
             // Render last column and break row
