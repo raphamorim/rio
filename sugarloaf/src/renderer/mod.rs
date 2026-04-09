@@ -1591,11 +1591,7 @@ impl Renderer {
             }
 
             let offset = i as u64 * stride;
-            render_encoder.set_vertex_buffer(
-                0,
-                Some(&brush.image_vertex_buffer),
-                offset,
-            );
+            render_encoder.set_vertex_buffer(0, Some(&brush.image_vertex_buffer), offset);
             render_encoder.set_fragment_texture(0, Some(tex));
             render_encoder.draw_primitives_instanced(
                 metal::MTLPrimitiveType::TriangleStrip,
@@ -1916,9 +1912,7 @@ impl Renderer {
                             rpass.set_bind_group(1, &bg, &[]);
                             rpass.set_vertex_buffer(
                                 0,
-                                brush
-                                    .image_vertex_buffer
-                                    .slice(offset..offset + stride),
+                                brush.image_vertex_buffer.slice(offset..offset + stride),
                             );
                             rpass.draw(0..4, 0..1);
                         }
@@ -2004,9 +1998,7 @@ impl Renderer {
                             rpass.set_bind_group(1, &bg, &[]);
                             rpass.set_vertex_buffer(
                                 0,
-                                brush
-                                    .image_vertex_buffer
-                                    .slice(offset..offset + stride),
+                                brush.image_vertex_buffer.slice(offset..offset + stride),
                             );
                             rpass.draw(0..4, 0..1);
                         }

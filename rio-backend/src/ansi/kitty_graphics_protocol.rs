@@ -48,6 +48,29 @@ pub struct KittyGraphicsResponse {
     pub placement_request: Option<PlacementRequest>,
     pub delete_request: Option<DeleteRequest>,
     pub response: Option<String>,
+    /// True when this "response" is just a chunk-accumulation
+    /// acknowledgement — the parser stored the chunk and is waiting
+    /// for more. The dispatcher should treat this as a successful
+    /// no-op and must NOT log a parse failure for it (yazi and other
+    /// TUIs send hundreds of chunked frames per second; spamming
+    /// warnings on each chunk is the bug fix this field enables).
+    pub incomplete: bool,
+}
+
+impl KittyGraphicsResponse {
+    /// Sentinel returned for an in-progress chunked transmission. The
+    /// dispatcher recognises this as "data accumulated, no action
+    /// needed", as opposed to `None` which now means "real parse
+    /// error".
+    fn pending_chunk() -> Self {
+        Self {
+            graphic_data: None,
+            placement_request: None,
+            delete_request: None,
+            response: None,
+            incomplete: true,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -275,6 +298,7 @@ pub fn parse(
             placement_request: None,
             delete_request: None,
             response: Some(response),
+            incomplete: false,
         });
     }
 
@@ -351,7 +375,11 @@ pub fn parse(
                 );
             }
         }
-        return None;
+        // Tell the dispatcher this is an in-progress chunked
+        // transmission, not an error. Returning None here would have
+        // been logged as "Failed to parse" — yazi sends hundreds of
+        // chunks per image preview and that flooded the warning log.
+        return Some(KittyGraphicsResponse::pending_chunk());
     } else {
         // Check if we have incomplete data (even if image_id/number is 0)
         if let Some(mut stored_cmd) = state.incomplete_images.remove(&image_key) {
@@ -417,6 +445,7 @@ pub fn parse(
                 placement_request,
                 delete_request: None,
                 response,
+                incomplete: false,
             })
         }
         Action::Put => {
@@ -449,6 +478,7 @@ pub fn parse(
                 placement_request: Some(placement),
                 delete_request: None,
                 response,
+                incomplete: false,
             })
         }
         Action::Delete => {
@@ -468,6 +498,7 @@ pub fn parse(
                 placement_request: None,
                 delete_request: Some(delete),
                 response: None,
+                incomplete: false,
             })
         }
         Action::Query => {
@@ -506,6 +537,7 @@ pub fn parse(
                 placement_request: None,
                 delete_request: None,
                 response,
+                incomplete: false,
             })
         }
     }
@@ -1308,13 +1340,19 @@ mod tests {
         assert!(response.placement_request.is_none());
         assert!(response.delete_request.is_none());
         let body = response.response.expect("error response expected");
-        assert!(body.contains("i=1"), "response should echo image id: {body}");
+        assert!(
+            body.contains("i=1"),
+            "response should echo image id: {body}"
+        );
         assert!(
             body.contains("EINVAL:unsupported action"),
             "response should contain EINVAL: {body}"
         );
         assert!(body.starts_with("\x1b_G"), "response should be APC: {body}");
-        assert!(body.ends_with("\x1b\\"), "response should end with ST: {body}");
+        assert!(
+            body.ends_with("\x1b\\"),
+            "response should end with ST: {body}"
+        );
     }
 
     #[test]
@@ -1350,7 +1388,8 @@ mod tests {
     #[test]
     fn test_animation_error_suppressed_when_quiet_2() {
         // q=2 should suppress error responses too
-        let result = parse_kitty_graphics_protocol("a=f,i=1,r=2,s=1,v=1,f=32,q=2", "AAAA");
+        let result =
+            parse_kitty_graphics_protocol("a=f,i=1,r=2,s=1,v=1,f=32,q=2", "AAAA");
         let response = result.expect("response struct should still exist");
         assert!(
             response.response.is_none(),
@@ -1395,13 +1434,16 @@ mod tests {
         // First chunk - 1x1 RGBA pixel split into chunks
         // Total base64 for [255, 0, 0, 255] is "/wAA/w=="
         let params1 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=100", b"/wA"];
-        let result1 = parse(&params1, &mut state);
-        assert!(result1.is_none()); // Should accumulate
+        let result1 = parse(&params1, &mut state).expect(
+            "intermediate chunks must return a `pending_chunk` response, not None",
+        );
+        assert!(result1.incomplete, "first chunk must be marked incomplete");
+        assert!(result1.graphic_data.is_none());
 
         // Second chunk - need to specify action and image id
         let params2 = vec![b"G".as_ref(), b"a=t,m=1,i=100", b"A/"];
-        let result2 = parse(&params2, &mut state);
-        assert!(result2.is_none()); // Should accumulate
+        let result2 = parse(&params2, &mut state).expect("pending_chunk for chunk 2");
+        assert!(result2.incomplete, "second chunk must be marked incomplete");
 
         // Final chunk - need to specify action, image id, and dimensions
         let params3 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=0,i=100", b"w=="];
@@ -1409,7 +1451,33 @@ mod tests {
         assert!(result3.is_some()); // Should return complete image
 
         let response = result3.unwrap();
+        assert!(!response.incomplete, "final chunk must not be incomplete");
         assert!(response.graphic_data.is_some());
+    }
+
+    #[test]
+    fn test_pending_chunk_distinct_from_parse_error() {
+        // Regression for the yazi log spam: an in-progress chunked
+        // transmission must be distinguishable from a real parse error
+        // so the dispatcher can suppress the warning. Real errors
+        // (security check fail, missing dimensions, etc.) still return
+        // None.
+        let mut state = KittyGraphicsState::default();
+
+        // m=1: pending — Some(incomplete=true)
+        let params = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=42", b"/wA"];
+        let resp = parse(&params, &mut state).expect("pending must be Some");
+        assert!(resp.incomplete);
+
+        // Real error path: blocked path → None
+        let proc_path = BASE64.encode("/proc/self/environ".as_bytes());
+        let bad = vec![
+            b"G".as_ref(),
+            b"a=t,t=f,f=32,s=1,v=1,i=99",
+            proc_path.as_bytes(),
+        ];
+        let resp = parse(&bad, &mut KittyGraphicsState::default());
+        assert!(resp.is_none(), "real parse errors should still return None");
     }
 
     #[test]

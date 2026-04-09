@@ -273,19 +273,24 @@ fn test_chunked_transfer() {
     // Total base64 for 1x1 RGBA pixel [255, 0, 0, 255] is "/wAA/w=="
     // Split into 3 chunks: "/wA", "A/", "w=="
 
-    // Send first chunk (m=1 means more chunks coming)
+    // Send first chunk (m=1 means more chunks coming). The parser
+    // returns Some(pending_chunk) so the dispatcher can distinguish
+    // an in-progress chunked transmission from a real parse failure.
     let params1 = vec![
         b"G".as_ref(),
         b"a=t,f=32,s=1,v=1,m=1,i=100".as_ref(),
         b"/wA".as_ref(),
     ];
-    let result1 = kitty_graphics_protocol::parse(&params1, &mut state);
-    assert!(result1.is_none());
+    let result1 = kitty_graphics_protocol::parse(&params1, &mut state)
+        .expect("intermediate chunks must produce a Some response");
+    assert!(result1.incomplete);
+    assert!(result1.graphic_data.is_none());
 
     // Send second chunk
     let params2 = vec![b"G".as_ref(), b"a=t,m=1,i=100".as_ref(), b"A/".as_ref()];
-    let result2 = kitty_graphics_protocol::parse(&params2, &mut state);
-    assert!(result2.is_none());
+    let result2 = kitty_graphics_protocol::parse(&params2, &mut state)
+        .expect("intermediate chunks must produce a Some response");
+    assert!(result2.incomplete);
 
     // Send final chunk with complete image info (m=0 means last chunk)
     let params3 = vec![
@@ -2699,7 +2704,8 @@ fn test_eviction_prefers_inactive_screen_images() {
         2,
         StoredImage {
             data: inactive_data,
-            transmission_time: std::time::Instant::now() - std::time::Duration::from_secs(60),
+            transmission_time: std::time::Instant::now()
+                - std::time::Duration::from_secs(60),
         },
     );
     // Inactive bytes also count toward total_bytes (kept consistent).
@@ -2714,10 +2720,7 @@ fn test_eviction_prefers_inactive_screen_images() {
     assert!(ok, "Eviction should free enough");
 
     assert!(
-        !graphics
-            .kitty_inactive_screen
-            .kitty_images
-            .contains_key(&2),
+        !graphics.kitty_inactive_screen.kitty_images.contains_key(&2),
         "Inactive image should be evicted before active images"
     );
 }
@@ -2786,10 +2789,7 @@ fn test_eviction_keeps_active_used_image_when_inactive_available() {
          alternative exists"
     );
     assert!(
-        !graphics
-            .kitty_inactive_screen
-            .kitty_images
-            .contains_key(&2),
+        !graphics.kitty_inactive_screen.kitty_images.contains_key(&2),
         "Inactive image should be the eviction target"
     );
 }
@@ -2887,11 +2887,19 @@ fn test_implicit_image_ids_are_distinct() {
     // Two parses with no `i=` should yield two different graphic IDs.
     let mut state = KittyGraphicsState::default();
 
-    let p1 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1".as_ref(), b"/wAA/w==".as_ref()];
+    let p1 = vec![
+        b"G".as_ref(),
+        b"a=t,f=32,s=1,v=1".as_ref(),
+        b"/wAA/w==".as_ref(),
+    ];
     let r1 = kitty_graphics_protocol::parse(&p1, &mut state).unwrap();
     let id1 = r1.graphic_data.unwrap().id.get();
 
-    let p2 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1".as_ref(), b"AP8A/w==".as_ref()];
+    let p2 = vec![
+        b"G".as_ref(),
+        b"a=t,f=32,s=1,v=1".as_ref(),
+        b"AP8A/w==".as_ref(),
+    ];
     let r2 = kitty_graphics_protocol::parse(&p2, &mut state).unwrap();
     let id2 = r2.graphic_data.unwrap().id.get();
 
@@ -3683,7 +3691,11 @@ fn test_animation_action_surfaces_unsupported_response() {
     // response that the terminal can forward back to the client. Pre-fix
     // this returned None and the client got nothing.
     let mut state = KittyGraphicsState::default();
-    let params = vec![b"G".as_ref(), b"a=f,i=1,r=2,s=1,v=1,f=32".as_ref(), b"AAAA".as_ref()];
+    let params = vec![
+        b"G".as_ref(),
+        b"a=f,i=1,r=2,s=1,v=1,f=32".as_ref(),
+        b"AAAA".as_ref(),
+    ];
 
     let resp = kitty_graphics_protocol::parse(&params, &mut state)
         .expect("animation actions must produce a response");

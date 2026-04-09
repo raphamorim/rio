@@ -469,6 +469,7 @@ impl Graphics {
     /// 1. Inactive-screen images (the user is not looking at them)
     /// 2. Active-screen unused images (no live placement)
     /// 3. Active-screen used images (visible — last resort)
+    ///
     /// Within each tier we evict oldest by timestamp first.
     pub fn evict_images(
         &mut self,
@@ -606,9 +607,7 @@ impl Graphics {
                     self.kitty_image_numbers.retain(|_, v| *v != evicted_u32);
                 }
                 CandidateSource::InactiveKitty => {
-                    self.kitty_inactive_screen
-                        .kitty_images
-                        .remove(&evicted_u32);
+                    self.kitty_inactive_screen.kitty_images.remove(&evicted_u32);
                     self.kitty_inactive_screen
                         .kitty_image_numbers
                         .retain(|_, v| *v != evicted_u32);
@@ -634,8 +633,12 @@ impl Graphics {
             self.kitty_images.keys().copied().collect();
         self.kitty_placements
             .retain(|_, p| active_ids.contains(&p.image_id));
-        let inactive_ids: std::collections::HashSet<u32> =
-            self.kitty_inactive_screen.kitty_images.keys().copied().collect();
+        let inactive_ids: std::collections::HashSet<u32> = self
+            .kitty_inactive_screen
+            .kitty_images
+            .keys()
+            .copied()
+            .collect();
         self.kitty_inactive_screen
             .kitty_placements
             .retain(|_, p| inactive_ids.contains(&p.image_id));

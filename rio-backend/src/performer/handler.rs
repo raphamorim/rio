@@ -821,6 +821,15 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
             if let Some(response) =
                 kitty_graphics_protocol::parse(&kitty_params, chunking_state)
             {
+                if response.incomplete {
+                    // Chunk was accumulated, waiting for more chunks.
+                    // This is normal flow for multi-part transmissions
+                    // (yazi, image previewers) — must not be treated
+                    // as a parse failure.
+                    debug!("[process_apc_buffer] Kitty graphics chunk accumulated");
+                    return;
+                }
+
                 debug!("[process_apc_buffer] Kitty graphics parsed successfully");
 
                 if let Some(graphic_data) = response.graphic_data {
