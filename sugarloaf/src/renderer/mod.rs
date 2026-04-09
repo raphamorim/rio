@@ -1,5 +1,6 @@
 mod batch;
 mod compositor;
+pub mod cpu;
 mod image_cache;
 #[cfg(test)]
 mod positioning_tests;
@@ -46,6 +47,8 @@ pub enum RendererType {
     Wgpu(WgpuRenderer),
     #[cfg(target_os = "macos")]
     Metal(MetalRenderer),
+    /// CPU backend: no GPU brush; rasterization happens in `cpu::CpuPipeline` at present time.
+    Cpu,
 }
 
 pub struct WgpuRenderer {
@@ -572,6 +575,7 @@ impl Renderer {
             ContextType::Metal(metal_context) => {
                 RendererType::Metal(MetalRenderer::new(metal_context))
             }
+            ContextType::Cpu(_) => RendererType::Cpu,
         };
 
         Self {
@@ -1414,7 +1418,12 @@ impl Renderer {
                 continue;
             }
 
+            // CPU backend: image overlays not supported in v1, skip.
+            if matches!(&context.inner, crate::context::ContextType::Cpu(_)) {
+                continue;
+            }
             let gpu = match &context.inner {
+                crate::context::ContextType::Cpu(_) => unreachable!(),
                 crate::context::ContextType::Wgpu(ctx) => {
                     let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
                         label: Some("kitty image"),
@@ -1985,6 +1994,16 @@ impl Renderer {
         }
     }
 
+    /// Vertices accumulated for the current frame (CPU rasterizer reads these).
+    pub(crate) fn vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+
+    /// Image cache for CPU rasterizer atlas sampling.
+    pub(crate) fn image_cache(&self) -> &ImageCache {
+        &self.images
+    }
+
     pub fn resize(&mut self, context: &mut Context) {
         let transform = match &context.inner {
             ContextType::Wgpu(wgpu_ctx) => {
@@ -1994,6 +2013,9 @@ impl Renderer {
             ContextType::Metal(metal_ctx) => {
                 orthographic_projection(metal_ctx.size.width, metal_ctx.size.height)
             }
+            ContextType::Cpu(cpu_ctx) => {
+                orthographic_projection(cpu_ctx.size.width, cpu_ctx.size.height)
+            }
         };
 
         match &mut self.brush_type {
@@ -2001,7 +2023,6 @@ impl Renderer {
                 if transform != wgpu_brush.current_transform {
                     let queue = match &context.inner {
                         ContextType::Wgpu(wgpu_ctx) => &wgpu_ctx.queue,
-                        #[cfg(target_os = "macos")]
                         _ => unreachable!(),
                     };
 
@@ -2017,6 +2038,7 @@ impl Renderer {
             RendererType::Metal(metal_brush) => {
                 metal_brush.resize(transform);
             }
+            RendererType::Cpu => {}
         }
     }
 }
