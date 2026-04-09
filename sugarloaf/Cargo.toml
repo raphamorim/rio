@@ -55,7 +55,8 @@ num-traits = "0.2.19"
 yazi = { version = "0.2.1", optional = true }
 zeno = { version = "0.3.3", optional = true }
 futures = { workspace = true }
-tiny-skia = "0.11"
+tiny-skia = "0.12.0"
+wide = "1.2.0"
 
 librashader = { version = "0.10.0", default-features = false, features = ["runtime-wgpu", "stable", "presets"] }
 librashader-common = "0.10"
