@@ -951,7 +951,6 @@ impl ImageCache {
             DeviceQueue::Wgpu {
                 mask_texture_view, ..
             } => Some(mask_texture_view),
-            #[cfg(target_os = "macos")]
             _ => None,
         }
     }
