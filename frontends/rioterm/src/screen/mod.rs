@@ -126,21 +126,26 @@ impl Screen<'_> {
             RendererPerformance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        let backend = match config.renderer.backend {
-            Backend::Automatic => {
-                #[cfg(target_arch = "wasm32")]
-                let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-                #[cfg(not(target_arch = "wasm32"))]
-                let default_backend = wgpu::Backends::all();
+        let backend = if config.renderer.use_cpu {
+            SugarloafBackend::Cpu
+        } else {
+            match config.renderer.backend {
+                Backend::Automatic => {
+                    #[cfg(target_arch = "wasm32")]
+                    let default_backend =
+                        wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let default_backend = wgpu::Backends::all();
 
-                SugarloafBackend::Wgpu(default_backend)
+                    SugarloafBackend::Wgpu(default_backend)
+                }
+                Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
+                Backend::GL => SugarloafBackend::Wgpu(wgpu::Backends::GL),
+                Backend::WgpuMetal => SugarloafBackend::Wgpu(wgpu::Backends::METAL),
+                #[cfg(target_os = "macos")]
+                Backend::Metal => SugarloafBackend::Metal,
+                Backend::DX12 => SugarloafBackend::Wgpu(wgpu::Backends::DX12),
             }
-            Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
-            Backend::GL => SugarloafBackend::Wgpu(wgpu::Backends::GL),
-            Backend::WgpuMetal => SugarloafBackend::Wgpu(wgpu::Backends::METAL),
-            #[cfg(target_os = "macos")]
-            Backend::Metal => SugarloafBackend::Metal,
-            Backend::DX12 => SugarloafBackend::Wgpu(wgpu::Backends::DX12),
         };
 
         let sugarloaf_renderer = SugarloafRenderer {

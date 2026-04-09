@@ -138,6 +138,16 @@ Require confirmation before quitting (Default: `true`).
 confirm-before-quit = true
 ```
 
+## copy-on-select
+
+Automatically copy the selected text to the clipboard when a mouse selection ends. Disabled by default.
+
+This is a top-level option — it must appear before any `[section]` header in your config file.
+
+```toml
+copy-on-select = true
+```
+
 ## cursor
 
 By default, the cursor shape is set to `block`. You can also choose from other options like `underline` and `beam`.
@@ -1277,6 +1287,22 @@ Strategy property defines how Rio will render, by default it follows Event drive
 ```toml
 [renderer]
 strategy = "events"
+```
+
+## renderer.use-cpu
+
+Use the CPU rasterizer ([tiny-skia](https://github.com/RazrFalcon/tiny-skia)) instead of the GPU pipeline. Useful on systems without working GPU drivers, in virtual machines, or for debugging rendering issues.
+
+This option is **experimental**. The first version supports solid quads and glyphs only — the following features are not yet implemented on the CPU path:
+
+- Image overlays (Kitty graphics protocol)
+- GPU filters (RetroArch / `renderer.filters`)
+- Advanced underline styles
+- Corner radii
+
+```toml
+[renderer]
+use-cpu = false
 ```
 
 ## scroll

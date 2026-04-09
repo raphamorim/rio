@@ -1,3 +1,4 @@
+pub mod cpu;
 #[cfg(target_os = "macos")]
 pub mod metal;
 pub mod webgpu;
@@ -14,6 +15,7 @@ pub enum ContextType<'a> {
     Wgpu(webgpu::WgpuContext<'a>),
     #[cfg(target_os = "macos")]
     Metal(metal::MetalContext),
+    Cpu(cpu::CpuContext),
 }
 
 impl Context<'_> {
@@ -29,6 +31,9 @@ impl Context<'_> {
             SugarloafBackend::Metal => {
                 ContextType::Metal(metal::MetalContext::new(sugarloaf_window))
             }
+            SugarloafBackend::Cpu => {
+                ContextType::Cpu(cpu::CpuContext::new(sugarloaf_window))
+            }
         };
 
         Context { inner }
@@ -40,6 +45,7 @@ impl Context<'_> {
             ContextType::Wgpu(ctx) => ctx.scale,
             #[cfg(target_os = "macos")]
             ContextType::Metal(ctx) => ctx.scale,
+            ContextType::Cpu(ctx) => ctx.scale,
         }
     }
 
@@ -53,6 +59,9 @@ impl Context<'_> {
             ContextType::Metal(ctx) => {
                 ctx.set_scale(scale);
             }
+            ContextType::Cpu(ctx) => {
+                ctx.set_scale(scale);
+            }
         }
     }
 
@@ -62,6 +71,7 @@ impl Context<'_> {
             ContextType::Wgpu(ctx) => ctx.size,
             #[cfg(target_os = "macos")]
             ContextType::Metal(ctx) => ctx.size,
+            ContextType::Cpu(ctx) => ctx.size,
         }
     }
 
@@ -74,6 +84,7 @@ impl Context<'_> {
             ContextType::Wgpu(ctx) => ctx.resize(width, height),
             #[cfg(target_os = "macos")]
             ContextType::Metal(ctx) => ctx.resize(width, height),
+            ContextType::Cpu(ctx) => ctx.resize(width, height),
         }
     }
 
@@ -83,6 +94,7 @@ impl Context<'_> {
             ContextType::Wgpu(ctx) => ctx.supports_f16(),
             #[cfg(target_os = "macos")]
             ContextType::Metal(ctx) => ctx.supports_f16(),
+            ContextType::Cpu(ctx) => ctx.supports_f16(),
         }
     }
 }

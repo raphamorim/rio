@@ -12,8 +12,6 @@ const SHORT_ANIMATION_LENGTH: f32 = 0.04;
 /// Trail size 0.0–1.0.  1.0 = max stretch (leading edge jumps instantly,
 /// trailing edge lags most).
 const TRAIL_SIZE: f32 = 1.0;
-
-/// Depth / draw order for the trail quad (behind regular cursor text).
 const DEPTH: f32 = 0.0;
 const ORDER: u8 = 10;
 
