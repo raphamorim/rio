@@ -1289,6 +1289,22 @@ Strategy property defines how Rio will render, by default it follows Event drive
 strategy = "events"
 ```
 
+## renderer.use-cpu
+
+Use the CPU rasterizer ([tiny-skia](https://github.com/RazrFalcon/tiny-skia)) instead of the GPU pipeline. Useful on systems without working GPU drivers, in virtual machines, or for debugging rendering issues.
+
+This option is **experimental**. The first version supports solid quads and glyphs only — the following features are not yet implemented on the CPU path:
+
+- Image overlays (Kitty graphics protocol)
+- GPU filters (RetroArch / `renderer.filters`)
+- Advanced underline styles
+- Corner radii
+
+```toml
+[renderer]
+use-cpu = false
+```
+
 ## scroll
 
 You can change how many lines are scrolled each time by setting this option. Scroll calculation for canonical mode will be based on `lines = (accumulated scroll * multiplier / divider)`.
