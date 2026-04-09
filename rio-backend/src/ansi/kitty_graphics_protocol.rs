@@ -19,6 +19,27 @@ pub struct KittyGraphicsState {
     /// Tracks the current transmission key for chunks that don't specify an image ID.
     /// This is used for continuation chunks that only have m=1 or m=0.
     current_transmission_key: u32,
+
+    /// Counter for auto-assigned image IDs. Per kitty spec, when a
+    /// client transmits an image without an explicit `i=` (or `I=`)
+    /// the terminal must allocate one. We allocate from the high half
+    /// of the u32 range (`0x80000000..`) so the auto-assigned IDs do
+    /// not collide with client-supplied IDs (which clients typically
+    /// pick from `1..0x80000000`).
+    next_auto_image_id: u32,
+}
+
+impl KittyGraphicsState {
+    /// Allocate a fresh image_id for an implicit transmission.
+    fn allocate_image_id(&mut self) -> u32 {
+        if self.next_auto_image_id < 0x80000000 {
+            self.next_auto_image_id = 0x80000000;
+        }
+        let id = self.next_auto_image_id;
+        self.next_auto_image_id =
+            self.next_auto_image_id.checked_add(1).unwrap_or(0x80000000);
+        id
+    }
 }
 
 #[derive(Debug)]
@@ -96,6 +117,12 @@ pub struct KittyGraphicsCommand {
     action: Action,
     quiet: u8,
 
+    /// True when `image_id` was auto-assigned because the client did
+    /// not supply `i=` or `I=`. Per kitty spec we must not echo a
+    /// response back for these commands even though we now have an id
+    /// internally.
+    implicit_id: bool,
+
     // Image transmission
     format: Format,
     medium: TransmissionMedium,
@@ -155,6 +182,7 @@ impl Default for KittyGraphicsCommand {
         Self {
             action: Action::Transmit,
             quiet: 0,
+            implicit_id: false,
             format: Format::Rgba32,
             medium: TransmissionMedium::Direct,
             width: 0,
@@ -252,24 +280,40 @@ pub fn parse(
 
     // Handle chunked data
     // Determine the key for this chunk:
-    // - If this chunk has an explicit image_id or image_number, use that and set it as current
-    // - If no ID in this chunk, use the current transmission key (for continuation chunks)
+    // - If this chunk has an explicit image_id or image_number, use that.
+    // - If no ID in this chunk and we are mid-transmission (a chunked
+    //   command pinned `current_transmission_key`), reuse it.
+    // - Otherwise the client sent a fresh command without an explicit id
+    //   and we must allocate one per kitty spec.
+    //
+    // Importantly we only *pin* the key into `current_transmission_key`
+    // when this is a chunked command (`cmd.more` is true). Pinning on
+    // every command leaked into the next implicit command and made it
+    // think it was a continuation chunk.
     let image_key = if cmd.image_id > 0 || cmd.image_number > 0 {
-        // This chunk has an explicit ID - use it and set as current transmission
-        let key = if cmd.image_id > 0 {
+        if cmd.image_id > 0 {
             cmd.image_id
         } else {
             cmd.image_number
-        };
-        state.current_transmission_key = key;
-        key
-    } else {
-        // No ID in this chunk - use the current transmission key
-        // This handles continuation chunks that only have m=1 or m=0
+        }
+    } else if state.current_transmission_key != 0 {
+        // Continuation chunk: reuse the in-progress key
         state.current_transmission_key
+    } else {
+        // Fresh command without explicit id — allocate one. Mark as
+        // implicit so we suppress the response per spec.
+        let key = state.allocate_image_id();
+        cmd.image_id = key;
+        cmd.implicit_id = true;
+        key
     };
 
     if cmd.more {
+        // Pin the key for continuation chunks. Only chunked commands
+        // touch `current_transmission_key` so non-chunked commands
+        // don't leak state into subsequent transmissions.
+        state.current_transmission_key = image_key;
+
         // Store chunk for later - preserve all metadata from first chunk
         use std::collections::hash_map::Entry;
 
@@ -336,12 +380,14 @@ pub fn parse(
                 "Graphic data created successfully: {}x{}",
                 graphic_data.width, graphic_data.height
             );
-            let response = if cmd.quiet == 0 && (cmd.image_id > 0 || cmd.image_number > 0)
+            let response = if cmd.quiet == 0
+                && !cmd.implicit_id
+                && (cmd.image_id > 0 || cmd.image_number > 0)
             {
-                let id_part = if cmd.image_id > 0 {
-                    format!("i={}", cmd.image_id)
-                } else {
+                let id_part = if cmd.image_number > 0 {
                     format!("i={},I={}", graphic_data.id.get(), cmd.image_number)
+                } else {
+                    format!("i={}", cmd.image_id)
                 };
                 Some(format!("\x1b_G{};OK\x1b\\", id_part))
             } else {
@@ -388,7 +434,7 @@ pub fn parse(
                 unicode_placeholder: cmd.unicode_placeholder,
                 cursor_movement: cmd.cursor_movement,
             };
-            let response = if cmd.quiet == 0 && cmd.image_id > 0 {
+            let response = if cmd.quiet == 0 && !cmd.implicit_id && cmd.image_id > 0 {
                 let id_part = if cmd.placement_id > 0 {
                     format!("i={},p={}", cmd.image_id, cmd.placement_id)
                 } else {
@@ -424,9 +470,43 @@ pub fn parse(
                 response: None,
             })
         }
-        _ => {
-            // TODO: Handle other actions
-            None
+        Action::Query => {
+            // Query is handled earlier in the function before the
+            // chunking branches; the early return makes this arm
+            // unreachable in practice.
+            unreachable!("Query handled above")
+        }
+        Action::Frame | Action::Animate | Action::Compose => {
+            // Animation actions are not supported. Per the kitty spec we
+            // surface this so clients can detect the lack of support and
+            // fall back, instead of silently dropping the command.
+            // (Any chunked accumulation for this key was already drained
+            // above when we entered the final-chunk branch.)
+            //
+            // Implicit-id transmissions still get no response, so the
+            // client never sees stray APC traffic it didn't ask for.
+            let response = if cmd.quiet < 2 && !cmd.implicit_id {
+                let id_part = if cmd.image_id > 0 {
+                    format!("i={}", cmd.image_id)
+                } else if cmd.image_number > 0 {
+                    format!("I={}", cmd.image_number)
+                } else {
+                    String::new()
+                };
+                if id_part.is_empty() {
+                    Some("\x1b_G;EINVAL:unsupported action\x1b\\".to_string())
+                } else {
+                    Some(format!("\x1b_G{};EINVAL:unsupported action\x1b\\", id_part))
+                }
+            } else {
+                None
+            };
+            Some(KittyGraphicsResponse {
+                graphic_data: None,
+                placement_request: None,
+                delete_request: None,
+                response,
+            })
         }
     }
 }
@@ -1218,12 +1298,64 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_multi_frame() {
-        // 1x1 RGBA pixel
+    fn test_animation_frame_returns_unsupported_error() {
+        // a=f (transmit animation frame) is not implemented; per spec we
+        // surface EINVAL:unsupported action so clients can fall back.
         let payload = "AAAA";
         let result = parse_kitty_graphics_protocol("a=f,i=1,r=2,s=1,v=1,f=32", payload);
-        // Frame action returns None for now (not implemented)
-        assert!(result.is_none());
+        let response = result.expect("animation actions must produce a response");
+        assert!(response.graphic_data.is_none());
+        assert!(response.placement_request.is_none());
+        assert!(response.delete_request.is_none());
+        let body = response.response.expect("error response expected");
+        assert!(body.contains("i=1"), "response should echo image id: {body}");
+        assert!(
+            body.contains("EINVAL:unsupported action"),
+            "response should contain EINVAL: {body}"
+        );
+        assert!(body.starts_with("\x1b_G"), "response should be APC: {body}");
+        assert!(body.ends_with("\x1b\\"), "response should end with ST: {body}");
+    }
+
+    #[test]
+    fn test_animation_control_returns_unsupported_error() {
+        // a=a (animation control)
+        let result = parse_kitty_graphics_protocol("a=a,i=42,s=3", "");
+        let response = result.expect("animate action must produce a response");
+        let body = response.response.expect("error response expected");
+        assert!(body.contains("i=42"));
+        assert!(body.contains("EINVAL:unsupported action"));
+    }
+
+    #[test]
+    fn test_animation_compose_returns_unsupported_error() {
+        // a=c (compose frames)
+        let result = parse_kitty_graphics_protocol("a=c,i=7,r=1,c=2", "");
+        let response = result.expect("compose action must produce a response");
+        let body = response.response.expect("error response expected");
+        assert!(body.contains("i=7"));
+        assert!(body.contains("EINVAL:unsupported action"));
+    }
+
+    #[test]
+    fn test_animation_error_uses_image_number_when_no_id() {
+        // When only I= is given, the response should echo I=
+        let result = parse_kitty_graphics_protocol("a=f,I=99,r=2,s=1,v=1,f=32", "AAAA");
+        let response = result.expect("animation action must produce a response");
+        let body = response.response.expect("error response expected");
+        assert!(body.contains("I=99"), "expected I=99 in {body}");
+        assert!(body.contains("EINVAL:unsupported action"));
+    }
+
+    #[test]
+    fn test_animation_error_suppressed_when_quiet_2() {
+        // q=2 should suppress error responses too
+        let result = parse_kitty_graphics_protocol("a=f,i=1,r=2,s=1,v=1,f=32,q=2", "AAAA");
+        let response = result.expect("response struct should still exist");
+        assert!(
+            response.response.is_none(),
+            "q=2 should suppress error response"
+        );
     }
 
     #[test]
