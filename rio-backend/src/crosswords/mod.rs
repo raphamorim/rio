@@ -1234,8 +1234,11 @@ impl<U: EventListener> Crosswords<U> {
         self.mode ^= Mode::ALT_SCREEN;
         self.selection = None;
 
-        // Mark kitty graphics dirty so overlays rebuild for the new screen
-        self.graphics.kitty_graphics_dirty = true;
+        // Swap kitty graphics state per screen so each screen owns its
+        // own image cache, placements, number map, and virtual placements.
+        // (Marks the overlay layer dirty as a side effect so the renderer
+        // rebuilds against the new active screen.)
+        self.graphics.swap_kitty_screen_state();
         self.mark_fully_damaged();
     }
 
@@ -2069,11 +2072,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.keyboard_mode_stack = Default::default();
         self.inactive_keyboard_mode_stack = Default::default();
 
-        // Clear kitty graphics on full reset
-        self.graphics.kitty_placements.clear();
-        self.graphics.kitty_images.clear();
-        self.graphics.kitty_image_numbers.clear();
-        self.graphics.kitty_graphics_dirty = true;
+        // Clear kitty graphics on full reset (both active and inactive
+        // screens, so a reset doesn't leave stale images on the other
+        // screen waiting to come back).
+        self.graphics.clear_all_kitty_state();
 
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
@@ -3333,7 +3335,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.graphics.kitty_placements.clear();
                 overlay_changed = true;
 
-                if delete.action == b'A' && delete.delete_data {
+                if delete.delete_data {
                     self.graphics.kitty_images.clear();
                     self.graphics.kitty_image_numbers.clear();
                 }
@@ -3353,7 +3355,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
                 overlay_changed = self.graphics.kitty_placements.len() != before;
 
-                if delete.action == b'I' && delete.delete_data {
+                if delete.delete_data {
                     self.graphics
                         .delete_kitty_images(|id, _| *id == image_id_to_match);
                 }
@@ -3373,7 +3375,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 });
                 overlay_changed = self.graphics.kitty_placements.len() != before;
 
-                if delete.action == b'C' && delete.delete_data {
+                if delete.delete_data {
                     self.cleanup_unused_kitty_images();
                 }
             }
@@ -3395,7 +3397,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     overlay_changed = self.graphics.kitty_placements.len() != before;
                 }
 
-                if delete.action == b'P' && delete.delete_data {
+                if delete.delete_data {
                     self.cleanup_unused_kitty_images();
                 }
             }
@@ -3411,7 +3413,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     overlay_changed = self.graphics.kitty_placements.len() != before;
                 }
 
-                if delete.action == b'X' && delete.delete_data {
+                if delete.delete_data {
                     self.cleanup_unused_kitty_images();
                 }
             }
@@ -3427,7 +3429,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     overlay_changed = self.graphics.kitty_placements.len() != before;
                 }
 
-                if delete.action == b'Y' && delete.delete_data {
+                if delete.delete_data {
                     self.cleanup_unused_kitty_images();
                 }
             }
@@ -3437,7 +3439,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.graphics.kitty_placements.retain(|_, p| p.z_index != z);
                 overlay_changed = self.graphics.kitty_placements.len() != before;
 
-                if delete.action == b'Z' && delete.delete_data {
+                if delete.delete_data {
                     self.cleanup_unused_kitty_images();
                 }
             }
@@ -3458,7 +3460,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     }
                     overlay_changed = self.graphics.kitty_placements.len() != before;
 
-                    if delete.action == b'N' && delete.delete_data {
+                    if delete.delete_data {
                         self.graphics.delete_kitty_images(|id, _| *id == image_id);
                     }
                 }
@@ -3483,7 +3485,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     overlay_changed = self.graphics.kitty_placements.len() != before;
                 }
 
-                if delete.action == b'Q' && delete.delete_data {
+                if delete.delete_data {
                     self.cleanup_unused_kitty_images();
                 }
             }
@@ -3498,7 +3500,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                         .retain(|k, _| k.0 < range_start || k.0 > range_end);
                     overlay_changed = self.graphics.kitty_placements.len() != before;
 
-                    if delete.action == b'R' && delete.delete_data {
+                    if delete.delete_data {
                         self.graphics.delete_kitty_images(|id, _| {
                             *id >= range_start && *id <= range_end
                         });
@@ -3730,8 +3732,19 @@ impl<U: EventListener> Crosswords<U> {
             display_h.div_ceil(cell_height) as u32
         };
 
-        // Create overlay placement
-        let placement_id = placement.placement_id;
+        // Create overlay placement.
+        //
+        // Per kitty spec, when the client doesn't supply `p=` (or sends
+        // p=0) the terminal must allocate a unique internal placement_id
+        // so multiple placements of the same image don't collide. Without
+        // this, two `kitten icat` invocations referencing the same
+        // image_id would both store at key (image_id, 0) and only the
+        // last one would survive.
+        let placement_id = if placement.placement_id == 0 {
+            self.graphics.allocate_internal_placement_id()
+        } else {
+            placement.placement_id
+        };
         let kitty_placement = KittyPlacement {
             image_id,
             placement_id,
