@@ -29,6 +29,9 @@ pub struct Sugarloaf<'a> {
     filters_brush: Option<FiltersBrush>,
     /// Pixel data for standalone image textures, keyed by ImageId.
     pub image_data: rustc_hash::FxHashMap<u32, GraphicDataEntry>,
+    /// Persistent state for the CPU rasterizer (glyph cache + frame hash).
+    /// Unused on GPU backends.
+    cpu_cache: crate::renderer::cpu::CpuCache,
 }
 
 #[derive(Debug)]
@@ -64,6 +67,8 @@ pub enum SugarloafBackend {
     Wgpu(wgpu::Backends),
     #[cfg(target_os = "macos")]
     Metal,
+    /// CPU rendering via tiny-skia + softbuffer.
+    Cpu,
 }
 
 pub struct SugarloafRenderer {
@@ -166,6 +171,7 @@ impl Sugarloaf<'_> {
             graphics: Graphics::default(),
             filters_brush: None,
             image_data: rustc_hash::FxHashMap::default(),
+            cpu_cache: crate::renderer::cpu::CpuCache::new(),
         };
 
         Ok(instance)
@@ -180,6 +186,8 @@ impl Sugarloaf<'_> {
 
         // Clear the atlas to remove old font glyphs
         self.renderer.clear_atlas();
+        // Cached tinted glyphs alias the old atlas coordinates — drop them.
+        self.cpu_cache.clear();
 
         self.state.reset();
         self.state.set_fonts(font_library, &mut self.renderer);
@@ -252,7 +260,6 @@ impl Sugarloaf<'_> {
                     crate::context::ContextType::Wgpu(ctx) => {
                         brush.update_filters(ctx, filters);
                     }
-                    #[cfg(target_os = "macos")]
                     _ => {}
                 };
             }
@@ -835,7 +842,28 @@ impl Sugarloaf<'_> {
             crate::context::ContextType::Metal(_) => {
                 self.render_metal();
             }
+            crate::context::ContextType::Cpu(_) => {
+                self.render_cpu();
+            }
         }
+    }
+
+    #[inline]
+    pub fn render_cpu(&mut self) {
+        let bg = self.background_color;
+        let cpu_ctx = match &mut self.ctx.inner {
+            crate::context::ContextType::Cpu(c) => c,
+            _ => return,
+        };
+
+        crate::renderer::cpu::render_cpu(
+            cpu_ctx,
+            &self.renderer,
+            &mut self.cpu_cache,
+            bg,
+        );
+
+        self.reset();
     }
 
     #[inline]
@@ -845,9 +873,7 @@ impl Sugarloaf<'_> {
 
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Metal(metal) => metal,
-            crate::context::ContextType::Wgpu(_) => {
-                return;
-            }
+            _ => return,
         };
 
         match ctx.get_current_texture() {
@@ -902,16 +928,9 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render_wgpu(&mut self) {
-        #[cfg_attr(
-            not(target_os = "macos"),
-            expect(clippy::infallible_destructuring_match)
-        )]
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Wgpu(wgpu) => wgpu,
-            #[cfg(target_os = "macos")]
-            crate::context::ContextType::Metal(_) => {
-                return;
-            }
+            _ => return,
         };
 
         match ctx.surface.get_current_texture() {
