@@ -19,6 +19,16 @@ pub struct Renderer {
     pub filters: Vec<Filter>,
     #[serde(default = "RendererStategy::default")]
     pub strategy: RendererStategy,
+    /// Use the CPU rasterizer (tiny-skia) instead of the GPU pipeline.
+    /// Experimental. v1 supports solid quads + glyphs only; image
+    /// overlays, GPU filters, advanced underline styles, and corner radii
+    /// are not yet implemented on the CPU path.
+    #[serde(default = "default_use_cpu", rename = "use-cpu")]
+    pub use_cpu: bool,
+}
+
+fn default_use_cpu() -> bool {
+    false
 }
 
 fn default_disable_occluded_render() -> bool {
@@ -56,6 +66,7 @@ impl Default for Renderer {
             disable_occluded_render: default_disable_occluded_render(),
             filters: Vec::default(),
             strategy: RendererStategy::Events,
+            use_cpu: default_use_cpu(),
         }
     }
 }

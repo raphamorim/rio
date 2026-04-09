@@ -77,6 +77,8 @@ enum ColorAtlasTexture {
     Wgpu(wgpu::Texture, wgpu::TextureView),
     #[cfg(target_os = "macos")]
     Metal(metal::Texture),
+    /// CPU backend: pixel data lives in the Atlas buffer; no GPU resource.
+    Cpu,
 }
 
 enum DeviceQueue {
@@ -91,6 +93,8 @@ enum DeviceQueue {
         device: metal::Device,
         mask_texture: metal::Texture,
     },
+    /// CPU backend: no GPU device, no GPU mask texture; mask atlas buffer is sampled directly.
+    Cpu,
 }
 
 #[inline]
@@ -212,7 +216,39 @@ impl ImageCache {
                     },
                 }
             }
+            ContextType::Cpu(_) => {
+                // CPU backend: no GPU resources. Atlas buffers live in RAM and are sampled
+                // directly by the CPU rasterizer at present time.
+                let max_texture_size: u16 = 2048;
+                let color_atlases = vec![ColorAtlasWithTexture {
+                    atlas: Atlas::new(AtlasKind::Color, max_texture_size),
+                    texture: ColorAtlasTexture::Cpu,
+                }];
+                Self {
+                    entries: Vec::new(),
+                    mask_atlas: Atlas::new(AtlasKind::Mask, max_texture_size),
+                    color_atlases,
+                    max_texture_size,
+                    device_queue: DeviceQueue::Cpu,
+                }
+            }
         }
+    }
+
+    /// Public accessors used by the CPU rasterizer.
+    #[inline]
+    pub fn cpu_max_texture_size(&self) -> u16 {
+        self.max_texture_size
+    }
+    #[inline]
+    pub fn cpu_mask_atlas_buffer(&self) -> &[u8] {
+        &self.mask_atlas.buffer
+    }
+    #[inline]
+    pub fn cpu_color_atlas_buffer(&self, idx: usize) -> Option<&[u8]> {
+        self.color_atlases
+            .get(idx)
+            .map(|c| c.atlas.buffer.as_slice())
     }
 
     /// Allocates a new image and optionally fills it with the specified data.
@@ -431,6 +467,13 @@ impl ImageCache {
                 self.color_atlases.push(ColorAtlasWithTexture {
                     atlas: Atlas::new(AtlasKind::Color, self.max_texture_size),
                     texture: ColorAtlasTexture::Metal(texture),
+                });
+                true
+            }
+            DeviceQueue::Cpu => {
+                self.color_atlases.push(ColorAtlasWithTexture {
+                    atlas: Atlas::new(AtlasKind::Color, self.max_texture_size),
+                    texture: ColorAtlasTexture::Cpu,
                 });
                 true
             }
@@ -731,10 +774,6 @@ impl ImageCache {
             ContextType::Wgpu(wgpu_context) => {
                 // Process mask atlas
                 if self.mask_atlas.dirty {
-                    #[cfg_attr(
-                        not(target_os = "macos"),
-                        expect(irrefutable_let_patterns)
-                    )]
                     if let DeviceQueue::Wgpu {
                         mask_texture,
                         queue,
@@ -774,10 +813,6 @@ impl ImageCache {
                 // Process all color atlases
                 for atlas_with_texture in &mut self.color_atlases {
                     if atlas_with_texture.atlas.dirty {
-                        #[cfg_attr(
-                            not(target_os = "macos"),
-                            expect(irrefutable_let_patterns)
-                        )]
                         if let ColorAtlasTexture::Wgpu(texture, _) =
                             &atlas_with_texture.texture
                         {
@@ -810,6 +845,16 @@ impl ImageCache {
                             atlas_with_texture.atlas.dirty = false;
                         }
                     }
+                }
+            }
+            ContextType::Cpu(_) => {
+                // CPU backend: nothing to upload. Mark atlases clean so the dirty flag
+                // doesn't grow unbounded; rasterizer reads buffers directly.
+                self.mask_atlas.fresh = false;
+                self.mask_atlas.dirty = false;
+                for atlas_with_texture in &mut self.color_atlases {
+                    atlas_with_texture.atlas.fresh = false;
+                    atlas_with_texture.atlas.dirty = false;
                 }
             }
             #[cfg(target_os = "macos")]
@@ -876,7 +921,6 @@ impl ImageCache {
         self.color_atlases
             .iter()
             .filter_map(|atlas_with_texture| {
-                #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
                 if let ColorAtlasTexture::Wgpu(_, view) = &atlas_with_texture.texture {
                     Some(view)
                 } else {
@@ -907,7 +951,6 @@ impl ImageCache {
             DeviceQueue::Wgpu {
                 mask_texture_view, ..
             } => Some(mask_texture_view),
-            #[cfg(target_os = "macos")]
             _ => None,
         }
     }
