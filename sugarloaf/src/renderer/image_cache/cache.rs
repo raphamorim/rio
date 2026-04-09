@@ -246,7 +246,9 @@ impl ImageCache {
     }
     #[inline]
     pub fn cpu_color_atlas_buffer(&self, idx: usize) -> Option<&[u8]> {
-        self.color_atlases.get(idx).map(|c| c.atlas.buffer.as_slice())
+        self.color_atlases
+            .get(idx)
+            .map(|c| c.atlas.buffer.as_slice())
     }
 
     /// Allocates a new image and optionally fills it with the specified data.

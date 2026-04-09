@@ -5,21 +5,6 @@
 // Writes directly into softbuffer's `&mut [u32]` (0x00RRGGBB) — no
 // intermediate pixmap, no pixel format conversion at present time.
 //
-// Optimizations:
-//   - **Frame skip**: hash of (background, vertex bytes) compared to last
-//     frame; if equal, return without acquiring the surface buffer.
-//   - **Coalescing**: consecutive opaque solid quads with the same color
-//     and the same y-range that touch horizontally (q.x0 == p.x1) merge
-//     into a single fill. Terminal cell backgrounds collapse from
-//     thousands of fills/frame to dozens.
-//   - **Solid opaque rect fast path**: row-by-row `slice::fill(packed_u32)`
-//     — LLVM lowers to memset / vector stores.
-//   - **SIMD translucent rect blend**: `wide::u32x4` processes 4 dst
-//     pixels per iteration through a SWAR Porter-Duff over.
-//   - **SWAR glyph blit**: scalar source-over with R+B packed in one mul,
-//     G in another. Cached glyphs are stored as packed premultiplied
-//     `Vec<u32>` so blits skip any tinting math at draw time.
-//
 // v1 limitations: monochrome glyphs only (color-atlas glyphs / images
 // not implemented), no per-corner radii / borders / advanced underlines.
 
@@ -75,8 +60,6 @@ fn pack_opaque(r: u8, g: u8, b: u8) -> u32 {
     ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }
 
-// ---- Blend helpers ----
-
 /// Scalar SWAR Porter-Duff source-over with premultiplied source against
 /// opaque dest. Computes channels of R+B together in one multiply, G in
 /// another. ~30% faster than the naive 3-multiply scalar form.
@@ -100,8 +83,7 @@ fn blend_over_swar(src_premul: u32, dst: u32) -> u32 {
     let src_rgb = src_premul & 0x00ff_ffff;
     // Premultiplied src guarantees src.rgb <= src.a, so adding to the
     // attenuated dst can't carry into the next channel.
-    let out_rb =
-        ((src_rgb & 0x00ff_00ff) + (dst_blended & 0x00ff_00ff)) & 0x00ff_00ff;
+    let out_rb = ((src_rgb & 0x00ff_00ff) + (dst_blended & 0x00ff_00ff)) & 0x00ff_00ff;
     let out_g = (((src_rgb >> 8) & 0xff) + ((dst_blended >> 8) & 0xff)) & 0xff;
     out_rb | (out_g << 8)
 }
@@ -172,8 +154,6 @@ fn blend_over_simd_var_src_x4(src: u32x4, dst: u32x4) -> u32x4 {
     src_rgb + drb + dg
 }
 
-// ---- Quad parsing & coalescing types ----
-
 #[derive(Clone, Copy)]
 struct ParsedQuad {
     min_x: f32,
@@ -234,11 +214,7 @@ fn parse_quad(chunk: &[Vertex]) -> ParsedQuad {
 /// Snap quad bounds to integer pixels and clip to (clip_rect ∩ buffer).
 /// Returns Some((x0,y0,x1,y1)) or None if fully clipped.
 #[inline(always)]
-fn snap_and_clip(
-    q: &ParsedQuad,
-    buf_w: i32,
-    buf_h: i32,
-) -> Option<(i32, i32, i32, i32)> {
+fn snap_and_clip(q: &ParsedQuad, buf_w: i32, buf_h: i32) -> Option<(i32, i32, i32, i32)> {
     let mut x0 = q.min_x.round() as i32;
     let mut y0 = q.min_y.round() as i32;
     let mut x1 = q.max_x.round() as i32;
@@ -291,19 +267,8 @@ struct PendingFill {
 
 impl PendingFill {
     #[inline(always)]
-    fn try_extend(
-        &mut self,
-        x0: i32,
-        y0: i32,
-        x1: i32,
-        y1: i32,
-        packed: u32,
-    ) -> bool {
-        if self.packed == packed
-            && self.y0 == y0
-            && self.y1 == y1
-            && self.x1 == x0
-        {
+    fn try_extend(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, packed: u32) -> bool {
+        if self.packed == packed && self.y0 == y0 && self.y1 == y1 && self.x1 == x0 {
             self.x1 = x1;
             return true;
         }
@@ -320,8 +285,6 @@ fn flush_fill(buf: &mut [u32], buf_w: i32, p: &PendingFill) {
         buf[row_start..row_end].fill(p.packed);
     }
 }
-
-// ---- Top-level entry ----
 
 pub fn render_cpu(
     ctx: &mut CpuContext,
@@ -406,8 +369,8 @@ pub fn render_cpu(
                     flush_fill(buf_slice, buf_w, &p);
                 }
                 draw_glyph(
-                    buf_slice, buf_w, x0, y0, x1, y1, q.min_x, q.min_y, q.min_u,
-                    q.min_v, q.color, images, atlas_size, cache,
+                    buf_slice, buf_w, x0, y0, x1, y1, q.min_x, q.min_y, q.min_u, q.min_v,
+                    q.color, images, atlas_size, cache,
                 );
                 continue;
             }
@@ -462,8 +425,6 @@ pub fn render_cpu(
     }
 }
 
-// ---- Translucent rect: SIMD blend ----
-
 #[allow(clippy::too_many_arguments)]
 #[inline]
 fn fill_translucent_simd(
@@ -502,8 +463,8 @@ fn fill_translucent_simd(
         let mut chunks8 = row.chunks_exact_mut(8);
         for chunk in &mut chunks8 {
             let dst = u32x8::new([
-                chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5],
-                chunk[6], chunk[7],
+                chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
+                chunk[7],
             ]);
             let out = blend_over_simd_const_src_x8(src_v8, inv_v8, dst) & mask_rgb_x8;
             let arr = out.to_array();
@@ -525,8 +486,6 @@ fn fill_translucent_simd(
         }
     }
 }
-
-// ---- Glyph blit ----
 
 #[allow(clippy::too_many_arguments)]
 #[inline]
@@ -578,7 +537,7 @@ fn draw_glyph(
         color: color_packed,
     };
 
-    if !cache.glyphs.contains_key(&key) {
+    if let std::collections::hash_map::Entry::Vacant(e) = cache.glyphs.entry(key) {
         let mask = images.cpu_mask_atlas_buffer();
         if mask.is_empty() {
             return;
@@ -609,14 +568,11 @@ fn draw_glyph(
             }
         }
 
-        cache.glyphs.insert(
-            key,
-            CachedGlyph {
-                pixels,
-                w: g_w,
-                h: g_h,
-            },
-        );
+        e.insert(CachedGlyph {
+            pixels,
+            w: g_w,
+            h: g_h,
+        });
     }
 
     let glyph = cache.glyphs.get(&key).unwrap();

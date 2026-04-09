@@ -37,8 +37,7 @@ impl raw_window_handle::HasDisplayHandle for SoftbufferHandle {
 unsafe impl Send for SoftbufferHandle {}
 unsafe impl Sync for SoftbufferHandle {}
 
-pub type CpuSurface =
-    softbuffer::Surface<Rc<SoftbufferHandle>, Rc<SoftbufferHandle>>;
+pub type CpuSurface = softbuffer::Surface<Rc<SoftbufferHandle>, Rc<SoftbufferHandle>>;
 
 pub struct CpuContext {
     pub size: SugarloafWindowSize,
@@ -68,9 +67,7 @@ impl CpuContext {
         let width = (size.width as u32).max(1);
         let height = (size.height as u32).max(1);
 
-        if let (Some(w), Some(h)) =
-            (NonZeroU32::new(width), NonZeroU32::new(height))
-        {
+        if let (Some(w), Some(h)) = (NonZeroU32::new(width), NonZeroU32::new(height)) {
             surface
                 .resize(w, h)
                 .expect("CPU backend: failed to size softbuffer surface");
@@ -94,9 +91,7 @@ impl CpuContext {
         self.size.height = height as f32;
         self.width_px = width;
         self.height_px = height;
-        if let (Some(w), Some(h)) =
-            (NonZeroU32::new(width), NonZeroU32::new(height))
-        {
+        if let (Some(w), Some(h)) = (NonZeroU32::new(width), NonZeroU32::new(height)) {
             let _ = self.surface.resize(w, h);
         }
     }

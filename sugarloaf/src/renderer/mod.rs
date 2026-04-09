@@ -278,7 +278,6 @@ impl MetalRenderer {
         sampler_descriptor.set_address_mode_r(MTLSamplerAddressMode::ClampToEdge);
         let sampler = context.device.new_sampler(&sampler_descriptor);
 
-        // --- Image pipeline ---
         let image_shader_source = include_str!("image.metal");
         let image_library = context
             .device
@@ -1834,7 +1833,6 @@ impl Renderer {
                 return;
             }
 
-            // --- BelowText images (z < 0): render before text ---
             if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::BelowText)
             {
                 rpass.set_pipeline(&brush.image_pipeline);
@@ -1915,7 +1913,6 @@ impl Renderer {
                 current_vertex = end;
             }
 
-            // --- AboveText images (z >= 0): render after text ---
             if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::AboveText)
             {
                 rpass.set_pipeline(&brush.image_pipeline);
@@ -2297,7 +2294,6 @@ impl WgpuRenderer {
             mapped_at_creation: false,
         });
 
-        // --- Image pipeline (separate from text) ---
         let image_shader_source = include_str!("image.wgsl");
         let image_shader =
             context
