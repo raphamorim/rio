@@ -686,6 +686,22 @@ impl<U: EventListener> Crosswords<U> {
         delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
         self.vi_mode_cursor.pos.row += delta;
 
+        // Snapshot the cursor's *absolute* row (history + screen row)
+        // before the grid is reflowed. Kitty placements live in the
+        // same absolute coordinate space, and we use the cursor as a
+        // proxy for "where the surrounding text is". When reflow
+        // unwraps a row above the cursor (e.g. a long prompt fits on
+        // one line after the window widens), the cursor moves up to
+        // follow its content; we shift placements by the same amount
+        // so the image moves with the text. For grow_lines pulling
+        // from history the cursor's *absolute* row is invariant
+        // (history shrinks by N, cursor.row grows by N), so the
+        // delta naturally falls out to zero and placements stay put
+        // — which is what we want, since neither the cursor nor the
+        // image actually moved relative to the buffer.
+        let pre_resize_cursor_abs =
+            history_size as i64 + self.grid.cursor.pos.row.0 as i64;
+
         let is_alt = self.mode.contains(Mode::ALT_SCREEN);
         self.grid.resize(!is_alt, num_lines, num_cols);
         self.inactive_grid.resize(is_alt, num_lines, num_cols);
@@ -720,9 +736,22 @@ impl<U: EventListener> Crosswords<U> {
         // Update size information for graphics.
         self.graphics.resize(&size);
 
-        // Recompute overlay placement pixel dimensions for new cell size
+        // Compute the placement dest_row shift. See the comment above
+        // where we captured `pre_resize_cursor_abs`. Note: we use the
+        // *absolute* cursor row (history + cursor.row), not screen
+        // row, so vertical resizes (which move cursor.row but keep
+        // the absolute row constant) don't shift placements.
+        let post_resize_cursor_abs =
+            self.history_size() as i64 + self.grid.cursor.pos.row.0 as i64;
+        let dest_row_shift = post_resize_cursor_abs - pre_resize_cursor_abs;
+
+        // Recompute overlay placement pixel dimensions for new cell
+        // size, and shift dest_row to follow the text. Active and
+        // inactive screens both get the treatment so alt-screen
+        // images aren't stale on swap-back.
         let cell_w = self.graphics.cell_width as usize;
         let cell_h = self.graphics.cell_height as usize;
+        let mut overlay_changed = false;
         if cell_w > 0 && cell_h > 0 {
             for p in self.graphics.kitty_placements.values_mut() {
                 if p.columns > 0 {
@@ -731,10 +760,35 @@ impl<U: EventListener> Crosswords<U> {
                 if p.rows > 0 {
                     p.pixel_height = (p.rows as usize * cell_h) as u32;
                 }
+                if dest_row_shift != 0 {
+                    p.dest_row += dest_row_shift;
+                }
             }
-            if !self.graphics.kitty_placements.is_empty() {
-                self.graphics.kitty_graphics_dirty = true;
+            for p in self
+                .graphics
+                .kitty_inactive_screen
+                .kitty_placements
+                .values_mut()
+            {
+                if p.columns > 0 {
+                    p.pixel_width = (p.columns as usize * cell_w) as u32;
+                }
+                if p.rows > 0 {
+                    p.pixel_height = (p.rows as usize * cell_h) as u32;
+                }
+                if dest_row_shift != 0 {
+                    p.dest_row += dest_row_shift;
+                }
             }
+            overlay_changed = !self.graphics.kitty_placements.is_empty()
+                || !self
+                    .graphics
+                    .kitty_inactive_screen
+                    .kitty_placements
+                    .is_empty();
+        }
+        if overlay_changed {
+            self.graphics.kitty_graphics_dirty = true;
         }
     }
 
