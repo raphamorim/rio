@@ -28,7 +28,7 @@ pub struct Renderer {
 }
 
 fn default_use_cpu() -> bool {
-    true
+    false
 }
 
 fn default_disable_occluded_render() -> bool {
