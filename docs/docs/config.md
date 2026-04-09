@@ -138,6 +138,16 @@ Require confirmation before quitting (Default: `true`).
 confirm-before-quit = true
 ```
 
+## copy-on-select
+
+Automatically copy the selected text to the clipboard when a mouse selection ends. Disabled by default.
+
+This is a top-level option — it must appear before any `[section]` header in your config file.
+
+```toml
+copy-on-select = true
+```
+
 ## cursor
 
 By default, the cursor shape is set to `block`. You can also choose from other options like `underline` and `beam`.
