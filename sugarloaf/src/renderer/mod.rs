@@ -1526,6 +1526,14 @@ impl Renderer {
     }
 
     /// Draw image overlays for a specific layer using the image pipeline (Metal).
+    ///
+    /// The vertex buffer is shared across all draws (and across the
+    /// BelowText/AboveText layer passes), so each draw writes to its
+    /// own slot indexed by its position in `image_draws` and binds the
+    /// vertex buffer with the matching offset. Writing every instance
+    /// to slot 0 (the previous behaviour) made every draw read the same
+    /// last-written instance, so a screen with N kitty placements would
+    /// only ever render the most recent one.
     #[cfg(target_os = "macos")]
     fn draw_images_metal(
         image_draws: &[ImageDraw],
@@ -1539,11 +1547,27 @@ impl Renderer {
             return;
         }
 
+        // The vertex buffer holds up to MAX_IMAGE_INSTANCES instances.
+        // Anything beyond that can't be uploaded in this frame.
+        const MAX_IMAGE_INSTANCES: usize = 64;
+        let limit = image_draws.len().min(MAX_IMAGE_INSTANCES);
+        if image_draws.len() > MAX_IMAGE_INSTANCES {
+            tracing::warn!(
+                "image_draws ({}) exceeds vertex buffer capacity ({}); \
+                 extra placements will not render this frame",
+                image_draws.len(),
+                MAX_IMAGE_INSTANCES
+            );
+        }
+
         render_encoder.set_render_pipeline_state(&brush.image_pipeline_state);
         render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
         render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
 
-        for draw in image_draws {
+        let instance_data = brush.image_vertex_buffer.contents() as *mut ImageInstance;
+        let stride = mem::size_of::<ImageInstance>() as u64;
+
+        for (i, draw) in image_draws.iter().take(limit).enumerate() {
             if draw.layer != layer {
                 continue;
             }
@@ -1557,13 +1581,21 @@ impl Renderer {
                 _ => continue,
             };
 
-            let instance_data =
-                brush.image_vertex_buffer.contents() as *mut ImageInstance;
+            // Write this instance into its own slot. With
+            // StorageModeShared the GPU will read this slot back when
+            // the command buffer is committed; using a unique slot per
+            // draw avoids the previous bug where all draws shared
+            // offset 0 and ended up rendering only the last instance.
             unsafe {
-                *instance_data = draw.instance;
+                *instance_data.add(i) = draw.instance;
             }
 
-            render_encoder.set_vertex_buffer(0, Some(&brush.image_vertex_buffer), 0);
+            let offset = i as u64 * stride;
+            render_encoder.set_vertex_buffer(
+                0,
+                Some(&brush.image_vertex_buffer),
+                offset,
+            );
             render_encoder.set_fragment_texture(0, Some(tex));
             render_encoder.draw_primitives_instanced(
                 metal::MTLPrimitiveType::TriangleStrip,
@@ -1835,9 +1867,29 @@ impl Renderer {
 
             if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::BelowText)
             {
+                // Each draw must use a unique slot in the shared vertex
+                // buffer. Writing every instance to offset 0 (the old
+                // behaviour) made the GPU read only the last-written
+                // instance, so a screen with N kitty placements only
+                // ever rendered the most recent one. The buffer is
+                // sized for `MAX_IMAGE_INSTANCES` instances; the same
+                // index space is used by the AboveText pass below so
+                // both layers see consistent instance data.
+                const MAX_IMAGE_INSTANCES: usize = 64;
+                if image_draws.len() > MAX_IMAGE_INSTANCES {
+                    tracing::warn!(
+                        "image_draws ({}) exceeds vertex buffer capacity ({}); \
+                         extra placements will not render this frame",
+                        image_draws.len(),
+                        MAX_IMAGE_INSTANCES
+                    );
+                }
+                let limit = image_draws.len().min(MAX_IMAGE_INSTANCES);
+                let stride = std::mem::size_of::<ImageInstance>() as u64;
+
                 rpass.set_pipeline(&brush.image_pipeline);
                 rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
-                for draw in image_draws.iter() {
+                for (i, draw) in image_draws.iter().take(limit).enumerate() {
                     if draw.layer != ImageLayer::BelowText {
                         continue;
                     }
@@ -1855,9 +1907,10 @@ impl Renderer {
                                     }],
                                 },
                             );
+                            let offset = i as u64 * stride;
                             ctx.queue.write_buffer(
                                 &brush.image_vertex_buffer,
-                                0,
+                                offset,
                                 bytemuck::bytes_of(&draw.instance),
                             );
                             rpass.set_bind_group(1, &bg, &[]);
@@ -1865,7 +1918,7 @@ impl Renderer {
                                 0,
                                 brush
                                     .image_vertex_buffer
-                                    .slice(..std::mem::size_of::<ImageInstance>() as u64),
+                                    .slice(offset..offset + stride),
                             );
                             rpass.draw(0..4, 0..1);
                         }
@@ -1915,9 +1968,16 @@ impl Renderer {
 
             if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::AboveText)
             {
+                // See BelowText pass above for the rationale; both
+                // passes share the same indexing into image_draws so
+                // each placement always reads its own slot.
+                const MAX_IMAGE_INSTANCES: usize = 64;
+                let limit = image_draws.len().min(MAX_IMAGE_INSTANCES);
+                let stride = std::mem::size_of::<ImageInstance>() as u64;
+
                 rpass.set_pipeline(&brush.image_pipeline);
                 rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
-                for draw in image_draws.iter() {
+                for (i, draw) in image_draws.iter().take(limit).enumerate() {
                     if draw.layer != ImageLayer::AboveText {
                         continue;
                     }
@@ -1935,9 +1995,10 @@ impl Renderer {
                                     }],
                                 },
                             );
+                            let offset = i as u64 * stride;
                             ctx.queue.write_buffer(
                                 &brush.image_vertex_buffer,
-                                0,
+                                offset,
                                 bytemuck::bytes_of(&draw.instance),
                             );
                             rpass.set_bind_group(1, &bg, &[]);
@@ -1945,7 +2006,7 @@ impl Renderer {
                                 0,
                                 brush
                                     .image_vertex_buffer
-                                    .slice(..std::mem::size_of::<ImageInstance>() as u64),
+                                    .slice(offset..offset + stride),
                             );
                             rpass.draw(0..4, 0..1);
                         }
