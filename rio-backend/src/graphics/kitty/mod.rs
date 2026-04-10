@@ -273,19 +273,24 @@ fn test_chunked_transfer() {
     // Total base64 for 1x1 RGBA pixel [255, 0, 0, 255] is "/wAA/w=="
     // Split into 3 chunks: "/wA", "A/", "w=="
 
-    // Send first chunk (m=1 means more chunks coming)
+    // Send first chunk (m=1 means more chunks coming). The parser
+    // returns Some(pending_chunk) so the dispatcher can distinguish
+    // an in-progress chunked transmission from a real parse failure.
     let params1 = vec![
         b"G".as_ref(),
         b"a=t,f=32,s=1,v=1,m=1,i=100".as_ref(),
         b"/wA".as_ref(),
     ];
-    let result1 = kitty_graphics_protocol::parse(&params1, &mut state);
-    assert!(result1.is_none());
+    let result1 = kitty_graphics_protocol::parse(&params1, &mut state)
+        .expect("intermediate chunks must produce a Some response");
+    assert!(result1.incomplete);
+    assert!(result1.graphic_data.is_none());
 
     // Send second chunk
     let params2 = vec![b"G".as_ref(), b"a=t,m=1,i=100".as_ref(), b"A/".as_ref()];
-    let result2 = kitty_graphics_protocol::parse(&params2, &mut state);
-    assert!(result2.is_none());
+    let result2 = kitty_graphics_protocol::parse(&params2, &mut state)
+        .expect("intermediate chunks must produce a Some response");
+    assert!(result2.incomplete);
 
     // Send final chunk with complete image info (m=0 means last chunk)
     let params3 = vec![
@@ -2306,4 +2311,1397 @@ fn test_gray_alpha_format_conversion() {
     assert_eq!(data.pixels[2], 128);
     assert_eq!(data.pixels[3], 200);
     assert!(!data.is_opaque); // alpha != 255
+}
+
+// Free-data deletion bug regression tests.
+//
+// The parser lowercases `delete_action` and stores the original case in
+// `delete_data: bool`. The dispatcher used to check
+// `delete.action == b'I'` etc., which was always false because the parser
+// already normalized to lowercase, so the uppercase free-data variants
+// silently leaked image bytes. These tests pin the fix.
+
+fn make_test_term() -> Crosswords<TestEventListener> {
+    Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 24),
+        crate::ansi::CursorShape::Block,
+        TestEventListener,
+        unsafe { WindowId::dummy() },
+        0,
+    )
+}
+
+fn store_red_pixel(term: &mut Crosswords<TestEventListener>, image_id: u32) {
+    let graphic = GraphicData {
+        id: GraphicId::new(image_id as u64),
+        width: 1,
+        height: 1,
+        color_type: ColorType::Rgba,
+        pixels: vec![255, 0, 0, 255],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    term.store_graphic(graphic);
+}
+
+#[test]
+fn test_delete_uppercase_i_actually_frees_image_data() {
+    // Regression: d=I (uppercase) must remove the stored image, not just
+    // its placements. Pre-fix the dispatcher checked `delete.action == b'I'`
+    // which was always false, so the image cache leaked.
+    let mut term = make_test_term();
+    store_red_pixel(&mut term, 7);
+    assert!(term.graphics.get_kitty_image(7).is_some());
+
+    // Parser path: d=I sets delete_action='I', then is normalized to
+    // lowercase 'i' with delete_data=true.
+    let mut state = KittyGraphicsState::default();
+    let params = vec![b"G".as_ref(), b"a=d,d=I,i=7"];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state).unwrap();
+    let delete = resp.delete_request.expect("expected DeleteRequest");
+    assert_eq!(delete.action, b'i');
+    assert!(delete.delete_data, "uppercase I must set delete_data");
+
+    term.delete_graphics(delete);
+
+    assert!(
+        term.graphics.get_kitty_image(7).is_none(),
+        "d=I must free image data — the dispatcher should rely on \
+         delete.delete_data, not on a dead `action == b'I'` check"
+    );
+}
+
+#[test]
+fn test_delete_uppercase_a_clears_all_image_data() {
+    let mut term = make_test_term();
+    store_red_pixel(&mut term, 1);
+    store_red_pixel(&mut term, 2);
+    store_red_pixel(&mut term, 3);
+    assert_eq!(term.graphics.kitty_images.len(), 3);
+
+    let delete = DeleteRequest {
+        action: b'a',
+        image_id: 0,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        z_index: 0,
+        delete_data: true, // simulating d=A
+    };
+    term.delete_graphics(delete);
+
+    assert!(
+        term.graphics.kitty_images.is_empty(),
+        "d=A must clear all image data, not just placements"
+    );
+    assert!(term.graphics.kitty_image_numbers.is_empty());
+}
+
+#[test]
+fn test_delete_lowercase_a_keeps_image_data() {
+    // Per spec: lowercase deletes placements only, image data stays so a
+    // future `a=p` can still place the same image.
+    let mut term = make_test_term();
+    store_red_pixel(&mut term, 1);
+
+    let delete = DeleteRequest {
+        action: b'a',
+        image_id: 0,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        z_index: 0,
+        delete_data: false, // d=a (lowercase)
+    };
+    term.delete_graphics(delete);
+
+    assert!(
+        term.graphics.get_kitty_image(1).is_some(),
+        "Lowercase d=a must keep image data — only placements are removed"
+    );
+}
+
+#[test]
+fn test_delete_uppercase_n_frees_image_via_number() {
+    // d=N: delete by image number, free data
+    let mut term = make_test_term();
+    let graphic = GraphicData {
+        id: GraphicId::new(42),
+        width: 1,
+        height: 1,
+        color_type: ColorType::Rgba,
+        pixels: vec![255, 0, 0, 255],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    // Store with image_number=9
+    term.graphics.store_kitty_image(42, Some(9), graphic);
+    assert!(term.graphics.get_kitty_image(42).is_some());
+    assert!(term.graphics.get_kitty_image_by_number(9).is_some());
+
+    // d=N with image_id=9 (the parser stores the image *number* into
+    // image_id for the d=n/N case via the `i=` key per spec).
+    let delete = DeleteRequest {
+        action: b'n',
+        image_id: 9, // image number
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        z_index: 0,
+        delete_data: true,
+    };
+    term.delete_graphics(delete);
+
+    assert!(
+        term.graphics.get_kitty_image(42).is_none(),
+        "d=N must free image data resolved through the number map"
+    );
+}
+
+#[test]
+fn test_delete_uppercase_r_frees_image_range() {
+    // d=R deletes a range of image_ids and frees their data.
+    let mut term = make_test_term();
+    store_red_pixel(&mut term, 1);
+    store_red_pixel(&mut term, 5);
+    store_red_pixel(&mut term, 10);
+    assert_eq!(term.graphics.kitty_images.len(), 3);
+
+    // d=R with x=range_start, y=range_end (inclusive). Source x/y carry
+    // these values per the parser's field reuse.
+    let delete = DeleteRequest {
+        action: b'r',
+        image_id: 0,
+        placement_id: 0,
+        x: 1, // range start
+        y: 5, // range end
+        z_index: 0,
+        delete_data: true,
+    };
+    term.delete_graphics(delete);
+
+    // Images 1 and 5 should be gone, 10 should remain.
+    assert!(term.graphics.get_kitty_image(1).is_none());
+    assert!(term.graphics.get_kitty_image(5).is_none());
+    assert!(
+        term.graphics.get_kitty_image(10).is_some(),
+        "Image outside range must survive"
+    );
+}
+
+// Per-screen kitty graphics state isolation.
+
+#[test]
+fn test_swap_alt_isolates_kitty_images() {
+    // Per spec: each terminal screen owns its own image cache. After
+    // swapping into the alt screen, main-screen images must not be
+    // visible, and vice versa.
+    let mut term = make_test_term();
+
+    // Store two images on the main screen.
+    store_red_pixel(&mut term, 1);
+    store_red_pixel(&mut term, 2);
+    assert!(term.graphics.get_kitty_image(1).is_some());
+    assert!(term.graphics.get_kitty_image(2).is_some());
+
+    // Swap to alt screen.
+    term.swap_alt();
+
+    assert!(
+        term.graphics.get_kitty_image(1).is_none(),
+        "Main-screen image 1 must be hidden after swapping to alt screen"
+    );
+    assert!(
+        term.graphics.get_kitty_image(2).is_none(),
+        "Main-screen image 2 must be hidden after swapping to alt screen"
+    );
+
+    // Store a different image on the alt screen.
+    store_red_pixel(&mut term, 3);
+    assert!(term.graphics.get_kitty_image(3).is_some());
+    // The main-screen images are still hidden.
+    assert!(term.graphics.get_kitty_image(1).is_none());
+
+    // Swap back to main screen.
+    term.swap_alt();
+
+    assert!(
+        term.graphics.get_kitty_image(1).is_some(),
+        "Image 1 must reappear when swapping back to main screen"
+    );
+    assert!(term.graphics.get_kitty_image(2).is_some());
+    assert!(
+        term.graphics.get_kitty_image(3).is_none(),
+        "Alt-screen image 3 must not leak into main screen"
+    );
+
+    // Swap back to alt — image 3 should be there again.
+    term.swap_alt();
+    assert!(
+        term.graphics.get_kitty_image(3).is_some(),
+        "Alt-screen image 3 must be preserved across screen swaps"
+    );
+}
+
+#[test]
+fn test_swap_alt_isolates_placements() {
+    // Placements are also per-screen — putting a placement on the main
+    // screen should not appear on the alt screen.
+    let mut term = make_test_term();
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    store_red_pixel(&mut term, 1);
+    let placement = kitty_graphics_protocol::PlacementRequest {
+        image_id: 1,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 0,
+        rows: 1,
+        z_index: 0,
+        unicode_placeholder: 0,
+        cursor_movement: 1,
+    };
+    term.place_graphic(placement);
+    assert!(
+        !term.graphics.kitty_placements.is_empty(),
+        "Main-screen placement should be present after place_graphic"
+    );
+
+    term.swap_alt();
+    assert!(
+        term.graphics.kitty_placements.is_empty(),
+        "Main-screen placements must not be visible on the alt screen"
+    );
+
+    term.swap_alt();
+    assert!(
+        !term.graphics.kitty_placements.is_empty(),
+        "Main-screen placements must reappear after swapping back"
+    );
+}
+
+#[test]
+fn test_swap_alt_isolates_image_numbers() {
+    // Image-number mappings (I=) are per-screen too.
+    let mut term = make_test_term();
+    let g = GraphicData {
+        id: GraphicId::new(1),
+        width: 1,
+        height: 1,
+        color_type: ColorType::Rgba,
+        pixels: vec![255, 0, 0, 255],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    term.graphics.store_kitty_image(1, Some(50), g);
+    assert!(term.graphics.get_kitty_image_by_number(50).is_some());
+
+    term.swap_alt();
+    assert!(
+        term.graphics.get_kitty_image_by_number(50).is_none(),
+        "Image-number mapping must not bleed across screens"
+    );
+
+    term.swap_alt();
+    assert!(
+        term.graphics.get_kitty_image_by_number(50).is_some(),
+        "Image-number mapping must come back when we swap to its screen"
+    );
+}
+
+#[test]
+fn test_swap_alt_marks_kitty_dirty() {
+    // The renderer relies on the dirty flag to know when to rebuild
+    // the overlay layer; swap must set it.
+    let mut term = make_test_term();
+    term.graphics.kitty_graphics_dirty = false;
+    term.swap_alt();
+    assert!(
+        term.graphics.kitty_graphics_dirty,
+        "swap_alt must mark kitty graphics dirty so the renderer rebuilds"
+    );
+}
+
+#[test]
+fn test_full_reset_clears_both_screens() {
+    // reset_state should clear images on both main and alt screens.
+    let mut term = make_test_term();
+
+    // Image on main screen.
+    store_red_pixel(&mut term, 1);
+    // Swap to alt and store another image.
+    term.swap_alt();
+    store_red_pixel(&mut term, 2);
+    // Sanity: alt has image 2, not 1.
+    assert!(term.graphics.get_kitty_image(2).is_some());
+    assert!(term.graphics.get_kitty_image(1).is_none());
+
+    // Full reset.
+    term.reset_state();
+
+    // Both screens should be empty.
+    assert!(term.graphics.get_kitty_image(1).is_none());
+    assert!(term.graphics.get_kitty_image(2).is_none());
+    assert!(term.graphics.kitty_inactive_screen.kitty_images.is_empty());
+}
+
+// Eviction prefers inactive-screen images.
+
+#[test]
+fn test_eviction_prefers_inactive_screen_images() {
+    use crate::ansi::graphics::{Graphics, KittyScreenState, StoredImage};
+
+    let mut graphics = Graphics {
+        total_limit: 100, // tiny limit so a 60-byte add forces eviction
+        ..Graphics::default()
+    };
+
+    // Active screen: image 1, 50 bytes, no placement (unused).
+    let active_data = GraphicData {
+        id: GraphicId::new(1),
+        width: 5,
+        height: 5,
+        color_type: ColorType::Rgba,
+        pixels: vec![1u8; 50],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    graphics.store_kitty_image(1, None, active_data);
+
+    // Inactive screen: image 2, 50 bytes, no placement either.
+    // Pre-load via the inactive_screen field directly so we don't need
+    // to drive a swap.
+    let inactive_data = GraphicData {
+        id: GraphicId::new(2),
+        width: 5,
+        height: 5,
+        color_type: ColorType::Rgba,
+        pixels: vec![2u8; 50],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now() - std::time::Duration::from_secs(60),
+    };
+    graphics.kitty_inactive_screen = KittyScreenState::default();
+    graphics.kitty_inactive_screen.kitty_images.insert(
+        2,
+        StoredImage {
+            data: inactive_data,
+            transmission_time: std::time::Instant::now()
+                - std::time::Duration::from_secs(60),
+        },
+    );
+    // Inactive bytes also count toward total_bytes (kept consistent).
+    graphics.total_bytes += 50;
+
+    // Now total_bytes = 100. Adding 60 more would push us to 160 > 100,
+    // so eviction must free 60 bytes. The inactive image (50 bytes) is
+    // tier 0 and gets evicted first; the active unused image (tier 1)
+    // is the next candidate to free the remaining 10 bytes.
+    let used = std::collections::HashSet::new();
+    let ok = graphics.evict_images(60, &used);
+    assert!(ok, "Eviction should free enough");
+
+    assert!(
+        !graphics.kitty_inactive_screen.kitty_images.contains_key(&2),
+        "Inactive image should be evicted before active images"
+    );
+}
+
+#[test]
+fn test_eviction_keeps_active_used_image_when_inactive_available() {
+    use crate::ansi::graphics::{Graphics, KittyScreenState, StoredImage};
+
+    let mut graphics = Graphics {
+        total_limit: 100,
+        ..Graphics::default()
+    };
+
+    // Active screen: image 1 with a *live* placement (used).
+    let active = GraphicData {
+        id: GraphicId::new(1),
+        width: 5,
+        height: 5,
+        color_type: ColorType::Rgba,
+        pixels: vec![1u8; 50],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    graphics.store_kitty_image(1, None, active);
+    graphics
+        .kitty_placements
+        .insert((1, 0), make_test_placement(1, 0, 0, 0, 5, 1, 0));
+
+    // Inactive screen: image 2 (older, unused on its screen).
+    let inactive = GraphicData {
+        id: GraphicId::new(2),
+        width: 5,
+        height: 5,
+        color_type: ColorType::Rgba,
+        pixels: vec![2u8; 50],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    graphics.kitty_inactive_screen = KittyScreenState::default();
+    graphics.kitty_inactive_screen.kitty_images.insert(
+        2,
+        StoredImage {
+            data: inactive,
+            transmission_time: std::time::Instant::now(),
+        },
+    );
+    graphics.total_bytes += 50;
+
+    // active placements protect image 1.
+    let mut used = std::collections::HashSet::new();
+    used.insert(1u64);
+
+    let ok = graphics.evict_images(50, &used);
+    assert!(ok);
+
+    // The active visible image must survive; the inactive image is gone.
+    assert!(
+        graphics.kitty_images.contains_key(&1),
+        "Active visible image must not be evicted while an inactive \
+         alternative exists"
+    );
+    assert!(
+        !graphics.kitty_inactive_screen.kitty_images.contains_key(&2),
+        "Inactive image should be the eviction target"
+    );
+}
+
+// kitten icat regression: multiple invocations must not collapse into
+// the last image. Reproduces the user-reported issue where running
+// `kitten icat` repeatedly only renders the most recent image.
+
+/// Drive a single icat-style transmit+display through the full pipeline.
+/// `payload` is a 1x1 RGBA pixel base64 encoded; we vary the colour so
+/// each transmission is distinguishable. `with_explicit_id` controls
+/// whether we send `i=N` (true) or omit it (false, like icat does).
+fn icat_invocation(
+    term: &mut Crosswords<TestEventListener>,
+    payload: &[u8],
+    explicit_id: Option<u32>,
+) {
+    let control = match explicit_id {
+        Some(id) => format!("a=T,f=32,s=1,v=1,i={id}"),
+        None => "a=T,f=32,s=1,v=1".to_string(),
+    };
+    let params = vec![b"G".as_ref(), control.as_bytes(), payload];
+    let mut state = std::mem::take(&mut term.graphics.kitty_chunking_state);
+    let resp = kitty_graphics_protocol::parse(&params, &mut state);
+    term.graphics.kitty_chunking_state = state;
+    let resp = resp.expect("transmit+display must produce a response struct");
+
+    if let Some(graphic_data) = resp.graphic_data {
+        if let Some(placement) = resp.placement_request {
+            term.kitty_transmit_and_display(graphic_data, placement);
+        } else {
+            term.insert_graphic(graphic_data, None, Some(0));
+        }
+    }
+}
+
+#[test]
+fn test_kitten_icat_two_invocations_without_explicit_id_keep_both_images() {
+    // The user reported that running `kitten icat` multiple times only
+    // renders the last image. icat doesn't always send an `i=` parameter,
+    // and prior to this fix Rio's parser left image_id at 0, so every
+    // implicit-id transmission collided in `kitty_images[0]` and
+    // `kitty_placements[(0, 0)]`. After the fix the parser auto-assigns
+    // a unique image_id and the placement layer auto-assigns a unique
+    // internal placement_id, so both icat outputs survive.
+    let mut term = make_test_term();
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // Two distinguishable 1x1 RGBA pixels (red, then green).
+    icat_invocation(&mut term, b"/wAA/w==", None); // red
+    icat_invocation(&mut term, b"AP8A/w==", None); // green
+
+    assert_eq!(
+        term.graphics.kitty_images.len(),
+        2,
+        "Both icat invocations should produce distinct stored images"
+    );
+    assert_eq!(
+        term.graphics.kitty_placements.len(),
+        2,
+        "Both icat placements should remain visible — only the last one \
+         survived before the fix"
+    );
+}
+
+#[test]
+fn test_kitten_icat_two_invocations_with_same_explicit_id_each_get_unique_placement() {
+    // Even when icat reuses the same `i=N` (which kitty itself allows
+    // and uses for re-transmission), the *placements* should still be
+    // distinct so both copies render. The image data is shared (the
+    // second transmission overwrites it per spec) but each placement
+    // gets its own internal placement_id.
+    let mut term = make_test_term();
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    icat_invocation(&mut term, b"/wAA/w==", Some(1));
+    icat_invocation(&mut term, b"/wAA/w==", Some(1));
+
+    // One image (re-transmissions overwrite at same id per spec).
+    assert_eq!(term.graphics.kitty_images.len(), 1);
+    // Two placements (each `a=T` with implicit p=0 must get its own
+    // internal placement_id so the prior placement isn't overwritten).
+    assert_eq!(
+        term.graphics.kitty_placements.len(),
+        2,
+        "Two `a=T` calls with the same image_id must produce two \
+         placements, not collapse into one"
+    );
+}
+
+#[test]
+fn test_implicit_image_ids_are_distinct() {
+    // Two parses with no `i=` should yield two different graphic IDs.
+    let mut state = KittyGraphicsState::default();
+
+    let p1 = vec![
+        b"G".as_ref(),
+        b"a=t,f=32,s=1,v=1".as_ref(),
+        b"/wAA/w==".as_ref(),
+    ];
+    let r1 = kitty_graphics_protocol::parse(&p1, &mut state).unwrap();
+    let id1 = r1.graphic_data.unwrap().id.get();
+
+    let p2 = vec![
+        b"G".as_ref(),
+        b"a=t,f=32,s=1,v=1".as_ref(),
+        b"AP8A/w==".as_ref(),
+    ];
+    let r2 = kitty_graphics_protocol::parse(&p2, &mut state).unwrap();
+    let id2 = r2.graphic_data.unwrap().id.get();
+
+    assert_ne!(
+        id1, id2,
+        "Two implicit-ID transmissions must get distinct allocated IDs"
+    );
+    assert!(id1 > 0, "Auto-assigned id must be non-zero");
+    assert!(id2 > 0, "Auto-assigned id must be non-zero");
+}
+
+#[test]
+fn test_implicit_image_id_still_suppresses_response() {
+    // Per spec: even though we auto-assign an id internally, we must
+    // not respond to commands the client transmitted *without* an
+    // explicit id (otherwise the client would see a stray APC reply
+    // it doesn't know how to interpret).
+    let mut state = KittyGraphicsState::default();
+    let params = vec![
+        b"G".as_ref(),
+        b"a=t,f=32,s=1,v=1".as_ref(),
+        b"/wAA/w==".as_ref(),
+    ];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state).unwrap();
+    assert!(
+        resp.response.is_none() || resp.response.as_deref() == Some(""),
+        "Implicit-id transmissions must not produce a response"
+    );
+}
+
+#[test]
+fn test_explicit_image_id_still_responds() {
+    // Sanity check that adding implicit-id auto-assignment didn't
+    // accidentally suppress responses for explicit-id transmissions.
+    let mut state = KittyGraphicsState::default();
+    let params = vec![
+        b"G".as_ref(),
+        b"a=t,f=32,s=1,v=1,i=42".as_ref(),
+        b"/wAA/w==".as_ref(),
+    ];
+    let resp = kitty_graphics_protocol::parse(&params, &mut state).unwrap();
+    let body = resp.response.expect("explicit-id response must be present");
+    assert!(body.contains("i=42"));
+    assert!(body.contains("OK"));
+}
+
+// Resize-with-reflow placement tracking.
+//
+// The user's actual scenario: a long command wraps to 2 lines, an image is
+// placed below it, then the window is widened so the command fits on 1 line.
+// The image must follow the surrounding text (move up by 1 row when widening,
+// down by 1 when narrowing) instead of staying anchored to its absolute
+// scrollback row.
+
+#[derive(Debug, Clone, Copy)]
+struct ReflowDim {
+    columns: usize,
+    lines: usize,
+}
+
+impl crate::crosswords::grid::Dimensions for ReflowDim {
+    fn columns(&self) -> usize {
+        self.columns
+    }
+    fn screen_lines(&self) -> usize {
+        self.lines
+    }
+    fn total_lines(&self) -> usize {
+        self.lines
+    }
+    fn square_width(&self) -> f32 {
+        10.0
+    }
+    fn square_height(&self) -> f32 {
+        20.0
+    }
+}
+
+/// Type a string of ASCII into the terminal so it lands in the grid like
+/// real shell input would.
+fn type_text(term: &mut Crosswords<TestEventListener>, text: &str) {
+    use crate::performer::handler::Handler;
+    for c in text.chars() {
+        term.input(c);
+    }
+}
+
+#[test]
+fn test_resize_widen_unwraps_command_image_follows() {
+    // Reproduce: narrow window where the command wraps to 2 lines, place
+    // an image right after the wrap, then widen the window so the command
+    // fits on a single line. The image must move *up* by one row to stay
+    // pinned to the spot just below the (now shorter) command.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(20, 10),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // Type a 32-char command. With columns=20 it wraps onto 2 rows;
+    // after we widen to columns=50 it will fit on 1 row.
+    type_text(&mut term, "$ kitten icat /path/to/image.png");
+    term.linefeed();
+    term.carriage_return();
+
+    let cursor_before = term.grid.cursor.pos.row.0;
+
+    store_red_pixel(&mut term, 1);
+    let placement = kitty_graphics_protocol::PlacementRequest {
+        image_id: 1,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        unicode_placeholder: 0,
+        cursor_movement: 1,
+    };
+    term.place_graphic(placement);
+
+    let initial_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .expect("placement must exist")
+        .dest_row;
+    assert_eq!(
+        initial_dest_row,
+        term.history_size() as i64 + cursor_before as i64,
+        "placement should anchor at the cursor's absolute row"
+    );
+
+    // Widen the window. The wrapped command should join back onto a
+    // single row, and the image should follow up by 1.
+    term.resize(ReflowDim {
+        columns: 50,
+        lines: 10,
+    });
+
+    let final_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .expect("placement must still exist")
+        .dest_row;
+    assert_eq!(
+        final_dest_row,
+        initial_dest_row - 1,
+        "Widening should drop dest_row by 1 so the image follows the \
+         (now unwrapped) command. Got {final_dest_row}, expected {}",
+        initial_dest_row - 1
+    );
+}
+
+#[test]
+fn test_resize_narrow_wraps_command_image_follows() {
+    // Mirror case: a wide window where the command fits on 1 line.
+    // Narrowing the window forces the command onto 2 wrapped rows;
+    // the image below it must shift *down* by 1.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(50, 10),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    type_text(&mut term, "$ kitten icat /path/to/image.png");
+    term.linefeed();
+    term.carriage_return();
+
+    let cursor_before = term.grid.cursor.pos.row.0;
+
+    store_red_pixel(&mut term, 1);
+    let placement = kitty_graphics_protocol::PlacementRequest {
+        image_id: 1,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        unicode_placeholder: 0,
+        cursor_movement: 1,
+    };
+    term.place_graphic(placement);
+
+    let initial_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+    assert_eq!(
+        initial_dest_row,
+        term.history_size() as i64 + cursor_before as i64
+    );
+
+    // Narrow the window so the command wraps onto two rows.
+    term.resize(ReflowDim {
+        columns: 20,
+        lines: 10,
+    });
+
+    let final_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+    assert_eq!(
+        final_dest_row,
+        initial_dest_row + 1,
+        "Narrowing should bump dest_row by 1 so the image follows the \
+         (now wrapped) command down. Got {final_dest_row}, expected {}",
+        initial_dest_row + 1
+    );
+}
+
+/// Print the visible grid contents for debugging.
+fn dump_grid(term: &Crosswords<TestEventListener>, label: &str) {
+    use crate::crosswords::grid::Dimensions;
+    eprintln!("=== {label} ===");
+    eprintln!(
+        "  cursor.row={}, history={}, columns={}, screen_lines={}",
+        term.grid.cursor.pos.row.0,
+        term.history_size(),
+        Dimensions::columns(&term.grid),
+        Dimensions::screen_lines(&term.grid),
+    );
+    for placement in term.graphics.kitty_placements.values() {
+        eprintln!(
+            "  placement: image_id={}, dest_row={}, dest_col={}, columns={}, rows={}",
+            placement.image_id,
+            placement.dest_row,
+            placement.dest_col,
+            placement.columns,
+            placement.rows,
+        );
+    }
+    use crate::crosswords::pos::{Column, Line};
+    let lines = Dimensions::screen_lines(&term.grid);
+    let cols = Dimensions::columns(&term.grid);
+    for r in 0..lines {
+        let line = Line(r as i32);
+        let mut s = String::new();
+        for c in 0..cols {
+            let cell = &term.grid[line][Column(c)];
+            let ch = cell.c;
+            if ch == '\0' || ch == ' ' {
+                s.push('.');
+            } else {
+                s.push(ch);
+            }
+        }
+        eprintln!("  row {:>2}: |{}|", r, s.trim_end_matches('.'));
+    }
+}
+
+#[test]
+fn test_debug_widen_visible_layout() {
+    // Mirror of test_debug_narrow_visible_layout: starts NARROW with the
+    // command wrapped onto 2 rows, then widens.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(20, 24),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    for _ in 0..18 {
+        term.linefeed();
+    }
+    term.carriage_return();
+
+    type_text(&mut term, "$ kitten icat /path/to/image.png");
+    term.linefeed();
+    term.carriage_return();
+
+    store_red_pixel(&mut term, 1);
+    let placement = kitty_graphics_protocol::PlacementRequest {
+        image_id: 1,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        unicode_placeholder: 0,
+        cursor_movement: 0,
+    };
+    term.place_graphic(placement);
+
+    term.linefeed();
+    term.carriage_return();
+    type_text(&mut term, "$ ");
+
+    dump_grid(&term, "BEFORE widen");
+
+    term.resize(ReflowDim {
+        columns: 50,
+        lines: 24,
+    });
+
+    dump_grid(&term, "AFTER widen");
+}
+
+#[test]
+fn test_debug_narrow_visible_layout() {
+    // Print visible layout before/after narrowing to understand what
+    // shrink_columns actually does to cursor and content positioning.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(50, 24),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    for _ in 0..20 {
+        term.linefeed();
+    }
+    term.carriage_return();
+
+    type_text(&mut term, "$ kitten icat /path/to/image.png");
+    term.linefeed();
+    term.carriage_return();
+
+    store_red_pixel(&mut term, 1);
+    let placement = kitty_graphics_protocol::PlacementRequest {
+        image_id: 1,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        unicode_placeholder: 0,
+        cursor_movement: 0,
+    };
+    term.place_graphic(placement);
+
+    term.linefeed();
+    term.carriage_return();
+    type_text(&mut term, "$ ");
+
+    dump_grid(&term, "BEFORE narrow");
+
+    term.resize(ReflowDim {
+        columns: 20,
+        lines: 24,
+    });
+
+    dump_grid(&term, "AFTER narrow");
+}
+
+#[test]
+fn test_resize_narrow_combined_col_and_row_change() {
+    // Real window resize: user drags the corner, both columns and
+    // lines change in the same Crosswords::resize call. Both
+    // grow_columns/shrink_columns AND grow_lines/shrink_lines fire.
+    // Cursor delta accumulates from both.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(50, 24),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    for _ in 0..10 {
+        term.linefeed();
+    }
+    term.carriage_return();
+
+    type_text(&mut term, "$ kitten icat /path/to/image.png");
+    term.linefeed();
+    term.carriage_return();
+
+    store_red_pixel(&mut term, 1);
+    let placement = kitty_graphics_protocol::PlacementRequest {
+        image_id: 1,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        unicode_placeholder: 0,
+        cursor_movement: 0,
+    };
+    term.place_graphic(placement);
+
+    term.linefeed();
+    term.carriage_return();
+    type_text(&mut term, "$ ");
+
+    let initial_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+
+    eprintln!(
+        "BEFORE combined: cursor.row={}, history={}, dest_row={}",
+        term.grid.cursor.pos.row.0,
+        term.history_size(),
+        initial_dest_row,
+    );
+
+    // Narrow + shorten at the same time.
+    term.resize(ReflowDim {
+        columns: 20,
+        lines: 20,
+    });
+
+    let final_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+
+    eprintln!(
+        "AFTER combined : cursor.row={}, history={}, dest_row={}, delta={}",
+        term.grid.cursor.pos.row.0,
+        term.history_size(),
+        final_dest_row,
+        final_dest_row - initial_dest_row,
+    );
+
+    // The image should still follow the wrap regardless of the
+    // simultaneous row count change.
+    // Cursor delta should be (history_grew_by_wrap) +
+    // (cursor_row_change_from_shrink_lines + wrap_above_cursor).
+    // The exact number depends on how shrink_lines + shrink_columns
+    // interact, but the image should track the cursor.
+}
+
+#[test]
+fn test_resize_narrow_with_multi_row_image() {
+    // Realistic icat: a tall image (e.g. 8 rows). The cursor advances
+    // by `rows - 1` linefeeds during placement, so the dest_row is
+    // *above* the cursor. Then the next prompt sits below the image.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(50, 24),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // Push the cursor down to where icat would normally land.
+    for _ in 0..10 {
+        term.linefeed();
+    }
+    term.carriage_return();
+
+    type_text(&mut term, "$ kitten icat /path/to/image.png");
+    term.linefeed();
+    term.carriage_return();
+
+    let placement_row = term.grid.cursor.pos.row.0;
+
+    store_red_pixel(&mut term, 1);
+    let placement = kitty_graphics_protocol::PlacementRequest {
+        image_id: 1,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 8, // 8-row image
+        z_index: 0,
+        unicode_placeholder: 0,
+        cursor_movement: 0, // Default: cursor moves to last row of image
+    };
+    term.place_graphic(placement);
+
+    // After place_kitty_overlay with cursor_movement=0, cursor was
+    // advanced by rows-1 linefeeds.
+    let cursor_after_image = term.grid.cursor.pos.row.0;
+    assert!(
+        cursor_after_image > placement_row,
+        "8-row image should advance cursor below placement_row \
+         (placement={placement_row}, cursor_after={cursor_after_image})"
+    );
+
+    // Then the next shell prompt.
+    term.linefeed();
+    term.carriage_return();
+    type_text(&mut term, "$ ");
+
+    let initial_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+
+    eprintln!(
+        "BEFORE: cursor.row={}, history={}, dest_row={}, placement_row={}",
+        term.grid.cursor.pos.row.0,
+        term.history_size(),
+        initial_dest_row,
+        placement_row,
+    );
+
+    term.resize(ReflowDim {
+        columns: 20,
+        lines: 24,
+    });
+
+    let final_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+
+    eprintln!(
+        "AFTER : cursor.row={}, history={}, dest_row={}, delta={}",
+        term.grid.cursor.pos.row.0,
+        term.history_size(),
+        final_dest_row,
+        final_dest_row - initial_dest_row,
+    );
+
+    assert_eq!(
+        final_dest_row - initial_dest_row,
+        1,
+        "8-row image should still follow the +1 wrap delta"
+    );
+}
+
+#[test]
+fn test_resize_narrow_with_cursor_at_bottom_of_screen() {
+    // Realistic terminal: cursor pinned at the bottom row when icat
+    // runs at the prompt. After narrowing, the wrap above the image
+    // pushes everything down, but Rio's `shrink_columns` may also
+    // scroll to keep the cursor in view, which makes history grow more
+    // than 1.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(50, 24),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // Push the cursor to near the bottom by linefeeding several times.
+    // This simulates a terminal session where some history has been
+    // built up before icat runs.
+    for _ in 0..20 {
+        term.linefeed();
+    }
+    term.carriage_return();
+
+    // Now run the icat-style sequence.
+    type_text(&mut term, "$ kitten icat /path/to/image.png");
+    term.linefeed();
+    term.carriage_return();
+
+    let placement_row = term.grid.cursor.pos.row.0;
+    let placement_history = term.history_size();
+
+    store_red_pixel(&mut term, 1);
+    let placement = kitty_graphics_protocol::PlacementRequest {
+        image_id: 1,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        unicode_placeholder: 0,
+        cursor_movement: 0,
+    };
+    term.place_graphic(placement);
+
+    // Then the shell prints its next prompt.
+    term.linefeed();
+    term.carriage_return();
+    type_text(&mut term, "$ ");
+
+    let initial_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+
+    eprintln!(
+        "BEFORE RESIZE: cursor.row={}, history={}, placement.dest_row={}, placement_row_at_place={}, history_at_place={}",
+        term.grid.cursor.pos.row.0,
+        term.history_size(),
+        initial_dest_row,
+        placement_row,
+        placement_history,
+    );
+
+    term.resize(ReflowDim {
+        columns: 20,
+        lines: 24,
+    });
+
+    let final_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+
+    eprintln!(
+        "AFTER  RESIZE: cursor.row={}, history={}, placement.dest_row={}, delta={}",
+        term.grid.cursor.pos.row.0,
+        term.history_size(),
+        final_dest_row,
+        final_dest_row - initial_dest_row,
+    );
+
+    // The image is one row below the wrapped command, so wrapping
+    // should push it down by 1.
+    assert_eq!(
+        final_dest_row - initial_dest_row,
+        1,
+        "Image should follow the wrap-down by exactly 1 row (delta {})",
+        final_dest_row - initial_dest_row
+    );
+}
+
+#[test]
+fn test_resize_narrow_with_prompt_after_image() {
+    // Realistic icat flow: command on row 0, image at row 1, then the
+    // shell prints a new prompt on row 2 below the image. Narrowing
+    // the window should wrap row 0 into 2 rows, pushing both the image
+    // and the prompt below it down by 1. This is the case the user
+    // reported as still broken — content after the image makes the
+    // cursor land at a row below the placement, which changes the
+    // delta math.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(50, 10),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // Row 0: the command (32 chars, fits at columns=50)
+    type_text(&mut term, "$ kitten icat /path/to/image.png");
+    term.linefeed();
+    term.carriage_return();
+
+    // Row 1: this is where the image goes. Place it here.
+    let placement_row = term.grid.cursor.pos.row.0;
+    store_red_pixel(&mut term, 1);
+    let placement = kitty_graphics_protocol::PlacementRequest {
+        image_id: 1,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        unicode_placeholder: 0,
+        cursor_movement: 0, // Default kitty behaviour: cursor stays on the last row of image
+    };
+    term.place_graphic(placement);
+
+    // Then the shell moves to row 2 and prints its prompt.
+    term.linefeed();
+    term.carriage_return();
+    type_text(&mut term, "$ ");
+
+    let cursor_before = term.grid.cursor.pos.row.0;
+    assert!(
+        cursor_before > placement_row,
+        "test setup: cursor should be below the image, got cursor={cursor_before} placement={placement_row}"
+    );
+    let initial_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+
+    // Narrow: row 0 wraps onto 2 rows.
+    term.resize(ReflowDim {
+        columns: 20,
+        lines: 10,
+    });
+
+    let final_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+
+    // The image is anchored to a cell directly below the wrapped row;
+    // after the wrap there is one extra row above it, so dest_row
+    // should increase by exactly 1.
+    assert_eq!(
+        final_dest_row - initial_dest_row,
+        1,
+        "Narrowing with content below the image should still shift the \
+         placement down by 1 (got delta {})",
+        final_dest_row - initial_dest_row
+    );
+}
+
+// Animation actions surface EINVAL (regression).
+
+#[test]
+fn test_animation_action_surfaces_unsupported_response() {
+    // Going through the full Crosswords path: a=f should produce a
+    // response that the terminal can forward back to the client. Pre-fix
+    // this returned None and the client got nothing.
+    let mut state = KittyGraphicsState::default();
+    let params = vec![
+        b"G".as_ref(),
+        b"a=f,i=1,r=2,s=1,v=1,f=32".as_ref(),
+        b"AAAA".as_ref(),
+    ];
+
+    let resp = kitty_graphics_protocol::parse(&params, &mut state)
+        .expect("animation actions must produce a response");
+    let body = resp
+        .response
+        .expect("response body must contain EINVAL marker");
+    assert!(body.contains("EINVAL:unsupported action"));
+    assert!(body.contains("i=1"));
 }

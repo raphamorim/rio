@@ -137,6 +137,25 @@ pub struct VirtualPlacement {
     pub y: u32,
 }
 
+/// Per-screen Kitty graphics state.
+///
+/// Each terminal has two screens (main and alt). Per the kitty graphics
+/// spec each screen owns its own image cache, placements, and number
+/// mappings, so swapping into the alt screen hides main-screen images
+/// (and vice versa) instead of leaking them across the boundary.
+///
+/// `Graphics` keeps the *active* screen's state inline (so existing
+/// rendering code can read `graphics.kitty_*` directly without changes)
+/// and stores the *inactive* screen's state in this struct. On
+/// `swap_kitty_screen_state` the two are exchanged with `mem::swap`.
+#[derive(Debug, Default)]
+pub struct KittyScreenState {
+    pub kitty_images: FxHashMap<u32, StoredImage>,
+    pub kitty_image_numbers: FxHashMap<u32, u32>,
+    pub kitty_placements: FxHashMap<(u32, u32), KittyPlacement>,
+    pub kitty_virtual_placements: FxHashMap<(u32, u32), VirtualPlacement>,
+}
+
 /// Track changes in the grid to add or to remove graphics.
 #[derive(Debug)]
 pub struct Graphics {
@@ -202,6 +221,23 @@ pub struct Graphics {
     /// Key is (image_id, placement_id). Rendered as overlays, not in grid cells.
     pub kitty_placements: FxHashMap<(u32, u32), KittyPlacement>,
 
+    /// Kitty graphics state for the *inactive* screen.
+    /// When the terminal toggles between main and alt screens this is
+    /// swapped with the active fields (`kitty_images`, `kitty_placements`,
+    /// `kitty_image_numbers`, `kitty_virtual_placements`) so each screen
+    /// keeps its own image set.
+    pub kitty_inactive_screen: KittyScreenState,
+
+    /// Counter for auto-assigning internal placement IDs.
+    ///
+    /// Per kitty spec, when a client asks to place an image without an
+    /// explicit `p=` (or with `p=0`), the terminal must allocate a
+    /// unique placement_id internally so multiple placements of the
+    /// same image don't collide at key `(image_id, 0)`. We allocate
+    /// from `0x80000000..` so internal IDs do not collide with the
+    /// client-supplied range (`1..0x80000000`).
+    pub next_internal_placement_id: u32,
+
     /// Signals the renderer that overlay placements have changed.
     pub kitty_graphics_dirty: bool,
 }
@@ -227,6 +263,8 @@ impl Default for Graphics {
             image_timestamps: FxHashMap::default(),
             placed_textures: FxHashMap::default(),
             kitty_placements: FxHashMap::default(),
+            kitty_inactive_screen: KittyScreenState::default(),
+            next_internal_placement_id: 0,
             kitty_graphics_dirty: false,
         }
     }
@@ -284,6 +322,71 @@ impl Graphics {
     pub fn resize<S: Dimensions>(&mut self, size: &S) {
         self.cell_height = size.square_height();
         self.cell_width = size.square_width();
+    }
+
+    /// Allocate a unique internal placement_id.
+    ///
+    /// Used by `place_kitty_overlay` whenever a placement request comes
+    /// in with `placement_id == 0`. Without this, two `a=T` calls (or a
+    /// client running `kitten icat` repeatedly) for the same image_id
+    /// would each insert at key `(image_id, 0)` and the second would
+    /// silently overwrite the first.
+    pub fn allocate_internal_placement_id(&mut self) -> u32 {
+        if self.next_internal_placement_id < 0x80000000 {
+            self.next_internal_placement_id = 0x80000000;
+        }
+        let id = self.next_internal_placement_id;
+        self.next_internal_placement_id = self
+            .next_internal_placement_id
+            .checked_add(1)
+            .unwrap_or(0x80000000);
+        id
+    }
+
+    /// Swap kitty graphics state between the active and inactive screen.
+    ///
+    /// Called by `Crosswords::swap_alt` so each screen (main vs alt)
+    /// keeps its own image cache, placements, number mappings, and
+    /// virtual placements. Marks the kitty overlay layer dirty so the
+    /// renderer rebuilds its overlay set against the new active screen.
+    pub fn swap_kitty_screen_state(&mut self) {
+        std::mem::swap(
+            &mut self.kitty_images,
+            &mut self.kitty_inactive_screen.kitty_images,
+        );
+        std::mem::swap(
+            &mut self.kitty_image_numbers,
+            &mut self.kitty_inactive_screen.kitty_image_numbers,
+        );
+        std::mem::swap(
+            &mut self.kitty_placements,
+            &mut self.kitty_inactive_screen.kitty_placements,
+        );
+        std::mem::swap(
+            &mut self.kitty_virtual_placements,
+            &mut self.kitty_inactive_screen.kitty_virtual_placements,
+        );
+        self.kitty_graphics_dirty = true;
+    }
+
+    /// Clear all kitty graphics state on both screens. Used by full reset.
+    pub fn clear_all_kitty_state(&mut self) {
+        // Subtract bytes from the inactive screen before dropping it,
+        // since total_bytes is the *global* counter.
+        let inactive_bytes: usize = self
+            .kitty_inactive_screen
+            .kitty_images
+            .values()
+            .map(|s| s.data.pixels.len())
+            .sum();
+        self.total_bytes = self.total_bytes.saturating_sub(inactive_bytes);
+
+        self.kitty_images.clear();
+        self.kitty_image_numbers.clear();
+        self.kitty_placements.clear();
+        self.kitty_virtual_placements.clear();
+        self.kitty_inactive_screen = KittyScreenState::default();
+        self.kitty_graphics_dirty = true;
     }
 
     /// Store a kitty graphics image for later placement.
@@ -362,9 +465,12 @@ impl Graphics {
     /// Evict images to make space for required_bytes.
     /// Returns true if enough space was freed, false otherwise.
     ///
-    /// Eviction priority (per kitty spec):
-    /// 1. Unused images (no active placements/references)
-    /// 2. Oldest images by timestamp
+    /// Eviction priority (per kitty spec, extended for per-screen state):
+    /// 1. Inactive-screen images (the user is not looking at them)
+    /// 2. Active-screen unused images (no live placement)
+    /// 3. Active-screen used images (visible — last resort)
+    ///
+    /// Within each tier we evict oldest by timestamp first.
     pub fn evict_images(
         &mut self,
         required_bytes: usize,
@@ -380,30 +486,81 @@ impl Graphics {
         debug!("Graphics memory: need to evict {} bytes (current: {}, limit: {}, required: {})",
             bytes_to_free, self.total_bytes, self.total_limit, required_bytes);
 
-        // Collect eviction candidates: (GraphicId, timestamp, is_used, bytes)
-        let mut candidates: Vec<(GraphicId, std::time::Instant, bool, usize)> =
-            Vec::new();
+        /// Where an eviction candidate lives, so removal touches the
+        /// right map. `Pending` is a sixel/iTerm2 atlas graphic in
+        /// `self.pending`; the kitty variants are screen-scoped.
+        #[derive(Copy, Clone, PartialEq, Eq)]
+        enum CandidateSource {
+            Pending,
+            ActiveKitty,
+            InactiveKitty,
+        }
 
-        // Check pending graphics
+        // Tier scale: lower number = evict first
+        // 0 = inactive kitty, 1 = active unused, 2 = active used (pending or kitty)
+        fn tier_for(source: CandidateSource, is_used: bool) -> u8 {
+            match source {
+                CandidateSource::InactiveKitty => 0,
+                CandidateSource::Pending | CandidateSource::ActiveKitty => {
+                    if is_used {
+                        2
+                    } else {
+                        1
+                    }
+                }
+            }
+        }
+
+        // Candidate: (sentinel GraphicId, timestamp, is_used, bytes, source)
+        let mut candidates: Vec<(
+            GraphicId,
+            std::time::Instant,
+            bool,
+            usize,
+            CandidateSource,
+        )> = Vec::new();
+
+        // Check pending graphics (sixel/iTerm2 — atlas based, single screen)
         for graphic in &self.pending {
             if let Some(&timestamp) = self.image_timestamps.get(&graphic.id) {
                 let is_used = used_ids.contains(&graphic.id.get());
                 let bytes = Self::calculate_graphic_bytes(graphic);
-                candidates.push((graphic.id, timestamp, is_used, bytes));
+                candidates.push((
+                    graphic.id,
+                    timestamp,
+                    is_used,
+                    bytes,
+                    CandidateSource::Pending,
+                ));
             }
         }
 
-        // Check stored kitty images (use image_id as u64 for unified candidate list)
+        // Check active-screen kitty images
         for (&kitty_id, stored) in &self.kitty_images {
             let id_as_u64 = kitty_id as u64;
             let is_used = used_ids.contains(&id_as_u64);
             let bytes = Self::calculate_graphic_bytes(&stored.data);
-            // Use a sentinel GraphicId — these will be matched by kitty_id in removal
             candidates.push((
                 GraphicId::new(id_as_u64),
                 stored.transmission_time,
                 is_used,
                 bytes,
+                CandidateSource::ActiveKitty,
+            ));
+        }
+
+        // Check inactive-screen kitty images. These are not visible to
+        // the user, so they're the first tier to evict regardless of
+        // whether they have a placement.
+        for (&kitty_id, stored) in &self.kitty_inactive_screen.kitty_images {
+            let id_as_u64 = kitty_id as u64;
+            let bytes = Self::calculate_graphic_bytes(&stored.data);
+            candidates.push((
+                GraphicId::new(id_as_u64),
+                stored.transmission_time,
+                false, // not displayed (we're on the other screen)
+                bytes,
+                CandidateSource::InactiveKitty,
             ));
         }
 
@@ -412,24 +569,22 @@ impl Graphics {
             return false;
         }
 
-        // Sort by priority: unused first, then oldest first
+        // Sort by tier (ascending), then oldest first within tier.
         candidates.sort_by(|a, b| {
-            match (a.2, b.2) {
-                (false, true) => std::cmp::Ordering::Less, // unused < used
-                (true, false) => std::cmp::Ordering::Greater, // used > unused
-                _ => a.1.cmp(&b.1),                        // same usage, oldest first
-            }
+            let ta = tier_for(a.4, a.2);
+            let tb = tier_for(b.4, b.2);
+            ta.cmp(&tb).then_with(|| a.1.cmp(&b.1))
         });
 
         let mut freed_bytes = 0usize;
-        let mut evicted_ids = Vec::new();
+        let mut evicted: Vec<(GraphicId, CandidateSource)> = Vec::new();
 
-        for (graphic_id, _, is_used, bytes) in candidates {
+        for (graphic_id, _, is_used, bytes, source) in candidates {
             if freed_bytes >= bytes_to_free {
                 break;
             }
 
-            evicted_ids.push(graphic_id);
+            evicted.push((graphic_id, source));
             freed_bytes += bytes;
 
             debug!(
@@ -440,25 +595,53 @@ impl Graphics {
             );
         }
 
-        // Actually remove the evicted graphics
-        for id in evicted_ids {
-            // Remove from pending
-            self.pending.retain(|g| g.id != id);
-
-            // Remove from kitty_images if the evicted id matches
+        // Actually remove the evicted graphics from the right home.
+        for (id, source) in evicted {
             let evicted_u32 = id.get() as u32;
-            self.kitty_images.remove(&evicted_u32);
+            match source {
+                CandidateSource::Pending => {
+                    self.pending.retain(|g| g.id != id);
+                }
+                CandidateSource::ActiveKitty => {
+                    self.kitty_images.remove(&evicted_u32);
+                    self.kitty_image_numbers.retain(|_, v| *v != evicted_u32);
+                }
+                CandidateSource::InactiveKitty => {
+                    self.kitty_inactive_screen.kitty_images.remove(&evicted_u32);
+                    self.kitty_inactive_screen
+                        .kitty_image_numbers
+                        .retain(|_, v| *v != evicted_u32);
+                }
+            }
 
-            // Remove dangling overlay placements
-            self.kitty_placements
-                .retain(|_, p| p.image_id != evicted_u32);
-
-            // Remove timestamp
+            // Remove timestamp (only used for pending atlas graphics)
             self.image_timestamps.remove(&id);
 
             // Add to removal queue so GPU textures get cleaned up
             self.texture_operations.lock().push(id);
         }
+
+        // Sweep dangling placements on both screens. A placement is
+        // dangling if its referenced image_id is no longer in the
+        // matching screen's image cache. This catches both:
+        //   - kitty placements whose image was just evicted
+        //   - cross-namespace coincidences where a sixel/iTerm2 atlas
+        //     graphic with the same numeric id as a kitty image is
+        //     evicted (the test_eviction_removes_dangling_placements
+        //     test pins this defensive behaviour)
+        let active_ids: std::collections::HashSet<u32> =
+            self.kitty_images.keys().copied().collect();
+        self.kitty_placements
+            .retain(|_, p| active_ids.contains(&p.image_id));
+        let inactive_ids: std::collections::HashSet<u32> = self
+            .kitty_inactive_screen
+            .kitty_images
+            .keys()
+            .copied()
+            .collect();
+        self.kitty_inactive_screen
+            .kitty_placements
+            .retain(|_, p| inactive_ids.contains(&p.image_id));
 
         // Update total_bytes
         self.total_bytes = self.total_bytes.saturating_sub(freed_bytes);
