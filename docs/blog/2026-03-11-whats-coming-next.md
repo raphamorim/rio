@@ -11,6 +11,8 @@ Hey folks!
 
 It's been a while since the last proper update on where Rio is headed. I've been on parental leave, and as some of you may know, I've also been working on a programming language called Jam. Between those two things, Rio updates have been quieter than usual, but development never stopped. So let's talk about what's been cooking.
 
+<!-- truncate -->
+
 The next version of Rio is a significant step forward. A lot of the work has gone into the rendering pipeline, the UI layer, and laying the groundwork for something bigger. Let me walk you through it.
 
 The renderer has been substantially reworked. Here's a rundown:
