@@ -89,6 +89,8 @@ release:
   replace_existing_draft: false
   replace_existing_artifacts: true
   include_meta: false
+  header: |
+    Full changelog: https://rioterm.com/changelog
   footer: >-
     ---
     Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
@@ -100,7 +102,7 @@ nightly:
   keep_single_release: true
 
 changelog:
-  use: git
+  disable: true
 
 checksum:
   name_template: checksums.txt
