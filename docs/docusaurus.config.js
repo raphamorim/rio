@@ -30,7 +30,11 @@ const config = {
   organizationName: 'raphamorim',
   projectName: 'rio',
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
   i18n: {
     defaultLocale,
     locales: ['en', 'ko', 'pt-br', 'es', 'pl', 'ja', 'zh-hans', 'zh-hant'],
