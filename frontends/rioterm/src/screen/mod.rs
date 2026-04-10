@@ -170,7 +170,7 @@ impl Screen<'_> {
 
         sugarloaf.update_filters(config.renderer.filters.as_slice());
 
-        let renderer = Renderer::new(config, font_library);
+        let renderer = Renderer::new(config);
 
         let bindings = crate::bindings::default_key_bindings(config);
 
@@ -367,7 +367,7 @@ impl Screen<'_> {
 
         // Preserve existing Island (tab state) and update its colors
         let old_island = self.renderer.island.take();
-        self.renderer = Renderer::new(config, font_library);
+        self.renderer = Renderer::new(config);
         if let Some(mut island) = old_island {
             island.update_colors(
                 config.colors.tabs,

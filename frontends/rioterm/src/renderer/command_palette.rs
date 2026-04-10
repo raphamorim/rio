@@ -4,9 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use crate::context::next_rich_text_id;
-use crate::renderer::font_cache::FontCache;
 use crate::renderer::utils::add_span_with_fallback;
-use rio_backend::sugarloaf::font::FontLibrary;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 use std::time::Instant;
 
@@ -471,13 +469,7 @@ impl CommandPalette {
         }
     }
 
-    pub fn render(
-        &mut self,
-        sugarloaf: &mut Sugarloaf,
-        dimensions: (f32, f32, f32),
-        font_library: &FontLibrary,
-        font_cache: &mut FontCache,
-    ) {
+    pub fn render(&mut self, sugarloaf: &mut Sugarloaf, dimensions: (f32, f32, f32)) {
         if !self.enabled {
             self.hide_all_text_ids(sugarloaf);
             return;
@@ -535,16 +527,9 @@ impl CommandPalette {
             color: text_color,
             ..SpanStyle::default()
         };
-        let content = sugarloaf.content();
-        let builder = content.sel(input_id).clear().new_line();
-        add_span_with_fallback(
-            builder,
-            display_text,
-            input_style,
-            font_library,
-            font_cache,
-        );
-        builder.build();
+        sugarloaf.content().sel(input_id).clear().new_line();
+        add_span_with_fallback(sugarloaf, display_text, input_style);
+        sugarloaf.content().build();
 
         let text_x = input_x + INPUT_PADDING_X;
         let text_y = input_y + (INPUT_HEIGHT - INPUT_FONT_SIZE) / 2.0;
@@ -631,16 +616,9 @@ impl CommandPalette {
                 },
                 ..SpanStyle::default()
             };
-            let content = sugarloaf.content();
-            let builder = content.sel(result_id).clear().new_line();
-            add_span_with_fallback(
-                builder,
-                cmd.title,
-                result_style,
-                font_library,
-                font_cache,
-            );
-            builder.build();
+            sugarloaf.content().sel(result_id).clear().new_line();
+            add_span_with_fallback(sugarloaf, cmd.title, result_style);
+            sugarloaf.content().build();
 
             let row_text_x = input_x + INPUT_PADDING_X;
             let row_text_y = item_y + (RESULT_ITEM_HEIGHT - RESULT_FONT_SIZE) / 2.0;
@@ -654,16 +632,9 @@ impl CommandPalette {
                     color: SHORTCUT_TEXT_COLOR,
                     ..SpanStyle::default()
                 };
-                let content = sugarloaf.content();
-                let builder = content.sel(shortcut_id).clear().new_line();
-                add_span_with_fallback(
-                    builder,
-                    cmd.shortcut,
-                    shortcut_style,
-                    font_library,
-                    font_cache,
-                );
-                builder.build();
+                sugarloaf.content().sel(shortcut_id).clear().new_line();
+                add_span_with_fallback(sugarloaf, cmd.shortcut, shortcut_style);
+                sugarloaf.content().build();
 
                 let shortcut_width = cmd.shortcut.len() as f32 * 6.5;
                 let shortcut_x = input_x + input_width - INPUT_PADDING_X - shortcut_width;

@@ -7,10 +7,8 @@
 // which is licensed under MIT license.
 
 use crate::context::{next_rich_text_id, ContextManager};
-use crate::renderer::font_cache::FontCache;
 use crate::renderer::utils::add_span_with_fallback;
 use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
-use rio_backend::sugarloaf::font::FontLibrary;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 use rustc_hash::FxHashMap;
 use std::time::Instant;
@@ -261,8 +259,6 @@ impl Island {
         sugarloaf: &mut Sugarloaf,
         dimensions: (f32, f32, f32),
         context_manager: &ContextManager<EventProxy>,
-        font_library: &FontLibrary,
-        font_cache: &mut FontCache,
     ) {
         let (window_width, _window_height, scale_factor) = dimensions;
         let num_tabs = context_manager.len();
@@ -355,10 +351,9 @@ impl Island {
                 ..SpanStyle::default()
             };
 
-            let content = sugarloaf.content();
-            let builder = content.sel(tab_data.text_id).clear().new_line();
-            add_span_with_fallback(builder, &title, base_style, font_library, font_cache);
-            builder.build();
+            sugarloaf.content().sel(tab_data.text_id).clear().new_line();
+            add_span_with_fallback(sugarloaf, &title, base_style);
+            sugarloaf.content().build();
             tab_data.last_title = title.clone();
 
             // Position text to measure, then re-center using actual rendered width

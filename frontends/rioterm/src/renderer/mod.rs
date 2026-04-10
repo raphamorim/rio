@@ -1,7 +1,6 @@
 pub mod assistant;
 pub mod command_palette;
 pub mod custom_cursor;
-mod font_cache;
 pub mod island;
 pub mod scrollbar;
 pub mod search;
@@ -9,7 +8,6 @@ pub mod trail_cursor;
 pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;
-use crate::renderer::font_cache::{FontCache, FontCacheData};
 use rio_backend::crosswords::LineDamage;
 use rio_backend::event::TerminalDamage;
 use taffy::NodeId;
@@ -28,15 +26,14 @@ use rio_backend::config::colors::{
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
+use rio_backend::sugarloaf::font_introspector::Attributes;
 use rio_backend::sugarloaf::{
-    drawable_character, is_private_user_area, Content, CursorKind, Graphic, SpanStyle,
+    drawable_character, is_private_user_area, CursorKind, Graphic, SpanStyle,
     SpanStyleDecoration, Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo,
     UnderlineShape, Weight,
 };
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
-
-use unicode_width::UnicodeWidthChar;
 
 pub struct Renderer {
     is_vi_mode_enabled: bool,
@@ -64,8 +61,6 @@ pub struct Renderer {
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
-    font_context: rio_backend::sugarloaf::font::FontLibrary,
-    font_cache: FontCache,
     pub custom_mouse_cursor: bool,
     pub trail_cursor_enabled: bool,
     pub trail_cursor: trail_cursor::TrailCursor,
@@ -127,10 +122,7 @@ fn pua_constraint_width(row: &Row<Square>, col: usize, cols: usize) -> f32 {
 }
 
 impl Renderer {
-    pub fn new(
-        config: &Config,
-        font_context: &rio_backend::sugarloaf::font::FontLibrary,
-    ) -> Renderer {
+    pub fn new(config: &Config) -> Renderer {
         let colors = List::from(&config.colors);
         let named_colors = config.colors;
 
@@ -155,7 +147,7 @@ impl Renderer {
             None
         };
 
-        let mut renderer = Renderer {
+        Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
             last_active: None,
             use_drawable_chars: config.fonts.use_drawable_chars,
@@ -180,18 +172,11 @@ impl Renderer {
             search: search::SearchOverlay::default(),
             assistant: assistant::AssistantOverlay::default(),
             scrollbar: scrollbar::Scrollbar::new(config.enable_scroll_bar),
-            font_cache: FontCache::new(),
-            font_context: font_context.clone(),
             is_game_mode_enabled: config.renderer.strategy.is_game(),
             custom_mouse_cursor: config.effects.custom_mouse_cursor,
             trail_cursor_enabled: config.effects.trail_cursor,
             trail_cursor: trail_cursor::TrailCursor::new(),
-        };
-
-        // Pre-populate font cache with common characters for better performance
-        renderer.font_cache.pre_populate(font_context);
-
-        renderer
+        }
     }
 
     #[inline]
@@ -317,7 +302,7 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     fn create_line(
         &mut self,
-        builder: &mut Content,
+        sugarloaf: &mut Sugarloaf,
         row: &Row<Square>,
         has_cursor: bool,
         line_opt: Option<usize>,
@@ -587,7 +572,7 @@ impl Renderer {
             let has_drawable_char = style.drawable_char.is_some();
             if !has_drawable_char {
                 if let Some(cached) =
-                    self.font_cache.get(&(square_content, style.font_attrs))
+                    sugarloaf.try_glyph_cached(square_content, style.font_attrs)
                 {
                     style.font_id = cached.font_id;
                     style.width = cached.width;
@@ -608,42 +593,32 @@ impl Renderer {
             styles_and_chars.push((style, square_content, column));
         }
 
-        // Batch font lookups with a single lock acquisition
+        // Batch font lookups with a single lock acquisition (the
+        // batch lives behind sugarloaf so the cache + FontLibrary
+        // stay co-located).
         if !font_lookups.is_empty() {
-            let font_ctx = self.font_context.inner.read();
-            for (style_index, square_content, font_attrs) in font_lookups {
-                let mut width = square_content.width().unwrap_or(1) as f32;
-                let column = styles_and_chars[style_index].2;
-                let style = &mut styles_and_chars[style_index].0;
-
-                if let Some((font_id, is_emoji)) =
-                    font_ctx.find_best_font_match(square_content, style)
-                {
-                    style.font_id = font_id;
-                    if is_emoji {
-                        width = 2.0;
-                    }
-                }
-                style.width = width;
-
-                let is_pua = is_private_user_area(&square_content);
-                self.font_cache.insert(
-                    (square_content, font_attrs),
-                    FontCacheData {
-                        font_id: style.font_id,
-                        width: style.width,
-                        is_pua,
-                    },
-                );
-
-                if is_pua {
+            let queries: Vec<(char, Attributes)> = font_lookups
+                .iter()
+                .map(|&(_, ch, attrs)| (ch, attrs))
+                .collect();
+            let resolved = sugarloaf.resolve_glyphs_batch(&queries);
+            for ((style_index, _, _), glyph) in font_lookups.iter().zip(resolved.iter()) {
+                let column = styles_and_chars[*style_index].2;
+                let style = &mut styles_and_chars[*style_index].0;
+                style.font_id = glyph.font_id;
+                style.width = glyph.width;
+                if glyph.is_pua {
                     style.pua_constraint =
                         Some(pua_constraint_width(row, column, columns));
                 }
             }
         }
 
-        // Second pass: render the line using the resolved styles
+        // Second pass: render the line using the resolved styles.
+        // Grab the content builder now — pass 1 only touched the
+        // sugarloaf font cache, so we can take a fresh `&mut Content`
+        // here without conflict.
+        let builder = sugarloaf.content();
         // Track consecutive blank cells ('\0' and ' ') to batch into a single rect
         let mut pending_blank_width: f32 = 0.0;
         let mut pending_blank_style = SpanStyle::default();
@@ -1238,16 +1213,14 @@ impl Renderer {
                 is_cursor_visible = true;
             }
 
-            let content = sugarloaf.content();
             match specific_lines {
                 None => {
-                    content.sel(rich_text_id);
-                    content.clear();
+                    sugarloaf.content().sel(rich_text_id).clear();
                     for (i, row) in terminal_snapshot.visible_rows.iter().enumerate() {
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == i;
                         self.create_line(
-                            content,
+                            sugarloaf,
                             row,
                             has_cursor,
                             None,
@@ -1260,21 +1233,21 @@ impl Renderer {
                             &terminal_snapshot,
                         );
                     }
-                    content.build();
+                    sugarloaf.content().build();
                     // let _duration = start.elapsed();
                 }
                 Some(lines) => {
-                    content.sel(rich_text_id);
+                    sugarloaf.content().sel(rich_text_id);
                     for line in lines {
                         let line = line.line;
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == line;
-                        content.clear_line(line);
+                        sugarloaf.content().clear_line(line);
                         if let Some(visible_row) =
                             terminal_snapshot.visible_rows.get(line)
                         {
                             self.create_line(
-                                content,
+                                sugarloaf,
                                 visible_row,
                                 has_cursor,
                                 Some(line),
@@ -1305,8 +1278,6 @@ impl Renderer {
                 sugarloaf,
                 (window_size.width, window_size.height, scale_factor),
                 context_manager,
-                &self.font_context,
-                &mut self.font_cache,
             );
         }
 
@@ -1318,15 +1289,11 @@ impl Renderer {
         self.search.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
-            &self.font_context,
-            &mut self.font_cache,
         );
 
         self.command_palette.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
-            &self.font_context,
-            &mut self.font_cache,
         );
 
         // Render scrollbars for each panel

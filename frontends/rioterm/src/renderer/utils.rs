@@ -1,67 +1,58 @@
 use crate::constants;
 use crate::layout::ContextDimension;
-use crate::renderer::font_cache::{FontCache, FontCacheData};
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
-use rio_backend::sugarloaf::font::FontLibrary;
-use rio_backend::sugarloaf::{Content, SpanStyle};
+use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 use rio_window::window::Theme;
 
-/// Add text to a Content builder with per-character font fallback.
-/// Splits the text into spans grouped by resolved font_id.
+/// Add text to the currently selected text content with per-character
+/// font fallback. Resolves each character against sugarloaf's glyph
+/// cache, groups consecutive chars by resolved `font_id`, and emits
+/// one span per group. The selected text id is whatever was last
+/// passed to `Content::sel(...)` by the caller.
 #[inline]
 pub fn add_span_with_fallback(
-    builder: &mut Content,
+    sugarloaf: &mut Sugarloaf,
     text: &str,
     base_style: SpanStyle,
-    font_library: &FontLibrary,
-    font_cache: &mut FontCache,
 ) {
     let font_attrs = base_style.font_attrs;
+
+    // First walk: resolve every char against sugarloaf's font cache
+    // and group into runs by font_id. We can't push to `content` yet
+    // because `resolve_glyph` borrows sugarloaf mutably to fill the
+    // cache.
+    let mut runs: Vec<(usize, String)> = Vec::new();
     let mut current_font_id: Option<usize> = None;
     let mut current_run = String::new();
 
     for ch in text.chars() {
-        let font_id = if let Some(cached) = font_cache.get(&(ch, font_attrs)) {
-            cached.font_id
-        } else {
-            let font_ctx = font_library.inner.read();
-            let (fid, _) = font_ctx
-                .find_best_font_match(ch, &base_style)
-                .unwrap_or((0, false));
-            font_cache.insert(
-                (ch, font_attrs),
-                FontCacheData {
-                    font_id: fid,
-                    width: 1.0,
-                    is_pua: false,
-                },
-            );
-            fid
-        };
-
-        if current_font_id == Some(font_id) {
+        let glyph = sugarloaf.resolve_glyph(ch, font_attrs);
+        if current_font_id == Some(glyph.font_id) {
             current_run.push(ch);
         } else {
             if !current_run.is_empty() {
-                builder.add_span(
-                    &current_run,
-                    SpanStyle {
-                        font_id: current_font_id.unwrap_or(0),
-                        ..base_style
-                    },
-                );
-                current_run.clear();
+                runs.push((
+                    current_font_id.unwrap_or(0),
+                    std::mem::take(&mut current_run),
+                ));
             }
-            current_font_id = Some(font_id);
+            current_font_id = Some(glyph.font_id);
             current_run.push(ch);
         }
     }
     if !current_run.is_empty() {
-        builder.add_span(
-            &current_run,
+        runs.push((current_font_id.unwrap_or(0), current_run));
+    }
+
+    // Second walk: emit the runs. Now we can take `&mut Content`
+    // because all the cache fills are done.
+    let content = sugarloaf.content();
+    for (font_id, run) in runs {
+        content.add_span(
+            &run,
             SpanStyle {
-                font_id: current_font_id.unwrap_or(0),
+                font_id,
                 ..base_style
             },
         );
