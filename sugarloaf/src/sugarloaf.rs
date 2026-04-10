@@ -5,6 +5,8 @@ pub mod state;
 use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::font::{fonts::SugarloafFont, FontLibrary};
+use crate::font_cache::{resolve_with, FontCache, ResolvedGlyph};
+use crate::font_introspector::Attributes;
 use crate::layout::{RootStyle, TextLayout};
 use crate::renderer::Renderer;
 use crate::sugarloaf::graphics::{GraphicDataEntry, Graphics};
@@ -32,6 +34,10 @@ pub struct Sugarloaf<'a> {
     /// Persistent state for the CPU rasterizer (glyph cache + frame hash).
     /// Unused on GPU backends.
     cpu_cache: crate::renderer::cpu::CpuCache,
+    /// Memo of `(char, attrs) -> ResolvedGlyph`. Owned here (next to
+    /// the FontLibrary it caches) so frontends never have to track
+    /// their own font cache.
+    font_cache: FontCache,
 }
 
 #[derive(Debug)]
@@ -162,6 +168,8 @@ impl Sugarloaf<'_> {
         let renderer = Renderer::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
 
+        let font_cache = FontCache::new();
+
         let instance = Sugarloaf {
             state,
             ctx,
@@ -172,6 +180,7 @@ impl Sugarloaf<'_> {
             filters_brush: None,
             image_data: rustc_hash::FxHashMap::default(),
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
+            font_cache,
         };
 
         Ok(instance)
@@ -188,9 +197,51 @@ impl Sugarloaf<'_> {
         self.renderer.clear_atlas();
         // Cached tinted glyphs alias the old atlas coordinates — drop them.
         self.cpu_cache.clear();
+        // Glyph resolutions point at the old font ids — drop them.
+        self.font_cache.clear();
 
         self.state.reset();
         self.state.set_fonts(font_library, &mut self.renderer);
+    }
+
+    /// Look up a single glyph in the font cache without performing
+    /// a fallback walk. Returns `None` if the entry is missing.
+    /// Use this in the first pass of a multi-cell layout to identify
+    /// cells that still need resolution.
+    #[inline]
+    pub fn try_glyph_cached(&self, ch: char, attrs: Attributes) -> Option<ResolvedGlyph> {
+        self.font_cache.get(&(ch, attrs)).copied()
+    }
+
+    /// Resolve a single glyph, filling the cache on miss. Acquires
+    /// the FontLibrary read lock once if needed.
+    #[inline]
+    pub fn resolve_glyph(&mut self, ch: char, attrs: Attributes) -> ResolvedGlyph {
+        if let Some(cached) = self.font_cache.get(&(ch, attrs)) {
+            return *cached;
+        }
+        let font_ctx = self.state.content.font_library().inner.read();
+        resolve_with(&mut self.font_cache, &font_ctx, ch, attrs)
+    }
+
+    /// Resolve a batch of glyph queries with a single FontLibrary
+    /// read lock acquisition. Cache hits short-circuit; misses are
+    /// walked under the lock and stored back in the cache. Returned
+    /// vector is parallel to `queries`.
+    #[inline]
+    pub fn resolve_glyphs_batch(
+        &mut self,
+        queries: &[(char, Attributes)],
+    ) -> Vec<ResolvedGlyph> {
+        if queries.is_empty() {
+            return Vec::new();
+        }
+        let font_ctx = self.state.content.font_library().inner.read();
+        let mut out = Vec::with_capacity(queries.len());
+        for &(ch, attrs) in queries {
+            out.push(resolve_with(&mut self.font_cache, &font_ctx, ch, attrs));
+        }
+        out
     }
 
     #[inline]
