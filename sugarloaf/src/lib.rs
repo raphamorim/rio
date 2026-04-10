@@ -1,6 +1,7 @@
 pub mod components;
 pub mod context;
 pub mod font;
+mod font_cache;
 pub mod font_introspector;
 pub mod layout;
 pub mod renderer;
@@ -11,6 +12,7 @@ pub use wgpu;
 
 pub use font_introspector::{Stretch, Style, Weight};
 
+pub use crate::font_cache::ResolvedGlyph;
 pub use crate::sugarloaf::{
     graphics::{
         ColorType, Graphic, GraphicData, GraphicDataEntry, GraphicId, GraphicOverlay,
