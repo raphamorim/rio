@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkrio_docs=self.webpackChunkrio_docs||[]).push([[1903],{9531:s=>{s.exports=JSON.parse('{"blogBasePath":"/pt-br/blog","blogTitle":"Blog","authorsListPath":"/pt-br/blog/authors"}')}}]);

@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkrio_docs=self.webpackChunkrio_docs||[]).push([[2112],{136:a=>{a.exports=JSON.parse('{"authors":[{"name":"Raphael Amorim","title":"Accidentally built a terminal","url":"https://github.com/raphamorim","imageURL":"https://github.com/raphamorim.png","key":"raphamorim","page":null,"count":1}]}')}}]);
