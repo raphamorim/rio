@@ -21,6 +21,11 @@ use raw_window_handle::{
 };
 use state::SugarState;
 
+/// Reserved content-state ID for the optional window background image.
+/// Picked at the top of the address space so it cannot collide with the
+/// dynamically-allocated rich-text IDs returned by `get_next_id`.
+const BACKGROUND_IMAGE_CONTENT_ID: usize = usize::MAX;
+
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
     renderer: Renderer,
@@ -320,10 +325,99 @@ impl Sugarloaf<'_> {
         self
     }
 
+    /// Try to load and install a window background image. Returns `Err`
+    /// with a human-readable message on failure (e.g. file missing,
+    /// decode failed, image too large for the atlas) so callers can
+    /// surface the message in a UI overlay.
     #[inline]
-    pub fn set_background_image(&mut self, _image: &ImageProperties) -> &mut Self {
-        // TODO: Background images are not yet implemented with the new rendering system
-        self
+    pub fn set_background_image(
+        &mut self,
+        image: &ImageProperties,
+    ) -> Result<(), String> {
+        // Skip if the same image is already configured.
+        if let Some(current) = &self.background_image {
+            if current.path == image.path {
+                return Ok(());
+            }
+        }
+
+        // Decode the file synchronously.
+        let decoded = match image_rs::open(&image.path) {
+            Ok(img) => img.to_rgba8(),
+            Err(e) => {
+                let msg = format!("'{}': {}", image.path, e);
+                tracing::warn!("failed to load background image {}", msg);
+                return Err(msg);
+            }
+        };
+        let (img_w, img_h) = decoded.dimensions();
+
+        // Allocate into the color atlas. Returns atlas UVs + layer that the
+        // existing image_rect content path needs to draw the texture.
+        let placement = match self.renderer.register_background_image(
+            decoded.as_raw(),
+            img_w as u16,
+            img_h as u16,
+        ) {
+            Some(p) => p,
+            None => {
+                let msg = format!(
+                    "'{}' ({}x{}) does not fit in the texture atlas",
+                    image.path, img_w, img_h
+                );
+                tracing::warn!("background image {}", msg);
+                return Err(msg);
+            }
+        };
+
+        self.background_image = Some(image.clone());
+        let _ = placement; // refresh below queries the renderer directly so
+                           // resize() can reuse the same path.
+        self.refresh_background_image_content();
+        Ok(())
+    }
+
+    /// Drop the current background image, if any.
+    #[inline]
+    pub fn clear_background_image(&mut self) {
+        if self.background_image.is_none() {
+            return;
+        }
+        self.state
+            .content
+            .remove_state(&BACKGROUND_IMAGE_CONTENT_ID);
+        self.renderer.clear_background_image();
+        self.background_image = None;
+    }
+
+    /// Push (or refresh) the background image content state with current
+    /// window dimensions. Called from `set_background_image` and from
+    /// `resize` so the image always covers the full window. No-op if no
+    /// background image is currently registered with the renderer.
+    fn refresh_background_image_content(&mut self) {
+        let placement = match self.renderer.current_background_image_placement() {
+            Some(p) => p,
+            None => return,
+        };
+        let physical = self.ctx.size();
+        let scale = self.state.style.scale_factor.max(1.0);
+        let logical_w = physical.width / scale;
+        let logical_h = physical.height / scale;
+        self.image_rect(
+            Some(BACKGROUND_IMAGE_CONTENT_ID),
+            0.0,
+            0.0,
+            logical_w,
+            logical_h,
+            [1.0, 1.0, 1.0, 1.0],
+            placement.coords,
+            // Lowest depth so it sits behind cell rects (-0.1) and the
+            // panel borders. The terminal compositor has no depth buffer,
+            // so this is a sort key, not a real Z test — keeping it well
+            // below all other content keeps things robust.
+            -0.5,
+            placement.atlas_layer,
+        );
     }
 
     /// Remove content by ID (any type)
@@ -856,12 +950,16 @@ impl Sugarloaf<'_> {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
         self.renderer.resize(&mut self.ctx);
+        // Background image must follow the new window size.
+        self.refresh_background_image_content();
     }
 
     #[inline]
     pub fn rescale(&mut self, scale: f32) {
         self.ctx.set_scale(scale);
         self.state.compute_layout_rescale(scale);
+        // Background image must follow the new scale factor.
+        self.refresh_background_image_content();
     }
 
     #[inline]

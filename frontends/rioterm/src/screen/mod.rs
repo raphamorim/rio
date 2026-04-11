@@ -38,6 +38,7 @@ use rio_backend::config::layout::Margin;
 use rio_backend::config::renderer::{Backend, Performance as RendererPerformance};
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
+use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
     layout::RootStyle, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
@@ -170,7 +171,7 @@ impl Screen<'_> {
 
         sugarloaf.update_filters(config.renderer.filters.as_slice());
 
-        let renderer = Renderer::new(config);
+        let mut renderer = Renderer::new(config);
 
         let bindings = crate::bindings::default_key_bindings(config);
 
@@ -253,7 +254,14 @@ impl Screen<'_> {
         sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
 
         if let Some(image) = &config.window.background_image {
-            sugarloaf.set_background_image(image);
+            if let Err(message) = sugarloaf.set_background_image(image) {
+                renderer.assistant.set_error(RioError {
+                    level: RioErrorLevel::Warning,
+                    report: RioErrorType::BackgroundImageLoadFailure(message),
+                });
+            }
+        } else {
+            sugarloaf.clear_background_image();
         }
 
         Ok(Screen {
@@ -424,7 +432,14 @@ impl Screen<'_> {
             .set_background_color(Some(self.renderer.dynamic_background.1));
 
         if let Some(image) = &config.window.background_image {
-            self.sugarloaf.set_background_image(image);
+            if let Err(message) = self.sugarloaf.set_background_image(image) {
+                self.renderer.assistant.set_error(RioError {
+                    level: RioErrorLevel::Warning,
+                    report: RioErrorType::BackgroundImageLoadFailure(message),
+                });
+            }
+        } else {
+            self.sugarloaf.clear_background_image();
         }
 
         self.resize_all_contexts();
