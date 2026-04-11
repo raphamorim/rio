@@ -108,6 +108,11 @@ pub struct TerminalSnapshot {
     pub display_offset: usize,
     pub blinking_cursor: bool,
     pub visible_rows: Vec<Row<Square>>,
+    /// Snapshot of the grid's per-cell style intern table. Cloned cheaply
+    /// (the table is just a `Vec<Style>` plus an `FxHashMap`); the renderer
+    /// dereferences cell `style_id`s through this clone instead of reaching
+    /// into the live grid.
+    pub style_set: rio_backend::crosswords::style::StyleSet,
     pub cursor: CursorState,
     pub damage: TerminalDamage,
     // Cache terminal dimensions to avoid repeated calls

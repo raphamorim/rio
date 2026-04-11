@@ -1898,62 +1898,10 @@ impl Screen<'_> {
             return None;
         }
 
-        let cell = &grid[point.row][point.col];
-        if let Some(hyperlink) = cell.hyperlink() {
-            // Find the extent of this hyperlink
-            let mut start_col = point.col;
-            let mut end_col = point.col;
-
-            // Scan backward to find start
-            while start_col > rio_backend::crosswords::pos::Column(0) {
-                let prev_col = start_col - 1;
-                let prev_cell = &grid[point.row][prev_col];
-                if prev_cell.hyperlink().as_ref() == Some(&hyperlink) {
-                    start_col = prev_col;
-                } else {
-                    break;
-                }
-            }
-
-            // Scan forward to find end
-            while end_col < grid.columns() - 1 {
-                let next_col = end_col + 1;
-                let next_cell = &grid[point.row][next_col];
-                if next_cell.hyperlink().as_ref() == Some(&hyperlink) {
-                    end_col = next_col;
-                } else {
-                    break;
-                }
-            }
-
-            // Create a dummy hint config for hyperlinks
-            let hint_config = std::rc::Rc::new(rio_backend::config::hints::Hint {
-                regex: None,
-                hyperlinks: true,
-                post_processing: true,
-                persist: false,
-                action: rio_backend::config::hints::HintAction::Command {
-                    command: rio_backend::config::hints::HintCommand::Simple(
-                        "xdg-open".to_string(),
-                    ),
-                },
-                mouse: rio_backend::config::hints::HintMouse::default(),
-                binding: None,
-            });
-
-            let mut uri = hyperlink.uri().to_string();
-            if hint_config.post_processing {
-                uri = post_process_hyperlink_uri(&uri);
-            }
-
-            return Some(crate::hints::HintMatch {
-                text: uri,
-                start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
-                end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
-                hint: hint_config,
-            });
-        }
-
+        // Per-cell hyperlinks are disabled during the cell repack — the
+        // OSC 8 hyperlink data needs to live in the per-grid extras side
+        // table once that lands. Skip the lookup for now.
+        let _ = grid;
         None
     }
 
@@ -1976,7 +1924,7 @@ impl Screen<'_> {
         let mut line_text = String::new();
         for col in 0..grid.columns() {
             let cell = &grid[point.row][rio_backend::crosswords::pos::Column(col)];
-            line_text.push(cell.c);
+            line_text.push(cell.c());
         }
         let line_text = line_text.trim_end();
 
@@ -2010,7 +1958,7 @@ impl Screen<'_> {
                     for col in processed_start.0..=processed_end.0 {
                         let cell =
                             &grid[point.row][rio_backend::crosswords::pos::Column(col)];
-                        processed_text.push(cell.c);
+                        processed_text.push(cell.c());
                     }
                     match_text = processed_text.trim_end().to_string();
                 }
@@ -2047,18 +1995,9 @@ impl Screen<'_> {
             return false;
         }
 
-        let terminal = self.context_manager.current().terminal.lock();
-        let display_offset = terminal.display_offset();
-        let pos = self.mouse_position(display_offset);
-        let pos_hyperlink = terminal.grid[pos].hyperlink();
-        drop(terminal);
-
-        if let Some(hyperlink) = pos_hyperlink {
-            self.open_hyperlink(hyperlink);
-
-            return true;
-        }
-
+        // Per-cell hyperlinks are temporarily disabled (cell repack):
+        // OSC 8 hyperlink data needs to live in the per-grid extras side
+        // table once that's wired up. trigger_hyperlink is a no-op for now.
         false
     }
 
@@ -3708,7 +3647,7 @@ impl Screen<'_> {
         // First pass: handle uneven brackets/parentheses
         while current_pos <= end_pos {
             if let Some(indexed) = iter.next() {
-                let c = indexed.square.c;
+                let c = indexed.square.c();
                 current_pos = indexed.pos;
 
                 match c {
@@ -3753,7 +3692,7 @@ impl Screen<'_> {
 
         while final_end > start_pos {
             if let Some(indexed) = iter.next() {
-                let c = indexed.square.c;
+                let c = indexed.square.c();
                 if !matches!(c, '.' | ',' | ':' | ';' | '?' | '!' | '(' | '[' | '\'') {
                     break;
                 }
