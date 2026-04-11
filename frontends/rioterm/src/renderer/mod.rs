@@ -538,7 +538,9 @@ impl Renderer {
             if pending_blank_width > 0.0
                 && (!is_blank
                     || style.background_color != pending_blank_style.background_color
-                    || style.cursor != pending_blank_style.cursor)
+                    || style.cursor != pending_blank_style.cursor
+                    || style.decoration != pending_blank_style.decoration
+                    || style.decoration_color != pending_blank_style.decoration_color)
             {
                 let mut rect_style = pending_blank_style;
                 rect_style.width = pending_blank_width;
