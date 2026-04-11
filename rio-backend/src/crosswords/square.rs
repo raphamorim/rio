@@ -1,6 +1,7 @@
-// square.rs was originally taken from Alacritty as cell.rs
-// (https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/term/cell.rs)
-// which is licensed under Apache 2.0 license.
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
 //
 // In rio it has been rewritten as a packed `u64`. The previous design held
 // `c`, `fg`, `bg`, `flags`, and an `Option<Arc<CellExtra>>` inline (24 bytes
@@ -9,7 +10,7 @@
 // cell itself is 8 bytes.
 
 use crate::crosswords::grid::GridSquare;
-use crate::crosswords::style::{StyleFlags, StyleId, DEFAULT_STYLE_ID};
+use crate::crosswords::style::{StyleId, DEFAULT_STYLE_ID};
 use crate::crosswords::Column;
 use crate::crosswords::Row;
 use bitflags::bitflags;
@@ -213,10 +214,6 @@ impl Extras {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Square — the packed cell.
-// ---------------------------------------------------------------------------
-
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Square(u64);
@@ -246,8 +243,6 @@ impl Square {
         self.0
     }
 
-    // -------- codepoint --------
-
     #[inline]
     pub fn c(self) -> char {
         let cp = ((self.0 >> CODEPOINT_SHIFT) & CODEPOINT_MASK) as u32;
@@ -262,8 +257,6 @@ impl Square {
         self.0 = (self.0 & !CODEPOINT_MASK) | ((cp & CODEPOINT_MASK) << CODEPOINT_SHIFT);
     }
 
-    // -------- wide --------
-
     #[inline]
     pub fn wide(self) -> Wide {
         Wide::from_bits(self.0)
@@ -273,8 +266,6 @@ impl Square {
     pub fn set_wide(&mut self, w: Wide) {
         self.0 = (self.0 & !WIDE_MASK) | ((w as u64) << WIDE_SHIFT);
     }
-
-    // -------- per-cell flags --------
 
     #[inline]
     pub fn cell_flags(self) -> CellFlags {
@@ -307,8 +298,6 @@ impl Square {
         self.cell_flags().contains(f)
     }
 
-    // -------- style id --------
-
     /// Read the raw style id bits.
     ///
     /// **The caller must check `content_tag()` first.** For non-Codepoint
@@ -325,8 +314,6 @@ impl Square {
     pub fn set_style_id(&mut self, id: StyleId) {
         self.0 = (self.0 & !STYLE_ID_MASK) | ((id as u64) << STYLE_ID_SHIFT);
     }
-
-    // -------- extras id --------
 
     /// Read the cell's extras id, if any.
     ///
@@ -349,8 +336,6 @@ impl Square {
         let bits = id.unwrap_or(0) as u64;
         self.0 = (self.0 & !EXTRAS_ID_MASK) | (bits << EXTRAS_ID_SHIFT);
     }
-
-    // -------- content tag + bg-only encoding --------
 
     #[inline]
     pub fn content_tag(self) -> ContentTag {
@@ -425,8 +410,6 @@ impl Square {
         self.set_style_id(id);
         self
     }
-
-    // -------- convenience predicates --------
 
     #[inline]
     pub fn is_default(self) -> bool {
