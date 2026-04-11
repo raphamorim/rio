@@ -112,8 +112,12 @@ pub enum ContentTag {
 }
 
 impl ContentTag {
-    #[inline]
-    fn from_bits(bits: u64) -> ContentTag {
+    /// Decode the content tag from a raw `Square` u64. Public so render
+    /// hot loops can read the cell once and dispatch on the tag without
+    /// going through the `Square::content_tag()` method (which reloads
+    /// the cell from memory if the optimizer can't prove it aliases).
+    #[inline(always)]
+    pub fn from_bits(bits: u64) -> ContentTag {
         match (bits >> CONTENT_TAG_SHIFT) & 0b11 {
             0 => ContentTag::Codepoint,
             1 => ContentTag::BgPalette,
@@ -231,6 +235,15 @@ impl Square {
         let mut s = Square(0);
         s.set_c(c);
         s
+    }
+
+    /// Read the underlying packed bits. Used by render hot loops that want
+    /// to extract multiple fields from a single cell load — calling the
+    /// individual accessors would otherwise reload the cell from memory
+    /// each time the optimizer can't prove they alias.
+    #[inline(always)]
+    pub fn raw(self) -> u64 {
+        self.0
     }
 
     // -------- codepoint --------

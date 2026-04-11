@@ -114,15 +114,19 @@ fn populate_visible(cw: &mut Crosswords<VoidListener>, cols: usize, rows: usize)
 }
 
 /// Worst case: every cell does a fresh `style_set.get(...)` call, with no
-/// caching across consecutive cells. This is the slowest path through the
-/// new layout — the renderer never actually does this in practice.
+/// caching across consecutive cells. The renderer never actually does this
+/// in practice — but we measure it to upper-bound the lookup overhead.
 fn walk_visible(cw: &Crosswords<VoidListener>, cols: usize, rows: usize) -> u64 {
     let mut acc: u64 = 0;
     for r in 0..rows {
         for c in 0..cols {
             let cell = &cw.grid[Line(r as i32)][Column(c)];
             acc = acc.wrapping_add(cell.c() as u64);
-            let style = cw.grid.style_set.get(cell.style_id());
+            // Safety: ids in this bench are produced by `intern`, so they
+            // are guaranteed to be in range.
+            let style = unsafe {
+                cw.grid.style_set.get_unchecked(cell.style_id())
+            };
             acc = acc.wrapping_add(mix_style(&style));
         }
     }
@@ -178,7 +182,12 @@ fn walk_visible_cached(
                         if sid == DEFAULT_STYLE_ID {
                             default_mix
                         } else {
-                            mix_style(&cw.grid.style_set.get(sid))
+                            // Safety: ids in this bench are produced by
+                            // `intern`, so they are guaranteed in range.
+                            let style = unsafe {
+                                cw.grid.style_set.get_unchecked(sid)
+                            };
+                            mix_style(&style)
                         }
                     }
                     ContentTag::BgPalette => cell.bg_palette_index() as u64,
@@ -521,6 +530,7 @@ fn report_type_sizes() {
     eprintln!("  Square         = {}", size_of::<Square>());
     eprintln!("  AnsiColor      = {}", size_of::<AnsiColor>());
     eprintln!("  StyleFlags     = {}", size_of::<StyleFlags>());
+    eprintln!("  Style          = {}", size_of::<Style>());
     eprintln!(
         "  Option<Square> = {}  (niche check)",
         size_of::<Option<Square>>()
