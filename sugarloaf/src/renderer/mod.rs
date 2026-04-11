@@ -562,6 +562,17 @@ pub struct Renderer {
     image_textures: FxHashMap<u32, ImageTextureEntry>,
     /// Image draw commands for the current frame.
     image_draws: Vec<ImageDraw>,
+    /// Atlas-allocated background image, if any. Kept allocated until
+    /// `clear_background_image` so we can deallocate explicitly.
+    background_image_id: Option<image_cache::ImageId>,
+}
+
+/// Atlas placement returned by `Renderer::register_background_image`,
+/// containing everything `Sugarloaf::image_rect` needs to draw the image.
+#[derive(Clone, Copy, Debug)]
+pub struct BackgroundImagePlacement {
+    pub coords: [f32; 4],
+    pub atlas_layer: i32,
 }
 
 impl Renderer {
@@ -588,7 +599,80 @@ impl Renderer {
             current_frame: 0,
             image_textures: FxHashMap::default(),
             image_draws: Vec::new(),
+            background_image_id: None,
         }
+    }
+
+    /// Allocate a background image into the color atlas. Returns the atlas
+    /// UV coordinates and atlas layer the caller needs to pass to
+    /// `Sugarloaf::image_rect`. The previous background image (if any) is
+    /// deallocated first so reloads don't leak atlas slots.
+    pub fn register_background_image(
+        &mut self,
+        pixels: &[u8],
+        width: u16,
+        height: u16,
+    ) -> Option<BackgroundImagePlacement> {
+        if width == 0 || height == 0 || pixels.len() < (width as usize * height as usize * 4) {
+            return None;
+        }
+        // Drop the previous allocation, if any, before claiming a new one.
+        self.clear_background_image();
+
+        let request = image_cache::AddImage {
+            width,
+            height,
+            has_alpha: true,
+            data: image_cache::ImageData::Borrowed(pixels),
+            content_type: image_cache::ContentType::Color,
+        };
+        let id = self.images.allocate(request)?;
+        let location = self.images.get(&id)?;
+        let atlas_layer = self
+            .images
+            .get_atlas_index(id)
+            .map(|idx| (idx + 1) as i32)
+            .unwrap_or(1);
+        self.background_image_id = Some(id);
+        Some(BackgroundImagePlacement {
+            coords: [
+                location.min.0,
+                location.min.1,
+                location.max.0,
+                location.max.1,
+            ],
+            atlas_layer,
+        })
+    }
+
+    /// Free the atlas slot held by the current background image, if any.
+    pub fn clear_background_image(&mut self) {
+        if let Some(id) = self.background_image_id.take() {
+            let _ = self.images.deallocate(id);
+        }
+    }
+
+    /// Look up the placement (atlas UVs + layer) of the currently registered
+    /// background image. Returns `None` if no background image is set.
+    pub fn current_background_image_placement(
+        &self,
+    ) -> Option<BackgroundImagePlacement> {
+        let id = self.background_image_id?;
+        let location = self.images.get(&id)?;
+        let atlas_layer = self
+            .images
+            .get_atlas_index(id)
+            .map(|idx| (idx + 1) as i32)
+            .unwrap_or(1);
+        Some(BackgroundImagePlacement {
+            coords: [
+                location.min.0,
+                location.min.1,
+                location.max.0,
+                location.max.1,
+            ],
+            atlas_layer,
+        })
     }
 
     #[inline]
