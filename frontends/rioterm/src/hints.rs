@@ -248,12 +248,65 @@ impl HintState {
 
     fn find_hyperlink_matches<T: EventListener>(
         &mut self,
-        _term: &rio_backend::crosswords::Crosswords<T>,
-        _hint: Rc<Hint>,
+        term: &rio_backend::crosswords::Crosswords<T>,
+        hint: Rc<Hint>,
     ) {
-        // Per-cell hyperlinks (OSC 8) are temporarily disabled during the
-        // cell repack — they need to live in the per-grid extras side
-        // table once that's wired up. Regex / url hint paths still work.
+        // Walk the visible region looking for OSC 8 hyperlink spans.
+        //
+        // After the cell repack, hyperlinks live in the per-grid
+        // `extras_table`. Each cell carries an `extras_id: u16`; cells
+        // in the same hyperlink span share that id. We compare ids
+        // (cheap u16 compare) to find the start and end of each span,
+        // then look up the URI once via `Crosswords::cell_hyperlink`.
+        let grid = &term.grid;
+        let display_offset = grid.display_offset();
+        let visible_lines = grid.screen_lines();
+
+        for line_idx in 0..visible_lines {
+            let line = Line(line_idx as i32 - display_offset as i32);
+            if line < Line(0) || line.0 >= grid.total_lines() as i32 {
+                continue;
+            }
+
+            let mut col = 0usize;
+            let cols = grid.columns();
+            while col < cols {
+                let id = match term.cell_hyperlink_id(line, Column(col)) {
+                    Some(id) => id,
+                    None => {
+                        col += 1;
+                        continue;
+                    }
+                };
+
+                // Found the start of a hyperlink span. Walk forward
+                // until the extras_id changes.
+                let start_col = col;
+                let mut end_col = col;
+                while end_col < cols
+                    && term.cell_hyperlink_id(line, Column(end_col)) == Some(id)
+                {
+                    end_col += 1;
+                }
+
+                // Look up the URI once for the whole span.
+                if let Some(hyperlink) = term.cell_hyperlink(line, Column(start_col))
+                {
+                    let mut uri = hyperlink.uri().to_string();
+                    if hint.post_processing {
+                        uri = post_process_hyperlink_uri(&uri);
+                    }
+                    self.matches.push(HintMatch {
+                        text: uri,
+                        start: Pos::new(line, Column(start_col)),
+                        end: Pos::new(line, Column(end_col - 1)),
+                        hint: hint.clone(),
+                    });
+                }
+
+                col = end_col;
+            }
+        }
     }
 
     fn extract_line_text<T: EventListener>(
