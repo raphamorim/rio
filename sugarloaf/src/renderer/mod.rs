@@ -798,17 +798,20 @@ impl Renderer {
         // Reset clip_rect after rendering all content
         self.comp.batches.clip_rect = [0.0; 4];
 
-        // Render image overlays from content states
+        // Render image overlays from visible content states only.
+        // Hidden states (e.g. inactive tabs) must be excluded so
+        // their images don't bleed through.
         let has_overlays = state
             .content
             .states
             .values()
-            .any(|cs| !cs.image_overlays.is_empty());
+            .any(|cs| !cs.render_data.hidden && !cs.image_overlays.is_empty());
         if has_overlays {
             let overlays: Vec<_> = state
                 .content
                 .states
                 .values()
+                .filter(|cs| !cs.render_data.hidden)
                 .flat_map(|cs| cs.image_overlays.iter())
                 .collect();
             self.render_graphic_overlays(context, image_data, &overlays);

@@ -853,7 +853,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "copa"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "arrayvec",
  "criterion",
@@ -879,7 +879,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -1830,9 +1830,9 @@ dependencies = [
 
 [[package]]
 name = "gif"
-version = "0.14.1"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5df2ba84018d80c213569363bdcd0c64e6933c67fe4c1d60ecf822971a3c35e"
+checksum = "ee8cfcc411d9adbbaba82fb72661cc1bcca13e8bba98b364e62b2dba8f960159"
 dependencies = [
  "color_quant",
  "weezl",
@@ -2013,6 +2013,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashbrown"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f467dd6dccf739c208452f8014c75c18bb8301b050ad1cfb27153803edb0f51"
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2175,12 +2181,12 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.13.1"
+version = "2.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45a8a2b9cb3e0b0c1803dbb0758ffac5de2f425b23c28f518faabd9d805342ff"
+checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.0",
  "serde",
  "serde_core",
 ]
@@ -2683,14 +2689,14 @@ dependencies = [
 
 [[package]]
 name = "libredox"
-version = "0.1.15"
+version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ddbf48fd451246b1f8c2610bd3b4ac0cc6e149d89832867093ab69a17194f08"
+checksum = "e02f3bb43d335493c96bf3fd3a321600bf6bd07ed34bc64118e9293bdffea46c"
 dependencies = [
  "bitflags 2.11.0",
  "libc",
  "plain",
- "redox_syscall 0.7.3",
+ "redox_syscall 0.7.4",
 ]
 
 [[package]]
@@ -3973,9 +3979,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ce70a74e890531977d37e532c34d45e9055d2409ed08ddba14529471ed0be16"
+checksum = "f450ad9c3b1da563fb6948a8e0fb0fb9269711c9c73d9ea1de5058c79c8d643a"
 dependencies = [
  "bitflags 2.11.0",
 ]
@@ -4048,7 +4054,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "base64",
  "bitflags 2.11.0",
@@ -4084,7 +4090,7 @@ dependencies = [
 
 [[package]]
 name = "rio-notifier"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "block2 0.5.1",
  "objc-rs 0.3.1",
@@ -4097,7 +4103,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4105,7 +4111,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -4159,7 +4165,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "ahash",
  "bitflags 2.11.0",
@@ -4680,7 +4686,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "sugarloaf"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "approx",
  "bytemuck",
@@ -4787,7 +4793,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "teletypewriter"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "corcovado",
  "dirs",
