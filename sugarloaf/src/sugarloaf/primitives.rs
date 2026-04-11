@@ -151,14 +151,6 @@ pub struct SugarCursor {
 pub struct ImageProperties {
     #[serde(default = "String::default")]
     pub path: String,
-    #[serde(default = "Option::default")]
-    pub width: Option<f32>,
-    #[serde(default = "Option::default")]
-    pub height: Option<f32>,
-    #[serde(default = "f32::default")]
-    pub x: f32,
-    #[serde(default = "f32::default")]
-    pub y: f32,
     /// Multiplier applied to the image's alpha channel before upload.
     /// Clamped to `[0.0, 1.0]`. `1.0` (the default) means fully opaque;
     /// lower values let the terminal background show through.
@@ -175,10 +167,6 @@ impl Default for ImageProperties {
     fn default() -> Self {
         Self {
             path: String::new(),
-            width: None,
-            height: None,
-            x: 0.0,
-            y: 0.0,
             opacity: default_image_opacity(),
         }
     }

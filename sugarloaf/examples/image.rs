@@ -74,12 +74,9 @@ impl ApplicationHandler for Application {
         )
         .expect("Sugarloaf instance should be created");
 
-        sugarloaf.set_background_image(&sugarloaf::ImageProperties {
+        let _ = sugarloaf.set_background_image(&sugarloaf::ImageProperties {
             path: String::from("resources/demo-sugarloaf-1.png"),
-            width: Some(400.),
-            height: Some(400.),
-            x: 0.,
-            y: 0.,
+            opacity: 1.0,
         });
 
         window.request_redraw();

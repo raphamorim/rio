@@ -1232,7 +1232,13 @@ impl Renderer {
                     let char_width = run.span.width;
 
                     // Fast path: empty run (blanks/spaces) — just advance
-                    // and optionally paint background/cursor
+                    // and optionally paint background/cursor/decoration.
+                    // Decoration must be checked too: an underline cursor
+                    // on a blank cell carries its line through `decoration`
+                    // (not `cursor`) and the cell's `background_color` may
+                    // have been stripped to `None` when the window has a
+                    // background image / opacity < 1, so without the
+                    // decoration check the cursor would silently vanish.
                     if run.glyphs.is_empty() {
                         let advance = cell_width * char_width;
                         let run_x = px;
@@ -1240,6 +1246,7 @@ impl Renderer {
 
                         if run.span.background_color.is_some()
                             || run.span.cursor.is_some()
+                            || run.span.decoration.is_some()
                         {
                             let style = TextRunStyle {
                                 font_coords,
