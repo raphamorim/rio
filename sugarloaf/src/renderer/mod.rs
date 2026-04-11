@@ -653,8 +653,7 @@ fn upload_background_image_texture(
             desc.set_width(pixels.width as u64);
             desc.set_height(pixels.height as u64);
             desc.set_usage(
-                metal::MTLTextureUsage::ShaderRead
-                    | metal::MTLTextureUsage::ShaderWrite,
+                metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite,
             );
             let mtl_tex = ctx.device.new_texture(&desc);
             mtl_tex.set_label("sugarloaf::background image");
@@ -712,10 +711,7 @@ impl Renderer {
     /// Replace the background image. Pass `None` to clear it. The pixels
     /// are uploaded into a dedicated GPU texture on the next `prepare`
     /// call (so we don't go through the glyph atlas).
-    pub fn set_background_image_pixels(
-        &mut self,
-        pixels: Option<BackgroundImagePixels>,
-    ) {
+    pub fn set_background_image_pixels(&mut self, pixels: Option<BackgroundImagePixels>) {
         if pixels.is_some() {
             self.background_image_dirty = pixels;
         } else {
@@ -2077,10 +2073,7 @@ impl Renderer {
                 if let ImageTexture::Wgpu { view, .. } = &bg_tex.gpu {
                     let instance = ImageInstance {
                         dest_pos: [0.0, 0.0],
-                        dest_size: [
-                            ctx.size.width as f32,
-                            ctx.size.height as f32,
-                        ],
+                        dest_size: [ctx.size.width, ctx.size.height],
                         source_rect: [0.0, 0.0, 1.0, 1.0],
                     };
                     ctx.queue.write_buffer(
@@ -2088,16 +2081,15 @@ impl Renderer {
                         0,
                         bytemuck::bytes_of(&instance),
                     );
-                    let bg_bind = ctx.device.create_bind_group(
-                        &wgpu::BindGroupDescriptor {
+                    let bg_bind =
+                        ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
                             label: Some("background image bind group"),
                             layout: &brush.image_bind_group_layout,
                             entries: &[wgpu::BindGroupEntry {
                                 binding: 0,
                                 resource: wgpu::BindingResource::TextureView(view),
                             }],
-                        },
-                    );
+                        });
                     rpass.set_pipeline(&brush.image_pipeline);
                     rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
                     rpass.set_bind_group(1, &bg_bind, &[]);
@@ -2274,7 +2266,7 @@ impl Renderer {
                 &self.background_image_texture,
                 brush,
                 render_encoder,
-                (context.size.width as f32, context.size.height as f32),
+                (context.size.width, context.size.height),
             );
 
             // BelowText images (z < 0): before text
