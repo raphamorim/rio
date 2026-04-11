@@ -21,11 +21,6 @@ use raw_window_handle::{
 };
 use state::SugarState;
 
-/// Reserved content-state ID for the optional window background image.
-/// Picked at the top of the address space so it cannot collide with the
-/// dynamically-allocated rich-text IDs returned by `get_next_id`.
-const BACKGROUND_IMAGE_CONTENT_ID: usize = usize::MAX;
-
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
     renderer: Renderer,
@@ -326,23 +321,27 @@ impl Sugarloaf<'_> {
     }
 
     /// Try to load and install a window background image. Returns `Err`
-    /// with a human-readable message on failure (e.g. file missing,
-    /// decode failed, image too large for the atlas) so callers can
-    /// surface the message in a UI overlay.
+    /// with a human-readable message on failure (file missing, decode
+    /// failed, decoded image is empty, etc.) so callers can surface the
+    /// message in a UI overlay. The decoded pixels are uploaded to a
+    /// dedicated GPU texture sized to the image — the glyph atlas is not
+    /// touched, so a 4K wallpaper does not push glyphs out of cache.
     #[inline]
     pub fn set_background_image(
         &mut self,
         image: &ImageProperties,
     ) -> Result<(), String> {
-        // Skip if the same image is already configured.
+        // Skip if the same image is already configured. Both the path and
+        // the opacity must match — opacity is baked into the alpha channel
+        // at upload time, so an opacity change requires a reload.
         if let Some(current) = &self.background_image {
-            if current.path == image.path {
+            if current.path == image.path && current.opacity == image.opacity {
                 return Ok(());
             }
         }
 
         // Decode the file synchronously.
-        let decoded = match image_rs::open(&image.path) {
+        let mut decoded = match image_rs::open(&image.path) {
             Ok(img) => img.to_rgba8(),
             Err(e) => {
                 let msg = format!("'{}': {}", image.path, e);
@@ -351,29 +350,35 @@ impl Sugarloaf<'_> {
             }
         };
         let (img_w, img_h) = decoded.dimensions();
+        if img_w == 0 || img_h == 0 {
+            let msg = format!(
+                "'{}' decoded to a {}x{} image",
+                image.path, img_w, img_h
+            );
+            tracing::warn!("background image {}", msg);
+            return Err(msg);
+        }
 
-        // Allocate into the color atlas. Returns atlas UVs + layer that the
-        // existing image_rect content path needs to draw the texture.
-        let placement = match self.renderer.register_background_image(
-            decoded.as_raw(),
-            img_w as u16,
-            img_h as u16,
-        ) {
-            Some(p) => p,
-            None => {
-                let msg = format!(
-                    "'{}' ({}x{}) does not fit in the texture atlas",
-                    image.path, img_w, img_h
-                );
-                tracing::warn!("background image {}", msg);
-                return Err(msg);
+        // Apply per-image opacity by scaling the alpha channel before
+        // upload. The image fragment shader premultiplies alpha at sample
+        // time, so the GPU does the right thing for both fully-opaque and
+        // partially-translucent source images.
+        let opacity = image.opacity.clamp(0.0, 1.0);
+        if opacity < 1.0 {
+            let opacity_byte = (opacity * 255.0).round() as u16;
+            for pixel in decoded.pixels_mut() {
+                pixel[3] = ((pixel[3] as u16 * opacity_byte) / 255) as u8;
             }
-        };
+        }
 
+        self.renderer.set_background_image_pixels(Some(
+            crate::renderer::BackgroundImagePixels {
+                width: img_w,
+                height: img_h,
+                pixels: decoded.into_raw(),
+            },
+        ));
         self.background_image = Some(image.clone());
-        let _ = placement; // refresh below queries the renderer directly so
-                           // resize() can reuse the same path.
-        self.refresh_background_image_content();
         Ok(())
     }
 
@@ -383,41 +388,8 @@ impl Sugarloaf<'_> {
         if self.background_image.is_none() {
             return;
         }
-        self.state
-            .content
-            .remove_state(&BACKGROUND_IMAGE_CONTENT_ID);
-        self.renderer.clear_background_image();
+        self.renderer.set_background_image_pixels(None);
         self.background_image = None;
-    }
-
-    /// Push (or refresh) the background image content state with current
-    /// window dimensions. Called from `set_background_image` and from
-    /// `resize` so the image always covers the full window. No-op if no
-    /// background image is currently registered with the renderer.
-    fn refresh_background_image_content(&mut self) {
-        let placement = match self.renderer.current_background_image_placement() {
-            Some(p) => p,
-            None => return,
-        };
-        let physical = self.ctx.size();
-        let scale = self.state.style.scale_factor.max(1.0);
-        let logical_w = physical.width / scale;
-        let logical_h = physical.height / scale;
-        self.image_rect(
-            Some(BACKGROUND_IMAGE_CONTENT_ID),
-            0.0,
-            0.0,
-            logical_w,
-            logical_h,
-            [1.0, 1.0, 1.0, 1.0],
-            placement.coords,
-            // Lowest depth so it sits behind cell rects (-0.1) and the
-            // panel borders. The terminal compositor has no depth buffer,
-            // so this is a sort key, not a real Z test — keeping it well
-            // below all other content keeps things robust.
-            -0.5,
-            placement.atlas_layer,
-        );
     }
 
     /// Remove content by ID (any type)
@@ -950,16 +922,14 @@ impl Sugarloaf<'_> {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
         self.renderer.resize(&mut self.ctx);
-        // Background image must follow the new window size.
-        self.refresh_background_image_content();
+        // No content-state refresh needed for the background image — the
+        // dedicated draw call reads `ctx.size` directly each frame.
     }
 
     #[inline]
     pub fn rescale(&mut self, scale: f32) {
         self.ctx.set_scale(scale);
         self.state.compute_layout_rescale(scale);
-        // Background image must follow the new scale factor.
-        self.refresh_background_image_content();
     }
 
     #[inline]

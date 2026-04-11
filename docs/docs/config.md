@@ -1663,16 +1663,19 @@ Set an image as background.
 
 - Default: `None`
 
-#### Using image as background:
+#### Fields
 
-If both properties `width` and `height` are occluded then background image will use the terminal width/height.
+- `path` — required, absolute path to a PNG/JPG/etc.
+- `opacity` — `0.0`–`1.0`, default `1.0`. Multiplied into the image's alpha channel before upload, so a lower value lets the terminal background bleed through.
+
+> The image is uploaded once into a dedicated GPU texture sized exactly to the source dimensions and stretched to fill the window. The `width`, `height`, `x`, and `y` fields are currently ignored.
+
+#### Using image as background:
 
 ```toml
 [window.background-image]
 path = "/Users/hugoamor/Desktop/musashi.png"
 opacity = 0.5
-x = 0.0
-y = -100.0
 ```
 
 ![Demo image as background](/assets/demos/demo-background-image.png)
