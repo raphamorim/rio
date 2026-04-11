@@ -847,6 +847,37 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.current_index
     }
 
+    /// Get the terminal title for each panel in a given tab.
+    pub fn panel_titles(&self, tab_index: usize) -> Vec<String> {
+        if tab_index >= self.contexts.len() {
+            return Vec::new();
+        }
+        self.contexts[tab_index]
+            .inner_values()
+            .map(|item| {
+                let ctx = item.context();
+                let terminal = ctx.terminal.lock();
+                let title = terminal.title.to_string();
+                if !title.is_empty() {
+                    return title;
+                }
+                drop(terminal);
+                // Fall back to the tab title from the titles system
+                if let Some(tab_title) = self.titles.titles.get(&tab_index) {
+                    if !tab_title.content.is_empty() {
+                        return tab_title.content.clone();
+                    }
+                    if let Some(ref extra) = tab_title.extra {
+                        if !extra.program.is_empty() {
+                            return extra.program.clone();
+                        }
+                    }
+                }
+                String::from("shell")
+            })
+            .collect()
+    }
+
     #[inline]
     pub fn current_route(&self) -> usize {
         self.current_route

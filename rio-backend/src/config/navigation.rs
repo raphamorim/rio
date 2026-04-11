@@ -8,6 +8,8 @@ pub enum NavigationMode {
     Plain,
     #[serde(alias = "tab")]
     Tab,
+    #[serde(alias = "sidebar")]
+    Sidebar,
     #[cfg(target_os = "macos")]
     #[serde(alias = "nativetab")]
     NativeTab,
@@ -30,6 +32,7 @@ impl Default for NavigationMode {
 impl NavigationMode {
     const PLAIN_STR: &'static str = "Plain";
     const TAB_STR: &'static str = "Tab";
+    const SIDEBAR_STR: &'static str = "Sidebar";
     #[cfg(target_os = "macos")]
     const NATIVE_TAB_STR: &'static str = "NativeTab";
 
@@ -37,6 +40,7 @@ impl NavigationMode {
         match self {
             Self::Plain => Self::PLAIN_STR,
             Self::Tab => Self::TAB_STR,
+            Self::Sidebar => Self::SIDEBAR_STR,
             #[cfg(target_os = "macos")]
             Self::NativeTab => Self::NATIVE_TAB_STR,
         }
@@ -48,6 +52,7 @@ pub fn modes_as_vec_string() -> Vec<String> {
     [
         NavigationMode::Plain,
         NavigationMode::Tab,
+        NavigationMode::Sidebar,
         #[cfg(target_os = "macos")]
         NavigationMode::NativeTab,
     ]
@@ -72,6 +77,7 @@ impl std::str::FromStr for NavigationMode {
         match s {
             Self::PLAIN_STR => Ok(NavigationMode::Plain),
             Self::TAB_STR => Ok(NavigationMode::Tab),
+            Self::SIDEBAR_STR => Ok(NavigationMode::Sidebar),
             #[cfg(target_os = "macos")]
             Self::NATIVE_TAB_STR => Ok(NavigationMode::NativeTab),
             _ => Ok(NavigationMode::default()),
@@ -95,6 +101,11 @@ pub struct ColorAutomation {
 #[inline]
 pub fn default_unfocused_split_opacity() -> f32 {
     0.4
+}
+
+#[inline]
+fn default_sidebar_width() -> f32 {
+    200.0
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -128,6 +139,8 @@ pub struct Navigation {
         rename = "unfocused-split-opacity"
     )]
     pub unfocused_split_opacity: f32,
+    #[serde(default = "default_sidebar_width", rename = "sidebar-width")]
+    pub sidebar_width: f32,
 }
 
 impl Default for Navigation {
@@ -142,6 +155,7 @@ impl Default for Navigation {
             use_split: true,
             unfocused_split_opacity: default_unfocused_split_opacity(),
             open_config_with_split: true,
+            sidebar_width: default_sidebar_width(),
         }
     }
 }
@@ -167,7 +181,12 @@ impl Navigation {
 
     #[inline]
     pub fn is_enabled(&self) -> bool {
-        self.mode == NavigationMode::Tab
+        self.mode == NavigationMode::Tab || self.mode == NavigationMode::Sidebar
+    }
+
+    #[inline]
+    pub fn is_sidebar(&self) -> bool {
+        self.mode == NavigationMode::Sidebar
     }
 }
 

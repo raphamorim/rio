@@ -1037,6 +1037,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 return;
                             }
 
+                            if route
+                                .window
+                                .screen
+                                .handle_sidebar_click(&mut self.router.clipboard)
+                            {
+                                route.request_redraw();
+                                return;
+                            }
+
                             let handled_by_island =
                                 route.window.screen.handle_island_click(
                                     &route.window.winit_window,
@@ -1268,15 +1277,45 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
 
-                // Check if mouse is over island and set cursor to default
-                use crate::renderer::island::ISLAND_HEIGHT;
+                // Handle sidebar hover (must come before island check)
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
-                let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
-                if route.window.screen.renderer.navigation.is_enabled()
-                    && y <= island_height_px
-                {
-                    route.window.winit_window.set_cursor(CursorIcon::Default);
-                    return;
+                if route.window.screen.renderer.sidebar.is_some() {
+                    let mx = x as f32 / scale_factor;
+                    let my = y as f32 / scale_factor;
+                    let needs_redraw = route.window.screen.update_sidebar_hover(mx, my);
+                    if needs_redraw {
+                        route.request_redraw();
+                    }
+                    let sidebar_hover = route
+                        .window
+                        .screen
+                        .renderer
+                        .sidebar
+                        .as_ref()
+                        .map(|s| (mx <= s.effective_width(), s.hovered));
+                    if let Some((true, hover)) = sidebar_hover {
+                        use crate::renderer::sidebar::SidebarHit;
+                        match hover {
+                            SidebarHit::None => {
+                                route.window.winit_window.set_cursor(CursorIcon::Default);
+                            }
+                            _ => {
+                                route.window.winit_window.set_cursor(CursorIcon::Pointer);
+                            }
+                        }
+                        return;
+                    }
+                }
+
+                // Check if mouse is over island and set cursor to default
+                // (skip for sidebar mode — the sidebar handles its own area)
+                if route.window.screen.renderer.island.is_some() {
+                    use crate::renderer::island::ISLAND_HEIGHT;
+                    let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
+                    if y <= island_height_px {
+                        route.window.winit_window.set_cursor(CursorIcon::Default);
+                        return;
+                    }
                 }
 
                 // Handle scrollbar drag

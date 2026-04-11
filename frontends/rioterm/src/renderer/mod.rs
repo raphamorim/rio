@@ -4,6 +4,7 @@ pub mod custom_cursor;
 pub mod island;
 pub mod scrollbar;
 pub mod search;
+pub mod sidebar;
 pub mod trail_cursor;
 pub mod utils;
 
@@ -45,6 +46,7 @@ pub struct Renderer {
     pub navigation: Navigation,
     pub margin: rio_backend::config::layout::Margin,
     pub island: Option<island::Island>,
+    pub sidebar: Option<sidebar::Sidebar>,
     pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
     last_active: Option<NodeId>,
@@ -136,11 +138,25 @@ impl Renderer {
             dynamic_background.2 = true;
         }
 
-        let island = if config.navigation.is_enabled() {
+        let island = if config.navigation.is_enabled() && !config.navigation.is_sidebar()
+        {
             Some(island::Island::new(
                 named_colors.tabs,
                 named_colors.tabs_active,
                 named_colors.tab_border,
+                config.navigation.hide_if_single,
+            ))
+        } else {
+            None
+        };
+
+        let sidebar = if config.navigation.is_sidebar() {
+            Some(sidebar::Sidebar::new(
+                config.navigation.sidebar_width,
+                named_colors.tabs,
+                named_colors.tabs_active,
+                named_colors.tab_border,
+                named_colors.background.0,
                 config.navigation.hide_if_single,
             ))
         } else {
@@ -162,6 +178,7 @@ impl Renderer {
             navigation: config.navigation.clone(),
             margin: config.margin,
             island,
+            sidebar,
             command_palette: {
                 let mut palette = command_palette::CommandPalette::new();
                 palette.has_adaptive_theme = config.adaptive_colors.is_some();
@@ -1175,6 +1192,14 @@ impl Renderer {
 
         if let Some(island) = &mut self.island {
             island.render(
+                sugarloaf,
+                (window_size.width, window_size.height, scale_factor),
+                context_manager,
+            );
+        }
+
+        if let Some(sidebar) = &mut self.sidebar {
+            sidebar.render(
                 sugarloaf,
                 (window_size.width, window_size.height, scale_factor),
                 context_manager,

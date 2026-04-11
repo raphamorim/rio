@@ -27,7 +27,12 @@ use crate::crosswords::{
 use crate::hints::HintState;
 use crate::layout::ContextDimension;
 use crate::mouse::{calculate_mouse_position, Mouse};
-use crate::renderer::{utils::padding_top_from_config, Renderer};
+use crate::renderer::{
+    utils::{
+        padding_left_from_sidebar, padding_top_from_config, sidebar_collapsed_top_padding,
+    },
+    Renderer,
+};
 use crate::screen::hint::HintMatches;
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
@@ -201,24 +206,26 @@ impl Screen<'_> {
             keyboard: config.keyboard,
         };
 
-        // Create rich text with initial position accounting for island
+        let padding_x_left = config.margin.left + padding_left_from_sidebar(&renderer);
+
+        // Create rich text with initial position accounting for island/sidebar
         let rich_text_id = next_rich_text_id();
         let _ = sugarloaf.text(Some(rich_text_id));
-        sugarloaf.set_position(rich_text_id, config.margin.left, padding_y_top);
+        sugarloaf.set_position(rich_text_id, padding_x_left, padding_y_top);
 
         // Create unscaled margin for ContextDimension (compute() will scale it)
         let margin = Margin::new(
             padding_y_top,
             config.margin.right,
             padding_y_bottom,
-            config.margin.left,
+            padding_x_left,
         );
         // Create scaled margin for ContextGrid (already in physical pixels)
         let scaled_margin = Margin::new(
             padding_y_top * scale as f32,
             config.margin.right * scale as f32,
             padding_y_bottom * scale as f32,
-            config.margin.left * scale as f32,
+            padding_x_left * scale as f32,
         );
         let context_dimension = ContextDimension::build(
             size.width as f32,
@@ -365,8 +372,9 @@ impl Screen<'_> {
         self.sugarloaf
             .update_filters(config.renderer.filters.as_slice());
 
-        // Preserve existing Island (tab state) and update its colors
+        // Preserve existing Island/Sidebar (tab state) and update colors
         let old_island = self.renderer.island.take();
+        let old_sidebar = self.renderer.sidebar.take();
         self.renderer = Renderer::new(config);
         if let Some(mut island) = old_island {
             island.update_colors(
@@ -376,7 +384,18 @@ impl Screen<'_> {
             );
             self.renderer.island = Some(island);
         }
+        if let Some(mut sidebar) = old_sidebar {
+            sidebar.update_colors(
+                config.colors.tabs,
+                config.colors.tabs_active,
+                config.colors.tab_border,
+                config.colors.background.0,
+            );
+            self.renderer.sidebar = Some(sidebar);
+        }
 
+        let padding_x_left =
+            config.margin.left + padding_left_from_sidebar(&self.renderer);
         let scale = self.sugarloaf.scale_factor();
         for context_grid in self.context_manager.contexts_mut() {
             context_grid.update_line_height(config.line_height);
@@ -385,7 +404,7 @@ impl Screen<'_> {
                 padding_y_top * scale,
                 config.margin.right * scale,
                 padding_y_bottom * scale,
-                config.margin.left * scale,
+                padding_x_left * scale,
             ));
 
             // Update font size and line height BEFORE update_dimensions
@@ -1387,6 +1406,47 @@ impl Screen<'_> {
         }
     }
 
+    pub fn toggle_navigation_mode(&mut self) {
+        use rio_backend::config::navigation::NavigationMode;
+
+        let current_mode = self.renderer.navigation.mode;
+        let named_colors = self.renderer.named_colors;
+
+        match current_mode {
+            NavigationMode::Tab => {
+                // Switch to Sidebar
+                self.renderer.navigation.mode = NavigationMode::Sidebar;
+                self.renderer.island = None;
+                self.renderer.sidebar = Some(crate::renderer::sidebar::Sidebar::new(
+                    self.renderer.navigation.sidebar_width,
+                    named_colors.tabs,
+                    named_colors.tabs_active,
+                    named_colors.tab_border,
+                    named_colors.background.0,
+                    self.renderer.navigation.hide_if_single,
+                ));
+            }
+            NavigationMode::Sidebar => {
+                // Switch to Tab
+                self.renderer.navigation.mode = NavigationMode::Tab;
+                self.renderer.sidebar = None;
+                self.renderer.island = Some(crate::renderer::island::Island::new(
+                    named_colors.tabs,
+                    named_colors.tabs_active,
+                    named_colors.tab_border,
+                    self.renderer.navigation.hide_if_single,
+                ));
+            }
+            _ => {}
+        }
+
+        // Recompute margins for all tabs
+        let num_tabs = self.ctx().len();
+        self.resize_top_or_bottom_line(num_tabs);
+        self.resize_all_contexts();
+        self.render();
+    }
+
     pub fn create_tab(&mut self, clipboard: &mut Clipboard) {
         let redirect = true;
 
@@ -1404,7 +1464,9 @@ impl Screen<'_> {
 
         // Use the base scaled_margin for the new tab position, not the
         // split-panel-aware margin, because the new tab is full-window.
-        let padding_x = self.context_manager.current_grid().scaled_margin.left;
+        let sidebar_left = padding_left_from_sidebar(&self.renderer);
+        let padding_x =
+            self.context_manager.current_grid().scaled_margin.left + sidebar_left;
         let padding_y_top = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
@@ -1467,11 +1529,14 @@ impl Screen<'_> {
             self.renderer.margin.top,
             num_tabs,
             self.renderer.macos_use_unified_titlebar,
-        );
+        ) + sidebar_collapsed_top_padding(&self.renderer);
         let padding_y_bottom = self.renderer.margin.bottom;
+        let padding_x_left =
+            self.renderer.margin.left + padding_left_from_sidebar(&self.renderer);
 
         if previous_margin.top != padding_y_top
             || previous_margin.bottom != padding_y_bottom
+            || previous_margin.left != padding_x_left
         {
             if let Some(layout) = self
                 .sugarloaf
@@ -1487,7 +1552,7 @@ impl Screen<'_> {
                     padding_y_top * scale,
                     d.scaled_margin.right,
                     padding_y_bottom * scale,
-                    d.scaled_margin.left,
+                    padding_x_left * scale,
                 ));
                 self.resize_all_contexts();
             }
@@ -2596,6 +2661,71 @@ impl Screen<'_> {
         true
     }
 
+    pub fn update_sidebar_hover(&mut self, mx: f32, my: f32) -> bool {
+        if let Some(ref mut sidebar) = self.renderer.sidebar {
+            if sidebar.update_hover(mx, my, &self.context_manager) {
+                self.render();
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn handle_sidebar_click(&mut self, clipboard: &mut Clipboard) -> bool {
+        let sidebar = match &self.renderer.sidebar {
+            Some(s) => s,
+            None => return false,
+        };
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let sidebar_width_px = (sidebar.effective_width() * scale_factor) as usize;
+
+        // Only handle clicks within the sidebar region
+        if self.mouse.x > sidebar_width_px {
+            return false;
+        }
+
+        // Convert to logical coordinates for hit testing
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        let hit = sidebar.hit_test(mouse_x, mouse_y, &self.context_manager);
+        match hit {
+            crate::renderer::sidebar::SidebarHit::CollapseButton => {
+                if let Some(ref mut sidebar) = self.renderer.sidebar {
+                    sidebar.toggle_collapsed();
+                }
+                let num_tabs = self.ctx().len();
+                self.resize_top_or_bottom_line(num_tabs);
+                self.resize_all_contexts();
+                self.render();
+                true
+            }
+            crate::renderer::sidebar::SidebarHit::Tab(tab_index) => {
+                if tab_index != self.context_manager.current_index() {
+                    self.cancel_search(clipboard);
+                    self.clear_selection();
+                    let old_index = self.context_manager.current_index();
+                    self.context_manager.set_current(tab_index);
+                    let new_index = self.context_manager.current_index();
+                    self.context_manager.switch_context_visibility(
+                        &mut self.sugarloaf,
+                        old_index,
+                        new_index,
+                    );
+                }
+                self.render();
+                true
+            }
+            crate::renderer::sidebar::SidebarHit::Panel(_tab_index, _panel_index) => {
+                // TODO: focus specific panel within tab
+                self.render();
+                true
+            }
+            crate::renderer::sidebar::SidebarHit::None => true, // consumed (in sidebar area)
+        }
+    }
+
     #[inline]
     pub fn on_left_click(&mut self, point: Pos, clipboard: &mut Clipboard) {
         let side = self.mouse.square_side;
@@ -3246,6 +3376,9 @@ impl Screen<'_> {
             PaletteAction::ClearHistory => {
                 let mut terminal = self.context_manager.current_mut().terminal.lock();
                 terminal.clear_saved_history();
+            }
+            PaletteAction::ToggleNavigationMode => {
+                self.toggle_navigation_mode();
             }
             PaletteAction::Quit => {
                 self.context_manager.quit();

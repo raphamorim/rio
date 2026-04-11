@@ -69,6 +69,7 @@ pub enum PaletteAction {
     SearchBackward,
     ClearHistory,
     CloseCurrentSplitOrTab,
+    ToggleNavigationMode,
     Quit,
 }
 
@@ -193,6 +194,11 @@ const COMMANDS: &[Command] = &[
         title: "Clear History",
         shortcut: "",
         action: PaletteAction::ClearHistory,
+    },
+    Command {
+        title: "Toggle Tab Bar / Sidebar",
+        shortcut: "",
+        action: PaletteAction::ToggleNavigationMode,
     },
     Command {
         title: "Quit",

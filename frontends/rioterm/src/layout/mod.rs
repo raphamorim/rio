@@ -945,6 +945,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         true
     }
 
+    /// Iterate over panel items (immutable).
+    #[inline]
+    pub fn inner_values(&self) -> impl Iterator<Item = &ContextGridItem<T>> {
+        self.inner.values()
+    }
+
     #[inline]
     pub fn contexts_mut(&mut self) -> &mut FxHashMap<NodeId, ContextGridItem<T>> {
         &mut self.inner

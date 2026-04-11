@@ -60,12 +60,56 @@ pub fn add_span_with_fallback(
 }
 
 #[inline]
+pub fn padding_left_from_sidebar(renderer: &super::Renderer) -> f32 {
+    if let Some(sidebar) = &renderer.sidebar {
+        sidebar.effective_width()
+    } else {
+        0.0
+    }
+}
+
+/// On macOS, when the sidebar is collapsed the terminal needs
+/// the regular titlebar top padding (PADDING_Y) so content
+/// doesn't render under the traffic lights.
+#[inline]
+pub fn sidebar_collapsed_top_padding(renderer: &super::Renderer) -> f32 {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(sidebar) = &renderer.sidebar {
+            if sidebar.collapsed {
+                return constants::PADDING_Y;
+            }
+        }
+    }
+    let _ = renderer;
+    0.0
+}
+
 pub fn padding_top_from_config(
     navigation: &Navigation,
     padding_y_top: f32,
     #[allow(unused)] num_tabs: usize,
     #[allow(unused)] macos_use_unified_titlebar: bool,
 ) -> f32 {
+    // Sidebar mode: when expanded on macOS, the sidebar header
+    // handles the titlebar space so no extra top padding is needed.
+    // When collapsed on macOS, fall through to the regular padding
+    // so content doesn't render under the traffic lights.
+    if navigation.is_sidebar() {
+        #[cfg(target_os = "macos")]
+        {
+            // Check if sidebar is collapsed — if so, use regular
+            // macOS padding (PADDING_Y = 26). This is a compile-time
+            // branch; the collapsed check happens at the call site
+            // via `padding_top_for_sidebar`.
+            return padding_y_top;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            return constants::PADDING_Y + padding_y_top;
+        }
+    }
+
     // When navigation is enabled (Tab mode), start content below island
     if navigation.is_enabled() {
         // On Linux/Windows, if hide_if_single is true and there's only one tab,
