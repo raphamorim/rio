@@ -118,6 +118,25 @@ impl StyleSet {
             .unwrap_or_else(Style::default)
     }
 
+    /// Unchecked variant of `get`. Skips both the default-style early
+    /// return AND the bounds check on `self.styles`. Used by the renderer
+    /// hot loop after the caller has already verified the id is non-zero
+    /// and in range (which is always true for ids produced by `intern`).
+    ///
+    /// # Safety
+    /// `id` must be a valid index into `self.styles` (i.e. less than
+    /// `self.len()`). Ids returned by `intern` always satisfy this.
+    #[inline(always)]
+    pub unsafe fn get_unchecked(&self, id: StyleId) -> Style {
+        debug_assert!(
+            (id as usize) < self.styles.len(),
+            "StyleSet::get_unchecked called with out-of-range id {} (len {})",
+            id,
+            self.styles.len(),
+        );
+        *self.styles.get_unchecked(id as usize)
+    }
+
     /// Intern a style and return its id. If the style already exists,
     /// returns the existing id. If not, inserts it.
     ///
