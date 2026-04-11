@@ -36,6 +36,22 @@ type UData = ::libc::intptr_t;
 #[cfg(target_os = "netbsd")]
 type Count = usize;
 
+#[cfg(target_os = "freebsd")]
+macro_rules! kevent {
+    ($id: expr, $filter: expr, $flags: expr, $data: expr) => {
+        libc::kevent {
+            ident: $id as ::libc::uintptr_t,
+            filter: $filter as Filter,
+            flags: $flags,
+            fflags: 0,
+            data: 0,
+            udata: $data as UData,
+            ext: [0; 4],
+        }
+    };
+}
+
+#[cfg(not(target_os = "freebsd"))]
 macro_rules! kevent {
     ($id: expr, $filter: expr, $flags: expr, $data: expr) => {
         libc::kevent {
