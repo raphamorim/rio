@@ -289,6 +289,13 @@ winget:
 
 after:
   hooks:
+    # `release.mode: append` does not update the header/footer once the
+    # release exists, so we overwrite the body here via `gh`. Idempotent —
+    # every partial job writes the same text.
+    - cmd: gh release edit {{ .Tag }} --notes "Full changelog: https://rioterm.com/changelog"
+      if: "{{ .IsRelease }}"
+      env: ["GH_TOKEN={{ .Env.GITHUB_TOKEN }}"]
+      output: true
     - cmd: brew bump-cask-pr rio --version {{ .Version }}
       if: "{{ and .IsRelease .IsMerging }}"
       env: ["HOMEBREW_GITHUB_API_TOKEN={{ .Env.GITHUB_TOKEN }}"]

@@ -5,6 +5,12 @@ language: 'en'
 
 <h1 style={{fontSize: "2.25rem", fontWeight: 800, letterSpacing: "-0.02em", background: "linear-gradient(-120deg, #fb43fe 30%, #00dbe5)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", borderBottom: "none", paddingBottom: "1rem", marginBottom: "2rem"}}>Changelog</h1>
 
+## 0.3.5
+
+- Fix underline cursor rendering.
+- Fix `navigation.unfocused-split-opacity` not dimming unfocused splits. The setting is now applied as a semi-transparent overlay drawn on top of inactive panes and works correctly on both opaque and transparent windows. Default raised from `0.4` to `0.7` and clamped to `[0.15, 1.0]`.
+- Add `navigation.unfocused-split-fill`: RGB tint used for the unfocused-split overlay. Defaults to the terminal background color.
+
 ## 0.3.4
 
 - Fix kitty image protocol overlay when has a new tab.

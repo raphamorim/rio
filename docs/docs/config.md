@@ -981,10 +981,26 @@ use-split = true
 
 ## navigation.unfocused-split-opacity
 
-Configure opacity on unfocused split.
+The opacity level (opposite of transparency) of an unfocused split. Unfocused splits are faded out by default to make it easier to see which split is focused. To disable this feature, set this value to `1`.
+
+A value of `1` is fully opaque and a value of `0` is fully transparent. Because `0` is not useful (it makes the split look very weird), the minimum value is `0.15`. A value outside of `0.15..=1` is clamped to the nearest valid value.
+
+Default is `0.7`.
 
 ```toml
-navigation.unfocused-split-opacity = 0.8
+[navigation]
+unfocused-split-opacity = 0.7
+```
+
+## navigation.unfocused-split-fill
+
+The color used to dim an unfocused split. Unfocused splits are dimmed by rendering a semi-transparent rectangle over the split; this option sets the color of that rectangle. The alpha of the overlay is derived from `navigation.unfocused-split-opacity` — this field is an RGB tint only.
+
+Defaults to the terminal's background color. Specified as a hex string (`#RRGGBB` or `RRGGBB`).
+
+```toml
+[navigation]
+unfocused-split-fill = "#000000"
 ```
 
 ## navigation.open-config-with-split
