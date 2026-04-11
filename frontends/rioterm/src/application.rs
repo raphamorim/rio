@@ -1292,7 +1292,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .renderer
                         .sidebar
                         .as_ref()
-                        .map(|s| (mx <= s.effective_width(), s.hovered));
+                        .map(|s| (mx <= s.interactive_width(), s.hovered));
                     if let Some((true, hover)) = sidebar_hover {
                         use crate::renderer::sidebar::SidebarHit;
                         match hover {

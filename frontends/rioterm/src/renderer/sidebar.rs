@@ -271,7 +271,25 @@ impl Sidebar {
             {
                 let btn_x = 76.0_f32;
                 let btn_y = 16.0 - COLLAPSE_BUTTON_SIZE / 2.0;
-                let icon_color = self.inactive_text_color;
+                let is_hovered = self.hovered == SidebarHit::CollapseButton;
+                if is_hovered {
+                    let pad = 4.0;
+                    sugarloaf.rect(
+                        None,
+                        btn_x - pad,
+                        btn_y - pad,
+                        COLLAPSE_BUTTON_SIZE + pad * 2.0,
+                        COLLAPSE_BUTTON_SIZE + pad * 2.0,
+                        HOVER_BG,
+                        0.065,
+                        2,
+                    );
+                }
+                let icon_color = if is_hovered {
+                    self.active_text_color
+                } else {
+                    self.inactive_text_color
+                };
                 self.draw_collapse_icon(sugarloaf, btn_x, btn_y, icon_color);
             }
 
