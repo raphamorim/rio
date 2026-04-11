@@ -3,12 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-//! Glyph resolution cache. Memoises `(char, Attributes) ->
-//! (font_id, width, is_pua)` so the layout pipeline doesn't have to
-//! walk the font fallback chain on every cell. The cache lives next
-//! to `FontLibrary` so callers go through `Sugarloaf::resolve_glyph`
-//! / `Sugarloaf::resolve_glyphs_batch` instead of holding their own.
-
 use crate::font_introspector::Attributes;
 use crate::sugarloaf::primitives::is_private_user_area;
 use crate::SpanStyle;
