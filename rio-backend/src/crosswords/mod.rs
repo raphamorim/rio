@@ -1082,6 +1082,7 @@ impl<U: EventListener> Crosswords<U> {
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
         let style_id = self.grid.cursor.template.style_id();
         let template_extras_id = self.grid.cursor.template.extras_id();
+        let template_flags = self.grid.cursor.template.cell_flags();
 
         let cursor_square = self.grid.cursor_square();
         if matches!(
@@ -1118,7 +1119,41 @@ impl<U: EventListener> Crosswords<U> {
         cell.set_c(c);
         cell.set_style_id(style_id);
         cell.set_extras_id(template_extras_id);
+        // Propagate per-cell flags from the cursor template (HYPERLINK,
+        // GRAPHICS). WRAPLINE and GRAPHEME are set per-cell elsewhere
+        // and are never set on the template, so this can copy the
+        // whole flag set without filtering.
+        cell.set_cell_flags(template_flags);
         *cursor_square = cell;
+    }
+
+    /// Read the hyperlink (if any) for the cell at `(line, col)`.
+    /// Looks up the cell's `extras_id` in the per-grid extras table.
+    /// Used by hint matching (`find_hyperlink_matches`) to locate
+    /// clickable OSC 8 link spans on screen.
+    #[inline]
+    pub fn cell_hyperlink(&self, line: Line, col: Column) -> Option<Hyperlink> {
+        let cell = &self.grid[line][col];
+        if !cell.has_hyperlink() {
+            return None;
+        }
+        let extras_id = cell.extras_id()?;
+        self.grid
+            .extras_table
+            .get(extras_id)
+            .and_then(|e| e.hyperlink.clone())
+    }
+
+    /// Read the cell's `extras_id` if it carries a hyperlink. Cheaper
+    /// than `cell_hyperlink` for span scans because it returns just the
+    /// 16-bit id; matching consecutive cells is then a u16 compare.
+    #[inline]
+    pub fn cell_hyperlink_id(&self, line: Line, col: Column) -> Option<u16> {
+        let cell = &self.grid[line][col];
+        if !cell.has_hyperlink() {
+            return None;
+        }
+        cell.extras_id()
     }
 
     #[inline]
@@ -2638,9 +2673,41 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn set_hyperlink(&mut self, _hyperlink: Option<Hyperlink>) {
-        // TODO: route hyperlinks through Grid::extras_table once the side
-        // table grows ref-counting. Disabled during the cell repack.
+    fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
+        // OSC 8 hyperlinks live in `Grid::extras_table` after the cell
+        // repack. Setting one allocates a side-table slot holding the
+        // Hyperlink and stores its id on the cursor template, so every
+        // subsequent cell write picks up the id via
+        // `write_at_cursor`'s `template_extras_id` propagation.
+        //
+        // Stage 1 limitation: extras slots are not reference-counted.
+        // Each new hyperlink leaks one slot until the grid is reset
+        // (`clear_history` / `Grid::reset`). The bound is `u16::MAX`
+        // distinct slots per session, which is generous for normal
+        // workloads. A future ref-counting pass can free slots when
+        // the last cell referencing them is overwritten.
+        match hyperlink {
+            Some(hl) => {
+                let id = self.grid.extras_table.alloc(
+                    crate::crosswords::square::Extras {
+                        hyperlink: Some(hl),
+                        ..Default::default()
+                    },
+                );
+                self.grid.cursor.template.set_extras_id(Some(id));
+                self.grid
+                    .cursor
+                    .template
+                    .insert_cell_flag(crate::crosswords::square::CellFlags::HYPERLINK);
+            }
+            None => {
+                self.grid.cursor.template.set_extras_id(None);
+                self.grid
+                    .cursor
+                    .template
+                    .remove_cell_flag(crate::crosswords::square::CellFlags::HYPERLINK);
+            }
+        }
     }
 
     /// Set the indexed color value.
@@ -4027,6 +4094,149 @@ mod tests {
         assert_eq!(cw.grid[Line(1)][Column(2)].c(), '\0');
         assert_eq!(cw.grid[Line(1)][Column(3)].c(), 'b');
         assert_eq!(cw.grid[Line(0)][Column(4)].c(), '\0');
+    }
+
+    /// Drive the parser with an OSC 8 hyperlink and assert that every
+    /// cell in the link span carries the same `extras_id`, that the
+    /// extras table holds the URI, and that cells outside the span
+    /// have no hyperlink. Locks in the per-instance ExtrasTable wiring
+    /// added in 2026-04-12 so future regressions in the cell repack
+    /// path get caught at test time.
+    #[test]
+    fn osc8_hyperlink_basic() {
+        use crate::performer::handler::{Processor, StdSyncHandler};
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut processor = Processor::<StdSyncHandler>::new();
+
+        // Plain text, then "click" wrapped in an OSC 8, then plain "."
+        // The bell-terminated form is what most shells emit.
+        let bytes = b"go \x1b]8;;https://example.com\x07click\x1b]8;;\x07.";
+        processor.advance(&mut cw, bytes);
+
+        // "go " — three cells, no hyperlink.
+        for col in 0..3 {
+            assert!(
+                cw.cell_hyperlink(Line(0), Column(col)).is_none(),
+                "col {} should have no hyperlink",
+                col,
+            );
+            assert!(cw.cell_hyperlink_id(Line(0), Column(col)).is_none());
+        }
+
+        // "click" — five cells, all sharing the same extras_id and URI.
+        let id = cw
+            .cell_hyperlink_id(Line(0), Column(3))
+            .expect("expected hyperlink id at col 3");
+        for col in 3..8 {
+            assert_eq!(
+                cw.cell_hyperlink_id(Line(0), Column(col)),
+                Some(id),
+                "col {} should share the link's extras_id",
+                col,
+            );
+            let hl = cw
+                .cell_hyperlink(Line(0), Column(col))
+                .expect("hyperlink");
+            assert_eq!(hl.uri(), "https://example.com");
+        }
+
+        // "." — one cell after the OSC 8 reset, no hyperlink.
+        assert!(cw.cell_hyperlink(Line(0), Column(8)).is_none());
+        assert!(cw.cell_hyperlink_id(Line(0), Column(8)).is_none());
+    }
+
+    /// Two distinct hyperlinks back-to-back must use *different*
+    /// `extras_id`s so that consumers walking cell-by-cell can detect
+    /// the boundary by id comparison.
+    #[test]
+    fn osc8_hyperlink_two_distinct_links_use_distinct_ids() {
+        use crate::performer::handler::{Processor, StdSyncHandler};
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut processor = Processor::<StdSyncHandler>::new();
+
+        let bytes = b"\x1b]8;;https://a.example\x07A\x1b]8;;\x07\
+                      \x1b]8;;https://b.example\x07B\x1b]8;;\x07";
+        processor.advance(&mut cw, bytes);
+
+        let id_a = cw.cell_hyperlink_id(Line(0), Column(0));
+        let id_b = cw.cell_hyperlink_id(Line(0), Column(1));
+        assert!(id_a.is_some());
+        assert!(id_b.is_some());
+        assert_ne!(
+            id_a, id_b,
+            "two distinct hyperlinks must allocate distinct extras_ids",
+        );
+
+        let hl_a = cw.cell_hyperlink(Line(0), Column(0)).unwrap();
+        let hl_b = cw.cell_hyperlink(Line(0), Column(1)).unwrap();
+        assert_eq!(hl_a.uri(), "https://a.example");
+        assert_eq!(hl_b.uri(), "https://b.example");
+    }
+
+    /// OSC 8 with no params clears the active hyperlink. Cells written
+    /// after the reset must not inherit the previous link.
+    #[test]
+    fn osc8_hyperlink_reset_clears_template() {
+        use crate::performer::handler::{Processor, StdSyncHandler};
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut processor = Processor::<StdSyncHandler>::new();
+
+        // Open a hyperlink, write 'X', close it, then write 'Y'.
+        processor
+            .advance(&mut cw, b"\x1b]8;;https://example.com\x07X\x1b]8;;\x07Y");
+
+        // X has the link.
+        assert!(cw.cell_hyperlink(Line(0), Column(0)).is_some());
+        // Y does not.
+        assert!(
+            cw.cell_hyperlink(Line(0), Column(1)).is_none(),
+            "cells after the OSC 8 reset must not inherit the previous link",
+        );
+    }
+
+    /// OSC 8 hyperlinks span multiple lines when the parser writes a
+    /// linefeed in the middle of the link. The cells on both lines
+    /// should carry the same `extras_id` (modulo the cells before /
+    /// after the link on those lines).
+    #[test]
+    fn osc8_hyperlink_spans_linefeed() {
+        use crate::performer::handler::{Processor, StdSyncHandler};
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut processor = Processor::<StdSyncHandler>::new();
+
+        // "AB\nCD" with the whole thing inside one OSC 8 link.
+        processor.advance(
+            &mut cw,
+            b"\x1b]8;;https://example.com\x07AB\r\nCD\x1b]8;;\x07",
+        );
+
+        let id_a = cw.cell_hyperlink_id(Line(0), Column(0)).unwrap();
+        let id_b = cw.cell_hyperlink_id(Line(0), Column(1)).unwrap();
+        let id_c = cw.cell_hyperlink_id(Line(1), Column(0)).unwrap();
+        let id_d = cw.cell_hyperlink_id(Line(1), Column(1)).unwrap();
+
+        assert_eq!(id_a, id_b);
+        assert_eq!(id_b, id_c);
+        assert_eq!(id_c, id_d);
+
+        let hl = cw.cell_hyperlink(Line(1), Column(1)).unwrap();
+        assert_eq!(hl.uri(), "https://example.com");
     }
 
     #[test]

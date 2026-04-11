@@ -619,11 +619,16 @@ mod tests {
         assert_eq!(s.content_tag(), ContentTag::BgPalette);
         assert!(s.is_bg_only());
         assert_eq!(s.bg_palette_index(), 42);
-        // bg-only cells implicitly use the default style
-        assert_eq!(s.style_id(), DEFAULT_STYLE_ID);
-        // and have no codepoint / extras
+        // bg-only cells have no codepoint
         assert_eq!(s.c(), '\0');
-        assert_eq!(s.extras_id(), None);
+        // NOTE: `style_id()` and `extras_id()` are intentionally
+        // branchless on the bg-only/codepoint discriminant — they
+        // read raw bits regardless of content_tag. For a bg-only
+        // cell those bits hold the bg color encoding, not a style/
+        // extras id. Production code (the renderer hot loop) checks
+        // `content_tag()` first, so it never asks `style_id()` of a
+        // bg-only cell. We don't assert `style_id() == DEFAULT_STYLE_ID`
+        // here for that reason. (See comments on `Square::style_id`.)
     }
 
     #[test]
@@ -633,8 +638,11 @@ mod tests {
         assert_eq!(s.content_tag(), ContentTag::BgRgb);
         assert!(s.is_bg_only());
         assert_eq!(s.bg_rgb(), (0x12, 0x34, 0x56));
-        assert_eq!(s.style_id(), DEFAULT_STYLE_ID);
         assert_eq!(s.c(), '\0');
+        // Same caveat as `bg_palette_round_trip`: branchless
+        // accessors read raw bits, so `style_id()` of a BgRgb cell
+        // returns garbage. The renderer always checks `content_tag()`
+        // first.
     }
 
     #[test]

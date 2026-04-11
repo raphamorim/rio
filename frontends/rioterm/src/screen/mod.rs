@@ -1898,11 +1898,62 @@ impl Screen<'_> {
             return None;
         }
 
-        // Per-cell hyperlinks are disabled during the cell repack — the
-        // OSC 8 hyperlink data needs to live in the per-grid extras side
-        // table once that lands. Skip the lookup for now.
-        let _ = grid;
-        None
+        // Look up the cell's hyperlink via the per-grid extras table.
+        // Cells in the same OSC 8 span share an `extras_id`, so we
+        // walk left/right comparing ids (cheap u16 compare) to find
+        // the span boundaries, then look up the URI once.
+        let id = terminal.cell_hyperlink_id(point.row, point.col)?;
+
+        let mut start_col = point.col;
+        let mut end_col = point.col;
+
+        while start_col > rio_backend::crosswords::pos::Column(0) {
+            let prev_col = start_col - 1;
+            if terminal.cell_hyperlink_id(point.row, prev_col) == Some(id) {
+                start_col = prev_col;
+            } else {
+                break;
+            }
+        }
+        while end_col < grid.columns() - 1 {
+            let next_col = end_col + 1;
+            if terminal.cell_hyperlink_id(point.row, next_col) == Some(id) {
+                end_col = next_col;
+            } else {
+                break;
+            }
+        }
+
+        let hyperlink = terminal.cell_hyperlink(point.row, point.col)?;
+
+        // Build a synthetic hint config so the rest of the hint
+        // pipeline (highlighting, click action) treats this just like
+        // a regex/url match.
+        let hint_config = std::rc::Rc::new(rio_backend::config::hints::Hint {
+            regex: None,
+            hyperlinks: true,
+            post_processing: true,
+            persist: false,
+            action: rio_backend::config::hints::HintAction::Command {
+                command: rio_backend::config::hints::HintCommand::Simple(
+                    "xdg-open".to_string(),
+                ),
+            },
+            mouse: rio_backend::config::hints::HintMouse::default(),
+            binding: None,
+        });
+
+        let mut uri = hyperlink.uri().to_string();
+        if hint_config.post_processing {
+            uri = post_process_hyperlink_uri(&uri);
+        }
+
+        Some(crate::hints::HintMatch {
+            text: uri,
+            start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
+            end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
+            hint: hint_config,
+        })
     }
 
     /// Find regex match at the specified point
@@ -1995,9 +2046,19 @@ impl Screen<'_> {
             return false;
         }
 
-        // Per-cell hyperlinks are temporarily disabled (cell repack):
-        // OSC 8 hyperlink data needs to live in the per-grid extras side
-        // table once that's wired up. trigger_hyperlink is a no-op for now.
+        // Look up the cell under the mouse and dispatch open_hyperlink
+        // if it carries an OSC 8 link.
+        let terminal = self.context_manager.current().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let pos = self.mouse_position(display_offset);
+        let pos_hyperlink = terminal.cell_hyperlink(pos.row, pos.col);
+        drop(terminal);
+
+        if let Some(hyperlink) = pos_hyperlink {
+            self.open_hyperlink(hyperlink);
+            return true;
+        }
+
         false
     }
 
