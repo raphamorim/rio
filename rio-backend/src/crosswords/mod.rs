@@ -19,6 +19,7 @@ pub mod grid;
 pub mod pos;
 pub mod search;
 pub mod square;
+pub mod style;
 pub mod vi_mode;
 
 use crate::ansi::graphics::GraphicCell;
@@ -38,7 +39,8 @@ use crate::clipboard::ClipboardType;
 use crate::config::colors::{self, AnsiColor, ColorRgb};
 use crate::crosswords::colors::term::TermColors;
 use crate::crosswords::grid::{Dimensions, Grid, Scroll};
-use crate::crosswords::square::Flags;
+use crate::crosswords::square::{CellFlags, Wide};
+use crate::crosswords::style::StyleFlags;
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent, TerminalDamage};
 use crate::performer::handler::Handler;
@@ -882,32 +884,24 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Jump to the end of a wide cell.
     pub fn expand_wide(&self, mut pos: Pos, direction: Direction) -> Pos {
-        let flags = self.grid[pos.row][pos.col].flags;
+        use crate::crosswords::square::Wide;
+        let wide = self.grid[pos.row][pos.col].wide();
 
         match direction {
-            Direction::Right
-                if flags.contains(square::Flags::LEADING_WIDE_CHAR_SPACER) =>
-            {
+            Direction::Right if matches!(wide, Wide::LeadingSpacer) => {
                 pos.col = Column(1);
                 pos.row += 1;
             }
-            Direction::Right if flags.contains(square::Flags::WIDE_CHAR) => {
+            Direction::Right if matches!(wide, Wide::Wide) => {
                 pos.col = std::cmp::min(pos.col + 1, self.grid.last_column());
             }
-            Direction::Left
-                if flags.intersects(
-                    square::Flags::WIDE_CHAR | square::Flags::WIDE_CHAR_SPACER,
-                ) =>
-            {
-                if flags.contains(square::Flags::WIDE_CHAR_SPACER) {
+            Direction::Left if matches!(wide, Wide::Wide | Wide::Spacer) => {
+                if matches!(wide, Wide::Spacer) {
                     pos.col -= 1;
                 }
 
                 let prev = pos.sub(&self.grid, Boundary::Grid, 1);
-                if self.grid[prev]
-                    .flags
-                    .contains(square::Flags::LEADING_WIDE_CHAR_SPACER)
-                {
+                if matches!(self.grid[prev].wide(), Wide::LeadingSpacer) {
                     pos = prev;
                 }
             }
@@ -928,10 +922,7 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
 
-        self.grid
-            .cursor_cell()
-            .flags
-            .insert(square::Flags::WRAPLINE);
+        self.grid.cursor_cell().set_wrapline(true);
 
         if self.grid.cursor.pos.row + 1 >= self.scroll_region.end {
             self.linefeed();
@@ -1089,43 +1080,45 @@ impl<U: EventListener> Crosswords<U> {
     #[inline(always)]
     pub fn write_at_cursor(&mut self, c: char) {
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
-        let fg = self.grid.cursor.template.fg;
-        let bg = self.grid.cursor.template.bg;
-        let flags = self.grid.cursor.template.flags;
-        let extra = self.grid.cursor.template.extra.clone();
+        let style_id = self.grid.cursor.template.style_id();
+        let template_extras_id = self.grid.cursor.template.extras_id();
 
-        let mut cursor_square = self.grid.cursor_square();
-        if cursor_square
-            .flags
-            .intersects(square::Flags::WIDE_CHAR | square::Flags::WIDE_CHAR_SPACER)
-        {
+        let cursor_square = self.grid.cursor_square();
+        if matches!(
+            cursor_square.wide(),
+            crate::crosswords::square::Wide::Wide
+                | crate::crosswords::square::Wide::Spacer
+        ) {
             // Remove wide char and spacer.
-            let wide = cursor_square.flags.contains(square::Flags::WIDE_CHAR);
+            let wide = matches!(
+                cursor_square.wide(),
+                crate::crosswords::square::Wide::Wide
+            );
             let point = self.grid.cursor.pos;
             if wide && point.col < self.grid.last_column() {
                 self.grid[point.row][point.col + 1]
-                    .flags
-                    .remove(square::Flags::WIDE_CHAR_SPACER);
+                    .set_wide(crate::crosswords::square::Wide::Narrow);
             } else if point.col > 0 {
-                self.grid[point.row][point.col - 1].clear_wide();
+                self.grid[point.row][point.col - 1].clear();
             }
 
             // Remove leading spacers.
             if point.col <= 1 && point.row != self.grid.topmost_line() {
                 let column = self.grid.last_column();
-                self.grid[point.row - 1i32][column]
-                    .flags
-                    .remove(square::Flags::LEADING_WIDE_CHAR_SPACER);
+                let prev = &mut self.grid[point.row - 1i32][column];
+                if matches!(prev.wide(), crate::crosswords::square::Wide::LeadingSpacer)
+                {
+                    prev.set_wide(crate::crosswords::square::Wide::Narrow);
+                }
             }
-
-            cursor_square = self.grid.cursor_cell();
         }
 
-        cursor_square.c = c;
-        cursor_square.fg = fg;
-        cursor_square.bg = bg;
-        cursor_square.flags = flags;
-        cursor_square.extra = extra;
+        let cursor_square = self.grid.cursor_cell();
+        let mut cell = crate::crosswords::square::Square::default();
+        cell.set_c(c);
+        cell.set_style_id(style_id);
+        cell.set_extras_id(template_extras_id);
+        *cursor_square = cell;
     }
 
     #[inline]
@@ -1248,10 +1241,7 @@ impl<U: EventListener> Crosswords<U> {
             }
             self.grid.cursor.pos
         };
-        if self.grid[pos]
-            .flags
-            .contains(square::Flags::WIDE_CHAR_SPACER)
-        {
+        if matches!(self.grid[pos].wide(), Wide::Spacer) {
             pos.col -= 1;
         }
 
@@ -1372,10 +1362,7 @@ impl<U: EventListener> Crosswords<U> {
         let line_length = std::cmp::min(grid_line.line_length(), cols.end + 1);
 
         // Include wide char when trailing spacer is selected.
-        if grid_line[cols.start]
-            .flags
-            .contains(square::Flags::WIDE_CHAR_SPACER)
-        {
+        if matches!(grid_line[cols.start].wide(), Wide::Spacer) {
             cols.start -= 1;
         }
 
@@ -1385,35 +1372,37 @@ impl<U: EventListener> Crosswords<U> {
 
             // Skip over cells until next tab-stop once a tab was found.
             if tab_mode {
-                if self.tabs[column] || cell.c != '\0' {
+                if self.tabs[column] || cell.c() != '\0' {
                     tab_mode = false;
                 } else {
                     continue;
                 }
             }
 
-            if cell.c == '\t' {
+            if cell.c() == '\t' {
                 tab_mode = true;
             }
 
-            if !cell.flags.intersects(
-                square::Flags::WIDE_CHAR_SPACER | square::Flags::LEADING_WIDE_CHAR_SPACER,
-            ) {
+            if !matches!(cell.wide(), Wide::Spacer | Wide::LeadingSpacer) {
                 // Push cells primary character.
-                text.push(cell.c);
+                text.push(cell.c());
 
                 // Push zero-width characters.
-                for c in cell.zerowidth().into_iter().flatten() {
-                    text.push(*c);
+                if let Some(extras_id) = cell.extras_id() {
+                    if let Some(extras) =
+                        self.grid.extras_table.get(extras_id)
+                    {
+                        for c in &extras.zerowidth {
+                            text.push(*c);
+                        }
+                    }
                 }
             }
         }
 
         if cols.end >= self.grid.columns() - 1
             && (line_length.0 == 0
-                || !self.grid[line][line_length - 1]
-                    .flags
-                    .contains(square::Flags::WRAPLINE))
+                || !self.grid[line][line_length - 1].wrapline())
         {
             text.push('\n');
         }
@@ -1421,12 +1410,10 @@ impl<U: EventListener> Crosswords<U> {
         // If wide char is not part of the selection, but leading spacer is, include it.
         if line_length == self.grid.columns()
             && line_length.0 >= 2
-            && grid_line[line_length - 1]
-                .flags
-                .contains(square::Flags::LEADING_WIDE_CHAR_SPACER)
+            && matches!(grid_line[line_length - 1].wide(), Wide::LeadingSpacer)
             && include_wrapped_wide
         {
-            text.push(self.grid[line - 1i32][Column(0)].c);
+            text.push(self.grid[line - 1i32][Column(0)].c());
         }
 
         text
@@ -1452,9 +1439,7 @@ impl<U: EventListener> Crosswords<U> {
     /// Find the beginning of the current line across linewraps.
     pub fn row_search_left(&self, mut point: Pos) -> Pos {
         while point.row > self.grid.topmost_line()
-            && self.grid[point.row - 1i32][self.grid.last_column()]
-                .flags
-                .contains(square::Flags::WRAPLINE)
+            && self.grid[point.row - 1i32][self.grid.last_column()].wrapline()
         {
             point.row -= 1;
         }
@@ -1467,9 +1452,7 @@ impl<U: EventListener> Crosswords<U> {
     /// Find the end of the current line across linewraps.
     pub fn row_search_right(&self, mut point: Pos) -> Pos {
         while point.row + 1 < self.grid.screen_lines()
-            && self.grid[point.row][self.grid.last_column()]
-                .flags
-                .contains(square::Flags::WRAPLINE)
+            && self.grid[point.row][self.grid.last_column()].wrapline()
         {
             point.row += 1;
         }
@@ -1483,14 +1466,16 @@ impl<U: EventListener> Crosswords<U> {
 impl<U: EventListener> Crosswords<U> {
     /// Delete all graphics from the visible grid
     fn delete_all_graphics(&mut self) {
+        use crate::crosswords::square::CellFlags;
         for line_idx in 0..self.grid.screen_lines() {
             let line = Line(line_idx as i32);
             for col_idx in 0..self.grid.columns() {
                 let col = Column(col_idx);
                 let cell = &mut self.grid[line][col];
-                if cell.flags.contains(Flags::GRAPHICS) {
-                    cell.set_graphics(smallvec::SmallVec::new());
-                    cell.flags.remove(Flags::GRAPHICS);
+                if cell.has_graphics() {
+                    cell.remove_cell_flag(CellFlags::GRAPHICS);
+                    // TODO: free the corresponding entry in
+                    // grid.extras_table when we wire up sixel storage there.
                 }
             }
             self.mark_line_damaged(line);
@@ -1504,9 +1489,8 @@ impl<U: EventListener> Crosswords<U> {
             && col.0 < self.grid.columns()
         {
             let cell = &mut self.grid[row][col];
-            if cell.flags.contains(Flags::GRAPHICS) {
-                cell.set_graphics(smallvec::SmallVec::new());
-                cell.flags.remove(Flags::GRAPHICS);
+            if cell.has_graphics() {
+                cell.remove_cell_flag(CellFlags::GRAPHICS);
                 self.mark_line_damaged(row);
             }
         }
@@ -1518,9 +1502,8 @@ impl<U: EventListener> Crosswords<U> {
             for line_idx in 0..self.grid.screen_lines() {
                 let line = Line(line_idx as i32);
                 let cell = &mut self.grid[line][col];
-                if cell.flags.contains(Flags::GRAPHICS) {
-                    cell.set_graphics(smallvec::SmallVec::new());
-                    cell.flags.remove(Flags::GRAPHICS);
+                if cell.has_graphics() {
+                    cell.remove_cell_flag(CellFlags::GRAPHICS);
                     self.mark_line_damaged(line);
                 }
             }
@@ -1533,9 +1516,8 @@ impl<U: EventListener> Crosswords<U> {
             for col_idx in 0..self.grid.columns() {
                 let col = Column(col_idx);
                 let cell = &mut self.grid[row][col];
-                if cell.flags.contains(Flags::GRAPHICS) {
-                    cell.set_graphics(smallvec::SmallVec::new());
-                    cell.flags.remove(Flags::GRAPHICS);
+                if cell.has_graphics() {
+                    cell.remove_cell_flag(CellFlags::GRAPHICS);
                 }
             }
             self.mark_line_damaged(row);
@@ -1932,7 +1914,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             for column in 0..self.grid.columns() {
                 let cell = &mut self.grid[line][Column(column)];
                 *cell = Square::default();
-                cell.c = 'E';
+                cell.set_c('E');
             }
         }
 
@@ -2002,18 +1984,21 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn erase_chars(&mut self, count: Column) {
-        let cursor = &self.grid.cursor;
-
-        let start = cursor.pos.col;
-        let end = std::cmp::min(start + count, Column(self.grid.columns()));
+        let start = self.grid.cursor.pos.col;
+        let end =
+            std::cmp::min(start + count, Column(self.grid.columns()));
 
         // Cleared cells have current background color set.
-        let bg = self.grid.cursor.template.bg;
-        let line = cursor.pos.row;
+        let bg = self
+            .grid
+            .style_of(&self.grid.cursor.template)
+            .bg;
+        let blank = self.grid.blank_with_bg(bg);
+        let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
         let row = &mut self.grid[line];
         for cell in &mut row[start..end] {
-            *cell = bg.into();
+            *cell = blank;
         }
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
@@ -2023,17 +2008,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn delete_chars(&mut self, count: usize) {
         let columns = self.grid.columns();
-        let cursor = &self.grid.cursor;
-        let bg = cursor.template.bg;
+        let bg = self
+            .grid
+            .style_of(&self.grid.cursor.template)
+            .bg;
+        let blank = self.grid.blank_with_bg(bg);
 
         // Ensure deleting within terminal bounds.
         let count = std::cmp::min(count, columns);
 
-        let start = cursor.pos.col.0;
+        let start = self.grid.cursor.pos.col.0;
         let end = std::cmp::min(start + count, columns - 1);
         let num_cells = columns - end;
 
-        let line = cursor.pos.row;
+        let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
         let row = &mut self.grid[line][..];
 
@@ -2045,7 +2033,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // 1 cell.
         let end = columns - count;
         for cell in &mut row[end..] {
-            *cell = bg.into();
+            *cell = blank;
         }
     }
 
@@ -2065,17 +2053,21 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn insert_blank(&mut self, count: usize) {
-        let cursor = &self.grid.cursor;
-        let bg = cursor.template.bg;
+        let bg = self
+            .grid
+            .style_of(&self.grid.cursor.template)
+            .bg;
+        let blank = self.grid.blank_with_bg(bg);
 
         // Ensure inserting within terminal bounds
-        let count = std::cmp::min(count, self.grid.columns() - cursor.pos.col.0);
+        let count =
+            std::cmp::min(count, self.grid.columns() - self.grid.cursor.pos.col.0);
 
-        let source = cursor.pos.col;
-        let destination = cursor.pos.col.0 + count;
+        let source = self.grid.cursor.pos.col;
+        let destination = self.grid.cursor.pos.col.0 + count;
         let num_cells = self.grid.columns() - destination;
 
-        let line = cursor.pos.row;
+        let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
 
         let row = &mut self.grid[line][..];
@@ -2087,7 +2079,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Squares were just moved out toward the end of the line;
         // fill in between source and dest with blanks.
         for cell in &mut row[source.0..destination] {
-            *cell = bg.into();
+            *cell = blank;
         }
     }
 
@@ -2143,67 +2135,85 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
         trace!("Setting attribute: {:?}", attr);
-        let cursor = &mut self.grid.cursor;
+        use crate::crosswords::style::StyleFlags;
         match attr {
-            Attr::Foreground(color) => cursor.template.fg = color,
-            Attr::Background(color) => cursor.template.bg = color,
-            Attr::UnderlineColor(color) => cursor.template.set_underline_color(color),
+            Attr::Foreground(color) => {
+                self.grid.update_template_style(|s| s.fg = color)
+            }
+            Attr::Background(color) => {
+                self.grid.update_template_style(|s| s.bg = color)
+            }
+            Attr::UnderlineColor(color) => {
+                self.grid.update_template_style(|s| s.underline_color = color)
+            }
             Attr::Reset => {
-                cursor.template.fg = AnsiColor::Named(NamedColor::Foreground);
-                cursor.template.bg = AnsiColor::Named(NamedColor::Background);
-                cursor.template.flags = square::Flags::empty();
-                cursor.template.set_underline_color(None);
+                self.grid
+                    .set_template_style(crate::crosswords::style::Style::default())
             }
-            Attr::Reverse => cursor.template.flags.insert(square::Flags::INVERSE),
-            Attr::CancelReverse => cursor.template.flags.remove(square::Flags::INVERSE),
-            Attr::Bold => cursor.template.flags.insert(square::Flags::BOLD),
-            Attr::CancelBold => cursor.template.flags.remove(square::Flags::BOLD),
-            Attr::Dim => cursor.template.flags.insert(square::Flags::DIM),
-            Attr::CancelBoldDim => cursor
-                .template
-                .flags
-                .remove(square::Flags::BOLD | square::Flags::DIM),
-            Attr::Italic => cursor.template.flags.insert(square::Flags::ITALIC),
-            Attr::CancelItalic => cursor.template.flags.remove(square::Flags::ITALIC),
-            Attr::Underline => {
-                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES);
-                cursor.template.flags.insert(square::Flags::UNDERLINE);
+            Attr::Reverse => self
+                .grid
+                .update_template_style(|s| s.flags.insert(StyleFlags::INVERSE)),
+            Attr::CancelReverse => self
+                .grid
+                .update_template_style(|s| s.flags.remove(StyleFlags::INVERSE)),
+            Attr::Bold => self
+                .grid
+                .update_template_style(|s| s.flags.insert(StyleFlags::BOLD)),
+            Attr::CancelBold => self
+                .grid
+                .update_template_style(|s| s.flags.remove(StyleFlags::BOLD)),
+            Attr::Dim => self
+                .grid
+                .update_template_style(|s| s.flags.insert(StyleFlags::DIM)),
+            Attr::CancelBoldDim => {
+                self.grid.update_template_style(|s| {
+                    s.flags.remove(StyleFlags::BOLD | StyleFlags::DIM)
+                })
             }
-            Attr::DoubleUnderline => {
-                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES);
-                cursor
-                    .template
-                    .flags
-                    .insert(square::Flags::DOUBLE_UNDERLINE);
-            }
-            Attr::Undercurl => {
-                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES);
-                cursor.template.flags.insert(square::Flags::UNDERCURL);
-            }
-            Attr::DottedUnderline => {
-                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES);
-                cursor
-                    .template
-                    .flags
-                    .insert(square::Flags::DOTTED_UNDERLINE);
-            }
-            Attr::DashedUnderline => {
-                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES);
-                cursor
-                    .template
-                    .flags
-                    .insert(square::Flags::DASHED_UNDERLINE);
-            }
+            Attr::Italic => self
+                .grid
+                .update_template_style(|s| s.flags.insert(StyleFlags::ITALIC)),
+            Attr::CancelItalic => self
+                .grid
+                .update_template_style(|s| s.flags.remove(StyleFlags::ITALIC)),
+            Attr::Underline => self.grid.update_template_style(|s| {
+                s.flags.remove(StyleFlags::ALL_UNDERLINES);
+                s.flags.insert(StyleFlags::UNDERLINE);
+            }),
+            Attr::DoubleUnderline => self.grid.update_template_style(|s| {
+                s.flags.remove(StyleFlags::ALL_UNDERLINES);
+                s.flags.insert(StyleFlags::DOUBLE_UNDERLINE);
+            }),
+            Attr::Undercurl => self.grid.update_template_style(|s| {
+                s.flags.remove(StyleFlags::ALL_UNDERLINES);
+                s.flags.insert(StyleFlags::UNDERCURL);
+            }),
+            Attr::DottedUnderline => self.grid.update_template_style(|s| {
+                s.flags.remove(StyleFlags::ALL_UNDERLINES);
+                s.flags.insert(StyleFlags::DOTTED_UNDERLINE);
+            }),
+            Attr::DashedUnderline => self.grid.update_template_style(|s| {
+                s.flags.remove(StyleFlags::ALL_UNDERLINES);
+                s.flags.insert(StyleFlags::DASHED_UNDERLINE);
+            }),
             Attr::BlinkSlow | Attr::BlinkFast | Attr::CancelBlink => {
                 info!("Term got unhandled attr: {:?}", attr);
             }
-            Attr::CancelUnderline => {
-                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES)
-            }
-            Attr::Hidden => cursor.template.flags.insert(square::Flags::HIDDEN),
-            Attr::CancelHidden => cursor.template.flags.remove(square::Flags::HIDDEN),
-            Attr::Strike => cursor.template.flags.insert(square::Flags::STRIKEOUT),
-            Attr::CancelStrike => cursor.template.flags.remove(square::Flags::STRIKEOUT),
+            Attr::CancelUnderline => self
+                .grid
+                .update_template_style(|s| s.flags.remove(StyleFlags::ALL_UNDERLINES)),
+            Attr::Hidden => self
+                .grid
+                .update_template_style(|s| s.flags.insert(StyleFlags::HIDDEN)),
+            Attr::CancelHidden => self
+                .grid
+                .update_template_style(|s| s.flags.remove(StyleFlags::HIDDEN)),
+            Attr::Strike => self
+                .grid
+                .update_template_style(|s| s.flags.insert(StyleFlags::STRIKEOUT)),
+            Attr::CancelStrike => self
+                .grid
+                .update_template_style(|s| s.flags.remove(StyleFlags::STRIKEOUT)),
             // _ => {
             // warn!("Term got unhandled attr: {:?}", attr);
             // }
@@ -2300,14 +2310,27 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
             // // Put zerowidth characters over first fullwidth character cell.
             let row = self.grid.cursor.pos.row;
-            if self.grid[row][column]
-                .flags
-                .contains(square::Flags::WIDE_CHAR_SPACER)
-            {
+            if matches!(self.grid[row][column].wide(), Wide::Spacer) {
                 column.0 = column.saturating_sub(1);
             }
 
-            self.grid[row][column].push_zerowidth(c);
+            // Allocate / extend an Extras entry for this cell to hold the
+            // multi-codepoint grapheme.
+            let cell = &mut self.grid[row][column];
+            let existing_id = cell.extras_id();
+            if let Some(id) = existing_id {
+                if let Some(extras) = self.grid.extras_table.get_mut(id) {
+                    extras.zerowidth.push(c);
+                }
+            } else {
+                let mut extras =
+                    crate::crosswords::square::Extras::default();
+                extras.zerowidth.push(c);
+                let id = self.grid.extras_table.alloc(extras);
+                let cell = &mut self.grid[row][column];
+                cell.set_extras_id(Some(id));
+                cell.insert_cell_flag(CellFlags::GRAPHEME);
+            }
             return;
         }
 
@@ -2332,18 +2355,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         } else {
             if self.grid.cursor.pos.col + 1 >= columns {
                 if self.mode.contains(Mode::LINE_WRAP) {
-                    // Insert placeholder before wide char if glyph does not fit in this row.
-                    self.grid
-                        .cursor
-                        .template
-                        .flags
-                        .insert(square::Flags::LEADING_WIDE_CHAR_SPACER);
+                    // Insert placeholder before wide char if glyph does not
+                    // fit in this row. Mark it as LeadingSpacer post-write.
                     self.write_at_cursor(' ');
-                    self.grid
-                        .cursor
-                        .template
-                        .flags
-                        .remove(square::Flags::LEADING_WIDE_CHAR_SPACER);
+                    self.grid.cursor_cell().set_wide(Wide::LeadingSpacer);
                     self.wrapline();
                 } else {
                     // Prevent out of bounds crash when linewrapping is disabled.
@@ -2352,31 +2367,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
             }
 
-            self.grid
-                .cursor
-                .template
-                .flags
-                .insert(square::Flags::WIDE_CHAR);
+            // Wide character itself.
             self.write_at_cursor(c);
-            self.grid
-                .cursor
-                .template
-                .flags
-                .remove(square::Flags::WIDE_CHAR);
+            self.grid.cursor_cell().set_wide(Wide::Wide);
 
-            // Write spacer to cell following the wide glyph.
+            // Spacer cell after it.
             self.grid.cursor.pos.col += 1;
-            self.grid
-                .cursor
-                .template
-                .flags
-                .insert(square::Flags::WIDE_CHAR_SPACER);
             self.write_at_cursor(' ');
-            self.grid
-                .cursor
-                .template
-                .flags
-                .remove(square::Flags::WIDE_CHAR_SPACER);
+            self.grid.cursor_cell().set_wide(Wide::Spacer);
         }
 
         // Mark cursor line as damaged for partial rendering
@@ -2513,7 +2511,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn clear_screen(&mut self, mode: ClearMode) {
-        let bg = self.grid.cursor.template.bg;
+        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        let blank = self.grid.blank_with_bg(bg);
 
         let screen_lines = self.grid.screen_lines();
 
@@ -2530,7 +2529,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 // Clear up to the current column in the current line.
                 let end = std::cmp::min(cursor.col + 1, Column(self.grid.columns()));
                 for cell in &mut self.grid[cursor.row][..end] {
-                    *cell = bg.into();
+                    *cell = blank;
                 }
 
                 let range = Line(0)..=cursor.row;
@@ -2540,7 +2539,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             ClearMode::Below => {
                 let cursor = self.grid.cursor.pos;
                 for cell in &mut self.grid[cursor.row][cursor.col..] {
-                    *cell = bg.into();
+                    *cell = blank;
                 }
 
                 if (cursor.row.0 as usize) < screen_lines - 1 {
@@ -2639,8 +2638,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
-        self.grid.cursor.template.set_hyperlink(hyperlink);
+    fn set_hyperlink(&mut self, _hyperlink: Option<Hyperlink>) {
+        // TODO: route hyperlinks through Grid::extras_table once the side
+        // table grows ref-counting. Disabled during the cell repack.
     }
 
     /// Set the indexed color value.
@@ -2727,8 +2727,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
             let c = self.grid.cursor.charsets[self.active_charset].map('\t');
             let cell = self.grid.cursor_square();
-            if cell.c == '\0' {
-                cell.c = c;
+            if cell.c() == '\0' {
+                cell.set_c(c);
             }
 
             loop {
@@ -2796,12 +2796,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn clear_line(&mut self, mode: LineClearMode) {
-        let cursor = &self.grid.cursor;
-        let bg = cursor.template.bg;
-        let point = cursor.pos;
+        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        let blank = self.grid.blank_with_bg(bg);
+        let point = self.grid.cursor.pos;
+        let should_wrap = self.grid.cursor.should_wrap;
 
         let (left, right) = match mode {
-            LineClearMode::Right if cursor.should_wrap => return,
+            LineClearMode::Right if should_wrap => return,
             LineClearMode::Right => (point.col, Column(self.grid.columns())),
             LineClearMode::Left => (Column(0), point.col + 1),
             LineClearMode::All => (Column(0), Column(self.grid.columns())),
@@ -2811,7 +2812,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let row = &mut self.grid[point.row];
         for cell in &mut row[left..right] {
-            *cell = bg.into();
+            *cell = blank;
         }
 
         let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
@@ -3141,33 +3142,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // In this case, we will ignore cells with a reference to the replaced
         // graphic.
 
-        let skip_textures = {
-            if graphic.maybe_transparent() {
-                HashSet::new()
-            } else {
-                let mut set = HashSet::new();
-
-                let line = if scrolling {
-                    self.grid.cursor.pos.row
-                } else {
-                    Line(0)
-                };
-
-                if let Some(old_graphics) = self.grid[line][Column(leftmost)].graphics() {
-                    for graphic in old_graphics {
-                        let tex = &*graphic.texture;
-                        if tex.width == width
-                            && tex.height == height
-                            && tex.cell_height == cell_height
-                        {
-                            set.insert(tex.id);
-                        }
-                    }
-                }
-
-                set
-            }
-        };
+        // TODO: re-implement sixel cell-anchoring against the per-grid
+        // SixelTable once it lands. The cell repack moved per-cell graphics
+        // out of `Square`; for now, sixel placements are not stored in cells.
+        let skip_textures: HashSet<u64> = HashSet::new();
 
         // Fill the cells under the graphic.
         //
@@ -3206,43 +3184,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     break;
                 }
 
-                let graphic_cell = GraphicCell {
-                    texture: texture.clone(),
-                    offset_x,
-                    offset_y,
-                };
-
-                let mut cell = self.grid.cursor.template.clone();
+                // TODO: store the GraphicCell in a per-grid SixelTable
+                // keyed by (line, col). For now, sixel placements are not
+                // anchored in cells; the cell carries only the GRAPHICS bit
+                // so the renderer knows it's a sixel cell.
+                let _ = (offset_x, offset_y, &texture);
                 let cell_ref = &mut self.grid[line][Column(left)];
-
-                // If the cell contains any graphics, and the region of the cell
-                // is not fully filled by the new graphic, the old graphics are
-                // kept in the cell.
-                let graphics = match cell_ref.take_graphics() {
-                    Some(mut old_graphics)
-                        if old_graphics.iter().any(|graphic| {
-                            !skip_textures.contains(&graphic.texture.id)
-                        }) && !graphic.is_filled(
-                            offset_x as usize,
-                            offset_y as usize,
-                            cell_width,
-                            cell_height,
-                        ) =>
-                    {
-                        // Ensure that we don't exceed the graphics limit per cell.
-                        while old_graphics.len() >= MAX_GRAPHICS_PER_CELL {
-                            drop(old_graphics.remove(0));
-                        }
-
-                        old_graphics.push(graphic_cell);
-                        old_graphics
-                    }
-
-                    _ => smallvec::smallvec![graphic_cell],
-                };
-
-                cell.set_graphics(graphics);
-                *cell_ref = cell;
+                cell_ref.insert_cell_flag(CellFlags::GRAPHICS);
             }
 
             self.mark_line_damaged(line);
@@ -3939,14 +3887,15 @@ impl<U: EventListener> Crosswords<U> {
             };
 
             for col_idx in 0..columns {
-                // Set colors to encode image_id and placement_id
-                self.grid.cursor.template.fg =
-                    crate::config::colors::AnsiColor::Spec(fg_color);
-                if let Some(ul_color) = underline_color {
-                    self.grid.cursor.template.set_underline_color(Some(
-                        crate::config::colors::AnsiColor::Spec(ul_color),
-                    ));
-                }
+                // Set colors to encode image_id and placement_id via the
+                // style table.
+                let fg = crate::config::colors::AnsiColor::Spec(fg_color);
+                let ul = underline_color
+                    .map(crate::config::colors::AnsiColor::Spec);
+                self.grid.update_template_style(|s| {
+                    s.fg = fg;
+                    s.underline_color = ul;
+                });
 
                 // Encode placeholder with diacritics for this cell's position
                 let placeholder_str = kitty_virtual::encode_placeholder(
@@ -3991,30 +3940,30 @@ mod tests {
         let mut cw =
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         for i in 0..10 {
-            cw.grid[Line(i)][Column(0)].c = i as u8 as char;
+            cw.grid[Line(i)][Column(0)].set_c(i as u8 as char);
         }
 
         cw.grid.scroll_up(&(Line(0)..Line(10)), 2);
 
-        assert_eq!(cw.grid[Line(0)][Column(0)].c, '\u{2}');
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), '\u{2}');
         assert_eq!(cw.grid[Line(0)].occ, 1);
-        assert_eq!(cw.grid[Line(1)][Column(0)].c, '\u{3}');
+        assert_eq!(cw.grid[Line(1)][Column(0)].c(), '\u{3}');
         assert_eq!(cw.grid[Line(1)].occ, 1);
-        assert_eq!(cw.grid[Line(2)][Column(0)].c, '\u{4}');
+        assert_eq!(cw.grid[Line(2)][Column(0)].c(), '\u{4}');
         assert_eq!(cw.grid[Line(2)].occ, 1);
-        assert_eq!(cw.grid[Line(3)][Column(0)].c, '\u{5}');
+        assert_eq!(cw.grid[Line(3)][Column(0)].c(), '\u{5}');
         assert_eq!(cw.grid[Line(3)].occ, 1);
-        assert_eq!(cw.grid[Line(4)][Column(0)].c, '\u{6}');
+        assert_eq!(cw.grid[Line(4)][Column(0)].c(), '\u{6}');
         assert_eq!(cw.grid[Line(4)].occ, 1);
-        assert_eq!(cw.grid[Line(5)][Column(0)].c, '\u{7}');
+        assert_eq!(cw.grid[Line(5)][Column(0)].c(), '\u{7}');
         assert_eq!(cw.grid[Line(5)].occ, 1);
-        assert_eq!(cw.grid[Line(6)][Column(0)].c, '\u{8}');
+        assert_eq!(cw.grid[Line(6)][Column(0)].c(), '\u{8}');
         assert_eq!(cw.grid[Line(6)].occ, 1);
-        assert_eq!(cw.grid[Line(7)][Column(0)].c, '\u{9}');
+        assert_eq!(cw.grid[Line(7)][Column(0)].c(), '\u{9}');
         assert_eq!(cw.grid[Line(7)].occ, 1);
-        assert_eq!(cw.grid[Line(8)][Column(0)].c, '\0'); // was 0.
+        assert_eq!(cw.grid[Line(8)][Column(0)].c(), '\0'); // was 0.
         assert_eq!(cw.grid[Line(8)].occ, 0);
-        assert_eq!(cw.grid[Line(9)][Column(0)].c, '\0'); // was 1.
+        assert_eq!(cw.grid[Line(9)][Column(0)].c(), '\0'); // was 1.
         assert_eq!(cw.grid[Line(9)].occ, 0);
     }
 
@@ -4066,18 +4015,18 @@ mod tests {
         let mut cw =
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         for i in 0..4 {
-            cw.grid[Line(0)][Column(i)].c = i as u8 as char;
+            cw.grid[Line(0)][Column(i)].set_c(i as u8 as char);
         }
-        cw.grid[Line(1)][Column(3)].c = 'b';
+        cw.grid[Line(1)][Column(3)].set_c('b');
 
-        assert_eq!(cw.grid[Line(0)][Column(0)].c, '\u{0}');
-        assert_eq!(cw.grid[Line(0)][Column(1)].c, '\u{1}');
-        assert_eq!(cw.grid[Line(0)][Column(2)].c, '\u{2}');
-        assert_eq!(cw.grid[Line(0)][Column(3)].c, '\u{3}');
-        assert_eq!(cw.grid[Line(0)][Column(4)].c, '\0');
-        assert_eq!(cw.grid[Line(1)][Column(2)].c, '\0');
-        assert_eq!(cw.grid[Line(1)][Column(3)].c, 'b');
-        assert_eq!(cw.grid[Line(0)][Column(4)].c, '\0');
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), '\u{0}');
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), '\u{1}');
+        assert_eq!(cw.grid[Line(0)][Column(2)].c(), '\u{2}');
+        assert_eq!(cw.grid[Line(0)][Column(3)].c(), '\u{3}');
+        assert_eq!(cw.grid[Line(0)][Column(4)].c(), '\0');
+        assert_eq!(cw.grid[Line(1)][Column(2)].c(), '\0');
+        assert_eq!(cw.grid[Line(1)][Column(3)].c(), 'b');
+        assert_eq!(cw.grid[Line(0)][Column(4)].c(), '\0');
     }
 
     #[test]
@@ -4142,7 +4091,7 @@ mod tests {
         let cursor_line = cw.grid.cursor.pos.row;
         for col in 0..test_text.len() {
             assert_eq!(
-                cw.grid[cursor_line][Column(col)].c,
+                cw.grid[cursor_line][Column(col)].c(),
                 '\0',
                 "Line should be cleared after Control+C"
             );
@@ -4189,7 +4138,7 @@ mod tests {
         // Fill some lines with content
         for line in 0..5 {
             for col in 0..10 {
-                cw.grid[Line(line)][Column(col)].c = 'X';
+                cw.grid[Line(line)][Column(col)].set_c('X');
             }
         }
 
@@ -4207,7 +4156,7 @@ mod tests {
         // Verify the clear operation
         for col in 5..10 {
             assert_eq!(
-                cw.grid[Line(2)][Column(col)].c,
+                cw.grid[Line(2)][Column(col)].c(),
                 '\0',
                 "Characters from cursor to end should be cleared"
             );
@@ -4216,7 +4165,7 @@ mod tests {
         // Characters before cursor should remain
         for col in 0..5 {
             assert_eq!(
-                cw.grid[Line(2)][Column(col)].c,
+                cw.grid[Line(2)][Column(col)].c(),
                 'X',
                 "Characters before cursor should remain"
             );
@@ -4258,13 +4207,13 @@ mod tests {
         }
 
         // Verify prompt is displayed correctly
-        assert_eq!(cw.grid[cw.grid.cursor.pos.row][Column(0)].c, '$');
-        assert_eq!(cw.grid[cw.grid.cursor.pos.row][Column(1)].c, ' ');
+        assert_eq!(cw.grid[cw.grid.cursor.pos.row][Column(0)].c(), '$');
+        assert_eq!(cw.grid[cw.grid.cursor.pos.row][Column(1)].c(), ' ');
 
         // Verify old command is cleared
         for col in 2..8 {
             assert_eq!(
-                cw.grid[cw.grid.cursor.pos.row][Column(col)].c,
+                cw.grid[cw.grid.cursor.pos.row][Column(col)].c(),
                 '\0',
                 "Old command should be cleared"
             );
@@ -4284,20 +4233,18 @@ mod tests {
                 continue;
             }
 
-            grid[Line(i)][Column(0)].c = '"';
+            grid[Line(i)][Column(0)].set_c('"');
 
             for j in 1..4 {
-                grid[Line(i)][Column(j)].c = 'a';
+                grid[Line(i)][Column(j)].set_c('a');
             }
 
-            grid[Line(i)][Column(4)].c = '"';
+            grid[Line(i)][Column(4)].set_c('"');
         }
-        grid[Line(2)][Column(0)].c = ' ';
-        grid[Line(2)][Column(4)].c = ' ';
-        grid[Line(2)][Column(4)]
-            .flags
-            .insert(square::Flags::WRAPLINE);
-        grid[Line(3)][Column(0)].c = ' ';
+        grid[Line(2)][Column(0)].set_c(' ');
+        grid[Line(2)][Column(4)].set_c(' ');
+        grid[Line(2)][Column(4)].set_wrapline(true);
+        grid[Line(3)][Column(0)].set_c(' ');
 
         // Multiple lines contain an empty line.
         term.selection = Some(Selection::new(
@@ -4355,10 +4302,10 @@ mod tests {
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         let mut grid: Grid<Square> = Grid::new(1, 5, 0);
         for i in 0..5 {
-            grid[Line(0)][Column(i)].c = 'a';
+            grid[Line(0)][Column(i)].set_c('a');
         }
-        grid[Line(0)][Column(0)].c = '"';
-        grid[Line(0)][Column(3)].c = '"';
+        grid[Line(0)][Column(0)].set_c('"');
+        grid[Line(0)][Column(3)].set_c('"');
 
         mem::swap(&mut term.grid, &mut grid);
 
@@ -4382,19 +4329,17 @@ mod tests {
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         let grid = &mut term.grid;
         for i in 1..4 {
-            grid[Line(i)][Column(0)].c = '"';
+            grid[Line(i)][Column(0)].set_c('"');
 
             for j in 1..4 {
-                grid[Line(i)][Column(j)].c = 'a';
+                grid[Line(i)][Column(j)].set_c('a');
             }
 
-            grid[Line(i)][Column(4)].c = '"';
+            grid[Line(i)][Column(4)].set_c('"');
         }
-        grid[Line(2)][Column(2)].c = ' ';
-        grid[Line(2)][Column(4)]
-            .flags
-            .insert(square::Flags::WRAPLINE);
-        grid[Line(3)][Column(4)].c = ' ';
+        grid[Line(2)][Column(2)].set_c(' ');
+        grid[Line(2)][Column(4)].set_wrapline(true);
+        grid[Line(3)][Column(4)].set_c(' ');
 
         term.selection = Some(Selection::new(
             SelectionType::Block,

@@ -4062,6 +4062,7 @@ dependencies = [
  "copa",
  "copypasta",
  "corcovado",
+ "criterion",
  "cursor-icon",
  "dirs",
  "flate2",

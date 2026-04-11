@@ -57,3 +57,10 @@ x11 = [
 wayland = [
     "copypasta/wayland",
 ]
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "cell_perf"
+harness = false

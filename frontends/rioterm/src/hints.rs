@@ -248,62 +248,12 @@ impl HintState {
 
     fn find_hyperlink_matches<T: EventListener>(
         &mut self,
-        term: &rio_backend::crosswords::Crosswords<T>,
-        hint: Rc<Hint>,
+        _term: &rio_backend::crosswords::Crosswords<T>,
+        _hint: Rc<Hint>,
     ) {
-        // Scan the visible area for OSC 8 hyperlinks
-        let grid = &term.grid;
-        let display_offset = grid.display_offset();
-        let visible_lines = grid.screen_lines();
-
-        for line_idx in 0..visible_lines {
-            let line = Line(line_idx as i32 - display_offset as i32);
-            if line < Line(0) || line.0 >= grid.total_lines() as i32 {
-                continue;
-            }
-
-            let mut col = Column(0);
-            while col < grid.columns() {
-                let cell = &grid[line][col];
-
-                if let Some(hyperlink) = cell.hyperlink() {
-                    // Find the extent of this hyperlink
-                    let start_col = col;
-                    let mut end_col = col;
-
-                    // Scan forward to find the end of the hyperlink
-                    while end_col < grid.columns() {
-                        let next_cell = &grid[line][end_col];
-                        if next_cell.hyperlink().as_ref() == Some(&hyperlink) {
-                            end_col += 1;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    let mut uri = hyperlink.uri().to_string();
-
-                    // Apply post-processing if enabled
-                    if hint.post_processing {
-                        uri = post_process_hyperlink_uri(&uri);
-                    }
-
-                    let hint_match = HintMatch {
-                        text: uri,
-                        start: Pos::new(line, start_col),
-                        end: Pos::new(line, end_col - 1),
-                        hint: hint.clone(),
-                    };
-
-                    self.matches.push(hint_match);
-
-                    // Skip to the end of this hyperlink
-                    col = end_col;
-                } else {
-                    col += 1;
-                }
-            }
-        }
+        // Per-cell hyperlinks (OSC 8) are temporarily disabled during the
+        // cell repack — they need to live in the per-grid extras side
+        // table once that's wired up. Regex / url hint paths still work.
     }
 
     fn extract_line_text<T: EventListener>(
@@ -316,7 +266,7 @@ impl HintState {
 
         for col in 0..grid.columns() {
             let cell = &grid[line][Column(col)];
-            text.push(cell.c);
+            text.push(cell.c());
         }
 
         text.trim_end().to_string()
