@@ -351,10 +351,7 @@ impl Sugarloaf<'_> {
         };
         let (img_w, img_h) = decoded.dimensions();
         if img_w == 0 || img_h == 0 {
-            let msg = format!(
-                "'{}' decoded to a {}x{} image",
-                image.path, img_w, img_h
-            );
+            let msg = format!("'{}' decoded to a {}x{} image", image.path, img_w, img_h);
             tracing::warn!("background image {}", msg);
             return Err(msg);
         }
