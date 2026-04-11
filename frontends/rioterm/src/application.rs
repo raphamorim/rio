@@ -1149,6 +1149,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
+                        // copy_on_select: run BEFORE trigger_hint so that an early
+                        // return for hyperlink activation does not suppress the copy.
+                        // Also write to Selection (X11 primary buffer) so that
+                        // middle-click paste always reflects the completed selection.
+                        if let MouseButton::Left | MouseButton::Right = button {
+                            if self.config.copy_on_select {
+                                route.window.screen.copy_selection(
+                                    ClipboardType::Clipboard,
+                                    &mut self.router.clipboard,
+                                );
+                                route.window.screen.copy_selection(
+                                    ClipboardType::Selection,
+                                    &mut self.router.clipboard,
+                                );
+                            }
+                        }
+
                         // Trigger hints highlighted by the mouse
                         if button == MouseButton::Left
                             && route
@@ -1157,15 +1174,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .trigger_hint(&mut self.router.clipboard)
                         {
                             return;
-                        }
-
-                        if let MouseButton::Left | MouseButton::Right = button {
-                            if self.config.copy_on_select {
-                                route.window.screen.copy_selection(
-                                    ClipboardType::Clipboard,
-                                    &mut self.router.clipboard,
-                                );
-                            }
                         }
                     }
                 }
