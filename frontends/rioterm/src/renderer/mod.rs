@@ -47,6 +47,7 @@ pub struct Renderer {
     pub island: Option<island::Island>,
     pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
+    unfocused_split_fill: Option<ColorArray>,
     last_active: Option<NodeId>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
@@ -149,6 +150,7 @@ impl Renderer {
 
         Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
+            unfocused_split_fill: config.navigation.unfocused_split_fill,
             last_active: None,
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
@@ -439,13 +441,6 @@ impl Renderer {
                     Weight::BOLD,
                     current_attrs.style(),
                 );
-            }
-
-            if !is_active {
-                style.color[3] = self.unfocused_split_opacity;
-                if let Some(ref mut background_color) = style.background_color {
-                    background_color[3] = self.unfocused_split_opacity;
-                }
             }
 
             // Kitty Unicode placeholder (U+10EEEE): treat as a space.
@@ -1174,6 +1169,34 @@ impl Renderer {
 
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
+
+        // Dim overlay for unfocused splits. Drawn after the split content is
+        // built so it composites on top. The tint comes from
+        // `unfocused_split_fill` (falling back to the terminal background)
+        // and its strength is `1.0 - unfocused_split_opacity`. Skipped
+        // entirely when the feature is disabled.
+        if self.unfocused_split_opacity < 1.0 {
+            let tint = self
+                .unfocused_split_fill
+                .unwrap_or(self.dynamic_background.0);
+            let dim_color = [
+                tint[0],
+                tint[1],
+                tint[2],
+                1.0 - self.unfocused_split_opacity,
+            ];
+            for (key, grid_context) in grid.contexts_mut().iter() {
+                if &active_key == key {
+                    continue;
+                }
+                let panel_rect = grid_context.layout_rect;
+                let x = (panel_rect[0] + grid_scaled_margin.left) / scale_factor;
+                let y = (panel_rect[1] + grid_scaled_margin.top) / scale_factor;
+                let w = panel_rect[2] / scale_factor;
+                let h = panel_rect[3] / scale_factor;
+                sugarloaf.rect(None, x, y, w, h, dim_color, -0.05, 3);
+            }
+        }
 
         if let Some(island) = &mut self.island {
             island.render(
