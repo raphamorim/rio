@@ -149,7 +149,7 @@ impl Sidebar {
         mouse_y: f32,
         context_manager: &ContextManager<EventProxy>,
     ) -> bool {
-        let new_hover = if mouse_x <= self.effective_width() {
+        let new_hover = if mouse_x <= self.interactive_width() {
             self.hit_test(mouse_x, mouse_y, context_manager)
         } else {
             SidebarHit::None
@@ -173,6 +173,25 @@ impl Sidebar {
             #[cfg(target_os = "macos")]
             {
                 0.0
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                COLLAPSED_WIDTH
+            }
+        } else {
+            self.width
+        }
+    }
+
+    /// The clickable/hoverable width — includes the icon area
+    /// even when collapsed on macOS.
+    #[inline]
+    pub fn interactive_width(&self) -> f32 {
+        if self.collapsed {
+            #[cfg(target_os = "macos")]
+            {
+                // Icon at x=76, size=16, pad=6 → need ~98px
+                76.0 + COLLAPSE_BUTTON_SIZE + 6.0
             }
             #[cfg(not(target_os = "macos"))]
             {
@@ -608,11 +627,24 @@ impl Sidebar {
         y: f32,
         context_manager: &ContextManager<EventProxy>,
     ) -> SidebarHit {
-        // When collapsed on Linux/Windows, the whole strip is the toggle
-        #[cfg(not(target_os = "macos"))]
+        // When collapsed, only the icon area is interactive
         if self.collapsed {
+            #[cfg(not(target_os = "macos"))]
             if x < COLLAPSED_WIDTH {
                 return SidebarHit::CollapseButton;
+            }
+            #[cfg(target_os = "macos")]
+            {
+                let btn_x = 76.0_f32;
+                let btn_y = 16.0 - COLLAPSE_BUTTON_SIZE / 2.0;
+                let hit_pad = 6.0;
+                if x >= btn_x - hit_pad
+                    && x <= btn_x + COLLAPSE_BUTTON_SIZE + hit_pad
+                    && y >= btn_y - hit_pad
+                    && y <= btn_y + COLLAPSE_BUTTON_SIZE + hit_pad
+                {
+                    return SidebarHit::CollapseButton;
+                }
             }
             return SidebarHit::None;
         }

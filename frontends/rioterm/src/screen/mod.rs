@@ -2678,7 +2678,7 @@ impl Screen<'_> {
         };
 
         let scale_factor = self.sugarloaf.scale_factor();
-        let sidebar_width_px = (sidebar.effective_width() * scale_factor) as usize;
+        let sidebar_width_px = (sidebar.interactive_width() * scale_factor) as usize;
 
         // Only handle clicks within the sidebar region
         if self.mouse.x > sidebar_width_px {
@@ -2697,6 +2697,9 @@ impl Screen<'_> {
                 }
                 let num_tabs = self.ctx().len();
                 self.resize_top_or_bottom_line(num_tabs);
+                for context_grid in self.context_manager.contexts_mut() {
+                    context_grid.update_dimensions(&mut self.sugarloaf);
+                }
                 self.resize_all_contexts();
                 self.render();
                 true
