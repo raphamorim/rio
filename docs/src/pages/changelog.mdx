@@ -5,6 +5,10 @@ language: 'en'
 
 <h1 style={{fontSize: "2.25rem", fontWeight: 800, letterSpacing: "-0.02em", background: "linear-gradient(-120deg, #fb43fe 30%, #00dbe5)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", borderBottom: "none", paddingBottom: "1rem", marginBottom: "2rem"}}>Changelog</h1>
 
+## 0.3.6
+
+- Add support for `window.columns` and `window.rows` for window sizing. Ignores invalid `0` values with fallback to `window.width`/`window.height`, and guarantees a minimum startup size of `300x200` logical pixels.
+
 ## 0.3.4
 
 - Fix kitty image protocol overlay when has a new tab.
@@ -17,8 +21,6 @@ language: 'en'
 - Fix kitty image protocol and sixel.
 
 ## 0.3.2
-
-- Add support for `window.columns` and `window.rows` for window sizing. Ignores invalid `0` values with fallback to `window.width`/`window.height`, and guarantees a minimum startup size of `300x200` logical pixels.
 - Performance: Skip shaping for empty cells, perf gain can be over 50% depending of the visible rows.
 - Private user area should adjust based on cells.
 - Cells now by default are created with \0.
