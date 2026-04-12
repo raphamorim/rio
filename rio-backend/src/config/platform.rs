@@ -55,8 +55,6 @@ pub struct PlatformWindow {
     pub decorations: Option<window::Decorations>,
     #[serde(default = "Option::default", rename = "macos-use-unified-titlebar")]
     pub macos_use_unified_titlebar: Option<bool>,
-    #[serde(default = "Option::default", rename = "macos-use-quit-dialog")]
-    pub macos_use_quit_dialog: Option<bool>,
     #[serde(default = "Option::default", rename = "macos-use-shadow")]
     pub macos_use_shadow: Option<bool>,
     #[serde(default = "Option::default", rename = "macos-traffic-light-position-x")]
@@ -103,6 +101,12 @@ pub struct PlatformNavigation {
     pub open_config_with_split: Option<bool>,
     #[serde(default = "Option::default", rename = "unfocused-split-opacity")]
     pub unfocused_split_opacity: Option<f32>,
+    #[serde(
+        default = "Option::default",
+        deserialize_with = "crate::config::colors::deserialize_to_arr_opt",
+        rename = "unfocused-split-fill"
+    )]
+    pub unfocused_split_fill: Option<crate::config::colors::ColorArray>,
 }
 
 /// Platform-specific renderer config with optional fields for selective override

@@ -64,6 +64,10 @@ pub struct WgpuRenderer {
     image_pipeline: wgpu::RenderPipeline,
     image_bind_group_layout: wgpu::BindGroupLayout,
     image_vertex_buffer: wgpu::Buffer,
+    /// Dedicated one-instance vertex buffer for the background image,
+    /// kept separate from the kitty `image_vertex_buffer` so it cannot
+    /// collide with kitty placement slots.
+    background_image_vertex_buffer: wgpu::Buffer,
 }
 
 #[cfg(target_os = "macos")]
@@ -85,6 +89,10 @@ pub struct MetalRenderer {
     // Image pipeline (separate from text)
     image_pipeline_state: RenderPipelineState,
     image_vertex_buffer: Buffer,
+    /// Dedicated one-instance vertex buffer for the background image,
+    /// kept separate from the kitty `image_vertex_buffer` so it cannot
+    /// collide with kitty placement slots.
+    background_image_vertex_buffer: Buffer,
 }
 
 #[cfg(target_os = "macos")]
@@ -361,6 +369,13 @@ impl MetalRenderer {
         );
         image_vertex_buffer.set_label("sugarloaf::image instance buffer");
 
+        let background_image_vertex_buffer = context.device.new_buffer(
+            mem::size_of::<ImageInstance>() as u64,
+            MTLResourceOptions::StorageModeShared,
+        );
+        background_image_vertex_buffer
+            .set_label("sugarloaf::background image instance buffer");
+
         Self {
             pipeline_state,
             vertex_buffer,
@@ -370,6 +385,7 @@ impl MetalRenderer {
             uniform_buffer,
             image_pipeline_state,
             image_vertex_buffer,
+            background_image_vertex_buffer,
         }
     }
 
@@ -549,6 +565,13 @@ struct ImageDraw {
     layer: ImageLayer,
 }
 
+/// Decoded background image pixels (RGBA8) waiting to be uploaded to the GPU.
+pub struct BackgroundImagePixels {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+}
+
 pub struct Renderer {
     brush_type: RendererType,
     comp: Compositor,
@@ -562,6 +585,98 @@ pub struct Renderer {
     image_textures: FxHashMap<u32, ImageTextureEntry>,
     /// Image draw commands for the current frame.
     image_draws: Vec<ImageDraw>,
+    /// Pending background image upload (consumed by `prepare`).
+    background_image_dirty: Option<BackgroundImagePixels>,
+    /// Dedicated GPU texture for the background image, sized to the
+    /// image dimensions instead of going through the glyph atlas.
+    background_image_texture: Option<ImageTextureEntry>,
+}
+
+/// Upload `pixels` to a fresh GPU texture using whatever backend `context`
+/// is bound to. Mirrors the per-image upload in `render_graphic_overlays`,
+/// but produces a standalone `ImageTextureEntry` sized exactly to the image
+/// instead of consuming a slot in the glyph atlas.
+fn upload_background_image_texture(
+    context: &mut crate::context::Context,
+    pixels: &BackgroundImagePixels,
+) -> Option<ImageTextureEntry> {
+    if pixels.width == 0 || pixels.height == 0 {
+        return None;
+    }
+    let gpu = match &context.inner {
+        crate::context::ContextType::Cpu(_) => return None,
+        crate::context::ContextType::Wgpu(ctx) => {
+            let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("sugarloaf::background image"),
+                size: wgpu::Extent3d {
+                    width: pixels.width,
+                    height: pixels.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            ctx.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &pixels.pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(pixels.width * 4),
+                    rows_per_image: Some(pixels.height),
+                },
+                wgpu::Extent3d {
+                    width: pixels.width,
+                    height: pixels.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            ImageTexture::Wgpu {
+                _texture: texture,
+                view,
+            }
+        }
+        #[cfg(target_os = "macos")]
+        crate::context::ContextType::Metal(ctx) => {
+            let desc = metal::TextureDescriptor::new();
+            desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
+            desc.set_width(pixels.width as u64);
+            desc.set_height(pixels.height as u64);
+            desc.set_usage(
+                metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite,
+            );
+            let mtl_tex = ctx.device.new_texture(&desc);
+            mtl_tex.set_label("sugarloaf::background image");
+            mtl_tex.replace_region(
+                metal::MTLRegion {
+                    origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                    size: metal::MTLSize {
+                        width: pixels.width as u64,
+                        height: pixels.height as u64,
+                        depth: 1,
+                    },
+                },
+                0,
+                pixels.pixels.as_ptr() as *const std::ffi::c_void,
+                (pixels.width * 4) as u64,
+            );
+            ImageTexture::Metal(mtl_tex)
+        }
+    };
+    Some(ImageTextureEntry {
+        gpu,
+        transmit_time: std::time::Instant::now(),
+    })
 }
 
 impl Renderer {
@@ -588,6 +703,20 @@ impl Renderer {
             current_frame: 0,
             image_textures: FxHashMap::default(),
             image_draws: Vec::new(),
+            background_image_dirty: None,
+            background_image_texture: None,
+        }
+    }
+
+    /// Replace the background image. Pass `None` to clear it. The pixels
+    /// are uploaded into a dedicated GPU texture on the next `prepare`
+    /// call (so we don't go through the glyph atlas).
+    pub fn set_background_image_pixels(&mut self, pixels: Option<BackgroundImagePixels>) {
+        if pixels.is_some() {
+            self.background_image_dirty = pixels;
+        } else {
+            self.background_image_dirty = None;
+            self.background_image_texture = None;
         }
     }
 
@@ -820,6 +949,14 @@ impl Renderer {
             // don't keep rendering. Keep image_textures and image_data
             // so images can be re-rendered when scrolling back.
             self.image_draws.clear();
+        }
+
+        // Upload pending background image (if any) before the render pass
+        // begins. The texture stays cached until a new image arrives or
+        // `set_background_image_pixels(None)` is called.
+        if let Some(pixels) = self.background_image_dirty.take() {
+            self.background_image_texture =
+                upload_background_image_texture(context, &pixels);
         }
 
         self.vertices.clear();
@@ -1091,7 +1228,13 @@ impl Renderer {
                     let char_width = run.span.width;
 
                     // Fast path: empty run (blanks/spaces) — just advance
-                    // and optionally paint background/cursor
+                    // and optionally paint background/cursor/decoration.
+                    // Decoration must be checked too: an underline cursor
+                    // on a blank cell carries its line through `decoration`
+                    // (not `cursor`) and the cell's `background_color` may
+                    // have been stripped to `None` when the window has a
+                    // background image / opacity < 1, so without the
+                    // decoration check the cursor would silently vanish.
                     if run.glyphs.is_empty() {
                         let advance = cell_width * char_width;
                         let run_x = px;
@@ -1099,6 +1242,7 @@ impl Renderer {
 
                         if run.span.background_color.is_some()
                             || run.span.cursor.is_some()
+                            || run.span.decoration.is_some()
                         {
                             let style = TextRunStyle {
                                 font_coords,
@@ -1611,6 +1755,59 @@ impl Renderer {
         render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
     }
 
+    /// Draw a single fullscreen background image quad through the image
+    /// pipeline. Mirrors `draw_images_metal` but uses the dedicated
+    /// `background_image_vertex_buffer` so it never collides with kitty
+    /// placements, and reads the bg texture from `background_image_texture`.
+    #[cfg(target_os = "macos")]
+    fn draw_background_image_metal(
+        background_image_texture: &Option<ImageTextureEntry>,
+        brush: &MetalRenderer,
+        render_encoder: &metal::RenderCommandEncoderRef,
+        physical_size: (f32, f32),
+    ) {
+        let entry = match background_image_texture {
+            Some(e) => e,
+            None => return,
+        };
+        let tex = match &entry.gpu {
+            ImageTexture::Metal(tex) => tex,
+            _ => return,
+        };
+
+        let instance = ImageInstance {
+            dest_pos: [0.0, 0.0],
+            dest_size: [physical_size.0, physical_size.1],
+            source_rect: [0.0, 0.0, 1.0, 1.0],
+        };
+        unsafe {
+            *(brush.background_image_vertex_buffer.contents() as *mut ImageInstance) =
+                instance;
+        }
+
+        render_encoder.set_render_pipeline_state(&brush.image_pipeline_state);
+        render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
+        render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
+        render_encoder.set_vertex_buffer(
+            0,
+            Some(&brush.background_image_vertex_buffer),
+            0,
+        );
+        render_encoder.set_fragment_texture(0, Some(tex));
+        render_encoder.draw_primitives_instanced(
+            metal::MTLPrimitiveType::TriangleStrip,
+            0,
+            4,
+            1,
+        );
+
+        // Restore text pipeline state for downstream batches.
+        render_encoder.set_render_pipeline_state(&brush.pipeline_state);
+        render_encoder.set_vertex_buffer(0, Some(&brush.vertex_buffer), 0);
+        render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
+        render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
+    }
+
     /// Find the least recently used graphic ID for eviction.
     /// Returns the GraphicId to evict, or None if cache is empty.
     fn find_oldest_graphic(&self) -> Option<GraphicId> {
@@ -1851,6 +2048,7 @@ impl Renderer {
             vertices,
             image_draws,
             image_textures,
+            background_image_texture,
             ..
         } = self;
 
@@ -1860,8 +2058,50 @@ impl Renderer {
             let mask_texture_view = images.get_mask_texture_view();
 
             let has_images = !image_draws.is_empty();
-            if (color_views.is_empty() || vertices.is_empty()) && !has_images {
+            let has_background = background_image_texture.is_some();
+            if (color_views.is_empty() || vertices.is_empty())
+                && !has_images
+                && !has_background
+            {
                 return;
+            }
+
+            // Background image: drawn first so all subsequent text/rects
+            // composite on top. Single fullscreen instance, dedicated
+            // vertex buffer, reuses the kitty image pipeline + sampler.
+            if let Some(bg_tex) = background_image_texture.as_ref() {
+                if let ImageTexture::Wgpu { view, .. } = &bg_tex.gpu {
+                    let instance = ImageInstance {
+                        dest_pos: [0.0, 0.0],
+                        dest_size: [ctx.size.width, ctx.size.height],
+                        source_rect: [0.0, 0.0, 1.0, 1.0],
+                    };
+                    ctx.queue.write_buffer(
+                        &brush.background_image_vertex_buffer,
+                        0,
+                        bytemuck::bytes_of(&instance),
+                    );
+                    let bg_bind =
+                        ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("background image bind group"),
+                            layout: &brush.image_bind_group_layout,
+                            entries: &[wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(view),
+                            }],
+                        });
+                    rpass.set_pipeline(&brush.image_pipeline);
+                    rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
+                    rpass.set_bind_group(1, &bg_bind, &[]);
+                    rpass.set_vertex_buffer(
+                        0,
+                        brush.background_image_vertex_buffer.slice(..),
+                    );
+                    rpass.draw(0..4, 0..1);
+                    // Restore text pipeline state for downstream batches.
+                    rpass.set_pipeline(&brush.pipeline);
+                    rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
+                }
             }
 
             if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::BelowText)
@@ -2019,6 +2259,15 @@ impl Renderer {
     ) {
         if let RendererType::Metal(brush) = &mut self.brush_type {
             let has_images = !self.image_draws.is_empty();
+
+            // Background image: drawn first so all subsequent text/rects
+            // composite on top.
+            Self::draw_background_image_metal(
+                &self.background_image_texture,
+                brush,
+                render_encoder,
+                (context.size.width, context.size.height),
+            );
 
             // BelowText images (z < 0): before text
             if has_images {
@@ -2456,6 +2705,14 @@ impl WgpuRenderer {
             mapped_at_creation: false,
         });
 
+        let background_image_vertex_buffer =
+            context.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("background image instance buffer"),
+                size: mem::size_of::<ImageInstance>() as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
         WgpuRenderer {
             layout_bind_group,
             layout_bind_group_layout,
@@ -2468,6 +2725,7 @@ impl WgpuRenderer {
             image_pipeline,
             image_bind_group_layout,
             image_vertex_buffer,
+            background_image_vertex_buffer,
         }
     }
 

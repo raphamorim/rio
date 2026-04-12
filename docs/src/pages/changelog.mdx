@@ -8,6 +8,20 @@ language: 'en'
 ## 0.3.6
 
 - Add support for `window.columns` and `window.rows` for window sizing. Ignores invalid `0` values with fallback to `window.width`/`window.height`, and guarantees a minimum startup size of `300x200` logical pixels.
+- Fix macOS window close button (red semaphore) showing quit confirmation dialog. Clicking the close button now always closes the window. Quit confirmation is only triggered by Cmd+Q.
+- Remove `window.macos-use-quit-dialog` configuration option.
+
+## 0.3.5
+
+- Fix underline cursor rendering.
+- Fix underline cursor disappearing on blank cells when `window.background-image` is set or `window.opacity < 1.0`. The empty-run dispatch in the renderer now also paints decoration-only spans.
+- Fix `navigation.unfocused-split-opacity` not dimming unfocused splits. The setting is now applied as a semi-transparent overlay drawn on top of inactive panes and works correctly on both opaque and transparent windows. Default raised from `0.4` to `0.7` and clamped to `[0.15, 1.0]`.
+- Add `navigation.unfocused-split-fill`: RGB tint used for the unfocused-split overlay. Defaults to the terminal background color.
+- Re-implement `window.background-image`. It had been a silent no-op since the renderer rewrite — setting it would clear the window to transparent and paint nothing on top. The image is now uploaded into a dedicated GPU texture sized exactly to the source dimensions (no glyph-atlas pollution, no atlas-size limit) and stretched to cover the full window.
+- Add `window.background-image.opacity`: `0.0`–`1.0` multiplier applied to the image's alpha channel. Defaults to `1.0`.
+- **Breaking:** removed `window.background-image.width`, `height`, `x`, and `y`. They had no effect under the old implementation and the new dedicated pipeline always fills the window.
+- Surface background-image load failures (missing path, decode error) through the in-window assistant warning popup instead of a silent log line.
+- Fix FreeBSD build.
 
 ## 0.3.4
 
