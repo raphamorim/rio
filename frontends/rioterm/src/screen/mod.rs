@@ -1420,9 +1420,9 @@ impl Screen<'_> {
         self.context_manager.contexts_mut()[old_index]
             .update_dimensions(&mut self.sugarloaf);
 
-        // Use the base scaled_margin for the new tab position, not the
-        // split-panel-aware margin, because the new tab is full-window.
-        let padding_x = self.context_manager.current_grid().scaled_margin.left;
+        // Use the logical (unscaled) margin for the new tab position so it
+        // matches the position set for the first tab in Screen::new.
+        let padding_x = self.renderer.margin.left;
         let padding_y_top = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
