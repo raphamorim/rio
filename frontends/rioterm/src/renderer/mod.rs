@@ -60,6 +60,8 @@ pub struct Renderer {
     pub option_as_alt: String,
     #[allow(unused)]
     pub macos_use_unified_titlebar: bool,
+    pub window_opacity: f64,
+    pub use_window_background_for_transparency: bool,
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
@@ -129,6 +131,30 @@ fn pua_constraint_width(row: &Row<Square>, col: usize, cols: usize) -> f32 {
 }
 
 impl Renderer {
+    #[inline]
+    fn should_use_window_background_for_transparency(config: &Config) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            config.window.opacity < 1.0
+                && config.renderer.backend
+                    == rio_backend::config::renderer::Backend::Metal
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = config;
+            false
+        }
+    }
+
+    #[inline]
+    fn apply_window_opacity_to_background(&self, mut color: wgpu::Color) -> wgpu::Color {
+        if self.window_opacity < 1.0 {
+            color.a = self.window_opacity;
+        }
+        color
+    }
+
     pub fn new(config: &Config) -> Renderer {
         let colors = List::from(&config.colors);
         let named_colors = config.colors;
@@ -161,6 +187,9 @@ impl Renderer {
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
+            window_opacity: config.window.opacity as f64,
+            use_window_background_for_transparency:
+                Self::should_use_window_background_for_transparency(config),
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_vi_mode_enabled: false,
@@ -1422,16 +1451,27 @@ impl Renderer {
             current_context.renderable_content.background.take()
         {
             use crate::context::renderable::BackgroundState;
-            match bg_state {
+            let effective_bg_state = match bg_state {
                 BackgroundState::Set(color) => {
-                    sugarloaf.set_background_color(Some(color));
+                    let color = self.apply_window_opacity_to_background(color);
+                    if self.use_window_background_for_transparency {
+                        sugarloaf.set_background_color(None);
+                    } else {
+                        sugarloaf.set_background_color(Some(color));
+                    }
+                    BackgroundState::Set(color)
                 }
                 BackgroundState::Reset => {
-                    sugarloaf.set_background_color(None);
+                    if self.use_window_background_for_transparency {
+                        sugarloaf.set_background_color(None);
+                    } else {
+                        sugarloaf.set_background_color(Some(self.dynamic_background.1));
+                    }
+                    BackgroundState::Set(self.dynamic_background.1)
                 }
-            }
+            };
             Some(crate::context::renderable::WindowUpdate::Background(
-                bg_state,
+                effective_bg_state,
             ))
         } else {
             None
@@ -1661,7 +1701,67 @@ impl Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rio_backend::config::renderer::Backend;
+    use rio_backend::config::Config;
     use rio_backend::crosswords::pos::{Column, Line, Pos};
+
+    #[test]
+    fn test_apply_window_opacity_to_background() {
+        let mut config = Config::default();
+        config.window.opacity = 0.42;
+        let renderer = Renderer::new(&config);
+
+        let color = renderer.apply_window_opacity_to_background(wgpu::Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        });
+
+        assert!((color.a - 0.42).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_apply_window_opacity_keeps_opaque_background_when_window_is_opaque() {
+        let renderer = Renderer::new(&Config::default());
+
+        let color = renderer.apply_window_opacity_to_background(wgpu::Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 0.7,
+        });
+
+        assert_eq!(color.a, 0.7);
+    }
+
+    #[test]
+    fn test_should_use_window_background_for_transparency() {
+        let mut config = Config::default();
+        config.window.opacity = 0.5;
+        config.renderer.backend = Backend::Metal;
+
+        #[cfg(target_os = "macos")]
+        assert!(Renderer::should_use_window_background_for_transparency(
+            &config
+        ));
+
+        #[cfg(not(target_os = "macos"))]
+        assert!(!Renderer::should_use_window_background_for_transparency(
+            &config
+        ));
+    }
+
+    #[test]
+    fn test_should_not_use_window_background_for_non_metal_backend() {
+        let mut config = Config::default();
+        config.window.opacity = 0.5;
+        config.renderer.backend = Backend::WgpuMetal;
+
+        assert!(!Renderer::should_use_window_background_for_transparency(
+            &config
+        ));
+    }
 
     #[test]
     fn test_is_position_in_hint_matches() {
