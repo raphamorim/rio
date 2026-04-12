@@ -1589,12 +1589,9 @@ mod tests {
     /// All written cells get a non-default fg so they are NOT is_empty().
     /// Unwritten cells (beyond chars.len()) remain default (is_empty() == true).
     fn make_row(chars: &[char], cols: usize) -> Row<Square> {
-        use rio_backend::config::colors::{AnsiColor, NamedColor};
         let mut row = Row::<Square>::new(cols);
         for (i, &ch) in chars.iter().enumerate() {
-            row[Column(i)].c = ch;
-            // Mark as written by setting non-default fg
-            row[Column(i)].fg = AnsiColor::Named(NamedColor::White);
+            row[Column(i)].set_c(*ch);
         }
         row
     }
