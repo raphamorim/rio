@@ -98,8 +98,6 @@ pub struct Window {
     pub decorations: Decorations,
     #[serde(default = "bool::default", rename = "macos-use-unified-titlebar")]
     pub macos_use_unified_titlebar: bool,
-    #[serde(default = "bool::default", rename = "macos-use-quit-dialog")]
-    pub macos_use_quit_dialog: bool,
     #[serde(rename = "macos-use-shadow", default = "default_bool_true")]
     pub macos_use_shadow: bool,
     #[serde(rename = "macos-traffic-light-position-x", default = "Option::default")]
@@ -132,7 +130,6 @@ impl Default for Window {
             decorations: Decorations::default(),
             blur: false,
             macos_use_unified_titlebar: false,
-            macos_use_quit_dialog: false,
             macos_use_shadow: true,
             macos_traffic_light_position_x: None,
             macos_traffic_light_position_y: None,
