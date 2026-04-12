@@ -1698,23 +1698,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 WindowUpdate::Background(bg_state) => {
                                     // for now setting this as allowed because it fails on linux builds
                                     #[allow(unused_variables)]
-                                    let mut bg_color = match bg_state {
+                                    let bg_color = match bg_state {
                                         BackgroundState::Set(color) => color,
                                         BackgroundState::Reset => {
                                             self.config.colors.background.1
                                         }
                                     };
 
-                                    #[cfg(any(
-                                        target_os = "macos",
-                                        target_os = "windows"
-                                    ))]
-                                    if self.config.window.opacity < 1.0 {
-                                        bg_color.a = self.config.window.opacity as f64;
-                                    }
-
                                     #[cfg(target_os = "macos")]
                                     {
+                                        let mut bg_color = bg_color;
+                                        if self.config.window.opacity < 1.0 {
+                                            bg_color.a =
+                                                self.config.window.opacity as f64;
+                                        }
                                         route.window.winit_window.set_background_color(
                                             bg_color.r, bg_color.g, bg_color.b,
                                             bg_color.a,
@@ -1724,6 +1721,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                     #[cfg(target_os = "windows")]
                                     {
                                         use rio_window::platform::windows::WindowExtWindows;
+                                        let mut bg_color = bg_color;
+                                        if self.config.window.opacity < 1.0 {
+                                            bg_color.a =
+                                                self.config.window.opacity as f64;
+                                        }
                                         route
                                             .window
                                             .winit_window
