@@ -320,10 +320,73 @@ impl Sugarloaf<'_> {
         self
     }
 
+    /// Try to load and install a window background image. Returns `Err`
+    /// with a human-readable message on failure (file missing, decode
+    /// failed, decoded image is empty, etc.) so callers can surface the
+    /// message in a UI overlay. The decoded pixels are uploaded to a
+    /// dedicated GPU texture sized to the image — the glyph atlas is not
+    /// touched, so a 4K wallpaper does not push glyphs out of cache.
     #[inline]
-    pub fn set_background_image(&mut self, _image: &ImageProperties) -> &mut Self {
-        // TODO: Background images are not yet implemented with the new rendering system
-        self
+    pub fn set_background_image(
+        &mut self,
+        image: &ImageProperties,
+    ) -> Result<(), String> {
+        // Skip if the same image is already configured. Both the path and
+        // the opacity must match — opacity is baked into the alpha channel
+        // at upload time, so an opacity change requires a reload.
+        if let Some(current) = &self.background_image {
+            if current.path == image.path && current.opacity == image.opacity {
+                return Ok(());
+            }
+        }
+
+        // Decode the file synchronously.
+        let mut decoded = match image_rs::open(&image.path) {
+            Ok(img) => img.to_rgba8(),
+            Err(e) => {
+                let msg = format!("'{}': {}", image.path, e);
+                tracing::warn!("failed to load background image {}", msg);
+                return Err(msg);
+            }
+        };
+        let (img_w, img_h) = decoded.dimensions();
+        if img_w == 0 || img_h == 0 {
+            let msg = format!("'{}' decoded to a {}x{} image", image.path, img_w, img_h);
+            tracing::warn!("background image {}", msg);
+            return Err(msg);
+        }
+
+        // Apply per-image opacity by scaling the alpha channel before
+        // upload. The image fragment shader premultiplies alpha at sample
+        // time, so the GPU does the right thing for both fully-opaque and
+        // partially-translucent source images.
+        let opacity = image.opacity.clamp(0.0, 1.0);
+        if opacity < 1.0 {
+            let opacity_byte = (opacity * 255.0).round() as u16;
+            for pixel in decoded.pixels_mut() {
+                pixel[3] = ((pixel[3] as u16 * opacity_byte) / 255) as u8;
+            }
+        }
+
+        self.renderer.set_background_image_pixels(Some(
+            crate::renderer::BackgroundImagePixels {
+                width: img_w,
+                height: img_h,
+                pixels: decoded.into_raw(),
+            },
+        ));
+        self.background_image = Some(image.clone());
+        Ok(())
+    }
+
+    /// Drop the current background image, if any.
+    #[inline]
+    pub fn clear_background_image(&mut self) {
+        if self.background_image.is_none() {
+            return;
+        }
+        self.renderer.set_background_image_pixels(None);
+        self.background_image = None;
     }
 
     /// Remove content by ID (any type)
@@ -856,6 +919,8 @@ impl Sugarloaf<'_> {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
         self.renderer.resize(&mut self.ctx);
+        // No content-state refresh needed for the background image — the
+        // dedicated draw call reads `ctx.size` directly each frame.
     }
 
     #[inline]

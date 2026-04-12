@@ -90,7 +90,7 @@ release:
   replace_existing_artifacts: true
   include_meta: false
   header: |
-    Full changelog: https://rioterm.com/changelog
+    **Full Changelog**: https://rioterm.com/changelog
   footer: >-
     ---
     Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

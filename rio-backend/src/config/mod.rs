@@ -521,9 +521,6 @@ impl Config {
             if let Some(macos_unified) = window_overwrite.macos_use_unified_titlebar {
                 self.window.macos_use_unified_titlebar = macos_unified;
             }
-            if let Some(macos_quit_dialog) = window_overwrite.macos_use_quit_dialog {
-                self.window.macos_use_quit_dialog = macos_quit_dialog;
-            }
             if let Some(macos_shadow) = window_overwrite.macos_use_shadow {
                 self.window.macos_use_shadow = macos_shadow;
             }
@@ -580,7 +577,17 @@ impl Config {
             {
                 self.navigation.unfocused_split_opacity = unfocused_opacity;
             }
+            if let Some(fill) = navigation_overwrite.unfocused_split_fill {
+                self.navigation.unfocused_split_fill = Some(fill);
+            }
         }
+
+        // Clamp after platform merge so both the base and any override go
+        // through the same bound.
+        self.navigation.unfocused_split_opacity =
+            crate::config::navigation::clamp_unfocused_split_opacity(
+                self.navigation.unfocused_split_opacity,
+            );
 
         // Merge renderer fields individually
         if let Some(renderer_overwrite) = &platform_config.renderer {
