@@ -981,10 +981,26 @@ use-split = true
 
 ## navigation.unfocused-split-opacity
 
-Configure opacity on unfocused split.
+The opacity level (opposite of transparency) of an unfocused split. Unfocused splits are faded out by default to make it easier to see which split is focused. To disable this feature, set this value to `1`.
+
+A value of `1` is fully opaque and a value of `0` is fully transparent. Because `0` is not useful (it makes the split look very weird), the minimum value is `0.15`. A value outside of `0.15..=1` is clamped to the nearest valid value.
+
+Default is `0.7`.
 
 ```toml
-navigation.unfocused-split-opacity = 0.8
+[navigation]
+unfocused-split-opacity = 0.7
+```
+
+## navigation.unfocused-split-fill
+
+The color used to dim an unfocused split. Unfocused splits are dimmed by rendering a semi-transparent rectangle over the split; this option sets the color of that rectangle. The alpha of the overlay is derived from `navigation.unfocused-split-opacity` — this field is an RGB tint only.
+
+Defaults to the terminal's background color. Specified as a hex string (`#RRGGBB` or `RRGGBB`).
+
+```toml
+[navigation]
+unfocused-split-fill = "#000000"
 ```
 
 ## navigation.open-config-with-split
@@ -1643,37 +1659,22 @@ blur = true
 
 ## window.background-image
 
-Set an image as background.
+Set an image as the window background. The image is uploaded once into a dedicated GPU texture sized to the source dimensions and stretched to cover the full window.
 
 - Default: `None`
 
-#### Using image as background:
+#### Fields
 
-If both properties `width` and `height` are occluded then background image will use the terminal width/height.
+- `path` — required, absolute path to a PNG/JPG/etc.
+- `opacity` — `0.0`–`1.0`, default `1.0`. Multiplied into the image's alpha channel before upload, so a lower value lets the terminal background bleed through.
 
 ```toml
 [window.background-image]
 path = "/Users/hugoamor/Desktop/musashi.png"
 opacity = 0.5
-x = 0.0
-y = -100.0
 ```
 
 ![Demo image as background](/assets/demos/demo-background-image.png)
-
-If any property `width` or `height` are used then background image will be respected.
-
-```toml
-[window.background-image]
-path = "/Users/hugoamor/Desktop/harvest-moon.png"
-width = 1200
-height = 800
-opacity = 0.5
-x = 0.0
-y = 0.0
-```
-
-![Demo image as background](/assets/demos/demo-background-image-partial.png)
 
 ## window.decorations
 

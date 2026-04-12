@@ -147,18 +147,29 @@ pub struct SugarCursor {
     pub order: u8,
 }
 
-#[derive(Default, Clone, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Deserialize, Debug, PartialEq)]
 pub struct ImageProperties {
     #[serde(default = "String::default")]
     pub path: String,
-    #[serde(default = "Option::default")]
-    pub width: Option<f32>,
-    #[serde(default = "Option::default")]
-    pub height: Option<f32>,
-    #[serde(default = "f32::default")]
-    pub x: f32,
-    #[serde(default = "f32::default")]
-    pub y: f32,
+    /// Multiplier applied to the image's alpha channel before upload.
+    /// Clamped to `[0.0, 1.0]`. `1.0` (the default) means fully opaque;
+    /// lower values let the terminal background show through.
+    #[serde(default = "default_image_opacity")]
+    pub opacity: f32,
+}
+
+#[inline]
+fn default_image_opacity() -> f32 {
+    1.0
+}
+
+impl Default for ImageProperties {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            opacity: default_image_opacity(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
