@@ -1736,17 +1736,23 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_should_use_window_background_for_transparency() {
         let mut config = Config::default();
         config.window.opacity = 0.5;
         config.renderer.backend = Backend::Metal;
 
-        #[cfg(target_os = "macos")]
         assert!(Renderer::should_use_window_background_for_transparency(
             &config
         ));
+    }
 
-        #[cfg(not(target_os = "macos"))]
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_should_not_use_window_background_for_transparency_on_non_macos() {
+        let mut config = Config::default();
+        config.window.opacity = 0.5;
+
         assert!(!Renderer::should_use_window_background_for_transparency(
             &config
         ));
