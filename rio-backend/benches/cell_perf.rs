@@ -53,21 +53,23 @@ fn populate_visible(cw: &mut Crosswords<VoidListener>, cols: usize, rows: usize)
     // measures cell writes, not style hashing.
     let mut styles: Vec<rio_backend::crosswords::style::StyleId> = Vec::with_capacity(64);
     for i in 0..64u32 {
-        let mut style = Style::default();
-        style.fg = match i % 4 {
-            0 => AnsiColor::Named(NamedColor::Foreground),
-            1 => AnsiColor::Indexed((i & 0xff) as u8),
-            2 => AnsiColor::Spec(rio_backend::config::colors::ColorRgb {
-                r: (i & 0xff) as u8,
-                g: ((i * 7) & 0xff) as u8,
-                b: 0x80,
-            }),
-            _ => AnsiColor::Named(NamedColor::Red),
-        };
-        style.bg = if i % 5 == 0 {
-            AnsiColor::Named(NamedColor::Background)
-        } else {
-            AnsiColor::Indexed((i * 11 & 0xff) as u8)
+        let mut style = Style {
+            fg: match i % 4 {
+                0 => AnsiColor::Named(NamedColor::Foreground),
+                1 => AnsiColor::Indexed((i & 0xff) as u8),
+                2 => AnsiColor::Spec(rio_backend::config::colors::ColorRgb {
+                    r: (i & 0xff) as u8,
+                    g: ((i * 7) & 0xff) as u8,
+                    b: 0x80,
+                }),
+                _ => AnsiColor::Named(NamedColor::Red),
+            },
+            bg: if i % 5 == 0 {
+                AnsiColor::Named(NamedColor::Background)
+            } else {
+                AnsiColor::Indexed(((i * 11) & 0xff) as u8)
+            },
+            ..Default::default()
         };
         if i % 3 == 0 {
             style.flags.insert(StyleFlags::BOLD);
@@ -142,7 +144,7 @@ fn walk_visible(cw: &Crosswords<VoidListener>, cols: usize, rows: usize) -> u64 
 ///    bits directly from the cell, skipping the StyleSet table entirely.
 fn walk_visible_cached(cw: &Crosswords<VoidListener>, cols: usize, rows: usize) -> u64 {
     use rio_backend::crosswords::square::ContentTag;
-    use rio_backend::crosswords::style::{Style, StyleId, DEFAULT_STYLE_ID};
+    use rio_backend::crosswords::style::{Style, DEFAULT_STYLE_ID};
 
     let default_style = Style::default();
     let default_mix = mix_style(&default_style);
@@ -286,11 +288,13 @@ fn mix_style(style: &rio_backend::crosswords::style::Style) -> u64 {
 fn populate_visible_runs(cw: &mut Crosswords<VoidListener>, cols: usize, rows: usize) {
     let mut styles: Vec<rio_backend::crosswords::style::StyleId> = Vec::with_capacity(8);
     for i in 0..8u32 {
-        let mut style = Style::default();
-        style.fg = match i % 3 {
-            0 => AnsiColor::Named(NamedColor::Foreground),
-            1 => AnsiColor::Indexed((i + 30) as u8),
-            _ => AnsiColor::Named(NamedColor::Red),
+        let mut style = Style {
+            fg: match i % 3 {
+                0 => AnsiColor::Named(NamedColor::Foreground),
+                1 => AnsiColor::Indexed((i + 30) as u8),
+                _ => AnsiColor::Named(NamedColor::Red),
+            },
+            ..Default::default()
         };
         if i % 2 == 0 {
             style.flags.insert(StyleFlags::BOLD);
