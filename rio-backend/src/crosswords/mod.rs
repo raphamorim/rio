@@ -36,7 +36,7 @@ use crate::ansi::{
     KeyboardModesApplyBehavior, LineClearMode, TabulationClearMode,
 };
 use crate::clipboard::ClipboardType;
-use crate::config::colors::{self, AnsiColor, ColorRgb};
+use crate::config::colors::{self, ColorRgb};
 use crate::crosswords::colors::term::TermColors;
 use crate::crosswords::grid::{Dimensions, Grid, Scroll};
 use crate::crosswords::square::{CellFlags, Wide};
@@ -70,7 +70,7 @@ pub type NamedColor = colors::NamedColor;
 pub const MIN_COLUMNS: usize = 2;
 pub const MIN_LINES: usize = 1;
 
-/// Max. number of graphics stored in a single cell.
+// Max. number of graphics stored in a single cell.
 // const MAX_GRAPHICS_PER_CELL: usize = 20;
 
 bitflags! {
