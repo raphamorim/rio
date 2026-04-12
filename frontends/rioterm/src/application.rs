@@ -1732,6 +1732,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                         }
                                     };
 
+                                    #[cfg(any(
+                                        target_os = "macos",
+                                        target_os = "windows"
+                                    ))]
                                     if self.config.window.opacity < 1.0 {
                                         bg_color.a = self.config.window.opacity as f64;
                                     }
