@@ -772,16 +772,11 @@ fn apply_columns_or_rows_config_on_window_dimension(
         physical_height = raw.next_multiple_of(scale_u32);
     }
 
-    // Keep startup sizing aligned with the global minimum window constraints.
-    // These constants are defined in logical pixels, so we convert them to
-    // physical pixels using the current scale before clamping.
-    let minimum_physical_width =
-        (DEFAULT_MINIMUM_WINDOW_WIDTH as f32 * scale).ceil() as u32;
-    let minimum_physical_height =
-        (DEFAULT_MINIMUM_WINDOW_HEIGHT as f32 * scale).ceil() as u32;
-
-    physical_width = physical_width.max(minimum_physical_width);
-    physical_height = physical_height.max(minimum_physical_height);
+    // Enforce minimum window size (logical → physical).
+    let min_w = (DEFAULT_MINIMUM_WINDOW_WIDTH as f32 * scale).ceil() as u32;
+    let min_h = (DEFAULT_MINIMUM_WINDOW_HEIGHT as f32 * scale).ceil() as u32;
+    physical_width = physical_width.max(min_w);
+    physical_height = physical_height.max(min_h);
 
     Some((physical_width, physical_height))
 }
