@@ -1591,7 +1591,7 @@ mod tests {
     fn make_row(chars: &[char], cols: usize) -> Row<Square> {
         let mut row = Row::<Square>::new(cols);
         for (i, &ch) in chars.iter().enumerate() {
-            row[Column(i)].set_c(*ch);
+            row[Column(i)].set_c(ch);
         }
         row
     }
