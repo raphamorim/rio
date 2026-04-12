@@ -5,6 +5,11 @@ language: 'en'
 
 <h1 style={{fontSize: "2.25rem", fontWeight: 800, letterSpacing: "-0.02em", background: "linear-gradient(-120deg, #fb43fe 30%, #00dbe5)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", borderBottom: "none", paddingBottom: "1rem", marginBottom: "2rem"}}>Changelog</h1>
 
+## 0.3.6
+
+- Fix macOS window close button (red semaphore) showing quit confirmation dialog. Clicking the close button now always closes the window. Quit confirmation is only triggered by Cmd+Q.
+- Remove `window.macos-use-quit-dialog` configuration option.
+
 ## 0.3.5
 
 - Fix underline cursor rendering.
