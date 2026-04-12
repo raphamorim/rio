@@ -113,6 +113,10 @@ pub struct TerminalSnapshot {
     /// dereferences cell `style_id`s through this clone instead of reaching
     /// into the live grid.
     pub style_set: rio_backend::crosswords::style::StyleSet,
+    /// Snapshot of the grid's extras table (zero-width chars, hyperlinks,
+    /// sixel/iterm graphics). The renderer reads per-cell graphic data
+    /// through this clone.
+    pub extras_table: rio_backend::crosswords::grid::ExtrasTable,
     pub cursor: CursorState,
     pub damage: TerminalDamage,
     // Cache terminal dimensions to avoid repeated calls

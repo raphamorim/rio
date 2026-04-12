@@ -290,8 +290,7 @@ impl HintState {
                 }
 
                 // Look up the URI once for the whole span.
-                if let Some(hyperlink) = term.cell_hyperlink(line, Column(start_col))
-                {
+                if let Some(hyperlink) = term.cell_hyperlink(line, Column(start_col)) {
                     let mut uri = hyperlink.uri().to_string();
                     if hint.post_processing {
                         uri = post_process_hyperlink_uri(&uri);

@@ -129,10 +129,7 @@ impl Grid<Square> {
             // Remove leading spacers when reflowing wide char to the previous line.
             let mut last_len = last_row.len();
             if last_len >= 1
-                && matches!(
-                    last_row[Column(last_len - 1)].wide(),
-                    Wide::LeadingSpacer
-                )
+                && matches!(last_row[Column(last_len - 1)].wide(), Wide::LeadingSpacer)
             {
                 last_row.shrink(last_len - 1);
                 last_len -= 1;

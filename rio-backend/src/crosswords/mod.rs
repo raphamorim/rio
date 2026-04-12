@@ -40,7 +40,6 @@ use crate::config::colors::{self, AnsiColor, ColorRgb};
 use crate::crosswords::colors::term::TermColors;
 use crate::crosswords::grid::{Dimensions, Grid, Scroll};
 use crate::crosswords::square::{CellFlags, Wide};
-use crate::crosswords::style::StyleFlags;
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent, TerminalDamage};
 use crate::performer::handler::Handler;
@@ -72,7 +71,7 @@ pub const MIN_COLUMNS: usize = 2;
 pub const MIN_LINES: usize = 1;
 
 /// Max. number of graphics stored in a single cell.
-const MAX_GRAPHICS_PER_CELL: usize = 20;
+// const MAX_GRAPHICS_PER_CELL: usize = 20;
 
 bitflags! {
     #[derive(Debug, Copy, Clone)]
@@ -1091,10 +1090,8 @@ impl<U: EventListener> Crosswords<U> {
                 | crate::crosswords::square::Wide::Spacer
         ) {
             // Remove wide char and spacer.
-            let wide = matches!(
-                cursor_square.wide(),
-                crate::crosswords::square::Wide::Wide
-            );
+            let wide =
+                matches!(cursor_square.wide(), crate::crosswords::square::Wide::Wide);
             let point = self.grid.cursor.pos;
             if wide && point.col < self.grid.last_column() {
                 self.grid[point.row][point.col + 1]
@@ -1107,8 +1104,7 @@ impl<U: EventListener> Crosswords<U> {
             if point.col <= 1 && point.row != self.grid.topmost_line() {
                 let column = self.grid.last_column();
                 let prev = &mut self.grid[point.row - 1i32][column];
-                if matches!(prev.wide(), crate::crosswords::square::Wide::LeadingSpacer)
-                {
+                if matches!(prev.wide(), crate::crosswords::square::Wide::LeadingSpacer) {
                     prev.set_wide(crate::crosswords::square::Wide::Narrow);
                 }
             }
@@ -1154,6 +1150,22 @@ impl<U: EventListener> Crosswords<U> {
             return None;
         }
         cell.extras_id()
+    }
+
+    /// Read the first graphic (if any) for the cell at `(line, col)`.
+    /// Looks up the cell's `extras_id` in the per-grid extras table.
+    #[inline]
+    pub fn cell_graphic(&self, line: Line, col: Column) -> Option<&GraphicCell> {
+        let cell = &self.grid[line][col];
+        if !cell.has_graphics() {
+            return None;
+        }
+        let extras_id = cell.extras_id()?;
+        self.grid
+            .extras_table
+            .get(extras_id)
+            .and_then(|e| e.graphic.as_ref())
+            .and_then(|g| g.first())
     }
 
     #[inline]
@@ -1424,9 +1436,7 @@ impl<U: EventListener> Crosswords<U> {
 
                 // Push zero-width characters.
                 if let Some(extras_id) = cell.extras_id() {
-                    if let Some(extras) =
-                        self.grid.extras_table.get(extras_id)
-                    {
+                    if let Some(extras) = self.grid.extras_table.get(extras_id) {
                         for c in &extras.zerowidth {
                             text.push(*c);
                         }
@@ -1436,8 +1446,7 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         if cols.end >= self.grid.columns() - 1
-            && (line_length.0 == 0
-                || !self.grid[line][line_length - 1].wrapline())
+            && (line_length.0 == 0 || !self.grid[line][line_length - 1].wrapline())
         {
             text.push('\n');
         }
@@ -1499,18 +1508,31 @@ impl<U: EventListener> Crosswords<U> {
 }
 
 impl<U: EventListener> Crosswords<U> {
+    /// Clear the graphic data from a cell's extras slot.
+    /// If the extras slot becomes empty after removing the graphic,
+    /// free the slot entirely.
+    #[inline]
+    fn clear_cell_graphic(extras_table: &mut grid::ExtrasTable, cell: &mut Square) {
+        if let Some(eid) = cell.extras_id() {
+            if let Some(extras) = extras_table.get_mut(eid) {
+                extras.graphic = None;
+                if extras.is_empty() {
+                    extras_table.free(eid);
+                    cell.set_extras_id(None);
+                }
+            }
+        }
+        cell.remove_cell_flag(CellFlags::GRAPHICS);
+    }
+
     /// Delete all graphics from the visible grid
     fn delete_all_graphics(&mut self) {
-        use crate::crosswords::square::CellFlags;
         for line_idx in 0..self.grid.screen_lines() {
             let line = Line(line_idx as i32);
             for col_idx in 0..self.grid.columns() {
-                let col = Column(col_idx);
-                let cell = &mut self.grid[line][col];
+                let cell = &mut self.grid.raw[line][Column(col_idx)];
                 if cell.has_graphics() {
-                    cell.remove_cell_flag(CellFlags::GRAPHICS);
-                    // TODO: free the corresponding entry in
-                    // grid.extras_table when we wire up sixel storage there.
+                    Self::clear_cell_graphic(&mut self.grid.extras_table, cell);
                 }
             }
             self.mark_line_damaged(line);
@@ -1523,9 +1545,9 @@ impl<U: EventListener> Crosswords<U> {
             && (row.0 as usize) < self.grid.screen_lines()
             && col.0 < self.grid.columns()
         {
-            let cell = &mut self.grid[row][col];
+            let cell = &mut self.grid.raw[row][col];
             if cell.has_graphics() {
-                cell.remove_cell_flag(CellFlags::GRAPHICS);
+                Self::clear_cell_graphic(&mut self.grid.extras_table, cell);
                 self.mark_line_damaged(row);
             }
         }
@@ -1536,9 +1558,9 @@ impl<U: EventListener> Crosswords<U> {
         if col.0 < self.grid.columns() {
             for line_idx in 0..self.grid.screen_lines() {
                 let line = Line(line_idx as i32);
-                let cell = &mut self.grid[line][col];
+                let cell = &mut self.grid.raw[line][col];
                 if cell.has_graphics() {
-                    cell.remove_cell_flag(CellFlags::GRAPHICS);
+                    Self::clear_cell_graphic(&mut self.grid.extras_table, cell);
                     self.mark_line_damaged(line);
                 }
             }
@@ -1549,10 +1571,9 @@ impl<U: EventListener> Crosswords<U> {
     fn delete_graphics_in_row(&mut self, row: Line) {
         if row.0 >= 0 && (row.0 as usize) < self.grid.screen_lines() {
             for col_idx in 0..self.grid.columns() {
-                let col = Column(col_idx);
-                let cell = &mut self.grid[row][col];
+                let cell = &mut self.grid.raw[row][Column(col_idx)];
                 if cell.has_graphics() {
-                    cell.remove_cell_flag(CellFlags::GRAPHICS);
+                    Self::clear_cell_graphic(&mut self.grid.extras_table, cell);
                 }
             }
             self.mark_line_damaged(row);
@@ -2020,14 +2041,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn erase_chars(&mut self, count: Column) {
         let start = self.grid.cursor.pos.col;
-        let end =
-            std::cmp::min(start + count, Column(self.grid.columns()));
+        let end = std::cmp::min(start + count, Column(self.grid.columns()));
 
         // Cleared cells have current background color set.
-        let bg = self
-            .grid
-            .style_of(&self.grid.cursor.template)
-            .bg;
+        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
         let blank = self.grid.blank_with_bg(bg);
         let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
@@ -2043,10 +2060,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn delete_chars(&mut self, count: usize) {
         let columns = self.grid.columns();
-        let bg = self
-            .grid
-            .style_of(&self.grid.cursor.template)
-            .bg;
+        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
         let blank = self.grid.blank_with_bg(bg);
 
         // Ensure deleting within terminal bounds.
@@ -2088,10 +2102,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn insert_blank(&mut self, count: usize) {
-        let bg = self
-            .grid
-            .style_of(&self.grid.cursor.template)
-            .bg;
+        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
         let blank = self.grid.blank_with_bg(bg);
 
         // Ensure inserting within terminal bounds
@@ -2172,19 +2183,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
         trace!("Setting attribute: {:?}", attr);
         use crate::crosswords::style::StyleFlags;
         match attr {
-            Attr::Foreground(color) => {
-                self.grid.update_template_style(|s| s.fg = color)
-            }
-            Attr::Background(color) => {
-                self.grid.update_template_style(|s| s.bg = color)
-            }
-            Attr::UnderlineColor(color) => {
-                self.grid.update_template_style(|s| s.underline_color = color)
-            }
-            Attr::Reset => {
-                self.grid
-                    .set_template_style(crate::crosswords::style::Style::default())
-            }
+            Attr::Foreground(color) => self.grid.update_template_style(|s| s.fg = color),
+            Attr::Background(color) => self.grid.update_template_style(|s| s.bg = color),
+            Attr::UnderlineColor(color) => self
+                .grid
+                .update_template_style(|s| s.underline_color = color),
+            Attr::Reset => self
+                .grid
+                .set_template_style(crate::crosswords::style::Style::default()),
             Attr::Reverse => self
                 .grid
                 .update_template_style(|s| s.flags.insert(StyleFlags::INVERSE)),
@@ -2200,11 +2206,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             Attr::Dim => self
                 .grid
                 .update_template_style(|s| s.flags.insert(StyleFlags::DIM)),
-            Attr::CancelBoldDim => {
-                self.grid.update_template_style(|s| {
-                    s.flags.remove(StyleFlags::BOLD | StyleFlags::DIM)
-                })
-            }
+            Attr::CancelBoldDim => self.grid.update_template_style(|s| {
+                s.flags.remove(StyleFlags::BOLD | StyleFlags::DIM)
+            }),
             Attr::Italic => self
                 .grid
                 .update_template_style(|s| s.flags.insert(StyleFlags::ITALIC)),
@@ -2358,8 +2362,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     extras.zerowidth.push(c);
                 }
             } else {
-                let mut extras =
-                    crate::crosswords::square::Extras::default();
+                let mut extras = crate::crosswords::square::Extras::default();
                 extras.zerowidth.push(c);
                 let id = self.grid.extras_table.alloc(extras);
                 let cell = &mut self.grid[row][column];
@@ -2688,12 +2691,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // the last cell referencing them is overwritten.
         match hyperlink {
             Some(hl) => {
-                let id = self.grid.extras_table.alloc(
-                    crate::crosswords::square::Extras {
-                        hyperlink: Some(hl),
-                        ..Default::default()
-                    },
-                );
+                let id =
+                    self.grid
+                        .extras_table
+                        .alloc(crate::crosswords::square::Extras {
+                            hyperlink: Some(hl),
+                            ..Default::default()
+                        });
                 self.grid.cursor.template.set_extras_id(Some(id));
                 self.grid
                     .cursor
@@ -3212,7 +3216,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // TODO: re-implement sixel cell-anchoring against the per-grid
         // SixelTable once it lands. The cell repack moved per-cell graphics
         // out of `Square`; for now, sixel placements are not stored in cells.
-        let skip_textures: HashSet<u64> = HashSet::new();
+        let _skip_textures: HashSet<u64> = HashSet::new();
 
         // Fill the cells under the graphic.
         //
@@ -3251,12 +3255,36 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     break;
                 }
 
-                // TODO: store the GraphicCell in a per-grid SixelTable
-                // keyed by (line, col). For now, sixel placements are not
-                // anchored in cells; the cell carries only the GRAPHICS bit
-                // so the renderer knows it's a sixel cell.
-                let _ = (offset_x, offset_y, &texture);
-                let cell_ref = &mut self.grid[line][Column(left)];
+                let graphic_cell = GraphicCell {
+                    texture: texture.clone(),
+                    offset_x,
+                    offset_y,
+                };
+
+                let cell_ref = &mut self.grid.raw[line][Column(left)];
+
+                // Bg-only cells (BgPalette/BgRgb) reuse the upper 32
+                // bits for the background color — `extras_id()` and
+                // `set_extras_id()` would read/write garbage.  Reset
+                // to a plain Codepoint cell so the extras slot is
+                // usable.
+                if cell_ref.is_bg_only() {
+                    cell_ref.clear();
+                }
+
+                // If the cell already has an extras slot (e.g. hyperlink),
+                // merge the graphic into it; otherwise allocate a new one.
+                if let Some(eid) = cell_ref.extras_id() {
+                    if let Some(extras) = self.grid.extras_table.get_mut(eid) {
+                        extras.graphic = Some(smallvec::smallvec![graphic_cell]);
+                    }
+                } else {
+                    let eid = self.grid.extras_table.alloc(square::Extras {
+                        graphic: Some(smallvec::smallvec![graphic_cell]),
+                        ..Default::default()
+                    });
+                    cell_ref.set_extras_id(Some(eid));
+                }
                 cell_ref.insert_cell_flag(CellFlags::GRAPHICS);
             }
 
@@ -3936,7 +3964,7 @@ impl<U: EventListener> Crosswords<U> {
         // Save cursor position and template
         let start_col = self.grid.cursor.pos.col;
         let _start_row = self.grid.cursor.pos.row;
-        let saved_template = self.grid.cursor.template.clone();
+        let saved_template = self.grid.cursor.template;
 
         // Move to placement position if specified
         if placement.x > 0 || placement.y > 0 {
@@ -3957,8 +3985,7 @@ impl<U: EventListener> Crosswords<U> {
                 // Set colors to encode image_id and placement_id via the
                 // style table.
                 let fg = crate::config::colors::AnsiColor::Spec(fg_color);
-                let ul = underline_color
-                    .map(crate::config::colors::AnsiColor::Spec);
+                let ul = underline_color.map(crate::config::colors::AnsiColor::Spec);
                 self.grid.update_template_style(|s| {
                     s.fg = fg;
                     s.underline_color = ul;
@@ -4138,9 +4165,7 @@ mod tests {
                 "col {} should share the link's extras_id",
                 col,
             );
-            let hl = cw
-                .cell_hyperlink(Line(0), Column(col))
-                .expect("hyperlink");
+            let hl = cw.cell_hyperlink(Line(0), Column(col)).expect("hyperlink");
             assert_eq!(hl.uri(), "https://example.com");
         }
 
@@ -4194,8 +4219,7 @@ mod tests {
         let mut processor = Processor::<StdSyncHandler>::new();
 
         // Open a hyperlink, write 'X', close it, then write 'Y'.
-        processor
-            .advance(&mut cw, b"\x1b]8;;https://example.com\x07X\x1b]8;;\x07Y");
+        processor.advance(&mut cw, b"\x1b]8;;https://example.com\x07X\x1b]8;;\x07Y");
 
         // X has the link.
         assert!(cw.cell_hyperlink(Line(0), Column(0)).is_some());
