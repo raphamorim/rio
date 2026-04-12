@@ -18,9 +18,7 @@ use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Square, Wide};
-use crate::crosswords::style::{
-    Style as CellStyle, StyleFlags, StyleSet,
-};
+use crate::crosswords::style::{Style as CellStyle, StyleFlags, StyleSet};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
@@ -198,10 +196,8 @@ impl Renderer {
     ) -> (SpanStyle, char) {
         let flags = cell_style.flags;
 
-        let mut foreground_color =
-            self.compute_color(&cell_style.fg, flags, term_colors);
-        let mut background_color =
-            self.compute_bg_color(cell_style, term_colors);
+        let mut foreground_color = self.compute_color(&cell_style.fg, flags, term_colors);
+        let mut background_color = self.compute_bg_color(cell_style, term_colors);
 
         let content = if square.c() == '\t' || flags.contains(StyleFlags::HIDDEN) {
             ' '
@@ -314,6 +310,7 @@ impl Renderer {
         sugarloaf: &mut Sugarloaf,
         row: &Row<Square>,
         style_set: &StyleSet,
+        extras_table: &rio_backend::crosswords::grid::ExtrasTable,
         has_cursor: bool,
         line_opt: Option<usize>,
         line: Line,
@@ -375,17 +372,16 @@ impl Renderer {
                 }
                 ContentTag::BgRgb => {
                     let (r, g, b) = square.bg_rgb();
-                    let key = 0x0200_0000
-                        | ((r as u64) << 16)
-                        | ((g as u64) << 8)
-                        | b as u64;
+                    let key =
+                        0x0200_0000 | ((r as u64) << 16) | ((g as u64) << 8) | b as u64;
                     if cached_bg_only != key {
-                        cached_style = CellStyle {
-                            bg: AnsiColor::Spec(
-                                rio_backend::config::colors::ColorRgb { r, g, b },
-                            ),
-                            ..CellStyle::default()
-                        };
+                        cached_style =
+                            CellStyle {
+                                bg: AnsiColor::Spec(
+                                    rio_backend::config::colors::ColorRgb { r, g, b },
+                                ),
+                                ..CellStyle::default()
+                            };
                         cached_bg_only = key;
                         cached_style_id = None;
                     }
@@ -419,11 +415,7 @@ impl Renderer {
                 let pos = Pos::new(line, Column(column));
                 if range.contains(pos) {
                     style.color = if self.ignore_selection_fg_color {
-                        self.compute_color(
-                            &cell_style.fg,
-                            cell_style.flags,
-                            term_colors,
-                        )
+                        self.compute_color(&cell_style.fg, cell_style.flags, term_colors)
                     } else {
                         self.named_colors.selection_foreground
                     };
@@ -432,16 +424,20 @@ impl Renderer {
             }
 
             if square_content == '\0' {
-                // TODO: re-route sixel placements through Grid::extras_table
-                // once that side-table is added; for now we only flag the
-                // cell as carrying graphics so the renderer at least knows
-                // not to treat it as blank.
                 if square.has_graphics() {
-                    style.media = Some(Graphic {
-                        id: rio_backend::sugarloaf::GraphicId(0),
-                        offset_x: 0,
-                        offset_y: 0,
-                    });
+                    if let Some(eid) = square.extras_id() {
+                        if let Some(gc) = extras_table
+                            .get(eid)
+                            .and_then(|e| e.graphic.as_ref())
+                            .and_then(|g| g.first())
+                        {
+                            style.media = Some(Graphic {
+                                id: gc.texture.id,
+                                offset_x: gc.offset_x,
+                                offset_y: gc.offset_y,
+                            });
+                        }
+                    }
                 }
                 styles_and_chars.push((style, square_content, column));
                 continue;
@@ -533,11 +529,19 @@ impl Renderer {
             }
 
             if square.has_graphics() {
-                style.media = Some(Graphic {
-                    id: rio_backend::sugarloaf::GraphicId(0),
-                    offset_x: 0,
-                    offset_y: 0,
-                });
+                if let Some(eid) = square.extras_id() {
+                    if let Some(gc) = extras_table
+                        .get(eid)
+                        .and_then(|e| e.graphic.as_ref())
+                        .and_then(|g| g.first())
+                    {
+                        style.media = Some(Graphic {
+                            id: gc.texture.id,
+                            offset_x: gc.offset_x,
+                            offset_y: gc.offset_y,
+                        });
+                    }
+                }
             }
 
             // Handle drawable characters
@@ -764,9 +768,7 @@ impl Renderer {
             AnsiColor::Indexed(index) => {
                 let index = match (dim, index) {
                     (true, 8..=15) => *index as usize - 8,
-                    (true, 0..=7) => {
-                        NamedColor::DimBlack as usize + *index as usize
-                    }
+                    (true, 0..=7) => NamedColor::DimBlack as usize + *index as usize,
                     _ => *index as usize,
                 };
 
@@ -793,12 +795,7 @@ impl Renderer {
                 }
             }
             AnsiColor::Indexed(idx) => {
-                let idx = match (
-                    self.draw_bold_text_with_light_colors,
-                    dim,
-                    bold,
-                    idx,
-                ) {
+                let idx = match (self.draw_bold_text_with_light_colors, dim, bold, idx) {
                     (true, false, true, 0..=7) => idx as usize + 8,
                     (false, true, false, 8..=15) => idx as usize - 8,
                     (false, true, false, 0..=7) => {
@@ -1040,6 +1037,7 @@ impl Renderer {
                     blinking_cursor: terminal.blinking_cursor,
                     visible_rows: terminal.visible_rows(),
                     style_set: terminal.grid.style_set.clone(),
+                    extras_table: terminal.grid.extras_table.clone(),
                     cursor: terminal.cursor(),
                     damage,
                     columns: terminal.columns(),
@@ -1216,6 +1214,7 @@ impl Renderer {
                             sugarloaf,
                             row,
                             &terminal_snapshot.style_set,
+                            &terminal_snapshot.extras_table,
                             has_cursor,
                             None,
                             Line((i as i32) - terminal_snapshot.display_offset as i32),
@@ -1243,6 +1242,7 @@ impl Renderer {
                                 sugarloaf,
                                 visible_row,
                                 &terminal_snapshot.style_set,
+                                &terminal_snapshot.extras_table,
                                 has_cursor,
                                 Some(line),
                                 Line(

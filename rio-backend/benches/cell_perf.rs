@@ -51,8 +51,7 @@ fn populate_visible(cw: &mut Crosswords<VoidListener>, cols: usize, rows: usize)
     // ids — exercising both the cache hit (same id repeated) and the lookup
     // path. We pre-build the styles outside the cell loop so the bench
     // measures cell writes, not style hashing.
-    let mut styles: Vec<rio_backend::crosswords::style::StyleId> =
-        Vec::with_capacity(64);
+    let mut styles: Vec<rio_backend::crosswords::style::StyleId> = Vec::with_capacity(64);
     for i in 0..64u32 {
         let mut style = Style::default();
         style.fg = match i % 4 {
@@ -124,9 +123,7 @@ fn walk_visible(cw: &Crosswords<VoidListener>, cols: usize, rows: usize) -> u64 
             acc = acc.wrapping_add(cell.c() as u64);
             // Safety: ids in this bench are produced by `intern`, so they
             // are guaranteed to be in range.
-            let style = unsafe {
-                cw.grid.style_set.get_unchecked(cell.style_id())
-            };
+            let style = unsafe { cw.grid.style_set.get_unchecked(cell.style_id()) };
             acc = acc.wrapping_add(mix_style(&style));
         }
     }
@@ -143,11 +140,7 @@ fn walk_visible(cw: &Crosswords<VoidListener>, cols: usize, rows: usize) -> u64 
 ///    skipping the StyleSet table entirely.
 /// 3. Bg-only cell (Ghostty-style content tag) → read the inline color
 ///    bits directly from the cell, skipping the StyleSet table entirely.
-fn walk_visible_cached(
-    cw: &Crosswords<VoidListener>,
-    cols: usize,
-    rows: usize,
-) -> u64 {
+fn walk_visible_cached(cw: &Crosswords<VoidListener>, cols: usize, rows: usize) -> u64 {
     use rio_backend::crosswords::square::ContentTag;
     use rio_backend::crosswords::style::{Style, StyleId, DEFAULT_STYLE_ID};
 
@@ -184,9 +177,7 @@ fn walk_visible_cached(
                         } else {
                             // Safety: ids in this bench are produced by
                             // `intern`, so they are guaranteed in range.
-                            let style = unsafe {
-                                cw.grid.style_set.get_unchecked(sid)
-                            };
+                            let style = unsafe { cw.grid.style_set.get_unchecked(sid) };
                             mix_style(&style)
                         }
                     }
@@ -208,11 +199,7 @@ fn walk_visible_cached(
 /// workload — every cell triggers the bg-only fast path; the StyleSet is
 /// never touched. With the inline encoding this should be the *fastest*
 /// possible walk through the new layout.
-fn populate_visible_bg_only(
-    cw: &mut Crosswords<VoidListener>,
-    cols: usize,
-    rows: usize,
-) {
+fn populate_visible_bg_only(cw: &mut Crosswords<VoidListener>, cols: usize, rows: usize) {
     for r in 0..rows {
         for c in 0..cols {
             let cell = &mut cw.grid[Line(r as i32)][Column(c)];
@@ -220,11 +207,7 @@ fn populate_visible_bg_only(
             if (r + c) % 2 == 0 {
                 cell.set_bg_palette(((r * 3 + c) & 0xff) as u8);
             } else {
-                cell.set_bg_rgb(
-                    ((r * 17) & 0xff) as u8,
-                    ((c * 31) & 0xff) as u8,
-                    0x40,
-                );
+                cell.set_bg_rgb(((r * 17) & 0xff) as u8, ((c * 31) & 0xff) as u8, 0x40);
             }
         }
     }
@@ -300,13 +283,8 @@ fn mix_style(style: &rio_backend::crosswords::style::Style) -> u64 {
 /// of cells sharing a style, mimicking typical terminal output (ANSI prompt,
 /// syntax highlighting, log levels, etc.). With this layout the renderer's
 /// style cache hits ~95% of the time.
-fn populate_visible_runs(
-    cw: &mut Crosswords<VoidListener>,
-    cols: usize,
-    rows: usize,
-) {
-    let mut styles: Vec<rio_backend::crosswords::style::StyleId> =
-        Vec::with_capacity(8);
+fn populate_visible_runs(cw: &mut Crosswords<VoidListener>, cols: usize, rows: usize) {
+    let mut styles: Vec<rio_backend::crosswords::style::StyleId> = Vec::with_capacity(8);
     for i in 0..8u32 {
         let mut style = Style::default();
         style.fg = match i % 3 {
@@ -450,7 +428,12 @@ fn bench_pty_parse(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Bytes(payload.len() as u64));
     group.bench_function("pty_parse_256kib", |b| {
         b.iter_batched(
-            || (make_terminal(COLS, ROWS), Processor::<StdSyncHandler>::new()),
+            || {
+                (
+                    make_terminal(COLS, ROWS),
+                    Processor::<StdSyncHandler>::new(),
+                )
+            },
             |(mut cw, mut processor)| {
                 processor.advance(&mut cw, black_box(&payload));
                 black_box(&cw);

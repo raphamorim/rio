@@ -207,9 +207,7 @@ pub struct Extras {
 impl Extras {
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.zerowidth.is_empty()
-            && self.hyperlink.is_none()
-            && self.graphic.is_none()
+        self.zerowidth.is_empty() && self.hyperlink.is_none() && self.graphic.is_none()
     }
 }
 
@@ -274,8 +272,7 @@ impl Square {
 
     #[inline]
     pub fn set_cell_flags(&mut self, f: CellFlags) {
-        self.0 =
-            (self.0 & !CELL_FLAGS_MASK) | ((f.bits() as u64) << CELL_FLAGS_SHIFT);
+        self.0 = (self.0 & !CELL_FLAGS_MASK) | ((f.bits() as u64) << CELL_FLAGS_SHIFT);
     }
 
     #[inline]
@@ -398,8 +395,7 @@ impl Square {
     /// drops any extras the cell currently has (caller must free the slot).
     #[inline]
     pub fn reset(&mut self, template: Square) {
-        let new = Square(0)
-            .with_style_id(template.style_id());
+        let new = Square(0).with_style_id(template.style_id());
         *self = new;
     }
 
@@ -658,7 +654,9 @@ mod tests {
     fn bg_only_cells_are_not_empty() {
         let mut s = Square(0);
         s.set_bg_palette(7);
-        assert!(!<Square as crate::crosswords::grid::GridSquare>::is_empty(&s));
+        assert!(!<Square as crate::crosswords::grid::GridSquare>::is_empty(
+            &s
+        ));
     }
 
     #[test]

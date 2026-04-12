@@ -41,7 +41,7 @@ pub struct Grid<T> {
 
     /// Lines in the grid. Each row holds a list of cells corresponding to the
     /// columns in that row.
-    raw: Storage<T>,
+    pub raw: Storage<T>,
 
     /// Number of columns.
     columns: usize,
@@ -72,7 +72,7 @@ pub struct Grid<T> {
 /// Slot table for `square::Extras`. Index `0` is reserved as the "no extras"
 /// sentinel — `Square::extras_id() == None` corresponds to id 0. Slots are
 /// reused via a free list when cells are cleared.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ExtrasTable {
     slots: Vec<Option<crate::crosswords::square::Extras>>,
     free: Vec<u16>,
@@ -88,16 +88,25 @@ impl ExtrasTable {
         }
     }
 
-    pub fn get(&self, id: crate::crosswords::square::ExtrasId) -> Option<&crate::crosswords::square::Extras> {
+    pub fn get(
+        &self,
+        id: crate::crosswords::square::ExtrasId,
+    ) -> Option<&crate::crosswords::square::Extras> {
         self.slots.get(id as usize)?.as_ref()
     }
 
-    pub fn get_mut(&mut self, id: crate::crosswords::square::ExtrasId) -> Option<&mut crate::crosswords::square::Extras> {
+    pub fn get_mut(
+        &mut self,
+        id: crate::crosswords::square::ExtrasId,
+    ) -> Option<&mut crate::crosswords::square::Extras> {
         self.slots.get_mut(id as usize)?.as_mut()
     }
 
     /// Allocate a new extras slot, returning its id (always non-zero).
-    pub fn alloc(&mut self, extras: crate::crosswords::square::Extras) -> crate::crosswords::square::ExtrasId {
+    pub fn alloc(
+        &mut self,
+        extras: crate::crosswords::square::Extras,
+    ) -> crate::crosswords::square::ExtrasId {
         if let Some(id) = self.free.pop() {
             self.slots[id as usize] = Some(extras);
             return id;
@@ -494,10 +503,7 @@ impl Grid<Square> {
     /// which makes large filled regions (selection highlight, blank lines
     /// after `clear`, color block fills) essentially free to render.
     #[inline]
-    pub fn blank_with_bg(
-        &mut self,
-        bg: crate::config::colors::AnsiColor,
-    ) -> Square {
+    pub fn blank_with_bg(&mut self, bg: crate::config::colors::AnsiColor) -> Square {
         use crate::config::colors::{AnsiColor, NamedColor};
 
         let mut cell = Square::default();
