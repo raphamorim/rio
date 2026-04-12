@@ -908,7 +908,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let is_multi_panel = self.inner.len() > 1;
 
         for item in self.inner.values_mut() {
-            let [abs_x, abs_y, width, height] = item.layout_rect;
+            // Single panel: ignore Taffy panel margin offset, use full available area
+            let [abs_x, abs_y, width, height] = if is_multi_panel {
+                item.layout_rect
+            } else {
+                [
+                    0.0,
+                    0.0,
+                    self.width - self.scaled_margin.left - self.scaled_margin.right,
+                    self.height - self.scaled_margin.top - self.scaled_margin.bottom,
+                ]
+            };
 
             let x = (abs_x + self.scaled_margin.left) / scale;
             let y = (abs_y + self.scaled_margin.top) / scale;
