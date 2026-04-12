@@ -658,7 +658,7 @@ impl<'a> RouteWindow<'a> {
             .expect("Screen not created");
 
         if let Some((physical_width, physical_height)) =
-            compute_startup_window_physical_size(config, screen.ctx().current().dimension)
+            apply_columns_or_rows_config_on_window_dimension(config, screen.ctx().current().dimension)
         {
             let _ = winit_window.request_inner_size(PhysicalSize {
                 width: physical_width,
@@ -716,7 +716,7 @@ fn scaled_panel_edge(
     (padding_start + padding_end + margin_start + margin_end) * scale
 }
 
-fn compute_startup_window_physical_size(
+fn apply_columns_or_rows_config_on_window_dimension(
     config: &RioConfig,
     dim: crate::layout::ContextDimension,
 ) -> Option<(u32, u32)> {
@@ -803,7 +803,7 @@ fn startup_window_size_returns_none_without_overrides() {
     };
     dim.margin = Margin::all(0.0);
 
-    assert_eq!(compute_startup_window_physical_size(&config, dim), None);
+    assert_eq!(apply_columns_or_rows_config_on_window_dimension(&config, dim), None);
 }
 
 #[test]
@@ -828,7 +828,7 @@ fn startup_window_size_applies_only_columns_override() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        compute_startup_window_physical_size(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, dim),
         Some((800, 600))
     );
 }
@@ -855,7 +855,7 @@ fn startup_window_size_applies_only_rows_override() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        compute_startup_window_physical_size(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, dim),
         Some((1000, 480))
     );
 }
@@ -880,7 +880,7 @@ fn startup_window_size_applies_both_overrides() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        compute_startup_window_physical_size(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, dim),
         Some((1000, 800))
     );
 }
@@ -907,7 +907,7 @@ fn startup_window_size_ignores_zero_overrides_and_falls_back() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        compute_startup_window_physical_size(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, dim),
         Some((1000, 600))
     );
 }
@@ -932,7 +932,7 @@ fn startup_window_size_rounds_up_on_hidpi() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        compute_startup_window_physical_size(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, dim),
         Some((1314, 792))
     );
 }
@@ -957,7 +957,7 @@ fn startup_window_size_includes_terminal_and_panel_margins() {
     dim.margin = Margin::new(4.0, 3.0, 5.0, 2.0);
 
     assert_eq!(
-        compute_startup_window_physical_size(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, dim),
         Some((300, 200))
     );
 }
@@ -984,7 +984,7 @@ fn startup_window_size_never_goes_under_minimum() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        compute_startup_window_physical_size(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, dim),
         Some((300, 200))
     );
 }
