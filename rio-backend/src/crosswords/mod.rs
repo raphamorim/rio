@@ -54,7 +54,7 @@ use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
 use square::{Hyperlink, LineLength, Square};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
@@ -2341,20 +2341,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         // Handle zero-width characters.
         if width == 0 {
-            // // Get previous column.
             let mut column = self.grid.cursor.pos.col;
             if !self.grid.cursor.should_wrap {
                 column.0 = column.saturating_sub(1);
             }
 
-            // // Put zerowidth characters over first fullwidth character cell.
             let row = self.grid.cursor.pos.row;
             if matches!(self.grid[row][column].wide(), Wide::Spacer) {
                 column.0 = column.saturating_sub(1);
             }
 
-            // Allocate / extend an Extras entry for this cell to hold the
-            // multi-codepoint grapheme.
             let cell = &mut self.grid[row][column];
             let existing_id = cell.extras_id();
             if let Some(id) = existing_id {
@@ -3213,10 +3209,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // In this case, we will ignore cells with a reference to the replaced
         // graphic.
 
-        // TODO: re-implement sixel cell-anchoring against the per-grid
-        // SixelTable once it lands. The cell repack moved per-cell graphics
-        // out of `Square`; for now, sixel placements are not stored in cells.
-        let _skip_textures: HashSet<u64> = HashSet::new();
+        // Fill the cells under the graphic with GraphicCell entries
+        // in the per-grid extras table.
 
         // Fill the cells under the graphic.
         //
@@ -5149,5 +5143,145 @@ mod tests {
             !term.mode().contains(Mode::REPORT_EVENT_TYPES),
             "mode() should not contain REPORT_EVENT_TYPES after replace"
         );
+    }
+
+    /// Insert a small sixel graphic and verify that every cell in the
+    /// image span carries the GRAPHICS flag with a valid extras_id
+    /// pointing to a GraphicCell in the extras table.
+    #[test]
+    fn sixel_stores_graphic_in_extras_table() {
+        // 20×20 pixel image, 10×10 cell size → 2×2 cells
+        let size = CrosswordsSize::new(20, 10);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Set cell dimensions so insert_graphic can compute layout.
+        cw.graphics.cell_width = 10.0;
+        cw.graphics.cell_height = 10.0;
+
+        let graphic = GraphicData {
+            id: sugarloaf::GraphicId::new(0), // will be reassigned
+            width: 20,
+            height: 20,
+            pixels: vec![0u8; 20 * 20 * 4],
+            color_type: sugarloaf::ColorType::Rgba,
+            is_opaque: true,
+            display_width: None,
+            display_height: None,
+            resize: None,
+            transmit_time: std::time::Instant::now(),
+        };
+
+        cw.insert_graphic(graphic, None, None);
+
+        // The image spans rows 0..2, cols 0..2.
+        for row in 0..2 {
+            for col in 0..2 {
+                let cell = &cw.grid[Line(row)][Column(col)];
+                assert!(
+                    cell.has_graphics(),
+                    "cell ({row},{col}) should have GRAPHICS flag"
+                );
+                let eid = cell.extras_id().expect("cell should have extras_id");
+                let extras = cw
+                    .grid
+                    .extras_table
+                    .get(eid)
+                    .expect("extras slot should exist");
+                let gc = extras
+                    .graphic
+                    .as_ref()
+                    .expect("extras should have graphic")
+                    .first()
+                    .expect("graphic SmallVec should have one entry");
+
+                // Verify offsets match the cell position.
+                assert_eq!(gc.offset_x, (col * 10) as u16);
+                assert_eq!(gc.offset_y, (row * 10) as u16);
+            }
+        }
+
+        // Cell outside the image should NOT have graphics.
+        assert!(!cw.grid[Line(0)][Column(2)].has_graphics());
+    }
+
+    /// Verify that `cell_graphic()` reads the first GraphicCell back.
+    #[test]
+    fn cell_graphic_accessor() {
+        let size = CrosswordsSize::new(20, 10);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        cw.graphics.cell_width = 10.0;
+        cw.graphics.cell_height = 10.0;
+
+        let graphic = GraphicData {
+            id: sugarloaf::GraphicId::new(0),
+            width: 10,
+            height: 10,
+            pixels: vec![0u8; 10 * 10 * 4],
+            color_type: sugarloaf::ColorType::Rgba,
+            is_opaque: true,
+            display_width: None,
+            display_height: None,
+            resize: None,
+            transmit_time: std::time::Instant::now(),
+        };
+
+        cw.insert_graphic(graphic, None, None);
+
+        let gc = cw
+            .cell_graphic(Line(0), Column(0))
+            .expect("cell_graphic should return a GraphicCell");
+        assert_eq!(gc.offset_x, 0);
+        assert_eq!(gc.offset_y, 0);
+        // The graphic id should be non-zero (assigned by next_id).
+        assert!(gc.texture.id.get() > 0);
+    }
+
+    /// `delete_all_graphics` should clear the GRAPHICS flag and free
+    /// extras slots.
+    #[test]
+    fn delete_all_graphics_frees_extras() {
+        let size = CrosswordsSize::new(20, 10);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        cw.graphics.cell_width = 10.0;
+        cw.graphics.cell_height = 10.0;
+
+        let graphic = GraphicData {
+            id: sugarloaf::GraphicId::new(0),
+            width: 20,
+            height: 20,
+            pixels: vec![0u8; 20 * 20 * 4],
+            color_type: sugarloaf::ColorType::Rgba,
+            is_opaque: true,
+            display_width: None,
+            display_height: None,
+            resize: None,
+            transmit_time: std::time::Instant::now(),
+        };
+
+        cw.insert_graphic(graphic, None, None);
+
+        // Confirm graphics exist before deletion.
+        assert!(cw.grid[Line(0)][Column(0)].has_graphics());
+
+        cw.delete_all_graphics();
+
+        for row in 0..2 {
+            for col in 0..2 {
+                let cell = &cw.grid[Line(row)][Column(col)];
+                assert!(
+                    !cell.has_graphics(),
+                    "cell ({row},{col}) should no longer have GRAPHICS"
+                );
+            }
+        }
+
+        // The accessor should also return None.
+        assert!(cw.cell_graphic(Line(0), Column(0)).is_none());
     }
 }
