@@ -119,6 +119,9 @@ impl MetalContext {
         } else {
             tracing::warn!("Failed to create Display P3 CGColorSpace");
         }
+        // Preserve the alpha channel so macOS can actually composite
+        // transparent Rio windows instead of forcing the layer opaque.
+        layer.set_opaque(false);
         layer.set_presents_with_transaction(false);
 
         // Use CGSize from core_graphics_types

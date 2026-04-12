@@ -305,7 +305,11 @@ impl Screen<'_> {
             sugarloaf_errors,
         )?;
 
-        sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
+        if renderer.use_window_background_for_transparency {
+            sugarloaf.set_background_color(None);
+        } else {
+            sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
+        }
 
         if let Some(image) = &config.window.background_image {
             if let Err(message) = sugarloaf.set_background_image(image) {
@@ -539,8 +543,12 @@ impl Screen<'_> {
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
 
-        self.sugarloaf
-            .set_background_color(Some(self.renderer.dynamic_background.1));
+        if self.renderer.use_window_background_for_transparency {
+            self.sugarloaf.set_background_color(None);
+        } else {
+            self.sugarloaf
+                .set_background_color(Some(self.renderer.dynamic_background.1));
+        }
 
         if let Some(image) = &config.window.background_image {
             if let Err(message) = self.sugarloaf.set_background_image(image) {

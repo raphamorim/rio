@@ -1725,12 +1725,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 WindowUpdate::Background(bg_state) => {
                                     // for now setting this as allowed because it fails on linux builds
                                     #[allow(unused_variables)]
-                                    let bg_color = match bg_state {
+                                    let mut bg_color = match bg_state {
                                         BackgroundState::Set(color) => color,
                                         BackgroundState::Reset => {
                                             self.config.colors.background.1
                                         }
                                     };
+
+                                    if self.config.window.opacity < 1.0 {
+                                        bg_color.a = self.config.window.opacity as f64;
+                                    }
 
                                     #[cfg(target_os = "macos")]
                                     {
