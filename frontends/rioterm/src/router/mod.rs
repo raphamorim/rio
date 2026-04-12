@@ -658,7 +658,10 @@ impl<'a> RouteWindow<'a> {
             .expect("Screen not created");
 
         if let Some((physical_width, physical_height)) =
-            apply_columns_or_rows_config_on_window_dimension(config, screen.ctx().current().dimension)
+            apply_columns_or_rows_config_on_window_dimension(
+                config,
+                &screen.ctx().current().dimension,
+            )
         {
             let _ = winit_window.request_inner_size(PhysicalSize {
                 width: physical_width,
@@ -705,62 +708,27 @@ impl<'a> RouteWindow<'a> {
     }
 }
 
-/// Sum of logical padding and margin on one axis, scaled to physical pixels.
-fn scaled_panel_edge(
-    padding_start: f32,
-    padding_end: f32,
-    margin_start: f32,
-    margin_end: f32,
-    scale: f32,
-) -> f32 {
-    (padding_start + padding_end + margin_start + margin_end) * scale
-}
-
 fn apply_columns_or_rows_config_on_window_dimension(
     config: &RioConfig,
-    dim: crate::layout::ContextDimension,
+    dim: &crate::layout::ContextDimension,
 ) -> Option<(u32, u32)> {
     if config.window.columns.is_none() && config.window.rows.is_none() {
         return None;
     }
 
     let scale = dim.dimension.scale;
-
-    // On Retina (HiDPI) displays, macOS snaps window sizes to multiples of
-    // the scale factor (e.g. 2 on 2x displays). Using PhysicalSize and
-    // rounding up to the nearest multiple of scale ensures we never end up
-    // one physical pixel short, which would cause the renderer to truncate
-    // one column or row.
-    let scale_u32 = scale.round().max(1.0) as u32;
-
-    let mut physical_width = (config.window.width as f32 * scale).round() as u32;
-    let mut physical_height = (config.window.height as f32 * scale).round() as u32;
-
-    // Taffy reserves `config.panel` padding and margin inside the window margin.
-    // Startup sizing must include that frame or the first layout reports fewer
-    // cols/rows than requested.
-    let panel_horizontal = scaled_panel_edge(
-        config.panel.padding.left,
-        config.panel.padding.right,
-        config.panel.margin.left,
-        config.panel.margin.right,
-        scale,
-    );
-    let panel_vertical = scaled_panel_edge(
-        config.panel.padding.top,
-        config.panel.padding.bottom,
-        config.panel.margin.top,
-        config.panel.margin.bottom,
-        scale,
-    );
+    let physical_width = (config.window.width as f32 * scale).round() as u32;
+    let physical_height = (config.window.height as f32 * scale).round() as u32;
 
     if let Some(columns) = config.window.columns.filter(|columns| *columns > 0) {
         let margin_horizontal = (dim.margin.left + dim.margin.right) * scale;
         let raw = (columns as f32 * dim.dimension.width).ceil() as u32
             + margin_horizontal as u32
-            + panel_horizontal as u32;
-        // Round up to nearest multiple of scale factor so macOS Retina
-        // snapping never drops us below the target column count.
+            + ((config.panel.padding.left
+                + config.panel.padding.right
+                + config.panel.margin.left
+                + config.panel.margin.right)
+                * scale) as u32;
         physical_width = raw.next_multiple_of(scale_u32);
     }
 
@@ -768,17 +736,18 @@ fn apply_columns_or_rows_config_on_window_dimension(
         let margin_vertical = (dim.margin.top + dim.margin.bottom) * scale;
         let raw = (rows as f32 * dim.dimension.height).ceil() as u32
             + margin_vertical as u32
-            + panel_vertical as u32;
+            + ((config.panel.padding.top
+                + config.panel.padding.bottom
+                + config.panel.margin.top
+                + config.panel.margin.bottom)
+                * scale) as u32;
         physical_height = raw.next_multiple_of(scale_u32);
     }
 
-    // Enforce minimum window size (logical → physical).
     let min_w = (DEFAULT_MINIMUM_WINDOW_WIDTH as f32 * scale).ceil() as u32;
     let min_h = (DEFAULT_MINIMUM_WINDOW_HEIGHT as f32 * scale).ceil() as u32;
-    physical_width = physical_width.max(min_w);
-    physical_height = physical_height.max(min_h);
 
-    Some((physical_width, physical_height))
+    Some((physical_width.max(min_w), physical_height.max(min_h)))
 }
 
 #[test]
@@ -798,7 +767,10 @@ fn startup_window_size_returns_none_without_overrides() {
     };
     dim.margin = Margin::all(0.0);
 
-    assert_eq!(apply_columns_or_rows_config_on_window_dimension(&config, dim), None);
+    assert_eq!(
+        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
+        None
+    );
 }
 
 #[test]
@@ -823,7 +795,7 @@ fn startup_window_size_applies_only_columns_override() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
         Some((800, 600))
     );
 }
@@ -850,7 +822,7 @@ fn startup_window_size_applies_only_rows_override() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
         Some((1000, 480))
     );
 }
@@ -875,7 +847,7 @@ fn startup_window_size_applies_both_overrides() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
         Some((1000, 800))
     );
 }
@@ -902,7 +874,7 @@ fn startup_window_size_ignores_zero_overrides_and_falls_back() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
         Some((1000, 600))
     );
 }
@@ -927,7 +899,7 @@ fn startup_window_size_rounds_up_on_hidpi() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
         Some((1314, 792))
     );
 }
@@ -952,7 +924,7 @@ fn startup_window_size_includes_terminal_and_panel_margins() {
     dim.margin = Margin::new(4.0, 3.0, 5.0, 2.0);
 
     assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
         Some((300, 200))
     );
 }
@@ -979,7 +951,7 @@ fn startup_window_size_never_goes_under_minimum() {
     dim.margin = Margin::all(0.0);
 
     assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, dim),
+        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
         Some((300, 200))
     );
 }
