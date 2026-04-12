@@ -657,12 +657,14 @@ impl<'a> RouteWindow<'a> {
         let screen = Screen::new(properties, config, event_proxy, font_library, open_url)
             .expect("Screen not created");
 
-        if let Some((physical_width, physical_height)) =
-            apply_columns_or_rows_config_on_window_dimension(
-                config,
+        if config.window.columns.is_some() || config.window.rows.is_some() {
+            let (physical_width, physical_height) = compute_window_size_from_grid(
+                config.window.columns,
+                config.window.rows,
+                &config.panel,
                 &screen.ctx().current().dimension,
-            )
-        {
+                winit_window.inner_size(),
+            );
             let _ = winit_window.request_inner_size(PhysicalSize {
                 width: physical_width,
                 height: physical_height,
@@ -708,250 +710,189 @@ impl<'a> RouteWindow<'a> {
     }
 }
 
-fn apply_columns_or_rows_config_on_window_dimension(
-    config: &RioConfig,
+fn compute_window_size_from_grid(
+    columns: Option<u16>,
+    rows: Option<u16>,
+    panel: &rio_backend::config::layout::Panel,
     dim: &crate::layout::ContextDimension,
-) -> Option<(u32, u32)> {
-    if config.window.columns.is_none() && config.window.rows.is_none() {
-        return None;
-    }
-
+    window_size: PhysicalSize<u32>,
+) -> (u32, u32) {
     let scale = dim.dimension.scale;
-    let physical_width = (config.window.width as f32 * scale).round() as u32;
-    let physical_height = (config.window.height as f32 * scale).round() as u32;
+    let scale_u32 = scale.round().max(1.0) as u32;
 
-    if let Some(columns) = config.window.columns.filter(|columns| *columns > 0) {
-        let margin_horizontal = (dim.margin.left + dim.margin.right) * scale;
-        let raw = (columns as f32 * dim.dimension.width).ceil() as u32
-            + margin_horizontal as u32
-            + ((config.panel.padding.left
-                + config.panel.padding.right
-                + config.panel.margin.left
-                + config.panel.margin.right)
-                * scale) as u32;
-        physical_width = raw.next_multiple_of(scale_u32);
-    }
+    let physical_width = match columns {
+        Some(columns) if columns > 0 => {
+            let margin = (dim.margin.left + dim.margin.right) * scale;
+            let panel_edge = (panel.padding.left + panel.padding.right
+                + panel.margin.left + panel.margin.right)
+                * scale;
+            let raw = (columns as f32 * dim.dimension.width).ceil() as u32
+                + margin as u32
+                + panel_edge as u32;
+            raw.next_multiple_of(scale_u32)
+        }
+        _ => window_size.width,
+    };
 
-    if let Some(rows) = config.window.rows.filter(|rows| *rows > 0) {
-        let margin_vertical = (dim.margin.top + dim.margin.bottom) * scale;
-        let raw = (rows as f32 * dim.dimension.height).ceil() as u32
-            + margin_vertical as u32
-            + ((config.panel.padding.top
-                + config.panel.padding.bottom
-                + config.panel.margin.top
-                + config.panel.margin.bottom)
-                * scale) as u32;
-        physical_height = raw.next_multiple_of(scale_u32);
-    }
+    let physical_height = match rows {
+        Some(rows) if rows > 0 => {
+            let margin = (dim.margin.top + dim.margin.bottom) * scale;
+            let panel_edge = (panel.padding.top + panel.padding.bottom
+                + panel.margin.top + panel.margin.bottom)
+                * scale;
+            let raw = (rows as f32 * dim.dimension.height).ceil() as u32
+                + margin as u32
+                + panel_edge as u32;
+            raw.next_multiple_of(scale_u32)
+        }
+        _ => window_size.height,
+    };
 
     let min_w = (DEFAULT_MINIMUM_WINDOW_WIDTH as f32 * scale).ceil() as u32;
     let min_h = (DEFAULT_MINIMUM_WINDOW_HEIGHT as f32 * scale).ceil() as u32;
 
-    Some((physical_width.max(min_w), physical_height.max(min_h)))
+    (physical_width.max(min_w), physical_height.max(min_h))
 }
 
-#[test]
-fn startup_window_size_returns_none_without_overrides() {
-    use rio_backend::config::layout::Margin;
+#[cfg(test)]
+mod grid_size_tests {
+    use super::*;
+    use rio_backend::config::layout::{Margin, Panel};
     use rio_backend::sugarloaf::layout::TextDimensions;
 
-    let mut config = RioConfig::default();
-    config.window.columns = None;
-    config.window.rows = None;
+    fn make_dim(
+        width: f32,
+        height: f32,
+        scale: f32,
+        margin: Margin,
+    ) -> crate::layout::ContextDimension {
+        let mut dim = crate::layout::ContextDimension::default();
+        dim.dimension = TextDimensions {
+            width,
+            height,
+            scale,
+        };
+        dim.margin = margin;
+        dim
+    }
 
-    let mut dim = crate::layout::ContextDimension::default();
-    dim.dimension = TextDimensions {
-        width: 10.0,
-        height: 20.0,
-        scale: 2.0,
-    };
-    dim.margin = Margin::all(0.0);
+    fn win(w: u32, h: u32) -> PhysicalSize<u32> {
+        PhysicalSize {
+            width: w,
+            height: h,
+        }
+    }
 
-    assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
-        None
-    );
-}
+    fn panel_zero() -> Panel {
+        let mut p = Panel::default();
+        p.padding = Margin::all(0.0);
+        p.margin = Margin::all(0.0);
+        p
+    }
 
-#[test]
-fn startup_window_size_applies_only_columns_override() {
-    use rio_backend::config::layout::Margin;
-    use rio_backend::sugarloaf::layout::TextDimensions;
+    #[test]
+    fn applies_only_columns_override() {
+        let dim = make_dim(10.0, 20.0, 2.0, Margin::all(0.0));
+        // 80 * 10.0 = 800, next_multiple_of(2) = 800; height stays at window size
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(80),
+                None,
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (800, 600)
+        );
+    }
 
-    let mut config = RioConfig::default();
-    config.window.width = 500;
-    config.window.height = 300;
-    config.window.columns = Some(80);
-    config.window.rows = None;
-    config.panel.padding = Margin::all(0.0);
-    config.panel.margin = Margin::all(0.0);
+    #[test]
+    fn applies_only_rows_override() {
+        let dim = make_dim(10.0, 20.0, 2.0, Margin::all(0.0));
+        // 24 * 20.0 = 480, next_multiple_of(2) = 480; width stays at window size
+        assert_eq!(
+            compute_window_size_from_grid(
+                None,
+                Some(24),
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (1000, 480)
+        );
+    }
 
-    let mut dim = crate::layout::ContextDimension::default();
-    dim.dimension = TextDimensions {
-        width: 10.0,
-        height: 20.0,
-        scale: 2.0,
-    };
-    dim.margin = Margin::all(0.0);
+    #[test]
+    fn applies_both_overrides() {
+        let dim = make_dim(10.0, 20.0, 1.0, Margin::all(0.0));
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(100),
+                Some(40),
+                &panel_zero(),
+                &dim,
+                win(500, 300)
+            ),
+            (1000, 800)
+        );
+    }
 
-    assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
-        Some((800, 600))
-    );
-}
+    #[test]
+    fn ignores_zero_overrides_and_keeps_window_size() {
+        let dim = make_dim(10.0, 20.0, 2.0, Margin::all(0.0));
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(0),
+                Some(0),
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (1000, 600)
+        );
+    }
 
-#[test]
-fn startup_window_size_applies_only_rows_override() {
-    use rio_backend::config::layout::Margin;
-    use rio_backend::sugarloaf::layout::TextDimensions;
+    #[test]
+    fn rounds_up_on_hidpi() {
+        let dim = make_dim(16.41, 33.0, 2.0, Margin::all(0.0));
+        // 80 * 16.41 = 1312.8 → ceil = 1313, next_multiple_of(2) = 1314
+        // 24 * 33.0 = 792, next_multiple_of(2) = 792
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(80),
+                Some(24),
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (1314, 792)
+        );
+    }
 
-    let mut config = RioConfig::default();
-    config.window.width = 500;
-    config.window.height = 300;
-    config.window.columns = None;
-    config.window.rows = Some(24);
-    config.panel.padding = Margin::all(0.0);
-    config.panel.margin = Margin::all(0.0);
+    #[test]
+    fn includes_terminal_and_panel_margins() {
+        let mut panel = Panel::default();
+        panel.padding = Margin::new(3.0, 2.0, 4.0, 1.0);
+        panel.margin = Margin::new(7.0, 6.0, 8.0, 5.0);
+        let dim = make_dim(10.0, 20.0, 1.0, Margin::new(4.0, 3.0, 5.0, 2.0));
+        assert_eq!(
+            compute_window_size_from_grid(Some(10), Some(5), &panel, &dim, win(500, 300)),
+            (300, 200)
+        );
+    }
 
-    let mut dim = crate::layout::ContextDimension::default();
-    dim.dimension = TextDimensions {
-        width: 10.0,
-        height: 20.0,
-        scale: 2.0,
-    };
-    dim.margin = Margin::all(0.0);
-
-    assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
-        Some((1000, 480))
-    );
-}
-
-#[test]
-fn startup_window_size_applies_both_overrides() {
-    use rio_backend::config::layout::Margin;
-    use rio_backend::sugarloaf::layout::TextDimensions;
-
-    let mut config = RioConfig::default();
-    config.window.columns = Some(100);
-    config.window.rows = Some(40);
-    config.panel.padding = Margin::all(0.0);
-    config.panel.margin = Margin::all(0.0);
-
-    let mut dim = crate::layout::ContextDimension::default();
-    dim.dimension = TextDimensions {
-        width: 10.0,
-        height: 20.0,
-        scale: 1.0,
-    };
-    dim.margin = Margin::all(0.0);
-
-    assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
-        Some((1000, 800))
-    );
-}
-
-#[test]
-fn startup_window_size_ignores_zero_overrides_and_falls_back() {
-    use rio_backend::config::layout::Margin;
-    use rio_backend::sugarloaf::layout::TextDimensions;
-
-    let mut config = RioConfig::default();
-    config.window.width = 500;
-    config.window.height = 300;
-    config.window.columns = Some(0);
-    config.window.rows = Some(0);
-    config.panel.padding = Margin::all(0.0);
-    config.panel.margin = Margin::all(0.0);
-
-    let mut dim = crate::layout::ContextDimension::default();
-    dim.dimension = TextDimensions {
-        width: 10.0,
-        height: 20.0,
-        scale: 2.0,
-    };
-    dim.margin = Margin::all(0.0);
-
-    assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
-        Some((1000, 600))
-    );
-}
-
-#[test]
-fn startup_window_size_rounds_up_on_hidpi() {
-    use rio_backend::config::layout::Margin;
-    use rio_backend::sugarloaf::layout::TextDimensions;
-
-    let mut config = RioConfig::default();
-    config.window.columns = Some(80);
-    config.window.rows = Some(24);
-    config.panel.padding = Margin::all(0.0);
-    config.panel.margin = Margin::all(0.0);
-
-    let mut dim = crate::layout::ContextDimension::default();
-    dim.dimension = TextDimensions {
-        width: 16.41,
-        height: 33.0,
-        scale: 2.0,
-    };
-    dim.margin = Margin::all(0.0);
-
-    assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
-        Some((1314, 792))
-    );
-}
-
-#[test]
-fn startup_window_size_includes_terminal_and_panel_margins() {
-    use rio_backend::config::layout::Margin;
-    use rio_backend::sugarloaf::layout::TextDimensions;
-
-    let mut config = RioConfig::default();
-    config.window.columns = Some(10);
-    config.window.rows = Some(5);
-    config.panel.padding = Margin::new(3.0, 2.0, 4.0, 1.0);
-    config.panel.margin = Margin::new(7.0, 6.0, 8.0, 5.0);
-
-    let mut dim = crate::layout::ContextDimension::default();
-    dim.dimension = TextDimensions {
-        width: 10.0,
-        height: 20.0,
-        scale: 1.0,
-    };
-    dim.margin = Margin::new(4.0, 3.0, 5.0, 2.0);
-
-    assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
-        Some((300, 200))
-    );
-}
-
-#[test]
-fn startup_window_size_never_goes_under_minimum() {
-    use rio_backend::config::layout::Margin;
-    use rio_backend::sugarloaf::layout::TextDimensions;
-
-    let mut config = RioConfig::default();
-    config.window.width = 50;
-    config.window.height = 50;
-    config.window.columns = Some(1);
-    config.window.rows = Some(1);
-    config.panel.padding = Margin::all(0.0);
-    config.panel.margin = Margin::all(0.0);
-
-    let mut dim = crate::layout::ContextDimension::default();
-    dim.dimension = TextDimensions {
-        width: 1.0,
-        height: 1.0,
-        scale: 1.0,
-    };
-    dim.margin = Margin::all(0.0);
-
-    assert_eq!(
-        apply_columns_or_rows_config_on_window_dimension(&config, &dim),
-        Some((300, 200))
-    );
+    #[test]
+    fn never_goes_under_minimum() {
+        let dim = make_dim(1.0, 1.0, 1.0, Margin::all(0.0));
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(1),
+                Some(1),
+                &panel_zero(),
+                &dim,
+                win(50, 50)
+            ),
+            (300, 200)
+        );
+    }
 }
