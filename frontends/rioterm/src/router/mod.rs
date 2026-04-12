@@ -12,7 +12,7 @@ use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 
-use rio_window::dpi::PhysicalSize;
+use rio_window::dpi::{PhysicalPosition, PhysicalSize};
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -669,6 +669,11 @@ impl<'a> RouteWindow<'a> {
                 width: physical_width,
                 height: physical_height,
             });
+            if let Some(pos) =
+                centered_position(event_loop, physical_width, physical_height)
+            {
+                winit_window.set_outer_position(pos);
+            }
         }
 
         #[cfg(target_os = "windows")]
@@ -710,6 +715,19 @@ impl<'a> RouteWindow<'a> {
     }
 }
 
+fn centered_position(
+    event_loop: &ActiveEventLoop,
+    width: u32,
+    height: u32,
+) -> Option<PhysicalPosition<i32>> {
+    let monitor = event_loop.primary_monitor()?;
+    let monitor_size = monitor.size();
+    let monitor_pos = monitor.position();
+    let x = monitor_pos.x + (monitor_size.width as i32 - width as i32) / 2;
+    let y = monitor_pos.y + (monitor_size.height as i32 - height as i32) / 2;
+    Some(PhysicalPosition::new(x, y))
+}
+
 fn compute_window_size_from_grid(
     columns: Option<u16>,
     rows: Option<u16>,
@@ -723,8 +741,10 @@ fn compute_window_size_from_grid(
     let physical_width = match columns {
         Some(columns) if columns > 0 => {
             let margin = (dim.margin.left + dim.margin.right) * scale;
-            let panel_edge = (panel.padding.left + panel.padding.right
-                + panel.margin.left + panel.margin.right)
+            let panel_edge = (panel.padding.left
+                + panel.padding.right
+                + panel.margin.left
+                + panel.margin.right)
                 * scale;
             let raw = (columns as f32 * dim.dimension.width).ceil() as u32
                 + margin as u32
@@ -737,8 +757,10 @@ fn compute_window_size_from_grid(
     let physical_height = match rows {
         Some(rows) if rows > 0 => {
             let margin = (dim.margin.top + dim.margin.bottom) * scale;
-            let panel_edge = (panel.padding.top + panel.padding.bottom
-                + panel.margin.top + panel.margin.bottom)
+            let panel_edge = (panel.padding.top
+                + panel.padding.bottom
+                + panel.margin.top
+                + panel.margin.bottom)
                 * scale;
             let raw = (rows as f32 * dim.dimension.height).ceil() as u32
                 + margin as u32
@@ -766,14 +788,15 @@ mod grid_size_tests {
         scale: f32,
         margin: Margin,
     ) -> crate::layout::ContextDimension {
-        let mut dim = crate::layout::ContextDimension::default();
-        dim.dimension = TextDimensions {
-            width,
-            height,
-            scale,
-        };
-        dim.margin = margin;
-        dim
+        crate::layout::ContextDimension {
+            dimension: TextDimensions {
+                width,
+                height,
+                scale,
+            },
+            margin,
+            ..Default::default()
+        }
     }
 
     fn win(w: u32, h: u32) -> PhysicalSize<u32> {
@@ -784,10 +807,11 @@ mod grid_size_tests {
     }
 
     fn panel_zero() -> Panel {
-        let mut p = Panel::default();
-        p.padding = Margin::all(0.0);
-        p.margin = Margin::all(0.0);
-        p
+        Panel {
+            padding: Margin::all(0.0),
+            margin: Margin::all(0.0),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -871,9 +895,11 @@ mod grid_size_tests {
 
     #[test]
     fn includes_terminal_and_panel_margins() {
-        let mut panel = Panel::default();
-        panel.padding = Margin::new(3.0, 2.0, 4.0, 1.0);
-        panel.margin = Margin::new(7.0, 6.0, 8.0, 5.0);
+        let panel = Panel {
+            padding: Margin::new(3.0, 2.0, 4.0, 1.0),
+            margin: Margin::new(7.0, 6.0, 8.0, 5.0),
+            ..Default::default()
+        };
         let dim = make_dim(10.0, 20.0, 1.0, Margin::new(4.0, 3.0, 5.0, 2.0));
         assert_eq!(
             compute_window_size_from_grid(Some(10), Some(5), &panel, &dim, win(500, 300)),
