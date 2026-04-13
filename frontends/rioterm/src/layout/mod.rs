@@ -1123,7 +1123,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
-    /// Select panel based on mouse position using Taffy layout
+    /// Select panel based on mouse position using Taffy layout.
+    /// Returns true only when focus actually changed to a different panel.
     pub fn select_current_based_on_mouse(&mut self, mouse: &Mouse) -> bool {
         if self.inner.len() <= 1 {
             return false;
@@ -1134,8 +1135,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Use Taffy's find_context_at_position to find the panel
         if let Some(context_id) = self.find_context_at_position(x, y) {
-            self.current = context_id;
-            return true;
+            if context_id != self.current {
+                self.current = context_id;
+                return true;
+            }
         }
 
         false

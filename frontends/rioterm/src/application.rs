@@ -1046,10 +1046,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             }
                         }
 
-                        // Process mouse press before bindings to update the `click_state`.
-                        if !route.window.screen.modifiers.state().shift_key()
+                        // Always try panel switching first: if the click
+                        // targets a different panel, switch to it regardless
+                        // of mouse mode (e.g. neovim capturing clicks).
+                        if route.window.screen.select_current_based_on_mouse() {
+                            route.request_redraw();
+                        } else if !route.window.screen.modifiers.state().shift_key()
                             && route.window.screen.mouse_mode()
                         {
+                            // Process mouse press before bindings to update the `click_state`.
                             route.window.screen.mouse.click_state = ClickState::None;
 
                             let code = match button {
@@ -1072,9 +1077,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 &mut self.router.clipboard,
                             );
                         } else {
-                            // In case need to switch grid current
-                            route.window.screen.select_current_based_on_mouse();
-
                             if route.window.screen.trigger_hyperlink() {
                                 return;
                             }

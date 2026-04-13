@@ -312,14 +312,16 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn select_current_based_on_mouse(&mut self) {
+    pub fn select_current_based_on_mouse(&mut self) -> bool {
         if self
             .context_manager
             .current_grid_mut()
             .select_current_based_on_mouse(&self.mouse)
         {
             self.context_manager.select_route_from_current_grid();
+            return true;
         }
+        false
     }
 
     #[inline]
