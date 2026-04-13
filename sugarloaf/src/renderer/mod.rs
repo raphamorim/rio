@@ -255,7 +255,8 @@ impl MetalRenderer {
         inst_color.set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
         inst_color.set_rgb_blend_operation(MTLBlendOperation::Add);
         inst_color.set_source_alpha_blend_factor(MTLBlendFactor::One);
-        inst_color.set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        inst_color
+            .set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
         inst_color.set_alpha_blend_operation(MTLBlendOperation::Add);
 
         let instanced_pipeline_state = context
@@ -430,8 +431,7 @@ impl MetalRenderer {
         // Upload instance buffer
         if !instances.is_empty() {
             if instances.len() > self.supported_instance_buffer {
-                self.supported_instance_buffer =
-                    (instances.len() as f32 * 1.25) as usize;
+                self.supported_instance_buffer = (instances.len() as f32 * 1.25) as usize;
                 self.instance_buffer = context.device.new_buffer(
                     (mem::size_of::<batch::QuadInstance>()
                         * self.supported_instance_buffer) as u64,
@@ -450,8 +450,7 @@ impl MetalRenderer {
         // Upload vertex buffer (lines/triangles/arcs — rare)
         if !vertices.is_empty() {
             if vertices.len() > self.supported_vertex_buffer {
-                self.supported_vertex_buffer =
-                    (vertices.len() as f32 * 1.25) as usize;
+                self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
                 self.vertex_buffer = context.device.new_buffer(
                     (mem::size_of::<Vertex>() * self.supported_vertex_buffer) as u64,
                     MTLResourceOptions::StorageModeShared,
@@ -503,8 +502,7 @@ impl MetalRenderer {
             if color_layer > 0 {
                 let idx = (color_layer - 1) as usize;
                 if idx < color_textures.len() {
-                    render_encoder
-                        .set_fragment_texture(0, Some(color_textures[idx]));
+                    render_encoder.set_fragment_texture(0, Some(color_textures[idx]));
                 } else {
                     render_encoder.set_fragment_texture(0, None);
                 }
@@ -527,13 +525,16 @@ impl MetalRenderer {
                     if !pipeline_set || !current_pipeline_instanced {
                         render_encoder
                             .set_render_pipeline_state(&self.instanced_pipeline_state);
-                        render_encoder
-                            .set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
+                        render_encoder.set_vertex_buffer(
+                            1,
+                            Some(&self.uniform_buffer),
+                            0,
+                        );
                         current_pipeline_instanced = true;
                         pipeline_set = true;
                     }
-                    let byte_offset = *offset as u64
-                        * mem::size_of::<batch::QuadInstance>() as u64;
+                    let byte_offset =
+                        *offset as u64 * mem::size_of::<batch::QuadInstance>() as u64;
                     render_encoder.set_vertex_buffer(
                         0,
                         Some(&self.instance_buffer),
@@ -548,12 +549,13 @@ impl MetalRenderer {
                 }
                 batch::DrawCmd::Vertices { offset, count, .. } => {
                     if !pipeline_set || current_pipeline_instanced {
-                        render_encoder
-                            .set_render_pipeline_state(&self.pipeline_state);
-                        render_encoder
-                            .set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
-                        render_encoder
-                            .set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
+                        render_encoder.set_render_pipeline_state(&self.pipeline_state);
+                        render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
+                        render_encoder.set_vertex_buffer(
+                            1,
+                            Some(&self.uniform_buffer),
+                            0,
+                        );
                         current_pipeline_instanced = false;
                         pipeline_set = true;
                     }
@@ -1028,11 +1030,8 @@ impl Renderer {
         self.vertices.clear();
         self.draw_cmds.clear();
         self.images.process_atlases(context);
-        self.comp.finish(
-            &mut self.instances,
-            &mut self.vertices,
-            &mut self.draw_cmds,
-        );
+        self.comp
+            .finish(&mut self.instances, &mut self.vertices, &mut self.draw_cmds);
 
         let inst_bytes =
             self.instances.len() * std::mem::size_of::<batch::QuadInstance>();
@@ -2124,7 +2123,6 @@ impl Renderer {
             images,
             instances,
             vertices,
-            draw_cmds,
             image_draws,
             image_textures,
             background_image_texture,
@@ -2138,8 +2136,7 @@ impl Renderer {
 
             let has_images = !image_draws.is_empty();
             let has_background = background_image_texture.is_some();
-            if (color_views.is_empty()
-                || (instances.is_empty() && vertices.is_empty()))
+            if (color_views.is_empty() || (instances.is_empty() && vertices.is_empty()))
                 && !has_images
                 && !has_background
             {

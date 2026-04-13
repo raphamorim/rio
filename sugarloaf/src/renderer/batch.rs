@@ -29,14 +29,14 @@ pub struct RunUnderline {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 pub struct QuadInstance {
-    pub pos: [f32; 3],         // top-left x, y + depth (12)
-    pub color: [f32; 4],       // fill / underline color (16)
-    pub uv_rect: [f32; 4],    // [left, top, right, bottom] (16)
-    pub layers: [i32; 2],     // [color_layer, mask_layer] (8)
-    pub size: [f32; 2],       // width, height in pixels (8)
+    pub pos: [f32; 3],          // top-left x, y + depth (12)
+    pub color: [f32; 4],        // fill / underline color (16)
+    pub uv_rect: [f32; 4],      // [left, top, right, bottom] (16)
+    pub layers: [i32; 2],       // [color_layer, mask_layer] (8)
+    pub size: [f32; 2],         // width, height in pixels (8)
     pub corner_radii: [f32; 4], // [tl, tr, br, bl] (16)
-    pub underline_style: i32, // 0=none, 1=regular, 2=dashed, 3=dotted, 4=curly (4)
-    pub clip_rect: [f32; 4],  // [x, y, w, h] physical pixels (16)
+    pub underline_style: i32,   // 0=none, 1=regular, 2=dashed, 3=dotted, 4=curly (4)
+    pub clip_rect: [f32; 4],    // [x, y, w, h] physical pixels (16)
 }
 
 /// Vertex for non-quad geometry (lines, triangles, arcs).
