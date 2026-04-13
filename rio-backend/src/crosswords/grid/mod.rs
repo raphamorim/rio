@@ -446,11 +446,6 @@ impl<T> Grid<T> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers specific to Grid<Square> for working with the per-grid style table
-// and extras storage.
-// ---------------------------------------------------------------------------
-
 use crate::crosswords::square::Square;
 use crate::crosswords::style::{Style, StyleId};
 
