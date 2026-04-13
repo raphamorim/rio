@@ -151,7 +151,6 @@ impl PendingUpdate {
     }
 
     /// Mark as needing to check for damage on next render
-    /// This is used by TerminalDamaged events to store damage
     pub fn set_dirty(&mut self) {
         self.dirty = true;
     }
@@ -188,7 +187,7 @@ impl PendingUpdate {
     }
 
     /// Merge two terminal damages into one
-    fn merge_terminal_damages(
+    pub fn merge_terminal_damages(
         existing: TerminalDamage,
         new: TerminalDamage,
     ) -> TerminalDamage {

@@ -215,16 +215,17 @@ where
             }
         }
 
-        // Send damage event so the renderer knows what changed without locking.
+        // Notify renderer that new damage is available.
+        // Only send if no event is already in flight — the renderer will
+        // extract all accumulated damage when it locks the terminal.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
             if let Some(ref mut term) = terminal {
-                if let Some(damage) = term.peek_damage_event() {
-                    term.reset_damage();
+                if !term.damage_event_in_flight
+                    && term.peek_damage_event().is_some()
+                {
+                    term.damage_event_in_flight = true;
                     self.event_proxy.send_event(
-                        RioEvent::TerminalDamaged {
-                            route_id: self.route_id,
-                            damage,
-                        },
+                        RioEvent::TerminalDamaged(self.route_id),
                         self.window_id,
                     );
                 }
@@ -356,14 +357,13 @@ where
                     let mut terminal = self.terminal.lock();
                     state.parser.stop_sync(&mut *terminal);
 
-                    // Extract damage while locked, send via event
-                    if let Some(damage) = terminal.peek_damage_event() {
-                        terminal.reset_damage();
+                    // Notify renderer if damage available and no event in flight
+                    if !terminal.damage_event_in_flight
+                        && terminal.peek_damage_event().is_some()
+                    {
+                        terminal.damage_event_in_flight = true;
                         self.event_proxy.send_event(
-                            RioEvent::TerminalDamaged {
-                                route_id: self.route_id,
-                                damage,
-                            },
+                            RioEvent::TerminalDamaged(self.route_id),
                             self.window_id,
                         );
                     }
