@@ -303,11 +303,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         {
                             // Just mark dirty — damage will be extracted from
                             // the terminal when the renderer locks it.
-                            ctx_item
-                                .val
-                                .renderable_content
-                                .pending_update
-                                .set_dirty();
+                            ctx_item.val.renderable_content.pending_update.set_dirty();
                             route.schedule_redraw(&mut self.scheduler, route_id);
                         }
                     }
