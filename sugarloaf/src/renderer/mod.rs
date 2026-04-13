@@ -1033,17 +1033,18 @@ impl Renderer {
         self.comp
             .finish(&mut self.instances, &mut self.vertices, &mut self.draw_cmds);
 
-        let inst_bytes =
-            self.instances.len() * std::mem::size_of::<batch::QuadInstance>();
-        let vert_bytes = self.vertices.len() * std::mem::size_of::<Vertex>();
-        println!(
-            "gpu upload: {} instances ({:.2} MB) + {} verts ({:.2} MB) = {:.2} MB",
-            self.instances.len(),
-            inst_bytes as f64 / (1024.0 * 1024.0),
-            self.vertices.len(),
-            vert_bytes as f64 / (1024.0 * 1024.0),
-            (inst_bytes + vert_bytes) as f64 / (1024.0 * 1024.0),
-        );
+        // Useful for debug occasionally
+        // let inst_bytes =
+        //     self.instances.len() * std::mem::size_of::<batch::QuadInstance>();
+        // let vert_bytes = self.vertices.len() * std::mem::size_of::<Vertex>();
+        // println!(
+        //     "gpu upload: {} instances ({:.2} MB) + {} verts ({:.2} MB) = {:.2} MB",
+        //     self.instances.len(),
+        //     inst_bytes as f64 / (1024.0 * 1024.0),
+        //     self.vertices.len(),
+        //     vert_bytes as f64 / (1024.0 * 1024.0),
+        //     (inst_bytes + vert_bytes) as f64 / (1024.0 * 1024.0),
+        // );
     }
 
     #[inline]
