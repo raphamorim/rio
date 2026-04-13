@@ -431,6 +431,10 @@ where
     title_stack: Vec<String>,
     pub current_directory: Option<std::path::PathBuf>,
 
+    /// Whether a `TerminalDamaged` event is already in flight to the renderer.
+    /// Set by PTY thread before sending; cleared by renderer after extracting damage.
+    pub damage_event_in_flight: bool,
+
     // The stack for the keyboard modes.
     keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
     keyboard_mode_idx: usize,
@@ -483,6 +487,7 @@ impl<U: EventListener> Crosswords<U> {
             route_id,
             title_stack: Default::default(),
             current_directory: None,
+            damage_event_in_flight: false,
             keyboard_mode_stack: Default::default(),
             keyboard_mode_idx: 0,
             inactive_keyboard_mode_stack: Default::default(),

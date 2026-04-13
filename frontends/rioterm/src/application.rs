@@ -283,7 +283,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
 
-            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }) => {
+            RioEventType::Rio(RioEvent::TerminalDamaged(route_id)) => {
                 if self.config.renderer.strategy.is_event_based() {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         if self.config.renderer.disable_unfocused_render
@@ -301,12 +301,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         if let Some(ctx_item) =
                             route.window.screen.ctx_mut().get_by_route_id(route_id)
                         {
-                            // Store damage directly — no need to lock terminal later
+                            // Just mark dirty — damage will be extracted from
+                            // the terminal when the renderer locks it.
                             ctx_item
                                 .val
                                 .renderable_content
                                 .pending_update
-                                .set_terminal_damage(damage);
+                                .set_dirty();
                             route.schedule_redraw(&mut self.scheduler, route_id);
                         }
                     }

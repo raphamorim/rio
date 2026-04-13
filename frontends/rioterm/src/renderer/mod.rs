@@ -13,7 +13,7 @@ use rio_backend::event::TerminalDamage;
 use taffy::NodeId;
 
 use crate::ansi::CursorShape;
-use crate::context::renderable::{Cursor, RenderableContent};
+use crate::context::renderable::{Cursor, PendingUpdate, RenderableContent};
 use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
@@ -1001,35 +1001,41 @@ impl Renderer {
                 continue;
             }
 
-            // Get damages before resetting
-            let pending_terminal_damage = context
+            // UI-side damage (scroll, selection, resize, etc.)
+            let ui_terminal_damage = context
                 .renderable_content
                 .pending_update
                 .take_terminal_damage();
             let _ui_damage = context.renderable_content.pending_update.take_ui_damage();
             context.renderable_content.pending_update.reset();
 
-            // Compute snapshot at render time
+            // Compute snapshot at render time — extract PTY-side damage from the
+            // terminal, merge with any UI-side damage, and clear the in-flight
+            // flag so the PTY thread can send a new notification.
             let terminal_snapshot = {
                 let mut terminal = context.terminal.lock();
 
-                // Resolve damage: prefer damage from TerminalDamaged event (avoids
-                // re-computing inside lock), fall back to peeking terminal state
+                // Clear in-flight flag so PTY thread can notify again
+                terminal.damage_event_in_flight = false;
+
+                let pty_damage = terminal.peek_damage_event();
+
                 let damage = if force_full_damage {
                     TerminalDamage::Full
-                } else if let Some(damage) = pending_terminal_damage {
-                    // Damage already extracted by PTY thread — use directly
-                    damage
                 } else {
-                    // No event damage (e.g. scroll, selection) — check terminal
-                    match terminal.peek_damage_event() {
-                        Some(d) => d,
-                        None => {
+                    match (ui_terminal_damage, pty_damage) {
+                        (Some(ui), Some(pty)) => {
+                            PendingUpdate::merge_terminal_damages(ui, pty)
+                        }
+                        (Some(d), None) | (None, Some(d)) => d,
+                        (None, None) => {
                             drop(terminal);
                             continue;
                         }
                     }
                 };
+
+                terminal.reset_damage();
 
                 let snapshot = TerminalSnapshot {
                     colors: terminal.colors,
@@ -1064,7 +1070,6 @@ impl Renderer {
                     kitty_graphics_dirty: terminal.graphics.kitty_graphics_dirty,
                 };
                 terminal.graphics.kitty_graphics_dirty = false;
-                terminal.reset_damage();
                 drop(terminal);
 
                 snapshot
