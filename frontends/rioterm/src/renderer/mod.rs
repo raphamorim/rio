@@ -1295,7 +1295,7 @@ impl Renderer {
                 let y = (panel_rect[1] + grid_scaled_margin.top) / scale_factor;
                 let w = panel_rect[2] / scale_factor;
                 let h = panel_rect[3] / scale_factor;
-                sugarloaf.rect(None, x, y, w, h, dim_color, -0.05, 3);
+                sugarloaf.rect(None, x, y, w, h, dim_color, 0.0, 3);
             }
         }
 
@@ -1367,8 +1367,8 @@ impl Renderer {
                         height,
                         quad.background_color,
                         corner_radii,
-                        -0.1, // Negative depth = closer to camera (in front)
-                        1,    // Higher order renders on top
+                        0.0,
+                        1, // Higher order renders on top
                     );
                 }
                 rio_backend::sugarloaf::Object::Rect(rect) => {
@@ -1378,7 +1378,7 @@ impl Renderer {
                     let width = rect.width / scale_factor;
                     let height = rect.height / scale_factor;
 
-                    sugarloaf.rect(None, x, y, width, height, rect.color, -0.1, 1);
+                    sugarloaf.rect(None, x, y, width, height, rect.color, 0.0, 1);
                 }
                 _ => {}
             }
