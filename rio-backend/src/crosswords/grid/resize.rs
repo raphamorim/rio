@@ -9,9 +9,6 @@ use crate::crosswords::Row;
 use std::cmp::{max, min, Ordering};
 use std::mem;
 
-// All grid resize logic operates on `Square` cells specifically (it manipulates
-// wide-char spacers and wrap markers, which are Square-specific concepts), so
-// the impl is bound to `Grid<Square>` rather than the generic `Grid<T>`.
 impl Grid<Square> {
     /// Resize the grid's width and/or height.
     pub fn resize(&mut self, reflow: bool, lines: usize, columns: usize) {

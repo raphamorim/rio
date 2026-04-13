@@ -7,7 +7,28 @@ language: 'en'
 
 ## 0.3.6
 
+- Performance improvements.
+- Now a cell is 8 bytes.
+```
+// Bit layout for Square(u64)
+//
+//   bits  0..20 (21): codepoint (Unicode scalar value, max 0x10_FFFF)
+//                     OR low bits of bg color when content_tag != Codepoint
+//   bits 21..22 (2):  wide                              (Wide enum)
+//   bits 23..29 (7):  per-cell flag bits (CellFlags), incl WRAPLINE at bit 0
+//   bits 30..31 (2):  content_tag (NEW)
+//                       0 = Codepoint        (text cell, use style_id below)
+//                       1 = BgPalette        (bg-only cell, palette index in 32..39)
+//                       2 = BgRgb            (bg-only cell, RGB packed in 32..55)
+//                       3 = reserved
+//   bits 32..47 (16): style_id      (when tag == Codepoint)
+//                     bg palette idx in low 8 (when tag == BgPalette)
+//                     bg RGB.r:g    in low 16  (when tag == BgRgb)
+//   bits 48..63 (16): extras_id     (when tag == Codepoint)
+//                     bg RGB.b      in low 8   (when tag == BgRgb)
+```
 - Add support for `window.columns` and `window.rows` for window sizing. Ignores invalid `0` values with fallback to `window.width`/`window.height`, and guarantees a minimum startup size of `300x200` logical pixels.
+- Avoid send damage events to Application when terminal already has damage found and unprocessed.
 - Fix macOS window close button (red semaphore) showing quit confirmation dialog. Clicking the close button now always closes the window. Quit confirmation is only triggered by Cmd+Q.
 - Remove `window.macos-use-quit-dialog` configuration option.
 
