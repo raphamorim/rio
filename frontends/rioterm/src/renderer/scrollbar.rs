@@ -22,7 +22,7 @@ const SCROLLBAR_COLOR: [f32; 4] = [0.6, 0.6, 0.6, 0.5];
 const SCROLLBAR_DRAG_COLOR: [f32; 4] = [0.7, 0.7, 0.7, 0.7];
 
 // Depth / order (render on top of content but below overlays)
-const DEPTH: f32 = -0.05;
+const DEPTH: f32 = 0.0;
 const ORDER: u8 = 5;
 
 /// Computed geometry of a scrollbar track and thumb in logical pixels.
