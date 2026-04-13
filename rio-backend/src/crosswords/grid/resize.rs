@@ -2,21 +2,19 @@
 // https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/grid/resize.rs
 // which is licensed under Apache 2.0 license.
 
-use crate::crosswords::grid::{Dimensions, Grid, GridSquare};
+use crate::crosswords::grid::{Dimensions, Grid};
 use crate::crosswords::pos::{Boundary, Column, Line};
-use crate::crosswords::square::Flags;
-use crate::crosswords::square::ResetDiscriminant;
+use crate::crosswords::square::{Square, Wide};
 use crate::crosswords::Row;
 use std::cmp::{max, min, Ordering};
 use std::mem;
 
-impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
+// All grid resize logic operates on `Square` cells specifically (it manipulates
+// wide-char spacers and wrap markers, which are Square-specific concepts), so
+// the impl is bound to `Grid<Square>` rather than the generic `Grid<T>`.
+impl Grid<Square> {
     /// Resize the grid's width and/or height.
-    pub fn resize<D>(&mut self, reflow: bool, lines: usize, columns: usize)
-    where
-        T: ResetDiscriminant<D>,
-        D: PartialEq,
-    {
+    pub fn resize(&mut self, reflow: bool, lines: usize, columns: usize) {
         // Use empty template cell for resetting cells due to resize.
         let template = mem::take(&mut self.cursor.template);
 
@@ -41,11 +39,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     /// Rio keeps the cursor at the bottom of the terminal as long as there
     /// is scrollback available. Once scrollback is exhausted, new lines are
     /// simply added to the bottom of the screen.
-    fn grow_lines<D>(&mut self, target: usize)
-    where
-        T: ResetDiscriminant<D>,
-        D: PartialEq,
-    {
+    fn grow_lines(&mut self, target: usize) {
         let lines_added = target - self.lines;
 
         // Need to resize before updating buffer.
@@ -76,11 +70,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     /// of the terminal window.
     ///
     /// Rio takes the same approach.
-    fn shrink_lines<D>(&mut self, target: usize)
-    where
-        T: ResetDiscriminant<D>,
-        D: PartialEq,
-    {
+    fn shrink_lines(&mut self, target: usize) {
         // Scroll up to keep content inside the window.
         let required_scrolling =
             (self.cursor.pos.row.0 as usize + 1).saturating_sub(target);
@@ -103,17 +93,14 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     /// Grow number of columns in each row, reflowing if necessary.
     fn grow_columns(&mut self, reflow: bool, columns: usize) {
         // Check if a row needs to be wrapped.
-        let should_reflow = |row: &Row<T>| -> bool {
+        let should_reflow = |row: &Row<Square>| -> bool {
             let len = Column(row.len());
-            reflow
-                && len.0 > 0
-                && len < columns
-                && row[len - 1].flags().contains(Flags::WRAPLINE)
+            reflow && len.0 > 0 && len < columns && row[len - 1].wrapline()
         };
 
         self.columns = columns;
 
-        let mut reversed: Vec<Row<T>> = Vec::with_capacity(self.raw.len());
+        let mut reversed: Vec<Row<Square>> = Vec::with_capacity(self.raw.len());
         let mut cursor_line_delta = 0;
 
         // Remove the linewrap special case, by moving the cursor outside of the grid.
@@ -136,15 +123,13 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
             // Remove wrap flag before appending additional cells.
             if let Some(cell) = last_row.last_mut() {
-                cell.flags_mut().remove(Flags::WRAPLINE);
+                cell.set_wrapline(false);
             }
 
             // Remove leading spacers when reflowing wide char to the previous line.
             let mut last_len = last_row.len();
             if last_len >= 1
-                && last_row[Column(last_len - 1)]
-                    .flags()
-                    .contains(Flags::LEADING_WIDE_CHAR_SPACER)
+                && matches!(last_row[Column(last_len - 1)].wide(), Wide::LeadingSpacer)
             {
                 last_row.shrink(last_len - 1);
                 last_len -= 1;
@@ -155,13 +140,13 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
             let len = min(row.len(), num_wrapped);
 
             // Insert leading spacer when there's not enough room for reflowing wide char.
-            let mut cells = if row[Column(len - 1)].flags().contains(Flags::WIDE_CHAR) {
+            let mut cells = if matches!(row[Column(len - 1)].wide(), Wide::Wide) {
                 num_wrapped -= 1;
 
                 let mut cells = row.front_split_off(len - 1);
 
-                let mut spacer = T::default();
-                spacer.flags_mut().insert(Flags::LEADING_WIDE_CHAR_SPACER);
+                let mut spacer = Square::default();
+                spacer.set_wide(Wide::LeadingSpacer);
                 cells.push(spacer);
 
                 cells
@@ -211,7 +196,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
             if let Some(cell) = last_row.last_mut() {
                 // Set wrap flag if next line still has cells.
-                cell.flags_mut().insert(Flags::WRAPLINE);
+                cell.set_wrapline(true);
             }
 
             reversed.push(row);
@@ -260,7 +245,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         }
 
         let mut new_raw = Vec::with_capacity(self.raw.len());
-        let mut buffered: Option<Vec<T>> = None;
+        let mut buffered: Option<Vec<Square>> = None;
 
         let mut rows = self.raw.take_all();
         for (i, mut row) in rows.drain(..).enumerate().rev() {
@@ -300,10 +285,10 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
                 // Insert spacer if a wide char would be wrapped into the last column.
                 if row.len() >= columns
-                    && row[Column(columns - 1)].flags().contains(Flags::WIDE_CHAR)
+                    && matches!(row[Column(columns - 1)].wide(), Wide::Wide)
                 {
-                    let mut spacer = T::default();
-                    spacer.flags_mut().insert(Flags::LEADING_WIDE_CHAR_SPACER);
+                    let mut spacer = Square::default();
+                    spacer.set_wide(Wide::LeadingSpacer);
 
                     let wide_char = mem::replace(&mut row[Column(columns - 1)], spacer);
                     wrapped.insert(0, wide_char);
@@ -311,18 +296,14 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
                 // Remove wide char spacer before shrinking.
                 let len = wrapped.len();
-                if len > 0
-                    && wrapped[len - 1]
-                        .flags()
-                        .contains(Flags::LEADING_WIDE_CHAR_SPACER)
-                {
+                if len > 0 && matches!(wrapped[len - 1].wide(), Wide::LeadingSpacer) {
                     if len == 1 {
-                        row[Column(columns - 1)].flags_mut().insert(Flags::WRAPLINE);
+                        row[Column(columns - 1)].set_wrapline(true);
                         new_raw.push(row);
                         break;
                     } else {
                         // Remove the leading spacer from the end of the wrapped row.
-                        wrapped[len - 2].flags_mut().insert(Flags::WRAPLINE);
+                        wrapped[len - 2].set_wrapline(true);
                         wrapped.truncate(len - 1);
                     }
                 }
@@ -331,18 +312,18 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
                 // Set line as wrapped if cells got removed.
                 if let Some(cell) = new_raw.last_mut().and_then(|r| r.last_mut()) {
-                    cell.flags_mut().insert(Flags::WRAPLINE);
+                    cell.set_wrapline(true);
                 }
 
                 if wrapped
                     .last()
-                    .map(|c| c.flags().contains(Flags::WRAPLINE) && i >= 1)
+                    .map(|c| c.wrapline() && i >= 1)
                     .unwrap_or(false)
                     && wrapped.len() < columns
                 {
                     // Make sure previous wrap flag doesn't linger around.
                     if let Some(cell) = wrapped.last_mut() {
-                        cell.flags_mut().remove(Flags::WRAPLINE);
+                        cell.set_wrapline(false);
                     }
 
                     // Add removed cells to start of next row.
@@ -368,7 +349,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
                     // Make sure new row is at least as long as new width.
                     let occ = wrapped.len();
                     if occ < columns {
-                        wrapped.resize_with(columns, T::default);
+                        wrapped.resize_with(columns, Square::default);
                     }
                     row = Row::from_vec(wrapped, occ);
 
@@ -381,7 +362,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         }
 
         // Reverse iterator and use it as the new grid storage.
-        let mut reversed: Vec<Row<T>> = new_raw.drain(..).rev().collect();
+        let mut reversed: Vec<Row<Square>> = new_raw.drain(..).rev().collect();
         reversed.truncate(self.max_scroll_limit + self.lines);
         self.raw.replace_inner(reversed);
 
@@ -392,9 +373,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         if !reflow {
             self.cursor.pos.col = min(self.cursor.pos.col, Column(columns - 1));
         } else if self.cursor.pos.col == columns
-            && !self[self.cursor.pos.row][Column(columns - 1)]
-                .flags()
-                .contains(Flags::WRAPLINE)
+            && !self[self.cursor.pos.row][Column(columns - 1)].wrapline()
         {
             self.cursor.should_wrap = true;
             self.cursor.pos.col -= 1;

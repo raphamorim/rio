@@ -251,7 +251,13 @@ impl HintState {
         term: &rio_backend::crosswords::Crosswords<T>,
         hint: Rc<Hint>,
     ) {
-        // Scan the visible area for OSC 8 hyperlinks
+        // Walk the visible region looking for OSC 8 hyperlink spans.
+        //
+        // After the cell repack, hyperlinks live in the per-grid
+        // `extras_table`. Each cell carries an `extras_id: u16`; cells
+        // in the same hyperlink span share that id. We compare ids
+        // (cheap u16 compare) to find the start and end of each span,
+        // then look up the URI once via `Crosswords::cell_hyperlink`.
         let grid = &term.grid;
         let display_offset = grid.display_offset();
         let visible_lines = grid.screen_lines();
@@ -262,46 +268,42 @@ impl HintState {
                 continue;
             }
 
-            let mut col = Column(0);
-            while col < grid.columns() {
-                let cell = &grid[line][col];
-
-                if let Some(hyperlink) = cell.hyperlink() {
-                    // Find the extent of this hyperlink
-                    let start_col = col;
-                    let mut end_col = col;
-
-                    // Scan forward to find the end of the hyperlink
-                    while end_col < grid.columns() {
-                        let next_cell = &grid[line][end_col];
-                        if next_cell.hyperlink().as_ref() == Some(&hyperlink) {
-                            end_col += 1;
-                        } else {
-                            break;
-                        }
+            let mut col = 0usize;
+            let cols = grid.columns();
+            while col < cols {
+                let id = match term.cell_hyperlink_id(line, Column(col)) {
+                    Some(id) => id,
+                    None => {
+                        col += 1;
+                        continue;
                     }
+                };
 
+                // Found the start of a hyperlink span. Walk forward
+                // until the extras_id changes.
+                let start_col = col;
+                let mut end_col = col;
+                while end_col < cols
+                    && term.cell_hyperlink_id(line, Column(end_col)) == Some(id)
+                {
+                    end_col += 1;
+                }
+
+                // Look up the URI once for the whole span.
+                if let Some(hyperlink) = term.cell_hyperlink(line, Column(start_col)) {
                     let mut uri = hyperlink.uri().to_string();
-
-                    // Apply post-processing if enabled
                     if hint.post_processing {
                         uri = post_process_hyperlink_uri(&uri);
                     }
-
-                    let hint_match = HintMatch {
+                    self.matches.push(HintMatch {
                         text: uri,
-                        start: Pos::new(line, start_col),
-                        end: Pos::new(line, end_col - 1),
+                        start: Pos::new(line, Column(start_col)),
+                        end: Pos::new(line, Column(end_col - 1)),
                         hint: hint.clone(),
-                    };
-
-                    self.matches.push(hint_match);
-
-                    // Skip to the end of this hyperlink
-                    col = end_col;
-                } else {
-                    col += 1;
+                    });
                 }
+
+                col = end_col;
             }
         }
     }
@@ -316,7 +318,7 @@ impl HintState {
 
         for col in 0..grid.columns() {
             let cell = &grid[line][Column(col)];
-            text.push(cell.c);
+            text.push(cell.c());
         }
 
         text.trim_end().to_string()

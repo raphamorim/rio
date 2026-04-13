@@ -47,8 +47,8 @@ const FEATURES = [
     Icon: Image,
     description: (
       <Translate id="home.features.images-in-terminal.description">
-        Display images within the terminal using Sixel and iTerm2
-        image protocol.
+        Display images within the terminal using Kitty and iTerm2
+        image protocols, or using Sixel.
       </Translate>
     ),
   },
