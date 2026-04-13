@@ -53,13 +53,16 @@ pub enum RendererType {
 
 pub struct WgpuRenderer {
     vertex_buffer: wgpu::Buffer,
+    instance_buffer: wgpu::Buffer,
     constant_bind_group: wgpu::BindGroup,
     layout_bind_group: wgpu::BindGroup,
     layout_bind_group_layout: wgpu::BindGroupLayout,
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
+    instanced_pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
     supported_vertex_buffer: usize,
+    supported_instance_buffer: usize,
     // Image pipeline (separate from text)
     image_pipeline: wgpu::RenderPipeline,
     image_bind_group_layout: wgpu::BindGroupLayout,
@@ -2124,6 +2127,7 @@ impl Renderer {
             images,
             instances,
             vertices,
+            draw_cmds,
             image_draws,
             image_textures,
             background_image_texture,
@@ -2243,42 +2247,111 @@ impl Renderer {
                 rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
             }
 
-            // Text pipeline: batching by atlas
-            let mut current_vertex = 0usize;
-            while current_vertex < vertices.len() {
-                let start = current_vertex;
-                let current_color_layer = vertices[start].layers[0];
-                let current_mask_layer = vertices[start].layers[1];
-
-                // Find the end of this batch (consecutive vertices with same layers)
-                let mut end = start;
-                while end < vertices.len()
-                    && vertices[end].layers[0] == current_color_layer
-                    && vertices[end].layers[1] == current_mask_layer
-                {
-                    end += 1;
+            // Upload buffers once
+            if !instances.is_empty() {
+                if instances.len() > brush.supported_instance_buffer {
+                    brush.instance_buffer.destroy();
+                    brush.supported_instance_buffer =
+                        (instances.len() as f32 * 1.25) as usize;
+                    brush.instance_buffer =
+                        ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                            label: Some("rich_text::Instance Buffer (resized)"),
+                            size: mem::size_of::<batch::QuadInstance>() as u64
+                                * brush.supported_instance_buffer as u64,
+                            usage: wgpu::BufferUsages::VERTEX
+                                | wgpu::BufferUsages::COPY_DST,
+                            mapped_at_creation: false,
+                        });
                 }
+                ctx.queue.write_buffer(
+                    &brush.instance_buffer,
+                    0,
+                    bytemuck::cast_slice(instances),
+                );
+            }
+            if !vertices.is_empty() {
+                if vertices.len() > brush.supported_vertex_buffer {
+                    brush.vertex_buffer.destroy();
+                    brush.supported_vertex_buffer =
+                        (vertices.len() as f32 * 1.25) as usize;
+                    brush.vertex_buffer =
+                        ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                            label: Some("rich_text::Vertices Buffer (resized)"),
+                            size: mem::size_of::<Vertex>() as u64
+                                * brush.supported_vertex_buffer as u64,
+                            usage: wgpu::BufferUsages::VERTEX
+                                | wgpu::BufferUsages::COPY_DST,
+                            mapped_at_creation: false,
+                        });
+                }
+                ctx.queue.write_buffer(
+                    &brush.vertex_buffer,
+                    0,
+                    bytemuck::cast_slice(vertices),
+                );
+            }
 
-                // Bind appropriate textures for this batch
-                let color_view = if current_color_layer > 0 {
-                    let atlas_index = (current_color_layer - 1) as usize;
-                    color_views.get(atlas_index).unwrap_or(&color_views[0])
+            // Text pipeline: dispatch draw commands
+            let mut current_pipeline_instanced = false;
+            let mut pipeline_set = false;
+
+            for cmd in draw_cmds {
+                let (color_layer, mask_layer) = match cmd {
+                    batch::DrawCmd::Instanced {
+                        color_layer,
+                        mask_layer,
+                        ..
+                    } => (*color_layer, *mask_layer),
+                    batch::DrawCmd::Vertices {
+                        color_layer,
+                        mask_layer,
+                        ..
+                    } => (*color_layer, *mask_layer),
+                };
+
+                // Bind textures for this batch
+                let color_view = if color_layer > 0 {
+                    let idx = (color_layer - 1) as usize;
+                    color_views.get(idx).unwrap_or(&color_views[0])
                 } else {
                     &color_views[0]
                 };
-
-                let final_mask_view = if current_mask_layer > 0 {
+                let final_mask_view = if mask_layer > 0 {
                     mask_texture_view.unwrap_or(color_views[0])
                 } else {
                     color_views[0]
                 };
-
                 brush.update_bind_group(ctx, color_view, final_mask_view);
 
-                // Draw this batch
-                brush.render_range(ctx, vertices, rpass, start..end);
-
-                current_vertex = end;
+                match cmd {
+                    batch::DrawCmd::Instanced { offset, count, .. } => {
+                        if !pipeline_set || !current_pipeline_instanced {
+                            rpass.set_pipeline(&brush.instanced_pipeline);
+                            rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
+                            current_pipeline_instanced = true;
+                            pipeline_set = true;
+                        }
+                        rpass.set_bind_group(1, &brush.layout_bind_group, &[]);
+                        let byte_offset =
+                            *offset as u64 * mem::size_of::<batch::QuadInstance>() as u64;
+                        rpass.set_vertex_buffer(
+                            0,
+                            brush.instance_buffer.slice(byte_offset..),
+                        );
+                        rpass.draw(0..4, 0..*count);
+                    }
+                    batch::DrawCmd::Vertices { offset, count, .. } => {
+                        if !pipeline_set || current_pipeline_instanced {
+                            rpass.set_pipeline(&brush.pipeline);
+                            rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
+                            rpass.set_vertex_buffer(0, brush.vertex_buffer.slice(..));
+                            current_pipeline_instanced = false;
+                            pipeline_set = true;
+                        }
+                        rpass.set_bind_group(1, &brush.layout_bind_group, &[]);
+                        rpass.draw(*offset..*offset + *count, 0..1);
+                    }
+                }
             }
 
             if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::AboveText)
@@ -2674,9 +2747,69 @@ impl WgpuRenderer {
                     multiview_mask: None,
                 });
 
+        // Instanced pipeline (vs_instanced + fs_main, instance step mode)
+        let instanced_pipeline =
+            context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    cache: None,
+                    label: Some("rich_text::instanced pipeline"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &shader,
+                        entry_point: Some("vs_instanced"),
+                        buffers: &[wgpu::VertexBufferLayout {
+                            array_stride: mem::size_of::<batch::QuadInstance>() as u64,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &wgpu::vertex_attr_array!(
+                                0 => Float32x3,  // pos
+                                1 => Float32x4,  // color
+                                2 => Float32x4,  // uv_rect
+                                3 => Sint32x2,   // layers
+                                4 => Float32x2,  // size
+                                5 => Float32x4,  // corner_radii
+                                6 => Sint32,     // underline_style
+                                7 => Float32x4,  // clip_rect
+                            ),
+                        }],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &shader,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: context.format,
+                            blend: BLEND,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleStrip,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: None,
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        unclipped_depth: false,
+                        conservative: false,
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                });
+
         let vertex_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rich_text::Vertices Buffer"),
             size: mem::size_of::<Vertex>() as u64 * supported_vertex_buffer as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let supported_instance_buffer = 20_000usize;
+        let instance_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rich_text::Instance Buffer"),
+            size: mem::size_of::<batch::QuadInstance>() as u64
+                * supported_instance_buffer as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -2801,8 +2934,11 @@ impl WgpuRenderer {
             constant_bind_group,
             transform,
             pipeline,
+            instanced_pipeline,
             vertex_buffer,
+            instance_buffer,
             supported_vertex_buffer,
+            supported_instance_buffer,
             current_transform,
             image_pipeline,
             image_bind_group_layout,
@@ -2815,45 +2951,56 @@ impl WgpuRenderer {
     pub fn render<'pass>(
         &'pass mut self,
         ctx: &mut WgpuContext,
+        instances: &[batch::QuadInstance],
         vertices: &[Vertex],
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
-        // let start = std::time::Instant::now();
-        // There's nothing to render
-        if vertices.is_empty() {
+        if instances.is_empty() && vertices.is_empty() {
             return;
         }
 
         let queue = &mut ctx.queue;
 
-        if vertices.len() > self.supported_vertex_buffer {
-            self.vertex_buffer.destroy();
-
-            // Allocate 25% more buffer space to reduce frequent reallocations
-            self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
-            self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("sugarloaf::rich_text::Pipeline vertices"),
-                size: mem::size_of::<Vertex>() as u64
-                    * self.supported_vertex_buffer as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+        // Upload instance buffer
+        if !instances.is_empty() {
+            if instances.len() > self.supported_instance_buffer {
+                self.instance_buffer.destroy();
+                self.supported_instance_buffer = (instances.len() as f32 * 1.25) as usize;
+                self.instance_buffer =
+                    ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("rich_text::Instance Buffer (resized)"),
+                        size: mem::size_of::<batch::QuadInstance>() as u64
+                            * self.supported_instance_buffer as u64,
+                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+            }
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
         }
 
-        let vertices_bytes: &[u8] = bytemuck::cast_slice(vertices);
-        if !vertices_bytes.is_empty() {
-            queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
+        // Upload vertex buffer
+        if !vertices.is_empty() {
+            if vertices.len() > self.supported_vertex_buffer {
+                self.vertex_buffer.destroy();
+                self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
+                self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("rich_text::Vertices Buffer (resized)"),
+                    size: mem::size_of::<Vertex>() as u64
+                        * self.supported_vertex_buffer as u64,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+            }
+            queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(vertices));
         }
 
-        rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.constant_bind_group, &[]);
         rpass.set_bind_group(1, &self.layout_bind_group, &[]);
+        rpass.set_pipeline(&self.pipeline);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
         let vertex_count = vertices.len() as u32;
         rpass.draw(0..vertex_count, 0..1);
-        // let duration = start.elapsed();
-        // println!("Time elapsed in rich_text::render is: {:?}", duration);
     }
 
     #[inline]
