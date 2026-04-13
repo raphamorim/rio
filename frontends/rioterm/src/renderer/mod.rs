@@ -1351,21 +1351,14 @@ impl Renderer {
                     let width = quad.width / scale_factor;
                     let height = quad.height / scale_factor;
 
-                    // Scale corner radii and border widths
                     let corner_radii = [
                         quad.corner_radii.top_left / scale_factor,
                         quad.corner_radii.top_right / scale_factor,
                         quad.corner_radii.bottom_right / scale_factor,
                         quad.corner_radii.bottom_left / scale_factor,
                     ];
-                    let border_widths = [
-                        quad.border_widths.top / scale_factor,
-                        quad.border_widths.right / scale_factor,
-                        quad.border_widths.bottom / scale_factor,
-                        quad.border_widths.left / scale_factor,
-                    ];
 
-                    // Render quad with rounded corners and borders
+                    // Render quad with rounded corners
                     sugarloaf.quad(
                         None,
                         x,
@@ -1374,9 +1367,6 @@ impl Renderer {
                         height,
                         quad.background_color,
                         corner_radii,
-                        border_widths,
-                        quad.border_color,
-                        quad.border_style as i32,
                         -0.1, // Negative depth = closer to camera (in front)
                         1,    // Higher order renders on top
                     );

@@ -656,9 +656,6 @@ impl Sugarloaf<'_> {
         height: f32,
         background_color: [f32; 4],
         corner_radii: [f32; 4],
-        border_widths: [f32; 4],
-        border_color: [f32; 4],
-        border_style: i32,
         depth: f32,
         order: u8,
     ) {
@@ -673,12 +670,6 @@ impl Sugarloaf<'_> {
             corner_radii[2] * scale,
             corner_radii[3] * scale,
         ];
-        let scaled_border_widths = [
-            border_widths[0] * scale,
-            border_widths[1] * scale,
-            border_widths[2] * scale,
-            border_widths[3] * scale,
-        ];
 
         // For now, quad is always rendered immediately (no caching support yet)
         self.renderer.quad(
@@ -688,9 +679,6 @@ impl Sugarloaf<'_> {
             scaled_height,
             background_color,
             scaled_corner_radii,
-            scaled_border_widths,
-            border_color,
-            border_style,
             depth,
             order,
         );
