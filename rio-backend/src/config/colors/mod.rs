@@ -1,4 +1,3 @@
-// Produces WGPU Color based on ColorBuilder
 pub mod defaults;
 pub mod term;
 
