@@ -3,8 +3,6 @@
 // which is licensed under Apache 2.0 license.
 
 use crate::crosswords::grid::GridSquare;
-use crate::crosswords::square::Flags;
-use crate::crosswords::square::ResetDiscriminant;
 use crate::crosswords::Column;
 use core::cmp::min;
 use std::cmp::max;
@@ -82,11 +80,7 @@ impl<T: Clone + Default> Row<T> {
 
         self.occ = min(self.occ, columns);
 
-        if new_row.is_empty()
-            || new_row
-                .iter()
-                .all(|cell| cell.flags().contains(Flags::GRAPHICS))
-        {
+        if new_row.is_empty() {
             None
         } else {
             Some(new_row)
@@ -95,24 +89,20 @@ impl<T: Clone + Default> Row<T> {
 
     /// Reset all cells in the row to the `template` cell.
     #[inline]
-    pub fn reset<D>(&mut self, template: &T)
+    pub fn reset(&mut self, template: &T)
     where
-        T: ResetDiscriminant<D> + GridSquare,
-        D: PartialEq,
+        T: GridSquare,
     {
         debug_assert!(!self.inner.is_empty());
 
-        // Mark all cells as dirty if template cell changed.
+        // Always reset every cell in the row. The previous implementation
+        // skipped untouched cells when the template's discriminant matched
+        // the rightmost cell — that optimization was based on the inline
+        // bg-color field on the cell, which no longer exists.
         let len = self.inner.len();
-        if self.inner[len - 1].discriminant() != template.discriminant() {
-            self.occ = len;
-        }
-
-        // Reset every dirty cell in the row.
-        for item in &mut self.inner[0..self.occ] {
+        for item in &mut self.inner[0..len] {
             item.reset(template);
         }
-
         self.occ = 0;
     }
 }

@@ -10,8 +10,6 @@ pub mod storage;
 mod tests;
 
 use crate::crosswords::pos::Pos;
-use crate::crosswords::square::Flags;
-use crate::crosswords::square::ResetDiscriminant;
 use crate::crosswords::Cursor;
 use crate::crosswords::{Column, Line};
 use row::Row;
@@ -31,8 +29,6 @@ pub enum Scroll {
 pub trait GridSquare: Sized {
     fn is_empty(&self) -> bool;
     fn reset(&mut self, template: &Self);
-    fn flags(&self) -> &Flags;
-    fn flags_mut(&mut self) -> &mut Flags;
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +41,7 @@ pub struct Grid<T> {
 
     /// Lines in the grid. Each row holds a list of cells corresponding to the
     /// columns in that row.
-    raw: Storage<T>,
+    pub raw: Storage<T>,
 
     /// Number of columns.
     columns: usize,
@@ -62,6 +58,85 @@ pub struct Grid<T> {
 
     /// Maximum number of lines in history.
     max_scroll_limit: usize,
+
+    /// Per-grid intern table for cell styles. Cells store only a `StyleId`;
+    /// the actual fg/bg/underline_color/sgr-flags live here and are looked up
+    /// at render/SGR-mutation time.
+    pub style_set: crate::crosswords::style::StyleSet,
+
+    /// Per-grid storage for the rare per-cell data that used to live inside
+    /// `CellExtra` (zero-width chars, hyperlinks, sixel/iterm graphics).
+    pub extras_table: ExtrasTable,
+}
+
+/// Slot table for `square::Extras`. Index `0` is reserved as the "no extras"
+/// sentinel — `Square::extras_id() == None` corresponds to id 0. Slots are
+/// reused via a free list when cells are cleared.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ExtrasTable {
+    slots: Vec<Option<crate::crosswords::square::Extras>>,
+    free: Vec<u16>,
+}
+
+impl ExtrasTable {
+    pub fn new() -> Self {
+        // Reserve slot 0 as the "none" sentinel so we can use a non-zero id
+        // to mean "has extras".
+        Self {
+            slots: vec![None],
+            free: Vec::new(),
+        }
+    }
+
+    pub fn get(
+        &self,
+        id: crate::crosswords::square::ExtrasId,
+    ) -> Option<&crate::crosswords::square::Extras> {
+        self.slots.get(id as usize)?.as_ref()
+    }
+
+    pub fn get_mut(
+        &mut self,
+        id: crate::crosswords::square::ExtrasId,
+    ) -> Option<&mut crate::crosswords::square::Extras> {
+        self.slots.get_mut(id as usize)?.as_mut()
+    }
+
+    /// Allocate a new extras slot, returning its id (always non-zero).
+    pub fn alloc(
+        &mut self,
+        extras: crate::crosswords::square::Extras,
+    ) -> crate::crosswords::square::ExtrasId {
+        if let Some(id) = self.free.pop() {
+            self.slots[id as usize] = Some(extras);
+            return id;
+        }
+        if self.slots.len() >= u16::MAX as usize {
+            tracing::warn!("ExtrasTable hit u16::MAX slots; dropping new extras");
+            return 0;
+        }
+        let id = self.slots.len() as u16;
+        self.slots.push(Some(extras));
+        id
+    }
+
+    /// Free a previously-allocated slot. No-op if `id == 0`.
+    pub fn free(&mut self, id: crate::crosswords::square::ExtrasId) {
+        if id == 0 {
+            return;
+        }
+        if let Some(slot) = self.slots.get_mut(id as usize) {
+            if slot.take().is_some() {
+                self.free.push(id);
+            }
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.slots.clear();
+        self.slots.push(None);
+        self.free.clear();
+    }
 }
 
 impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
@@ -74,6 +149,8 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
             cursor: Cursor::default(),
             lines,
             columns,
+            style_set: crate::crosswords::style::StyleSet::new(),
+            extras_table: ExtrasTable::new(),
         }
     }
 
@@ -116,11 +193,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     }
 
     #[inline]
-    pub fn scroll_down<D>(&mut self, region: &Range<Line>, positions: usize)
-    where
-        T: ResetDiscriminant<D>,
-        D: PartialEq,
-    {
+    pub fn scroll_down(&mut self, region: &Range<Line>, positions: usize) {
         // When rotating the entire region, just reset everything.
         if region.end - region.start <= positions {
             for i in (region.start.0..region.end.0).map(Line::from) {
@@ -182,11 +255,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     /// Move lines at the bottom toward the top.
     ///
     /// This is the performance-sensitive part of scrolling.
-    pub fn scroll_up<D>(&mut self, region: &Range<Line>, positions: usize)
-    where
-        T: ResetDiscriminant<D>,
-        D: PartialEq,
-    {
+    pub fn scroll_up(&mut self, region: &Range<Line>, positions: usize) {
         // When rotating the entire region with fixed lines at the top, just reset everything.
         if region.end - region.start <= positions && region.start != 0 {
             for i in (region.start.0..region.end.0).map(Line::from) {
@@ -240,11 +309,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         }
     }
 
-    pub fn clear_viewport<D>(&mut self)
-    where
-        T: ResetDiscriminant<D>,
-        D: PartialEq,
-    {
+    pub fn clear_viewport(&mut self) {
         // Determine how many lines to scroll up by.
         let end = Pos::new(Line(self.lines as i32 - 1), Column(self.columns()));
         let mut iter = self.iter_from(end);
@@ -267,11 +332,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     }
 
     /// Completely reset the grid state.
-    pub fn reset<D>(&mut self)
-    where
-        T: ResetDiscriminant<D>,
-        D: PartialEq,
-    {
+    pub fn reset(&mut self) {
         self.clear_history();
 
         self.saved_cursor = Cursor::default();
@@ -288,10 +349,9 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
 impl<T> Grid<T> {
     /// Reset a visible region within the grid.
-    pub fn reset_region<D, R: RangeBounds<Line>>(&mut self, bounds: R)
+    pub fn reset_region<R: RangeBounds<Line>>(&mut self, bounds: R)
     where
-        T: ResetDiscriminant<D> + GridSquare + Clone + Default,
-        D: PartialEq,
+        T: GridSquare + Clone + Default,
     {
         let start = match bounds.start_bound() {
             Bound::Included(line) => *line,
@@ -383,6 +443,107 @@ impl<T> Grid<T> {
     pub fn cursor_cell(&mut self) -> &mut T {
         let point = self.cursor.pos;
         &mut self[point.row][point.col]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers specific to Grid<Square> for working with the per-grid style table
+// and extras storage.
+// ---------------------------------------------------------------------------
+
+use crate::crosswords::square::Square;
+use crate::crosswords::style::{Style, StyleId};
+
+impl Grid<Square> {
+    /// Read the style associated with the cell's style id.
+    #[inline]
+    pub fn style_of(&self, square: &Square) -> Style {
+        self.style_set.get(square.style_id())
+    }
+
+    /// Read the style id of the current cursor template.
+    #[inline]
+    pub fn template_style_id(&self) -> StyleId {
+        self.cursor.template.style_id()
+    }
+
+    /// Set the cursor template's style id directly.
+    #[inline]
+    pub fn set_template_style_id(&mut self, id: StyleId) {
+        self.cursor.template.set_style_id(id);
+    }
+
+    /// Mutate the cursor template's style by recomputing-and-reinterning.
+    /// Used by the SGR handler: `cursor.template` doesn't carry inline
+    /// fg/bg/flags anymore, so updates have to round-trip through the
+    /// style table.
+    #[inline]
+    pub fn update_template_style(&mut self, f: impl FnOnce(&mut Style)) {
+        let mut s = self.style_set.get(self.cursor.template.style_id());
+        f(&mut s);
+        let id = self.style_set.intern(s);
+        self.cursor.template.set_style_id(id);
+    }
+
+    /// Set the template style by passing a fully-formed `Style`.
+    #[inline]
+    pub fn set_template_style(&mut self, style: Style) {
+        let id = self.style_set.intern(style);
+        self.cursor.template.set_style_id(id);
+    }
+
+    /// Build a "blank cell with this bg color" using the default style for
+    /// every other field. Used by `erase_chars`/`delete_chars`/`insert_blank`
+    /// which need to overwrite cells with a colored background but reset
+    /// every other attribute.
+    ///
+    /// When the bg color can be encoded inline (palette index or RGB), this
+    /// returns a bg-only cell that bypasses the style table entirely. The
+    /// renderer's hot path detects bg-only cells and skips the lookup,
+    /// which makes large filled regions (selection highlight, blank lines
+    /// after `clear`, color block fills) essentially free to render.
+    #[inline]
+    pub fn blank_with_bg(&mut self, bg: crate::config::colors::AnsiColor) -> Square {
+        use crate::config::colors::{AnsiColor, NamedColor};
+
+        let mut cell = Square::default();
+        match bg {
+            // Default background → fully default cell, no encoding needed.
+            AnsiColor::Named(NamedColor::Background) => return cell,
+
+            // Palette index → bg-only cell, inline encoding.
+            AnsiColor::Indexed(idx) => {
+                cell.set_bg_palette(idx);
+                return cell;
+            }
+
+            // RGB spec → bg-only cell, inline encoding.
+            AnsiColor::Spec(rgb) => {
+                cell.set_bg_rgb(rgb.r, rgb.g, rgb.b);
+                return cell;
+            }
+
+            // Named palette colors 0..15 → encode as palette index.
+            AnsiColor::Named(named) => {
+                let n = named as u16;
+                if n < 16 {
+                    cell.set_bg_palette(n as u8);
+                    return cell;
+                }
+                // Special named colors (Foreground, Cursor, Dim*, Light*)
+                // fall through to the style table because their meaning
+                // depends on the active palette and would require lookup
+                // anyway.
+            }
+        }
+
+        // Fallback: intern a regular style. Should be rare in practice.
+        let style = Style {
+            bg,
+            ..Style::default()
+        };
+        let id = self.style_set.intern(style);
+        Square::default().with_style_id(id)
     }
 }
 

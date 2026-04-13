@@ -108,6 +108,15 @@ pub struct TerminalSnapshot {
     pub display_offset: usize,
     pub blinking_cursor: bool,
     pub visible_rows: Vec<Row<Square>>,
+    /// Snapshot of the grid's per-cell style intern table. Cloned cheaply
+    /// (the table is just a `Vec<Style>` plus an `FxHashMap`); the renderer
+    /// dereferences cell `style_id`s through this clone instead of reaching
+    /// into the live grid.
+    pub style_set: rio_backend::crosswords::style::StyleSet,
+    /// Snapshot of the grid's extras table (zero-width chars, hyperlinks,
+    /// sixel/iterm graphics). The renderer reads per-cell graphic data
+    /// through this clone.
+    pub extras_table: rio_backend::crosswords::grid::ExtrasTable,
     pub cursor: CursorState,
     pub damage: TerminalDamage,
     // Cache terminal dimensions to avoid repeated calls
@@ -142,7 +151,6 @@ impl PendingUpdate {
     }
 
     /// Mark as needing to check for damage on next render
-    /// This is used by TerminalDamaged events to store damage
     pub fn set_dirty(&mut self) {
         self.dirty = true;
     }
@@ -179,7 +187,7 @@ impl PendingUpdate {
     }
 
     /// Merge two terminal damages into one
-    fn merge_terminal_damages(
+    pub fn merge_terminal_damages(
         existing: TerminalDamage,
         new: TerminalDamage,
     ) -> TerminalDamage {

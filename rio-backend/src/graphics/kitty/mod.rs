@@ -3169,7 +3169,7 @@ fn dump_grid(term: &Crosswords<TestEventListener>, label: &str) {
         let mut s = String::new();
         for c in 0..cols {
             let cell = &term.grid[line][Column(c)];
-            let ch = cell.c;
+            let ch = cell.c();
             if ch == '\0' || ch == ' ' {
                 s.push('.');
             } else {
