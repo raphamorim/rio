@@ -136,8 +136,8 @@ mod tests {
 
     #[test]
     fn test_vertex_positioning() {
-        // Create mock vertex data for one complete vertex (116 bytes)
-        // Vertex structure: pos[3] + color[4] + uv[2] + layers[2] + corner_radii[4] + rect_size[2] + border_widths[4] + border_color[4]
+        // Create mock vertex data for one complete vertex (88 bytes)
+        // Vertex structure: pos[3] + color[4] + uv[2] + layers[2] + corner_radii[4] + rect_size[2] + underline_style + clip_rect[4]
         let mut vertices = Vec::new();
 
         // Position: (10.0, 20.0, 0.0) - 12 bytes

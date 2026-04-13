@@ -115,19 +115,16 @@ impl MetalRenderer {
             .expect("Failed to get fragment function");
 
         // Create vertex descriptor for rich text rendering
-        // Vertex layout (116 bytes total):
+        // Vertex layout (88 bytes total):
         // - pos: [f32; 3] = 12 bytes (offset 0)
         // - color: [f32; 4] = 16 bytes (offset 12)
         // - uv: [f32; 2] = 8 bytes (offset 28)
         // - layers: [i32; 2] = 8 bytes (offset 36)
         // - corner_radii: [f32; 4] = 16 bytes (offset 44)
         // - rect_size: [f32; 2] = 8 bytes (offset 60)
-        // - border_widths: [f32; 4] = 16 bytes (offset 68)
-        // - border_color: [f32; 4] = 16 bytes (offset 84)
-        // - border_style: i32 = 4 bytes (offset 100)
-        // - underline_style: i32 = 4 bytes (offset 104)
-        // - _padding: [i32; 2] = 8 bytes (offset 108)
-        // Total: 116 bytes
+        // - underline_style: i32 = 4 bytes (offset 68)
+        // - clip_rect: [f32; 4] = 16 bytes (offset 72)
+        // Total: 88 bytes
         let vertex_descriptor = VertexDescriptor::new();
         let attributes = vertex_descriptor.attributes();
 
@@ -179,45 +176,21 @@ impl MetalRenderer {
         attributes.object_at(5).unwrap().set_offset(60);
         attributes.object_at(5).unwrap().set_buffer_index(0);
 
-        // Border widths (attribute 6) - vec4<f32>
+        // Underline style (attribute 6) - i32
         attributes
             .object_at(6)
             .unwrap()
-            .set_format(MTLVertexFormat::Float4);
+            .set_format(MTLVertexFormat::Int);
         attributes.object_at(6).unwrap().set_offset(68);
         attributes.object_at(6).unwrap().set_buffer_index(0);
 
-        // Border color (attribute 7) - vec4<f32>
+        // Clip rect (attribute 7) - vec4<f32>
         attributes
             .object_at(7)
             .unwrap()
             .set_format(MTLVertexFormat::Float4);
-        attributes.object_at(7).unwrap().set_offset(84);
+        attributes.object_at(7).unwrap().set_offset(72);
         attributes.object_at(7).unwrap().set_buffer_index(0);
-
-        // Border style (attribute 8) - i32
-        attributes
-            .object_at(8)
-            .unwrap()
-            .set_format(MTLVertexFormat::Int);
-        attributes.object_at(8).unwrap().set_offset(100);
-        attributes.object_at(8).unwrap().set_buffer_index(0);
-
-        // Underline style (attribute 9) - i32
-        attributes
-            .object_at(9)
-            .unwrap()
-            .set_format(MTLVertexFormat::Int);
-        attributes.object_at(9).unwrap().set_offset(104);
-        attributes.object_at(9).unwrap().set_buffer_index(0);
-
-        // Clip rect (attribute 10) - vec4<f32>
-        attributes
-            .object_at(10)
-            .unwrap()
-            .set_format(MTLVertexFormat::Float4);
-        attributes.object_at(10).unwrap().set_offset(108);
-        attributes.object_at(10).unwrap().set_buffer_index(0);
 
         // Set up buffer layout
         let layouts = vertex_descriptor.layouts();
@@ -1907,7 +1880,7 @@ impl Renderer {
         );
     }
 
-    /// Add a quad with per-corner radii and per-edge border widths
+    /// Add a quad with per-corner radii
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn quad(
@@ -1918,9 +1891,6 @@ impl Renderer {
         height: f32,
         background_color: [f32; 4],
         corner_radii: [f32; 4],
-        border_widths: [f32; 4],
-        border_color: [f32; 4],
-        border_style: i32,
         depth: f32,
         order: u8,
     ) {
@@ -1934,9 +1904,6 @@ impl Renderer {
             depth,
             &background_color,
             corner_radii,
-            border_widths,
-            border_color,
-            border_style,
             order,
         );
     }
@@ -2560,11 +2527,8 @@ impl WgpuRenderer {
                                 3 => Sint32x2,   // layers
                                 4 => Float32x4,  // corner_radii
                                 5 => Float32x2,  // rect_size
-                                6 => Float32x4,  // border_widths
-                                7 => Float32x4,  // border_color
-                                8 => Sint32,     // border_style
-                                9 => Sint32,     // underline_style
-                                10 => Float32x4, // clip_rect
+                                6 => Sint32,     // underline_style
+                                7 => Float32x4,  // clip_rect
                             ),
                         }],
                     },

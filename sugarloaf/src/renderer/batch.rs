@@ -36,18 +36,15 @@ pub struct Vertex {
     pub layers: [i32; 2],
     pub corner_radii: [f32; 4], // [top_left, top_right, bottom_right, bottom_left] / for underlines: [thickness, 0, 0, 0]
     pub rect_size: [f32; 2],    // For underlines: [width, height]
-    pub border_widths: [f32; 4], // [top, right, bottom, left]
-    pub border_color: [f32; 4], // Border color RGBA
-    pub border_style: i32,      // 0 = solid, 1 = dashed (for borders)
     pub underline_style: i32, // 0 = none, 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
     pub clip_rect: [f32; 4], // [x, y, width, height] in physical pixels (0,0,0,0 = no clip)
 }
 
 impl Vertex {
     /// Vertex size in bytes:
-    /// pos[3] + color[4] + uv[2] + layers[2] + corner_radii[4] + rect_size[2] + border_widths[4] + border_color[4] + border_style + underline_style + clip_rect[4]
-    /// = 12 + 16 + 8 + 8 + 16 + 8 + 16 + 16 + 4 + 4 + 16 = 124 bytes
-    pub const SIZE: usize = 124;
+    /// pos[3] + color[4] + uv[2] + layers[2] + corner_radii[4] + rect_size[2] + underline_style + clip_rect[4]
+    /// = 12 + 16 + 8 + 8 + 16 + 8 + 4 + 16 = 88 bytes
+    pub const SIZE: usize = 88;
 
     /// Convert vertex to bytes for caching
     #[inline]
@@ -174,9 +171,6 @@ impl Batch {
             layers,
             corner_radii: [0.0; 4],
             rect_size: [0.0, 0.0],
-            border_widths: [0.0; 4],
-            border_color: [0.0; 4],
-            border_style: 0,
             underline_style: 0,
             clip_rect: [0.0; 4],
         };
@@ -187,9 +181,6 @@ impl Batch {
             layers,
             corner_radii: [0.0; 4],
             rect_size: [0.0, 0.0],
-            border_widths: [0.0; 4],
-            border_color: [0.0; 4],
-            border_style: 0,
             underline_style: 0,
             clip_rect: [0.0; 4],
         };
@@ -200,9 +191,6 @@ impl Batch {
             layers,
             corner_radii: [0.0; 4],
             rect_size: [0.0, 0.0],
-            border_widths: [0.0; 4],
-            border_color: [0.0; 4],
-            border_style: 0,
             underline_style: 0,
             clip_rect: [0.0; 4],
         };
@@ -213,9 +201,6 @@ impl Batch {
             layers,
             corner_radii: [0.0; 4],
             rect_size: [0.0, 0.0],
-            border_widths: [0.0; 4],
-            border_color: [0.0; 4],
-            border_style: 0,
             underline_style: 0,
             clip_rect: [0.0; 4],
         };
@@ -273,9 +258,6 @@ impl Batch {
             layers,
             corner_radii: [0.0; 4],
             rect_size: [0.0, 0.0],
-            border_widths: [0.0; 4],
-            border_color: [0.0; 4],
-            border_style: 0,
             underline_style: 0,
             clip_rect: [0.0; 4],
         });
@@ -286,9 +268,6 @@ impl Batch {
             layers,
             corner_radii: [0.0; 4],
             rect_size: [0.0, 0.0],
-            border_widths: [0.0; 4],
-            border_color: [0.0; 4],
-            border_style: 0,
             underline_style: 0,
             clip_rect: [0.0; 4],
         });
@@ -299,9 +278,6 @@ impl Batch {
             layers,
             corner_radii: [0.0; 4],
             rect_size: [0.0, 0.0],
-            border_widths: [0.0; 4],
-            border_color: [0.0; 4],
-            border_style: 0,
             underline_style: 0,
             clip_rect: [0.0; 4],
         });
@@ -383,9 +359,6 @@ impl Batch {
                 layers,
                 corner_radii: [0.0; 4],
                 rect_size: [0.0, 0.0],
-                border_widths: [0.0; 4],
-                border_color: [0.0; 4],
-                border_style: 0,
                 underline_style: 0,
                 clip_rect: [0.0; 4],
             };
@@ -396,9 +369,6 @@ impl Batch {
                 layers,
                 corner_radii: [0.0; 4],
                 rect_size: [0.0, 0.0],
-                border_widths: [0.0; 4],
-                border_color: [0.0; 4],
-                border_style: 0,
                 underline_style: 0,
                 clip_rect: [0.0; 4],
             };
@@ -409,9 +379,6 @@ impl Batch {
                 layers,
                 corner_radii: [0.0; 4],
                 rect_size: [0.0, 0.0],
-                border_widths: [0.0; 4],
-                border_color: [0.0; 4],
-                border_style: 0,
                 underline_style: 0,
                 clip_rect: [0.0; 4],
             };
@@ -422,9 +389,6 @@ impl Batch {
                 layers,
                 corner_radii: [0.0; 4],
                 rect_size: [0.0, 0.0],
-                border_widths: [0.0; 4],
-                border_color: [0.0; 4],
-                border_style: 0,
                 underline_style: 0,
                 clip_rect: [0.0; 4],
             };
@@ -472,10 +436,7 @@ impl Batch {
         self.image = image;
         self.mask = mask;
         let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
-        self.push_rect(
-            rect, depth, color, coords, layers, [0.0; 4], [0.0; 4], [0.0; 4], 0, 0,
-            clip_rect,
-        );
+        self.push_rect(rect, depth, color, coords, layers, [0.0; 4], 0, clip_rect);
         true
     }
 
@@ -491,9 +452,6 @@ impl Batch {
         mask: Option<i32>,
         subpix: bool,
         corner_radii: [f32; 4],
-        border_widths: [f32; 4],
-        border_color: [f32; 4],
-        border_style: i32,
         clip_rect: [f32; 4],
     ) -> bool {
         if !self.vertices.is_empty() && subpix != self.subpix {
@@ -516,9 +474,6 @@ impl Batch {
             coords,
             layers,
             corner_radii,
-            border_widths,
-            border_color,
-            border_style,
             0,
             clip_rect,
         );
@@ -559,9 +514,6 @@ impl Batch {
             None,
             layers,
             corner_radii,
-            [0.0; 4],
-            [0.0; 4],
-            0,
             underline_style,
             clip_rect,
         );
@@ -578,9 +530,6 @@ impl Batch {
         coords: Option<&[f32; 4]>,
         layers: [i32; 2],
         corner_radii: [f32; 4],
-        border_widths: [f32; 4],
-        border_color: [f32; 4],
-        border_style: i32,
         underline_style: i32,
         clip_rect: [f32; 4],
     ) {
@@ -604,9 +553,6 @@ impl Batch {
             layers,
             corner_radii,
             rect_size: [w, h],
-            border_widths,
-            border_color,
-            border_style,
             underline_style,
             clip_rect,
         };
@@ -617,9 +563,6 @@ impl Batch {
             layers,
             corner_radii,
             rect_size: [w, h],
-            border_widths,
-            border_color,
-            border_style,
             underline_style,
             clip_rect,
         };
@@ -630,9 +573,6 @@ impl Batch {
             layers,
             corner_radii,
             rect_size: [w, h],
-            border_widths,
-            border_color,
-            border_style,
             underline_style,
             clip_rect,
         };
@@ -643,9 +583,6 @@ impl Batch {
             layers,
             corner_radii,
             rect_size: [w, h],
-            border_widths,
-            border_color,
-            border_style,
             underline_style,
             clip_rect,
         };
@@ -1034,9 +971,6 @@ impl BatchManager {
                     None,
                     false,
                     corner_radii,
-                    [0.0; 4],
-                    [0.0; 4],
-                    0,
                     cr,
                 )
             {
@@ -1052,14 +986,11 @@ impl BatchManager {
             None,
             false,
             corner_radii,
-            [0.0; 4],
-            [0.0; 4],
-            0,
             cr,
         );
     }
 
-    /// Add a quad with per-corner radii and per-edge border widths
+    /// Add a quad with per-corner radii
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn quad(
@@ -1068,9 +999,6 @@ impl BatchManager {
         depth: f32,
         background_color: &[f32; 4],
         corner_radii: [f32; 4],
-        border_widths: [f32; 4],
-        border_color: [f32; 4],
-        border_style: i32,
         order: u8,
     ) {
         let cr = self.clip_rect;
@@ -1085,9 +1013,6 @@ impl BatchManager {
                     None,
                     false,
                     corner_radii,
-                    border_widths,
-                    border_color,
-                    border_style,
                     cr,
                 )
             {
@@ -1103,9 +1028,6 @@ impl BatchManager {
             None,
             false,
             corner_radii,
-            border_widths,
-            border_color,
-            border_style,
             cr,
         );
     }
