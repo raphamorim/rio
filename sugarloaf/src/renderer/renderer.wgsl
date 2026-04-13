@@ -7,16 +7,29 @@ struct Globals {
 @group(1) @binding(0) var color_texture: texture_2d<f32>; // RGBA texture for color glyphs
 @group(1) @binding(1) var mask_texture: texture_2d<f32>;  // R8 texture for alpha masks
 
+// Per-instance data for instanced quad rendering (matches Rust QuadInstance)
+struct QuadInstanceInput {
+    @location(0) pos: vec3<f32>,
+    @location(1) color: vec4<f32>,
+    @location(2) uv_rect: vec4<f32>,
+    @location(3) layers: vec2<i32>,
+    @location(4) size: vec2<f32>,
+    @location(5) corner_radii: vec4<f32>,
+    @location(6) underline_style: i32,
+    @location(7) clip_rect: vec4<f32>,
+}
+
+// Per-vertex data for non-quad geometry (lines, triangles, arcs)
 struct VertexInput {
     @builtin(vertex_index) vertex_index: u32,
     @location(0) v_pos: vec3<f32>,
-    @location(1) v_color: vec4<f32>,           // Background color / underline color
+    @location(1) v_color: vec4<f32>,
     @location(2) v_uv: vec2<f32>,
     @location(3) layers: vec2<i32>,
-    @location(4) corner_radii: vec4<f32>,      // [top_left, top_right, bottom_right, bottom_left] / for underlines: [thickness, 0, 0, 0]
-    @location(5) rect_size: vec2<f32>,         // For underlines: [width, height]
-    @location(6) underline_style: i32,         // 0 = none, 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
-    @location(7) clip_rect: vec4<f32>,        // [x, y, width, height] in pixels (0,0,0,0 = no clip)
+    @location(4) corner_radii: vec4<f32>,
+    @location(5) rect_size: vec2<f32>,
+    @location(6) underline_style: i32,
+    @location(7) clip_rect: vec4<f32>,
 }
 
 struct VertexOutput {
@@ -29,6 +42,36 @@ struct VertexOutput {
     @location(5) rect_size: vec2<f32>,
     @location(6) @interpolate(flat) underline_style: i32,
     @location(7) @interpolate(flat) clip_rect: vec4<f32>,
+}
+
+// Unit quad corners for triangle strip: TL, BL, TR, BR
+const UNIT_QUAD = array<vec2<f32>, 4>(
+    vec2<f32>(0.0, 0.0),
+    vec2<f32>(0.0, 1.0),
+    vec2<f32>(1.0, 0.0),
+    vec2<f32>(1.0, 1.0),
+);
+
+@vertex
+fn vs_instanced(
+    @builtin(vertex_index) vertex_id: u32,
+    input: QuadInstanceInput,
+) -> VertexOutput {
+    let unit = UNIT_QUAD[vertex_id];
+    let pos = input.pos.xy + unit * input.size;
+    let uv = mix(input.uv_rect.xy, input.uv_rect.zw, unit);
+
+    var out: VertexOutput;
+    out.position = globals.transform * vec4<f32>(pos, input.pos.z, 1.0);
+    out.f_color = input.color;
+    out.f_uv = uv;
+    out.color_layer = input.layers.x;
+    out.mask_layer = input.layers.y;
+    out.corner_radii = input.corner_radii;
+    out.rect_size = input.size;
+    out.underline_style = input.underline_style;
+    out.clip_rect = input.clip_rect;
+    return out;
 }
 
 @vertex

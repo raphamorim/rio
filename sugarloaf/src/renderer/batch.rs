@@ -24,20 +24,33 @@ pub struct RunUnderline {
     pub shape: UnderlineShape,
 }
 
-/// Batch geometry vertex.
-/// Supports rounded rectangles with per-corner radii and per-edge border widths.
-/// Also supports GPU-rendered underlines with various styles.
+/// Per-quad instance for instanced rendering (96 bytes).
+/// One per quad — vertex shader generates 4 corners from vertex_id.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+pub struct QuadInstance {
+    pub pos: [f32; 3],         // top-left x, y + depth (12)
+    pub color: [f32; 4],       // fill / underline color (16)
+    pub uv_rect: [f32; 4],    // [left, top, right, bottom] (16)
+    pub layers: [i32; 2],     // [color_layer, mask_layer] (8)
+    pub size: [f32; 2],       // width, height in pixels (8)
+    pub corner_radii: [f32; 4], // [tl, tr, br, bl] (16)
+    pub underline_style: i32, // 0=none, 1=regular, 2=dashed, 3=dotted, 4=curly (4)
+    pub clip_rect: [f32; 4],  // [x, y, w, h] physical pixels (16)
+}
+
+/// Vertex for non-quad geometry (lines, triangles, arcs).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 pub struct Vertex {
     pub pos: [f32; 3],
-    pub color: [f32; 4], // Background color / underline color
+    pub color: [f32; 4],
     pub uv: [f32; 2],
     pub layers: [i32; 2],
-    pub corner_radii: [f32; 4], // [top_left, top_right, bottom_right, bottom_left] / for underlines: [thickness, 0, 0, 0]
-    pub rect_size: [f32; 2],    // For underlines: [width, height]
-    pub underline_style: i32, // 0 = none, 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
-    pub clip_rect: [f32; 4], // [x, y, width, height] in physical pixels (0,0,0,0 = no clip)
+    pub corner_radii: [f32; 4],
+    pub rect_size: [f32; 2],
+    pub underline_style: i32,
+    pub clip_rect: [f32; 4],
 }
 
 impl Vertex {
@@ -90,6 +103,7 @@ impl From<[f32; 4]> for Rect {
 struct Batch {
     image: Option<i32>,
     mask: Option<i32>,
+    instances: Vec<QuadInstance>,
     vertices: Vec<Vertex>,
     subpix: bool,
     order: u8,
@@ -99,9 +113,15 @@ impl Batch {
     fn clear(&mut self) {
         self.image = None;
         self.mask = None;
+        self.instances.clear();
         self.vertices.clear();
         self.subpix = false;
         self.order = 0;
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.instances.is_empty() && self.vertices.is_empty()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -119,13 +139,13 @@ impl Batch {
         mask: Option<i32>,
         subpix: bool,
     ) -> bool {
-        if !self.vertices.is_empty() && subpix != self.subpix {
+        if !self.is_empty() && subpix != self.subpix {
             return false;
         }
-        if !self.vertices.is_empty() && self.image != image {
+        if !self.is_empty() && self.image != image {
             return false;
         }
-        if !self.vertices.is_empty() && self.mask != mask {
+        if !self.is_empty() && self.mask != mask {
             return false;
         }
         self.subpix = subpix;
@@ -235,13 +255,13 @@ impl Batch {
         mask: Option<i32>,
         subpix: bool,
     ) -> bool {
-        if !self.vertices.is_empty() && subpix != self.subpix {
+        if !self.is_empty() && subpix != self.subpix {
             return false;
         }
-        if !self.vertices.is_empty() && self.image != image {
+        if !self.is_empty() && self.image != image {
             return false;
         }
-        if !self.vertices.is_empty() && self.mask != mask {
+        if !self.is_empty() && self.mask != mask {
             return false;
         }
 
@@ -301,13 +321,13 @@ impl Batch {
         mask: Option<i32>,
         subpix: bool,
     ) -> bool {
-        if !self.vertices.is_empty() && subpix != self.subpix {
+        if !self.is_empty() && subpix != self.subpix {
             return false;
         }
-        if !self.vertices.is_empty() && self.image != image {
+        if !self.is_empty() && self.image != image {
             return false;
         }
-        if !self.vertices.is_empty() && self.mask != mask {
+        if !self.is_empty() && self.mask != mask {
             return false;
         }
         self.subpix = subpix;
@@ -423,13 +443,13 @@ impl Batch {
         subpix: bool,
         clip_rect: [f32; 4],
     ) -> bool {
-        if !self.vertices.is_empty() && subpix != self.subpix {
+        if !self.is_empty() && subpix != self.subpix {
             return false;
         }
-        if !self.vertices.is_empty() && self.image != image {
+        if !self.is_empty() && self.image != image {
             return false;
         }
-        if !self.vertices.is_empty() && self.mask != mask {
+        if !self.is_empty() && self.mask != mask {
             return false;
         }
         self.subpix = subpix;
@@ -454,13 +474,13 @@ impl Batch {
         corner_radii: [f32; 4],
         clip_rect: [f32; 4],
     ) -> bool {
-        if !self.vertices.is_empty() && subpix != self.subpix {
+        if !self.is_empty() && subpix != self.subpix {
             return false;
         }
-        if !self.vertices.is_empty() && self.image != image {
+        if !self.is_empty() && self.image != image {
             return false;
         }
-        if !self.vertices.is_empty() && self.mask != mask {
+        if !self.is_empty() && self.mask != mask {
             return false;
         }
         self.subpix = subpix;
@@ -493,13 +513,13 @@ impl Batch {
         thickness: f32,
         clip_rect: [f32; 4],
     ) -> bool {
-        if !self.vertices.is_empty() && self.subpix {
+        if !self.is_empty() && self.subpix {
             return false;
         }
-        if !self.vertices.is_empty() && self.image.is_some() {
+        if !self.is_empty() && self.image.is_some() {
             return false;
         }
-        if !self.vertices.is_empty() && self.mask.is_some() {
+        if !self.is_empty() && self.mask.is_some() {
             return false;
         }
         self.subpix = false;
@@ -533,77 +553,72 @@ impl Batch {
         underline_style: i32,
         clip_rect: [f32; 4],
     ) {
-        let x = rect.x;
-        let y = rect.y;
-        let w = rect.width;
-        let h = rect.height;
-
         const DEFAULT_COORDS: [f32; 4] = [0., 0., 1., 1.];
         let coords = coords.unwrap_or(&DEFAULT_COORDS);
-        let l = coords[0];
-        let t = coords[1];
-        let r = coords[2];
-        let b = coords[3];
 
-        // Create the four corner vertices
-        let v0 = Vertex {
-            pos: [x, y, depth],
+        self.instances.push(QuadInstance {
+            pos: [rect.x, rect.y, depth],
             color: *color,
-            uv: [l, t],
+            uv_rect: *coords,
             layers,
+            size: [rect.width, rect.height],
             corner_radii,
-            rect_size: [w, h],
             underline_style,
             clip_rect,
-        };
-        let v1 = Vertex {
-            pos: [x, y + h, depth],
-            color: *color,
-            uv: [l, b],
-            layers,
-            corner_radii,
-            rect_size: [w, h],
-            underline_style,
-            clip_rect,
-        };
-        let v2 = Vertex {
-            pos: [x + w, y + h, depth],
-            color: *color,
-            uv: [r, b],
-            layers,
-            corner_radii,
-            rect_size: [w, h],
-            underline_style,
-            clip_rect,
-        };
-        let v3 = Vertex {
-            pos: [x + w, y, depth],
-            color: *color,
-            uv: [r, t],
-            layers,
-            corner_radii,
-            rect_size: [w, h],
-            underline_style,
-            clip_rect,
-        };
-
-        // Add vertices directly in the order they'll be drawn
-        // First triangle: v0, v1, v2
-        self.vertices.push(v0);
-        self.vertices.push(v1);
-        self.vertices.push(v2);
-
-        // Second triangle: v2, v3, v0
-        self.vertices.push(v2);
-        self.vertices.push(v3);
-        self.vertices.push(v0);
+        });
     }
 
     #[inline]
-    fn build_display_list(&self, list: &mut Vec<Vertex>) {
-        // Since vertices are already in draw order, we can just copy them
-        list.extend_from_slice(&self.vertices);
+    fn build_display_list(
+        &self,
+        inst_list: &mut Vec<QuadInstance>,
+        vert_list: &mut Vec<Vertex>,
+        cmds: &mut Vec<DrawCmd>,
+    ) {
+        let color_layer = self.image.unwrap_or(0);
+        let mask_layer = self.mask.unwrap_or(0);
+
+        if !self.instances.is_empty() {
+            let offset = inst_list.len() as u32;
+            inst_list.extend_from_slice(&self.instances);
+            cmds.push(DrawCmd::Instanced {
+                offset,
+                count: self.instances.len() as u32,
+                color_layer,
+                mask_layer,
+            });
+        }
+
+        if !self.is_empty() {
+            let offset = vert_list.len() as u32;
+            vert_list.extend_from_slice(&self.vertices);
+            cmds.push(DrawCmd::Vertices {
+                offset,
+                count: self.vertices.len() as u32,
+                color_layer,
+                mask_layer,
+            });
+        }
     }
+}
+
+/// Draw command emitted by the batch system.
+#[derive(Debug, Clone, Copy)]
+pub enum DrawCmd {
+    /// Instanced quad draw (one instance per quad, 4 verts from vertex_id).
+    Instanced {
+        offset: u32,
+        count: u32,
+        color_layer: i32,
+        mask_layer: i32,
+    },
+    /// Triangle-list draw for non-quad geometry (lines, triangles, arcs).
+    Vertices {
+        offset: u32,
+        count: u32,
+        color_layer: i32,
+        mask_layer: i32,
+    },
 }
 
 pub struct BatchManager {
@@ -1033,17 +1048,22 @@ impl BatchManager {
     }
 
     #[inline]
-    pub fn build_display_list(&mut self, list: &mut Vec<Vertex>) {
+    pub fn build_display_list(
+        &mut self,
+        instances: &mut Vec<QuadInstance>,
+        vertices: &mut Vec<Vertex>,
+        cmds: &mut Vec<DrawCmd>,
+    ) {
         // Sort batches by draw order (painter's algorithm)
         // Secondary sort: unmasked batches (backgrounds) before masked batches (text)
         // This ensures backgrounds render before text at the same draw order level
         self.active.sort_by_key(|b| (b.order, b.mask.is_some()));
 
         for batch in &self.active {
-            if batch.vertices.is_empty() {
+            if batch.instances.is_empty() && batch.vertices.is_empty() {
                 continue;
             }
-            batch.build_display_list(list);
+            batch.build_display_list(instances, vertices, cmds);
         }
     }
 

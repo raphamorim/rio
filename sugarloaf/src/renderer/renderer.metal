@@ -6,7 +6,28 @@ struct Globals {
     float4x4 transform;
 };
 
-// Vertex input structure - matches Vertex struct exactly
+// QuadInstance - matches Rust QuadInstance struct (96 bytes, per-instance)
+// All packed types to match C/Rust layout without Metal alignment padding.
+struct QuadInstance {
+    packed_float3 pos;          // 12 bytes, offset 0
+    packed_float4 color;        // 16 bytes, offset 12
+    packed_float4 uv_rect;     // 16 bytes, offset 28
+    packed_int2 layers;         // 8 bytes, offset 44
+    packed_float2 size;         // 8 bytes, offset 52
+    packed_float4 corner_radii; // 16 bytes, offset 60
+    int underline_style;        // 4 bytes, offset 76
+    packed_float4 clip_rect;   // 16 bytes, offset 80
+};
+
+// Unit quad corners for triangle strip (TL, BL, TR, BR)
+constant float2 UNIT_QUAD[4] = {
+    float2(0.0, 0.0),
+    float2(0.0, 1.0),
+    float2(1.0, 0.0),
+    float2(1.0, 1.0),
+};
+
+// Vertex input structure - matches Vertex struct (for lines/triangles/arcs)
 struct VertexInput {
     float3 v_pos [[attribute(0)]];          // Position (12 bytes)
     float4 v_color [[attribute(1)]];        // Background color / underline color (16 bytes)
@@ -48,6 +69,33 @@ vertex VertexOutput vs_main(
 
     out.position = globals.transform * float4(input.v_pos, 1.0);
 
+    return out;
+}
+
+// Instanced vertex shader — one QuadInstance per quad, vertex_id picks corner
+vertex VertexOutput vs_instanced(
+    uint vertex_id [[vertex_id]],
+    uint instance_id [[instance_id]],
+    const device QuadInstance* instances [[buffer(0)]],
+    constant Globals& globals [[buffer(1)]]
+) {
+    const device QuadInstance& inst = instances[instance_id];
+    float2 sz = float2(inst.size);
+    float4 uv_r = float4(inst.uv_rect);
+    float2 unit = UNIT_QUAD[vertex_id];
+    float2 pos = float2(inst.pos[0], inst.pos[1]) + unit * sz;
+    float2 uv = mix(uv_r.xy, uv_r.zw, unit);
+
+    VertexOutput out;
+    out.position = globals.transform * float4(pos, inst.pos[2], 1.0);
+    out.f_color = float4(inst.color);
+    out.f_uv = uv;
+    out.color_layer = int2(inst.layers).x;
+    out.mask_layer = int2(inst.layers).y;
+    out.corner_radii = float4(inst.corner_radii);
+    out.rect_size = sz;
+    out.underline_style = inst.underline_style;
+    out.clip_rect = float4(inst.clip_rect);
     return out;
 }
 
