@@ -931,6 +931,8 @@ Default is `false`
 hide-mouse-cursor-when-typing = false
 ```
 
+## navigation
+
 ## navigation.mode
 
 Rio has multiple styles of showing navigation/tabs.
