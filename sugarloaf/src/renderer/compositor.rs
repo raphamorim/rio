@@ -6,7 +6,7 @@
 // Compositor with vertex capture for text run caching
 
 use crate::layout::{SpanStyleDecoration, UnderlineShape};
-use crate::renderer::batch::{BatchManager, RunUnderline};
+use crate::renderer::batch::{BatchManager, DrawCmd, QuadInstance, RunUnderline};
 pub use crate::renderer::batch::{Rect, Vertex};
 use crate::renderer::image_cache::glyph::GlyphCacheSession;
 use crate::renderer::text::*;
@@ -105,8 +105,13 @@ impl Compositor {
     }
 
     #[inline]
-    pub fn finish(&mut self, vertices: &mut Vec<Vertex>) {
-        self.batches.build_display_list(vertices);
+    pub fn finish(
+        &mut self,
+        instances: &mut Vec<QuadInstance>,
+        vertices: &mut Vec<Vertex>,
+        cmds: &mut Vec<DrawCmd>,
+    ) {
+        self.batches.build_display_list(instances, vertices, cmds);
         self.batches.reset();
     }
 
