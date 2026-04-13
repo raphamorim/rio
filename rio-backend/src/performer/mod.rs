@@ -220,9 +220,7 @@ where
         // extract all accumulated damage when it locks the terminal.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
             if let Some(ref mut term) = terminal {
-                if !term.damage_event_in_flight
-                    && term.peek_damage_event().is_some()
-                {
+                if !term.damage_event_in_flight && term.peek_damage_event().is_some() {
                     term.damage_event_in_flight = true;
                     self.event_proxy.send_event(
                         RioEvent::TerminalDamaged(self.route_id),
