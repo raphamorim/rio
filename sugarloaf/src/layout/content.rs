@@ -450,6 +450,90 @@ impl Content {
         self
     }
 
+    /// Shape a text run and return the result. Checks the ShapingCache
+    /// first; on miss, shapes with the internal ShapeContext and caches
+    /// the result. Returns (RunData, was_cache_hit).
+    ///
+    /// This is the terminal renderer's entry point for inline shaping —
+    /// it bypasses the fragment layer entirely.
+    #[allow(clippy::too_many_arguments)]
+    pub fn shape_run(
+        &mut self,
+        text: &str,
+        style: SpanStyle,
+        font_id: usize,
+        scaled_font_size: f32,
+        line_number: u32,
+    ) -> Option<crate::layout::glyph::RunData> {
+        use crate::font_introspector::text::Script;
+        use crate::font_introspector::FontRef;
+
+        let metrics_result = self
+            .fonts
+            .inner
+            .write()
+            .get_font_metrics(&font_id, scaled_font_size);
+        let (ascent, descent, leading) = metrics_result?;
+
+        // Check shaping cache
+        if let Some(cached_run) = self.shaping_cache.get(&font_id, text) {
+            let mut run = crate::layout::glyph::RunData {
+                span: style,
+                line: line_number,
+                size: scaled_font_size,
+                glyphs: cached_run.glyphs.clone(),
+                detailed_glyphs: cached_run.detailed_glyphs.clone(),
+                ascent,
+                descent,
+                leading,
+                underline_offset: 0.,
+                strikeout_offset: 0.,
+                strikeout_size: 0.,
+                x_height: 0.,
+                advance: cached_run.advance,
+                cache_key: cached_run.cache_key,
+            };
+            if let Some(graphic) = style.media {
+                run.span.media = Some(graphic);
+            }
+            return Some(run);
+        }
+
+        // Cache miss — shape the run
+        self.shaping_cache.set_content(font_id, text);
+
+        let font_library = self.fonts.inner.read();
+        let (shared_data, offset, key) = font_library.get_data(&font_id)?;
+        let font_ref = FontRef {
+            data: shared_data.as_ref(),
+            offset,
+            key,
+        };
+
+        let features = &self.font_features;
+        let mut shaper = self
+            .scx
+            .builder(font_ref)
+            .script(Script::Latin)
+            .size(scaled_font_size)
+            .features(features.iter().copied())
+            .build();
+
+        shaper.add_str(text);
+        drop(font_library);
+
+        let mut render_data = crate::layout::render_data::RenderData::default();
+        render_data.push_run(
+            style,
+            scaled_font_size,
+            line_number,
+            shaper,
+            &mut self.shaping_cache,
+        );
+
+        render_data.runs.into_iter().next()
+    }
+
     /// Clear image overlays on the selected content state.
     pub fn clear_image_overlays(&mut self) {
         if let Some(id) = self.selector {
@@ -474,6 +558,36 @@ impl Content {
     #[inline]
     pub fn font_library(&self) -> &FontLibrary {
         &self.fonts
+    }
+
+    /// Get primary font metrics at the given size.
+    #[inline]
+    pub fn font_metrics(
+        &self,
+        font_id: usize,
+        size: f32,
+    ) -> Option<crate::font_introspector::Metrics> {
+        let (ascent, descent, leading) =
+            self.fonts.inner.write().get_font_metrics(&font_id, size)?;
+        Some(crate::font_introspector::Metrics {
+            ascent,
+            descent,
+            leading,
+            ..Default::default()
+        })
+    }
+
+    /// Get the scaled font size for the currently selected content state.
+    #[inline]
+    pub fn scaled_font_size(&self) -> f32 {
+        if let Some(selector) = self.selector {
+            if let Some(state) = self.states.get(&selector) {
+                if let Some(text) = state.as_text() {
+                    return text.scaled_font_size;
+                }
+            }
+        }
+        0.0
     }
 
     #[inline]
@@ -891,6 +1005,46 @@ impl Content {
             }
         }
         self
+    }
+
+    /// Push a pre-built RunData directly to a line's render_data,
+    /// bypassing the fragment/shaping pipeline. Used by the terminal
+    /// renderer which shapes runs inline during cell iteration.
+    #[inline]
+    pub fn push_run_on_line(
+        &mut self,
+        line_idx: usize,
+        run: crate::layout::glyph::RunData,
+    ) {
+        if let Some(selector) = self.selector {
+            if let Some(text_state) = self.get_state_mut(&selector) {
+                text_state.mark_line_dirty(line_idx);
+                if let Some(line) = text_state.lines.get_mut(line_idx) {
+                    line.render_data.runs.push(run);
+                }
+            }
+        }
+    }
+
+    /// Push an empty run (advance only, no glyphs) directly to a line.
+    #[inline]
+    pub fn push_empty_run_on_line(
+        &mut self,
+        line_idx: usize,
+        style: SpanStyle,
+        size: f32,
+        line_number: u32,
+        metrics: &crate::font_introspector::Metrics,
+    ) {
+        if let Some(selector) = self.selector {
+            if let Some(text_state) = self.get_state_mut(&selector) {
+                text_state.mark_line_dirty(line_idx);
+                if let Some(line) = text_state.lines.get_mut(line_idx) {
+                    line.render_data
+                        .push_empty_run(style, size, line_number, metrics);
+                }
+            }
+        }
     }
 
     /// Adds a text fragment to the paragraph.
@@ -1445,11 +1599,25 @@ impl ShapingCache {
         debug!("ShapingCache cleared");
     }
 
-    /// Compute a position-independent cache key from content and font_id.
+    /// Compute a position-independent cache key from content string and font_id.
     #[inline]
     pub fn cache_key(content: &str, font_id: usize) -> u64 {
         let mut hasher = rustc_hash::FxHasher::default();
         content.hash(&mut hasher);
+        font_id.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Compute a position-independent cache key from individual codepoints.
+    /// Hashes each codepoint with its relative position in the run, making
+    /// identical text at different screen positions share the same key.
+    #[inline]
+    pub fn cache_key_from_chars(chars: &[char], font_id: usize) -> u64 {
+        let mut hasher = rustc_hash::FxHasher::default();
+        for (i, &cp) in chars.iter().enumerate() {
+            (cp as u32).hash(&mut hasher);
+            (i as u16).hash(&mut hasher);
+        }
         font_id.hash(&mut hasher);
         hasher.finish()
     }

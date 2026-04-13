@@ -87,7 +87,7 @@ impl RenderData {
 
 impl RenderData {
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn push_run(
+    pub fn push_run(
         &mut self,
         style: SpanStyle,
         size: f32,
@@ -161,7 +161,7 @@ impl RenderData {
 
     /// Push a pre-packed cached run — no repacking, no hashing.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn push_cached_run(
+    pub fn push_cached_run(
         &mut self,
         style: SpanStyle,
         size: f32,
@@ -194,7 +194,7 @@ impl RenderData {
     }
 
     #[cfg(test)]
-    pub(super) fn push_run_without_shaper(
+    pub fn push_run_without_shaper(
         &mut self,
         style: SpanStyle,
         size: f32,
@@ -260,7 +260,7 @@ impl RenderData {
 
     /// Push an empty run that advances position without any glyphs.
     /// Used for unwritten cells ('\0') that need to occupy space.
-    pub(super) fn push_empty_run(
+    pub fn push_empty_run(
         &mut self,
         style: SpanStyle,
         size: f32,

@@ -596,20 +596,21 @@ impl Renderer {
             }
         }
 
-        // Second pass: render the line using the resolved styles.
-        // Grab the content builder now — pass 1 only touched the
-        // sugarloaf font cache, so we can take a fresh `&mut Content`
-        // here without conflict.
+        // Second pass: build runs directly from cells — no fragment
+        // layer. Group consecutive same-style cells into runs, shape
+        // each run inline (checking the shaping cache first), and push
+        // RunData directly to the line's render_data.
         let builder = sugarloaf.content();
-        // Track consecutive blank cells ('\0' and ' ') to batch into a single rect
+        let scaled_font_size = builder.scaled_font_size();
+        let default_metrics = builder
+            .font_metrics(0, scaled_font_size)
+            .unwrap_or_default();
+
+        // Track consecutive blank cells to batch into a single empty run
         let mut pending_blank_width: f32 = 0.0;
         let mut pending_blank_style = SpanStyle::default();
 
         for (style, square_content, column) in styles_and_chars {
-            // Cells carrying a graphic (sixel/iTerm2/Kitty) must go
-            // through the normal text path so the renderer paints
-            // their image. They are NOT blank — even when their
-            // character slot is `'\0'` or `' '`.
             let has_media = style.media.is_some();
             let is_blank =
                 (square_content == '\0' || square_content == ' ') && !has_media;
@@ -625,33 +626,48 @@ impl Renderer {
                 let mut rect_style = pending_blank_style;
                 rect_style.width = pending_blank_width;
                 if let Some(line) = line_opt {
-                    builder.add_span_as_rect_on_line(line, rect_style);
-                } else {
-                    builder.add_span_as_rect(rect_style);
+                    builder.push_empty_run_on_line(
+                        line,
+                        rect_style,
+                        scaled_font_size,
+                        line as u32,
+                        &default_metrics,
+                    );
                 }
                 pending_blank_width = 0.0;
             }
 
-            // Handle drawable characters
             if style.drawable_char.is_some() {
+                // Flush text run before drawable char
                 if !content.is_empty() {
                     if let Some(line) = line_opt {
-                        builder.add_span_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_span(&content, last_style);
+                        if let Some(run) = builder.shape_run(
+                            &content,
+                            last_style,
+                            last_style.font_id,
+                            scaled_font_size,
+                            line as u32,
+                        ) {
+                            builder.push_run_on_line(line, run);
+                        }
                     }
                     content.clear();
                 }
-
                 last_style = style;
-                content.push(' '); // Ignore font shaping
+                content.push(' ');
             } else if is_blank {
-                // Accumulate into pending blank run
+                // Flush text run before blanks
                 if !content.is_empty() {
                     if let Some(line) = line_opt {
-                        builder.add_span_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_span(&content, last_style);
+                        if let Some(run) = builder.shape_run(
+                            &content,
+                            last_style,
+                            last_style.font_id,
+                            scaled_font_size,
+                            line as u32,
+                        ) {
+                            builder.push_run_on_line(line, run);
+                        }
                     }
                     content.clear();
                 }
@@ -661,26 +677,27 @@ impl Renderer {
                 pending_blank_width += 1.0;
                 last_style = style;
             } else {
-                // Break runs when styles differ in ways that affect shaping
-                // or when background color changes (for search highlights, etc.)
+                // Break runs when styles differ
                 if !styles_are_compatible_for_shaping(&last_style, &style)
                     || last_style.background_color != style.background_color
                 {
                     if !content.is_empty() {
                         if let Some(line) = line_opt {
-                            builder.add_span_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_span(&content, last_style);
+                            if let Some(run) = builder.shape_run(
+                                &content,
+                                last_style,
+                                last_style.font_id,
+                                scaled_font_size,
+                                line as u32,
+                            ) {
+                                builder.push_run_on_line(line, run);
+                            }
                         }
                         content.clear();
                     }
-
                     last_style = style;
                 }
 
-                // A '\0' cell with a graphic still needs a glyph to
-                // anchor the image draw. Substitute a space so the
-                // shaper produces a real run.
                 let push_char = if has_media && square_content == '\0' {
                     ' '
                 } else {
@@ -689,34 +706,41 @@ impl Renderer {
                 content.push(push_char);
             }
 
-            // Render last column and break row
+            // Last column: flush everything
             if column == (columns - 1) {
                 if !content.is_empty() {
                     if let Some(line) = line_opt {
-                        builder.add_span_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_span(&content, last_style);
+                        if let Some(run) = builder.shape_run(
+                            &content,
+                            last_style,
+                            last_style.font_id,
+                            scaled_font_size,
+                            line as u32,
+                        ) {
+                            builder.push_run_on_line(line, run);
+                        }
                     }
                 }
-
-                // Flush any remaining pending blank cells
                 if pending_blank_width > 0.0 {
                     let mut rect_style = pending_blank_style;
                     rect_style.width = pending_blank_width;
                     if let Some(line) = line_opt {
-                        builder.add_span_as_rect_on_line(line, rect_style);
-                    } else {
-                        builder.add_span_as_rect(rect_style);
+                        builder.push_empty_run_on_line(
+                            line,
+                            rect_style,
+                            scaled_font_size,
+                            line as u32,
+                            &default_metrics,
+                        );
                     }
                 }
-
                 break;
             }
         }
 
-        if let Some(line) = line_opt {
-            builder.build_line(line);
-        } else {
+        // For the full-damage path (line_opt = None), advance to the
+        // next line in the content model so each row gets its own line.
+        if line_opt.is_none() {
             builder.new_line();
         }
 
