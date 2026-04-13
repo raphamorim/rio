@@ -1079,6 +1079,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             route.window.screen.select_current_based_on_mouse();
 
                             if route.window.screen.trigger_hyperlink() {
+                                route.window.screen.clear_highlighted_hint();
+                                route.request_redraw();
                                 return;
                             }
 
