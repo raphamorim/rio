@@ -55,8 +55,6 @@ pub struct PlatformWindow {
     pub decorations: Option<window::Decorations>,
     #[serde(default = "Option::default", rename = "macos-use-unified-titlebar")]
     pub macos_use_unified_titlebar: Option<bool>,
-    #[serde(default = "Option::default", rename = "macos-use-quit-dialog")]
-    pub macos_use_quit_dialog: Option<bool>,
     #[serde(default = "Option::default", rename = "macos-use-shadow")]
     pub macos_use_shadow: Option<bool>,
     #[serde(default = "Option::default", rename = "macos-traffic-light-position-x")]
@@ -76,6 +74,10 @@ pub struct PlatformWindow {
     pub windows_corner_preference: Option<window::WindowsCornerPreference>,
     #[serde(default = "Option::default")]
     pub colorspace: Option<window::Colorspace>,
+    #[serde(default = "Option::default")]
+    pub columns: Option<u16>,
+    #[serde(default = "Option::default")]
+    pub rows: Option<u16>,
 }
 
 /// Platform-specific navigation config with optional fields for selective override

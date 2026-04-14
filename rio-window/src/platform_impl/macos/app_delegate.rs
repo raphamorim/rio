@@ -58,7 +58,6 @@ pub(super) struct State {
     activation_policy: Policy,
     default_menu: bool,
     set_confirm_before_quit: Cell<bool>,
-    use_native_quit_dialog: Cell<bool>,
     activate_ignoring_other_apps: bool,
     event_handler: EventHandler,
     stop_on_launch: Cell<bool>,
@@ -102,14 +101,6 @@ declare_class!(
         fn should_terminate(&self, _sender: Option<&AnyObject>) -> u64 {
             if !self.ivars().set_confirm_before_quit.get() {
                 return NSApplicationTerminateReply::Now as u64;
-            }
-
-            // When the native quit dialog is disabled, cancel the OS
-            // termination and dispatch CloseRequested to each window so the
-            // app can show its own in-window confirm dialog.
-            if !self.ivars().use_native_quit_dialog.get() {
-                self.handle_close_requested();
-                return NSApplicationTerminateReply::Cancel as u64;
             }
 
             use objc::runtime::Object;
@@ -446,29 +437,8 @@ impl ApplicationDelegate {
         self.ivars().event_handler.set(handler, closure)
     }
 
-    /// Place the event handler in the application delegate for the duration
-    /// of the given closure.
     pub fn set_confirm_before_quit(&self, confirmation: bool) {
         self.ivars().set_confirm_before_quit.set(confirmation)
-    }
-
-    pub fn set_use_native_quit_dialog(&self, native: bool) {
-        self.ivars().use_native_quit_dialog.set(native)
-    }
-
-    /// Send CloseRequested to all windows so the app can show its own
-    /// in-window confirm dialog instead of the native macOS one.
-    fn handle_close_requested(&self) {
-        let mtm = MainThreadMarker::from(self);
-        let app = NSApplication::sharedApplication(mtm);
-        let windows = app.windows();
-        for i in 0..windows.len() {
-            let window = &windows[i];
-            let window_id = WindowId(window as *const _ as usize);
-            self.queue_window_event(window_id, WindowEvent::CloseRequested);
-        }
-        // Wake the event loop so queued events are processed.
-        self.ivars().waker.borrow_mut().start();
     }
 
     /// If `pump_events` is called to progress the event loop then we

@@ -53,13 +53,16 @@ pub enum RendererType {
 
 pub struct WgpuRenderer {
     vertex_buffer: wgpu::Buffer,
+    instance_buffer: wgpu::Buffer,
     constant_bind_group: wgpu::BindGroup,
     layout_bind_group: wgpu::BindGroup,
     layout_bind_group_layout: wgpu::BindGroupLayout,
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
+    instanced_pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
     supported_vertex_buffer: usize,
+    supported_instance_buffer: usize,
     // Image pipeline (separate from text)
     image_pipeline: wgpu::RenderPipeline,
     image_bind_group_layout: wgpu::BindGroupLayout,
@@ -81,10 +84,13 @@ struct Globals {
 #[derive(Debug)]
 pub struct MetalRenderer {
     pipeline_state: RenderPipelineState,
+    instanced_pipeline_state: RenderPipelineState,
     vertex_buffer: Buffer,
+    instance_buffer: Buffer,
     uniform_buffer: Buffer,
     sampler: SamplerState,
     supported_vertex_buffer: usize,
+    supported_instance_buffer: usize,
     current_transform: [f32; 16],
     // Image pipeline (separate from text)
     image_pipeline_state: RenderPipelineState,
@@ -115,19 +121,16 @@ impl MetalRenderer {
             .expect("Failed to get fragment function");
 
         // Create vertex descriptor for rich text rendering
-        // Vertex layout (116 bytes total):
+        // Vertex layout (88 bytes total):
         // - pos: [f32; 3] = 12 bytes (offset 0)
         // - color: [f32; 4] = 16 bytes (offset 12)
         // - uv: [f32; 2] = 8 bytes (offset 28)
         // - layers: [i32; 2] = 8 bytes (offset 36)
         // - corner_radii: [f32; 4] = 16 bytes (offset 44)
         // - rect_size: [f32; 2] = 8 bytes (offset 60)
-        // - border_widths: [f32; 4] = 16 bytes (offset 68)
-        // - border_color: [f32; 4] = 16 bytes (offset 84)
-        // - border_style: i32 = 4 bytes (offset 100)
-        // - underline_style: i32 = 4 bytes (offset 104)
-        // - _padding: [i32; 2] = 8 bytes (offset 108)
-        // Total: 116 bytes
+        // - underline_style: i32 = 4 bytes (offset 68)
+        // - clip_rect: [f32; 4] = 16 bytes (offset 72)
+        // Total: 88 bytes
         let vertex_descriptor = VertexDescriptor::new();
         let attributes = vertex_descriptor.attributes();
 
@@ -179,45 +182,21 @@ impl MetalRenderer {
         attributes.object_at(5).unwrap().set_offset(60);
         attributes.object_at(5).unwrap().set_buffer_index(0);
 
-        // Border widths (attribute 6) - vec4<f32>
+        // Underline style (attribute 6) - i32
         attributes
             .object_at(6)
             .unwrap()
-            .set_format(MTLVertexFormat::Float4);
+            .set_format(MTLVertexFormat::Int);
         attributes.object_at(6).unwrap().set_offset(68);
         attributes.object_at(6).unwrap().set_buffer_index(0);
 
-        // Border color (attribute 7) - vec4<f32>
+        // Clip rect (attribute 7) - vec4<f32>
         attributes
             .object_at(7)
             .unwrap()
             .set_format(MTLVertexFormat::Float4);
-        attributes.object_at(7).unwrap().set_offset(84);
+        attributes.object_at(7).unwrap().set_offset(72);
         attributes.object_at(7).unwrap().set_buffer_index(0);
-
-        // Border style (attribute 8) - i32
-        attributes
-            .object_at(8)
-            .unwrap()
-            .set_format(MTLVertexFormat::Int);
-        attributes.object_at(8).unwrap().set_offset(100);
-        attributes.object_at(8).unwrap().set_buffer_index(0);
-
-        // Underline style (attribute 9) - i32
-        attributes
-            .object_at(9)
-            .unwrap()
-            .set_format(MTLVertexFormat::Int);
-        attributes.object_at(9).unwrap().set_offset(104);
-        attributes.object_at(9).unwrap().set_buffer_index(0);
-
-        // Clip rect (attribute 10) - vec4<f32>
-        attributes
-            .object_at(10)
-            .unwrap()
-            .set_format(MTLVertexFormat::Float4);
-        attributes.object_at(10).unwrap().set_offset(108);
-        attributes.object_at(10).unwrap().set_buffer_index(0);
 
         // Set up buffer layout
         let layouts = vertex_descriptor.layouts();
@@ -260,12 +239,48 @@ impl MetalRenderer {
             .new_render_pipeline_state(&pipeline_descriptor)
             .expect("Failed to create render pipeline state");
 
-        // Create vertex buffer
+        // Instanced pipeline (vs_instanced + fs_main, no vertex descriptor)
+        let instanced_vertex_fn = library
+            .get_function("vs_instanced", None)
+            .expect("Failed to get instanced vertex function");
+        let instanced_pipeline_descriptor = RenderPipelineDescriptor::new();
+        instanced_pipeline_descriptor.set_vertex_function(Some(&instanced_vertex_fn));
+        instanced_pipeline_descriptor.set_fragment_function(Some(&fragment_function));
+        // No vertex descriptor — instance data read from buffer(0) directly
+
+        let inst_color = instanced_pipeline_descriptor
+            .color_attachments()
+            .object_at(0)
+            .unwrap();
+        inst_color.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+        inst_color.set_blending_enabled(true);
+        inst_color.set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
+        inst_color.set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        inst_color.set_rgb_blend_operation(MTLBlendOperation::Add);
+        inst_color.set_source_alpha_blend_factor(MTLBlendFactor::One);
+        inst_color
+            .set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        inst_color.set_alpha_blend_operation(MTLBlendOperation::Add);
+
+        let instanced_pipeline_state = context
+            .device
+            .new_render_pipeline_state(&instanced_pipeline_descriptor)
+            .expect("Failed to create instanced pipeline state");
+
+        // Create vertex buffer (for lines/triangles/arcs — rare)
         let vertex_buffer = context.device.new_buffer(
             (mem::size_of::<Vertex>() * supported_vertex_buffer) as u64,
             MTLResourceOptions::StorageModeShared,
         );
         vertex_buffer.set_label("sugarloaf::rich_text vertex buffer");
+
+        // Create instance buffer (for quads — the hot path)
+        let supported_instance_buffer = 20_000usize;
+        let instance_buffer = context.device.new_buffer(
+            (mem::size_of::<batch::QuadInstance>() * supported_instance_buffer) as u64,
+            MTLResourceOptions::StorageModeShared,
+        );
+        instance_buffer.set_label("sugarloaf::rich_text instance buffer");
 
         // Create uniform buffer
         let uniform_buffer = context.device.new_buffer(
@@ -378,9 +393,12 @@ impl MetalRenderer {
 
         Self {
             pipeline_state,
+            instanced_pipeline_state,
             vertex_buffer,
+            instance_buffer,
             sampler,
             supported_vertex_buffer,
+            supported_instance_buffer,
             current_transform: [0.0; 16],
             uniform_buffer,
             image_pipeline_state,
@@ -402,83 +420,92 @@ impl MetalRenderer {
 
     pub fn render(
         &mut self,
+        instances: &[batch::QuadInstance],
         vertices: &[Vertex],
+        draw_cmds: &[batch::DrawCmd],
         images: &ImageCache,
         render_encoder: &RenderCommandEncoderRef,
         context: &MetalContext,
     ) {
-        if vertices.is_empty() {
+        if instances.is_empty() && vertices.is_empty() {
             return;
         }
 
-        // Expand vertex buffer if needed
-        if vertices.len() > self.supported_vertex_buffer {
-            self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
-
-            // Recreate vertex buffer with larger size
-            self.vertex_buffer = context.device.new_buffer(
-                (mem::size_of::<Vertex>() * self.supported_vertex_buffer) as u64,
-                MTLResourceOptions::StorageModeShared,
-            );
-            self.vertex_buffer
-                .set_label("sugarloaf::rich_text vertex buffer (resized)");
+        // Upload instance buffer
+        if !instances.is_empty() {
+            if instances.len() > self.supported_instance_buffer {
+                self.supported_instance_buffer = (instances.len() as f32 * 1.25) as usize;
+                self.instance_buffer = context.device.new_buffer(
+                    (mem::size_of::<batch::QuadInstance>()
+                        * self.supported_instance_buffer) as u64,
+                    MTLResourceOptions::StorageModeShared,
+                );
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    instances.as_ptr(),
+                    self.instance_buffer.contents() as *mut batch::QuadInstance,
+                    instances.len(),
+                );
+            }
         }
 
-        // Copy vertex data to buffer
-        let vertex_data = self.vertex_buffer.contents() as *mut Vertex;
-        unsafe {
-            std::ptr::copy_nonoverlapping(vertices.as_ptr(), vertex_data, vertices.len());
+        // Upload vertex buffer (lines/triangles/arcs — rare)
+        if !vertices.is_empty() {
+            if vertices.len() > self.supported_vertex_buffer {
+                self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
+                self.vertex_buffer = context.device.new_buffer(
+                    (mem::size_of::<Vertex>() * self.supported_vertex_buffer) as u64,
+                    MTLResourceOptions::StorageModeShared,
+                );
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    vertices.as_ptr(),
+                    self.vertex_buffer.contents() as *mut Vertex,
+                    vertices.len(),
+                );
+            }
         }
 
-        // Set up render state
-        render_encoder.set_render_pipeline_state(&self.pipeline_state);
-        render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
-
+        // Update transform
         let transform = orthographic_projection(context.size.width, context.size.height);
         if self.current_transform != transform {
             let globals = Globals { transform };
-            let uniform_data = self.uniform_buffer.contents() as *mut Globals;
             unsafe {
-                *uniform_data = globals;
+                *(self.uniform_buffer.contents() as *mut Globals) = globals;
             }
             self.current_transform = transform;
         }
 
-        render_encoder.set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
-
-        // Set sampler
         render_encoder.set_fragment_sampler_state(0, Some(&self.sampler));
 
-        // Implement proper batching by atlas to avoid lifetime issues
         let color_textures = images.get_metal_textures();
         let mask_texture = images.get_mask_texture();
 
-        // Group vertices by their texture binding requirements
-        // layers[0] = color_layer (0 = no color texture, 1+ = color atlas index)
-        // layers[1] = mask_layer (0 = no mask texture, 1 = mask atlas)
+        let mut current_pipeline_instanced = false;
+        // Start with neither pipeline set — force first bind
+        let mut pipeline_set = false;
 
-        let mut current_vertex = 0usize;
-        while current_vertex < vertices.len() {
-            let start = current_vertex;
-            let current_color_layer = vertices[start].layers[0];
-            let current_mask_layer = vertices[start].layers[1];
+        for cmd in draw_cmds {
+            let (color_layer, mask_layer) = match cmd {
+                batch::DrawCmd::Instanced {
+                    color_layer,
+                    mask_layer,
+                    ..
+                } => (*color_layer, *mask_layer),
+                batch::DrawCmd::Vertices {
+                    color_layer,
+                    mask_layer,
+                    ..
+                } => (*color_layer, *mask_layer),
+            };
 
-            // Find the end of this batch (consecutive vertices with same layers)
-            let mut end = start;
-            while end < vertices.len()
-                && vertices[end].layers[0] == current_color_layer
-                && vertices[end].layers[1] == current_mask_layer
-            {
-                end += 1;
-            }
-
-            // Bind appropriate textures for this batch
-            if current_color_layer > 0 {
-                // Use color atlas (current_color_layer is 1-based, so subtract 1 for 0-based index)
-                let atlas_index = (current_color_layer - 1) as usize;
-                if atlas_index < color_textures.len() {
-                    render_encoder
-                        .set_fragment_texture(0, Some(color_textures[atlas_index]));
+            // Bind textures
+            if color_layer > 0 {
+                let idx = (color_layer - 1) as usize;
+                if idx < color_textures.len() {
+                    render_encoder.set_fragment_texture(0, Some(color_textures[idx]));
                 } else {
                     render_encoder.set_fragment_texture(0, None);
                 }
@@ -486,7 +513,7 @@ impl MetalRenderer {
                 render_encoder.set_fragment_texture(0, None);
             }
 
-            if current_mask_layer > 0 {
+            if mask_layer > 0 {
                 if let Some(mask_tex) = mask_texture {
                     render_encoder.set_fragment_texture(1, Some(mask_tex));
                 } else {
@@ -496,14 +523,52 @@ impl MetalRenderer {
                 render_encoder.set_fragment_texture(1, None);
             }
 
-            // Draw this batch
-            render_encoder.draw_primitives(
-                MTLPrimitiveType::Triangle,
-                start as u64,
-                (end - start) as u64,
-            );
-
-            current_vertex = end;
+            match cmd {
+                batch::DrawCmd::Instanced { offset, count, .. } => {
+                    if !pipeline_set || !current_pipeline_instanced {
+                        render_encoder
+                            .set_render_pipeline_state(&self.instanced_pipeline_state);
+                        render_encoder.set_vertex_buffer(
+                            1,
+                            Some(&self.uniform_buffer),
+                            0,
+                        );
+                        current_pipeline_instanced = true;
+                        pipeline_set = true;
+                    }
+                    let byte_offset =
+                        *offset as u64 * mem::size_of::<batch::QuadInstance>() as u64;
+                    render_encoder.set_vertex_buffer(
+                        0,
+                        Some(&self.instance_buffer),
+                        byte_offset,
+                    );
+                    render_encoder.draw_primitives_instanced(
+                        MTLPrimitiveType::TriangleStrip,
+                        0,
+                        4, // 4 vertices per quad (triangle strip)
+                        *count as u64,
+                    );
+                }
+                batch::DrawCmd::Vertices { offset, count, .. } => {
+                    if !pipeline_set || current_pipeline_instanced {
+                        render_encoder.set_render_pipeline_state(&self.pipeline_state);
+                        render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
+                        render_encoder.set_vertex_buffer(
+                            1,
+                            Some(&self.uniform_buffer),
+                            0,
+                        );
+                        current_pipeline_instanced = false;
+                        pipeline_set = true;
+                    }
+                    render_encoder.draw_primitives(
+                        MTLPrimitiveType::Triangle,
+                        *offset as u64,
+                        *count as u64,
+                    );
+                }
+            }
         }
     }
 }
@@ -575,7 +640,9 @@ pub struct BackgroundImagePixels {
 pub struct Renderer {
     brush_type: RendererType,
     comp: Compositor,
+    instances: Vec<batch::QuadInstance>,
     vertices: Vec<Vertex>,
+    draw_cmds: Vec<batch::DrawCmd>,
     images: ImageCache,
     glyphs: GlyphCache,
     text_run_manager: TextRunManager,
@@ -695,7 +762,9 @@ impl Renderer {
         Self {
             brush_type,
             comp: Compositor::new(),
+            instances: vec![],
             vertices: vec![],
+            draw_cmds: vec![],
             images: ImageCache::new(context),
             glyphs: GlyphCache::new(),
             text_run_manager: TextRunManager::new(),
@@ -731,8 +800,9 @@ impl Renderer {
             crate::sugarloaf::graphics::GraphicDataEntry,
         >,
     ) {
-        // Always clear vertices first
+        self.instances.clear();
         self.vertices.clear();
+        self.draw_cmds.clear();
 
         let library = state.content.font_library();
         // Iterate over all content states and render visible ones
@@ -959,9 +1029,25 @@ impl Renderer {
                 upload_background_image_texture(context, &pixels);
         }
 
+        self.instances.clear();
         self.vertices.clear();
+        self.draw_cmds.clear();
         self.images.process_atlases(context);
-        self.comp.finish(&mut self.vertices);
+        self.comp
+            .finish(&mut self.instances, &mut self.vertices, &mut self.draw_cmds);
+
+        // Useful for debug occasionally
+        // let inst_bytes =
+        //     self.instances.len() * std::mem::size_of::<batch::QuadInstance>();
+        // let vert_bytes = self.vertices.len() * std::mem::size_of::<Vertex>();
+        // println!(
+        //     "gpu upload: {} instances ({:.2} MB) + {} verts ({:.2} MB) = {:.2} MB",
+        //     self.instances.len(),
+        //     inst_bytes as f64 / (1024.0 * 1024.0),
+        //     self.vertices.len(),
+        //     vert_bytes as f64 / (1024.0 * 1024.0),
+        //     (inst_bytes + vert_bytes) as f64 / (1024.0 * 1024.0),
+        // );
     }
 
     #[inline]
@@ -1907,7 +1993,7 @@ impl Renderer {
         );
     }
 
-    /// Add a quad with per-corner radii and per-edge border widths
+    /// Add a quad with per-corner radii
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn quad(
@@ -1918,9 +2004,6 @@ impl Renderer {
         height: f32,
         background_color: [f32; 4],
         corner_radii: [f32; 4],
-        border_widths: [f32; 4],
-        border_color: [f32; 4],
-        border_style: i32,
         depth: f32,
         order: u8,
     ) {
@@ -1934,9 +2017,6 @@ impl Renderer {
             depth,
             &background_color,
             corner_radii,
-            border_widths,
-            border_color,
-            border_style,
             order,
         );
     }
@@ -2045,7 +2125,9 @@ impl Renderer {
         let Self {
             brush_type,
             images,
+            instances,
             vertices,
+            draw_cmds,
             image_draws,
             image_textures,
             background_image_texture,
@@ -2059,7 +2141,7 @@ impl Renderer {
 
             let has_images = !image_draws.is_empty();
             let has_background = background_image_texture.is_some();
-            if (color_views.is_empty() || vertices.is_empty())
+            if (color_views.is_empty() || (instances.is_empty() && vertices.is_empty()))
                 && !has_images
                 && !has_background
             {
@@ -2165,42 +2247,111 @@ impl Renderer {
                 rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
             }
 
-            // Text pipeline: batching by atlas
-            let mut current_vertex = 0usize;
-            while current_vertex < vertices.len() {
-                let start = current_vertex;
-                let current_color_layer = vertices[start].layers[0];
-                let current_mask_layer = vertices[start].layers[1];
-
-                // Find the end of this batch (consecutive vertices with same layers)
-                let mut end = start;
-                while end < vertices.len()
-                    && vertices[end].layers[0] == current_color_layer
-                    && vertices[end].layers[1] == current_mask_layer
-                {
-                    end += 1;
+            // Upload buffers once
+            if !instances.is_empty() {
+                if instances.len() > brush.supported_instance_buffer {
+                    brush.instance_buffer.destroy();
+                    brush.supported_instance_buffer =
+                        (instances.len() as f32 * 1.25) as usize;
+                    brush.instance_buffer =
+                        ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                            label: Some("rich_text::Instance Buffer (resized)"),
+                            size: mem::size_of::<batch::QuadInstance>() as u64
+                                * brush.supported_instance_buffer as u64,
+                            usage: wgpu::BufferUsages::VERTEX
+                                | wgpu::BufferUsages::COPY_DST,
+                            mapped_at_creation: false,
+                        });
                 }
+                ctx.queue.write_buffer(
+                    &brush.instance_buffer,
+                    0,
+                    bytemuck::cast_slice(instances),
+                );
+            }
+            if !vertices.is_empty() {
+                if vertices.len() > brush.supported_vertex_buffer {
+                    brush.vertex_buffer.destroy();
+                    brush.supported_vertex_buffer =
+                        (vertices.len() as f32 * 1.25) as usize;
+                    brush.vertex_buffer =
+                        ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                            label: Some("rich_text::Vertices Buffer (resized)"),
+                            size: mem::size_of::<Vertex>() as u64
+                                * brush.supported_vertex_buffer as u64,
+                            usage: wgpu::BufferUsages::VERTEX
+                                | wgpu::BufferUsages::COPY_DST,
+                            mapped_at_creation: false,
+                        });
+                }
+                ctx.queue.write_buffer(
+                    &brush.vertex_buffer,
+                    0,
+                    bytemuck::cast_slice(vertices),
+                );
+            }
 
-                // Bind appropriate textures for this batch
-                let color_view = if current_color_layer > 0 {
-                    let atlas_index = (current_color_layer - 1) as usize;
-                    color_views.get(atlas_index).unwrap_or(&color_views[0])
+            // Text pipeline: dispatch draw commands
+            let mut current_pipeline_instanced = false;
+            let mut pipeline_set = false;
+
+            for cmd in draw_cmds {
+                let (color_layer, mask_layer) = match cmd {
+                    batch::DrawCmd::Instanced {
+                        color_layer,
+                        mask_layer,
+                        ..
+                    } => (*color_layer, *mask_layer),
+                    batch::DrawCmd::Vertices {
+                        color_layer,
+                        mask_layer,
+                        ..
+                    } => (*color_layer, *mask_layer),
+                };
+
+                // Bind textures for this batch
+                let color_view = if color_layer > 0 {
+                    let idx = (color_layer - 1) as usize;
+                    color_views.get(idx).unwrap_or(&color_views[0])
                 } else {
                     &color_views[0]
                 };
-
-                let final_mask_view = if current_mask_layer > 0 {
+                let final_mask_view = if mask_layer > 0 {
                     mask_texture_view.unwrap_or(color_views[0])
                 } else {
                     color_views[0]
                 };
-
                 brush.update_bind_group(ctx, color_view, final_mask_view);
 
-                // Draw this batch
-                brush.render_range(ctx, vertices, rpass, start..end);
-
-                current_vertex = end;
+                match cmd {
+                    batch::DrawCmd::Instanced { offset, count, .. } => {
+                        if !pipeline_set || !current_pipeline_instanced {
+                            rpass.set_pipeline(&brush.instanced_pipeline);
+                            rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
+                            current_pipeline_instanced = true;
+                            pipeline_set = true;
+                        }
+                        rpass.set_bind_group(1, &brush.layout_bind_group, &[]);
+                        let byte_offset =
+                            *offset as u64 * mem::size_of::<batch::QuadInstance>() as u64;
+                        rpass.set_vertex_buffer(
+                            0,
+                            brush.instance_buffer.slice(byte_offset..),
+                        );
+                        rpass.draw(0..4, 0..*count);
+                    }
+                    batch::DrawCmd::Vertices { offset, count, .. } => {
+                        if !pipeline_set || current_pipeline_instanced {
+                            rpass.set_pipeline(&brush.pipeline);
+                            rpass.set_bind_group(0, &brush.constant_bind_group, &[]);
+                            rpass.set_vertex_buffer(0, brush.vertex_buffer.slice(..));
+                            current_pipeline_instanced = false;
+                            pipeline_set = true;
+                        }
+                        rpass.set_bind_group(1, &brush.layout_bind_group, &[]);
+                        rpass.draw(*offset..*offset + *count, 0..1);
+                    }
+                }
             }
 
             if has_images && image_draws.iter().any(|d| d.layer == ImageLayer::AboveText)
@@ -2281,7 +2432,14 @@ impl Renderer {
             }
 
             // Text pipeline
-            brush.render(&self.vertices, &self.images, render_encoder, context);
+            brush.render(
+                &self.instances,
+                &self.vertices,
+                &self.draw_cmds,
+                &self.images,
+                render_encoder,
+                context,
+            );
 
             // AboveText images (z >= 0): after text
             if has_images {
@@ -2560,11 +2718,8 @@ impl WgpuRenderer {
                                 3 => Sint32x2,   // layers
                                 4 => Float32x4,  // corner_radii
                                 5 => Float32x2,  // rect_size
-                                6 => Float32x4,  // border_widths
-                                7 => Float32x4,  // border_color
-                                8 => Sint32,     // border_style
-                                9 => Sint32,     // underline_style
-                                10 => Float32x4, // clip_rect
+                                6 => Sint32,     // underline_style
+                                7 => Float32x4,  // clip_rect
                             ),
                         }],
                     },
@@ -2592,9 +2747,69 @@ impl WgpuRenderer {
                     multiview_mask: None,
                 });
 
+        // Instanced pipeline (vs_instanced + fs_main, instance step mode)
+        let instanced_pipeline =
+            context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    cache: None,
+                    label: Some("rich_text::instanced pipeline"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &shader,
+                        entry_point: Some("vs_instanced"),
+                        buffers: &[wgpu::VertexBufferLayout {
+                            array_stride: mem::size_of::<batch::QuadInstance>() as u64,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &wgpu::vertex_attr_array!(
+                                0 => Float32x3,  // pos
+                                1 => Float32x4,  // color
+                                2 => Float32x4,  // uv_rect
+                                3 => Sint32x2,   // layers
+                                4 => Float32x2,  // size
+                                5 => Float32x4,  // corner_radii
+                                6 => Sint32,     // underline_style
+                                7 => Float32x4,  // clip_rect
+                            ),
+                        }],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &shader,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: context.format,
+                            blend: BLEND,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleStrip,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: None,
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        unclipped_depth: false,
+                        conservative: false,
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                });
+
         let vertex_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rich_text::Vertices Buffer"),
             size: mem::size_of::<Vertex>() as u64 * supported_vertex_buffer as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let supported_instance_buffer = 20_000usize;
+        let instance_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rich_text::Instance Buffer"),
+            size: mem::size_of::<batch::QuadInstance>() as u64
+                * supported_instance_buffer as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -2719,8 +2934,11 @@ impl WgpuRenderer {
             constant_bind_group,
             transform,
             pipeline,
+            instanced_pipeline,
             vertex_buffer,
+            instance_buffer,
             supported_vertex_buffer,
+            supported_instance_buffer,
             current_transform,
             image_pipeline,
             image_bind_group_layout,
@@ -2733,45 +2951,56 @@ impl WgpuRenderer {
     pub fn render<'pass>(
         &'pass mut self,
         ctx: &mut WgpuContext,
+        instances: &[batch::QuadInstance],
         vertices: &[Vertex],
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
-        // let start = std::time::Instant::now();
-        // There's nothing to render
-        if vertices.is_empty() {
+        if instances.is_empty() && vertices.is_empty() {
             return;
         }
 
         let queue = &mut ctx.queue;
 
-        if vertices.len() > self.supported_vertex_buffer {
-            self.vertex_buffer.destroy();
-
-            // Allocate 25% more buffer space to reduce frequent reallocations
-            self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
-            self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("sugarloaf::rich_text::Pipeline vertices"),
-                size: mem::size_of::<Vertex>() as u64
-                    * self.supported_vertex_buffer as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+        // Upload instance buffer
+        if !instances.is_empty() {
+            if instances.len() > self.supported_instance_buffer {
+                self.instance_buffer.destroy();
+                self.supported_instance_buffer = (instances.len() as f32 * 1.25) as usize;
+                self.instance_buffer =
+                    ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("rich_text::Instance Buffer (resized)"),
+                        size: mem::size_of::<batch::QuadInstance>() as u64
+                            * self.supported_instance_buffer as u64,
+                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+            }
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
         }
 
-        let vertices_bytes: &[u8] = bytemuck::cast_slice(vertices);
-        if !vertices_bytes.is_empty() {
-            queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
+        // Upload vertex buffer
+        if !vertices.is_empty() {
+            if vertices.len() > self.supported_vertex_buffer {
+                self.vertex_buffer.destroy();
+                self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
+                self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("rich_text::Vertices Buffer (resized)"),
+                    size: mem::size_of::<Vertex>() as u64
+                        * self.supported_vertex_buffer as u64,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+            }
+            queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(vertices));
         }
 
-        rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.constant_bind_group, &[]);
         rpass.set_bind_group(1, &self.layout_bind_group, &[]);
+        rpass.set_pipeline(&self.pipeline);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
         let vertex_count = vertices.len() as u32;
         rpass.draw(0..vertex_count, 0..1);
-        // let duration = start.elapsed();
-        // println!("Time elapsed in rich_text::render is: {:?}", duration);
     }
 
     #[inline]

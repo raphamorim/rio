@@ -200,6 +200,7 @@ impl Screen<'_> {
             panel: config.panel,
             title: config.title.clone(),
             keyboard: config.keyboard,
+            scrollback_history_limit: config.scrollback_history_limit,
         };
 
         // Create rich text with initial position accounting for island
@@ -312,14 +313,16 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn select_current_based_on_mouse(&mut self) {
+    pub fn select_current_based_on_mouse(&mut self) -> bool {
         if self
             .context_manager
             .current_grid_mut()
             .select_current_based_on_mouse(&self.mouse)
         {
             self.context_manager.select_route_from_current_grid();
+            return true;
         }
+        false
     }
 
     #[inline]
@@ -1898,63 +1901,62 @@ impl Screen<'_> {
             return None;
         }
 
-        let cell = &grid[point.row][point.col];
-        if let Some(hyperlink) = cell.hyperlink() {
-            // Find the extent of this hyperlink
-            let mut start_col = point.col;
-            let mut end_col = point.col;
+        // Look up the cell's hyperlink via the per-grid extras table.
+        // Cells in the same OSC 8 span share an `extras_id`, so we
+        // walk left/right comparing ids (cheap u16 compare) to find
+        // the span boundaries, then look up the URI once.
+        let id = terminal.cell_hyperlink_id(point.row, point.col)?;
 
-            // Scan backward to find start
-            while start_col > rio_backend::crosswords::pos::Column(0) {
-                let prev_col = start_col - 1;
-                let prev_cell = &grid[point.row][prev_col];
-                if prev_cell.hyperlink().as_ref() == Some(&hyperlink) {
-                    start_col = prev_col;
-                } else {
-                    break;
-                }
+        let mut start_col = point.col;
+        let mut end_col = point.col;
+
+        while start_col > rio_backend::crosswords::pos::Column(0) {
+            let prev_col = start_col - 1;
+            if terminal.cell_hyperlink_id(point.row, prev_col) == Some(id) {
+                start_col = prev_col;
+            } else {
+                break;
             }
-
-            // Scan forward to find end
-            while end_col < grid.columns() - 1 {
-                let next_col = end_col + 1;
-                let next_cell = &grid[point.row][next_col];
-                if next_cell.hyperlink().as_ref() == Some(&hyperlink) {
-                    end_col = next_col;
-                } else {
-                    break;
-                }
+        }
+        while end_col < grid.columns() - 1 {
+            let next_col = end_col + 1;
+            if terminal.cell_hyperlink_id(point.row, next_col) == Some(id) {
+                end_col = next_col;
+            } else {
+                break;
             }
-
-            // Create a dummy hint config for hyperlinks
-            let hint_config = std::rc::Rc::new(rio_backend::config::hints::Hint {
-                regex: None,
-                hyperlinks: true,
-                post_processing: true,
-                persist: false,
-                action: rio_backend::config::hints::HintAction::Command {
-                    command: rio_backend::config::hints::HintCommand::Simple(
-                        "xdg-open".to_string(),
-                    ),
-                },
-                mouse: rio_backend::config::hints::HintMouse::default(),
-                binding: None,
-            });
-
-            let mut uri = hyperlink.uri().to_string();
-            if hint_config.post_processing {
-                uri = post_process_hyperlink_uri(&uri);
-            }
-
-            return Some(crate::hints::HintMatch {
-                text: uri,
-                start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
-                end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
-                hint: hint_config,
-            });
         }
 
-        None
+        let hyperlink = terminal.cell_hyperlink(point.row, point.col)?;
+
+        // Build a synthetic hint config so the rest of the hint
+        // pipeline (highlighting, click action) treats this just like
+        // a regex/url match.
+        let hint_config = std::rc::Rc::new(rio_backend::config::hints::Hint {
+            regex: None,
+            hyperlinks: true,
+            post_processing: true,
+            persist: false,
+            action: rio_backend::config::hints::HintAction::Command {
+                command: rio_backend::config::hints::HintCommand::Simple(
+                    "xdg-open".to_string(),
+                ),
+            },
+            mouse: rio_backend::config::hints::HintMouse::default(),
+            binding: None,
+        });
+
+        let mut uri = hyperlink.uri().to_string();
+        if hint_config.post_processing {
+            uri = post_process_hyperlink_uri(&uri);
+        }
+
+        Some(crate::hints::HintMatch {
+            text: uri,
+            start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
+            end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
+            hint: hint_config,
+        })
     }
 
     /// Find regex match at the specified point
@@ -1976,7 +1978,7 @@ impl Screen<'_> {
         let mut line_text = String::new();
         for col in 0..grid.columns() {
             let cell = &grid[point.row][rio_backend::crosswords::pos::Column(col)];
-            line_text.push(cell.c);
+            line_text.push(cell.c());
         }
         let line_text = line_text.trim_end();
 
@@ -2010,7 +2012,7 @@ impl Screen<'_> {
                     for col in processed_start.0..=processed_end.0 {
                         let cell =
                             &grid[point.row][rio_backend::crosswords::pos::Column(col)];
-                        processed_text.push(cell.c);
+                        processed_text.push(cell.c());
                     }
                     match_text = processed_text.trim_end().to_string();
                 }
@@ -2047,15 +2049,16 @@ impl Screen<'_> {
             return false;
         }
 
+        // Look up the cell under the mouse and dispatch open_hyperlink
+        // if it carries an OSC 8 link.
         let terminal = self.context_manager.current().terminal.lock();
         let display_offset = terminal.display_offset();
         let pos = self.mouse_position(display_offset);
-        let pos_hyperlink = terminal.grid[pos].hyperlink();
+        let pos_hyperlink = terminal.cell_hyperlink(pos.row, pos.col);
         drop(terminal);
 
         if let Some(hyperlink) = pos_hyperlink {
             self.open_hyperlink(hyperlink);
-
             return true;
         }
 
@@ -3708,7 +3711,7 @@ impl Screen<'_> {
         // First pass: handle uneven brackets/parentheses
         while current_pos <= end_pos {
             if let Some(indexed) = iter.next() {
-                let c = indexed.square.c;
+                let c = indexed.square.c();
                 current_pos = indexed.pos;
 
                 match c {
@@ -3753,7 +3756,7 @@ impl Screen<'_> {
 
         while final_end > start_pos {
             if let Some(indexed) = iter.next() {
-                let c = indexed.square.c;
+                let c = indexed.square.c();
                 if !matches!(c, '.' | ',' | ':' | ';' | '?' | '!' | '(' | '[' | '\'') {
                     break;
                 }

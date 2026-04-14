@@ -13,11 +13,12 @@ use rio_backend::event::TerminalDamage;
 use taffy::NodeId;
 
 use crate::ansi::CursorShape;
-use crate::context::renderable::{Cursor, RenderableContent};
+use crate::context::renderable::{Cursor, PendingUpdate, RenderableContent};
 use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
-use crate::crosswords::square::{Flags, Square};
+use crate::crosswords::square::{Square, Wide};
+use crate::crosswords::style::{Style as CellStyle, StyleFlags, StyleSet};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
@@ -106,7 +107,7 @@ fn pua_constraint_width(row: &Row<Square>, col: usize, cols: usize) -> f32 {
     // If previous cell is also a PUA glyph (but not a graphics element
     // like powerline), constrain to 1 so consecutive icons align properly.
     if col > 0 {
-        let prev = row.inner[col - 1].c;
+        let prev = row.inner[col - 1].c();
         if is_private_user_area(&prev) && !is_powerline(prev) {
             return 1.0;
         }
@@ -114,7 +115,7 @@ fn pua_constraint_width(row: &Row<Square>, col: usize, cols: usize) -> f32 {
 
     // If next cell is empty, space, or wide char spacer, expand to 2 cells.
     let next = &row.inner[col + 1];
-    if next.c == '\0' || next.c == ' ' || next.flags.contains(Flags::WIDE_CHAR_SPACER) {
+    if next.c() == '\0' || next.c() == ' ' || matches!(next.wide(), Wide::Spacer) {
         return 2.0;
     }
 
@@ -190,23 +191,24 @@ impl Renderer {
     fn create_style(
         &mut self,
         square: &Square,
+        cell_style: &CellStyle,
         term_colors: &TermColors,
     ) -> (SpanStyle, char) {
-        let flags = square.flags;
+        let flags = cell_style.flags;
 
-        let mut foreground_color = self.compute_color(&square.fg, flags, term_colors);
-        let mut background_color = self.compute_bg_color(square, term_colors);
+        let mut foreground_color = self.compute_color(&cell_style.fg, flags, term_colors);
+        let mut background_color = self.compute_bg_color(cell_style, term_colors);
 
-        let content = if square.c == '\t' || flags.contains(Flags::HIDDEN) {
+        let content = if square.c() == '\t' || flags.contains(StyleFlags::HIDDEN) {
             ' '
         } else {
-            square.c
+            square.c()
         };
 
         let font_attrs = match (
-            flags.contains(Flags::ITALIC),
-            flags.contains(Flags::BOLD_ITALIC),
-            flags.contains(Flags::BOLD),
+            flags.contains(StyleFlags::ITALIC),
+            flags.contains(StyleFlags::ITALIC) && flags.contains(StyleFlags::BOLD),
+            flags.contains(StyleFlags::BOLD),
         ) {
             (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
             (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
@@ -214,7 +216,7 @@ impl Renderer {
             _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
         };
 
-        if flags.contains(Flags::INVERSE) {
+        if flags.contains(StyleFlags::INVERSE) {
             std::mem::swap(&mut background_color, &mut foreground_color);
         }
 
@@ -228,7 +230,8 @@ impl Renderer {
             Some(background_color)
         };
 
-        let (decoration, decoration_color) = self.compute_decoration(square, term_colors);
+        let (decoration, decoration_color) =
+            self.compute_decoration(cell_style, term_colors);
 
         (
             SpanStyle {
@@ -246,35 +249,35 @@ impl Renderer {
     #[inline]
     fn compute_decoration(
         &self,
-        square: &Square,
+        cell_style: &CellStyle,
         term_colors: &TermColors,
     ) -> (Option<SpanStyleDecoration>, Option<[f32; 4]>) {
         let mut decoration = None;
         let mut decoration_color = None;
 
-        if square.flags.contains(Flags::UNDERLINE) {
+        if cell_style.flags.contains(StyleFlags::UNDERLINE) {
             decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Regular,
             }));
-        } else if square.flags.contains(Flags::STRIKEOUT) {
+        } else if cell_style.flags.contains(StyleFlags::STRIKEOUT) {
             decoration = Some(SpanStyleDecoration::Strikethrough);
-        } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
+        } else if cell_style.flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
             decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: true,
                 shape: UnderlineShape::Regular,
             }));
-        } else if square.flags.contains(Flags::DOTTED_UNDERLINE) {
+        } else if cell_style.flags.contains(StyleFlags::DOTTED_UNDERLINE) {
             decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Dotted,
             }));
-        } else if square.flags.contains(Flags::DASHED_UNDERLINE) {
+        } else if cell_style.flags.contains(StyleFlags::DASHED_UNDERLINE) {
             decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Dashed,
             }));
-        } else if square.flags.contains(Flags::UNDERCURL) {
+        } else if cell_style.flags.contains(StyleFlags::UNDERCURL) {
             decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Curly,
@@ -282,9 +285,9 @@ impl Renderer {
         }
 
         if decoration.is_some() {
-            if let Some(color) = square.underline_color() {
+            if let Some(color) = cell_style.underline_color {
                 decoration_color =
-                    Some(self.compute_color(&color, square.flags, term_colors));
+                    Some(self.compute_color(&color, cell_style.flags, term_colors));
             }
         };
 
@@ -306,6 +309,8 @@ impl Renderer {
         &mut self,
         sugarloaf: &mut Sugarloaf,
         row: &Row<Square>,
+        style_set: &StyleSet,
+        extras_table: &rio_backend::crosswords::grid::ExtrasTable,
         has_cursor: bool,
         line_opt: Option<usize>,
         line: Line,
@@ -326,19 +331,83 @@ impl Renderer {
         let mut font_lookups = Vec::new();
         let mut styles_and_chars = Vec::with_capacity(columns);
 
+        // Cache the looked-up cell style across consecutive cells with the
+        // same `style_id` — this is the common case (most rows have long
+        // runs of identically-styled cells), and avoids the StyleSet lookup
+        // per cell. Bg-only cells (Ghostty's `bg_color_palette`/`bg_color_rgb`
+        // trick) skip the lookup entirely; we synthesize a Style with the
+        // inline bg and reuse the same cache slot.
+        let mut cached_style_id: Option<crate::crosswords::style::StyleId> = None;
+        let mut cached_style: CellStyle = CellStyle::default();
+        // Bg-only cells don't have a style id; track them by a tag instead
+        // so the cache invalidates correctly when transitioning between
+        // bg-only and codepoint cells.
+        let mut cached_bg_only: u64 = u64::MAX;
+
         // First pass: collect all styles and identify font cache misses
         for column in 0..columns {
             let square = &row.inner[column];
 
-            if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
+            if matches!(square.wide(), Wide::Spacer) {
                 continue;
             }
 
+            // Resolve the cell style. For bg-only cells we synthesize a
+            // Style with the inline bg and skip the StyleSet entirely.
+            // For codepoint cells we cache the looked-up style across runs
+            // of identical style_ids.
+            use crate::crosswords::square::ContentTag;
+            match square.content_tag() {
+                ContentTag::BgPalette => {
+                    let idx = square.bg_palette_index();
+                    let key = 0x0100_0000 | idx as u64;
+                    if cached_bg_only != key {
+                        cached_style = CellStyle {
+                            bg: AnsiColor::Indexed(idx),
+                            ..CellStyle::default()
+                        };
+                        cached_bg_only = key;
+                        cached_style_id = None;
+                    }
+                }
+                ContentTag::BgRgb => {
+                    let (r, g, b) = square.bg_rgb();
+                    let key =
+                        0x0200_0000 | ((r as u64) << 16) | ((g as u64) << 8) | b as u64;
+                    if cached_bg_only != key {
+                        cached_style =
+                            CellStyle {
+                                bg: AnsiColor::Spec(
+                                    rio_backend::config::colors::ColorRgb { r, g, b },
+                                ),
+                                ..CellStyle::default()
+                            };
+                        cached_bg_only = key;
+                        cached_style_id = None;
+                    }
+                }
+                ContentTag::Codepoint => {
+                    let sid = square.style_id();
+                    if Some(sid) != cached_style_id {
+                        cached_style = style_set.get(sid);
+                        cached_style_id = Some(sid);
+                        cached_bg_only = u64::MAX;
+                    }
+                }
+            }
+            let cell_style = &cached_style;
+
             let (mut style, mut square_content) =
                 if has_cursor && column == cursor.state.pos.col {
-                    self.create_cursor_style(square, cursor, is_active, term_colors)
+                    self.create_cursor_style(
+                        square,
+                        cell_style,
+                        cursor,
+                        is_active,
+                        term_colors,
+                    )
                 } else {
-                    self.create_style(square, term_colors)
+                    self.create_style(square, cell_style, term_colors)
                 };
 
             // Check selection before any early returns so '\0' cells get highlights
@@ -346,7 +415,7 @@ impl Renderer {
                 let pos = Pos::new(line, Column(column));
                 if range.contains(pos) {
                     style.color = if self.ignore_selection_fg_color {
-                        self.compute_color(&square.fg, square.flags, term_colors)
+                        self.compute_color(&cell_style.fg, cell_style.flags, term_colors)
                     } else {
                         self.named_colors.selection_foreground
                     };
@@ -355,21 +424,30 @@ impl Renderer {
             }
 
             if square_content == '\0' {
-                // Still check for graphics (sixel cells are '\0' with GRAPHICS flag)
-                if square.flags.contains(Flags::GRAPHICS) {
-                    let graphic = &square.graphics().unwrap()[0];
-                    style.media = Some(Graphic {
-                        id: graphic.texture.id,
-                        offset_x: graphic.offset_x,
-                        offset_y: graphic.offset_y,
-                    });
+                if square.has_graphics() {
+                    if let Some(eid) = square.extras_id() {
+                        if let Some(gc) = extras_table
+                            .get(eid)
+                            .and_then(|e| e.graphic.as_ref())
+                            .and_then(|g| g.first())
+                        {
+                            style.media = Some(Graphic {
+                                id: gc.texture.id,
+                                offset_x: gc.offset_x,
+                                offset_y: gc.offset_y,
+                            });
+                        }
+                    }
                 }
                 styles_and_chars.push((style, square_content, column));
                 continue;
             }
 
-            // Apply underline for hyperlinks (OSC 8) or highlighted hints (hover)
-            let should_underline = square.hyperlink().is_some() || {
+            // Apply underline for hyperlinks (OSC 8) or highlighted hints (hover).
+            // Hyperlinks are temporarily disabled in cells (the extras side
+            // table doesn't carry them yet) — only the hint highlight path
+            // applies during the cell repack.
+            let should_underline = {
                 if let Some(highlighted_hint) = &renderable_content.highlighted_hint {
                     let current_pos = Pos::new(line, Column(column));
                     highlighted_hint.start <= current_pos
@@ -450,13 +528,20 @@ impl Renderer {
                 square_content = ' ';
             }
 
-            if square.flags.contains(Flags::GRAPHICS) {
-                let graphic = &square.graphics().unwrap()[0];
-                style.media = Some(Graphic {
-                    id: graphic.texture.id,
-                    offset_x: graphic.offset_x,
-                    offset_y: graphic.offset_y,
-                });
+            if square.has_graphics() {
+                if let Some(eid) = square.extras_id() {
+                    if let Some(gc) = extras_table
+                        .get(eid)
+                        .and_then(|e| e.graphic.as_ref())
+                        .and_then(|g| g.first())
+                    {
+                        style.media = Some(Graphic {
+                            id: gc.texture.id,
+                            offset_x: gc.offset_x,
+                            offset_y: gc.offset_y,
+                        });
+                    }
+                }
             }
 
             // Handle drawable characters
@@ -646,28 +731,27 @@ impl Renderer {
     fn compute_color(
         &self,
         color: &AnsiColor,
-        flags: Flags,
+        flags: StyleFlags,
         term_colors: &TermColors,
     ) -> ColorArray {
+        let dim = flags.contains(StyleFlags::DIM);
+        let bold = flags.contains(StyleFlags::BOLD);
         match color {
             AnsiColor::Named(ansi) => {
-                match (
-                    self.draw_bold_text_with_light_colors,
-                    flags & Flags::DIM_BOLD,
-                ) {
+                match (self.draw_bold_text_with_light_colors, dim, bold) {
                     // If no bright foreground is set, treat it like the BOLD flag doesn't exist.
-                    (_, Flags::DIM_BOLD)
+                    (_, true, true)
                         if ansi == &NamedColor::Foreground
                             && self.named_colors.light_foreground.is_none() =>
                     {
                         self.color(NamedColor::DimForeground as usize, term_colors)
                     }
                     // Draw bold text in bright colors *and* contains bold flag.
-                    (true, Flags::BOLD) => {
+                    (true, false, true) => {
                         self.color(ansi.to_light() as usize, term_colors)
                     }
                     // Cell is marked as dim and not bold.
-                    (_, Flags::DIM) | (false, Flags::DIM_BOLD) => {
+                    (_, true, false) | (false, true, true) => {
                         self.color(ansi.to_dim() as usize, term_colors)
                     }
                     // None of the above, keep original color..
@@ -675,18 +759,16 @@ impl Renderer {
                 }
             }
             AnsiColor::Spec(rgb) => {
-                if !flags.contains(Flags::DIM) {
+                if !dim {
                     rgb.to_arr()
                 } else {
                     rgb.to_arr_with_dim()
                 }
             }
             AnsiColor::Indexed(index) => {
-                let index = match (flags & Flags::DIM_BOLD, index) {
-                    (Flags::DIM, 8..=15) => *index as usize - 8,
-                    (Flags::DIM, 0..=7) => {
-                        NamedColor::DimBlack as usize + *index as usize
-                    }
+                let index = match (dim, index) {
+                    (true, 8..=15) => *index as usize - 8,
+                    (true, 0..=7) => NamedColor::DimBlack as usize + *index as usize,
                     _ => *index as usize,
                 };
 
@@ -696,22 +778,27 @@ impl Renderer {
     }
 
     #[inline]
-    fn compute_bg_color(&self, square: &Square, term_colors: &TermColors) -> ColorArray {
-        match square.bg {
+    fn compute_bg_color(
+        &self,
+        cell_style: &CellStyle,
+        term_colors: &TermColors,
+    ) -> ColorArray {
+        let dim = cell_style.flags.contains(StyleFlags::DIM);
+        let bold = cell_style.flags.contains(StyleFlags::BOLD);
+        match cell_style.bg {
             AnsiColor::Named(ansi) => self.color(ansi as usize, term_colors),
-            AnsiColor::Spec(rgb) => match square.flags & Flags::DIM {
-                Flags::DIM => (&(rgb * DIM_FACTOR)).into(),
-                _ => (&rgb).into(),
-            },
+            AnsiColor::Spec(rgb) => {
+                if dim {
+                    (&(rgb * DIM_FACTOR)).into()
+                } else {
+                    (&rgb).into()
+                }
+            }
             AnsiColor::Indexed(idx) => {
-                let idx = match (
-                    self.draw_bold_text_with_light_colors,
-                    square.flags & Flags::DIM_BOLD,
-                    idx,
-                ) {
-                    (true, Flags::BOLD, 0..=7) => idx as usize + 8,
-                    (false, Flags::DIM, 8..=15) => idx as usize - 8,
-                    (false, Flags::DIM, 0..=7) => {
+                let idx = match (self.draw_bold_text_with_light_colors, dim, bold, idx) {
+                    (true, false, true, 0..=7) => idx as usize + 8,
+                    (false, true, false, 8..=15) => idx as usize - 8,
+                    (false, true, false, 0..=7) => {
                         NamedColor::DimBlack as usize + idx as usize
                     }
                     _ => idx as usize,
@@ -726,14 +813,16 @@ impl Renderer {
     fn create_cursor_style(
         &self,
         square: &Square,
+        cell_style: &CellStyle,
         cursor: &Cursor,
         is_active: bool,
         term_colors: &TermColors,
     ) -> (SpanStyle, char) {
+        let flags = cell_style.flags;
         let font_attrs = match (
-            square.flags.contains(Flags::ITALIC),
-            square.flags.contains(Flags::BOLD_ITALIC),
-            square.flags.contains(Flags::BOLD),
+            flags.contains(StyleFlags::ITALIC),
+            flags.contains(StyleFlags::ITALIC) && flags.contains(StyleFlags::BOLD),
+            flags.contains(StyleFlags::BOLD),
         ) {
             (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
             (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
@@ -741,18 +830,18 @@ impl Renderer {
             _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
         };
 
-        let mut color = self.compute_color(&square.fg, square.flags, term_colors);
-        let mut background_color = self.compute_bg_color(square, term_colors);
+        let mut color = self.compute_color(&cell_style.fg, flags, term_colors);
+        let mut background_color = self.compute_bg_color(cell_style, term_colors);
         // If IME is enabled we get the current content to cursor
         let content = if cursor.is_ime_enabled {
             cursor.content
-        } else if square.c == '\0' {
+        } else if square.c() == '\0' {
             ' '
         } else {
-            square.c
+            square.c()
         };
 
-        if square.flags.contains(Flags::INVERSE) {
+        if flags.contains(StyleFlags::INVERSE) {
             std::mem::swap(&mut background_color, &mut color);
         }
 
@@ -796,7 +885,8 @@ impl Renderer {
             self.named_colors.vi_cursor
         };
 
-        let (decoration, decoration_color) = self.compute_decoration(square, term_colors);
+        let (decoration, decoration_color) =
+            self.compute_decoration(cell_style, term_colors);
         style.decoration = decoration;
         style.decoration_color = decoration_color;
 
@@ -911,41 +1001,49 @@ impl Renderer {
                 continue;
             }
 
-            // Get damages before resetting
-            let pending_terminal_damage = context
+            // UI-side damage (scroll, selection, resize, etc.)
+            let ui_terminal_damage = context
                 .renderable_content
                 .pending_update
                 .take_terminal_damage();
             let _ui_damage = context.renderable_content.pending_update.take_ui_damage();
             context.renderable_content.pending_update.reset();
 
-            // Compute snapshot at render time
+            // Compute snapshot at render time — extract PTY-side damage from the
+            // terminal, merge with any UI-side damage, and clear the in-flight
+            // flag so the PTY thread can send a new notification.
             let terminal_snapshot = {
                 let mut terminal = context.terminal.lock();
 
-                // Resolve damage: prefer damage from TerminalDamaged event (avoids
-                // re-computing inside lock), fall back to peeking terminal state
+                // Clear in-flight flag so PTY thread can notify again
+                terminal.damage_event_in_flight = false;
+
+                let pty_damage = terminal.peek_damage_event();
+
                 let damage = if force_full_damage {
                     TerminalDamage::Full
-                } else if let Some(damage) = pending_terminal_damage {
-                    // Damage already extracted by PTY thread — use directly
-                    damage
                 } else {
-                    // No event damage (e.g. scroll, selection) — check terminal
-                    match terminal.peek_damage_event() {
-                        Some(d) => d,
-                        None => {
+                    match (ui_terminal_damage, pty_damage) {
+                        (Some(ui), Some(pty)) => {
+                            PendingUpdate::merge_terminal_damages(ui, pty)
+                        }
+                        (Some(d), None) | (None, Some(d)) => d,
+                        (None, None) => {
                             drop(terminal);
                             continue;
                         }
                     }
                 };
 
+                terminal.reset_damage();
+
                 let snapshot = TerminalSnapshot {
                     colors: terminal.colors,
                     display_offset: terminal.display_offset(),
                     blinking_cursor: terminal.blinking_cursor,
                     visible_rows: terminal.visible_rows(),
+                    style_set: terminal.grid.style_set.clone(),
+                    extras_table: terminal.grid.extras_table.clone(),
                     cursor: terminal.cursor(),
                     damage,
                     columns: terminal.columns(),
@@ -972,7 +1070,6 @@ impl Renderer {
                     kitty_graphics_dirty: terminal.graphics.kitty_graphics_dirty,
                 };
                 terminal.graphics.kitty_graphics_dirty = false;
-                terminal.reset_damage();
                 drop(terminal);
 
                 snapshot
@@ -1121,6 +1218,8 @@ impl Renderer {
                         self.create_line(
                             sugarloaf,
                             row,
+                            &terminal_snapshot.style_set,
+                            &terminal_snapshot.extras_table,
                             has_cursor,
                             None,
                             Line((i as i32) - terminal_snapshot.display_offset as i32),
@@ -1147,6 +1246,8 @@ impl Renderer {
                             self.create_line(
                                 sugarloaf,
                                 visible_row,
+                                &terminal_snapshot.style_set,
+                                &terminal_snapshot.extras_table,
                                 has_cursor,
                                 Some(line),
                                 Line(
@@ -1194,7 +1295,7 @@ impl Renderer {
                 let y = (panel_rect[1] + grid_scaled_margin.top) / scale_factor;
                 let w = panel_rect[2] / scale_factor;
                 let h = panel_rect[3] / scale_factor;
-                sugarloaf.rect(None, x, y, w, h, dim_color, -0.05, 3);
+                sugarloaf.rect(None, x, y, w, h, dim_color, 0.0, 3);
             }
         }
 
@@ -1250,21 +1351,14 @@ impl Renderer {
                     let width = quad.width / scale_factor;
                     let height = quad.height / scale_factor;
 
-                    // Scale corner radii and border widths
                     let corner_radii = [
                         quad.corner_radii.top_left / scale_factor,
                         quad.corner_radii.top_right / scale_factor,
                         quad.corner_radii.bottom_right / scale_factor,
                         quad.corner_radii.bottom_left / scale_factor,
                     ];
-                    let border_widths = [
-                        quad.border_widths.top / scale_factor,
-                        quad.border_widths.right / scale_factor,
-                        quad.border_widths.bottom / scale_factor,
-                        quad.border_widths.left / scale_factor,
-                    ];
 
-                    // Render quad with rounded corners and borders
+                    // Render quad with rounded corners
                     sugarloaf.quad(
                         None,
                         x,
@@ -1273,11 +1367,8 @@ impl Renderer {
                         height,
                         quad.background_color,
                         corner_radii,
-                        border_widths,
-                        quad.border_color,
-                        quad.border_style as i32,
-                        -0.1, // Negative depth = closer to camera (in front)
-                        1,    // Higher order renders on top
+                        0.0,
+                        1, // Higher order renders on top
                     );
                 }
                 rio_backend::sugarloaf::Object::Rect(rect) => {
@@ -1287,7 +1378,7 @@ impl Renderer {
                     let width = rect.width / scale_factor;
                     let height = rect.height / scale_factor;
 
-                    sugarloaf.rect(None, x, y, width, height, rect.color, -0.1, 1);
+                    sugarloaf.rect(None, x, y, width, height, rect.color, 0.0, 1);
                 }
                 _ => {}
             }
@@ -1493,12 +1584,9 @@ mod tests {
     /// All written cells get a non-default fg so they are NOT is_empty().
     /// Unwritten cells (beyond chars.len()) remain default (is_empty() == true).
     fn make_row(chars: &[char], cols: usize) -> Row<Square> {
-        use rio_backend::config::colors::{AnsiColor, NamedColor};
         let mut row = Row::<Square>::new(cols);
         for (i, &ch) in chars.iter().enumerate() {
-            row[Column(i)].c = ch;
-            // Mark as written by setting non-default fg
-            row[Column(i)].fg = AnsiColor::Named(NamedColor::White);
+            row[Column(i)].set_c(ch);
         }
         row
     }

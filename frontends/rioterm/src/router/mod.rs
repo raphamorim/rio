@@ -1,7 +1,10 @@
 pub mod routes;
 mod window;
 use crate::event::EventProxy;
-use crate::router::window::{configure_window, create_window_builder};
+use crate::router::window::{
+    configure_window, create_window_builder, DEFAULT_MINIMUM_WINDOW_HEIGHT,
+    DEFAULT_MINIMUM_WINDOW_WIDTH,
+};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -9,6 +12,7 @@ use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 
+use rio_window::dpi::{PhysicalPosition, PhysicalSize};
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -653,6 +657,25 @@ impl<'a> RouteWindow<'a> {
         let screen = Screen::new(properties, config, event_proxy, font_library, open_url)
             .expect("Screen not created");
 
+        if config.window.columns.is_some() || config.window.rows.is_some() {
+            let (physical_width, physical_height) = compute_window_size_from_grid(
+                config.window.columns,
+                config.window.rows,
+                &config.panel,
+                &screen.ctx().current().dimension,
+                winit_window.inner_size(),
+            );
+            let _ = winit_window.request_inner_size(PhysicalSize {
+                width: physical_width,
+                height: physical_height,
+            });
+            if let Some(pos) =
+                centered_position(event_loop, physical_width, physical_height)
+            {
+                winit_window.set_outer_position(pos);
+            }
+        }
+
         #[cfg(target_os = "windows")]
         {
             // On windows cloak (hide) the window initially, we later reveal it after the first draw.
@@ -689,5 +712,213 @@ impl<'a> RouteWindow<'a> {
             winit_window,
             screen,
         }
+    }
+}
+
+fn centered_position(
+    event_loop: &ActiveEventLoop,
+    width: u32,
+    height: u32,
+) -> Option<PhysicalPosition<i32>> {
+    let monitor = event_loop.primary_monitor()?;
+    let monitor_size = monitor.size();
+    let monitor_pos = monitor.position();
+    let x = monitor_pos.x + (monitor_size.width as i32 - width as i32) / 2;
+    let y = monitor_pos.y + (monitor_size.height as i32 - height as i32) / 2;
+    Some(PhysicalPosition::new(x, y))
+}
+
+fn compute_window_size_from_grid(
+    columns: Option<u16>,
+    rows: Option<u16>,
+    panel: &rio_backend::config::layout::Panel,
+    dim: &crate::layout::ContextDimension,
+    window_size: PhysicalSize<u32>,
+) -> (u32, u32) {
+    let scale = dim.dimension.scale;
+    let scale_u32 = scale.round().max(1.0) as u32;
+
+    let physical_width = match columns {
+        Some(columns) if columns > 0 => {
+            let margin = (dim.margin.left + dim.margin.right) * scale;
+            let panel_edge = (panel.padding.left
+                + panel.padding.right
+                + panel.margin.left
+                + panel.margin.right)
+                * scale;
+            let raw = (columns as f32 * dim.dimension.width).ceil() as u32
+                + margin as u32
+                + panel_edge as u32;
+            raw.next_multiple_of(scale_u32)
+        }
+        _ => window_size.width,
+    };
+
+    let physical_height = match rows {
+        Some(rows) if rows > 0 => {
+            let margin = (dim.margin.top + dim.margin.bottom) * scale;
+            let panel_edge = (panel.padding.top
+                + panel.padding.bottom
+                + panel.margin.top
+                + panel.margin.bottom)
+                * scale;
+            let raw = (rows as f32 * dim.dimension.height).ceil() as u32
+                + margin as u32
+                + panel_edge as u32;
+            raw.next_multiple_of(scale_u32)
+        }
+        _ => window_size.height,
+    };
+
+    let min_w = (DEFAULT_MINIMUM_WINDOW_WIDTH as f32 * scale).ceil() as u32;
+    let min_h = (DEFAULT_MINIMUM_WINDOW_HEIGHT as f32 * scale).ceil() as u32;
+
+    (physical_width.max(min_w), physical_height.max(min_h))
+}
+
+#[cfg(test)]
+mod grid_size_tests {
+    use super::*;
+    use rio_backend::config::layout::{Margin, Panel};
+    use rio_backend::sugarloaf::layout::TextDimensions;
+
+    fn make_dim(
+        width: f32,
+        height: f32,
+        scale: f32,
+        margin: Margin,
+    ) -> crate::layout::ContextDimension {
+        crate::layout::ContextDimension {
+            dimension: TextDimensions {
+                width,
+                height,
+                scale,
+            },
+            margin,
+            ..Default::default()
+        }
+    }
+
+    fn win(w: u32, h: u32) -> PhysicalSize<u32> {
+        PhysicalSize {
+            width: w,
+            height: h,
+        }
+    }
+
+    fn panel_zero() -> Panel {
+        Panel {
+            padding: Margin::all(0.0),
+            margin: Margin::all(0.0),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn applies_only_columns_override() {
+        let dim = make_dim(10.0, 20.0, 2.0, Margin::all(0.0));
+        // 80 * 10.0 = 800, next_multiple_of(2) = 800; height stays at window size
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(80),
+                None,
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (800, 600)
+        );
+    }
+
+    #[test]
+    fn applies_only_rows_override() {
+        let dim = make_dim(10.0, 20.0, 2.0, Margin::all(0.0));
+        // 24 * 20.0 = 480, next_multiple_of(2) = 480; width stays at window size
+        assert_eq!(
+            compute_window_size_from_grid(
+                None,
+                Some(24),
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (1000, 480)
+        );
+    }
+
+    #[test]
+    fn applies_both_overrides() {
+        let dim = make_dim(10.0, 20.0, 1.0, Margin::all(0.0));
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(100),
+                Some(40),
+                &panel_zero(),
+                &dim,
+                win(500, 300)
+            ),
+            (1000, 800)
+        );
+    }
+
+    #[test]
+    fn ignores_zero_overrides_and_keeps_window_size() {
+        let dim = make_dim(10.0, 20.0, 2.0, Margin::all(0.0));
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(0),
+                Some(0),
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (1000, 600)
+        );
+    }
+
+    #[test]
+    fn rounds_up_on_hidpi() {
+        let dim = make_dim(16.41, 33.0, 2.0, Margin::all(0.0));
+        // 80 * 16.41 = 1312.8 → ceil = 1313, next_multiple_of(2) = 1314
+        // 24 * 33.0 = 792, next_multiple_of(2) = 792
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(80),
+                Some(24),
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (1314, 792)
+        );
+    }
+
+    #[test]
+    fn includes_terminal_and_panel_margins() {
+        let panel = Panel {
+            padding: Margin::new(3.0, 2.0, 4.0, 1.0),
+            margin: Margin::new(7.0, 6.0, 8.0, 5.0),
+            ..Default::default()
+        };
+        let dim = make_dim(10.0, 20.0, 1.0, Margin::new(4.0, 3.0, 5.0, 2.0));
+        assert_eq!(
+            compute_window_size_from_grid(Some(10), Some(5), &panel, &dim, win(500, 300)),
+            (300, 200)
+        );
+    }
+
+    #[test]
+    fn never_goes_under_minimum() {
+        let dim = make_dim(1.0, 1.0, 1.0, Margin::all(0.0));
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(1),
+                Some(1),
+                &panel_zero(),
+                &dim,
+                win(50, 50)
+            ),
+            (300, 200)
+        );
     }
 }

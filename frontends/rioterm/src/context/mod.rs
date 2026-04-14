@@ -132,6 +132,7 @@ pub struct ContextManagerConfig {
     pub panel: rio_backend::config::layout::Panel,
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
+    pub scrollback_history_limit: usize,
 }
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
@@ -161,6 +162,8 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         event_proxy,
         window_id,
         route_id,
+        // Dead context never sees new input — no scrollback needed.
+        0,
     );
     let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
     let (sender, _receiver) = corcovado::channel::channel();
@@ -235,6 +238,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy.clone(),
             window_id,
             route_id,
+            config.scrollback_history_limit,
         );
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
@@ -1013,6 +1017,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             panel: config.panel,
             title: config.title,
             keyboard: config.keyboard,
+            scrollback_history_limit: config.scrollback_history_limit,
         };
 
         let current = self.current();

@@ -162,6 +162,11 @@ pub struct Config {
     pub bell: Bell,
     #[serde(default = "default_bool_true", rename = "enable-scroll-bar")]
     pub enable_scroll_bar: bool,
+    #[serde(
+        default = "default_scrollback_history_limit",
+        rename = "scrollback-history-limit"
+    )]
+    pub scrollback_history_limit: usize,
     #[serde(default = "effects::Effects::default")]
     pub effects: effects::Effects,
 }
@@ -497,6 +502,12 @@ impl Config {
             if let Some(height) = window_overwrite.height {
                 self.window.height = height;
             }
+            if let Some(columns) = window_overwrite.columns {
+                self.window.columns = Some(columns);
+            }
+            if let Some(rows) = window_overwrite.rows {
+                self.window.rows = Some(rows);
+            }
             if let Some(mode) = window_overwrite.mode {
                 self.window.mode = mode;
             }
@@ -514,9 +525,6 @@ impl Config {
             }
             if let Some(macos_unified) = window_overwrite.macos_use_unified_titlebar {
                 self.window.macos_use_unified_titlebar = macos_unified;
-            }
-            if let Some(macos_quit_dialog) = window_overwrite.macos_use_quit_dialog {
-                self.window.macos_use_quit_dialog = macos_quit_dialog;
             }
             if let Some(macos_shadow) = window_overwrite.macos_use_shadow {
                 self.window.macos_use_shadow = macos_shadow;
@@ -656,6 +664,7 @@ impl Default for Config {
             hints: Hints::default(),
             bell: Bell::default(),
             enable_scroll_bar: true,
+            scrollback_history_limit: default_scrollback_history_limit(),
             effects: effects::Effects::default(),
         }
     }
@@ -1258,6 +1267,41 @@ mod tests {
         );
 
         assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
+    }
+
+    #[test]
+    fn test_scrollback_history_limit_default() {
+        let result = create_temporary_config(
+            "scrollback-default",
+            r#"
+            [window]
+            width = 800
+        "#,
+        );
+        assert_eq!(result.scrollback_history_limit, 10_000);
+    }
+
+    #[test]
+    fn test_scrollback_history_limit_custom() {
+        let result = create_temporary_config(
+            "scrollback-custom",
+            r#"
+            scrollback-history-limit = 50000
+        "#,
+        );
+        assert_eq!(result.scrollback_history_limit, 50_000);
+    }
+
+    #[test]
+    fn test_scrollback_history_limit_zero_disables() {
+        // A value of 0 disables scrollback. Must round-trip cleanly.
+        let result = create_temporary_config(
+            "scrollback-zero",
+            r#"
+            scrollback-history-limit = 0
+        "#,
+        );
+        assert_eq!(result.scrollback_history_limit, 0);
     }
 
     #[test]

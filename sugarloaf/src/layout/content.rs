@@ -36,15 +36,38 @@ pub struct CachedRun {
 
 #[derive(Debug, Clone)]
 pub struct FragmentData {
-    /// Text content to shape. None means advance position only (no shaping).
-    pub content: Option<String>,
+    /// Range `(start, end)` into the owning `BuilderLine::text_buffer`.
+    /// `None` means advance position only (no shaping).
+    pub content: Option<(u32, u32)>,
     pub style: SpanStyle,
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct BuilderLine {
     pub fragments: Vec<FragmentData>,
+    /// Shared text buffer for all fragments on this line. Each fragment
+    /// stores a `(start, end)` range into this buffer instead of owning
+    /// its own `String`, eliminating per-span heap allocations.
+    pub text_buffer: String,
     pub render_data: RenderData,
+}
+
+impl BuilderLine {
+    /// Get the text slice for a fragment.
+    #[inline]
+    pub fn fragment_text(&self, frag: &FragmentData) -> Option<&str> {
+        let (start, end) = frag.content?;
+        self.text_buffer.get(start as usize..end as usize)
+    }
+
+    /// Push text into the shared buffer and return the range.
+    #[inline]
+    pub fn push_text(&mut self, text: &str) -> (u32, u32) {
+        let start = self.text_buffer.len() as u32;
+        self.text_buffer.push_str(text);
+        let end = self.text_buffer.len() as u32;
+        (start, end)
+    }
 }
 
 #[derive(Default, Clone, Debug, PartialEq)]
@@ -125,8 +148,9 @@ impl BuilderState {
         }
         let current_line = self.current_line();
         if let Some(line) = self.lines.get_mut(current_line) {
+            let range = line.push_text(text);
             line.fragments.push(FragmentData {
-                content: Some(text.to_string()),
+                content: Some(range),
                 style,
             });
         }
@@ -145,6 +169,7 @@ impl BuilderState {
     pub fn clear_line(&mut self, line_number: usize) -> &mut Self {
         if let Some(line) = self.lines.get_mut(line_number) {
             line.fragments.clear();
+            line.text_buffer.clear();
             line.render_data.glyphs.clear();
             line.render_data.runs.clear();
             self.mark_line_dirty(line_number);
@@ -161,8 +186,9 @@ impl BuilderState {
         style: SpanStyle,
     ) -> &mut Self {
         if let Some(line) = self.lines.get_mut(line_number) {
+            let range = line.push_text(text);
             line.fragments.push(FragmentData {
-                content: Some(text.to_string()),
+                content: Some(range),
                 style,
             });
         }
@@ -759,6 +785,7 @@ impl Content {
             if let Some(text_state) = self.get_state_mut(&selector) {
                 if let Some(line) = text_state.lines.get_mut(line_to_clear) {
                     line.fragments.clear();
+                    line.text_buffer.clear();
                     line.render_data.clear();
                 }
             }
@@ -833,8 +860,9 @@ impl Content {
             if let Some(text_state) = self.get_state_mut(&selector) {
                 text_state.mark_line_dirty(line_idx);
                 if let Some(line) = text_state.lines.get_mut(line_idx) {
+                    let range = line.push_text(text);
                     line.fragments.push(FragmentData {
-                        content: Some(text.to_string()),
+                        content: Some(range),
                         style,
                     });
                 }
@@ -875,8 +903,9 @@ impl Content {
         if let Some(text_state) = self.get_state_mut(id) {
             let current_line = text_state.current_line();
             if let Some(line) = &mut text_state.lines.get_mut(current_line) {
+                let range = line.push_text(text);
                 line.fragments.push(FragmentData {
-                    content: Some(text.to_string()),
+                    content: Some(range),
                     style,
                 });
             }
@@ -950,14 +979,16 @@ impl Content {
         let line = &mut text_state.lines[line_number];
 
         for fragment_idx in 0..line.fragments.len() {
-            let item = &line.fragments[fragment_idx];
-            let font_id = item.style.font_id;
-            let font_vars = item.style.font_vars;
-            let style = item.style;
+            let font_id = line.fragments[fragment_idx].style.font_id;
+            let font_vars = line.fragments[fragment_idx].style.font_vars;
+            let style = line.fragments[fragment_idx].style;
+
+            // Resolve text range to &str from the shared buffer.
+            let content_range = line.fragments[fragment_idx].content;
 
             // None content = advance-only fragment (no shaping)
-            let content = match &item.content {
-                Some(c) => c,
+            let content = match content_range {
+                Some((start, end)) => &line.text_buffer[start as usize..end as usize],
                 None => {
                     if let Some((ascent, descent, leading)) = if font_id == 0 {
                         metrics_result
@@ -1554,16 +1585,18 @@ mod tests {
         // Simulates '\0' cells: None content means advance-only
         let mut line = BuilderLine::default();
 
+        let range_a = line.push_text("A");
         line.fragments.push(FragmentData {
-            content: Some("A".to_string()),
+            content: Some(range_a),
             style: SpanStyle::default(),
         });
         line.fragments.push(FragmentData {
             content: None, // empty span (like '\0' cell)
             style: SpanStyle::default(),
         });
+        let range_b = line.push_text("B");
         line.fragments.push(FragmentData {
-            content: Some("B".to_string()),
+            content: Some(range_b),
             style: SpanStyle::default(),
         });
 

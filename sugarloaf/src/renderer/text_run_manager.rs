@@ -132,12 +132,13 @@ pub enum CacheResult {
 
 #[cfg(test)]
 mod tests {
+    use super::super::batch::Vertex;
     use super::*;
 
     #[test]
     fn test_vertex_positioning() {
-        // Create mock vertex data for one complete vertex (116 bytes)
-        // Vertex structure: pos[3] + color[4] + uv[2] + layers[2] + corner_radii[4] + rect_size[2] + border_widths[4] + border_color[4]
+        // Create mock vertex data for one complete vertex (88 bytes)
+        // Vertex structure: pos[3] + color[4] + uv[2] + layers[2] + corner_radii[4] + rect_size[2] + underline_style + clip_rect[4]
         let mut vertices = Vec::new();
 
         // Position: (10.0, 20.0, 0.0) - 12 bytes
@@ -169,21 +170,6 @@ mod tests {
         vertices.extend_from_slice(&100.0f32.to_le_bytes());
         vertices.extend_from_slice(&50.0f32.to_le_bytes());
 
-        // Border widths: (0.0, 0.0, 0.0, 0.0) - 16 bytes
-        vertices.extend_from_slice(&0.0f32.to_le_bytes());
-        vertices.extend_from_slice(&0.0f32.to_le_bytes());
-        vertices.extend_from_slice(&0.0f32.to_le_bytes());
-        vertices.extend_from_slice(&0.0f32.to_le_bytes());
-
-        // Border color: (0.0, 0.0, 0.0, 0.0) - 16 bytes
-        vertices.extend_from_slice(&0.0f32.to_le_bytes());
-        vertices.extend_from_slice(&0.0f32.to_le_bytes());
-        vertices.extend_from_slice(&0.0f32.to_le_bytes());
-        vertices.extend_from_slice(&0.0f32.to_le_bytes());
-
-        // Border style: 0 - 4 bytes
-        vertices.extend_from_slice(&0i32.to_le_bytes());
-
         // Underline style: 0 - 4 bytes
         vertices.extend_from_slice(&0i32.to_le_bytes());
 
@@ -193,7 +179,8 @@ mod tests {
         vertices.extend_from_slice(&0.0f32.to_le_bytes());
         vertices.extend_from_slice(&0.0f32.to_le_bytes());
 
-        assert_eq!(vertices.len(), 124);
+        assert_eq!(vertices.len(), Vertex::SIZE);
+        assert_eq!(vertices.len(), 88);
 
         let mut output_vertices = Vec::new();
 
@@ -206,7 +193,7 @@ mod tests {
 
         // Expected: only position should be offset by (+50, +50)
         // So (10, 20, 0) becomes (60, 70, 0)
-        assert_eq!(output_vertices.len(), 124);
+        assert_eq!(output_vertices.len(), Vertex::SIZE);
 
         // Check adjusted position
         let x = f32::from_le_bytes([
@@ -259,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_vertex_positioning_no_offset() {
-        let vertices = vec![0u8; 124]; // Mock vertex data (124 bytes)
+        let vertices = vec![0u8; Vertex::SIZE]; // Mock vertex data
         let mut output_vertices = Vec::new();
 
         TextRunManager::apply_cached_vertices(

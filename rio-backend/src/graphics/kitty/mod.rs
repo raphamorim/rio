@@ -132,6 +132,7 @@ fn test_png_transmit_and_display() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Set proper cell dimensions
@@ -270,33 +271,28 @@ fn test_chunked_transfer() {
     let mut handler = TestHandler::default();
     let mut state = KittyGraphicsState::default();
 
-    // Total base64 for 1x1 RGBA pixel [255, 0, 0, 255] is "/wAA/w=="
-    // Split into 3 chunks: "/wA", "A/", "w=="
+    // Total base64 for 1x1 RGBA pixel [255, 0, 0, 255] is "/wAA/w==".
+    // Each chunk is decoded independently now (matching ghostty / chafa
+    // style), so each must be a valid base64 on its own — either a
+    // multiple of 4 chars per kitty spec, or an independently padded
+    // chunk. Here we use two spec-compliant chunks.
 
-    // Send first chunk (m=1 means more chunks coming). The parser
-    // returns Some(pending_chunk) so the dispatcher can distinguish
-    // an in-progress chunked transmission from a real parse failure.
+    // Chunk 1 (m=1): 4 chars → 3 decoded bytes [0xFF, 0x00, 0x00]
     let params1 = vec![
         b"G".as_ref(),
         b"a=t,f=32,s=1,v=1,m=1,i=100".as_ref(),
-        b"/wA".as_ref(),
+        b"/wAA".as_ref(),
     ];
     let result1 = kitty_graphics_protocol::parse(&params1, &mut state)
         .expect("intermediate chunks must produce a Some response");
     assert!(result1.incomplete);
     assert!(result1.graphic_data.is_none());
 
-    // Send second chunk
-    let params2 = vec![b"G".as_ref(), b"a=t,m=1,i=100".as_ref(), b"A/".as_ref()];
-    let result2 = kitty_graphics_protocol::parse(&params2, &mut state)
-        .expect("intermediate chunks must produce a Some response");
-    assert!(result2.incomplete);
-
-    // Send final chunk with complete image info (m=0 means last chunk)
+    // Chunk 2 (m=0): 4 chars with padding → 1 decoded byte [0xFF]
     let params3 = vec![
         b"G".as_ref(),
         b"a=t,f=32,s=1,v=1,m=0,i=100".as_ref(),
-        b"w==".as_ref(),
+        b"/w==".as_ref(),
     ];
     if let Some(response) = kitty_graphics_protocol::parse(&params3, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
@@ -375,6 +371,7 @@ fn test_cursor_movement_default() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     let initial_cursor_row = term.grid.cursor.pos.row.0;
@@ -449,6 +446,7 @@ fn test_cursor_movement_no_move() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Set proper cell dimensions for testing
@@ -552,6 +550,7 @@ fn test_image_row_occupation_exact_fit() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Start at row 0
@@ -621,6 +620,7 @@ fn test_image_row_occupation_single_row() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Set proper cell dimensions for testing
@@ -687,6 +687,7 @@ fn test_image_row_occupation_three_rows() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     let initial_cursor_row = term.grid.cursor.pos.row.0;
@@ -754,6 +755,7 @@ fn test_image_row_occupation_from_middle() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Move cursor to row 5
@@ -824,12 +826,14 @@ fn test_delete_all() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Delete all graphics (d=a)
     let delete = DeleteRequest {
         action: b'a',
         image_id: 0,
+        image_number: 0,
         placement_id: 0,
         x: 0,
         y: 0,
@@ -854,6 +858,7 @@ fn test_store_graphic() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     let pixels = vec![255u8, 0, 0, 255]; // 1x1 red pixel
@@ -890,6 +895,7 @@ fn test_place_nonexistent_graphic() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     let placement = kitty_graphics_protocol::PlacementRequest {
@@ -974,6 +980,7 @@ fn test_placed_textures_tracks_inserts() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     term.graphics.cell_width = 10.0;
@@ -2186,26 +2193,43 @@ fn test_delete_all_preserves_memory_limit() {
 
 #[test]
 fn test_chunked_quiet_flag_inheritance() {
-    // Test: chunked quiet flag inheritance
+    // Chunked transmission: q= on the first chunk must be preserved
+    // through the merged command, so subsequent chunks — which only
+    // carry `m=` per the kitty spec — still take the original q value.
+    //
+    // q=1 suppresses OK responses but NOT errors. We test that here by
+    // sending a correctly-sized 2x2 RGBA image across two spec-compliant
+    // chunks; the OK response must be suppressed.
     let mut state = KittyGraphicsState::default();
 
-    // First chunk with q=1 (suppress responses)
-    let params1: Vec<&[u8]> = vec![b"G", b"a=t,f=32,s=2,v=2,i=1,m=1,q=1", b"AAAA"];
-    let resp1 = kitty_graphics_protocol::parse(&params1, &mut state);
-    // First chunk of multi-part: no response yet (data incomplete)
-    // Just verify it doesn't crash
-    assert!(resp1.is_none() || resp1.as_ref().unwrap().graphic_data.is_none());
+    // 2x2 RGBA = 16 bytes. Full base64 = 24 chars with trailing padding.
+    // We'll split on a 4-char boundary into chunk1=12 chars, chunk2=12 chars.
+    use base64::engine::general_purpose::STANDARD as B64;
+    use base64::Engine as _;
+    let raw = vec![0xFFu8; 16];
+    let encoded = B64.encode(&raw);
+    assert_eq!(encoded.len() % 4, 0);
+    let (first, second) = encoded.split_at(encoded.len() / 2);
+    let (first_bytes, second_bytes) = (first.as_bytes(), second.as_bytes());
 
-    // Second chunk (final)
-    let params2: Vec<&[u8]> = vec![b"G", b"m=0", b"AAAAAAAAAAAAAAAA"];
-    let resp2 = kitty_graphics_protocol::parse(&params2, &mut state);
-    // With q=1, response should be suppressed
-    if let Some(resp) = resp2 {
-        assert!(
-            resp.response.is_none() || resp.response.as_deref() == Some(""),
-            "q=1 should suppress response"
-        );
-    }
+    let ctrl1 = "a=t,f=32,s=2,v=2,i=1,m=1,q=1";
+    let params1: Vec<&[u8]> = vec![b"G", ctrl1.as_bytes(), first_bytes];
+    let resp1 = kitty_graphics_protocol::parse(&params1, &mut state)
+        .expect("pending chunk must return Some");
+    assert!(resp1.incomplete);
+
+    let ctrl2 = "m=0,i=1";
+    let params2: Vec<&[u8]> = vec![b"G", ctrl2.as_bytes(), second_bytes];
+    let resp2 = kitty_graphics_protocol::parse(&params2, &mut state)
+        .expect("final chunk must return Some");
+    // Successful transmission + q=1 inherited from first chunk →
+    // the OK response must be suppressed.
+    assert!(resp2.graphic_data.is_some(), "image must decode");
+    assert!(
+        resp2.response.is_none(),
+        "q=1 must suppress OK response even after chunk merge: {:?}",
+        resp2.response
+    );
 }
 
 #[test]
@@ -2328,6 +2352,7 @@ fn make_test_term() -> Crosswords<TestEventListener> {
         TestEventListener,
         unsafe { WindowId::dummy() },
         0,
+        10_000,
     )
 }
 
@@ -2385,6 +2410,7 @@ fn test_delete_uppercase_a_clears_all_image_data() {
     let delete = DeleteRequest {
         action: b'a',
         image_id: 0,
+        image_number: 0,
         placement_id: 0,
         x: 0,
         y: 0,
@@ -2410,6 +2436,7 @@ fn test_delete_lowercase_a_keeps_image_data() {
     let delete = DeleteRequest {
         action: b'a',
         image_id: 0,
+        image_number: 0,
         placement_id: 0,
         x: 0,
         y: 0,
@@ -2449,7 +2476,8 @@ fn test_delete_uppercase_n_frees_image_via_number() {
     // image_id for the d=n/N case via the `i=` key per spec).
     let delete = DeleteRequest {
         action: b'n',
-        image_id: 9, // image number
+        image_id: 0,
+        image_number: 9, // canonical: I= for d=n
         placement_id: 0,
         x: 0,
         y: 0,
@@ -2478,6 +2506,7 @@ fn test_delete_uppercase_r_frees_image_range() {
     let delete = DeleteRequest {
         action: b'r',
         image_id: 0,
+        image_number: 0,
         placement_id: 0,
         x: 1, // range start
         y: 5, // range end
@@ -3002,6 +3031,7 @@ fn test_resize_widen_unwraps_command_image_follows() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3080,6 +3110,7 @@ fn test_resize_narrow_wraps_command_image_follows() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3169,7 +3200,7 @@ fn dump_grid(term: &Crosswords<TestEventListener>, label: &str) {
         let mut s = String::new();
         for c in 0..cols {
             let cell = &term.grid[line][Column(c)];
-            let ch = cell.c;
+            let ch = cell.c();
             if ch == '\0' || ch == ' ' {
                 s.push('.');
             } else {
@@ -3193,6 +3224,7 @@ fn test_debug_widen_visible_layout() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3249,6 +3281,7 @@ fn test_debug_narrow_visible_layout() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3307,6 +3340,7 @@ fn test_resize_narrow_combined_col_and_row_change() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3399,6 +3433,7 @@ fn test_resize_narrow_with_multi_row_image() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3505,6 +3540,7 @@ fn test_resize_narrow_with_cursor_at_bottom_of_screen() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3612,6 +3648,7 @@ fn test_resize_narrow_with_prompt_after_image() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;

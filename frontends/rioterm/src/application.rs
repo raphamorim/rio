@@ -65,10 +65,7 @@ impl Application<'_> {
         event_loop.listen_device_events(DeviceEvents::Never);
 
         #[cfg(target_os = "macos")]
-        {
-            event_loop.set_confirm_before_quit(config.confirm_before_quit);
-            event_loop.set_use_native_quit_dialog(config.window.macos_use_quit_dialog);
-        }
+        event_loop.set_confirm_before_quit(config.confirm_before_quit);
 
         rio_notifier::request_authorization();
 
@@ -283,7 +280,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
 
-            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }) => {
+            RioEventType::Rio(RioEvent::TerminalDamaged(route_id)) => {
                 if self.config.renderer.strategy.is_event_based() {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         if self.config.renderer.disable_unfocused_render
@@ -301,12 +298,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         if let Some(ctx_item) =
                             route.window.screen.ctx_mut().get_by_route_id(route_id)
                         {
-                            // Store damage directly — no need to lock terminal later
-                            ctx_item
-                                .val
-                                .renderable_content
-                                .pending_update
-                                .set_terminal_damage(damage);
+                            // Just mark dirty — damage will be extracted from
+                            // the terminal when the renderer locks it.
+                            ctx_item.val.renderable_content.pending_update.set_dirty();
                             route.schedule_redraw(&mut self.scheduler, route_id);
                         }
                     }
@@ -908,12 +902,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         match event {
             WindowEvent::CloseRequested => {
-                // When the macOS native quit dialog handles confirmation,
-                // the app delegate manages the lifecycle — just remove the route.
-                if cfg!(target_os = "macos")
-                    && self.config.confirm_before_quit
-                    && self.config.window.macos_use_quit_dialog
-                {
+                // On macOS, just close the window. Quit confirmation is
+                // handled by Rio's Cmd+Q keybinding (RioEvent::Exit).
+                if cfg!(target_os = "macos") {
                     self.router.routes.remove(&window_id);
                     return;
                 }
@@ -1055,10 +1046,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             }
                         }
 
-                        // Process mouse press before bindings to update the `click_state`.
-                        if !route.window.screen.modifiers.state().shift_key()
+                        // Always try panel switching first: if the click
+                        // targets a different panel, switch to it regardless
+                        // of mouse mode (e.g. neovim capturing clicks).
+                        if route.window.screen.select_current_based_on_mouse() {
+                            route.request_redraw();
+                        } else if !route.window.screen.modifiers.state().shift_key()
                             && route.window.screen.mouse_mode()
                         {
+                            // Process mouse press before bindings to update the `click_state`.
                             route.window.screen.mouse.click_state = ClickState::None;
 
                             let code = match button {
@@ -1081,9 +1077,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 &mut self.router.clipboard,
                             );
                         } else {
-                            // In case need to switch grid current
-                            route.window.screen.select_current_based_on_mouse();
-
                             if route.window.screen.trigger_hyperlink() {
                                 return;
                             }

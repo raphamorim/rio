@@ -931,6 +931,8 @@ Default is `false`
 hide-mouse-cursor-when-typing = false
 ```
 
+## navigation
+
 ## navigation.mode
 
 Rio has multiple styles of showing navigation/tabs.
@@ -1350,6 +1352,20 @@ Default is `true`.
 enable-scroll-bar = true
 ```
 
+## scrollback-history-limit
+
+Maximum number of scrollback history lines retained per panel. Scrollback lets you scroll up to inspect command output that has moved off-screen.
+
+- Raising this keeps more history available at the cost of memory proportional to the total number of cells held in the buffer.
+- Setting it to `0` disables scrollback entirely.
+- The alt-screen grid (used by full-screen TUIs like `vim`, `less`, `htop`) never keeps scrollback regardless of this value.
+
+Default is `10000`.
+
+```toml
+scrollback-history-limit = 10000
+```
+
 ## shell
 
 You can set `shell.program` to the path of your favorite shell, e.g. `/bin/fish`.
@@ -1605,6 +1621,36 @@ Example:
 height = 400
 ```
 
+## window.columns
+
+Define the initial number of columns. When set, this takes precedence over `window.width`.
+
+- Default: not set
+- Works independently from `window.rows` (you can set only columns).
+- Invalid value `0` is ignored and Rio falls back to `window.width`.
+
+Example:
+
+```toml
+[window]
+columns = 80
+```
+
+## window.rows
+
+Define the initial number of rows. When set, this takes precedence over `window.height`.
+
+- Default: not set
+- Works independently from `window.columns` (you can set only rows).
+- Invalid value `0` is ignored and Rio falls back to `window.height`.
+
+Example:
+
+```toml
+[window]
+rows = 24
+```
+
 ## window.mode
 
 Define how the window will be created
@@ -1702,15 +1748,6 @@ macos-use-unified-titlebar = false
 ```
 
 ![Demo unified titlebar](/assets/demos/demo-macos-unified-titlebar.png)
-
-## window.macos-use-quit-dialog
-
-Use the native macOS quit confirmation dialog instead of the in-window dialog. Disabled by default. Only takes effect when `confirm-before-quit` is enabled.
-
-```toml
-[window]
-macos-use-quit-dialog = false
-```
 
 ## window.macos-use-shadow
 

@@ -605,7 +605,7 @@ impl Island {
             bg_width,
             PICKER_HEIGHT,
             [0.15, 0.15, 0.15, 1.0],
-            1.0,
+            0.0,
             4.0,
             10,
         );
@@ -628,7 +628,7 @@ impl Island {
                     PICKER_SWATCH_SIZE + border * 2.0,
                     PICKER_SWATCH_SIZE + border * 2.0,
                     [1.0, 1.0, 1.0, 1.0],
-                    1.05,
+                    0.0,
                     4.0,
                     10,
                 );
@@ -641,7 +641,7 @@ impl Island {
                 PICKER_SWATCH_SIZE,
                 PICKER_SWATCH_SIZE,
                 *color,
-                1.1,
+                0.0,
                 3.0,
                 10,
             );
@@ -660,7 +660,7 @@ impl Island {
             input_width,
             PICKER_INPUT_HEIGHT,
             [0.10, 0.10, 0.10, 1.0],
-            1.1,
+            0.0,
             3.0,
             10,
         );
@@ -773,7 +773,7 @@ impl Island {
                     1.5,
                     PICKER_INPUT_HEIGHT - 8.0,
                     [0.93, 0.93, 0.93, 1.0],
-                    1.2,
+                    0.0,
                     10,
                 );
             }

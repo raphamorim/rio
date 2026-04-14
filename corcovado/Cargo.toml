@@ -19,7 +19,7 @@ include = [
 [dependencies]
 tracing = { workspace = true }
 iovec = { workspace = true }
-slab = "0.4.9"
+slab = "0.4.12"
 net2 = "0.2.39"
 cfg-if = "0.1.9"
 

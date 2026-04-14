@@ -16,6 +16,11 @@ pub fn default_cursor_interval() -> u64 {
 }
 
 #[inline]
+pub fn default_scrollback_history_limit() -> usize {
+    10_000
+}
+
+#[inline]
 pub fn default_title_placeholder() -> Option<String> {
     Some(String::from("▲"))
 }
