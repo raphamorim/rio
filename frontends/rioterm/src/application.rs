@@ -499,6 +499,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     } else {
                         let size = route.window.screen.context_manager.len();
                         route.window.screen.resize_top_or_bottom_line(size);
+                        // Re-apply taffy layout so sugarloaf.set_position reflects the
+                        // updated scaled_margin (e.g. when hide_if_single transitions
+                        // from 2 tabs to 1 tab via shell exit rather than close-tab action).
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .current_grid_mut()
+                            .update_dimensions(&mut route.window.screen.sugarloaf);
+                        // Mark the surviving tab dirty so Renderer::run's
+                        // is_dirty / force_full_damage gate lets it through.
+                        // The PTY performer follows up with a RioEvent::Render,
+                        // so the queued redraw paints the new layout — no need
+                        // to force a synchronous render from this handler.
+                        route.window.screen.mark_dirty();
                     }
                 }
             }
