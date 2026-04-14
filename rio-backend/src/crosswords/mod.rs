@@ -3540,9 +3540,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
             }
             b'n' | b'N' => {
-                // Delete by image number — look up image_id from number mapping
+                // Delete by image number — look up image_id from the
+                // number map. Prefer the canonical `I=` channel
+                // (`delete.image_number`), but fall back to `image_id`
+                // for older clients that shove the number into `i=`.
+                let lookup_number = if delete.image_number > 0 {
+                    delete.image_number
+                } else {
+                    delete.image_id
+                };
                 if let Some(&image_id) =
-                    self.graphics.kitty_image_numbers.get(&delete.image_id)
+                    self.graphics.kitty_image_numbers.get(&lookup_number)
                 {
                     let before = self.graphics.kitty_placements.len();
                     if delete.placement_id != 0 {
