@@ -1414,31 +1414,204 @@ mod tests {
 
     #[test]
     fn test_incomplete_image_accumulation() {
-        // Use a single state instance across all chunks
+        // Use a single state instance across all chunks.
+        // Per kitty spec each chunk must be a multiple of 4 base64 chars
+        // (i.e. aligned on 3-byte binary boundaries) with padding only on
+        // the final chunk. Full base64 for [255, 0, 0, 255] is "/wAA/w==".
         let mut state = KittyGraphicsState::default();
 
-        // First chunk - 1x1 RGBA pixel split into chunks
-        // Total base64 for [255, 0, 0, 255] is "/wAA/w=="
-        let params1 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=100", b"/wA"];
+        // First chunk: 4 chars → 3 decoded bytes [0xFF, 0x00, 0x00]
+        let params1 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=100", b"/wAA"];
         let result1 = parse(&params1, &mut state).expect(
             "intermediate chunks must return a `pending_chunk` response, not None",
         );
         assert!(result1.incomplete, "first chunk must be marked incomplete");
         assert!(result1.graphic_data.is_none());
 
-        // Second chunk - need to specify action and image id
-        let params2 = vec![b"G".as_ref(), b"a=t,m=1,i=100", b"A/"];
-        let result2 = parse(&params2, &mut state).expect("pending_chunk for chunk 2");
-        assert!(result2.incomplete, "second chunk must be marked incomplete");
-
-        // Final chunk - need to specify action, image id, and dimensions
-        let params3 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=0,i=100", b"w=="];
-        let result3 = parse(&params3, &mut state);
-        assert!(result3.is_some()); // Should return complete image
-
-        let response = result3.unwrap();
+        // Final chunk: 4 chars with padding → 1 decoded byte [0xFF]
+        let params2 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=0,i=100", b"/w=="];
+        let result2 = parse(&params2, &mut state);
+        let response = result2.expect("final chunk must produce a response");
         assert!(!response.incomplete, "final chunk must not be incomplete");
-        assert!(response.graphic_data.is_some());
+        let graphic = response
+            .graphic_data
+            .expect("final chunk must produce graphic data");
+        assert_eq!(
+            graphic.pixels,
+            vec![0xFF, 0x00, 0x00, 0xFF],
+            "decoded bytes must equal the full decoded payload"
+        );
+    }
+
+    #[test]
+    fn test_incomplete_image_accumulation_padded_chunks() {
+        // Regression for chafa: clients may base64-encode each chunk
+        // independently, which leaves `=` padding on intermediate chunks.
+        // Concatenating the raw base64 text used to fail with
+        // `Base64 decode failed: InvalidByte(..., 61)` because the `=`
+        // ended up mid-string. We now decode each chunk independently so
+        // the merged binary payload is correct.
+        let mut state = KittyGraphicsState::default();
+
+        // Source bytes: 7 bytes of RGB data for a 1x? image. The point
+        // of this test is the chunking pattern, not meaningful pixels.
+        //
+        // Chunk 1: encodes 4 bytes [0xDE, 0xAD, 0xBE, 0xEF]
+        //   → 8 chars with padding: "3q2+7w=="
+        // Chunk 2: encodes 3 bytes [0xCA, 0xFE, 0xBA]
+        //   → 4 chars no padding: "yv66"
+        //
+        // Concatenated raw base64 would be "3q2+7w==yv66" with `==` in
+        // the middle — which a strict base64 decoder rejects.
+        let full_binary: Vec<u8> =
+            vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA];
+        let expected_pixels = {
+            // We'll reinterpret the 7 bytes as a width=7, height=1 grey
+            // image by using f=8 (1 bpp). Then create_graphic_data expands
+            // each gray byte to RGBA.
+            let mut rgba = Vec::with_capacity(full_binary.len() * 4);
+            for &g in &full_binary {
+                rgba.extend_from_slice(&[g, g, g, 255]);
+            }
+            rgba
+        };
+
+        let params1 = vec![
+            b"G".as_ref(),
+            b"a=t,f=8,s=7,v=1,m=1,i=200",
+            b"3q2+7w==",
+        ];
+        let r1 = parse(&params1, &mut state)
+            .expect("padded intermediate chunk must not return None");
+        assert!(r1.incomplete);
+
+        let params2 =
+            vec![b"G".as_ref(), b"a=t,f=8,s=7,v=1,m=0,i=200", b"yv66"];
+        let r2 = parse(&params2, &mut state).expect("final chunk must parse");
+        assert!(!r2.incomplete);
+        let graphic = r2.graphic_data.expect("graphic data must be produced");
+        assert_eq!(
+            graphic.pixels, expected_pixels,
+            "chafa-style padded chunks must merge into the correct byte stream",
+        );
+    }
+
+    #[test]
+    fn test_chunked_matches_single_shot() {
+        // Parsing an image as a single command or as several chunks must
+        // produce the same decoded payload — decoding per chunk must not
+        // introduce drift.
+        let single_pixel_b64 = "/wAA/w=="; // [0xFF, 0x00, 0x00, 0xFF]
+
+        let single = parse_kitty_graphics_protocol(
+            "a=t,f=32,s=1,v=1,i=301",
+            single_pixel_b64,
+        )
+        .and_then(|r| r.graphic_data)
+        .expect("single-shot must succeed");
+
+        let mut state = KittyGraphicsState::default();
+        let p1 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=302", b"/wAA"];
+        parse(&p1, &mut state).expect("first chunk");
+        let p2 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=0,i=302", b"/w=="];
+        let chunked = parse(&p2, &mut state)
+            .and_then(|r| r.graphic_data)
+            .expect("chunked must succeed");
+
+        assert_eq!(
+            single.pixels, chunked.pixels,
+            "chunked and single-shot decode must agree"
+        );
+        assert_eq!(single.width, chunked.width);
+        assert_eq!(single.height, chunked.height);
+    }
+
+    #[test]
+    fn test_chunked_preserves_first_chunk_metadata() {
+        // Only the first chunk carries the full control data. Subsequent
+        // chunks (including the terminating m=0 one) may omit width,
+        // height, format, etc. — the stored metadata from the first
+        // chunk must be used.
+        let mut state = KittyGraphicsState::default();
+
+        let p1 = vec![
+            b"G".as_ref(),
+            b"a=T,f=32,s=1,v=1,i=500,z=7,m=1",
+            b"/wAA",
+        ];
+        parse(&p1, &mut state).expect("first chunk");
+
+        // Final chunk: only `m=0` and `i=500`. Width/height/format are
+        // intentionally missing and must be inherited from the first.
+        let p2 = vec![b"G".as_ref(), b"m=0,i=500", b"/w=="];
+        let response =
+            parse(&p2, &mut state).expect("final chunk must produce a response");
+
+        let graphic = response.graphic_data.expect("graphic data");
+        assert_eq!(graphic.width, 1);
+        assert_eq!(graphic.height, 1);
+        assert_eq!(graphic.pixels, vec![0xFF, 0x00, 0x00, 0xFF]);
+
+        // Placement should reflect the first chunk's z-index because it
+        // used `a=T` (transmit and display).
+        let placement = response
+            .placement_request
+            .expect("a=T must emit a placement request");
+        assert_eq!(placement.z_index, 7);
+    }
+
+    #[test]
+    fn test_chunked_with_zlib_compression() {
+        // chafa transmits RGBA with zlib compression (o=z). The o= flag
+        // is only carried on the first chunk, so the decompression must
+        // happen after all chunks are merged.
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression as FlateCompression;
+        use std::io::Write;
+
+        // 2 pixels, 8 bytes RGBA: red + green
+        let raw = vec![
+            0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF,
+        ];
+        let mut encoder = ZlibEncoder::new(Vec::new(), FlateCompression::default());
+        encoder.write_all(&raw).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let encoded = BASE64.encode(&compressed);
+
+        // Split the base64 text on a 4-char boundary so each chunk is
+        // spec-compliant.
+        assert!(encoded.len() >= 4, "test payload should be chunkable");
+        let split_at = (encoded.len() / 2) & !0x3; // nearest lower multiple of 4
+        let (first, second) = encoded.split_at(split_at);
+
+        let mut state = KittyGraphicsState::default();
+        let p1_ctrl = format!("a=t,f=32,s=2,v=1,o=z,m=1,i=600");
+        let p1 =
+            vec![b"G".as_ref(), p1_ctrl.as_bytes(), first.as_bytes()];
+        parse(&p1, &mut state).expect("first chunk");
+
+        let p2_ctrl = format!("m=0,i=600");
+        let p2 =
+            vec![b"G".as_ref(), p2_ctrl.as_bytes(), second.as_bytes()];
+        let response =
+            parse(&p2, &mut state).expect("final chunk must parse and decompress");
+
+        let graphic = response.graphic_data.expect("graphic data");
+        assert_eq!(graphic.pixels, raw, "zlib-compressed chunked payload must decompress to original");
+    }
+
+    #[test]
+    fn test_padding_in_middle_of_raw_concat_would_fail() {
+        // Sanity check: confirm the exact failure mode we fixed — a
+        // naive concat of padded chunks produces a string with `=` in
+        // the middle that BASE64.decode rejects. If this ever becomes a
+        // non-error it means the decoder changed and our fix may be
+        // masking something else.
+        let concatenated = b"3q2+7w==yv66".as_slice();
+        assert!(
+            BASE64.decode(concatenated).is_err(),
+            "strict base64 must reject `=` in the middle of the input"
+        );
     }
 
     #[test]
