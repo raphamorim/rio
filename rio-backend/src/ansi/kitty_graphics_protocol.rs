@@ -194,9 +194,17 @@ pub struct KittyGraphicsCommand {
     // Placeholder
     unicode_placeholder: u32,
 
-    // Payload - SmallVec for stack allocation of small payloads
-    // 64 bytes inline covers most control-only commands (query, delete, placement)
-    // while still handling large image data by spilling to heap
+    /// Payload, always stored as already-base64-decoded bytes.
+    ///
+    /// Matches ghostty: we decode each APC command's base64 payload up
+    /// front in `parse()` so that clients which pad every chunk
+    /// independently (e.g. chafa) don't produce a concatenated base64
+    /// string with `=` bytes stuck in the middle when multiple chunks
+    /// are merged.
+    ///
+    /// 64 bytes inline covers most control-only commands (query, delete,
+    /// placement) while still handling large image data by spilling to
+    /// heap.
     payload: SmallVec<[u8; 64]>,
 }
 
@@ -279,10 +287,16 @@ pub fn parse(
         }
     }
 
-    // Parse payload if present
+    // Decode payload if present. We always decode base64 up front
+    // (matching ghostty) so that each APC command's payload is
+    // self-contained: clients like chafa which pad every chunk
+    // independently can be merged by simply concatenating the decoded
+    // byte streams, rather than trying to splice base64 text and running
+    // into stray `=` padding in the middle.
     if let Some(payload) = params.get(2) {
         if !payload.is_empty() {
-            cmd.payload = SmallVec::from_slice(payload);
+            let decoded = decode_payload_base64(payload)?;
+            cmd.payload = SmallVec::from_vec(decoded);
         }
     }
 
@@ -338,7 +352,9 @@ pub fn parse(
         // don't leak state into subsequent transmissions.
         state.current_transmission_key = image_key;
 
-        // Store chunk for later - preserve all metadata from first chunk
+        // Store chunk for later - preserve all metadata from first chunk.
+        // Payload is already base64-decoded at this point, so subsequent
+        // chunks can simply append their bytes.
         use std::collections::hash_map::Entry;
 
         match state.incomplete_images.entry(image_key) {
@@ -365,7 +381,7 @@ pub fn parse(
                 e.insert(cmd);
             }
             Entry::Occupied(mut e) => {
-                // Subsequent chunk - just append payload
+                // Subsequent chunk - append decoded bytes
                 let stored_cmd = e.get_mut();
                 stored_cmd.payload.extend_from_slice(&cmd.payload);
                 debug!(
@@ -383,7 +399,8 @@ pub fn parse(
     } else {
         // Check if we have incomplete data (even if image_id/number is 0)
         if let Some(mut stored_cmd) = state.incomplete_images.remove(&image_key) {
-            // Final chunk: use metadata from stored command, append final payload
+            // Final chunk: append this chunk's decoded bytes to the
+            // already-accumulated stored payload.
             stored_cmd.payload.extend_from_slice(&cmd.payload);
             cmd = stored_cmd; // Use stored metadata
             debug!(
@@ -686,22 +703,43 @@ fn parse_compression(value: &str) -> Compression {
     }
 }
 
+/// Decode a single APC command's base64 payload.
+///
+/// Tries the standard (padded) decoder first, falling back to the
+/// no-padding variant so that chunks from spec-compliant clients
+/// (which don't pad intermediate chunks) also decode cleanly.
+///
+/// Callers decode each APC command's payload independently — the same
+/// approach ghostty uses — so that per-chunk padding from clients like
+/// chafa is contained within its own chunk instead of contaminating the
+/// merged byte stream.
+fn decode_payload_base64(payload: &[u8]) -> Option<Vec<u8>> {
+    if payload.is_empty() {
+        return Some(Vec::new());
+    }
+    match BASE64.decode(payload) {
+        Ok(data) => Some(data),
+        Err(_) => match STANDARD_NO_PAD.decode(payload) {
+            Ok(data) => Some(data),
+            Err(e) => {
+                debug!("Base64 payload decode failed: {:?}", e);
+                None
+            }
+        },
+    }
+}
+
 fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
-    // Get pixel data based on transmission medium
+    // Payload is already base64-decoded by parse(). Pick up the bytes
+    // based on the transmission medium — direct means they're the image
+    // bytes, file/shm means they're a path/name.
     let raw_data = match cmd.medium {
         TransmissionMedium::Direct => {
-            // Decode base64 payload
-            debug!("Decoding base64 payload, length={}", cmd.payload.len());
-            match BASE64.decode(&cmd.payload) {
-                Ok(data) => {
-                    debug!("Base64 decoded successfully: {} bytes", data.len());
-                    data
-                }
-                Err(e) => {
-                    debug!("Base64 decode failed: {:?}", e);
-                    return None;
-                }
-            }
+            debug!(
+                "Using decoded Direct payload: {} bytes",
+                cmd.payload.len()
+            );
+            cmd.payload.to_vec()
         }
         TransmissionMedium::File | TransmissionMedium::TempFile => {
             // Read from file
@@ -709,38 +747,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             use std::io::Read;
             use std::path::Path;
 
-            // Decode base64 payload to get file path
-            // Try with standard decoder first, then without padding if that fails
-            debug!(
-                "Decoding base64 file path, payload length={}",
-                cmd.payload.len()
-            );
-            let path_bytes = match BASE64.decode(&cmd.payload) {
-                Ok(bytes) => {
-                    debug!(
-                        "Base64 decoded file path with padding: {} bytes",
-                        bytes.len()
-                    );
-                    bytes
-                }
-                Err(_) => {
-                    // Try without padding requirement
-                    match STANDARD_NO_PAD.decode(&cmd.payload) {
-                        Ok(bytes) => {
-                            debug!(
-                                "Base64 decoded file path without padding: {} bytes",
-                                bytes.len()
-                            );
-                            bytes
-                        }
-                        Err(e) => {
-                            debug!("Base64 decode failed (both with and without padding): {:?}", e);
-                            return None;
-                        }
-                    }
-                }
-            };
-            let path_str = std::str::from_utf8(&path_bytes).ok()?;
+            // Payload is already base64-decoded by parse(); the bytes
+            // directly represent the file path.
+            debug!("File path payload: {} bytes", cmd.payload.len());
+            let path_str = std::str::from_utf8(&cmd.payload).ok()?;
             debug!("File path: {}", path_str);
             let path = Path::new(path_str);
 
@@ -795,22 +805,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 use std::ffi::CString;
                 use std::os::unix::io::RawFd;
 
-                // Payload contains the base64-encoded shared memory name
-                debug!(
-                    "Decoding shared memory name from base64, payload length={}",
-                    cmd.payload.len()
-                );
-                let shm_name_bytes = match BASE64.decode(&cmd.payload) {
-                    Ok(bytes) => {
-                        debug!("Base64 decoded shm name: {} bytes", bytes.len());
-                        bytes
-                    }
-                    Err(e) => {
-                        debug!("Failed to decode shm name from base64: {:?}", e);
-                        return None;
-                    }
-                };
-                let shm_name_str = std::str::from_utf8(&shm_name_bytes).ok()?;
+                // Payload is already base64-decoded by parse(); the bytes
+                // directly represent the shared memory name.
+                debug!("Shared memory name payload: {} bytes", cmd.payload.len());
+                let shm_name_str = std::str::from_utf8(&cmd.payload).ok()?;
                 let shm_name = CString::new(shm_name_str).ok()?;
 
                 debug!(
@@ -902,22 +900,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     MEMORY_BASIC_INFORMATION,
                 };
 
-                // Payload contains the base64-encoded shared memory name
-                debug!(
-                    "Decoding shared memory name from base64, payload length={}",
-                    cmd.payload.len()
-                );
-                let shm_name_bytes = match BASE64.decode(&cmd.payload) {
-                    Ok(bytes) => {
-                        debug!("Base64 decoded shm name: {} bytes", bytes.len());
-                        bytes
-                    }
-                    Err(e) => {
-                        debug!("Failed to decode shm name from base64: {:?}", e);
-                        return None;
-                    }
-                };
-                let shm_name_str = std::str::from_utf8(&shm_name_bytes).ok()?;
+                // Payload is already base64-decoded by parse(); the bytes
+                // directly represent the shared memory name.
+                debug!("Shared memory name payload: {} bytes", cmd.payload.len());
+                let shm_name_str = std::str::from_utf8(&cmd.payload).ok()?;
 
                 debug!("Opening shared memory: {}", shm_name_str);
 
