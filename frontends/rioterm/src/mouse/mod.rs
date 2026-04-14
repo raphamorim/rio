@@ -114,6 +114,11 @@ pub fn calculate_mouse_position(
 /// `margin_x` is already pre-scaled (physical pixels).
 /// `cell_width` is the float cell width.
 /// `grid_width` is the total width of the grid area (physical pixels).
+///
+/// Uses a 60% threshold (matching ghostty) rather than the 50% midpoint rio
+/// inherited from alacritty. Clicks land on a cell until the cursor is past
+/// 60% across it, and a drag must cross 60% of the next cell before it's
+/// included — this reduces accidental half-cell snapping at the midpoint.
 #[inline]
 pub fn calculate_side_by_pos(
     x: usize,
@@ -123,12 +128,12 @@ pub fn calculate_side_by_pos(
 ) -> Side {
     let x_in_grid = (x as f32 - margin_x).max(0.0);
     let cell_x = x_in_grid % cell_width;
-    let half_cell_width = cell_width / 2.0;
+    let threshold = cell_width * 0.6;
 
     let additional_padding = (grid_width - margin_x) % cell_width;
     let end_of_grid = grid_width - margin_x - additional_padding;
 
-    if cell_x > half_cell_width || x as f32 >= end_of_grid {
+    if cell_x >= threshold || x as f32 >= end_of_grid {
         Side::Right
     } else {
         Side::Left
@@ -684,26 +689,30 @@ pub mod test {
         assert_eq!(pos, Pos::new(Line(0), Column(2)));
     }
 
-    /// With cell_width=16.41, the left half is [0, 8.205) and right half
-    /// is [8.205, 16.41).  Using float math avoids the truncation that
-    /// would shift the boundary to 8 (half of 16).
+    /// With cell_width=16.41 the 60% threshold sits at 9.846, so Left
+    /// spans [0, 9.846) and Right spans [9.846, 16.41). Using float math
+    /// avoids truncation that would shift the boundary.
     #[test]
     fn test_side_by_pos_float_precision() {
         let cell_width = 16.41_f32;
         let margin_x = 8.0; // pre-scaled
         let grid_width = 8.0 + 96.0 * cell_width;
 
-        // Just left of center of first cell: margin + 8.0 = pixel 16
-        // cell_x = 16 - 8 = 8.0, half = 8.205 → Left
+        // pixel 16 → cell_x = 8.0 < threshold 9.846 → Left
         assert_eq!(
             calculate_side_by_pos(16, margin_x, cell_width, grid_width),
             Side::Left,
         );
 
-        // Just right of center: margin + 8.41 ≈ pixel 17
-        // cell_x = 17 - 8 = 9.0, half = 8.205 → Right
+        // pixel 17 → cell_x = 9.0 < threshold 9.846 → still Left (was Right at 50%)
         assert_eq!(
             calculate_side_by_pos(17, margin_x, cell_width, grid_width),
+            Side::Left,
+        );
+
+        // pixel 18 → cell_x = 10.0 >= threshold 9.846 → Right
+        assert_eq!(
+            calculate_side_by_pos(18, margin_x, cell_width, grid_width),
             Side::Right,
         );
     }
@@ -718,15 +727,15 @@ pub mod test {
         let grid_width = 8.0 + 96.0 * cell_width;
 
         // Column 76 starts at margin + 76 * 16.41 = 8 + 1247.16 = 1255.16
-        // Left side: pixel 1256 → cell_x = (1256 - 8) % 16.41 = 1248 % 16.41 ≈ 0.66 → Left
+        // Left side: pixel 1256 → cell_x = 1248 % 16.41 ≈ 0.66 → Left
         assert_eq!(
             calculate_side_by_pos(1256, margin_x, cell_width, grid_width),
             Side::Left,
         );
 
-        // Right side of same cell: pixel 1265 → cell_x = (1265 - 8) % 16.41 = 1257 % 16.41 ≈ 9.48 → Right
+        // Pixel 1266 → cell_x = 1258 % 16.41 ≈ 10.48 >= 9.846 → Right
         assert_eq!(
-            calculate_side_by_pos(1265, margin_x, cell_width, grid_width),
+            calculate_side_by_pos(1266, margin_x, cell_width, grid_width),
             Side::Right,
         );
     }
@@ -739,17 +748,23 @@ pub mod test {
         let grid_width = 40.0 + 80.0 * 16.0;
 
         // Pixel 41: just past margin, left side of cell 0
-        // cell_x = (41 - 40) % 16 = 1.0, half = 8.0 → Left
+        // cell_x = (41 - 40) % 16 = 1.0, threshold = 9.6 → Left
         assert_eq!(
             calculate_side_by_pos(41, margin_x, cell_width, grid_width),
             Side::Left,
         );
 
-        // Pixel 50: past center of cell 0
-        // cell_x = (50 - 40) % 16 = 10.0, half = 8.0 → Right
+        // Pixel 50: past the 60% threshold of cell 0
+        // cell_x = (50 - 40) % 16 = 10.0, threshold = 9.6 → Right
         assert_eq!(
             calculate_side_by_pos(50, margin_x, cell_width, grid_width),
             Side::Right,
+        );
+
+        // Pixel 49: cell_x = 9.0 < threshold 9.6 → Left (was Right at 50%)
+        assert_eq!(
+            calculate_side_by_pos(49, margin_x, cell_width, grid_width),
+            Side::Left,
         );
 
         // Pixel 30: before margin → clamped to 0, Left
