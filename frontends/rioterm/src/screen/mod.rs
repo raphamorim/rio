@@ -1984,6 +1984,12 @@ impl Screen<'_> {
 
         // Find all matches in this line and check if point is within any of them
         for mat in regex.find_iter(line_text) {
+            // Same mid-word rejection as `HintState::find_regex_matches`.
+            if crate::hints::is_midword_path_match(line_text, mat.start(), mat.as_str())
+            {
+                continue;
+            }
+
             let start_col = rio_backend::crosswords::pos::Column(mat.start());
             let end_col =
                 rio_backend::crosswords::pos::Column(mat.end().saturating_sub(1));
@@ -3537,16 +3543,38 @@ impl Screen<'_> {
                     self.render();
                 }
             },
-            HintAction::Command { command } => match command {
-                HintCommand::Simple(program) => {
-                    self.exec(program, [&hint_match.text]);
+            HintAction::Command { command } => {
+                // If the match looks like a local path, resolve it against
+                // the terminal's OSC 7 CWD and fall back to the raw text if
+                // the path doesn't exist (or the text is a URL).
+                let arg_text = {
+                    let cwd = self
+                        .context_manager
+                        .current()
+                        .terminal
+                        .lock()
+                        .current_directory
+                        .clone();
+                    match crate::hints::resolve_path_for_opening(
+                        &hint_match.text,
+                        cwd.as_deref(),
+                    ) {
+                        Some(resolved) => resolved.to_string_lossy().into_owned(),
+                        None => hint_match.text.clone(),
+                    }
+                };
+
+                match command {
+                    HintCommand::Simple(program) => {
+                        self.exec(program, [&arg_text]);
+                    }
+                    HintCommand::WithArgs { program, args } => {
+                        let mut all_args = args.clone();
+                        all_args.push(arg_text);
+                        self.exec(program, &all_args);
+                    }
                 }
-                HintCommand::WithArgs { program, args } => {
-                    let mut all_args = args.clone();
-                    all_args.push(hint_match.text.clone());
-                    self.exec(program, &all_args);
-                }
-            },
+            }
         }
     }
 

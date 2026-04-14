@@ -2,6 +2,7 @@ use rio_backend::config::hints::Hint;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::crosswords::pos::{Column, Line, Pos};
 use rio_backend::event::EventListener;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 /// State for hint selection mode
@@ -223,6 +224,14 @@ impl HintState {
 
             // Find all matches in this line
             for mat in regex.find_iter(&line_text) {
+                // Reject rooted-path matches that start mid-word (e.g. the
+                // `/bar` inside `foo/bar`). Rust's regex crate has no
+                // lookbehind, so we filter after the fact to emulate
+                // ghostty's `(?<![\w~/])/` and `(?<!\w)~/` guards.
+                if is_midword_path_match(&line_text, mat.start(), mat.as_str()) {
+                    continue;
+                }
+
                 let start_col = Column(mat.start());
                 let mut match_text = mat.as_str().to_string();
 
@@ -379,6 +388,108 @@ impl LabelGenerator {
         if carry {
             self.indices.push(0);
         }
+    }
+}
+
+/// Reject rooted-path matches that actually start in the middle of a word.
+///
+/// Rio's regex crate has no lookbehind, so we can't write
+/// `(?<![\w~/])/` or `(?<!\w)~/` the way ghostty does. This filter
+/// emulates those guards: if the regex returned `/...` or `~/...` and the
+/// byte just before the match is a word char (or `~`/`/` for the `/` case),
+/// treat the match as a false positive (e.g. `/bar` inside `foo/bar`).
+pub fn is_midword_path_match(line: &str, start: usize, matched: &str) -> bool {
+    let starts_slash = matched.starts_with('/');
+    let starts_tilde_slash = matched.starts_with("~/");
+    if !starts_slash && !starts_tilde_slash {
+        return false;
+    }
+    if start == 0 {
+        return false;
+    }
+    let Some(prev) = line[..start].chars().next_back() else {
+        return false;
+    };
+    let is_word = prev.is_alphanumeric() || prev == '_';
+
+    if starts_slash {
+        is_word || prev == '~' || prev == '/'
+    } else {
+        // ~/ case: only reject when preceded by a word char.
+        is_word
+    }
+}
+
+/// URI scheme prefixes that should never be resolved as file paths.
+/// Matches the scheme branch of `DEFAULT_URL_REGEX`.
+const URI_SCHEMES: &[&str] = &[
+    "ipfs:",
+    "ipns:",
+    "magnet:",
+    "mailto:",
+    "gemini://",
+    "gopher://",
+    "https://",
+    "http://",
+    "news:",
+    "file:",
+    "git://",
+    "ssh:",
+    "ssh://",
+    "ftp://",
+    "tel:",
+];
+
+/// If `text` looks like a local filesystem path, resolve it against `cwd` and
+/// return the canonical absolute path when it exists on disk. Returns `None`
+/// for URL-scheme strings, paths that don't exist, or anything we can't
+/// resolve (e.g. relative path with no known `cwd`).
+///
+/// Ported from ghostty's `resolvePathForOpening` (`src/Surface.zig`). Rio's
+/// `cwd` comes from the terminal's OSC 7 `current_directory`.
+pub fn resolve_path_for_opening(text: &str, cwd: Option<&Path>) -> Option<PathBuf> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+
+    // Scheme URLs are not paths — let the OS opener route them.
+    if URI_SCHEMES.iter().any(|s| text.starts_with(s)) {
+        return None;
+    }
+
+    // Expand a recognized path prefix. Anything falling through is treated as
+    // a bare relative path (e.g. `src/main.rs`).
+    let expanded: PathBuf = if let Some(rest) = text.strip_prefix("~/") {
+        dirs::home_dir()?.join(rest)
+    } else if text == "~" {
+        dirs::home_dir()?
+    } else if let Some(rest) = text.strip_prefix('$') {
+        let (var_name, tail) = rest.split_once('/').unwrap_or((rest, ""));
+        if var_name.is_empty() {
+            return None;
+        }
+        let value = std::env::var(var_name).ok()?;
+        let base = PathBuf::from(value);
+        if tail.is_empty() {
+            base
+        } else {
+            base.join(tail)
+        }
+    } else {
+        PathBuf::from(text)
+    };
+
+    let absolute = if expanded.is_absolute() {
+        expanded
+    } else {
+        cwd?.join(expanded)
+    };
+
+    if absolute.exists() {
+        Some(absolute)
+    } else {
+        None
     }
 }
 
@@ -595,5 +706,162 @@ mod tests {
             test_keys.len(),
             "Label should be completed with single character"
         );
+    }
+
+    #[test]
+    fn test_midword_filter_rejects_slash_in_word() {
+        // `/bar` inside `foo/bar`
+        assert!(is_midword_path_match("foo/bar", 3, "/bar"));
+    }
+
+    #[test]
+    fn test_midword_filter_accepts_slash_after_space() {
+        assert!(!is_midword_path_match("cd /tmp", 3, "/tmp"));
+    }
+
+    #[test]
+    fn test_midword_filter_accepts_slash_at_start() {
+        assert!(!is_midword_path_match("/tmp/foo", 0, "/tmp/foo"));
+    }
+
+    #[test]
+    fn test_midword_filter_rejects_tilde_in_word() {
+        assert!(is_midword_path_match("foo~/bar", 3, "~/bar"));
+    }
+
+    #[test]
+    fn test_midword_filter_accepts_tilde_at_start() {
+        assert!(!is_midword_path_match("~/bar", 0, "~/bar"));
+    }
+
+    #[test]
+    fn test_midword_filter_rejects_double_slash() {
+        // `//comment` — prev char is `/`, reject.
+        assert!(is_midword_path_match("a//comment", 2, "/comment"));
+    }
+
+    #[test]
+    fn test_midword_filter_ignores_non_rooted_matches() {
+        // Bare relative and scheme URLs never trigger the filter.
+        assert!(!is_midword_path_match("foo src/main.rs", 4, "src/main.rs"));
+        assert!(!is_midword_path_match("see https://a.com", 4, "https://a.com"));
+    }
+
+    /// End-to-end: the default regex plus `is_midword_path_match` correctly
+    /// rejects the `/bar` inside `foo/bar`.
+    #[test]
+    fn test_default_regex_plus_filter_rejects_midword_slash() {
+        let re = regex::Regex::new(
+            rio_backend::config::hints::DEFAULT_URL_REGEX,
+        )
+        .unwrap();
+        let line = "foo/bar";
+        let matches: Vec<&str> = re
+            .find_iter(line)
+            .filter(|m| !is_midword_path_match(line, m.start(), m.as_str()))
+            .map(|m| m.as_str())
+            .collect();
+        assert!(matches.is_empty(), "expected no matches, got {matches:?}");
+    }
+
+    #[test]
+    fn test_resolve_path_skips_scheme_urls() {
+        assert!(resolve_path_for_opening("https://example.com", None).is_none());
+        assert!(resolve_path_for_opening("mailto:a@b.c", None).is_none());
+        assert!(resolve_path_for_opening("file:///tmp", None).is_none());
+        assert!(resolve_path_for_opening("ssh://host/path", None).is_none());
+    }
+
+    #[test]
+    fn test_resolve_path_returns_none_when_nonexistent() {
+        let cwd = std::env::temp_dir();
+        assert!(resolve_path_for_opening(
+            "rio-definitely-does-not-exist-xyz",
+            Some(&cwd)
+        )
+        .is_none());
+        assert!(resolve_path_for_opening(
+            "./rio-definitely-does-not-exist-xyz",
+            Some(&cwd)
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn test_resolve_path_absolute_existing_file() {
+        let tmp = std::env::temp_dir();
+        let file = tmp.join("rio-test-resolve-abs.txt");
+        std::fs::write(&file, "hi").unwrap();
+
+        let resolved =
+            resolve_path_for_opening(&file.to_string_lossy(), None).unwrap();
+        // PathBuf::exists() follows symlinks; on macOS /tmp is a symlink to
+        // /private/tmp, so compare existence rather than exact paths.
+        assert!(resolved.exists());
+
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn test_resolve_path_relative_joined_with_cwd() {
+        let tmp = std::env::temp_dir();
+        let subdir = tmp.join("rio-test-resolve-dir");
+        std::fs::create_dir_all(&subdir).unwrap();
+        let file = subdir.join("child.txt");
+        std::fs::write(&file, "hi").unwrap();
+
+        let resolved =
+            resolve_path_for_opening("child.txt", Some(&subdir)).unwrap();
+        assert!(resolved.exists());
+        assert!(resolved.ends_with("child.txt"));
+
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(&subdir);
+    }
+
+    #[test]
+    fn test_resolve_path_dot_relative_joined_with_cwd() {
+        let tmp = std::env::temp_dir();
+        let subdir = tmp.join("rio-test-resolve-dot-dir");
+        std::fs::create_dir_all(&subdir).unwrap();
+        let file = subdir.join("dot-child.txt");
+        std::fs::write(&file, "hi").unwrap();
+
+        let resolved =
+            resolve_path_for_opening("./dot-child.txt", Some(&subdir)).unwrap();
+        assert!(resolved.exists());
+
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(&subdir);
+    }
+
+    #[test]
+    fn test_resolve_path_requires_cwd_for_relative() {
+        // With no cwd and a relative path, we can't resolve; return None.
+        assert!(resolve_path_for_opening("foo/bar.txt", None).is_none());
+    }
+
+    #[test]
+    fn test_resolve_path_expands_env_var() {
+        let tmp = std::env::temp_dir();
+        // Safety: setting an env var inside a process-local test. This is
+        // unsafe in Rust 2024; rio-backend uses an earlier edition so it's
+        // permitted here. If rio moves to 2024 this test needs adjustment.
+        unsafe {
+            std::env::set_var("RIO_TEST_PATH_VAR", tmp.to_string_lossy().to_string());
+        }
+
+        let file = tmp.join("rio-test-env-var.txt");
+        std::fs::write(&file, "hi").unwrap();
+
+        let resolved =
+            resolve_path_for_opening("$RIO_TEST_PATH_VAR/rio-test-env-var.txt", None)
+                .unwrap();
+        assert!(resolved.exists());
+
+        let _ = std::fs::remove_file(&file);
+        unsafe {
+            std::env::remove_var("RIO_TEST_PATH_VAR");
+        }
     }
 }
