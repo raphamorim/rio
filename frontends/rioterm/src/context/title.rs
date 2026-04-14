@@ -382,29 +382,38 @@ pub mod test {
             String::from("64")
         );
 
-        // let's modify current_directory to actually be something
+        // Use a path that can't plausibly be $HOME on any realistic system.
+        // Sandboxed builds (e.g. Void's xbps-src) often set HOME=/tmp, so a
+        // literal "/tmp" here would get collapsed to "~" and break the test.
         {
-            let path = std::path::PathBuf::from("/tmp");
+            let path = std::path::PathBuf::from("/rio-sandbox-test-dir");
             let mut term = context.terminal.lock();
             term.current_directory = Some(path);
         };
 
         assert_eq!(
             update_title("{{ absolute_path || title }}", &context),
-            String::from("/tmp"),
+            String::from("/rio-sandbox-test-dir"),
         );
 
         assert_eq!(
             update_title("{{ relative_path || title }}", &context),
-            String::from("/tmp"),
+            String::from("/rio-sandbox-test-dir"),
         );
     }
 
     #[test]
     fn test_shorten_path() {
-        // Short paths stay as-is
-        assert_eq!(shorten_path("/tmp"), "/tmp");
-        assert_eq!(shorten_path("/usr/local"), "/usr/local");
+        // Use a path prefix that can't plausibly be $HOME to keep the test
+        // deterministic in build sandboxes that set HOME=/tmp or similar.
+        assert_eq!(
+            shorten_path("/rio-sandbox-test-dir"),
+            "/rio-sandbox-test-dir",
+        );
+        assert_eq!(
+            shorten_path("/rio-sandbox-test-dir/sub"),
+            "/rio-sandbox-test-dir/sub",
+        );
 
         // Deep paths get truncated to last 3 components
         assert_eq!(shorten_path("/a/b/c/d/e"), "…/c/d/e");
