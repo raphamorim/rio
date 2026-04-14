@@ -512,9 +512,7 @@ pub fn parse(
                 // Subsequent chunk - append decoded bytes, refusing if
                 // the accumulated size would exceed our cap.
                 let stored_cmd = e.get_mut();
-                if stored_cmd.payload.len().saturating_add(cmd.payload.len())
-                    > MAX_SIZE
-                {
+                if stored_cmd.payload.len().saturating_add(cmd.payload.len()) > MAX_SIZE {
                     debug!(
                         "Dropping chunked upload {}: would exceed MAX_SIZE ({})",
                         image_key, MAX_SIZE
@@ -544,8 +542,7 @@ pub fn parse(
         if let Some(mut stored_cmd) = state.incomplete_images.remove(&image_key) {
             // Final chunk: append this chunk's decoded bytes to the
             // already-accumulated stored payload.
-            if stored_cmd.payload.len().saturating_add(cmd.payload.len()) > MAX_SIZE
-            {
+            if stored_cmd.payload.len().saturating_add(cmd.payload.len()) > MAX_SIZE {
                 debug!(
                     "Dropping final chunk {}: would exceed MAX_SIZE ({})",
                     image_key, MAX_SIZE
@@ -968,9 +965,7 @@ impl GraphicError {
     }
 }
 
-fn create_graphic_data(
-    cmd: &KittyGraphicsCommand,
-) -> Result<GraphicData, GraphicError> {
+fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, GraphicError> {
     // Early dimension guard — applies to every non-PNG path. PNG
     // commands may transmit without declaring width/height (we pick
     // them up after decoding); we re-check post-decode.
@@ -992,10 +987,7 @@ fn create_graphic_data(
             if cmd.payload.len() > MAX_SIZE {
                 return Err(GraphicError::TooLarge);
             }
-            debug!(
-                "Using decoded Direct payload: {} bytes",
-                cmd.payload.len()
-            );
+            debug!("Using decoded Direct payload: {} bytes", cmd.payload.len());
             cmd.payload.to_vec()
         }
         TransmissionMedium::File | TransmissionMedium::TempFile => {
@@ -1773,8 +1765,7 @@ mod tests {
         //
         // Concatenated raw base64 would be "3q2+7w==yv66" with `==` in
         // the middle — which a strict base64 decoder rejects.
-        let full_binary: Vec<u8> =
-            vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA];
+        let full_binary: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA];
         let expected_pixels = {
             // We'll reinterpret the 7 bytes as a width=7, height=1 grey
             // image by using f=8 (1 bpp). Then create_graphic_data expands
@@ -1786,17 +1777,12 @@ mod tests {
             rgba
         };
 
-        let params1 = vec![
-            b"G".as_ref(),
-            b"a=t,f=8,s=7,v=1,m=1,i=200",
-            b"3q2+7w==",
-        ];
+        let params1 = vec![b"G".as_ref(), b"a=t,f=8,s=7,v=1,m=1,i=200", b"3q2+7w=="];
         let r1 = parse(&params1, &mut state)
             .expect("padded intermediate chunk must not return None");
         assert!(r1.incomplete);
 
-        let params2 =
-            vec![b"G".as_ref(), b"a=t,f=8,s=7,v=1,m=0,i=200", b"yv66"];
+        let params2 = vec![b"G".as_ref(), b"a=t,f=8,s=7,v=1,m=0,i=200", b"yv66"];
         let r2 = parse(&params2, &mut state).expect("final chunk must parse");
         assert!(!r2.incomplete);
         let graphic = r2.graphic_data.expect("graphic data must be produced");
@@ -1813,12 +1799,10 @@ mod tests {
         // introduce drift.
         let single_pixel_b64 = "/wAA/w=="; // [0xFF, 0x00, 0x00, 0xFF]
 
-        let single = parse_kitty_graphics_protocol(
-            "a=t,f=32,s=1,v=1,i=301",
-            single_pixel_b64,
-        )
-        .and_then(|r| r.graphic_data)
-        .expect("single-shot must succeed");
+        let single =
+            parse_kitty_graphics_protocol("a=t,f=32,s=1,v=1,i=301", single_pixel_b64)
+                .and_then(|r| r.graphic_data)
+                .expect("single-shot must succeed");
 
         let mut state = KittyGraphicsState::default();
         let p1 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=302", b"/wAA"];
@@ -1844,11 +1828,7 @@ mod tests {
         // chunk must be used.
         let mut state = KittyGraphicsState::default();
 
-        let p1 = vec![
-            b"G".as_ref(),
-            b"a=T,f=32,s=1,v=1,i=500,z=7,m=1",
-            b"/wAA",
-        ];
+        let p1 = vec![b"G".as_ref(), b"a=T,f=32,s=1,v=1,i=500,z=7,m=1", b"/wAA"];
         parse(&p1, &mut state).expect("first chunk");
 
         // Final chunk: only `m=0` and `i=500`. Width/height/format are
@@ -1880,9 +1860,7 @@ mod tests {
         use std::io::Write;
 
         // 2 pixels, 8 bytes RGBA: red + green
-        let raw = vec![
-            0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF,
-        ];
+        let raw = vec![0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF];
         let mut encoder = ZlibEncoder::new(Vec::new(), FlateCompression::default());
         encoder.write_all(&raw).unwrap();
         let compressed = encoder.finish().unwrap();
@@ -1895,29 +1873,27 @@ mod tests {
         let (first, second) = encoded.split_at(split_at);
 
         let mut state = KittyGraphicsState::default();
-        let p1_ctrl = format!("a=t,f=32,s=2,v=1,o=z,m=1,i=600");
-        let p1 =
-            vec![b"G".as_ref(), p1_ctrl.as_bytes(), first.as_bytes()];
+        let p1_ctrl = String::from("a=t,f=32,s=2,v=1,o=z,m=1,i=600");
+        let p1 = vec![b"G".as_ref(), p1_ctrl.as_bytes(), first.as_bytes()];
         parse(&p1, &mut state).expect("first chunk");
 
-        let p2_ctrl = format!("m=0,i=600");
-        let p2 =
-            vec![b"G".as_ref(), p2_ctrl.as_bytes(), second.as_bytes()];
+        let p2_ctrl = String::from("m=0,i=600");
+        let p2 = vec![b"G".as_ref(), p2_ctrl.as_bytes(), second.as_bytes()];
         let response =
             parse(&p2, &mut state).expect("final chunk must parse and decompress");
 
         let graphic = response.graphic_data.expect("graphic data");
-        assert_eq!(graphic.pixels, raw, "zlib-compressed chunked payload must decompress to original");
+        assert_eq!(
+            graphic.pixels, raw,
+            "zlib-compressed chunked payload must decompress to original"
+        );
     }
 
     #[test]
     fn test_max_dimension_rejects_oversized_images() {
         // Width above the cap must fail with EINVAL:dimensions too large.
-        let result = parse_kitty_graphics_protocol(
-            "a=t,f=32,s=10001,v=1,i=1",
-            "AAAA",
-        )
-        .expect("response struct must exist");
+        let result = parse_kitty_graphics_protocol("a=t,f=32,s=10001,v=1,i=1", "AAAA")
+            .expect("response struct must exist");
         assert!(result.graphic_data.is_none());
         let body = result.response.expect("error message expected");
         assert!(
@@ -1926,9 +1902,8 @@ mod tests {
         );
 
         // Height above the cap must also fail.
-        let result =
-            parse_kitty_graphics_protocol("a=t,f=32,s=1,v=10001,i=1", "AAAA")
-                .expect("response struct must exist");
+        let result = parse_kitty_graphics_protocol("a=t,f=32,s=1,v=10001,i=1", "AAAA")
+            .expect("response struct must exist");
         assert!(result.graphic_data.is_none());
         let body = result.response.expect("error message expected");
         assert!(body.contains("dimensions too large"));
@@ -1937,9 +1912,8 @@ mod tests {
         // (We don't actually feed 10000*10000*4 bytes here, the
         // create_graphic_data path will reject due to missing data, but
         // that's a different error than the dimension cap.)
-        let result =
-            parse_kitty_graphics_protocol("a=t,f=32,s=10000,v=1,i=1", "AAAA")
-                .expect("response struct must exist");
+        let result = parse_kitty_graphics_protocol("a=t,f=32,s=10000,v=1,i=1", "AAAA")
+            .expect("response struct must exist");
         let body = result.response.unwrap_or_default();
         assert!(
             !body.contains("dimensions too large"),
@@ -1950,9 +1924,8 @@ mod tests {
     #[test]
     fn test_iid_mutually_exclusive() {
         // Setting both i= and I= must be rejected with a specific EINVAL.
-        let result =
-            parse_kitty_graphics_protocol("a=t,f=32,s=1,v=1,i=5,I=6", "AAAA")
-                .expect("response struct must exist");
+        let result = parse_kitty_graphics_protocol("a=t,f=32,s=1,v=1,i=5,I=6", "AAAA")
+            .expect("response struct must exist");
         assert!(result.graphic_data.is_none());
         let body = result.response.expect("error message expected");
         assert!(
@@ -1967,8 +1940,8 @@ mod tests {
     fn test_query_requires_image_id() {
         // Query without i= AND without I=: no identifier to address
         // the response to, so nothing is emitted — matches ghostty.
-        let result = parse_kitty_graphics_protocol("a=q", "")
-            .expect("response struct must exist");
+        let result =
+            parse_kitty_graphics_protocol("a=q", "").expect("response struct must exist");
         assert!(result.response.is_none());
 
         // Query with only I= set (no i=): we surface the EINVAL
@@ -1995,9 +1968,8 @@ mod tests {
         // When placement_id is set alongside image_id, the response
         // must carry both keys (matches ghostty's encoder).
         let png_data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
-        let result =
-            parse_kitty_graphics_protocol("a=T,f=100,i=7,p=13", png_data)
-                .expect("response struct must exist");
+        let result = parse_kitty_graphics_protocol("a=T,f=100,i=7,p=13", png_data)
+            .expect("response struct must exist");
         let body = result.response.expect("OK response expected");
         assert!(
             body.contains("i=7") && body.contains("p=13"),
@@ -2013,10 +1985,7 @@ mod tests {
         // still return EINVAL for the action itself, but clients can
         // extend support later and the values must already be correct.
         let mut cmd = KittyGraphicsCommand::default();
-        parse_control_data(
-            &mut cmd,
-            "a=f,i=1,r=3,c=2,z=100,X=1,Y=4294901760",
-        );
+        parse_control_data(&mut cmd, "a=f,i=1,r=3,c=2,z=100,X=1,Y=4294901760");
         assert_eq!(cmd.action, Action::Frame);
         assert_eq!(cmd.frame_number, 3);
         assert_eq!(cmd.base_frame, 2);
@@ -2027,10 +1996,7 @@ mod tests {
         // Animation control (a=a) populates animation_state, loop_count,
         // current_frame, frame_number, frame_gap.
         let mut cmd = KittyGraphicsCommand::default();
-        parse_control_data(
-            &mut cmd,
-            "a=a,i=2,s=3,v=5,c=1,r=2,z=50",
-        );
+        parse_control_data(&mut cmd, "a=a,i=2,s=3,v=5,c=1,r=2,z=50");
         assert_eq!(cmd.action, Action::Animate);
         assert_eq!(cmd.animation_state, 3);
         assert_eq!(cmd.loop_count, 5);
@@ -2042,7 +2008,8 @@ mod tests {
     fn parse_delete(keys: &str) -> DeleteRequest {
         let resp = parse_kitty_graphics_protocol(keys, "")
             .expect("delete must produce a response");
-        resp.delete_request.expect("delete_request must be populated")
+        resp.delete_request
+            .expect("delete_request must be populated")
     }
 
     #[test]
@@ -2116,11 +2083,7 @@ mod tests {
         let mut state = KittyGraphicsState::default();
 
         // First chunk: legit pending upload.
-        let p1 = vec![
-            b"G".as_ref(),
-            b"a=t,f=32,s=1,v=1,m=1,i=777",
-            b"/wAA",
-        ];
+        let p1 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=777", b"/wAA"];
         parse(&p1, &mut state).expect("first chunk");
         assert_eq!(state.incomplete_images.len(), 1);
 
@@ -2132,8 +2095,7 @@ mod tests {
 
         // Any subsequent command triggers eviction on its way in. Use
         // a fresh single-shot image so the eviction scan runs.
-        let p2 =
-            vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,i=888", b"/wAA/w=="];
+        let p2 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,i=888", b"/wAA/w=="];
         let _ = parse(&p2, &mut state);
 
         assert!(
@@ -2186,7 +2148,10 @@ mod tests {
         assert!(!resp.incomplete, "real errors must not look like pending");
         assert!(resp.graphic_data.is_none());
         let body = resp.response.expect("error message expected");
-        assert!(body.contains("i=99"), "error must be addressed to i=99: {body}");
+        assert!(
+            body.contains("i=99"),
+            "error must be addressed to i=99: {body}"
+        );
         assert!(
             body.contains("EINVAL") || body.contains("ENOENT"),
             "blocked path should surface EINVAL or ENOENT: {body}"
@@ -2244,17 +2209,11 @@ mod tests {
         // Commands with no i=/I= get an implicit id, which suppresses
         // the response entirely — but we still must NOT load the file.
         // Include i=1 so we can assert on the EINVAL response.
-        for path in &[
-            "/proc/self/environ",
-            "/sys/class/net",
-            "/dev/null",
-        ] {
+        for path in &["/proc/self/environ", "/sys/class/net", "/dev/null"] {
             let encoded = BASE64.encode(path.as_bytes());
-            let response = parse_kitty_graphics_protocol(
-                "a=t,t=f,f=32,s=1,v=1,i=1",
-                &encoded,
-            )
-            .expect("must return a response carrying the EINVAL");
+            let response =
+                parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1,i=1", &encoded)
+                    .expect("must return a response carrying the EINVAL");
             assert!(response.graphic_data.is_none(), "{path} must not load");
             let body = response.response.expect("error message expected");
             assert!(body.contains("i=1"));
