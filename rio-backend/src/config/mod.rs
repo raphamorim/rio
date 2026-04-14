@@ -162,6 +162,11 @@ pub struct Config {
     pub bell: Bell,
     #[serde(default = "default_bool_true", rename = "enable-scroll-bar")]
     pub enable_scroll_bar: bool,
+    #[serde(
+        default = "default_scrollback_history_limit",
+        rename = "scrollback-history-limit"
+    )]
+    pub scrollback_history_limit: usize,
     #[serde(default = "effects::Effects::default")]
     pub effects: effects::Effects,
 }
@@ -659,6 +664,7 @@ impl Default for Config {
             hints: Hints::default(),
             bell: Bell::default(),
             enable_scroll_bar: true,
+            scrollback_history_limit: default_scrollback_history_limit(),
             effects: effects::Effects::default(),
         }
     }
@@ -1261,6 +1267,41 @@ mod tests {
         );
 
         assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
+    }
+
+    #[test]
+    fn test_scrollback_history_limit_default() {
+        let result = create_temporary_config(
+            "scrollback-default",
+            r#"
+            [window]
+            width = 800
+        "#,
+        );
+        assert_eq!(result.scrollback_history_limit, 10_000);
+    }
+
+    #[test]
+    fn test_scrollback_history_limit_custom() {
+        let result = create_temporary_config(
+            "scrollback-custom",
+            r#"
+            scrollback-history-limit = 50000
+        "#,
+        );
+        assert_eq!(result.scrollback_history_limit, 50_000);
+    }
+
+    #[test]
+    fn test_scrollback_history_limit_zero_disables() {
+        // A value of 0 disables scrollback. Must round-trip cleanly.
+        let result = create_temporary_config(
+            "scrollback-zero",
+            r#"
+            scrollback-history-limit = 0
+        "#,
+        );
+        assert_eq!(result.scrollback_history_limit, 0);
     }
 
     #[test]

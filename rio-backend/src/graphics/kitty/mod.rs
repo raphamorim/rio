@@ -132,6 +132,7 @@ fn test_png_transmit_and_display() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Set proper cell dimensions
@@ -370,6 +371,7 @@ fn test_cursor_movement_default() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     let initial_cursor_row = term.grid.cursor.pos.row.0;
@@ -444,6 +446,7 @@ fn test_cursor_movement_no_move() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Set proper cell dimensions for testing
@@ -547,6 +550,7 @@ fn test_image_row_occupation_exact_fit() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Start at row 0
@@ -616,6 +620,7 @@ fn test_image_row_occupation_single_row() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Set proper cell dimensions for testing
@@ -682,6 +687,7 @@ fn test_image_row_occupation_three_rows() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     let initial_cursor_row = term.grid.cursor.pos.row.0;
@@ -749,6 +755,7 @@ fn test_image_row_occupation_from_middle() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Move cursor to row 5
@@ -819,6 +826,7 @@ fn test_delete_all() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     // Delete all graphics (d=a)
@@ -850,6 +858,7 @@ fn test_store_graphic() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     let pixels = vec![255u8, 0, 0, 255]; // 1x1 red pixel
@@ -886,6 +895,7 @@ fn test_place_nonexistent_graphic() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     let placement = kitty_graphics_protocol::PlacementRequest {
@@ -970,6 +980,7 @@ fn test_placed_textures_tracks_inserts() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
 
     term.graphics.cell_width = 10.0;
@@ -2341,6 +2352,7 @@ fn make_test_term() -> Crosswords<TestEventListener> {
         TestEventListener,
         unsafe { WindowId::dummy() },
         0,
+        10_000,
     )
 }
 
@@ -3019,6 +3031,7 @@ fn test_resize_widen_unwraps_command_image_follows() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3097,6 +3110,7 @@ fn test_resize_narrow_wraps_command_image_follows() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3210,6 +3224,7 @@ fn test_debug_widen_visible_layout() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3266,6 +3281,7 @@ fn test_debug_narrow_visible_layout() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3324,6 +3340,7 @@ fn test_resize_narrow_combined_col_and_row_change() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3416,6 +3433,7 @@ fn test_resize_narrow_with_multi_row_image() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3522,6 +3540,7 @@ fn test_resize_narrow_with_cursor_at_bottom_of_screen() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3629,6 +3648,7 @@ fn test_resize_narrow_with_prompt_after_image() {
         event_listener,
         window_id,
         0,
+        10_000,
     );
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;

@@ -1352,6 +1352,20 @@ Default is `true`.
 enable-scroll-bar = true
 ```
 
+## scrollback-history-limit
+
+Maximum number of scrollback history lines retained per panel. Scrollback lets you scroll up to inspect command output that has moved off-screen.
+
+- Raising this keeps more history available at the cost of memory proportional to the total number of cells held in the buffer.
+- Setting it to `0` disables scrollback entirely.
+- The alt-screen grid (used by full-screen TUIs like `vim`, `less`, `htop`) never keeps scrollback regardless of this value.
+
+Default is `10000`.
+
+```toml
+scrollback-history-limit = 10000
+```
+
 ## shell
 
 You can set `shell.program` to the path of your favorite shell, e.g. `/bin/fish`.

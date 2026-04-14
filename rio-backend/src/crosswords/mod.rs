@@ -449,10 +449,11 @@ impl<U: EventListener> Crosswords<U> {
         event_proxy: U,
         window_id: WindowId,
         route_id: usize,
+        scrollback_history_limit: usize,
     ) -> Crosswords<U> {
         let cols = dimensions.columns();
         let rows = dimensions.screen_lines();
-        let grid = Grid::new(rows, cols, 10_000);
+        let grid = Grid::new(rows, cols, scrollback_history_limit);
         let alt = Grid::new(rows, cols, 0);
 
         let scroll_region = Line(0)..Line(rows as i32);
@@ -4038,8 +4039,14 @@ mod tests {
     fn scroll_up() {
         let size = CrosswordsSize::new(1, 10);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         for i in 0..10 {
             cw.grid[Line(i)][Column(0)].set_c(i as u8 as char);
         }
@@ -4073,8 +4080,14 @@ mod tests {
         let size = CrosswordsSize::new(1, 1);
         let window_id = crate::event::WindowId::from(0);
 
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         assert_eq!(cw.grid.total_lines(), 1);
 
         cw.linefeed();
@@ -4087,8 +4100,14 @@ mod tests {
 
         let window_id = crate::event::WindowId::from(0);
 
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         let cursor = cw.cursor();
         assert_eq!(cursor.pos.col, 0);
         assert_eq!(cursor.pos.row, 0);
@@ -4113,8 +4132,14 @@ mod tests {
         let size = CrosswordsSize::new(5, 10);
         let window_id = crate::event::WindowId::from(0);
 
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         for i in 0..4 {
             cw.grid[Line(0)][Column(i)].set_c(i as u8 as char);
         }
@@ -4142,8 +4167,14 @@ mod tests {
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         let mut processor = Processor::<StdSyncHandler>::new();
 
         // Plain text, then "click" wrapped in an OSC 8, then plain "."
@@ -4190,8 +4221,14 @@ mod tests {
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         let mut processor = Processor::<StdSyncHandler>::new();
 
         let bytes = b"\x1b]8;;https://a.example\x07A\x1b]8;;\x07\
@@ -4221,8 +4258,14 @@ mod tests {
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         let mut processor = Processor::<StdSyncHandler>::new();
 
         // Open a hyperlink, write 'X', close it, then write 'Y'.
@@ -4247,8 +4290,14 @@ mod tests {
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         let mut processor = Processor::<StdSyncHandler>::new();
 
         // "AB\nCD" with the whole thing inside one OSC 8 link.
@@ -4274,8 +4323,14 @@ mod tests {
     fn test_damage_tracking_after_control_c() {
         let size = CrosswordsSize::new(80, 24);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Simulate fzf-like scenario: write some text
         let test_text = "fzf> search term";
@@ -4343,8 +4398,14 @@ mod tests {
     fn test_damage_tracking_cursor_movement() {
         let size = CrosswordsSize::new(80, 24);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Write text on multiple lines
         cw.input('A');
@@ -4373,8 +4434,14 @@ mod tests {
     fn test_damage_tracking_clear_operations() {
         let size = CrosswordsSize::new(80, 24);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Fill some lines with content
         for line in 0..5 {
@@ -4417,8 +4484,14 @@ mod tests {
     fn test_damage_tracking_prompt_redraw() {
         let size = CrosswordsSize::new(80, 24);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Simulate a shell prompt scenario
         let prompt = "$ ";
@@ -4466,8 +4539,14 @@ mod tests {
         let size = CrosswordsSize::new(5, 5);
         let window_id = crate::event::WindowId::from(0);
 
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         let grid = &mut term.grid;
         for i in 0..4 {
             if i == 1 {
@@ -4539,8 +4618,14 @@ mod tests {
         let size = CrosswordsSize::new(5, 1);
         let window_id = crate::event::WindowId::from(0);
 
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         let mut grid: Grid<Square> = Grid::new(1, 5, 0);
         for i in 0..5 {
             grid[Line(0)][Column(i)].set_c('a');
@@ -4566,8 +4651,14 @@ mod tests {
         let size = CrosswordsSize::new(5, 5);
         let window_id = crate::event::WindowId::from(0);
 
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         let grid = &mut term.grid;
         for i in 1..4 {
             grid[Line(i)][Column(0)].set_c('"');
@@ -4651,8 +4742,14 @@ mod tests {
 
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Move cursor to position (1, 5) and type some text
         term.goto(Line(1), Column(5));
@@ -4728,8 +4825,14 @@ mod tests {
 
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Reset damage to start clean
         term.reset_damage();
@@ -4796,8 +4899,14 @@ mod tests {
     fn test_keyboard_mode_push_pop() {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Initial state: stack should be empty with NO_MODE
         assert_eq!(
@@ -4837,8 +4946,14 @@ mod tests {
     fn test_keyboard_mode_stack_wraparound() {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Fill the stack to maximum depth using Handler trait
         for i in 0..KEYBOARD_MODE_STACK_MAX_DEPTH {
@@ -4862,8 +4977,14 @@ mod tests {
     fn test_keyboard_mode_pop_excessive() {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Push a few modes using Handler trait
         Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
@@ -4884,8 +5005,14 @@ mod tests {
     fn test_keyboard_mode_set_replace() {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Set initial mode using Handler trait method
         Handler::set_keyboard_mode(
@@ -4914,8 +5041,14 @@ mod tests {
     fn test_keyboard_mode_set_union() {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Set initial mode using Handler trait method
         Handler::set_keyboard_mode(
@@ -4940,8 +5073,14 @@ mod tests {
     fn test_keyboard_mode_set_difference() {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Set combined mode using Handler trait method
         let combined_mode =
@@ -4970,7 +5109,8 @@ mod tests {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
         let listener = VoidListener {};
-        let mut term = Crosswords::new(size, CursorShape::Block, listener, window_id, 0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, listener, window_id, 0, 10_000);
 
         // Push a mode and test reporting using Handler trait
         Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
@@ -4986,8 +5126,14 @@ mod tests {
     fn test_keyboard_mode_reset() {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Push several modes
         Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
@@ -5010,8 +5156,14 @@ mod tests {
     fn test_keyboard_mode_stack_underflow_protection() {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Start at index 0, try to pop using Handler trait - should wrap correctly
         assert_eq!(term.keyboard_mode_idx, 0);
@@ -5051,7 +5203,8 @@ mod tests {
         let listener = TestListener {
             events: events.clone(),
         };
-        let mut term = Crosswords::new(size, CursorShape::Block, listener, window_id, 0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, listener, window_id, 0, 10_000);
 
         // Call report_version using Handler trait
         Handler::report_version(&mut term);
@@ -5087,8 +5240,14 @@ mod tests {
     fn test_keyboard_mode_syncs_with_mode() {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Initially, no keyboard mode should be set
         assert!(!term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES));
@@ -5166,8 +5325,14 @@ mod tests {
         // 20×20 pixel image, 10×10 cell size → 2×2 cells
         let size = CrosswordsSize::new(20, 10);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Set cell dimensions so insert_graphic can compute layout.
         cw.graphics.cell_width = 10.0;
@@ -5224,8 +5389,14 @@ mod tests {
     fn cell_graphic_accessor() {
         let size = CrosswordsSize::new(20, 10);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         cw.graphics.cell_width = 10.0;
         cw.graphics.cell_height = 10.0;
 
@@ -5259,8 +5430,14 @@ mod tests {
     fn delete_all_graphics_frees_extras() {
         let size = CrosswordsSize::new(20, 10);
         let window_id = crate::event::WindowId::from(0);
-        let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         cw.graphics.cell_width = 10.0;
         cw.graphics.cell_height = 10.0;
 
