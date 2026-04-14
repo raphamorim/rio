@@ -419,6 +419,7 @@ mod tests {
             VoidListener,
             crate::event::WindowId::from(0),
             0,
+            10_000,
         )
     }
 

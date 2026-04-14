@@ -769,8 +769,14 @@ mod tests {
         // Create terminal with the appropriate dimensions.
         let window_id = crate::event::WindowId::from(0);
         let size = CrosswordsSize::new(num_cols, lines.len());
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Fill terminal with content.
         for (line, text) in lines.iter().enumerate() {
@@ -1254,8 +1260,14 @@ mod tests {
     fn wide_without_spacer() {
         let window_id = crate::event::WindowId::from(0);
         let size = CrosswordsSize::new(2, 2);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
         term.grid[Line(0)][Column(0)].set_c('x');
         term.grid[Line(0)][Column(1)].set_c('字');
         term.grid[Line(0)][Column(1)].set_wide(Wide::Wide);

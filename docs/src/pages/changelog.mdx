@@ -5,6 +5,13 @@ language: 'en'
 
 <h1 style={{fontSize: "2.25rem", fontWeight: 800, letterSpacing: "-0.02em", background: "linear-gradient(-120deg, #fb43fe 30%, #00dbe5)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", borderBottom: "none", paddingBottom: "1rem", marginBottom: "2rem"}}>Changelog</h1>
 
+## 0.3.9
+
+- Add `scrollback-history-limit` config option (default `10000`, set to `0` to disable scrollback). Fixes [#993](https://github.com/raphamorim/rio/issues/993).
+- Harden Kitty graphics protocol: reject images exceeding 10000 px per axis or 400 MiB, add per-chunk base64 decoding so clients like `chafa --format=kitty` (which pads every chunk) merge correctly, time out stale chunked uploads after 10 s, combine `i=/I=/p=` response keys, validate `i=`/`I=` mutual exclusion, and require `i=` for `a=q` queries.
+- Fix kitty image protocol whenever using transmission.
+- Fix color picker not rendering correctly.
+
 ## 0.3.8
 
 - Fix click between panels not working if it's on alternative screen.

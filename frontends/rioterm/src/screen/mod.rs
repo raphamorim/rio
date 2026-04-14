@@ -200,6 +200,7 @@ impl Screen<'_> {
             panel: config.panel,
             title: config.title.clone(),
             keyboard: config.keyboard,
+            scrollback_history_limit: config.scrollback_history_limit,
         };
 
         // Create rich text with initial position accounting for island
