@@ -4,8 +4,25 @@ use base64::{
 };
 use smallvec::SmallVec;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 use tracing::debug;
+
+/// Maximum width or height (per axis) we accept for a kitty-graphics
+/// image. Matches ghostty / upstream kitty. Anything larger is a DoS
+/// vector — we refuse with `EINVAL: dimensions too large`.
+const MAX_DIMENSION: u32 = 10_000;
+
+/// Maximum decoded payload size (bytes) we accept. 400 MiB matches
+/// ghostty / upstream kitty. Guards against runaway base64 blobs filling
+/// memory before `create_graphic_data` validates them.
+const MAX_SIZE: usize = 400 * 1024 * 1024;
+
+/// How long an in-progress chunked upload may sit idle before the
+/// accumulator drops it. Prevents `incomplete_images` from growing
+/// without bound when a client abandons a chunked transmission
+/// mid-stream.
+const CHUNK_STALE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Per-terminal state for Kitty graphics protocol.
 /// This stores the accumulated command state for chunked transmissions.
@@ -92,6 +109,9 @@ pub struct PlacementRequest {
 pub struct DeleteRequest {
     pub action: u8,
     pub image_id: u32,
+    /// Image number (I= key) — used by `d=n/N` variants to resolve an
+    /// image via the client-assigned number rather than its id.
+    pub image_number: u32,
     pub placement_id: u32,
     pub x: u32,
     pub y: u32,
@@ -206,6 +226,11 @@ pub struct KittyGraphicsCommand {
     /// placement) while still handling large image data by spilling to
     /// heap.
     payload: SmallVec<[u8; 64]>,
+
+    /// Wall-clock time of the most recent chunk for this command. Used
+    /// to evict abandoned chunked uploads from the accumulator. Only
+    /// meaningful while the command lives in `incomplete_images`.
+    last_touched: Instant,
 }
 
 impl Default for KittyGraphicsCommand {
@@ -251,7 +276,64 @@ impl Default for KittyGraphicsCommand {
             delete_action: b'a',
             unicode_placeholder: 0,
             payload: SmallVec::new(),
+            last_touched: Instant::now(),
         }
+    }
+}
+
+/// Build an APC response string of the form
+/// `\x1b_G<keys>;<message>\x1b\\`, matching ghostty's encoder.
+///
+/// `image_id`, `image_number`, `placement_id` are all emitted (in that
+/// order, comma-separated) when non-zero. When *all* of them are zero
+/// this returns `None` — per kitty spec we don't send a response
+/// without an identifier.
+fn encode_response(
+    image_id: u32,
+    image_number: u32,
+    placement_id: u32,
+    message: &str,
+) -> Option<String> {
+    if image_id == 0 && image_number == 0 {
+        return None;
+    }
+
+    let mut keys = String::new();
+    if image_id > 0 {
+        keys.push_str(&format!("i={image_id}"));
+    }
+    if image_number > 0 {
+        if !keys.is_empty() {
+            keys.push(',');
+        }
+        keys.push_str(&format!("I={image_number}"));
+    }
+    if placement_id > 0 {
+        if !keys.is_empty() {
+            keys.push(',');
+        }
+        keys.push_str(&format!("p={placement_id}"));
+    }
+
+    Some(format!("\x1b_G{keys};{message}\x1b\\"))
+}
+
+/// Same as `encode_response` but respects the `q=` quiet setting:
+/// - `q=0`: emit both successes and failures
+/// - `q=1`: emit only failures
+/// - `q=2`: emit nothing
+fn encode_response_quiet(
+    image_id: u32,
+    image_number: u32,
+    placement_id: u32,
+    message: &str,
+    quiet: u8,
+    is_error: bool,
+) -> Option<String> {
+    match quiet {
+        0 => encode_response(image_id, image_number, placement_id, message),
+        1 if is_error => encode_response(image_id, image_number, placement_id, message),
+        _ => None,
     }
 }
 
@@ -300,18 +382,58 @@ pub fn parse(
         }
     }
 
-    // Handle query action
-    if cmd.action == Action::Query {
-        let response = if cmd.quiet < 2 {
-            format!("\x1b_Gi={};OK\x1b\\", cmd.image_id)
-        } else {
-            String::new()
-        };
+    // Validation: `i=` and `I=` are mutually exclusive per kitty spec
+    // (the image is either referenced by id or by number, never both).
+    if cmd.image_id > 0 && cmd.image_number > 0 {
         return Some(KittyGraphicsResponse {
             graphic_data: None,
             placement_request: None,
             delete_request: None,
-            response: Some(response),
+            response: encode_response_quiet(
+                cmd.image_id,
+                cmd.image_number,
+                cmd.placement_id,
+                "EINVAL: image ID and number are mutually exclusive",
+                cmd.quiet,
+                true,
+            ),
+            incomplete: false,
+        });
+    }
+
+    // Handle query action: requires an image id per kitty spec. Without
+    // one we cannot even build a response addressed to anything, so we
+    // surface EINVAL instead of pretending success.
+    if cmd.action == Action::Query {
+        if cmd.image_id == 0 {
+            return Some(KittyGraphicsResponse {
+                graphic_data: None,
+                placement_request: None,
+                delete_request: None,
+                response: encode_response_quiet(
+                    cmd.image_id,
+                    cmd.image_number,
+                    cmd.placement_id,
+                    "EINVAL: image ID required",
+                    cmd.quiet,
+                    true,
+                ),
+                incomplete: false,
+            });
+        }
+        let response = encode_response_quiet(
+            cmd.image_id,
+            cmd.image_number,
+            cmd.placement_id,
+            "OK",
+            cmd.quiet,
+            false,
+        );
+        return Some(KittyGraphicsResponse {
+            graphic_data: None,
+            placement_request: None,
+            delete_request: None,
+            response,
             incomplete: false,
         });
     }
@@ -346,6 +468,11 @@ pub fn parse(
         key
     };
 
+    // Drop any chunked uploads that have been idle for too long. Runs
+    // on every chunk event, so worst case we scan `incomplete_images`
+    // once per APC — O(n) with n bounded by concurrent uploads.
+    evict_stale_chunks(state);
+
     if cmd.more {
         // Pin the key for continuation chunks. Only chunked commands
         // touch `current_transmission_key` so non-chunked commands
@@ -378,12 +505,28 @@ pub fn parse(
                         cmd.payload.len()
                     );
                 }
+                cmd.last_touched = Instant::now();
                 e.insert(cmd);
             }
             Entry::Occupied(mut e) => {
-                // Subsequent chunk - append decoded bytes
+                // Subsequent chunk - append decoded bytes, refusing if
+                // the accumulated size would exceed our cap.
                 let stored_cmd = e.get_mut();
+                if stored_cmd.payload.len().saturating_add(cmd.payload.len())
+                    > MAX_SIZE
+                {
+                    debug!(
+                        "Dropping chunked upload {}: would exceed MAX_SIZE ({})",
+                        image_key, MAX_SIZE
+                    );
+                    // Evict the abandoned upload so it can't be resumed
+                    // into an oversized state.
+                    e.remove();
+                    state.current_transmission_key = 0;
+                    return None;
+                }
                 stored_cmd.payload.extend_from_slice(&cmd.payload);
+                stored_cmd.last_touched = Instant::now();
                 debug!(
                     "Appended chunk for image key {}: {} bytes accumulated",
                     image_key,
@@ -401,6 +544,15 @@ pub fn parse(
         if let Some(mut stored_cmd) = state.incomplete_images.remove(&image_key) {
             // Final chunk: append this chunk's decoded bytes to the
             // already-accumulated stored payload.
+            if stored_cmd.payload.len().saturating_add(cmd.payload.len()) > MAX_SIZE
+            {
+                debug!(
+                    "Dropping final chunk {}: would exceed MAX_SIZE ({})",
+                    image_key, MAX_SIZE
+                );
+                state.current_transmission_key = 0;
+                return None;
+            }
             stored_cmd.payload.extend_from_slice(&cmd.payload);
             cmd = stored_cmd; // Use stored metadata
             debug!(
@@ -420,23 +572,44 @@ pub fn parse(
         Action::Transmit | Action::TransmitAndDisplay => {
             debug!("Creating graphic data: format={:?}, medium={:?}, compression={:?}, width={}, height={}, payload_len={}",
                 cmd.format, cmd.medium, cmd.compression, cmd.width, cmd.height, cmd.payload.len());
-            let graphic_data = create_graphic_data(&cmd)?;
+            let graphic_data = match create_graphic_data(&cmd) {
+                Ok(g) => g,
+                Err(err) => {
+                    return Some(KittyGraphicsResponse {
+                        graphic_data: None,
+                        placement_request: None,
+                        delete_request: None,
+                        response: if cmd.implicit_id {
+                            None
+                        } else {
+                            encode_response_quiet(
+                                cmd.image_id,
+                                cmd.image_number,
+                                cmd.placement_id,
+                                err.message(),
+                                cmd.quiet,
+                                true,
+                            )
+                        },
+                        incomplete: false,
+                    });
+                }
+            };
             debug!(
                 "Graphic data created successfully: {}x{}",
                 graphic_data.width, graphic_data.height
             );
-            let response = if cmd.quiet == 0
-                && !cmd.implicit_id
-                && (cmd.image_id > 0 || cmd.image_number > 0)
-            {
-                let id_part = if cmd.image_number > 0 {
-                    format!("i={},I={}", graphic_data.id.get(), cmd.image_number)
-                } else {
-                    format!("i={}", cmd.image_id)
-                };
-                Some(format!("\x1b_G{};OK\x1b\\", id_part))
-            } else {
+            let response = if cmd.implicit_id {
                 None
+            } else {
+                encode_response_quiet(
+                    graphic_data.id.get() as u32,
+                    cmd.image_number,
+                    cmd.placement_id,
+                    "OK",
+                    cmd.quiet,
+                    false,
+                )
             };
 
             let placement_request = if cmd.action == Action::TransmitAndDisplay {
@@ -480,15 +653,17 @@ pub fn parse(
                 unicode_placeholder: cmd.unicode_placeholder,
                 cursor_movement: cmd.cursor_movement,
             };
-            let response = if cmd.quiet == 0 && !cmd.implicit_id && cmd.image_id > 0 {
-                let id_part = if cmd.placement_id > 0 {
-                    format!("i={},p={}", cmd.image_id, cmd.placement_id)
-                } else {
-                    format!("i={}", cmd.image_id)
-                };
-                Some(format!("\x1b_G{};OK\x1b\\", id_part))
-            } else {
+            let response = if cmd.implicit_id {
                 None
+            } else {
+                encode_response_quiet(
+                    cmd.image_id,
+                    cmd.image_number,
+                    cmd.placement_id,
+                    "OK",
+                    cmd.quiet,
+                    false,
+                )
             };
             Some(KittyGraphicsResponse {
                 graphic_data: None,
@@ -504,6 +679,7 @@ pub fn parse(
             let delete = DeleteRequest {
                 action: cmd.delete_action.to_ascii_lowercase(),
                 image_id: cmd.image_id,
+                image_number: cmd.image_number,
                 placement_id: cmd.placement_id,
                 x: cmd.source_x,
                 y: cmd.source_y,
@@ -533,21 +709,23 @@ pub fn parse(
             //
             // Implicit-id transmissions still get no response, so the
             // client never sees stray APC traffic it didn't ask for.
-            let response = if cmd.quiet < 2 && !cmd.implicit_id {
-                let id_part = if cmd.image_id > 0 {
-                    format!("i={}", cmd.image_id)
-                } else if cmd.image_number > 0 {
-                    format!("I={}", cmd.image_number)
-                } else {
-                    String::new()
-                };
-                if id_part.is_empty() {
-                    Some("\x1b_G;EINVAL:unsupported action\x1b\\".to_string())
-                } else {
-                    Some(format!("\x1b_G{};EINVAL:unsupported action\x1b\\", id_part))
-                }
-            } else {
+            let response = if cmd.implicit_id {
                 None
+            } else {
+                // Fall back to a bare APC when there's no id at all, so
+                // clients that probe without an id still see the error.
+                encode_response_quiet(
+                    cmd.image_id,
+                    cmd.image_number,
+                    cmd.placement_id,
+                    "EINVAL:unsupported action",
+                    cmd.quiet,
+                    true,
+                )
+                .or_else(|| match cmd.quiet {
+                    2 => None,
+                    _ => Some("\x1b_G;EINVAL:unsupported action\x1b\\".to_string()),
+                })
             };
             Some(KittyGraphicsResponse {
                 graphic_data: None,
@@ -703,6 +881,36 @@ fn parse_compression(value: &str) -> Compression {
     }
 }
 
+/// Evict entries from `incomplete_images` that have not received a
+/// chunk within `CHUNK_STALE_TIMEOUT`. Prevents unbounded growth when
+/// clients abandon chunked uploads.
+fn evict_stale_chunks(state: &mut KittyGraphicsState) {
+    if state.incomplete_images.is_empty() {
+        return;
+    }
+    let now = Instant::now();
+    let before = state.incomplete_images.len();
+    state
+        .incomplete_images
+        .retain(|_, cmd| now.duration_since(cmd.last_touched) < CHUNK_STALE_TIMEOUT);
+    let after = state.incomplete_images.len();
+    if after < before {
+        debug!(
+            "Evicted {} stale chunked uploads (>{}s idle)",
+            before - after,
+            CHUNK_STALE_TIMEOUT.as_secs()
+        );
+        // If the pinned transmission key was evicted, clear it so that a
+        // new chunkless command can't accidentally resume it.
+        if !state
+            .incomplete_images
+            .contains_key(&state.current_transmission_key)
+        {
+            state.current_transmission_key = 0;
+        }
+    }
+}
+
 /// Decode a single APC command's base64 payload.
 ///
 /// Tries the standard (padded) decoder first, falling back to the
@@ -729,12 +937,61 @@ fn decode_payload_base64(payload: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
+/// Error emitted from `create_graphic_data`. Maps directly to kitty
+/// protocol EINVAL/ENOENT/E2BIG message strings so the caller can
+/// surface them in a response.
+#[derive(Debug)]
+#[allow(dead_code)] // UnsupportedFormat/Medium are platform-gated
+enum GraphicError {
+    DimensionsTooLarge,
+    DimensionsRequired,
+    TooLarge,
+    UnsupportedFormat,
+    UnsupportedMedium,
+    InvalidData,
+    DecompressionFailed,
+    FileNotFound,
+}
+
+impl GraphicError {
+    fn message(&self) -> &'static str {
+        match self {
+            GraphicError::DimensionsTooLarge => "EINVAL: dimensions too large",
+            GraphicError::DimensionsRequired => "EINVAL: dimensions required",
+            GraphicError::TooLarge => "E2BIG: image too large",
+            GraphicError::UnsupportedFormat => "EINVAL: unsupported format",
+            GraphicError::UnsupportedMedium => "EINVAL: unsupported medium",
+            GraphicError::InvalidData => "EINVAL: invalid data",
+            GraphicError::DecompressionFailed => "EINVAL: decompression failed",
+            GraphicError::FileNotFound => "ENOENT: file not found",
+        }
+    }
+}
+
+fn create_graphic_data(
+    cmd: &KittyGraphicsCommand,
+) -> Result<GraphicData, GraphicError> {
+    // Early dimension guard — applies to every non-PNG path. PNG
+    // commands may transmit without declaring width/height (we pick
+    // them up after decoding); we re-check post-decode.
+    if cmd.format != Format::Png
+        && (cmd.width > MAX_DIMENSION || cmd.height > MAX_DIMENSION)
+    {
+        debug!(
+            "Rejecting kitty image: {}x{} exceeds {} cap",
+            cmd.width, cmd.height, MAX_DIMENSION
+        );
+        return Err(GraphicError::DimensionsTooLarge);
+    }
+
     // Payload is already base64-decoded by parse(). Pick up the bytes
     // based on the transmission medium — direct means they're the image
     // bytes, file/shm means they're a path/name.
     let raw_data = match cmd.medium {
         TransmissionMedium::Direct => {
+            if cmd.payload.len() > MAX_SIZE {
+                return Err(GraphicError::TooLarge);
+            }
             debug!(
                 "Using decoded Direct payload: {} bytes",
                 cmd.payload.len()
@@ -750,13 +1007,14 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             // Payload is already base64-decoded by parse(); the bytes
             // directly represent the file path.
             debug!("File path payload: {} bytes", cmd.payload.len());
-            let path_str = std::str::from_utf8(&cmd.payload).ok()?;
+            let path_str = std::str::from_utf8(&cmd.payload)
+                .map_err(|_| GraphicError::InvalidData)?;
             debug!("File path: {}", path_str);
             let path = Path::new(path_str);
 
             // Security checks
             if !path.is_file() {
-                return None;
+                return Err(GraphicError::FileNotFound);
             }
 
             // Check for sensitive paths
@@ -765,17 +1023,23 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 || path_str_lower.contains("/sys/")
                 || path_str_lower.contains("/dev/")
             {
-                return None;
+                return Err(GraphicError::InvalidData);
             }
 
             // For temp files, verify it contains "tty-graphics-protocol"
             if cmd.medium == TransmissionMedium::TempFile
                 && !path_str.contains("tty-graphics-protocol")
             {
-                return None;
+                return Err(GraphicError::InvalidData);
             }
 
-            let mut file = File::open(path).ok()?;
+            // Cap the explicit `S=` read size before we allocate. Keeps
+            // a malicious `S=<huge>` from exploding our heap.
+            if cmd.size as usize > MAX_SIZE {
+                return Err(GraphicError::TooLarge);
+            }
+
+            let mut file = File::open(path).map_err(|_| GraphicError::FileNotFound)?;
             let mut data = Vec::new();
 
             if cmd.size > 0 {
@@ -783,13 +1047,21 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 if cmd.offset > 0 {
                     use std::io::Seek;
                     file.seek(std::io::SeekFrom::Start(cmd.offset as u64))
-                        .ok()?;
+                        .map_err(|_| GraphicError::InvalidData)?;
                 }
                 data.resize(cmd.size as usize, 0);
-                file.read_exact(&mut data).ok()?;
+                file.read_exact(&mut data)
+                    .map_err(|_| GraphicError::InvalidData)?;
             } else {
-                // Read entire file
-                file.read_to_end(&mut data).ok()?;
+                // Read entire file. Cap the total so a huge file on disk
+                // can't be silently loaded through this channel.
+                let limit = (MAX_SIZE as u64).saturating_add(1);
+                file.take(limit)
+                    .read_to_end(&mut data)
+                    .map_err(|_| GraphicError::InvalidData)?;
+                if data.len() > MAX_SIZE {
+                    return Err(GraphicError::TooLarge);
+                }
             }
 
             // Delete temp file if requested
@@ -808,8 +1080,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 // Payload is already base64-decoded by parse(); the bytes
                 // directly represent the shared memory name.
                 debug!("Shared memory name payload: {} bytes", cmd.payload.len());
-                let shm_name_str = std::str::from_utf8(&cmd.payload).ok()?;
-                let shm_name = CString::new(shm_name_str).ok()?;
+                let shm_name_str = std::str::from_utf8(&cmd.payload)
+                    .map_err(|_| GraphicError::InvalidData)?;
+                let shm_name =
+                    CString::new(shm_name_str).map_err(|_| GraphicError::InvalidData)?;
 
                 debug!(
                     "Opening shared memory: {}, expected size: {}",
@@ -828,7 +1102,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                             "Failed to open shared memory '{}': {} (errno: {})",
                             shm_name_str, err, errno
                         );
-                        return None;
+                        return Err(GraphicError::FileNotFound);
                     }
 
                     // Get size of shared memory
@@ -837,7 +1111,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                         libc::close(fd);
                         libc::shm_unlink(shm_name.as_ptr());
                         debug!("Failed to fstat shared memory");
-                        return None;
+                        return Err(GraphicError::InvalidData);
                     }
 
                     let shm_size = stat.st_size as usize;
@@ -857,7 +1131,13 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                             "Requested size {} exceeds shared memory size {}",
                             data_size, shm_size
                         );
-                        return None;
+                        return Err(GraphicError::InvalidData);
+                    }
+
+                    if data_size > MAX_SIZE {
+                        libc::close(fd);
+                        libc::shm_unlink(shm_name.as_ptr());
+                        return Err(GraphicError::TooLarge);
                     }
 
                     // Map shared memory
@@ -873,7 +1153,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     if ptr == libc::MAP_FAILED {
                         libc::close(fd);
                         debug!("Failed to mmap shared memory");
-                        return None;
+                        return Err(GraphicError::InvalidData);
                     }
 
                     // Copy data from shared memory
@@ -903,7 +1183,8 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 // Payload is already base64-decoded by parse(); the bytes
                 // directly represent the shared memory name.
                 debug!("Shared memory name payload: {} bytes", cmd.payload.len());
-                let shm_name_str = std::str::from_utf8(&cmd.payload).ok()?;
+                let shm_name_str = std::str::from_utf8(&cmd.payload)
+                    .map_err(|_| GraphicError::InvalidData)?;
 
                 debug!("Opening shared memory: {}", shm_name_str);
 
@@ -923,7 +1204,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                             "Failed to open shared memory '{}': {}",
                             shm_name_str, err
                         );
-                        return None;
+                        return Err(GraphicError::FileNotFound);
                     }
 
                     // Map view of file
@@ -933,7 +1214,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                         let err = std::io::Error::last_os_error();
                         debug!("Failed to map view of file: {}", err);
                         CloseHandle(handle);
-                        return None;
+                        return Err(GraphicError::InvalidData);
                     }
 
                     // Query memory to get size
@@ -947,7 +1228,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                         debug!("Failed to query memory information");
                         UnmapViewOfFile(base_ptr);
                         CloseHandle(handle);
-                        return None;
+                        return Err(GraphicError::InvalidData);
                     }
 
                     let shm_size = mem_info.RegionSize;
@@ -968,7 +1249,13 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                         );
                         UnmapViewOfFile(base_ptr);
                         CloseHandle(handle);
-                        return None;
+                        return Err(GraphicError::InvalidData);
+                    }
+
+                    if data_size > MAX_SIZE {
+                        UnmapViewOfFile(base_ptr);
+                        CloseHandle(handle);
+                        return Err(GraphicError::TooLarge);
                     }
 
                     // Copy data from shared memory
@@ -986,7 +1273,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             #[cfg(not(any(unix, windows)))]
             {
                 debug!("SharedMemory transmission not supported on this platform");
-                return None;
+                return Err(GraphicError::UnsupportedMedium);
             }
         }
     };
@@ -998,9 +1285,18 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             use flate2::read::ZlibDecoder;
             use std::io::Read;
 
-            let mut decoder = ZlibDecoder::new(&raw_data[..]);
+            let decoder = ZlibDecoder::new(&raw_data[..]);
+            // Cap decompressed output so zip bombs can't wedge the
+            // terminal. `Take` passes the limit through the decoder; we
+            // then check the size we actually got.
             let mut decompressed = Vec::new();
-            decoder.read_to_end(&mut decompressed).ok()?;
+            decoder
+                .take((MAX_SIZE as u64).saturating_add(1))
+                .read_to_end(&mut decompressed)
+                .map_err(|_| GraphicError::DecompressionFailed)?;
+            if decompressed.len() > MAX_SIZE {
+                return Err(GraphicError::TooLarge);
+            }
             decompressed
         }
     };
@@ -1022,9 +1318,14 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 }
                 Err(e) => {
                     debug!("PNG decode failed: {:?}", e);
-                    return None;
+                    return Err(GraphicError::InvalidData);
                 }
             };
+            // PNG dimensions come from the decoded header — now enforce
+            // the cap we couldn't check up front.
+            if img.width() > MAX_DIMENSION || img.height() > MAX_DIMENSION {
+                return Err(GraphicError::DimensionsTooLarge);
+            }
             let rgba_img = img.to_rgba8();
             let (width, height) = (rgba_img.width() as usize, rgba_img.height() as usize);
             let pixels = rgba_img.into_raw();
@@ -1054,7 +1355,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 None
             };
 
-            Some(GraphicData {
+            Ok(GraphicData {
                 id: GraphicId::new(cmd.image_id as u64),
                 width,
                 height,
@@ -1076,16 +1377,23 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 _ => unreachable!(),
             };
 
+            if cmd.width == 0 || cmd.height == 0 {
+                return Err(GraphicError::DimensionsRequired);
+            }
+
             // Validate data size
             let expected_size =
                 cmd.width as usize * cmd.height as usize * bytes_per_pixel;
+            if expected_size > MAX_SIZE {
+                return Err(GraphicError::TooLarge);
+            }
             if pixel_data.len() < expected_size {
                 debug!(
                     "Pixel data size insufficient: got {} bytes, expected at least {}",
                     pixel_data.len(),
                     expected_size
                 );
-                return None;
+                return Err(GraphicError::InvalidData);
             }
 
             // Truncate to expected size if we have extra data (e.g., from shared memory padding)
@@ -1160,7 +1468,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 None
             };
 
-            Some(GraphicData {
+            Ok(GraphicData {
                 id: GraphicId::new(cmd.image_id as u64),
                 width: cmd.width as usize,
                 height: cmd.height as usize,
@@ -1397,17 +1705,19 @@ mod tests {
         let result = parse(&[], &mut state);
         assert!(result.is_none());
 
-        // Just "G" with no control data returns an empty graphic
+        // Just "G" with no control data defaults to action=t
+        // (Transmit), then fails create_graphic_data because width=0 /
+        // height=0 are not valid dimensions. The response carries no id
+        // (implicit) so nothing is emitted.
         let result = parse(&[b"G"], &mut state);
-        assert!(result.is_some());
-        let response = result.unwrap();
-        assert!(response.graphic_data.is_some());
-        let graphic = response.graphic_data.unwrap();
-        assert_eq!(graphic.width, 0);
-        assert_eq!(graphic.height, 0);
-        assert!(graphic.pixels.is_empty());
+        let response = result.expect("response struct must exist even on error");
+        assert!(response.graphic_data.is_none());
+        assert!(
+            response.response.is_none(),
+            "implicit-id failure must not emit a response"
+        );
 
-        // "G" with empty control data also returns an empty graphic
+        // "G" with empty control data: same path
         let result = parse(&[b"G", b""], &mut state);
         assert!(result.is_some());
     }
@@ -1601,6 +1911,238 @@ mod tests {
     }
 
     #[test]
+    fn test_max_dimension_rejects_oversized_images() {
+        // Width above the cap must fail with EINVAL:dimensions too large.
+        let result = parse_kitty_graphics_protocol(
+            "a=t,f=32,s=10001,v=1,i=1",
+            "AAAA",
+        )
+        .expect("response struct must exist");
+        assert!(result.graphic_data.is_none());
+        let body = result.response.expect("error message expected");
+        assert!(
+            body.contains("dimensions too large"),
+            "expected dimensions-too-large: {body}"
+        );
+
+        // Height above the cap must also fail.
+        let result =
+            parse_kitty_graphics_protocol("a=t,f=32,s=1,v=10001,i=1", "AAAA")
+                .expect("response struct must exist");
+        assert!(result.graphic_data.is_none());
+        let body = result.response.expect("error message expected");
+        assert!(body.contains("dimensions too large"));
+
+        // Exactly 10000 must be accepted (boundary).
+        // (We don't actually feed 10000*10000*4 bytes here, the
+        // create_graphic_data path will reject due to missing data, but
+        // that's a different error than the dimension cap.)
+        let result =
+            parse_kitty_graphics_protocol("a=t,f=32,s=10000,v=1,i=1", "AAAA")
+                .expect("response struct must exist");
+        let body = result.response.unwrap_or_default();
+        assert!(
+            !body.contains("dimensions too large"),
+            "10000 must not trip the dimension cap: {body}"
+        );
+    }
+
+    #[test]
+    fn test_iid_mutually_exclusive() {
+        // Setting both i= and I= must be rejected with a specific EINVAL.
+        let result =
+            parse_kitty_graphics_protocol("a=t,f=32,s=1,v=1,i=5,I=6", "AAAA")
+                .expect("response struct must exist");
+        assert!(result.graphic_data.is_none());
+        let body = result.response.expect("error message expected");
+        assert!(
+            body.contains("mutually exclusive"),
+            "expected mutually-exclusive error: {body}"
+        );
+        assert!(body.contains("i=5"));
+        assert!(body.contains("I=6"));
+    }
+
+    #[test]
+    fn test_query_requires_image_id() {
+        // Query without i= AND without I=: no identifier to address
+        // the response to, so nothing is emitted — matches ghostty.
+        let result = parse_kitty_graphics_protocol("a=q", "")
+            .expect("response struct must exist");
+        assert!(result.response.is_none());
+
+        // Query with only I= set (no i=): we surface the EINVAL
+        // addressed by image_number, so the client can correlate.
+        let result = parse_kitty_graphics_protocol("a=q,I=7", "")
+            .expect("response struct must exist");
+        let body = result.response.expect("error message expected");
+        assert!(
+            body.contains("image ID required"),
+            "expected image-id-required error: {body}"
+        );
+        assert!(body.contains("I=7"));
+
+        // With an explicit id, query succeeds with OK.
+        let result = parse_kitty_graphics_protocol("a=q,i=42", "")
+            .expect("response struct must exist");
+        let body = result.response.expect("OK response expected");
+        assert!(body.contains("i=42"));
+        assert!(body.contains(";OK"));
+    }
+
+    #[test]
+    fn test_response_combines_image_number_and_placement() {
+        // When placement_id is set alongside image_id, the response
+        // must carry both keys (matches ghostty's encoder).
+        let png_data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+        let result =
+            parse_kitty_graphics_protocol("a=T,f=100,i=7,p=13", png_data)
+                .expect("response struct must exist");
+        let body = result.response.expect("OK response expected");
+        assert!(
+            body.contains("i=7") && body.contains("p=13"),
+            "both id and placement must appear: {body}"
+        );
+        assert!(body.contains(";OK"));
+    }
+
+    #[test]
+    fn test_animation_params_are_parsed() {
+        // Frame loading (a=f) should populate frame_number, base_frame,
+        // frame_gap, composition_mode, background_color fields. We
+        // still return EINVAL for the action itself, but clients can
+        // extend support later and the values must already be correct.
+        let mut cmd = KittyGraphicsCommand::default();
+        parse_control_data(
+            &mut cmd,
+            "a=f,i=1,r=3,c=2,z=100,X=1,Y=4294901760",
+        );
+        assert_eq!(cmd.action, Action::Frame);
+        assert_eq!(cmd.frame_number, 3);
+        assert_eq!(cmd.base_frame, 2);
+        assert_eq!(cmd.frame_gap, 100);
+        assert_eq!(cmd.composition_mode, 1);
+        assert_eq!(cmd.background_color, 4_294_901_760);
+
+        // Animation control (a=a) populates animation_state, loop_count,
+        // current_frame, frame_number, frame_gap.
+        let mut cmd = KittyGraphicsCommand::default();
+        parse_control_data(
+            &mut cmd,
+            "a=a,i=2,s=3,v=5,c=1,r=2,z=50",
+        );
+        assert_eq!(cmd.action, Action::Animate);
+        assert_eq!(cmd.animation_state, 3);
+        assert_eq!(cmd.loop_count, 5);
+        assert_eq!(cmd.current_frame, 1);
+        assert_eq!(cmd.frame_number, 2);
+        assert_eq!(cmd.frame_gap, 50);
+    }
+
+    fn parse_delete(keys: &str) -> DeleteRequest {
+        let resp = parse_kitty_graphics_protocol(keys, "")
+            .expect("delete must produce a response");
+        resp.delete_request.expect("delete_request must be populated")
+    }
+
+    #[test]
+    fn test_delete_variants_all_parse() {
+        // d=a/A — delete all
+        let d = parse_delete("a=d,d=a");
+        assert_eq!(d.action, b'a');
+        assert!(!d.delete_data);
+        let d = parse_delete("a=d,d=A");
+        assert_eq!(d.action, b'a');
+        assert!(d.delete_data, "uppercase form must set delete_data=true");
+
+        // d=i/I — by image id
+        let d = parse_delete("a=d,d=i,i=7");
+        assert_eq!(d.action, b'i');
+        assert_eq!(d.image_id, 7);
+
+        // d=n/N — by image number (I= channel)
+        let d = parse_delete("a=d,d=n,I=11");
+        assert_eq!(d.action, b'n');
+        assert_eq!(
+            d.image_number, 11,
+            "d=n must pick up the number from I=, not i="
+        );
+
+        // d=c/C — intersecting cursor
+        let d = parse_delete("a=d,d=C");
+        assert_eq!(d.action, b'c');
+        assert!(d.delete_data);
+
+        // d=p/P — at cell position
+        let d = parse_delete("a=d,d=p,x=3,y=5");
+        assert_eq!(d.action, b'p');
+        assert_eq!(d.x, 3);
+        assert_eq!(d.y, 5);
+
+        // d=q/Q — at cell + z-index
+        let d = parse_delete("a=d,d=q,x=2,y=4,z=-3");
+        assert_eq!(d.action, b'q');
+        assert_eq!(d.z_index, -3);
+
+        // d=r/R — id range (x=start, y=end)
+        let d = parse_delete("a=d,d=R,x=10,y=20");
+        assert_eq!(d.action, b'r');
+        assert_eq!(d.x, 10);
+        assert_eq!(d.y, 20);
+        assert!(d.delete_data);
+
+        // d=x/X — by column
+        let d = parse_delete("a=d,d=x,x=5");
+        assert_eq!(d.action, b'x');
+        assert_eq!(d.x, 5);
+
+        // d=y/Y — by row
+        let d = parse_delete("a=d,d=Y,y=9");
+        assert_eq!(d.action, b'y');
+        assert_eq!(d.y, 9);
+        assert!(d.delete_data);
+
+        // d=z/Z — by z-index
+        let d = parse_delete("a=d,d=z,z=42");
+        assert_eq!(d.action, b'z');
+        assert_eq!(d.z_index, 42);
+    }
+
+    #[test]
+    fn test_stale_chunk_eviction() {
+        // An in-progress chunked upload whose `last_touched` is older
+        // than CHUNK_STALE_TIMEOUT must be dropped on the next chunk
+        // event.
+        let mut state = KittyGraphicsState::default();
+
+        // First chunk: legit pending upload.
+        let p1 = vec![
+            b"G".as_ref(),
+            b"a=t,f=32,s=1,v=1,m=1,i=777",
+            b"/wAA",
+        ];
+        parse(&p1, &mut state).expect("first chunk");
+        assert_eq!(state.incomplete_images.len(), 1);
+
+        // Artificially age the stored command past the timeout.
+        let stale = Instant::now() - CHUNK_STALE_TIMEOUT - Duration::from_secs(1);
+        if let Some(cmd) = state.incomplete_images.get_mut(&777) {
+            cmd.last_touched = stale;
+        }
+
+        // Any subsequent command triggers eviction on its way in. Use
+        // a fresh single-shot image so the eviction scan runs.
+        let p2 =
+            vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,i=888", b"/wAA/w=="];
+        let _ = parse(&p2, &mut state);
+
+        assert!(
+            !state.incomplete_images.contains_key(&777),
+            "stale chunk must have been evicted"
+        );
+    }
+
+    #[test]
     fn test_padding_in_middle_of_raw_concat_would_fail() {
         // Sanity check: confirm the exact failure mode we fixed — a
         // naive concat of padded chunks produces a string with `=` in
@@ -1617,26 +2159,38 @@ mod tests {
     #[test]
     fn test_pending_chunk_distinct_from_parse_error() {
         // Regression for the yazi log spam: an in-progress chunked
-        // transmission must be distinguishable from a real parse error
-        // so the dispatcher can suppress the warning. Real errors
-        // (security check fail, missing dimensions, etc.) still return
-        // None.
+        // transmission must be distinguishable from a real parse error.
+        // Pending chunks return `Some { incomplete: true }`; real
+        // errors return a response with an EINVAL/ENOENT message
+        // instead of a graphic.
         let mut state = KittyGraphicsState::default();
 
-        // m=1: pending — Some(incomplete=true)
-        let params = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=42", b"/wA"];
+        // m=1: pending — Some(incomplete=true), no graphic, no error msg
+        let params = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=42", b"/wAA"];
         let resp = parse(&params, &mut state).expect("pending must be Some");
         assert!(resp.incomplete);
+        assert!(resp.response.is_none());
 
-        // Real error path: blocked path → None
+        // Real error path: blocked path → error response addressed to
+        // i=99. The exact error varies by platform — on Linux the
+        // `/proc/` sensitive-path match triggers EINVAL, on macOS the
+        // missing file triggers ENOENT. Either is correct.
         let proc_path = BASE64.encode("/proc/self/environ".as_bytes());
         let bad = vec![
             b"G".as_ref(),
             b"a=t,t=f,f=32,s=1,v=1,i=99",
             proc_path.as_bytes(),
         ];
-        let resp = parse(&bad, &mut KittyGraphicsState::default());
-        assert!(resp.is_none(), "real parse errors should still return None");
+        let resp = parse(&bad, &mut KittyGraphicsState::default())
+            .expect("real errors now carry a response, not None");
+        assert!(!resp.incomplete, "real errors must not look like pending");
+        assert!(resp.graphic_data.is_none());
+        let body = resp.response.expect("error message expected");
+        assert!(body.contains("i=99"), "error must be addressed to i=99: {body}");
+        assert!(
+            body.contains("EINVAL") || body.contains("ENOENT"),
+            "blocked path should surface EINVAL or ENOENT: {body}"
+        );
     }
 
     #[test]
@@ -1687,36 +2241,41 @@ mod tests {
 
     #[test]
     fn test_security_checks() {
-        // Should reject sensitive paths - encode as base64
-        let proc_path = BASE64.encode("/proc/self/environ".as_bytes());
-        let result = parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", &proc_path);
-        assert!(result.is_none());
-
-        let sys_path = BASE64.encode("/sys/class/net".as_bytes());
-        let result = parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", &sys_path);
-        assert!(result.is_none());
-
-        let dev_path = BASE64.encode("/dev/null".as_bytes());
-        let result = parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", &dev_path);
-        assert!(result.is_none());
+        // Commands with no i=/I= get an implicit id, which suppresses
+        // the response entirely — but we still must NOT load the file.
+        // Include i=1 so we can assert on the EINVAL response.
+        for path in &[
+            "/proc/self/environ",
+            "/sys/class/net",
+            "/dev/null",
+        ] {
+            let encoded = BASE64.encode(path.as_bytes());
+            let response = parse_kitty_graphics_protocol(
+                "a=t,t=f,f=32,s=1,v=1,i=1",
+                &encoded,
+            )
+            .expect("must return a response carrying the EINVAL");
+            assert!(response.graphic_data.is_none(), "{path} must not load");
+            let body = response.response.expect("error message expected");
+            assert!(body.contains("i=1"));
+            assert!(
+                body.contains("EINVAL") || body.contains("ENOENT"),
+                "blocked path should surface EINVAL/ENOENT: {body}"
+            );
+        }
     }
 
     #[test]
     fn test_quiet_mode() {
-        // q=1 should suppress OK response for placement
+        // q=1 suppresses OK but keeps errors
         let result = parse_kitty_graphics_protocol("a=p,i=1,q=1", "");
-        assert!(result.is_some());
+        let response = result.expect("response struct must exist");
+        assert!(response.response.is_none(), "q=1 must suppress OK");
 
-        let response = result.unwrap();
-        // Placement with q=1 should not have response
-        assert!(response.response.is_none());
-
-        // q=2 should suppress all responses including query
+        // q=2 suppresses everything, including errors. Ghostty / kitty
+        // both document this as "absolute silence".
         let result = parse_kitty_graphics_protocol("a=q,i=1,q=2", "");
-        assert!(result.is_some());
-
-        let response = result.unwrap();
-        // Query with q=2 should have empty response
-        assert_eq!(response.response, Some(String::new()));
+        let response = result.expect("response struct must exist");
+        assert!(response.response.is_none(), "q=2 must suppress all output");
     }
 }
