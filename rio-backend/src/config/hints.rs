@@ -3,8 +3,37 @@ use serde::{Deserialize, Serialize};
 /// Default alphabet for hint labels
 pub const DEFAULT_HINTS_ALPHABET: &str = "jfkdls;ahgurieowpq";
 
-/// Default URL regex pattern (same as Alacritty)
-pub const DEFAULT_URL_REGEX: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+";
+/// Default URL/path regex pattern.
+///
+/// Three alternations (ported from ghostty's `src/config/url.zig`, adapted for
+/// the Rust `regex` crate which lacks lookaround assertions):
+///
+/// 1. **Schemed URLs** — `http://`, `https://`, `file:`, `ssh:`, `mailto:`,
+///    etc. Historical alacritty pattern.
+/// 2. **Rooted or explicitly-relative paths** — `/abs`, `./rel`, `../rel`,
+///    `~/x`, `$VAR/x`. Clickable paths the user typed with an unambiguous
+///    prefix.
+/// 3. **Bare relative paths** — `word/.../name.ext`. Requires a dotted
+///    component so `foo/bar` (ambiguous) does not match but `src/main.rs`
+///    does.
+///
+/// Trailing punctuation (`.` `,` `:` `;` `?` `!` `(` `[` `'`) and unbalanced
+/// brackets are trimmed by `post_process_hyperlink_uri` at match time, so the
+/// regex does not need lookbehinds to exclude them.
+pub const DEFAULT_URL_REGEX: &str = concat!(
+    // 1. Schemed URLs.
+    "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)",
+    "[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+",
+    "|",
+    // 2. Rooted or explicitly-relative paths (../, ./, ~/, .hidden/,
+    //    $VAR/, or /abs). Mid-word false positives for the plain `/`
+    //    and `~/` variants are filtered out at match time — see
+    //    `is_midword_path_match` in `frontends/rioterm/src/hints.rs`.
+    r"(?:\.\./|\./|~/|\.[A-Za-z_][\w\-.]*/|\$[A-Za-z_]\w*/|/)[\w\-.~:/?#@!$&*+;=%]+",
+    "|",
+    // 3. Bare relative paths (must contain a dotted filename-like component).
+    r"[A-Za-z_][\w\-.]*/[\w\-.~:/?#@!$&*+;=%]*\.[\w\-.~:/?#@!$&*+;=%]+",
+);
 
 /// Hints configuration
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -218,6 +247,64 @@ mod tests {
         let serialized = toml::to_string(&hint).unwrap();
         let deserialized: Hint = toml::from_str(&serialized).unwrap();
         assert_eq!(hint, deserialized);
+    }
+
+    #[test]
+    fn test_default_regex_compiles() {
+        regex::Regex::new(DEFAULT_URL_REGEX).expect("default regex must compile");
+    }
+
+    /// Given input text, return every leftmost non-overlapping match produced
+    /// by `DEFAULT_URL_REGEX`. Used to verify the path branches.
+    fn find_all(input: &str) -> Vec<&str> {
+        let re = regex::Regex::new(DEFAULT_URL_REGEX).unwrap();
+        re.find_iter(input).map(|m| m.as_str()).collect()
+    }
+
+    #[test]
+    fn test_default_regex_matches_schemed_urls() {
+        assert_eq!(find_all("visit https://rioterm.com here"), vec!["https://rioterm.com"]);
+        assert_eq!(find_all("file://foo"), vec!["file://foo"]);
+    }
+
+    #[test]
+    fn test_default_regex_matches_rooted_paths() {
+        assert_eq!(find_all("open ~/Desktop please"), vec!["~/Desktop"]);
+        assert_eq!(find_all("cd /tmp/foo"), vec!["/tmp/foo"]);
+        assert_eq!(find_all("see ./script.sh"), vec!["./script.sh"]);
+        assert_eq!(find_all("check ../parent/file"), vec!["../parent/file"]);
+        assert_eq!(find_all("logs at $HOME/logs"), vec!["$HOME/logs"]);
+    }
+
+    #[test]
+    fn test_default_regex_matches_bare_relative_paths_with_extension() {
+        assert_eq!(find_all("edit src/main.rs now"), vec!["src/main.rs"]);
+        assert_eq!(find_all("see frontends/rioterm/src/hints.rs"), vec!["frontends/rioterm/src/hints.rs"]);
+    }
+
+    #[test]
+    fn test_default_regex_leaks_midword_slash_without_filter() {
+        // The regex alone returns `/bar` for `foo/bar` because Rust's regex
+        // crate has no lookbehind. The full hint pipeline rejects this via
+        // `crate::hints::is_midword_path_match` in the frontend.
+        assert_eq!(find_all("foo/bar"), vec!["/bar"]);
+    }
+
+    #[test]
+    fn test_default_regex_matches_dot_prefixed_paths() {
+        // `.config/foo.txt` matches the `.word/` branch (hidden dirs).
+        assert_eq!(find_all(".config/rio/config.toml"), vec![".config/rio/config.toml"]);
+    }
+
+    #[test]
+    fn test_default_regex_prefers_bare_relative_over_embedded_slash() {
+        // `Compiling src/config/url.zig` — the bare-relative branch anchors
+        // at `src/...` and wins over the rooted `/config/url.zig` because
+        // it starts earlier in the text.
+        assert_eq!(
+            find_all("Compiling src/config/url.zig"),
+            vec!["src/config/url.zig"],
+        );
     }
 
     #[test]
