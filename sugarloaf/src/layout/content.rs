@@ -386,6 +386,12 @@ pub struct SpanStyle {
     /// None for normal glyphs, Some(1.0) or Some(2.0) for PUA glyphs.
     /// Does NOT affect positioning/advance — only compositor scaling.
     pub pua_constraint: Option<f32>,
+    /// Optional per-glyph Nerd Font constraint (size / alignment /
+    /// padding) ported from ghostty's patcher table. When set, the
+    /// compositor uses ghostty's constrain() math to lay the glyph out
+    /// instead of the generic cell-centered fit. Only populated by the
+    /// renderer for codepoints with a table entry (`get_constraint`).
+    pub nerd_font_constraint: Option<crate::font::nerd_font_attributes::Constraint>,
 }
 
 impl Default for SpanStyle {
@@ -406,6 +412,7 @@ impl Default for SpanStyle {
             media: None,
             drawable_char: None,
             pua_constraint: None,
+            nerd_font_constraint: None,
         }
     }
 }

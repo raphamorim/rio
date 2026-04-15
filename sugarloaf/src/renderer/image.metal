@@ -65,6 +65,14 @@ static inline float3 srgb_to_p3(float3 linear_srgb) {
     );
 }
 
+static inline float3 rec2020_to_p3(float3 linear_r2020) {
+    return float3(
+        dot(linear_r2020, float3( 1.34357825, -0.28217967, -0.06139858)),
+        dot(linear_r2020, float3(-0.06529745,  1.08782226, -0.02252481)),
+        dot(linear_r2020, float3( 0.00282179, -0.02598807,  1.02316628))
+    );
+}
+
 fragment float4 image_fs_main(
     ImageVertexOut input [[stage_in]],
     constant Globals& globals [[buffer(1)]],
@@ -75,6 +83,8 @@ fragment float4 image_fs_main(
     float3 lin = srgb_to_linear(rgba.rgb);
     if (globals.input_colorspace == 0u) {
         lin = srgb_to_p3(lin);
+    } else if (globals.input_colorspace == 2u) {
+        lin = rec2020_to_p3(lin);
     }
     // Premultiply alpha
     return float4(lin * rgba.a, rgba.a);

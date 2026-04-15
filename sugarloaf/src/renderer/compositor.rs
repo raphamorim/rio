@@ -265,28 +265,49 @@ impl Compositor {
                         // Matches ghostty's `.size = .fit` for PUA symbols.
                         let glyph_rect =
                             if let Some((cell_w, cells)) = style.scale_constraint {
-                                let target_w = cell_w * cells as f32;
-                                let target_h = style.line_height;
-                                let orig_w = entry.width as f32;
-                                let orig_h = entry.height as f32;
+                                // If this codepoint has a per-glyph entry
+                                // in the Nerd Fonts patcher table (ported
+                                // from ghostty), defer to ghostty's
+                                // `Constraint::constrain` for size and
+                                // alignment. Otherwise fall back to Rio's
+                                // generic cell-centered fit.
+                                if let Some(constraint) = style.nerd_font_constraint
+                                {
+                                    compute_nerd_font_rect(
+                                        &constraint,
+                                        &entry,
+                                        glyph,
+                                        cell_w,
+                                        cells,
+                                        style.line_height,
+                                        style.topline,
+                                    )
+                                } else {
+                                    let target_w = cell_w * cells as f32;
+                                    let target_h = style.line_height;
+                                    let orig_w = entry.width as f32;
+                                    let orig_h = entry.height as f32;
 
-                                let scale = (target_w / orig_w).min(target_h / orig_h);
-                                let sw = orig_w * scale;
-                                let sh = orig_h * scale;
+                                    let scale = (target_w / orig_w)
+                                        .min(target_h / orig_h);
+                                    let sw = orig_w * scale;
+                                    let sh = orig_h * scale;
 
-                                // Center horizontally within the constraint
-                                // slot that starts at `glyph.x`.
-                                let cx = glyph.x + (target_w - sw) / 2.0;
-                                // Center vertically within the line. PUA /
-                                // Nerd Font symbols aren't baseline-anchored
-                                // the way text glyphs are — scaling `entry.top`
-                                // shifts the image up because the top-bearing
-                                // scales faster than the descent-bearing. Same
-                                // choice ghostty makes for `isSymbol(cp)` via
-                                // `.align_vertical = .center1`.
-                                let cy = style.topline + (style.line_height - sh) / 2.0;
+                                    // Center horizontally within the constraint
+                                    // slot that starts at `glyph.x`.
+                                    let cx = glyph.x + (target_w - sw) / 2.0;
+                                    // Center vertically within the line. PUA /
+                                    // Nerd Font symbols aren't baseline-anchored
+                                    // the way text glyphs are — scaling `entry.top`
+                                    // shifts the image up because the top-bearing
+                                    // scales faster than the descent-bearing. Same
+                                    // choice ghostty makes for `isSymbol(cp)` via
+                                    // `.align_vertical = .center1`.
+                                    let cy = style.topline
+                                        + (style.line_height - sh) / 2.0;
 
-                                Rect::new(cx, cy, sw, sh)
+                                    Rect::new(cx, cy, sw, sh)
+                                }
                             } else {
                                 Rect::new(gx, gy, entry.width as f32, entry.height as f32)
                             };
@@ -407,4 +428,70 @@ impl Default for Compositor {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Apply ghostty's per-glyph `Constraint` to a rasterized glyph entry and
+/// return the target draw rectangle in screen space.
+///
+/// The ghostty constraint model operates on a glyph bounding box `(x, y,
+/// width, height)` in a face+cell coordinate frame (y-up, origin at the
+/// cell's bottom-left). Rio's compositor works in y-down screen space
+/// with `glyph.x` at the cell's left edge and `style.topline` at the cell
+/// top. This helper does the coordinate round-trip:
+///   face-box → ghostty constrain() → draw rect on screen.
+///
+/// Width/height of the drawn bitmap come from the scaled glyph size.
+/// Horizontal position adds ghostty's `aligned_x` result to the cell's
+/// left edge. Vertical position converts y-up (with face origin at the
+/// cell bottom) back to y-down screen coordinates by subtracting from
+/// `topline + line_height`.
+fn compute_nerd_font_rect(
+    constraint: &crate::font::nerd_font_attributes::Constraint,
+    entry: &crate::renderer::image_cache::glyph::GlyphEntry,
+    glyph: &Glyph,
+    cell_w: f32,
+    cells: u8,
+    line_height: f32,
+    topline: f32,
+) -> Rect {
+    use crate::font::nerd_font_attributes::{GlyphSize, Metrics};
+
+    let face_width = cell_w as f64;
+    let face_height = line_height as f64;
+    let metrics = Metrics {
+        face_width,
+        face_height,
+        face_y: 0.0,
+        cell_width: cell_w.max(1.0) as u32,
+        cell_height: line_height.max(1.0) as u32,
+        // Icon heights used by `Height::Icon` entries. Ghostty derives
+        // these from `adjust-icon-height`; until Rio has the knob we use
+        // ghostty's defaults (75% of face_height single-cell, same for
+        // multi-cell since we don't widen for multi-cell either).
+        icon_height_single: 0.75 * face_height,
+        icon_height: 0.75 * face_height,
+    };
+
+    // Build the y-up glyph bounding box that ghostty's constrain expects.
+    // `entry.width`/`entry.height` are in pixels at the rasterization size;
+    // `entry.top` is distance from baseline up to the top of the bitmap.
+    // The glyph's bottom in face coords = face_height - entry.top - (
+    // face_height - entry.height - entry.top). Simplified: y = face_height
+    // - entry.top + (entry.height - entry.height) = entry.height - entry.top.
+    let glyph_size = GlyphSize {
+        width: entry.width as f64,
+        height: entry.height as f64,
+        x: 0.0,
+        y: entry.height as f64 - entry.top as f64,
+    };
+
+    let out = constraint.constrain(glyph_size, metrics, cells.clamp(1, 2));
+
+    // Project back to y-down screen coordinates.
+    let cx = glyph.x + out.x as f32;
+    // The ghostty model places the glyph with its bottom at `out.y` (y-up)
+    // inside a cell whose top is at `topline`. In y-down space, the top of
+    // the drawn rect is `topline + (face_height - out.y - out.height)`.
+    let cy = topline + (line_height - out.y as f32 - out.height as f32);
+    Rect::new(cx, cy, out.width as f32, out.height as f32)
 }

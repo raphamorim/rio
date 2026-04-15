@@ -4,6 +4,7 @@ pub mod fonts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
 pub mod metrics;
+pub mod nerd_font_attributes;
 pub mod text_run_cache;
 
 #[cfg(test)]
