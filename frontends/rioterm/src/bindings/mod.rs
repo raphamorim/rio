@@ -502,11 +502,7 @@ pub enum Action {
     /// Move divider right
     MoveDividerRight,
 
-    /// Toggle the command palette overlay. When it's visible, this
-    /// closes it; when it's hidden, this opens it with an empty query
-    /// and focus on the input field. Wired in `screen::process_key_event`
-    /// so every key route (vi mode, search, hints, alt-screen apps)
-    /// sees it consistently.
+    /// Toggle the command palette overlay.
     ToggleCommandPalette,
 
     /// Allow receiving char input.

@@ -450,8 +450,6 @@ impl Scrollbar {
 mod tests {
     use super::*;
 
-    // --- opacity_from_last_scroll ----------------------------------------
-
     #[test]
     fn opacity_zero_when_never_scrolled() {
         assert_eq!(opacity_from_last_scroll(None, false), 0.0);
@@ -482,8 +480,6 @@ mod tests {
             );
         assert_eq!(opacity_from_last_scroll(Some(deep_past), false), 0.0);
     }
-
-    // --- compute_thumb ---------------------------------------------------
 
     #[test]
     fn compute_thumb_hidden_when_list_fits() {
@@ -528,8 +524,6 @@ mod tests {
         let (_, thumb_h) = compute_thumb(8, 10_000, 0.0, 200.0, 0.0).unwrap();
         assert!(thumb_h >= SCROLLBAR_MIN_THUMB_HEIGHT);
     }
-
-    // --- Scrollbar::notify_scroll + opacity_for --------------------------
 
     #[test]
     fn notify_scroll_stores_timestamp_per_panel() {
