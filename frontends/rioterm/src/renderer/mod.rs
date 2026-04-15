@@ -589,8 +589,7 @@ impl Renderer {
                 .map(|&(_, ch, attrs)| (ch, attrs))
                 .collect();
             let resolved = sugarloaf.resolve_glyphs_batch(&queries);
-            for ((style_index, ch, _), glyph) in
-                font_lookups.iter().zip(resolved.iter())
+            for ((style_index, ch, _), glyph) in font_lookups.iter().zip(resolved.iter())
             {
                 let column = styles_and_chars[*style_index].2;
                 let style = &mut styles_and_chars[*style_index].0;
