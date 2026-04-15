@@ -270,8 +270,7 @@ impl Compositor {
                                 let orig_w = entry.width as f32;
                                 let orig_h = entry.height as f32;
 
-                                let scale =
-                                    (target_w / orig_w).min(target_h / orig_h);
+                                let scale = (target_w / orig_w).min(target_h / orig_h);
                                 let sw = orig_w * scale;
                                 let sh = orig_h * scale;
 
@@ -285,8 +284,7 @@ impl Compositor {
                                 // scales faster than the descent-bearing. Same
                                 // choice ghostty makes for `isSymbol(cp)` via
                                 // `.align_vertical = .center1`.
-                                let cy =
-                                    style.topline + (style.line_height - sh) / 2.0;
+                                let cy = style.topline + (style.line_height - sh) / 2.0;
 
                                 Rect::new(cx, cy, sw, sh)
                             } else {

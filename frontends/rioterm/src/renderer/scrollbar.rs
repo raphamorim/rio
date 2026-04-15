@@ -37,10 +37,7 @@ pub const TERMINAL_ORDER: u8 = 5;
 /// - 0.0 before any scroll ever happened
 /// - 1.0 for the first `FADE_OUT_DELAY_MS` after a scroll
 /// - linear fade over `FADE_OUT_DURATION_MS` back to 0.0
-pub fn opacity_from_last_scroll(
-    last_scroll: Option<Instant>,
-    dragging: bool,
-) -> f32 {
+pub fn opacity_from_last_scroll(last_scroll: Option<Instant>, dragging: bool) -> f32 {
     if dragging {
         return 1.0;
     }
@@ -84,8 +81,8 @@ pub fn compute_thumb(
         return None;
     }
     let ratio = visible as f32 / total as f32;
-    let thumb_height =
-        (track_height * ratio).clamp(SCROLLBAR_MIN_THUMB_HEIGHT.min(track_height), track_height);
+    let thumb_height = (track_height * ratio)
+        .clamp(SCROLLBAR_MIN_THUMB_HEIGHT.min(track_height), track_height);
     let scrollable = (track_height - thumb_height).max(0.0);
     let progress = normalized_offset.clamp(0.0, 1.0);
     Some((track_top + scrollable * progress, thumb_height))

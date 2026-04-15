@@ -251,11 +251,8 @@ impl Route<'_> {
                             // command list to the registered font
                             // family names and keep it open.
                             Some(PaletteAction::ListFonts) => {
-                                let fonts = self
-                                    .window
-                                    .screen
-                                    .sugarloaf
-                                    .font_family_names();
+                                let fonts =
+                                    self.window.screen.sugarloaf.font_family_names();
                                 self.window
                                     .screen
                                     .renderer
