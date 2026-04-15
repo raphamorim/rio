@@ -263,7 +263,10 @@ mod tests {
 
     #[test]
     fn test_default_regex_matches_schemed_urls() {
-        assert_eq!(find_all("visit https://rioterm.com here"), vec!["https://rioterm.com"]);
+        assert_eq!(
+            find_all("visit https://rioterm.com here"),
+            vec!["https://rioterm.com"]
+        );
         assert_eq!(find_all("file://foo"), vec!["file://foo"]);
     }
 
@@ -279,7 +282,10 @@ mod tests {
     #[test]
     fn test_default_regex_matches_bare_relative_paths_with_extension() {
         assert_eq!(find_all("edit src/main.rs now"), vec!["src/main.rs"]);
-        assert_eq!(find_all("see frontends/rioterm/src/hints.rs"), vec!["frontends/rioterm/src/hints.rs"]);
+        assert_eq!(
+            find_all("see frontends/rioterm/src/hints.rs"),
+            vec!["frontends/rioterm/src/hints.rs"]
+        );
     }
 
     #[test]
@@ -293,7 +299,10 @@ mod tests {
     #[test]
     fn test_default_regex_matches_dot_prefixed_paths() {
         // `.config/foo.txt` matches the `.word/` branch (hidden dirs).
-        assert_eq!(find_all(".config/rio/config.toml"), vec![".config/rio/config.toml"]);
+        assert_eq!(
+            find_all(".config/rio/config.toml"),
+            vec![".config/rio/config.toml"]
+        );
     }
 
     #[test]

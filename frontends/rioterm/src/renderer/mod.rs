@@ -443,11 +443,14 @@ impl Renderer {
                 continue;
             }
 
-            // Apply underline for hyperlinks (OSC 8) or highlighted hints (hover).
-            // Hyperlinks are temporarily disabled in cells (the extras side
-            // table doesn't carry them yet) — only the hint highlight path
-            // applies during the cell repack.
-            let should_underline = {
+            // Apply underline for OSC 8 hyperlinks (always) or highlighted
+            // hints (hover with the configured modifier).
+            //
+            // The cell repack moved hyperlink data from `Square` itself into
+            // the per-grid `extras_table`, so the cell carries only a
+            // `HYPERLINK` flag plus an `extras_id`. Checking the flag here
+            // is enough to underline — the renderer doesn't need the URI.
+            let should_underline = square.has_hyperlink() || {
                 if let Some(highlighted_hint) = &renderable_content.highlighted_hint {
                     let current_pos = Pos::new(line, Column(column));
                     highlighted_hint.start <= current_pos
