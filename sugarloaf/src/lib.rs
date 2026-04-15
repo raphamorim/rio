@@ -10,7 +10,7 @@ mod sugarloaf;
 // Expose WGPU
 pub use wgpu;
 
-pub use font_introspector::{Stretch, Style, Weight};
+pub use font_introspector::{Attributes, Stretch, Style, Weight};
 
 pub use crate::font_cache::ResolvedGlyph;
 pub use crate::sugarloaf::{

@@ -5,6 +5,10 @@ language: 'en'
 
 <h1 style={{fontSize: "2.25rem", fontWeight: 800, letterSpacing: "-0.02em", background: "linear-gradient(-120deg, #fb43fe 30%, #00dbe5)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", borderBottom: "none", paddingBottom: "1rem", marginBottom: "2rem"}}>Changelog</h1>
 
+## 0.3.10
+
+- Fix tab-title overflow spilling into neighbour tabs / off-screen when the title is longer than the tab width (issue [#1508](https://github.com/raphamorim/rio/issues/1508)). The island was adding the full title as a text span, measuring it, and centering — with no truncation — so a wide `text_width` produced a negative x offset and the text bled left of the tab's origin. Added `Sugarloaf::char_advance(ch, attrs, font_size)` (and extended `ResolvedGlyph` with `advance_units` + `units_per_em`, populated once at resolve time alongside the existing fallback walk) so the tab bar can walk titles char-by-char and truncate with a trailing `…` to fit `tab_width - 2·TAB_PADDING_X`. Wired `TAB_PADDING_X` up and dropped its `#[allow(dead_code)]`.
+
 ## 0.3.9
 
 - Fix progress bar visually freezing at the left edge when a TUI heartbeats `OSC 9;4` faster than the indeterminate animation cycle (issue [#1509](https://github.com/raphamorim/rio/issues/1509)). The island had one `progress_last_update` field doing double duty as the animation phase reference *and* the stale-bar dismissal timestamp; every report yanked the animation back to t=0. Now split into `progress_started_at` (only reset on actual state transitions) and `progress_last_seen` (bumped every report, drives the 15 s timeout) — same separation ghostty's GTK apprt gets for free from `GtkProgressBar.pulse()` plus a side `glib.timeoutAdd`.

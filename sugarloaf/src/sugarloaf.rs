@@ -36,7 +36,9 @@ pub struct Sugarloaf<'a> {
     cpu_cache: crate::renderer::cpu::CpuCache,
     /// Memo of `(char, attrs) -> ResolvedGlyph`. Owned here (next to
     /// the FontLibrary it caches) so frontends never have to track
-    /// their own font cache.
+    /// their own font cache. Each entry carries both terminal-cell
+    /// width (for the grid) and unscaled glyph advance (for
+    /// proportional UI via `char_advance`).
     font_cache: FontCache,
 }
 
@@ -222,6 +224,22 @@ impl Sugarloaf<'_> {
         }
         let font_ctx = self.state.content.font_library().inner.read();
         resolve_with(&mut self.font_cache, &font_ctx, ch, attrs)
+    }
+
+    /// Horizontal advance in pixels for a single char rendered with
+    /// `attrs` at `font_size`, using the same font fallback as
+    /// `resolve_glyph`. Answered from the `FontCache` entry — no
+    /// `content().build()` round trip, no extra font-data load after
+    /// the first sighting of `ch`.
+    ///
+    /// Intended for proportional UI labels (tab titles, palette,
+    /// hints): per-char isolated advance, cached. Does NOT account
+    /// for kerning, ligatures, or emoji cluster formation — callers
+    /// that need those must build the full text span and measure via
+    /// `get_text_rendered_width`.
+    #[inline]
+    pub fn char_advance(&mut self, ch: char, attrs: Attributes, font_size: f32) -> f32 {
+        self.resolve_glyph(ch, attrs).scaled_advance(font_size)
     }
 
     /// Resolve a batch of glyph queries with a single FontLibrary

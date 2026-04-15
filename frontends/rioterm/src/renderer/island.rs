@@ -9,7 +9,7 @@
 use crate::context::{next_rich_text_id, ContextManager};
 use crate::renderer::utils::add_span_with_fallback;
 use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
-use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
+use rio_backend::sugarloaf::{Attributes, SpanStyle, Sugarloaf};
 use rustc_hash::FxHashMap;
 use std::time::Instant;
 
@@ -24,9 +24,66 @@ const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
 
 const TITLE_FONT_SIZE: f32 = 12.0;
 
-/// Left/right padding inside tab text
-#[allow(dead_code)]
+/// Left/right padding inside each tab — kept as breathing room around the
+/// title text so it never butts against the tab separator lines.
 const TAB_PADDING_X: f32 = 24.0;
+
+/// Suffix used when truncating a title that doesn't fit in its tab.
+const TITLE_ELLIPSIS: char = '…';
+
+/// Truncate `title` to fit within `max_width` pixels at the tab font,
+/// appending `…` when characters have to be dropped. Thin adapter that
+/// asks sugarloaf's cached glyph advance for each char.
+fn fit_title_to_width(
+    sugarloaf: &mut Sugarloaf,
+    title: &str,
+    max_width: f32,
+) -> String {
+    if max_width <= 0.0 || title.is_empty() {
+        return title.to_string();
+    }
+    let attrs = Attributes::default();
+    fit_title_with_widths(title, max_width, |c| {
+        sugarloaf.char_advance(c, attrs, TITLE_FONT_SIZE)
+    })
+}
+
+/// Pure-logic truncation: walks `title` left to right, summing per-char
+/// widths from the supplied closure, appending `…` the first moment the
+/// running total would exceed `max_width`. Separated from sugarloaf so
+/// tests can feed synthetic widths without a GPU context.
+///
+/// Approximate (isolated per-char advances — no kerning, no ligatures,
+/// no emoji cluster formation). Fine for short labels where a pixel or
+/// two of slack is invisible.
+fn fit_title_with_widths(
+    title: &str,
+    max_width: f32,
+    mut char_width: impl FnMut(char) -> f32,
+) -> String {
+    let suffix_width = char_width(TITLE_ELLIPSIS);
+
+    // `truncate_ix` tracks the last byte offset at which the prefix so
+    // far still has room for the suffix. Updated before adding the next
+    // char's width so the moment we detect overflow we already know
+    // where to cut.
+    let mut accumulated: f32 = 0.0;
+    let mut truncate_ix: usize = 0;
+    for (ix, c) in title.char_indices() {
+        if accumulated + suffix_width <= max_width {
+            truncate_ix = ix;
+        }
+        accumulated += char_width(c);
+        if accumulated > max_width {
+            let mut out =
+                String::with_capacity(truncate_ix + TITLE_ELLIPSIS.len_utf8());
+            out.push_str(&title[..truncate_ix]);
+            out.push(TITLE_ELLIPSIS);
+            return out;
+        }
+    }
+    title.to_string()
+}
 
 /// Color picker constants
 const PICKER_SWATCH_SIZE: f32 = 18.0;
@@ -344,12 +401,17 @@ impl Island {
         for tab_index in 0..num_tabs {
             let is_active = tab_index == current_tab_index;
 
-            // Get title for this tab
-            let title = self.get_title_for_tab(context_manager, tab_index);
-            if title.is_empty() {
+            // Get title for this tab, then truncate with a trailing
+            // ellipsis so overflowing titles can't bleed into the next
+            // tab or past the left edge (issue #1508).
+            let raw_title = self.get_title_for_tab(context_manager, tab_index);
+            if raw_title.is_empty() {
                 x_position += tab_width;
                 continue;
             }
+            let max_text_width =
+                (tab_width - TAB_PADDING_X * 2.0).max(0.0);
+            let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
 
             // Get or create tab data
             let tab_data = self.tab_data.entry(tab_index).or_insert_with(|| {
@@ -980,6 +1042,85 @@ mod tests {
 
         assert_eq!(island.progress_started_at, Some(first));
         assert_eq!(island.progress_value, Some(60));
+    }
+
+    // ------------------------------------------------------------------
+    // Tab-title truncation (issue #1508).
+    // Exercised via `fit_title_with_widths` with synthetic per-char widths
+    // so tests don't need a live Sugarloaf.
+    // ------------------------------------------------------------------
+
+    /// Each char = 1.0 wide, including the ellipsis. Easy arithmetic.
+    fn unit_width(_c: char) -> f32 {
+        1.0
+    }
+
+    fn rendered_width(s: &str, mut char_width: impl FnMut(char) -> f32) -> f32 {
+        s.chars().map(|c| char_width(c)).sum()
+    }
+
+    #[test]
+    fn title_fits_is_returned_unchanged() {
+        assert_eq!(fit_title_with_widths("hello", 10.0, unit_width), "hello");
+        assert_eq!(fit_title_with_widths("hi", 2.0, unit_width), "hi");
+    }
+
+    #[test]
+    fn title_overflow_gets_ellipsized_and_fits_budget() {
+        // "hello world" budgeted at 5 → best we can do without exceeding
+        // is "hell" (4) + "…" (1) = 5. Anything more overflows.
+        let out = fit_title_with_widths("hello world", 5.0, unit_width);
+        assert_eq!(out, "hell…");
+        assert!(
+            rendered_width(&out, unit_width) <= 5.0,
+            "truncated width {} must be ≤ budget 5",
+            rendered_width(&out, unit_width)
+        );
+    }
+
+    #[test]
+    fn title_respects_budget_with_wide_chars() {
+        // Mixed widths: 'W' = 2.0, others (including ellipsis) = 1.0.
+        // Title "WxWxW", budget 4.0. Walk:
+        //   ix=0 W: before add, 0+1(suffix) ≤ 4 → truncate_ix=0; accum→2
+        //   ix=1 x: 2+1 ≤ 4 → truncate_ix=1; accum→3
+        //   ix=2 W: 3+1 ≤ 4 → truncate_ix=2; accum→5; 5>4 → cut.
+        // Output: title[..2] + "…" = "Wx…", width 2+1+1 = 4 ≤ 4 ✓
+        let widths = |c: char| if c == 'W' { 2.0 } else { 1.0 };
+        let out = fit_title_with_widths("WxWxW", 4.0, widths);
+        assert_eq!(out, "Wx…");
+        assert!(rendered_width(&out, widths) <= 4.0);
+    }
+
+    #[test]
+    fn title_truncation_preserves_utf8_boundaries() {
+        // Each emoji/char = 2.0 wide; ellipsis = 2.0.
+        // Title "🎟🎟🎟" = 6.0. Budget 4.0 → one emoji + "…" = 4.0 ≤ 4 ✓.
+        // Crucial: the byte index we cut at must be on a UTF-8 boundary.
+        let w = |_c: char| 2.0;
+        let out = fit_title_with_widths("🎟🎟🎟", 4.0, w);
+        assert_eq!(out, "🎟…");
+        assert!(out.chars().count() == 2, "{out:?} should be 2 graphemes");
+    }
+
+    #[test]
+    fn title_budget_smaller_than_ellipsis_still_returns_ellipsis() {
+        // Budget 0.5 < ellipsis_width 1.0: first char overflows, prefix is
+        // empty, we return just "…" so the user at least sees *something*
+        // indicating truncation rather than a blank tab label.
+        let out = fit_title_with_widths("abc", 0.5, unit_width);
+        assert_eq!(out, "…");
+    }
+
+    #[test]
+    fn title_empty_input_returned_as_is() {
+        assert_eq!(fit_title_with_widths("", 10.0, unit_width), "");
+    }
+
+    #[test]
+    fn title_exact_fit_not_truncated() {
+        // Title "abcd" = 4.0, budget 4.0 → fits exactly, no truncation.
+        assert_eq!(fit_title_with_widths("abcd", 4.0, unit_width), "abcd");
     }
 
     #[test]
