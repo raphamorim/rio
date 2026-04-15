@@ -123,10 +123,7 @@ pub struct MetalRenderer {
 
 #[cfg(target_os = "macos")]
 impl MetalRenderer {
-    pub fn new(
-        context: &MetalContext,
-        colorspace: crate::sugarloaf::Colorspace,
-    ) -> Self {
+    pub fn new(context: &MetalContext, colorspace: crate::sugarloaf::Colorspace) -> Self {
         let input_colorspace = match colorspace {
             crate::sugarloaf::Colorspace::Srgb => 0u8,
             crate::sugarloaf::Colorspace::DisplayP3 => 1u8,
