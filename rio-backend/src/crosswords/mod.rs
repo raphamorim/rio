@@ -398,6 +398,23 @@ fn version_number(mut version: &str) -> usize {
     version_number
 }
 
+/// True when (`base`, `vs`) appears in Unicode's `emoji-variation-sequences.txt`,
+/// i.e. `vs` (U+FE0F or U+FE0E) is defined to have an effect on this base.
+/// Equivalent to kitty's `is_emoji_presentation_base` guard and ghostty's
+/// `emoji_vs_base` property — the actual widen/narrow decision is then
+/// gated on the current cell's `Wide` state by the callers.
+fn vs_is_valid_base(base: char, vs: char) -> bool {
+    use rio_grapheme_width::emoji::Presentation;
+    let mut buf = [0u8; 8];
+    let n1 = base.encode_utf8(&mut buf).len();
+    let n2 = vs.encode_utf8(&mut buf[n1..]).len();
+    // SAFETY: two valid chars written consecutively remain valid UTF-8.
+    let s = unsafe { core::str::from_utf8_unchecked(&buf[..n1 + n2]) };
+    // `for_grapheme` returns `Some(explicit)` iff the sequence is in
+    // VARIATION_MAP (forked from wezterm's emoji-variation-sequences.txt).
+    Presentation::for_grapheme(s).1.is_some()
+}
+
 // Max size of the window title stack.
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
 
@@ -1127,6 +1144,139 @@ impl<U: EventListener> Crosswords<U> {
         // whole flag set without filtering.
         cell.set_cell_flags(template_flags);
         *cursor_square = cell;
+    }
+
+    /// If the previous cell is a narrow, text-presentation emoji base whose
+    /// (base, U+FE0F) sequence is listed in emoji-variation-sequences.txt,
+    /// promote it to Wide and write a Spacer into the next column, advancing
+    /// the cursor past it. No-op otherwise.
+    ///
+    /// Mirrors kitty's `draw_combining_char` / ghostty's VS16 branch: font
+    /// shaping will return a wide emoji glyph for the (base, VS16) cluster
+    /// via cmap format 14, so the grid must budget two cells for it.
+    #[inline(never)]
+    fn apply_emoji_vs16(&mut self) {
+        let columns = self.grid.columns();
+        let row = self.grid.cursor.pos.row;
+        let cursor_col = self.grid.cursor.pos.col.0;
+        let should_wrap = self.grid.cursor.should_wrap;
+
+        let base_col = if should_wrap {
+            cursor_col
+        } else if cursor_col == 0 {
+            return;
+        } else {
+            cursor_col - 1
+        };
+
+        let base_cell = &self.grid[row][Column(base_col)];
+        if !matches!(base_cell.wide(), Wide::Narrow) {
+            return;
+        }
+        let base_char = base_cell.c();
+        if !vs_is_valid_base(base_char, '\u{FE0F}') {
+            return;
+        }
+
+        let spacer_col = base_col + 1;
+        if spacer_col >= columns {
+            // Base is at the final column → no room for a Spacer on this
+            // row. Mirror kitty's `move_widened_char_past_multiline_chars`
+            // (screen.c) and ghostty's wrap branch (Terminal.zig:414): turn
+            // the trailing cell into a `LeadingSpacer` (signals "wide char
+            // continues on next line"), wrap, and re-place the wide base
+            // on the new row, preserving the original cell's style and
+            // any extras (zerowidth combining chars attached before VS16).
+            if !self.mode.contains(Mode::LINE_WRAP) {
+                return;
+            }
+
+            // Snapshot the base cell — `write_at_cursor` below replaces
+            // it with a fresh `Square` and would otherwise lose the
+            // codepoint, style, and extras_id we want to move.
+            let base_snapshot = self.grid[row][Column(base_col)];
+
+            self.grid.cursor.pos.col = Column(base_col);
+            self.grid.cursor.should_wrap = false;
+            self.write_at_cursor(' ');
+            self.grid.cursor_cell().set_wide(Wide::LeadingSpacer);
+
+            self.wrapline();
+
+            let new_row = self.grid.cursor.pos.row;
+            let mut moved = base_snapshot;
+            moved.set_wide(Wide::Wide);
+            self.grid[new_row][Column(0)] = moved;
+
+            self.grid.cursor.pos.col = Column(1);
+            self.write_at_cursor(' ');
+            self.grid.cursor_cell().set_wide(Wide::Spacer);
+
+            if 2 < columns {
+                self.grid.cursor.pos.col = Column(2);
+            } else {
+                self.grid.cursor.should_wrap = true;
+            }
+
+            self.damage.damage_line(row.0 as usize);
+            self.damage.damage_line(new_row.0 as usize);
+            return;
+        }
+
+        self.grid[row][Column(base_col)].set_wide(Wide::Wide);
+
+        self.grid.cursor.pos.col = Column(spacer_col);
+        self.grid.cursor.should_wrap = false;
+        self.write_at_cursor(' ');
+        self.grid.cursor_cell().set_wide(Wide::Spacer);
+
+        if spacer_col + 1 < columns {
+            self.grid.cursor.pos.col = Column(spacer_col + 1);
+        } else {
+            self.grid.cursor.should_wrap = true;
+        }
+
+        self.damage.damage_line(row.0 as usize);
+    }
+
+    /// Inverse of `apply_emoji_vs16`: if the previous cell is a Wide emoji
+    /// base whose (base, U+FE0E) sequence is listed in the variation map,
+    /// narrow it back to a single cell, clear the trailing Spacer, and
+    /// retreat the cursor.
+    #[inline(never)]
+    fn apply_emoji_vs15(&mut self) {
+        let row = self.grid.cursor.pos.row;
+        let cursor_col = self.grid.cursor.pos.col.0;
+        let should_wrap = self.grid.cursor.should_wrap;
+
+        let (base_col, spacer_col) = if should_wrap {
+            if cursor_col == 0 {
+                return;
+            }
+            (cursor_col - 1, cursor_col)
+        } else {
+            if cursor_col < 2 {
+                return;
+            }
+            (cursor_col - 2, cursor_col - 1)
+        };
+
+        let base_cell = &self.grid[row][Column(base_col)];
+        if !matches!(base_cell.wide(), Wide::Wide) {
+            return;
+        }
+        let base_char = base_cell.c();
+        if !vs_is_valid_base(base_char, '\u{FE0E}') {
+            return;
+        }
+
+        self.grid[row][Column(base_col)].set_wide(Wide::Narrow);
+        self.grid[row][Column(spacer_col)] = Square::default();
+
+        self.grid.cursor.pos.col = Column(spacer_col);
+        self.grid.cursor.should_wrap = false;
+
+        self.damage.damage_line(row.0 as usize);
     }
 
     /// Read the hyperlink (if any) for the cell at `(line, col)`.
@@ -2347,6 +2497,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         // Handle zero-width characters.
         if width == 0 {
+            // Emoji presentation variation selectors flip the *width* of
+            // the preceding cell before being attached as combining data.
+            // Matches kitty/ghostty; see emoji-variation-sequences.txt.
+            // Without this, a text-presentation emoji like U+1F39F picks up
+            // a wide emoji glyph from the font shaper but stays in a single
+            // grid cell, overflowing into the neighbour on render.
+            match c {
+                '\u{FE0F}' => self.apply_emoji_vs16(),
+                '\u{FE0E}' => self.apply_emoji_vs15(),
+                _ => {}
+            }
+
             let mut column = self.grid.cursor.pos.col;
             if !self.grid.cursor.should_wrap {
                 column.0 = column.saturating_sub(1);
@@ -5473,5 +5635,206 @@ mod tests {
 
         // The accessor should also return None.
         assert!(cw.cell_graphic(Line(0), Column(0)).is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // Emoji presentation variation selectors (VS15 / VS16).
+    // See `input()` + `apply_emoji_vs16` / `apply_emoji_vs15`.
+    // ------------------------------------------------------------------
+
+    fn new_term(cols: usize, rows: usize) -> Crosswords<VoidListener> {
+        let size = CrosswordsSize::new(cols, rows);
+        let window_id = crate::event::WindowId::from(0);
+        Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        )
+    }
+
+    #[test]
+    fn vs16_widens_text_presentation_emoji() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        // 🎟 (U+1F39F, EAW=N, default text presentation) then VS16.
+        cw.input('\u{1F39F}');
+        cw.input('\u{FE0F}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].c(), '\u{1F39F}');
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Spacer);
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+        assert!(!cw.grid.cursor.should_wrap);
+        // VS16 still attached as combining mark to the base cell.
+        let extras_id = cw.grid[row][Column(0)].extras_id();
+        assert!(extras_id.is_some());
+    }
+
+    #[test]
+    fn vs16_on_non_emoji_base_leaves_cell_narrow() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        cw.input('a');
+        cw.input('\u{FE0F}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].c(), 'a');
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid.cursor.pos.col, Column(1));
+    }
+
+    #[test]
+    fn vs16_on_already_wide_emoji_is_noop() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        // 🤝 (U+1F91D, EAW=W, already wide).
+        cw.input('\u{1F91D}');
+        cw.input('\u{FE0F}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Spacer);
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+    }
+
+    #[test]
+    fn vs15_narrows_default_emoji() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        // 👍 (U+1F44D THUMBS UP) defaults to emoji presentation. It is
+        // listed in emoji-variation-sequences.txt with a VS15 narrowing
+        // sequence (unlike e.g. 🤝 U+1F91D, which has no VS entry at all).
+        cw.input('\u{1F44D}');
+        cw.input('\u{FE0E}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].c(), '\u{1F44D}');
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid.cursor.pos.col, Column(1));
+        assert!(!cw.grid.cursor.should_wrap);
+    }
+
+    #[test]
+    fn vs15_on_non_listed_emoji_is_noop() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        // 🤝 (U+1F91D) is default-emoji but has no VS entry, so VS15
+        // cannot narrow it — the grid must keep the Wide+Spacer pair.
+        cw.input('\u{1F91D}');
+        cw.input('\u{FE0E}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Spacer);
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+    }
+
+    #[test]
+    fn vs16_at_column_zero_noop() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        // VS16 with no preceding base must be ignored.
+        cw.input('\u{FE0F}');
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid.cursor.pos.col, Column(0));
+    }
+
+    #[test]
+    fn vs16_at_last_column_wraps_base_to_next_row() {
+        use crate::performer::handler::Handler;
+        // Width 3 so that a 1-cell base at col 2 has no room for a spacer.
+        let mut cw = new_term(3, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{1F39F}');
+        // Cursor at col 2 with should_wrap=true after writing base in last col.
+        assert!(cw.grid.cursor.should_wrap);
+        cw.input('\u{FE0F}');
+
+        // Old row's last cell is now a LeadingSpacer signalling that a wide
+        // glyph continues on the wrapped line. The base char itself moves to
+        // (1, 0) marked Wide, with a Spacer at (1, 1).
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), 'a');
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), 'a');
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::LeadingSpacer);
+
+        assert_eq!(cw.grid[Line(1)][Column(0)].c(), '\u{1F39F}');
+        assert_eq!(cw.grid[Line(1)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[Line(1)][Column(1)].wide(), Wide::Spacer);
+
+        assert_eq!(cw.grid.cursor.pos.row, Line(1));
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+        assert!(!cw.grid.cursor.should_wrap);
+    }
+
+    #[test]
+    fn vs16_at_last_column_preserves_base_extras() {
+        use crate::performer::handler::Handler;
+        // Attach a combining mark to the base BEFORE VS16 arrives, then
+        // trigger the right-edge wrap and confirm the extras follow the
+        // base to the new row (matches ghostty's grapheme transfer block).
+        let mut cw = new_term(3, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{1F39F}');
+        // U+200D ZERO WIDTH JOINER attaches to the base as zerowidth.
+        cw.input('\u{200D}');
+        let original_extras = cw.grid[Line(0)][Column(2)].extras_id();
+        assert!(original_extras.is_some());
+
+        cw.input('\u{FE0F}');
+
+        // The wide base on the new row should still carry the same extras
+        // entry (the ZWJ we attached earlier).
+        let moved_extras = cw.grid[Line(1)][Column(0)].extras_id();
+        assert_eq!(moved_extras, original_extras);
+        assert_eq!(cw.grid[Line(1)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::LeadingSpacer);
+    }
+
+    #[test]
+    fn vs16_then_vs15_round_trip_narrows() {
+        use crate::performer::handler::Handler;
+        // Text-default 🎟 widened by VS16, then VS15 must narrow it back.
+        // The (🎟, VS15) entry in the variation map is (Text, Text) — our
+        // predicate matches any listed (base, vs) pair, not just the
+        // "changes presentation" ones, so round-tripping works.
+        let mut cw = new_term(10, 3);
+        cw.input('\u{1F39F}');
+        cw.input('\u{FE0F}');
+        cw.input('\u{FE0E}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid.cursor.pos.col, Column(1));
+    }
+
+    #[test]
+    fn vs16_then_following_char_does_not_overlap() {
+        use crate::performer::handler::Handler;
+        // Reproduces the original vim-split-misalignment scenario: after
+        // widening the text-presentation emoji, the next character must
+        // land *past* the spacer, not on top of it.
+        let mut cw = new_term(10, 3);
+        cw.input('"');
+        cw.input('\u{1F39F}');
+        cw.input('\u{FE0F}');
+        cw.input('"');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].c(), '"');
+        assert_eq!(cw.grid[row][Column(1)].c(), '\u{1F39F}');
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[row][Column(2)].wide(), Wide::Spacer);
+        assert_eq!(cw.grid[row][Column(3)].c(), '"');
+        assert_eq!(cw.grid.cursor.pos.col, Column(4));
     }
 }

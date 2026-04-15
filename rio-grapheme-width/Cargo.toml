@@ -1,0 +1,16 @@
+[package]
+name = "rio-grapheme-width"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Emoji presentation and variation-sequence tables for Rio terminal. Forked from wezterm-char-props."
+
+[dependencies]
+phf = { version = "0.13.1", default-features = false }
+ucd-trie = { version = "0.1.7", default-features = false }
+
+[features]
+default = ["std"]
+std = ["ucd-trie/std", "phf/std"]
