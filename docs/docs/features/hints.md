@@ -13,10 +13,10 @@ When you activate hint mode, Rio scans the visible terminal content for patterns
 
 ## Default hints
 
-Rio ships with one rule out of the box that matches three kinds of clickable text:
+Rio ships with one rule out of the box that matches three kinds of clickable text. The default regex is ported verbatim from ghostty and uses oniguruma syntax (lookbehinds, lookaheads supported):
 
-1. **Schemed URLs** — `http://`, `https://`, `file:`, `ssh:`, `mailto:`, `magnet:`, `ipfs://`, `gemini://`, `gopher://`, `git://`, `news:`, `ipns:`, `ftp://`, `tel:`.
-2. **Rooted or explicitly-relative paths** — `/abs/path`, `./rel`, `../rel`, `~/Desktop`, `.config/foo`, `$HOME/x`, `$XDG_CONFIG_HOME/x`. Mid-word slashes (the `/bar` inside `foo/bar`) are rejected.
+1. **Schemed URLs** — `http://`, `https://`, `file:`, `ssh:`, `mailto:`, `magnet:`, `ipfs://`, `gemini://`, `gopher://`, `git://`, `news:`, `ipns:`, `ftp://`, `tel:`. IPv6 literals and bracketed parentheses inside URLs are handled.
+2. **Rooted or explicitly-relative paths** — `/abs/path`, `./rel`, `../rel`, `~/Desktop`, `.config/foo`, `$HOME/x`, `$XDG_CONFIG_HOME/x`. Mid-word slashes (the `/bar` inside `foo/bar`) are rejected via lookbehind. Paths with internal spaces are matched when they contain a dotted filename segment (e.g. `~/My\ Documents/notes.md`).
 3. **Bare relative paths with a dotted filename** — `src/main.rs`, `lib/foo.zig:42:10`. A dotted segment is required, so ambiguous strings like `foo/bar` aren't matched.
 
 When you click a path-like match (or use the keyboard hint), rio resolves it against the terminal's working directory (reported by your shell via OSC 7), expands `~/` and `$VAR/`, and dispatches the absolute path to the OS opener (`open`/`xdg-open`/`cmd /c start`) only if the file exists. URL-scheme matches are passed through unchanged.
