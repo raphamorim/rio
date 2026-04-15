@@ -40,6 +40,10 @@ pub struct Sugarloaf<'a> {
     /// width (for the grid) and unscaled glyph advance (for
     /// proportional UI via `char_advance`).
     font_cache: FontCache,
+    /// Cached input colorspace from the renderer config — used by the
+    /// Metal clear-color path to keep the first HW-cleared pixel in the
+    /// same colorspace the shader will emit subsequent pixels in.
+    colorspace: Colorspace,
 }
 
 #[derive(Debug)]
@@ -108,28 +112,49 @@ fn srgb_channel_to_linear(c: f64) -> f64 {
     }
 }
 
+/// Bradford-adapted sRGB D65 → DisplayP3 D65 matrix applied in linear light.
+/// Must stay in sync with the `srgb_to_p3` helper in `renderer.metal` so the
+/// clear color lands in the same colorspace as shader-emitted pixels.
 #[cfg(target_os = "macos")]
 #[inline]
-fn srgb_to_linear_f64(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+fn linear_srgb_to_linear_p3(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     (
-        srgb_channel_to_linear(r),
-        srgb_channel_to_linear(g),
-        srgb_channel_to_linear(b),
+        0.82246197 * r + 0.17753803 * g,
+        0.03319420 * r + 0.96680580 * g,
+        0.01708263 * r + 0.07239744 * g + 0.91051993 * b,
     )
 }
 
+/// Prepare a CPU-side theme color for an `_sRGB` + DisplayP3-tagged render
+/// target. Linearizes (mandatory for the HW encode to work) and, when the
+/// input is declared sRGB, runs the sRGB → P3 primaries matrix so the
+/// clear color matches what the shader emits for the same input bytes.
 #[cfg(target_os = "macos")]
-#[allow(clippy::derivable_impls)]
-impl Default for Colorspace {
-    fn default() -> Colorspace {
-        Colorspace::DisplayP3
+#[inline]
+fn prepare_output_rgb_f64(
+    r: f64,
+    g: f64,
+    b: f64,
+    colorspace: Colorspace,
+) -> (f64, f64, f64) {
+    let r = srgb_channel_to_linear(r);
+    let g = srgb_channel_to_linear(g);
+    let b = srgb_channel_to_linear(b);
+    match colorspace {
+        Colorspace::Srgb => linear_srgb_to_linear_p3(r, g, b),
+        // DisplayP3 / Rec.2020 inputs: already in the target primaries (or
+        // close enough for Rec.2020 until we wire up a proper matrix).
+        _ => (r, g, b),
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 #[allow(clippy::derivable_impls)]
 impl Default for Colorspace {
     fn default() -> Colorspace {
+        // See `rio-backend::config::window::Colorspace::default` — the
+        // config field drives how input colors are interpreted, and the
+        // shader/surface always target a wide-gamut output. Default sRGB
+        // keeps theme bytes visually consistent with the rest of the OS.
         Colorspace::Srgb
     }
 }
@@ -190,9 +215,10 @@ impl Sugarloaf<'_> {
         layout: RootStyle,
     ) -> Result<Sugarloaf<'a>, Box<SugarloafWithErrors<'a>>> {
         let font_features = renderer.font_features.to_owned();
+        let colorspace = renderer.colorspace;
         let ctx = Context::new(window, renderer);
 
-        let renderer = Renderer::new(&ctx);
+        let renderer = Renderer::new(&ctx, colorspace);
         let state = SugarState::new(layout, font_library, &font_features);
 
         let font_cache = FontCache::new();
@@ -208,6 +234,7 @@ impl Sugarloaf<'_> {
             image_data: rustc_hash::FxHashMap::default(),
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
             font_cache,
+            colorspace,
         };
 
         Ok(instance)
@@ -1079,19 +1106,23 @@ impl Sugarloaf<'_> {
 
                 // Set background color.
                 //
-                // The drawable is `BGRA8Unorm_sRGB` (see `context/metal.rs`),
-                // which means Metal treats the `MTLClearColor` components as
-                // *linear* RGB and applies the sRGB transfer curve on write.
-                // Rio's theme colors arrive here already sRGB-encoded, so if
-                // we hand them to `MTLClearColor` verbatim the HW encode on
-                // top of already-encoded values brightens the clear pixel
-                // (e.g. a dark-gray window gains a visible tint). Linearize
-                // RGB first; alpha is linear by convention, pass it through.
+                // The drawable is `BGRA8Unorm_sRGB` + DisplayP3-tagged (see
+                // `context/metal.rs`). That means Metal reads `MTLClearColor`
+                // components as *linear* RGB in the drawable's color space
+                // and applies the sRGB transfer curve on write. Rio's theme
+                // colors arrive here sRGB-encoded with their primaries
+                // declared by `[window] colorspace`, so we need to:
+                // 1. Linearize (mandatory — HW-encode expects linear input),
+                // 2. Convert sRGB → P3 primaries if the config says the
+                //    inputs are sRGB, so the clear pixel matches what the
+                //    shader emits for the same theme bytes (see
+                //    `renderer.metal`'s `prepare_output_rgb`).
                 let clear_color = if let Some(background_color) = self.background_color {
-                    let (r, g, b) = srgb_to_linear_f64(
+                    let (r, g, b) = prepare_output_rgb_f64(
                         background_color.r,
                         background_color.g,
                         background_color.b,
+                        self.colorspace,
                     );
                     MTLClearColor::new(r, g, b, background_color.a)
                 } else {

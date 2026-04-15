@@ -3,8 +3,11 @@ using namespace metal;
 
 // Image rendering shader — instanced, one instance per image placement.
 
+// Matches the Rust `Globals` in `renderer/mod.rs`. See that file for the
+// semantics of `input_colorspace`.
 struct Globals {
     float4x4 transform;
+    uchar input_colorspace;
 };
 
 struct ImageInstanceInput {
@@ -43,23 +46,36 @@ vertex ImageVertexOut image_vs_main(
     return out;
 }
 
-// Match `srgb_to_linear` in renderer.metal. Sampled image data is stored as
-// sRGB-encoded RGBA (Rgba8Unorm, no HW decode on read) — linearize before
-// returning so the `_sRGB` color attachment's on-write encode restores the
-// intended pixel value instead of double-encoding it too bright.
+// Match `renderer.metal` — sampled image data is Rgba8Unorm (no HW sRGB
+// decode on read) and treated as sRGB-encoded content. Linearize, then
+// apply the sRGB → DisplayP3 primaries matrix when the layer is DisplayP3
+// with sRGB-interpreted inputs (`input_colorspace == 0`). The framebuffer's
+// `_sRGB` on-write encode re-applies the transfer curve after blending.
 static inline float3 srgb_to_linear(float3 c) {
     float3 lo = c / 12.92;
     float3 hi = pow((c + 0.055) / 1.055, 2.4);
     return select(lo, hi, c > 0.04045);
 }
 
+static inline float3 srgb_to_p3(float3 linear_srgb) {
+    return float3(
+        dot(linear_srgb, float3(0.82246197, 0.17753803, 0.0)),
+        dot(linear_srgb, float3(0.03319420, 0.96680580, 0.0)),
+        dot(linear_srgb, float3(0.01708263, 0.07239744, 0.91051993))
+    );
+}
+
 fragment float4 image_fs_main(
     ImageVertexOut input [[stage_in]],
+    constant Globals& globals [[buffer(1)]],
     texture2d<float> image_texture [[texture(0)]],
     sampler image_sampler [[sampler(0)]]
 ) {
     float4 rgba = image_texture.sample(image_sampler, input.tex_coord);
     float3 lin = srgb_to_linear(rgba.rgb);
+    if (globals.input_colorspace == 0u) {
+        lin = srgb_to_p3(lin);
+    }
     // Premultiply alpha
     return float4(lin * rgba.a, rgba.a);
 }
