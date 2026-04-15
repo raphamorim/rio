@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/assets/css/styles.fd9c5787.css">
-<script src="/assets/js/runtime~main.83f2a89d.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.0ab9b980.js" defer="defer"></script>
 <script src="/assets/js/main.f4521c63.js" defer="defer"></script>
 </head>
 <body>
@@ -31,6 +31,13 @@
 <li class="">Harden Kitty graphics protocol: reject images exceeding 10000 px per axis or 400 MiB, add per-chunk base64 decoding so clients like <code>chafa --format=kitty</code> (which pads every chunk) merge correctly, time out stale chunked uploads after 10 s, combine <code>i=/I=/p=</code> response keys, validate <code>i=</code>/<code>I=</code> mutual exclusion, and require <code>i=</code> for <code>a=q</code> queries.</li>
 <li class="">Fix kitty image protocol whenever using transmission.</li>
 <li class="">Fix color picker not rendering correctly.</li>
+<li class="">Selection feel: bumped the click/drag side-of-cell threshold from 50% to 60% (matches ghostty), so selections no longer flip to the next cell as eagerly when the cursor crosses the midpoint.</li>
+<li class="">Default URL/path regex now matches local paths in addition to schemed URLs. Ported verbatim from ghostty&#x27;s <code>src/config/url.zig</code>: rooted (<code>/abs</code>), explicitly-relative (<code>./x</code>, <code>../x</code>), home (<code>~/x</code>), env-var-rooted (<code>$VAR/x</code>), hidden-dir (<code>.config/x</code>), and bare relative paths with a dotted filename (<code>src/main.rs</code>). Lookbehinds reject mid-word starts (the <code>/bar</code> inside <code>foo/bar</code>) and trailing punctuation (<code>see https://example.com.</code> won&#x27;t include the period).</li>
+<li class="">Switch hint regex matching from the Rust <code>regex</code> crate to <code>onig</code> (Oniguruma) — same engine ghostty uses. Adds lookbehind/lookahead support so the default regex matches ghostty&#x27;s behavior exactly, and user <code>[hints.rules]</code> regexes can now use lookarounds and backreferences.</li>
+<li class="">When a hint match looks like a local path, rio now resolves it against the terminal&#x27;s OSC 7 working directory, expands <code>~/</code> and <code>$VAR/</code>, and only dispatches the resolved absolute path to the OS opener if the file exists; URL schemes (<code>https://…</code>, <code>mailto:</code>, …) are passed through unchanged.</li>
+<li class="">Restore OSC 8 hyperlink underlines. The cell repack moved hyperlink data into a side table and the renderer&#x27;s <code>square.hyperlink().is_some()</code> check was disabled with a <code>// temporarily disabled</code> comment that was never lifted; the renderer now reads the cell&#x27;s <code>HYPERLINK</code> flag directly so OSC 8 spans are underlined again.</li>
+<li class="">Fix hover hint underline not appearing on the very first hover after startup. <code>update_highlighted_hints</code> now marks the renderer&#x27;s <code>pending_update</code> with full terminal damage when the hint changes, mirroring the pre-refactor <code>set_hyperlink_range</code> behaviour, so the partial-damage render path can no longer skip the re-shape.</li>
+<li class="">Fix two <code>context::title</code> tests panicking under sandboxed builds (e.g. Void&#x27;s xbps-src) where <code>$HOME=/tmp</code> collapsed the test path to <code>~</code>. The tests now use a path prefix that can&#x27;t plausibly be <code>$HOME</code>.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="038">0.3.8<a href="#038" class="hash-link" aria-label="Direct link to 0.3.8" title="Direct link to 0.3.8" translate="no">​</a></h2>
 <ul>
@@ -1390,7 +1397,7 @@
 <li class="">Default colors <code>selection-foreground</code> and <code>selection-background</code> has changed.</li>
 <li class="">Default colors <code>tab</code> and <code>tab-active</code> has changed.</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0014">0.0.14<a href="#0014" class="hash-link" aria-label="Direct link to 0.0.14" title="Direct link to 0.0.14" translate="no">​</a></h2>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="0014">0.0.14<a href="#0014" class="hash-link" aria-label="Direct link to 0.0.14" title="Direct link to 0.0.14" translate="no"> ​</a></h2>
 <ul>
 <li class="">Implementation of custom key bindings (<a href="https://github.com/raphamorim/rio/issues/117" target="_blank" rel="noopener noreferrer" class="">#117</a>).</li>
 <li class="">Fix .deb packing in GH Actions.</li>
