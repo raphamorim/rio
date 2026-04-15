@@ -240,13 +240,29 @@ impl Compositor {
         } else {
             // Handle regular glyphs
             for glyph in glyphs {
-                let entry = session.get(glyph.id);
+                // For PUA glyphs with a multi-cell constraint, rasterize at
+                // `cells × font_size` so the compositor only ever downscales
+                // in the fit pass below — upscaling an atlas bitmap would be
+                // blurry. For Cascadia-style fonts that already render ~2
+                // cells wide this is a no-op downscale; for JetBrainsMono NF
+                // Mono (~1 cell wide) this is what makes the 2-cell slot
+                // actually look 2-cell-sized instead of small-and-centered.
+                let entry = match style.scale_constraint {
+                    Some((_, cells)) if cells > 1 => {
+                        let larger = ((style.font_size * cells as f32) as u16).max(1);
+                        session.get_at_size(glyph.id, larger)
+                    }
+                    _ => session.get(glyph.id),
+                };
                 if let Some(entry) = entry {
                     if let Some(img) = session.get_image(entry.image) {
                         let gx = (glyph.x + subpx_bias.0).floor() + entry.left as f32;
                         let gy = (glyph.y + subpx_bias.1).floor() - entry.top as f32;
 
-                        // Scale PUA glyphs to fit constraint width
+                        // Proportional fit in both directions. After the
+                        // targeted rasterization above this is effectively a
+                        // downscale-or-identity, which keeps output crisp.
+                        // Matches ghostty's `.size = .fit` for PUA symbols.
                         let glyph_rect =
                             if let Some((cell_w, cells)) = style.scale_constraint {
                                 let target_w = cell_w * cells as f32;
@@ -254,16 +270,23 @@ impl Compositor {
                                 let orig_w = entry.width as f32;
                                 let orig_h = entry.height as f32;
 
-                                // Fit proportionally within the target area
                                 let scale =
-                                    (target_w / orig_w).min(target_h / orig_h).min(1.0);
+                                    (target_w / orig_w).min(target_h / orig_h);
                                 let sw = orig_w * scale;
                                 let sh = orig_h * scale;
 
-                                // Center horizontally within constraint width
+                                // Center horizontally within the constraint
+                                // slot that starts at `glyph.x`.
                                 let cx = glyph.x + (target_w - sw) / 2.0;
-                                // Align vertically from the baseline
-                                let cy = gy + (orig_h - sh) / 2.0;
+                                // Center vertically within the line. PUA /
+                                // Nerd Font symbols aren't baseline-anchored
+                                // the way text glyphs are — scaling `entry.top`
+                                // shifts the image up because the top-bearing
+                                // scales faster than the descent-bearing. Same
+                                // choice ghostty makes for `isSymbol(cp)` via
+                                // `.align_vertical = .center1`.
+                                let cy =
+                                    style.topline + (style.line_height - sh) / 2.0;
 
                                 Rect::new(cx, cy, sw, sh)
                             } else {

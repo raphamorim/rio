@@ -19,7 +19,7 @@ use crate::font_introspector::text::cluster::Token;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
 use crate::font_introspector::text::Codepoint;
 use crate::font_introspector::text::Script;
-use crate::font_introspector::{CacheKey, FontRef, Synthesis};
+use crate::font_introspector::{tag_from_bytes, CacheKey, FontRef, Synthesis};
 use crate::layout::SpanStyle;
 use crate::SugarloafErrors;
 use dashmap::DashMap;
@@ -439,22 +439,14 @@ impl FontLibraryData {
             }
         }
 
-        if let Some(emoji_font) = spec.emoji {
-            match find_font(&db, emoji_font, true, true) {
-                FindResult::Found(data) => {
-                    self.insert(data);
-                }
-                FindResult::NotFound(spec) => {
-                    self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
-                    if !spec.is_default_family() {
-                        fonts_not_fount.push(spec);
-                    }
-                }
-            }
-        } else {
-            self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
-        }
-
+        // User-configured fallbacks run before the bundled emoji / Nerd Font
+        // slices so a color emoji family dropped into `extras` (e.g.
+        // `extras = [{family = "Apple Color Emoji"}]`) takes priority over
+        // the bundled Twemoji. `is_emoji = false` is passed in; `FontData::
+        // from_data` auto-promotes to `true` when the font carries a color
+        // table (COLR/CBDT/CBLC/sbix), so real emoji families still get the
+        // wide-cell/color-atlas treatment while Nerd Font families stay
+        // single-cell.
         for extra_font in spec.extras {
             match find_font(
                 &db,
@@ -465,7 +457,7 @@ impl FontLibraryData {
                     width: extra_font.width,
                 },
                 true,
-                true,
+                false,
             ) {
                 FindResult::Found(data) => {
                     self.insert(data);
@@ -476,6 +468,7 @@ impl FontLibraryData {
             }
         }
 
+        self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
         self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO, false).unwrap());
 
         // TODO: Currently, it will naively just extend fonts from symbol_map
@@ -503,7 +496,7 @@ impl FontLibraryData {
                         ..SugarloafFont::default()
                     },
                     true,
-                    true,
+                    false,
                 ) {
                     FindResult::Found(data) => {
                         if let Some(start) =
@@ -698,6 +691,7 @@ impl FontData {
 
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
+        let is_emoji = is_emoji || has_color_tables(&font);
 
         let data = (!evictable).then_some(data);
 
@@ -731,6 +725,7 @@ impl FontData {
         let weight = attributes.weight();
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
+        let is_emoji = is_emoji || has_color_tables(&font);
 
         Ok(Self {
             data: Some(SharedData::new(data.to_vec())),
@@ -747,6 +742,18 @@ impl FontData {
             metrics_cache: FxHashMap::default(),
         })
     }
+}
+
+/// Auto-detect emoji-ness from SFNT color tables (COLR, CBDT, CBLC, SBIX).
+/// Matches ghostty's `FT_HAS_COLOR()` / CoreText SBIX checks. Used to guard
+/// against Nerd Font families being mis-flagged as emoji when loaded via the
+/// `extras` config slot (`is_emoji` is wired per-load-site, but a real emoji
+/// font in that slot would still need the wide-cell/color-atlas treatment).
+fn has_color_tables(font: &FontRef<'_>) -> bool {
+    font.table(tag_from_bytes(b"COLR")).is_some()
+        || font.table(tag_from_bytes(b"CBDT")).is_some()
+        || font.table(tag_from_bytes(b"CBLC")).is_some()
+        || font.table(tag_from_bytes(b"sbix")).is_some()
 }
 
 pub type SugarloafFont = fonts::SugarloafFont;
