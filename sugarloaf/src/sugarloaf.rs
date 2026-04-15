@@ -93,6 +93,31 @@ pub enum Colorspace {
     Rec2020,
 }
 
+/// Linearize a single sRGB channel (IEC 61966-2-1). Mirrors the
+/// `srgb_to_linear` helper in `renderer.metal` / `image.metal` — used at the
+/// Rust boundary when handing colors to `_sRGB` render targets (clear colors,
+/// etc.) so we don't double-encode a value that the HW will gamma-encode on
+/// write. Alpha is linear by convention; never pass it through this.
+#[cfg(target_os = "macos")]
+#[inline]
+fn srgb_channel_to_linear(c: f64) -> f64 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[inline]
+fn srgb_to_linear_f64(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    (
+        srgb_channel_to_linear(r),
+        srgb_channel_to_linear(g),
+        srgb_channel_to_linear(b),
+    )
+}
+
 #[cfg(target_os = "macos")]
 #[allow(clippy::derivable_impls)]
 impl Default for Colorspace {
@@ -1052,14 +1077,23 @@ impl Sugarloaf<'_> {
                 color_attachment.set_store_action(MTLStoreAction::Store);
                 color_attachment.set_load_action(MTLLoadAction::Clear);
 
-                // Set background color
+                // Set background color.
+                //
+                // The drawable is `BGRA8Unorm_sRGB` (see `context/metal.rs`),
+                // which means Metal treats the `MTLClearColor` components as
+                // *linear* RGB and applies the sRGB transfer curve on write.
+                // Rio's theme colors arrive here already sRGB-encoded, so if
+                // we hand them to `MTLClearColor` verbatim the HW encode on
+                // top of already-encoded values brightens the clear pixel
+                // (e.g. a dark-gray window gains a visible tint). Linearize
+                // RGB first; alpha is linear by convention, pass it through.
                 let clear_color = if let Some(background_color) = self.background_color {
-                    MTLClearColor::new(
+                    let (r, g, b) = srgb_to_linear_f64(
                         background_color.r,
                         background_color.g,
                         background_color.b,
-                        background_color.a,
-                    )
+                    );
+                    MTLClearColor::new(r, g, b, background_color.a)
                 } else {
                     // Default to transparent black if no background color set
                     MTLClearColor::new(0.0, 0.0, 0.0, 0.0)

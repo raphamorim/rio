@@ -43,13 +43,23 @@ vertex ImageVertexOut image_vs_main(
     return out;
 }
 
+// Match `srgb_to_linear` in renderer.metal. Sampled image data is stored as
+// sRGB-encoded RGBA (Rgba8Unorm, no HW decode on read) — linearize before
+// returning so the `_sRGB` color attachment's on-write encode restores the
+// intended pixel value instead of double-encoding it too bright.
+static inline float3 srgb_to_linear(float3 c) {
+    float3 lo = c / 12.92;
+    float3 hi = pow((c + 0.055) / 1.055, 2.4);
+    return select(lo, hi, c > 0.04045);
+}
+
 fragment float4 image_fs_main(
     ImageVertexOut input [[stage_in]],
     texture2d<float> image_texture [[texture(0)]],
     sampler image_sampler [[sampler(0)]]
 ) {
     float4 rgba = image_texture.sample(image_sampler, input.tex_coord);
+    float3 lin = srgb_to_linear(rgba.rgb);
     // Premultiply alpha
-    rgba = float4(rgba.rgb * rgba.a, rgba.a);
-    return rgba;
+    return float4(lin * rgba.a, rgba.a);
 }

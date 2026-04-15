@@ -4750,6 +4750,7 @@ dependencies = [
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
+ "core-graphics 0.24.0",
  "core-graphics-types 0.2.0",
  "criterion",
  "dashmap",
