@@ -34,6 +34,7 @@ libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
 sugarloaf = { workspace = true }
+rio-grapheme-width = { workspace = true }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }

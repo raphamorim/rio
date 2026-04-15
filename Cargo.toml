@@ -6,6 +6,7 @@ members = [
     "copa",
     "rio-proc-macros",
     "rio-backend",
+    "rio-grapheme-width",
     "rio-window",
     "rio-notifier",
     "frontends/rioterm",
@@ -33,6 +34,7 @@ teletypewriter = { path = "teletypewriter", version = "0.3.9" }
 rio-backend = { path = "rio-backend", version = "0.3.9" }
 rio-window = { path = "rio-window", version = "0.3.9", default-features = false }
 rio-notifier = { path = "rio-notifier", version = "0.3.9" }
+rio-grapheme-width = { path = "rio-grapheme-width", version = "0.3.9" }
 sugarloaf = { path = "sugarloaf", version = "0.3.9" }
 
 # Own dependencies
