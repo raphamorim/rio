@@ -9,38 +9,46 @@ use crate::SpanStyle;
 use rustc_hash::FxHashMap;
 use unicode_width::UnicodeWidthChar;
 
-/// Resolved glyph metadata: which font owns it, how wide it is in
-/// terminal cells, whether it lives in a Unicode private-use area
-/// (Nerd Font icons, custom symbol fonts, etc.), and the horizontal
-/// advance in the winning font's design units.
-///
-/// The advance is stored **unscaled** (font design units) together with
-/// `units_per_em`, so one cache entry answers `char_advance` queries at
-/// any font size via `advance_units * font_size / units_per_em`. Filled
-/// at resolve time because `find_best_font_match` has already loaded
-/// the winning font and consulted its cmap, so the extra hmtx lookup
-/// is essentially free on top.
+/// Unscaled horizontal advance for a glyph + the font's units-per-em,
+/// stored together so callers can recover pixels at any font size:
+/// `advance_units * font_size / units_per_em`. One cache entry survives
+/// font-size changes.
 #[derive(Debug, Clone, Copy)]
-pub struct ResolvedGlyph {
-    pub font_id: usize,
-    pub width: f32,
-    pub is_pua: bool,
+pub struct AdvanceInfo {
     pub advance_units: f32,
     pub units_per_em: u16,
 }
 
-impl ResolvedGlyph {
-    /// Scaled horizontal advance in pixels for the given font size.
-    /// Returns 0.0 when `units_per_em` is 0 (malformed/missing font
-    /// metrics) so callers don't need a separate guard.
+impl AdvanceInfo {
+    /// Scaled horizontal advance in pixels. Returns 0.0 when
+    /// `units_per_em` is 0 (malformed/missing font metrics) so callers
+    /// don't need a separate guard.
     #[inline]
-    pub fn scaled_advance(&self, font_size: f32) -> f32 {
+    pub fn scaled(&self, font_size: f32) -> f32 {
         if self.units_per_em > 0 {
             self.advance_units * font_size / self.units_per_em as f32
         } else {
             0.0
         }
     }
+}
+
+/// Resolved glyph metadata: which font owns it, how wide it is in
+/// terminal cells, whether it lives in a Unicode private-use area
+/// (Nerd Font icons, custom symbol fonts, etc.), and — lazily — the
+/// horizontal advance in the winning font's design units.
+///
+/// `advance` starts `None` and is filled only on the first
+/// `char_advance` query for this `(char, attrs)`. The terminal grid
+/// hot path doesn't need per-char pixel advances (it uses
+/// `width` — cell count — for layout), so we don't pay for an hmtx /
+/// upem read on every unique cell glyph.
+#[derive(Debug, Clone, Copy)]
+pub struct ResolvedGlyph {
+    pub font_id: usize,
+    pub width: f32,
+    pub is_pua: bool,
+    pub advance: Option<AdvanceInfo>,
 }
 
 /// Plain hash-map glyph cache. `get` is `&self` (no LRU promotion),
@@ -71,6 +79,22 @@ impl FontCache {
     pub fn clear(&mut self) {
         self.cache.clear();
     }
+
+    /// Attach `advance` to the entry for `key`, if one exists. Used by
+    /// `Sugarloaf::char_advance` after the first pixel-advance query
+    /// for a `(char, attrs)` pair so subsequent queries can short-circuit.
+    /// No-op when the entry hasn't been resolved yet (caller should
+    /// call `resolve_with` first).
+    #[inline]
+    pub(crate) fn set_advance(
+        &mut self,
+        key: (char, Attributes),
+        advance: AdvanceInfo,
+    ) {
+        if let Some(entry) = self.cache.get_mut(&key) {
+            entry.advance = Some(advance);
+        }
+    }
 }
 
 /// Resolve a single glyph: read from `cache` if present, otherwise
@@ -100,42 +124,32 @@ pub(crate) fn resolve_with(
         }
     }
 
-    // Pull the winning font's per-glyph advance and units-per-em so
-    // proportional UI callers (tab titles, palette, hints) can answer
-    // width queries at any font size via `ResolvedGlyph::scaled_advance`
-    // with no extra font-data lookup. `find_best_font_match` has already
-    // loaded the font and consulted its cmap — the added cost here is an
-    // Arc clone + an hmtx read, dwarfed by the fallback walk.
-    let (advance_units, units_per_em) =
-        match font_ctx.get_data(&font_id) {
-            Some((data, offset, _key)) => {
-                let font_ref = crate::font_introspector::FontRef::from_index(
-                    &data,
-                    offset as usize,
-                );
-                match font_ref {
-                    Some(font_ref) => {
-                        let glyph_id = font_ref.charmap().map(ch as u32);
-                        let metrics = crate::font_introspector::GlyphMetrics::from_font(
-                            &font_ref,
-                            &[],
-                        );
-                        let upem = font_ref.metrics(&[]).units_per_em;
-                        (metrics.advance_width(glyph_id), upem)
-                    }
-                    None => (0.0, 0),
-                }
-            }
-            None => (0.0, 0),
-        };
-
     let resolved = ResolvedGlyph {
         font_id,
         width,
         is_pua: is_private_user_area(&ch),
-        advance_units,
-        units_per_em,
+        advance: None,
     };
     cache.insert((ch, attrs), resolved);
     resolved
+}
+
+/// Compute the unscaled glyph advance for `ch` in the font registered
+/// under `font_id`. Returns `None` when the font data isn't available
+/// (font id unregistered or the SFNT bytes failed to parse); the
+/// caller is responsible for picking a rendering fallback.
+pub(crate) fn compute_advance(
+    font_ctx: &crate::font::FontLibraryData,
+    font_id: usize,
+    ch: char,
+) -> Option<AdvanceInfo> {
+    let (data, offset, _key) = font_ctx.get_data(&font_id)?;
+    let font_ref =
+        crate::font_introspector::FontRef::from_index(&data, offset as usize)?;
+    let glyph_id = font_ref.charmap().map(ch as u32);
+    let metrics = crate::font_introspector::GlyphMetrics::from_font(&font_ref, &[]);
+    Some(AdvanceInfo {
+        advance_units: metrics.advance_width(glyph_id),
+        units_per_em: font_ref.metrics(&[]).units_per_em,
+    })
 }
