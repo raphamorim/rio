@@ -74,7 +74,7 @@ Execute a predefined action in Rio terminal.
 | Quit             | Exit Rio |
 | ToggleFullscreen | Toggle fullscreen |
 | ToggleAppearanceTheme | Toggle between dark and light appearance theme |
-| ToggleCommandPalette | Open/close the command palette overlay (Raycast-style fuzzy launcher) |
+| OpenCommandPalette | Open the command palette overlay (Raycast-style fuzzy launcher). Close via `Esc`. |
 
 ### [Split Actions](#split-actions)
 
@@ -292,7 +292,7 @@ If you are missing a key binding that you believe that should be a default in th
 | Move divider down      | `Control + Command + ArrowDown`  |
 | Move divider left      | `Control + Command + ArrowLeft`  |
 | Move divider right     | `Control + Command + ArrowRight` |
-| Toggle command palette | `Command + Shift + p` |
+| Open command palette  | `Command + Shift + p` |
 
 ### Windows
 
@@ -329,7 +329,7 @@ If you are missing a key binding that you believe that should be a default in th
 | Move divider down      | `Control + Shift + Alt + ArrowDown`  |
 | Move divider left      | `Control + Shift + Alt + ArrowLeft`  |
 | Move divider right     | `Control + Shift + Alt + ArrowRight` |
-| Toggle command palette | `Control + Shift + p` |
+| Open command palette  | `Control + Shift + p` |
 
 ### Linux and BSD
 
@@ -366,7 +366,7 @@ If you are missing a key binding that you believe that should be a default in th
 | Move divider down      | `Control + Shift + Alt + ArrowDown`  |
 | Move divider left      | `Control + Shift + Alt + ArrowLeft`  |
 | Move divider right     | `Control + Shift + Alt + ArrowRight` |
-| Toggle command palette | `Control + Shift + p` |
+| Open command palette  | `Control + Shift + p` |
 
 ### Search
 

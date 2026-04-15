@@ -1164,9 +1164,17 @@ impl Screen<'_> {
                     Act::ToggleAppearanceTheme => {
                         self.context_manager.toggle_appearance_theme();
                     }
-                    Act::ToggleCommandPalette => {
-                        self.renderer.command_palette.toggle();
-                        self.render();
+                    Act::OpenCommandPalette => {
+                        // One-way "open": the action never closes an
+                        // already-visible palette. Users close it via
+                        // Esc (handled inside the palette's own key
+                        // dispatcher in `router::mod`). Idempotent —
+                        // re-firing while the palette is already open
+                        // must NOT wipe the user's in-progress query.
+                        if !self.renderer.command_palette.is_enabled() {
+                            self.renderer.command_palette.set_enabled(true);
+                            self.render();
+                        }
                     }
                     Act::Minimize => {
                         self.context_manager.minimize();

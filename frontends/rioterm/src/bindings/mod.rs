@@ -265,7 +265,7 @@ impl From<String> for Action {
             "togglevimode" => Some(Action::ToggleViMode),
             "toggleappearancetheme" => Some(Action::ToggleAppearanceTheme),
             "togglefullscreen" => Some(Action::ToggleFullscreen),
-            "togglecommandpalette" => Some(Action::ToggleCommandPalette),
+            "opencommandpalette" => Some(Action::OpenCommandPalette),
             "none" => Some(Action::None),
             _ => None,
         };
@@ -503,7 +503,7 @@ pub enum Action {
     MoveDividerRight,
 
     /// Toggle the command palette overlay.
-    ToggleCommandPalette,
+    OpenCommandPalette,
 
     /// Allow receiving char input.
     ReceiveChar,
@@ -1009,7 +1009,7 @@ pub fn platform_key_bindings(
         "q", ModifiersState::SUPER; Action::Quit;
         "n", ModifiersState::SUPER; Action::WindowCreateNew;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
-        "p", ModifiersState::SUPER | ModifiersState::SHIFT; Action::ToggleCommandPalette;
+        "p", ModifiersState::SUPER | ModifiersState::SHIFT; Action::OpenCommandPalette;
 
         // Search
         "f", ModifiersState::SUPER, ~BindingMode::SEARCH; Action::SearchForward;
@@ -1093,7 +1093,7 @@ pub fn platform_key_bindings(
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
-        "p", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ToggleCommandPalette;
+        "p", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::OpenCommandPalette;
 
         // Search
         "f", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchForward;
@@ -1163,7 +1163,7 @@ pub fn platform_key_bindings(
         // https://github.com/raphamorim/rio/issues/220#issuecomment-1761651339
         Key::Named(Backspace), ModifiersState::CONTROL, ~BindingMode::VI; Action::Esc("\u{0017}".into());
         Key::Named(Space), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ToggleViMode;
-        "p", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ToggleCommandPalette;
+        "p", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::OpenCommandPalette;
 
         // Search
         "f", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchForward;

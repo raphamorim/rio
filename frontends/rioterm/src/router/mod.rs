@@ -209,48 +209,78 @@ impl Route<'_> {
                         self.window.screen.render();
                     }
                     Key::Named(NamedKey::Enter) => {
-                        let palette =
-                            &mut self.window.screen.renderer.command_palette;
+                        // Snapshot what the palette wants to do FIRST,
+                        // before taking a mut-borrow on it, so we can
+                        // freely call other `self.window.screen.*`
+                        // methods in the match arms without tripping
+                        // the borrow checker on nested disjoint borrows.
+                        let selected_font = self
+                            .window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .get_selected_font();
+                        let selected_action = self
+                            .window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .get_selected_action();
+                        use crate::renderer::command_palette::PaletteAction;
 
                         // Fonts-mode Enter: copy the family name to
                         // the system clipboard and close. The copy
                         // icon on each row advertises this.
-                        if let Some(font) = palette.get_selected_font() {
+                        if let Some(font) = selected_font {
                             clipboard.set(
                                 rio_backend::clipboard::ClipboardType::Clipboard,
                                 font,
                             );
-                            palette.set_enabled(false);
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .set_enabled(false);
                             self.window.screen.render();
                             return true;
                         }
 
-                        match palette.get_selected_action() {
+                        match selected_action {
                             // `ListFonts` stays inside the palette —
                             // swap the palette's contents from the
                             // command list to the registered font
                             // family names and keep it open.
-                            Some(
-                                crate::renderer::command_palette::PaletteAction::ListFonts,
-                            ) => {
+                            Some(PaletteAction::ListFonts) => {
                                 let fonts = self
                                     .window
                                     .screen
                                     .sugarloaf
                                     .font_family_names();
-                                palette.enter_fonts_mode(fonts);
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .enter_fonts_mode(fonts);
                             }
                             // Any other command is a one-shot: close
                             // the palette first, then dispatch.
                             Some(action) => {
-                                palette.set_enabled(false);
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .set_enabled(false);
                                 self.window
                                     .screen
                                     .execute_palette_action(action, clipboard);
                             }
                             // No match at all — Enter just closes.
                             None => {
-                                palette.set_enabled(false);
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .set_enabled(false);
                             }
                         }
                         self.window.screen.render();
