@@ -78,7 +78,8 @@ impl MetalContext {
         // we create exactly one colorspace at startup, so a one-time leak
         // here is harmless and avoids a dangling pointer if Apple ever
         // changes the retention semantics.
-        if let Some(cs) = CGColorSpace::create_with_name(unsafe { kCGColorSpaceDisplayP3 })
+        if let Some(cs) =
+            CGColorSpace::create_with_name(unsafe { kCGColorSpaceDisplayP3 })
         {
             unsafe {
                 let layer_obj = layer.as_ptr() as *mut Object;
