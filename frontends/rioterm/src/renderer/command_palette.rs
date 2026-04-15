@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use crate::context::next_rich_text_id;
+use crate::renderer::scrollbar;
 use crate::renderer::utils::add_span_with_fallback;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 use std::time::Instant;
@@ -437,6 +438,12 @@ pub struct CommandPalette {
     shortcut_text_ids: Vec<usize>,
     /// Timestamp for caret blinking
     caret_blink_start: Instant,
+    /// Timestamp of the last event that actually changed `scroll_offset`.
+    /// Drives the scrollbar fade-in/fade-out, sharing the terminal
+    /// scrollbar's 2 s delay + 300 ms fade envelope via
+    /// `scrollbar::opacity_from_last_scroll`. `None` while the palette
+    /// has never scrolled since it opened — scrollbar stays hidden.
+    last_scroll_time: Option<Instant>,
 }
 
 impl Default for CommandPalette {
@@ -452,6 +459,7 @@ impl Default for CommandPalette {
             result_text_ids: Vec::new(),
             shortcut_text_ids: Vec::new(),
             caret_blink_start: Instant::now(),
+            last_scroll_time: None,
         }
     }
 }
@@ -472,6 +480,9 @@ impl CommandPalette {
             self.selected_index = 0;
             self.scroll_offset = 0;
             self.caret_blink_start = Instant::now();
+            // Clear scrollbar history so reopening the palette never
+            // flashes a leftover scrollbar from the previous session.
+            self.last_scroll_time = None;
             // Always re-open into Commands mode — a stale Fonts list
             // from a previous session would be misleading (fonts may
             // have changed) and surprising (user toggles palette and
@@ -494,6 +505,7 @@ impl CommandPalette {
         self.selected_index = 0;
         self.scroll_offset = 0;
         self.caret_blink_start = Instant::now();
+        self.last_scroll_time = None;
     }
 
     pub fn set_query(&mut self, query: String) {
@@ -501,6 +513,9 @@ impl CommandPalette {
         self.selected_index = 0;
         self.scroll_offset = 0;
         self.caret_blink_start = Instant::now();
+        // Typing reshapes the list entirely — drop any scrollbar
+        // fade state so the next scroll starts with a clean timer.
+        self.last_scroll_time = None;
     }
 
     pub fn move_selection_up(&mut self) {
@@ -508,6 +523,7 @@ impl CommandPalette {
             self.selected_index -= 1;
             if self.selected_index < self.scroll_offset {
                 self.scroll_offset = self.selected_index;
+                self.last_scroll_time = Some(Instant::now());
             }
         }
     }
@@ -518,6 +534,7 @@ impl CommandPalette {
             self.selected_index += 1;
             if self.selected_index >= self.scroll_offset + MAX_VISIBLE_RESULTS {
                 self.scroll_offset = self.selected_index - MAX_VISIBLE_RESULTS + 1;
+                self.last_scroll_time = Some(Instant::now());
             }
         }
     }
@@ -909,6 +926,49 @@ impl CommandPalette {
             sugarloaf.set_visibility(self.result_text_ids[i], false);
             sugarloaf.set_visibility(self.shortcut_text_ids[i], false);
         }
+
+        // Scrollbar: shares the terminal scrollbar's visual language
+        // (6 px wide, gray semi-transparent, 2 s visibility + 300 ms
+        // fade after the last scroll event) via `renderer::scrollbar`.
+        // Drawn only when the palette has actually been scrolled —
+        // hidden on first open, faded out 2.3 s after the last scroll.
+        let total = filtered.len();
+        let track_height = MAX_VISIBLE_RESULTS as f32 * RESULT_ITEM_HEIGHT;
+        let normalized = if total > MAX_VISIBLE_RESULTS {
+            self.scroll_offset as f32 / (total - MAX_VISIBLE_RESULTS) as f32
+        } else {
+            0.0
+        };
+        if let Some((thumb_y, thumb_height)) = scrollbar::compute_thumb(
+            MAX_VISIBLE_RESULTS,
+            total,
+            results_y,
+            track_height,
+            normalized,
+        ) {
+            let opacity = scrollbar::opacity_from_last_scroll(
+                self.last_scroll_time,
+                false, // palette has no drag interaction
+            );
+            let bar_x = input_x + input_width
+                - scrollbar::SCROLLBAR_WIDTH
+                - scrollbar::SCROLLBAR_MARGIN;
+            // Palette backdrop + bg rects use ORDER=20; the terminal
+            // scrollbar's default ORDER=5 would land *under* them and
+            // be invisible. Piggy-back on the palette's own order, at
+            // a depth slightly above the selection highlight so a
+            // hovered row doesn't mask the thumb.
+            scrollbar::draw_thumb(
+                sugarloaf,
+                bar_x,
+                thumb_y,
+                thumb_height,
+                opacity,
+                false,
+                DEPTH_ELEMENT + 0.05,
+                ORDER,
+            );
+        }
     }
 }
 
@@ -1171,6 +1231,75 @@ mod tests {
         palette.set_query("zzzz".to_string());
         // Query doesn't match anything → no selected font.
         assert!(palette.get_selected_font().is_none());
+    }
+
+    // --- Scrollbar trigger -----------------------------------------------
+    // Geometry + fade math live in `renderer::scrollbar` and are tested
+    // there. The tests here cover the palette's own contract: the
+    // scrollbar should only surface after the user *actually* scrolls,
+    // and reset when the list reshapes.
+
+    #[test]
+    fn scrollbar_hidden_until_first_scroll() {
+        // Long list, palette just opened — no scroll event has happened,
+        // so the fade timer is `None` and the scrollbar stays invisible
+        // despite the list being taller than the visible window.
+        let mut palette = CommandPalette::new();
+        palette.enter_fonts_mode(
+            (0..50).map(|i| format!("Family {i:02}")).collect(),
+        );
+        assert!(palette.last_scroll_time.is_none());
+    }
+
+    #[test]
+    fn scrollbar_triggered_only_when_offset_actually_changes() {
+        // The first few `move_selection_down` calls don't change
+        // `scroll_offset` (selection walks within the visible window).
+        // Only when selection crosses the window boundary does
+        // `scroll_offset` bump, and only then does the scrollbar wake.
+        let mut palette = CommandPalette::new();
+        palette.enter_fonts_mode(
+            (0..50).map(|i| format!("Family {i:02}")).collect(),
+        );
+        for _ in 0..MAX_VISIBLE_RESULTS {
+            palette.move_selection_down();
+        }
+        // At this point selection has just crossed into scroll territory.
+        assert!(palette.last_scroll_time.is_some());
+    }
+
+    #[test]
+    fn scrollbar_timer_reset_on_query_change() {
+        // Typing re-filters the list, which can shrink it below the
+        // visible window. Any stale scrollbar timer must clear so a
+        // leftover thumb doesn't linger over the new short list.
+        let mut palette = CommandPalette::new();
+        palette.enter_fonts_mode(
+            (0..50).map(|i| format!("Family {i:02}")).collect(),
+        );
+        for _ in 0..MAX_VISIBLE_RESULTS {
+            palette.move_selection_down();
+        }
+        assert!(palette.last_scroll_time.is_some());
+        palette.set_query("Family 00".to_string());
+        assert!(palette.last_scroll_time.is_none());
+    }
+
+    #[test]
+    fn scrollbar_timer_reset_on_palette_reopen() {
+        // Closing and re-opening the palette must drop any lingering
+        // scrollbar state so the user doesn't see a fading thumb on a
+        // fresh palette.
+        let mut palette = CommandPalette::new();
+        palette.enter_fonts_mode(
+            (0..50).map(|i| format!("Family {i:02}")).collect(),
+        );
+        for _ in 0..MAX_VISIBLE_RESULTS {
+            palette.move_selection_down();
+        }
+        palette.set_enabled(false);
+        palette.set_enabled(true);
+        assert!(palette.last_scroll_time.is_none());
     }
 
     #[test]
