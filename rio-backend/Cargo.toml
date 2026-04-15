@@ -25,6 +25,7 @@ bytemuck = { workspace = true }
 corcovado = { workspace = true }
 rustc-hash = { workspace = true }
 regex = { workspace = true }
+onig = { workspace = true }
 raw-window-handle = { workspace = true }
 copypasta = { version = "0.10.2", default-features = false }
 dirs = "6.0.0"

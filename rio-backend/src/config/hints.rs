@@ -5,34 +5,54 @@ pub const DEFAULT_HINTS_ALPHABET: &str = "jfkdls;ahgurieowpq";
 
 /// Default URL/path regex pattern.
 ///
-/// Three alternations (ported from ghostty's `src/config/url.zig`, adapted for
-/// the Rust `regex` crate which lacks lookaround assertions):
+/// Ported verbatim from ghostty's `src/config/url.zig`. Requires a regex
+/// engine with lookbehind support — rio uses oniguruma via the `onig`
+/// crate. Three alternations:
 ///
-/// 1. **Schemed URLs** — `http://`, `https://`, `file:`, `ssh:`, `mailto:`,
-///    etc. Historical alacritty pattern.
+/// 1. **Schemed URLs** — `http://`, `https://`, `mailto:`, `file:`, `ssh:`,
+///    `magnet:`, `ipfs://`, `gemini://`, etc. IPv6 literals supported.
+///    Trailing `.` / `,` and unbalanced parens are excluded via lookbehind.
 /// 2. **Rooted or explicitly-relative paths** — `/abs`, `./rel`, `../rel`,
-///    `~/x`, `$VAR/x`. Clickable paths the user typed with an unambiguous
-///    prefix.
-/// 3. **Bare relative paths** — `word/.../name.ext`. Requires a dotted
-///    component so `foo/bar` (ambiguous) does not match but `src/main.rs`
-///    does.
-///
-/// Trailing punctuation (`.` `,` `:` `;` `?` `!` `(` `[` `'`) and unbalanced
-/// brackets are trimmed by `post_process_hyperlink_uri` at match time, so the
-/// regex does not need lookbehinds to exclude them.
+///    `~/x`, `.hidden/x`, `$VAR/x`. Each prefix is guarded by lookbehinds
+///    so the `~/` inside `foo~/bar` and the `/` inside `foo/bar` aren't
+///    mis-matched. Paths with internal spaces are supported when they
+///    contain a dotted filename segment.
+/// 3. **Bare relative paths** — `word/.../name.ext`. A dotted segment is
+///    required, and lookbehinds prevent matching mid-word starts.
 pub const DEFAULT_URL_REGEX: &str = concat!(
-    // 1. Schemed URLs.
-    "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)",
-    "[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+",
+    // schemed URLs
+    "(?:https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:)",
+    "(?:",
+        r"(?:\[[:0-9a-fA-F]+(?:[:0-9a-fA-F]*)+\](?::[0-9]+)?)",
+        "|",
+        r"[\w\-.~:/?#@!$&*+,;=%]+(?:[\(\[]\w*[\)\]])?",
+    ")+",
+    r"(?<![,.])",
     "|",
-    // 2. Rooted or explicitly-relative paths (../, ./, ~/, .hidden/,
-    //    $VAR/, or /abs). Mid-word false positives for the plain `/`
-    //    and `~/` variants are filtered out at match time — see
-    //    `is_midword_path_match` in `frontends/rioterm/src/hints.rs`.
-    r"(?:\.\./|\./|~/|\.[A-Za-z_][\w\-.]*/|\$[A-Za-z_]\w*/|/)[\w\-.~:/?#@!$&*+;=%]+",
+    // rooted or explicitly-relative paths
+    r"(?:\.\./|\./|(?<!\w)~/|(?:[\w][\w\-.]*/)*(?<!\w)\$[A-Za-z_]\w*/|\.[\w][\w\-.]*/|(?<![\w~/])/(?!/))",
+    "(?:",
+        // Dotted: file-like, allows internal spaces around dotted segments.
+        r"(?=[\w\-.~:/?#@!$&*+;=%]*\.)",
+        r"[\w\-.~:/?#@!$&*+;=%]+",
+        r"(?:(?<!:) (?!\w+://)(?!\.{0,2}/)(?!~/)[\w\-.~:/?#@!$&*+;=%]*[/.])*",
+        r"(?<!:)",
+        r"(?: +(?= *$))?",
+        "|",
+        // Non-dotted: directory-like, broader.
+        r"(?![\w\-.~:/?#@!$&*+;=%]*\.)",
+        r"[\w\-.~:/?#@!$&*+;=%]+",
+        r"(?:(?<!:) (?!\w+://)(?!\.{0,2}/)(?!~/)[\w\-.~:/?#@!$&*+;=%]+)*",
+        r"(?<!:)",
+        r"(?: +(?= *$))?",
+    ")",
     "|",
-    // 3. Bare relative paths (must contain a dotted filename-like component).
-    r"[A-Za-z_][\w\-.]*/[\w\-.~:/?#@!$&*+;=%]*\.[\w\-.~:/?#@!$&*+;=%]+",
+    // bare relative paths (word/foo.ext)
+    r"(?=[\w\-.~:/?#@!$&*+;=%]*\.)",
+    r"(?<!\$\d*)(?<!\w)[\w][\w\-.]*/",
+    r"[\w\-.~:/?#@!$&*+;=%]+",
+    r"(?<!:)",
+    r"(?: +(?= *$))?",
 );
 
 /// Hints configuration
@@ -251,14 +271,14 @@ mod tests {
 
     #[test]
     fn test_default_regex_compiles() {
-        regex::Regex::new(DEFAULT_URL_REGEX).expect("default regex must compile");
+        onig::Regex::new(DEFAULT_URL_REGEX).expect("default regex must compile");
     }
 
     /// Given input text, return every leftmost non-overlapping match produced
     /// by `DEFAULT_URL_REGEX`. Used to verify the path branches.
     fn find_all(input: &str) -> Vec<&str> {
-        let re = regex::Regex::new(DEFAULT_URL_REGEX).unwrap();
-        re.find_iter(input).map(|m| m.as_str()).collect()
+        let re = onig::Regex::new(DEFAULT_URL_REGEX).unwrap();
+        re.find_iter(input).map(|(s, e)| &input[s..e]).collect()
     }
 
     #[test]
@@ -272,10 +292,22 @@ mod tests {
 
     #[test]
     fn test_default_regex_matches_rooted_paths() {
-        assert_eq!(find_all("open ~/Desktop please"), vec!["~/Desktop"]);
-        assert_eq!(find_all("cd /tmp/foo"), vec!["/tmp/foo"]);
+        // Dotted paths (file-like): match stops at the next non-dotted token.
+        assert_eq!(
+            find_all("open ~/notes.md please"),
+            vec!["~/notes.md"],
+        );
         assert_eq!(find_all("see ./script.sh"), vec!["./script.sh"]);
-        assert_eq!(find_all("check ../parent/file"), vec!["../parent/file"]);
+        assert_eq!(
+            find_all("check ../parent/file.txt"),
+            vec!["../parent/file.txt"],
+        );
+
+        // Non-dotted (directory-like): absorbs trailing spaces+words because
+        // the path could be a directory whose name contains spaces (e.g.
+        // `~/Desktop please/...`). This matches ghostty's behavior.
+        assert_eq!(find_all("open ~/Desktop please"), vec!["~/Desktop please"]);
+        assert_eq!(find_all("cd /tmp/foo"), vec!["/tmp/foo"]);
         assert_eq!(find_all("logs at $HOME/logs"), vec!["$HOME/logs"]);
     }
 
@@ -289,11 +321,25 @@ mod tests {
     }
 
     #[test]
-    fn test_default_regex_leaks_midword_slash_without_filter() {
-        // The regex alone returns `/bar` for `foo/bar` because Rust's regex
-        // crate has no lookbehind. The full hint pipeline rejects this via
-        // `crate::hints::is_midword_path_match` in the frontend.
-        assert_eq!(find_all("foo/bar"), vec!["/bar"]);
+    fn test_default_regex_rejects_midword_slash() {
+        // Lookbehind `(?<![\w~/])/` keeps the `/` inside `foo/bar` from
+        // anchoring the rooted-path branch. Branch 3 also fails (no dot).
+        assert!(find_all("foo/bar").is_empty());
+    }
+
+    #[test]
+    fn test_default_regex_rejects_midword_tilde() {
+        // Lookbehind `(?<!\w)~/` rejects the `~/bar` inside `foo~/bar`.
+        assert!(find_all("foo~/bar").is_empty());
+    }
+
+    #[test]
+    fn test_default_regex_strips_trailing_punctuation_on_urls() {
+        // `(?<![,.])` excludes the trailing period.
+        assert_eq!(
+            find_all("see https://example.com."),
+            vec!["https://example.com"],
+        );
     }
 
     #[test]

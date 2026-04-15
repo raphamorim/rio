@@ -86,7 +86,7 @@ impl HintState {
 
         // Find regex matches if regex is specified
         if let Some(regex_pattern) = &hint.regex {
-            if let Ok(regex) = regex::Regex::new(regex_pattern) {
+            if let Ok(regex) = onig::Regex::new(regex_pattern) {
                 self.find_regex_matches(term, &regex, hint.clone());
             }
         }
@@ -204,7 +204,7 @@ impl HintState {
     fn find_regex_matches<T: EventListener>(
         &mut self,
         term: &rio_backend::crosswords::Crosswords<T>,
-        regex: &regex::Regex,
+        regex: &onig::Regex,
         hint: Rc<Hint>,
     ) {
         // Get the visible area of the terminal
@@ -222,18 +222,11 @@ impl HintState {
             // Extract text from the line
             let line_text = self.extract_line_text(term, line);
 
-            // Find all matches in this line
-            for mat in regex.find_iter(&line_text) {
-                // Reject rooted-path matches that start mid-word (e.g. the
-                // `/bar` inside `foo/bar`). Rust's regex crate has no
-                // lookbehind, so we filter after the fact to emulate
-                // ghostty's `(?<![\w~/])/` and `(?<!\w)~/` guards.
-                if is_midword_path_match(&line_text, mat.start(), mat.as_str()) {
-                    continue;
-                }
-
-                let start_col = Column(mat.start());
-                let mut match_text = mat.as_str().to_string();
+            // Find all matches in this line. Onig yields (byte_start, byte_end);
+            // we slice the source ourselves.
+            for (start, end) in regex.find_iter(&line_text) {
+                let start_col = Column(start);
+                let mut match_text = line_text[start..end].to_string();
 
                 // Apply post-processing if enabled
                 if hint.post_processing {
@@ -241,7 +234,7 @@ impl HintState {
                 }
 
                 // Calculate the correct end position based on the processed text length
-                let end_col = Column(mat.start() + match_text.len().saturating_sub(1));
+                let end_col = Column(start + match_text.len().saturating_sub(1));
 
                 let hint_match = HintMatch {
                     text: match_text,
@@ -388,35 +381,6 @@ impl LabelGenerator {
         if carry {
             self.indices.push(0);
         }
-    }
-}
-
-/// Reject rooted-path matches that actually start in the middle of a word.
-///
-/// Rio's regex crate has no lookbehind, so we can't write
-/// `(?<![\w~/])/` or `(?<!\w)~/` the way ghostty does. This filter
-/// emulates those guards: if the regex returned `/...` or `~/...` and the
-/// byte just before the match is a word char (or `~`/`/` for the `/` case),
-/// treat the match as a false positive (e.g. `/bar` inside `foo/bar`).
-pub fn is_midword_path_match(line: &str, start: usize, matched: &str) -> bool {
-    let starts_slash = matched.starts_with('/');
-    let starts_tilde_slash = matched.starts_with("~/");
-    if !starts_slash && !starts_tilde_slash {
-        return false;
-    }
-    if start == 0 {
-        return false;
-    }
-    let Some(prev) = line[..start].chars().next_back() else {
-        return false;
-    };
-    let is_word = prev.is_alphanumeric() || prev == '_';
-
-    if starts_slash {
-        is_word || prev == '~' || prev == '/'
-    } else {
-        // ~/ case: only reject when preceded by a word char.
-        is_word
     }
 }
 
@@ -706,64 +670,6 @@ mod tests {
             test_keys.len(),
             "Label should be completed with single character"
         );
-    }
-
-    #[test]
-    fn test_midword_filter_rejects_slash_in_word() {
-        // `/bar` inside `foo/bar`
-        assert!(is_midword_path_match("foo/bar", 3, "/bar"));
-    }
-
-    #[test]
-    fn test_midword_filter_accepts_slash_after_space() {
-        assert!(!is_midword_path_match("cd /tmp", 3, "/tmp"));
-    }
-
-    #[test]
-    fn test_midword_filter_accepts_slash_at_start() {
-        assert!(!is_midword_path_match("/tmp/foo", 0, "/tmp/foo"));
-    }
-
-    #[test]
-    fn test_midword_filter_rejects_tilde_in_word() {
-        assert!(is_midword_path_match("foo~/bar", 3, "~/bar"));
-    }
-
-    #[test]
-    fn test_midword_filter_accepts_tilde_at_start() {
-        assert!(!is_midword_path_match("~/bar", 0, "~/bar"));
-    }
-
-    #[test]
-    fn test_midword_filter_rejects_double_slash() {
-        // `//comment` — prev char is `/`, reject.
-        assert!(is_midword_path_match("a//comment", 2, "/comment"));
-    }
-
-    #[test]
-    fn test_midword_filter_ignores_non_rooted_matches() {
-        // Bare relative and scheme URLs never trigger the filter.
-        assert!(!is_midword_path_match("foo src/main.rs", 4, "src/main.rs"));
-        assert!(!is_midword_path_match(
-            "see https://a.com",
-            4,
-            "https://a.com"
-        ));
-    }
-
-    /// End-to-end: the default regex plus `is_midword_path_match` correctly
-    /// rejects the `/bar` inside `foo/bar`.
-    #[test]
-    fn test_default_regex_plus_filter_rejects_midword_slash() {
-        let re =
-            regex::Regex::new(rio_backend::config::hints::DEFAULT_URL_REGEX).unwrap();
-        let line = "foo/bar";
-        let matches: Vec<&str> = re
-            .find_iter(line)
-            .filter(|m| !is_midword_path_match(line, m.start(), m.as_str()))
-            .map(|m| m.as_str())
-            .collect();
-        assert!(matches.is_empty(), "expected no matches, got {matches:?}");
     }
 
     #[test]
