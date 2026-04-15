@@ -11,6 +11,12 @@ language: 'en'
 - Harden Kitty graphics protocol: reject images exceeding 10000 px per axis or 400 MiB, add per-chunk base64 decoding so clients like `chafa --format=kitty` (which pads every chunk) merge correctly, time out stale chunked uploads after 10 s, combine `i=/I=/p=` response keys, validate `i=`/`I=` mutual exclusion, and require `i=` for `a=q` queries.
 - Fix kitty image protocol whenever using transmission.
 - Fix color picker not rendering correctly.
+- Selection feel: bumped the click/drag side-of-cell threshold from 50% to 60% (matches ghostty), so selections no longer flip to the next cell as eagerly when the cursor crosses the midpoint.
+- Default URL/path regex now also matches local paths: rooted (`/abs`), explicitly-relative (`./x`, `../x`), home (`~/x`), env-var-rooted (`$VAR/x`), hidden-dir (`.config/x`), and bare relative paths with a dotted filename (`src/main.rs`). A post-match filter rejects mid-word `/` and `~/` matches (the `/bar` inside `foo/bar`) since Rust's regex crate has no lookbehind.
+- When a hint match looks like a local path, rio now resolves it against the terminal's OSC 7 working directory, expands `~/` and `$VAR/`, and only dispatches the resolved absolute path to the OS opener if the file exists; URL schemes (`https://…`, `mailto:`, …) are passed through unchanged.
+- Restore OSC 8 hyperlink underlines. The cell repack moved hyperlink data into a side table and the renderer's `square.hyperlink().is_some()` check was disabled with a `// temporarily disabled` comment that was never lifted; the renderer now reads the cell's `HYPERLINK` flag directly so OSC 8 spans are underlined again.
+- Fix hover hint underline not appearing on the very first hover after startup. `update_highlighted_hints` now marks the renderer's `pending_update` with full terminal damage when the hint changes, mirroring the pre-refactor `set_hyperlink_range` behaviour, so the partial-damage render path can no longer skip the re-shape.
+- Fix two `context::title` tests panicking under sandboxed builds (e.g. Void's xbps-src) where `$HOME=/tmp` collapsed the test path to `~`. The tests now use a path prefix that can't plausibly be `$HOME`.
 
 ## 0.3.8
 
