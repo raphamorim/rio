@@ -34,11 +34,7 @@ const TITLE_ELLIPSIS: char = '…';
 /// Truncate `title` to fit within `max_width` pixels at the tab font,
 /// appending `…` when characters have to be dropped. Thin adapter that
 /// asks sugarloaf's cached glyph advance for each char.
-fn fit_title_to_width(
-    sugarloaf: &mut Sugarloaf,
-    title: &str,
-    max_width: f32,
-) -> String {
+fn fit_title_to_width(sugarloaf: &mut Sugarloaf, title: &str, max_width: f32) -> String {
     if max_width <= 0.0 || title.is_empty() {
         return title.to_string();
     }
@@ -75,8 +71,7 @@ fn fit_title_with_widths(
         }
         accumulated += char_width(c);
         if accumulated > max_width {
-            let mut out =
-                String::with_capacity(truncate_ix + TITLE_ELLIPSIS.len_utf8());
+            let mut out = String::with_capacity(truncate_ix + TITLE_ELLIPSIS.len_utf8());
             out.push_str(&title[..truncate_ix]);
             out.push(TITLE_ELLIPSIS);
             return out;
@@ -409,8 +404,7 @@ impl Island {
                 x_position += tab_width;
                 continue;
             }
-            let max_text_width =
-                (tab_width - TAB_PADDING_X * 2.0).max(0.0);
+            let max_text_width = (tab_width - TAB_PADDING_X * 2.0).max(0.0);
             let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
 
             // Get or create tab data
@@ -1055,8 +1049,8 @@ mod tests {
         1.0
     }
 
-    fn rendered_width(s: &str, mut char_width: impl FnMut(char) -> f32) -> f32 {
-        s.chars().map(|c| char_width(c)).sum()
+    fn rendered_width(s: &str, char_width: impl FnMut(char) -> f32) -> f32 {
+        s.chars().map(char_width).sum()
     }
 
     #[test]
