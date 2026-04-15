@@ -491,10 +491,6 @@ impl CommandPalette {
         }
     }
 
-    pub fn toggle(&mut self) {
-        self.set_enabled(!self.enabled);
-    }
-
     /// Swap the palette into font-browsing mode with the given family
     /// list. Clears the query so the full list is visible, keeps the
     /// palette open. Called by the router after the user picks the
@@ -975,16 +971,6 @@ impl CommandPalette {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_toggle() {
-        let mut palette = CommandPalette::new();
-        assert!(!palette.is_enabled());
-        palette.toggle();
-        assert!(palette.is_enabled());
-        palette.toggle();
-        assert!(!palette.is_enabled());
-    }
 
     #[test]
     fn test_set_enabled_resets_state() {
