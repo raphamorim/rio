@@ -293,10 +293,7 @@ mod tests {
     #[test]
     fn test_default_regex_matches_rooted_paths() {
         // Dotted paths (file-like): match stops at the next non-dotted token.
-        assert_eq!(
-            find_all("open ~/notes.md please"),
-            vec!["~/notes.md"],
-        );
+        assert_eq!(find_all("open ~/notes.md please"), vec!["~/notes.md"],);
         assert_eq!(find_all("see ./script.sh"), vec!["./script.sh"]);
         assert_eq!(
             find_all("check ../parent/file.txt"),
