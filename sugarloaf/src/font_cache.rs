@@ -86,11 +86,7 @@ impl FontCache {
     /// No-op when the entry hasn't been resolved yet (caller should
     /// call `resolve_with` first).
     #[inline]
-    pub(crate) fn set_advance(
-        &mut self,
-        key: (char, Attributes),
-        advance: AdvanceInfo,
-    ) {
+    pub(crate) fn set_advance(&mut self, key: (char, Attributes), advance: AdvanceInfo) {
         if let Some(entry) = self.cache.get_mut(&key) {
             entry.advance = Some(advance);
         }
@@ -144,8 +140,7 @@ pub(crate) fn compute_advance(
     ch: char,
 ) -> Option<AdvanceInfo> {
     let (data, offset, _key) = font_ctx.get_data(&font_id)?;
-    let font_ref =
-        crate::font_introspector::FontRef::from_index(&data, offset as usize)?;
+    let font_ref = crate::font_introspector::FontRef::from_index(&data, offset as usize)?;
     let glyph_id = font_ref.charmap().map(ch as u32);
     let metrics = crate::font_introspector::GlyphMetrics::from_font(&font_ref, &[]);
     Some(AdvanceInfo {
