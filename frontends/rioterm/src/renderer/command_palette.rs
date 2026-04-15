@@ -1134,8 +1134,6 @@ mod tests {
         assert!(score_next > -100);
     }
 
-    // --- Fonts-mode tests ------------------------------------------------
-
     #[test]
     fn enter_fonts_mode_switches_to_font_list() {
         let mut palette = CommandPalette::new();
@@ -1233,11 +1231,10 @@ mod tests {
         assert!(palette.get_selected_font().is_none());
     }
 
-    // --- Scrollbar trigger -----------------------------------------------
-    // Geometry + fade math live in `renderer::scrollbar` and are tested
-    // there. The tests here cover the palette's own contract: the
-    // scrollbar should only surface after the user *actually* scrolls,
-    // and reset when the list reshapes.
+    // Scrollbar geometry + fade math live in `renderer::scrollbar` and
+    // are tested there. The tests below cover the palette's own contract:
+    // the scrollbar only surfaces after the user actually scrolls, and
+    // resets when the list reshapes.
 
     #[test]
     fn scrollbar_hidden_until_first_scroll() {
