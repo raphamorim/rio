@@ -99,6 +99,19 @@ vertex VertexOutput vs_instanced(
     return out;
 }
 
+// sRGB → linear light. Colors uploaded from the CPU side are sRGB-encoded
+// 8-bit values normalized to 0..1. The color attachment's `_sRGB` pixel
+// format expects the fragment to emit *linear* RGB: the GPU then applies
+// the sRGB transfer curve on write and its inverse on read so alpha
+// blending runs in linear light. Without this the HW gamma encode would
+// shift every pixel too bright and defeat the point of the _sRGB target.
+// Alpha is already linear by convention — do not transform it.
+float3 srgb_to_linear(float3 c) {
+    float3 lo = c / 12.92;
+    float3 hi = pow((c + 0.055) / 1.055, 2.4);
+    return select(lo, hi, c > 0.04045);
+}
+
 // Pick the corner radius based on which quadrant the point is in
 float pick_corner_radius(float2 center_to_point, float4 corner_radii) {
     if (center_to_point.x < 0.0) {
@@ -221,7 +234,7 @@ fragment float4 fs_main(
         float thickness = input.corner_radii.x;
 
         float alpha = underline_alpha(x_pos, y_pos, rect_height, thickness, input.underline_style);
-        return float4(input.f_color.rgb, input.f_color.a * alpha);
+        return float4(srgb_to_linear(input.f_color.rgb), input.f_color.a * alpha);
     }
 
     // Handle texture sampling for glyphs
@@ -240,7 +253,7 @@ fragment float4 fs_main(
 
     // Fast path: no rounding
     if (!has_corners) {
-        return out;
+        return float4(srgb_to_linear(out.rgb), out.a);
     }
 
     float2 size = input.rect_size;
@@ -269,5 +282,6 @@ fragment float4 fs_main(
         discard_fragment();
     }
 
-    return out * float4(1.0, 1.0, 1.0, saturate(antialias_threshold - outer_sdf));
+    float edge = saturate(antialias_threshold - outer_sdf);
+    return float4(srgb_to_linear(out.rgb), out.a * edge);
 }

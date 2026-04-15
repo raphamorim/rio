@@ -1,7 +1,9 @@
 use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
 use ::objc_rs::runtime::Object;
 use ::objc_rs::{msg_send, sel, sel_impl};
+use core_graphics::color_space::{kCGColorSpaceDisplayP3, CGColorSpace};
 use core_graphics_types::geometry::CGSize;
+use metal::foreign_types::ForeignType;
 use metal::{
     CommandBuffer, CommandQueue, Device, MTLGPUFamily, MTLPixelFormat, MetalDrawable,
     MetalLayer, RenderCommandEncoder, Texture,
@@ -53,10 +55,49 @@ impl MetalContext {
         let size = sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
 
-        // Create Metal layer
+        // Create Metal layer.
+        //
+        // `BGRA8Unorm_sRGB` + DisplayP3 colorspace matches ghostty's Metal
+        // setup (see `src/renderer/metal/Target.zig`). The `_sRGB` suffix
+        // tells Metal to sRGB-encode on write and decode on read, so the
+        // alpha blending stage operates in linear light — eliminates the
+        // "dark halo" / muddy-edge artifact that gamma-incorrect blending
+        // produces around text and translucent overlays. DisplayP3 widens
+        // the gamut ~26% past sRGB primaries, so configured theme colors
+        // land closer to Apple Terminal / ghostty's vivid look. Requires
+        // the `renderer.metal` fragment shaders to output linear RGB (see
+        // `srgb_to_linear`), otherwise the HW encode would brighten every
+        // pixel.
         let layer = MetalLayer::new();
         layer.set_device(&device);
-        layer.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+        layer.set_pixel_format(MTLPixelFormat::BGRA8Unorm_sRGB);
+        // CAMetalLayer's `colorspace` setter isn't wrapped by the `metal`
+        // crate yet, so we go through the Obj-C runtime directly. The CG
+        // setter retains internally (standard CA property behaviour), but
+        // we also `mem::forget` our owning handle to be fully defensive —
+        // we create exactly one colorspace at startup, so a one-time leak
+        // here is harmless and avoids a dangling pointer if Apple ever
+        // changes the retention semantics.
+        if let Some(cs) = CGColorSpace::create_with_name(unsafe { kCGColorSpaceDisplayP3 })
+        {
+            unsafe {
+                let layer_obj = layer.as_ptr() as *mut Object;
+                let cs_ptr = cs.as_ptr() as *mut Object;
+                let _: () = msg_send![layer_obj, setColorspace: cs_ptr];
+                let applied: *mut Object = msg_send![layer_obj, colorspace];
+                if applied.is_null() {
+                    tracing::warn!(
+                        "CAMetalLayer.colorspace setter returned null — \
+                         rendering will stay in the default sRGB colorspace"
+                    );
+                } else {
+                    tracing::info!("CAMetalLayer colorspace set to Display P3");
+                }
+                std::mem::forget(cs);
+            }
+        } else {
+            tracing::warn!("Failed to create Display P3 CGColorSpace");
+        }
         layer.set_presents_with_transaction(false);
 
         // Use CGSize from core_graphics_types
