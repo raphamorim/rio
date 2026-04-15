@@ -546,12 +546,12 @@ impl CommandPalette {
     /// so the caller can mutate the palette state (`set_enabled`) in
     /// the same statement without fighting the borrow checker.
     pub fn get_selected_font(&self) -> Option<String> {
-        self.filtered_rows().get(self.selected_index).and_then(
-            |(_, row)| match row {
+        self.filtered_rows()
+            .get(self.selected_index)
+            .and_then(|(_, row)| match row {
                 PaletteRow::Font { family } => Some((*family).to_owned()),
                 PaletteRow::Command { .. } => None,
-            },
-        )
+            })
     }
 
     /// Filtered list of rows for the current mode. Both modes share
@@ -1228,9 +1228,7 @@ mod tests {
         // so the fade timer is `None` and the scrollbar stays invisible
         // despite the list being taller than the visible window.
         let mut palette = CommandPalette::new();
-        palette.enter_fonts_mode(
-            (0..50).map(|i| format!("Family {i:02}")).collect(),
-        );
+        palette.enter_fonts_mode((0..50).map(|i| format!("Family {i:02}")).collect());
         assert!(palette.last_scroll_time.is_none());
     }
 
@@ -1241,9 +1239,7 @@ mod tests {
         // Only when selection crosses the window boundary does
         // `scroll_offset` bump, and only then does the scrollbar wake.
         let mut palette = CommandPalette::new();
-        palette.enter_fonts_mode(
-            (0..50).map(|i| format!("Family {i:02}")).collect(),
-        );
+        palette.enter_fonts_mode((0..50).map(|i| format!("Family {i:02}")).collect());
         for _ in 0..MAX_VISIBLE_RESULTS {
             palette.move_selection_down();
         }
@@ -1257,9 +1253,7 @@ mod tests {
         // visible window. Any stale scrollbar timer must clear so a
         // leftover thumb doesn't linger over the new short list.
         let mut palette = CommandPalette::new();
-        palette.enter_fonts_mode(
-            (0..50).map(|i| format!("Family {i:02}")).collect(),
-        );
+        palette.enter_fonts_mode((0..50).map(|i| format!("Family {i:02}")).collect());
         for _ in 0..MAX_VISIBLE_RESULTS {
             palette.move_selection_down();
         }
@@ -1274,9 +1268,7 @@ mod tests {
         // scrollbar state so the user doesn't see a fading thumb on a
         // fresh palette.
         let mut palette = CommandPalette::new();
-        palette.enter_fonts_mode(
-            (0..50).map(|i| format!("Family {i:02}")).collect(),
-        );
+        palette.enter_fonts_mode((0..50).map(|i| format!("Family {i:02}")).collect());
         for _ in 0..MAX_VISIBLE_RESULTS {
             palette.move_selection_down();
         }
