@@ -3558,13 +3558,12 @@ impl Screen<'_> {
                 // the terminal's OSC 7 CWD and fall back to the raw text if
                 // the path doesn't exist (or the text is a URL).
                 let arg_text = {
-                    let cwd = self
+                    let cwd = &self
                         .context_manager
                         .current()
                         .terminal
                         .lock()
-                        .current_directory
-                        .clone();
+                        .current_directory;
                     match crate::hints::resolve_path_for_opening(
                         &hint_match.text,
                         cwd.as_deref(),
