@@ -73,8 +73,14 @@ pub struct Island {
     progress_state: Option<ProgressState>,
     /// Current progress value (0-100)
     progress_value: Option<u8>,
-    /// Time of the last progress update (for timeout)
-    progress_last_update: Option<Instant>,
+    /// When the *current* state began. Reset only when transitioning into a
+    /// new state, so the indeterminate animation phase is not yanked back to
+    /// zero by repeated identical OSC 9;4 reports (issue #1509).
+    progress_started_at: Option<Instant>,
+    /// Last time we saw an OSC 9;4 report — bumped on every report, used by
+    /// the stale-bar dismissal timer. Decoupled from `progress_started_at`
+    /// for the same reason.
+    progress_last_seen: Option<Instant>,
     /// Progress bar color
     pub progress_bar_color: [f32; 4],
     /// Progress bar error color
@@ -108,7 +114,8 @@ impl Island {
             tab_data: FxHashMap::default(),
             progress_state: None,
             progress_value: None,
-            progress_last_update: None,
+            progress_started_at: None,
+            progress_last_seen: None,
             // Default progress bar color (blue-ish)
             progress_bar_color: [0.3, 0.6, 1.0, 1.0],
             // Default error color (red-ish)
@@ -137,19 +144,34 @@ impl Island {
         }
     }
 
-    /// Update the progress bar state from an OSC 9;4 report
+    /// Update the progress bar state from an OSC 9;4 report.
+    ///
+    /// `progress_last_seen` is bumped on every (non-Remove) report so the
+    /// stale-bar dismissal timer keeps the bar alive while the TUI is
+    /// actively reporting. `progress_started_at` is reset only when the
+    /// state actually transitions, so a TUI sending the same `OSC 9;4;3`
+    /// every 100 ms (issue #1509) doesn't yank the indeterminate animation
+    /// phase back to zero on every report. Mirrors ghostty's split between
+    /// `glib.timeoutAdd` (heartbeat) and `GtkProgressBar`'s internal pulse
+    /// state (animation).
     pub fn set_progress_report(&mut self, report: ProgressReport) {
         match report.state {
             ProgressState::Remove => {
-                // Clear progress bar
                 self.progress_state = None;
                 self.progress_value = None;
-                self.progress_last_update = None;
+                self.progress_started_at = None;
+                self.progress_last_seen = None;
             }
-            _ => {
-                self.progress_state = Some(report.state);
+            new_state => {
+                let now = Instant::now();
+                self.progress_last_seen = Some(now);
+
+                let transitioning = self.progress_state != Some(new_state);
+                self.progress_state = Some(new_state);
                 self.progress_value = report.progress;
-                self.progress_last_update = Some(Instant::now());
+                if transitioning {
+                    self.progress_started_at = Some(now);
+                }
             }
         }
     }
@@ -159,14 +181,16 @@ impl Island {
         matches!(self.progress_state, Some(ProgressState::Indeterminate))
     }
 
-    /// Check if the progress bar should be auto-dismissed due to timeout
+    /// Check if the progress bar should be auto-dismissed due to timeout.
+    /// Uses `progress_last_seen` (heartbeat), not `progress_started_at`, so
+    /// a long-running TUI that keeps reporting stays visible.
     fn check_progress_timeout(&mut self) {
-        if let Some(last_update) = self.progress_last_update {
-            if last_update.elapsed().as_secs() >= PROGRESS_BAR_TIMEOUT_SECS {
-                // Auto-dismiss stale progress bar
+        if let Some(last_seen) = self.progress_last_seen {
+            if last_seen.elapsed().as_secs() >= PROGRESS_BAR_TIMEOUT_SECS {
                 self.progress_state = None;
                 self.progress_value = None;
-                self.progress_last_update = None;
+                self.progress_started_at = None;
+                self.progress_last_seen = None;
             }
         }
     }
@@ -218,10 +242,13 @@ impl Island {
                 }
             }
             ProgressState::Indeterminate => {
-                // For indeterminate, show a pulsing/moving indicator
-                // Simple implementation: show a 20% wide bar that moves based on time
+                // For indeterminate, show a pulsing/moving indicator.
+                // Phase is anchored to `progress_started_at` (set only on
+                // state transition) — using `progress_last_seen` here would
+                // freeze the bar at position 0 for any TUI that heartbeats
+                // its OSC 9;4;3 faster than `cycle_ms`. (Issue #1509.)
                 let elapsed = self
-                    .progress_last_update
+                    .progress_started_at
                     .map(|t| t.elapsed().as_millis() as f32)
                     .unwrap_or(0.0);
 
@@ -852,5 +879,123 @@ mod tests {
             false,
         );
         assert_eq!(island.height(), ISLAND_HEIGHT);
+    }
+
+    fn test_island() -> Island {
+        Island::new(
+            [0.5, 0.5, 0.5, 1.0],
+            [0.9, 0.9, 0.9, 1.0],
+            [0.7, 0.7, 0.7, 1.0],
+            false,
+        )
+    }
+
+    #[test]
+    fn progress_first_report_seeds_started_and_seen() {
+        let mut island = test_island();
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Indeterminate,
+            progress: None,
+        });
+        assert!(island.progress_started_at.is_some());
+        assert!(island.progress_last_seen.is_some());
+        assert_eq!(island.progress_state, Some(ProgressState::Indeterminate));
+    }
+
+    #[test]
+    fn progress_repeated_same_state_keeps_started_at_stable() {
+        // Issue #1509: a TUI that heartbeats `OSC 9;4;3` (or any same-state
+        // report) must NOT restart the indeterminate animation phase, or the
+        // pulsing block snaps back to the left edge on every report.
+        let mut island = test_island();
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Indeterminate,
+            progress: None,
+        });
+        let first_started = island.progress_started_at.unwrap();
+        let first_seen = island.progress_last_seen.unwrap();
+
+        // Sleep so a subsequent Instant::now() is observably later — the
+        // started_at field must stay equal while last_seen advances.
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Indeterminate,
+            progress: None,
+        });
+
+        assert_eq!(
+            island.progress_started_at,
+            Some(first_started),
+            "started_at must not move on a same-state heartbeat"
+        );
+        assert!(
+            island.progress_last_seen.unwrap() > first_seen,
+            "last_seen must advance on every report"
+        );
+    }
+
+    #[test]
+    fn progress_state_transition_resets_started_at() {
+        // Set → Indeterminate is a real state change, so the animation
+        // anchor should be reseated. (Set has no animation, but the
+        // started_at field still becomes meaningful as soon as we hit
+        // Indeterminate.)
+        let mut island = test_island();
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Set,
+            progress: Some(50),
+        });
+        let first = island.progress_started_at.unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Indeterminate,
+            progress: None,
+        });
+
+        assert!(
+            island.progress_started_at.unwrap() > first,
+            "transitioning into a new state must move started_at forward"
+        );
+        assert_eq!(island.progress_state, Some(ProgressState::Indeterminate));
+    }
+
+    #[test]
+    fn progress_set_value_change_does_not_reseat_started_at() {
+        // Same `Set` state with a different percentage is still the same
+        // state — only the value updates. started_at stays put; the bar
+        // just redraws at the new fraction.
+        let mut island = test_island();
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Set,
+            progress: Some(20),
+        });
+        let first = island.progress_started_at.unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Set,
+            progress: Some(60),
+        });
+
+        assert_eq!(island.progress_started_at, Some(first));
+        assert_eq!(island.progress_value, Some(60));
+    }
+
+    #[test]
+    fn progress_remove_clears_all_progress_state() {
+        let mut island = test_island();
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Set,
+            progress: Some(50),
+        });
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Remove,
+            progress: None,
+        });
+        assert!(island.progress_state.is_none());
+        assert!(island.progress_value.is_none());
+        assert!(island.progress_started_at.is_none());
+        assert!(island.progress_last_seen.is_none());
     }
 }
