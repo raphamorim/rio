@@ -73,11 +73,27 @@ pub struct WgpuRenderer {
     background_image_vertex_buffer: wgpu::Buffer,
 }
 
+/// GPU-side uniforms shared by every Metal pipeline.
+///
+/// `input_colorspace` encodes how the shader should interpret the sRGB-encoded
+/// RGB values it receives from the CPU (theme / ANSI colors) before writing
+/// them to the DisplayP3-tagged framebuffer:
+/// - `0` = sRGB. Apply the sRGB → DisplayP3 primaries matrix after
+///   linearization so `#ff0000` displays as the sRGB-standard red rather than
+///   P3-pure red. Matches ghostty's default.
+/// - `1` = DisplayP3. Treat inputs as already-P3, skip the matrix.
+/// - `2` = Rec.2020. Skipped (matrix pending), matches `1` in practice.
+///
+/// The field is stored as a `u8` plus padding up to 16 bytes so the whole
+/// struct stays 16-byte aligned for Metal's `constant` buffer binding;
+/// `#[repr(C)]` guarantees the field order.
 #[cfg(target_os = "macos")]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 struct Globals {
     transform: [f32; 16],
+    input_colorspace: u8,
+    _pad: [u8; 15],
 }
 
 #[cfg(target_os = "macos")]
@@ -92,6 +108,10 @@ pub struct MetalRenderer {
     supported_vertex_buffer: usize,
     supported_instance_buffer: usize,
     current_transform: [f32; 16],
+    /// Interpretation of sRGB-encoded input colors. Set once at construction
+    /// from the `[window] colorspace` config; written into every `Globals`
+    /// upload. Values: `0 = sRGB`, `1 = DisplayP3`, `2 = Rec.2020`.
+    input_colorspace: u8,
     // Image pipeline (separate from text)
     image_pipeline_state: RenderPipelineState,
     image_vertex_buffer: Buffer,
@@ -103,7 +123,15 @@ pub struct MetalRenderer {
 
 #[cfg(target_os = "macos")]
 impl MetalRenderer {
-    pub fn new(context: &MetalContext) -> Self {
+    pub fn new(
+        context: &MetalContext,
+        colorspace: crate::sugarloaf::Colorspace,
+    ) -> Self {
+        let input_colorspace = match colorspace {
+            crate::sugarloaf::Colorspace::Srgb => 0u8,
+            crate::sugarloaf::Colorspace::DisplayP3 => 1u8,
+            crate::sugarloaf::Colorspace::Rec2020 => 2u8,
+        };
         let supported_vertex_buffer = 500;
 
         // Create Metal shader library
@@ -402,6 +430,7 @@ impl MetalRenderer {
             supported_vertex_buffer,
             supported_instance_buffer,
             current_transform: [0.0; 16],
+            input_colorspace,
             uniform_buffer,
             image_pipeline_state,
             image_vertex_buffer,
@@ -411,7 +440,11 @@ impl MetalRenderer {
 
     pub fn resize(&mut self, transform: [f32; 16]) {
         if self.current_transform != transform {
-            let globals = Globals { transform };
+            let globals = Globals {
+                transform,
+                input_colorspace: self.input_colorspace,
+                _pad: [0; 15],
+            };
             let contents = self.uniform_buffer.contents() as *mut Globals;
             unsafe {
                 *contents = globals;
@@ -473,7 +506,11 @@ impl MetalRenderer {
         // Update transform
         let transform = orthographic_projection(context.size.width, context.size.height);
         if self.current_transform != transform {
-            let globals = Globals { transform };
+            let globals = Globals {
+                transform,
+                input_colorspace: self.input_colorspace,
+                _pad: [0; 15],
+            };
             unsafe {
                 *(self.uniform_buffer.contents() as *mut Globals) = globals;
             }
@@ -535,6 +572,13 @@ impl MetalRenderer {
                             Some(&self.uniform_buffer),
                             0,
                         );
+                        // Fragment shader reads `input_colorspace` from the
+                        // same Globals buffer (see `renderer.metal` fs_main).
+                        render_encoder.set_fragment_buffer(
+                            1,
+                            Some(&self.uniform_buffer),
+                            0,
+                        );
                         current_pipeline_instanced = true;
                         pipeline_set = true;
                     }
@@ -557,6 +601,11 @@ impl MetalRenderer {
                         render_encoder.set_render_pipeline_state(&self.pipeline_state);
                         render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
                         render_encoder.set_vertex_buffer(
+                            1,
+                            Some(&self.uniform_buffer),
+                            0,
+                        );
+                        render_encoder.set_fragment_buffer(
                             1,
                             Some(&self.uniform_buffer),
                             0,
@@ -749,14 +798,19 @@ fn upload_background_image_texture(
 }
 
 impl Renderer {
-    pub fn new(context: &Context) -> Self {
+    pub fn new(context: &Context, colorspace: crate::sugarloaf::Colorspace) -> Self {
+        // `colorspace` only matters to the Metal path (macOS); on other
+        // platforms the shader doesn't know the sRGB→P3 matrix yet so we
+        // silently drop it here.
+        #[cfg(not(target_os = "macos"))]
+        let _ = colorspace;
         let brush_type = match &context.inner {
             ContextType::Wgpu(wgpu_context) => {
                 RendererType::Wgpu(WgpuRenderer::new(wgpu_context))
             }
             #[cfg(target_os = "macos")]
             ContextType::Metal(metal_context) => {
-                RendererType::Metal(MetalRenderer::new(metal_context))
+                RendererType::Metal(MetalRenderer::new(metal_context, colorspace))
             }
             ContextType::Cpu(_) => RendererType::Cpu,
         };
@@ -1797,6 +1851,8 @@ impl Renderer {
 
         render_encoder.set_render_pipeline_state(&brush.image_pipeline_state);
         render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
+        // image_fs_main reads `input_colorspace` from Globals.
+        render_encoder.set_fragment_buffer(1, Some(&brush.uniform_buffer), 0);
         render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
 
         let instance_data = brush.image_vertex_buffer.contents() as *mut ImageInstance;
@@ -1875,6 +1931,7 @@ impl Renderer {
 
         render_encoder.set_render_pipeline_state(&brush.image_pipeline_state);
         render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
+        render_encoder.set_fragment_buffer(1, Some(&brush.uniform_buffer), 0);
         render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
         render_encoder.set_vertex_buffer(
             0,

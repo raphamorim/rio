@@ -57,17 +57,17 @@ impl MetalContext {
 
         // Create Metal layer.
         //
-        // `BGRA8Unorm_sRGB` + DisplayP3 colorspace matches ghostty's Metal
-        // setup (see `src/renderer/metal/Target.zig`). The `_sRGB` suffix
-        // tells Metal to sRGB-encode on write and decode on read, so the
-        // alpha blending stage operates in linear light — eliminates the
-        // "dark halo" / muddy-edge artifact that gamma-incorrect blending
-        // produces around text and translucent overlays. DisplayP3 widens
-        // the gamut ~26% past sRGB primaries, so configured theme colors
-        // land closer to Apple Terminal / ghostty's vivid look. Requires
-        // the `renderer.metal` fragment shaders to output linear RGB (see
-        // `srgb_to_linear`), otherwise the HW encode would brighten every
-        // pixel.
+        // Surface is always `BGRA8Unorm_sRGB` with the DisplayP3 colorspace
+        // tag — same as ghostty's `src/renderer/metal/Target.zig`. The
+        // `_sRGB` pixel format only controls the *transfer curve* (HW
+        // sRGB-encodes on write / decodes on read, so alpha blending runs
+        // in linear light); the colorspace tag controls which *primaries*
+        // those values represent on the display. We pick DisplayP3 here
+        // unconditionally because it's the widest gamut we can safely
+        // present without drawable-level HDR handling; the `[window]
+        // colorspace` config controls how input values are *interpreted*
+        // (sRGB vs P3 vs Rec.2020) via an sRGB→P3 matrix applied in the
+        // fragment shader (see `renderer.metal`).
         let layer = MetalLayer::new();
         layer.set_device(&device);
         layer.set_pixel_format(MTLPixelFormat::BGRA8Unorm_sRGB);
@@ -78,8 +78,7 @@ impl MetalContext {
         // we create exactly one colorspace at startup, so a one-time leak
         // here is harmless and avoids a dangling pointer if Apple ever
         // changes the retention semantics.
-        if let Some(cs) =
-            CGColorSpace::create_with_name(unsafe { kCGColorSpaceDisplayP3 })
+        if let Some(cs) = CGColorSpace::create_with_name(unsafe { kCGColorSpaceDisplayP3 })
         {
             unsafe {
                 let layer_obj = layer.as_ptr() as *mut Object;

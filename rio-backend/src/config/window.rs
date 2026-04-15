@@ -24,18 +24,14 @@ pub enum Colorspace {
     Rec2020,
 }
 
-#[cfg(target_os = "macos")]
 #[allow(clippy::derivable_impls)]
 impl Default for Colorspace {
     fn default() -> Colorspace {
-        Colorspace::DisplayP3
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-#[allow(clippy::derivable_impls)]
-impl Default for Colorspace {
-    fn default() -> Colorspace {
+        // `[window] colorspace` = how to interpret hex / ANSI color values
+        // (matches ghostty's `window-colorspace` semantics). The surface
+        // itself is always wide-gamut on macOS; the config picks which
+        // primaries the input bytes are assumed to be in. Default `srgb`
+        // keeps `#ff0000` looking like the sRGB standard red most apps use.
         Colorspace::Srgb
     }
 }

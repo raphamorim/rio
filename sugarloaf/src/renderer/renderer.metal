@@ -1,9 +1,15 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Uniform buffer structure (equivalent to @group(0) @binding(0))
+// Uniform buffer structure (equivalent to @group(0) @binding(0)).
+//
+// Matches the Rust `Globals` in `renderer/mod.rs` — `input_colorspace` is a
+// u8 followed by 15 bytes of padding so the struct is 16-byte aligned.
+// 0 = sRGB (apply sRGB → DisplayP3 matrix after linearize), 1 = DisplayP3
+// (no matrix), 2 = Rec.2020 (no matrix; real conversion TBD).
 struct Globals {
     float4x4 transform;
+    uchar input_colorspace;
 };
 
 // QuadInstance - matches Rust QuadInstance struct (96 bytes, per-instance)
@@ -112,6 +118,33 @@ float3 srgb_to_linear(float3 c) {
     return select(lo, hi, c > 0.04045);
 }
 
+// Bradford-adapted sRGB D65 primaries → DisplayP3 D65 primaries, in linear
+// light. Required because our CAMetalLayer is tagged DisplayP3: a linear
+// value we write is interpreted with P3's primaries, so we must convert
+// input colors to match. Applied only when `input_colorspace == 0` (sRGB) —
+// skipping it leaves `#ff0000` displaying as P3-pure red (oversaturated
+// vs. the sRGB standard red every other app draws). Matches ghostty's
+// `kSrgbToDisplayP3` / the colour.science constant.
+float3 srgb_to_p3(float3 linear_srgb) {
+    return float3(
+        dot(linear_srgb, float3(0.82246197, 0.17753803, 0.0)),
+        dot(linear_srgb, float3(0.03319420, 0.96680580, 0.0)),
+        dot(linear_srgb, float3(0.01708263, 0.07239744, 0.91051993))
+    );
+}
+
+// One-shot: sRGB-encoded → linear, then (if `input_colorspace == 0`) to
+// DisplayP3 primaries. Every fragment return path goes through this so the
+// framebuffer — which is sRGB-transfer-curve encoded but DisplayP3-tagged —
+// shows the intended colour.
+float3 prepare_output_rgb(float3 srgb, uchar input_colorspace) {
+    float3 lin = srgb_to_linear(srgb);
+    if (input_colorspace == 0u) {
+        lin = srgb_to_p3(lin);
+    }
+    return lin;
+}
+
 // Pick the corner radius based on which quadrant the point is in
 float pick_corner_radius(float2 center_to_point, float4 corner_radii) {
     if (center_to_point.x < 0.0) {
@@ -209,6 +242,7 @@ float underline_alpha(float x_pos, float y_pos, float rect_height, float thickne
 // Fragment shader
 fragment float4 fs_main(
     VertexOutput input [[stage_in]],
+    constant Globals& globals [[buffer(1)]],
     texture2d<float> color_texture [[texture(0)]],
     texture2d<float> mask_texture [[texture(1)]],
     sampler font_sampler [[sampler(0)]]
@@ -234,7 +268,10 @@ fragment float4 fs_main(
         float thickness = input.corner_radii.x;
 
         float alpha = underline_alpha(x_pos, y_pos, rect_height, thickness, input.underline_style);
-        return float4(srgb_to_linear(input.f_color.rgb), input.f_color.a * alpha);
+        return float4(
+            prepare_output_rgb(input.f_color.rgb, globals.input_colorspace),
+            input.f_color.a * alpha
+        );
     }
 
     // Handle texture sampling for glyphs
@@ -253,7 +290,7 @@ fragment float4 fs_main(
 
     // Fast path: no rounding
     if (!has_corners) {
-        return float4(srgb_to_linear(out.rgb), out.a);
+        return float4(prepare_output_rgb(out.rgb, globals.input_colorspace), out.a);
     }
 
     float2 size = input.rect_size;
@@ -283,5 +320,5 @@ fragment float4 fs_main(
     }
 
     float edge = saturate(antialias_threshold - outer_sdf);
-    return float4(srgb_to_linear(out.rgb), out.a * edge);
+    return float4(prepare_output_rgb(out.rgb, globals.input_colorspace), out.a * edge);
 }

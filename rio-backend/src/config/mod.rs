@@ -1315,9 +1315,9 @@ mod tests {
         "#,
         );
 
-        #[cfg(target_os = "macos")]
-        assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
-        #[cfg(not(target_os = "macos"))]
+        // Default is sRGB on every platform — same semantics as ghostty's
+        // `window-colorspace` default. `[window] colorspace` describes how
+        // input color bytes are *interpreted*, not the surface gamut.
         assert_eq!(result.window.colorspace, window::Colorspace::Srgb);
     }
 
