@@ -133,14 +133,32 @@ float3 srgb_to_p3(float3 linear_srgb) {
     );
 }
 
-// One-shot: sRGB-encoded → linear, then (if `input_colorspace == 0`) to
-// DisplayP3 primaries. Every fragment return path goes through this so the
-// framebuffer — which is sRGB-transfer-curve encoded but DisplayP3-tagged —
-// shows the intended colour.
+// Bradford-adapted Rec.2020 D65 primaries → DisplayP3 D65 primaries, in
+// linear light. Rec.2020 is wider than P3, so this matrix can produce
+// components outside [0, 1] — those get clipped by the framebuffer write.
+// Good enough for terminal rendering (Rec.2020-native theme content is
+// rare); proper HDR handling would need a 16-bit or extended-range drawable.
+float3 rec2020_to_p3(float3 linear_r2020) {
+    return float3(
+        dot(linear_r2020, float3( 1.34357825, -0.28217967, -0.06139858)),
+        dot(linear_r2020, float3(-0.06529745,  1.08782226, -0.02252481)),
+        dot(linear_r2020, float3( 0.00282179, -0.02598807,  1.02316628))
+    );
+}
+
+// One-shot: sRGB-encoded → linear, then convert primaries to DisplayP3
+// based on `input_colorspace`. Every fragment return path goes through
+// this so the framebuffer — which is sRGB-transfer-curve encoded but
+// DisplayP3-tagged — shows the intended colour.
+//   0 = sRGB      → sRGB → P3 matrix
+//   1 = DisplayP3 → identity (already P3)
+//   2 = Rec.2020  → Rec.2020 → P3 matrix
 float3 prepare_output_rgb(float3 srgb, uchar input_colorspace) {
     float3 lin = srgb_to_linear(srgb);
     if (input_colorspace == 0u) {
         lin = srgb_to_p3(lin);
+    } else if (input_colorspace == 2u) {
+        lin = rec2020_to_p3(lin);
     }
     return lin;
 }

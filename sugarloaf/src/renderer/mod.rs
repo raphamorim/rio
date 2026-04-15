@@ -1408,6 +1408,7 @@ impl Renderer {
                                 ascent: run.ascent,
                                 descent: run.descent,
                                 scale_constraint: None,
+                                nerd_font_constraint: None,
                             };
                             comp.draw_run(
                                 &mut session,
@@ -1481,6 +1482,7 @@ impl Renderer {
                                 scale_constraint: run.span.pua_constraint.and_then(|c| {
                                     rte_layout.map(|l| (l.dimensions.width, c as u8))
                                 }),
+                                nerd_font_constraint: run.span.nerd_font_constraint,
                             };
 
                             // Update font session if needed
@@ -1577,6 +1579,7 @@ impl Renderer {
                                 scale_constraint: run.span.pua_constraint.and_then(|c| {
                                     rte_layout.map(|l| (l.dimensions.width, c as u8))
                                 }),
+                                nerd_font_constraint: run.span.nerd_font_constraint,
                             };
 
                             // Update font session if needed

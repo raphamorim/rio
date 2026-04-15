@@ -125,10 +125,23 @@ fn linear_srgb_to_linear_p3(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     )
 }
 
+/// Bradford-adapted Rec.2020 D65 → DisplayP3 D65 matrix, linear light. Mirrors
+/// `rec2020_to_p3` in `renderer.metal`. Can produce components outside [0, 1]
+/// because Rec.2020 is wider than P3 — clip at framebuffer write time.
+#[cfg(target_os = "macos")]
+#[inline]
+fn linear_rec2020_to_linear_p3(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    (
+        1.34357825 * r + -0.28217967 * g + -0.06139858 * b,
+        -0.06529745 * r + 1.08782226 * g + -0.02252481 * b,
+        0.00282179 * r + -0.02598807 * g + 1.02316628 * b,
+    )
+}
+
 /// Prepare a CPU-side theme color for an `_sRGB` + DisplayP3-tagged render
-/// target. Linearizes (mandatory for the HW encode to work) and, when the
-/// input is declared sRGB, runs the sRGB → P3 primaries matrix so the
-/// clear color matches what the shader emits for the same input bytes.
+/// target. Linearizes (mandatory for the HW encode to work) and, depending
+/// on `colorspace`, runs the matching primaries matrix so the clear color
+/// matches what the shader emits for the same input bytes.
 #[cfg(target_os = "macos")]
 #[inline]
 fn prepare_output_rgb_f64(
@@ -142,9 +155,8 @@ fn prepare_output_rgb_f64(
     let b = srgb_channel_to_linear(b);
     match colorspace {
         Colorspace::Srgb => linear_srgb_to_linear_p3(r, g, b),
-        // DisplayP3 / Rec.2020 inputs: already in the target primaries (or
-        // close enough for Rec.2020 until we wire up a proper matrix).
-        _ => (r, g, b),
+        Colorspace::DisplayP3 => (r, g, b),
+        Colorspace::Rec2020 => linear_rec2020_to_linear_p3(r, g, b),
     }
 }
 

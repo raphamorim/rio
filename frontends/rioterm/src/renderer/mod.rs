@@ -73,9 +73,14 @@ pub struct Renderer {
 /// This allows runs with varying background colors to share cache entries,
 /// dramatically improving cache hit rates for highlighted/selected text.
 fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
-    // PUA glyphs must each be in their own run so they can be
-    // individually constrained/scaled by the compositor.
-    if a.pua_constraint.is_some() || b.pua_constraint.is_some() {
+    // PUA glyphs (and any glyph with a per-codepoint Nerd Font
+    // constraint) must each be in their own run so the compositor can
+    // individually constrain / scale them.
+    if a.pua_constraint.is_some()
+        || b.pua_constraint.is_some()
+        || a.nerd_font_constraint.is_some()
+        || b.nerd_font_constraint.is_some()
+    {
         return false;
     }
     a.font_id == b.font_id
@@ -558,6 +563,9 @@ impl Renderer {
                     if cached.is_pua {
                         style.pua_constraint =
                             Some(pua_constraint_width(row, column, columns));
+                        style.nerd_font_constraint = rio_backend::sugarloaf::font::nerd_font_attributes::get_constraint(
+                            square_content as u32,
+                        );
                     }
                 } else {
                     // Mark this character for font lookup
@@ -581,7 +589,9 @@ impl Renderer {
                 .map(|&(_, ch, attrs)| (ch, attrs))
                 .collect();
             let resolved = sugarloaf.resolve_glyphs_batch(&queries);
-            for ((style_index, _, _), glyph) in font_lookups.iter().zip(resolved.iter()) {
+            for ((style_index, ch, _), glyph) in
+                font_lookups.iter().zip(resolved.iter())
+            {
                 let column = styles_and_chars[*style_index].2;
                 let style = &mut styles_and_chars[*style_index].0;
                 style.font_id = glyph.font_id;
@@ -589,6 +599,9 @@ impl Renderer {
                 if glyph.is_pua {
                     style.pua_constraint =
                         Some(pua_constraint_width(row, column, columns));
+                    style.nerd_font_constraint = rio_backend::sugarloaf::font::nerd_font_attributes::get_constraint(
+                        *ch as u32,
+                    );
                 }
             }
         }

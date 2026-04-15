@@ -55,6 +55,12 @@ pub struct TextRunStyle<'a> {
     /// None for normal glyphs. When set, the glyph is scaled to fit
     /// constraint_cells * cell_width_px without affecting positioning.
     pub scale_constraint: Option<(f32, u8)>,
+    /// Per-glyph Nerd Font constraint from ghostty's patcher table.
+    /// When set, overrides the compositor's cell-centered fit with
+    /// ghostty's constrain() math — size + alignment + padding. Applies
+    /// only to PUA glyphs that have a hand-tuned entry in the table.
+    pub nerd_font_constraint:
+        Option<crate::font::nerd_font_attributes::Constraint>,
 }
 
 /// Positioned glyph in a text run.
