@@ -1038,14 +1038,8 @@ mod tests {
         assert_eq!(island.progress_value, Some(60));
     }
 
-    // ------------------------------------------------------------------
-    // Tab-title truncation (issue #1508).
-    // Exercised via `fit_title_with_widths` with synthetic per-char widths
-    // so tests don't need a live Sugarloaf.
-    // ------------------------------------------------------------------
-
     /// Each char = 1.0 wide, including the ellipsis. Easy arithmetic.
-    fn unit_width(_c: char) -> f32 {
+    fn fixed_unit_width(_c: char) -> f32 {
         1.0
     }
 
@@ -1055,20 +1049,20 @@ mod tests {
 
     #[test]
     fn title_fits_is_returned_unchanged() {
-        assert_eq!(fit_title_with_widths("hello", 10.0, unit_width), "hello");
-        assert_eq!(fit_title_with_widths("hi", 2.0, unit_width), "hi");
+        assert_eq!(fit_title_with_widths("hello", 10.0, fixed_unit_width), "hello");
+        assert_eq!(fit_title_with_widths("hi", 2.0, fixed_unit_width), "hi");
     }
 
     #[test]
     fn title_overflow_gets_ellipsized_and_fits_budget() {
         // "hello world" budgeted at 5 → best we can do without exceeding
         // is "hell" (4) + "…" (1) = 5. Anything more overflows.
-        let out = fit_title_with_widths("hello world", 5.0, unit_width);
+        let out = fit_title_with_widths("hello world", 5.0, fixed_unit_width);
         assert_eq!(out, "hell…");
         assert!(
-            rendered_width(&out, unit_width) <= 5.0,
+            rendered_width(&out, fixed_unit_width) <= 5.0,
             "truncated width {} must be ≤ budget 5",
-            rendered_width(&out, unit_width)
+            rendered_width(&out, fixed_unit_width)
         );
     }
 
@@ -1102,19 +1096,19 @@ mod tests {
         // Budget 0.5 < ellipsis_width 1.0: first char overflows, prefix is
         // empty, we return just "…" so the user at least sees *something*
         // indicating truncation rather than a blank tab label.
-        let out = fit_title_with_widths("abc", 0.5, unit_width);
+        let out = fit_title_with_widths("abc", 0.5, fixed_unit_width);
         assert_eq!(out, "…");
     }
 
     #[test]
     fn title_empty_input_returned_as_is() {
-        assert_eq!(fit_title_with_widths("", 10.0, unit_width), "");
+        assert_eq!(fit_title_with_widths("", 10.0, fixed_unit_width), "");
     }
 
     #[test]
     fn title_exact_fit_not_truncated() {
         // Title "abcd" = 4.0, budget 4.0 → fits exactly, no truncation.
-        assert_eq!(fit_title_with_widths("abcd", 4.0, unit_width), "abcd");
+        assert_eq!(fit_title_with_widths("abcd", 4.0, fixed_unit_width), "abcd");
     }
 
     #[test]
