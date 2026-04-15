@@ -265,6 +265,7 @@ impl From<String> for Action {
             "togglevimode" => Some(Action::ToggleViMode),
             "toggleappearancetheme" => Some(Action::ToggleAppearanceTheme),
             "togglefullscreen" => Some(Action::ToggleFullscreen),
+            "togglecommandpalette" => Some(Action::ToggleCommandPalette),
             "none" => Some(Action::None),
             _ => None,
         };
@@ -500,6 +501,13 @@ pub enum Action {
 
     /// Move divider right
     MoveDividerRight,
+
+    /// Toggle the command palette overlay. When it's visible, this
+    /// closes it; when it's hidden, this opens it with an empty query
+    /// and focus on the input field. Wired in `screen::process_key_event`
+    /// so every key route (vi mode, search, hints, alt-screen apps)
+    /// sees it consistently.
+    ToggleCommandPalette,
 
     /// Allow receiving char input.
     ReceiveChar,
@@ -1005,6 +1013,7 @@ pub fn platform_key_bindings(
         "q", ModifiersState::SUPER; Action::Quit;
         "n", ModifiersState::SUPER; Action::WindowCreateNew;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
+        "p", ModifiersState::SUPER | ModifiersState::SHIFT; Action::ToggleCommandPalette;
 
         // Search
         "f", ModifiersState::SUPER, ~BindingMode::SEARCH; Action::SearchForward;
@@ -1088,6 +1097,7 @@ pub fn platform_key_bindings(
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
+        "p", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ToggleCommandPalette;
 
         // Search
         "f", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchForward;
@@ -1157,6 +1167,7 @@ pub fn platform_key_bindings(
         // https://github.com/raphamorim/rio/issues/220#issuecomment-1761651339
         Key::Named(Backspace), ModifiersState::CONTROL, ~BindingMode::VI; Action::Esc("\u{0017}".into());
         Key::Named(Space), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ToggleViMode;
+        "p", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ToggleCommandPalette;
 
         // Search
         "f", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchForward;
