@@ -367,20 +367,22 @@ fonts.features = ["ss02", "ss03", "ss05", "ss19"]
 
 Note: Font features do not have support to live reload on configuration, so to reflect your changes, you will need to close and reopen Rio.
 
-## fonts.emojis
+## fonts.extras
 
-You can also specify which emoji font you would like to use, by default will be loaded a built-in Twemoji color by Mozilla.
-
-In case you would like to change:
+Extra font families searched after the configured regular/italic/bold slots. Use this to override the bundled Twemoji with a system color-emoji font, or to bring in a Nerd Font for icon glyphs. Rio auto-detects color-emoji fonts from their SFNT color tables (`COLR`, `CBDT`, `CBLC`, `sbix`), so an emoji family dropped here is treated as wide-cell / color-atlas without needing a flag, while a Nerd Font family stays single-cell.
 
 ```toml
-# Apple
-# [fonts.emoji]
-# family = "Apple Color Emoji"
+# Use Apple Color Emoji instead of the bundled Twemoji
+fonts.extras = [{ family = "Apple Color Emoji" }]
 
-# In case you have Noto Color Emoji installed
-# [fonts.emoji]
-# family = "Noto Color Emoji"
+# Or a Nerd Font for icon glyphs
+fonts.extras = [{ family = "JetBrainsMono Nerd Font Mono" }]
+
+# Both — order determines fallback priority
+fonts.extras = [
+  { family = "Apple Color Emoji" },
+  { family = "JetBrainsMono Nerd Font Mono" },
+]
 ```
 
 ## fonts.hinting

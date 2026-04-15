@@ -131,8 +131,6 @@ pub struct SugarloafFonts {
     pub bold_italic: SugarloafFont,
     #[serde(default = "default_font_italic")]
     pub italic: SugarloafFont,
-    #[serde(default = "Option::default")]
-    pub emoji: Option<SugarloafFont>,
     #[serde(default = "Vec::default")]
     pub extras: Vec<SugarloafFont>,
     #[serde(default = "default_bool_true", rename = "use-drawable-chars")]
@@ -162,7 +160,6 @@ impl Default for SugarloafFonts {
             hinting: true,
             size: default_font_size(),
             family: None,
-            emoji: None,
             regular: default_font_regular(),
             bold: default_font_bold(),
             bold_italic: default_font_bold_italic(),
