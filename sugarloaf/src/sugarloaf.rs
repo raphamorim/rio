@@ -234,9 +234,10 @@ impl Sugarloaf<'_> {
     /// Returns `0.0` when the font library can't produce an advance
     /// (font id unregistered or SFNT parse failure) — the same shape
     /// an OS text engine returns for an unmapped glyph, so callers
-    /// can sum widths without branching. These failures shouldn't
-    /// happen outside a pathological font-library state; they are
-    /// not cached, so they re-query on every call.
+    /// can sum widths without branching. The failure is cached as an
+    /// `AdvanceInfo` with `units_per_em = 0` (which `scaled` already
+    /// treats as 0), so repeated queries for the same char don't
+    /// re-walk the font data on every frame.
     ///
     /// Lazy: the glyph cache keeps the advance `None` until the first
     /// `char_advance` call for this `(char, attrs)`, then fills it for
@@ -257,17 +258,19 @@ impl Sugarloaf<'_> {
             return advance.scaled(font_size);
         }
 
-        let info = {
+        let computed = {
             let font_ctx = self.state.content.font_library().inner.read();
             compute_advance(&font_ctx, resolved.font_id, ch)
         };
-        match info {
-            Some(info) => {
-                self.font_cache.set_advance((ch, attrs), info);
-                info.scaled(font_size)
-            }
-            None => 0.0,
-        }
+        // Cache both hits AND misses — misses become a zero-advance
+        // sentinel (`units_per_em = 0`) so `scaled()` returns 0 and
+        // next frame short-circuits instead of re-walking font data.
+        let info = computed.unwrap_or(crate::font_cache::AdvanceInfo {
+            advance_units: 0.0,
+            units_per_em: 0,
+        });
+        self.font_cache.set_advance((ch, attrs), info);
+        info.scaled(font_size)
     }
 
     /// Resolve a batch of glyph queries with a single FontLibrary

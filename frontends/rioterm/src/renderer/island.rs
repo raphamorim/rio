@@ -11,6 +11,7 @@ use crate::renderer::utils::add_span_with_fallback;
 use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
 use rio_backend::sugarloaf::{Attributes, SpanStyle, Sugarloaf};
 use rustc_hash::FxHashMap;
+use std::borrow::Cow;
 use std::time::Instant;
 
 /// Height of the tab bar in pixels
@@ -33,11 +34,14 @@ const TITLE_ELLIPSIS: char = '…';
 
 /// Truncate `title` to fit within `max_width` pixels at the tab font,
 /// appending `…` when characters have to be dropped. Thin adapter that
-/// asks sugarloaf's cached glyph advance for each char.
-fn fit_title_to_width(sugarloaf: &mut Sugarloaf, title: &str, max_width: f32) -> String {
-    if max_width <= 0.0 || title.is_empty() {
-        return title.to_string();
-    }
+/// asks sugarloaf's cached glyph advance for each char. Returns
+/// `Cow::Borrowed(title)` when the full string fits so the common
+/// "no truncation needed" path avoids allocating.
+fn fit_title_to_width<'a>(
+    sugarloaf: &mut Sugarloaf,
+    title: &'a str,
+    max_width: f32,
+) -> Cow<'a, str> {
     let attrs = Attributes::default();
     fit_title_with_widths(title, max_width, |c| {
         sugarloaf.char_advance(c, attrs, TITLE_FONT_SIZE)
@@ -49,14 +53,23 @@ fn fit_title_to_width(sugarloaf: &mut Sugarloaf, title: &str, max_width: f32) ->
 /// running total would exceed `max_width`. Separated from sugarloaf so
 /// tests can feed synthetic widths without a GPU context.
 ///
+/// Returns `Cow::Borrowed(title)` when the full string fits, so the
+/// hot "no truncation needed" path does zero allocation.
+///
+/// `max_width <= 0.0` falls through the loop naturally: the first
+/// char's accumulated width already exceeds the budget, `truncate_ix`
+/// stays 0, and we return just `"…"` — a consistent sentinel that
+/// at least signals "there was content here". Empty input returns
+/// `Cow::Borrowed("")`.
+///
 /// Approximate (isolated per-char advances — no kerning, no ligatures,
 /// no emoji cluster formation). Fine for short labels where a pixel or
 /// two of slack is invisible.
-fn fit_title_with_widths(
-    title: &str,
+fn fit_title_with_widths<'a>(
+    title: &'a str,
     max_width: f32,
     mut char_width: impl FnMut(char) -> f32,
-) -> String {
+) -> Cow<'a, str> {
     let suffix_width = char_width(TITLE_ELLIPSIS);
 
     // `truncate_ix` tracks the last byte offset at which the prefix so
@@ -74,10 +87,10 @@ fn fit_title_with_widths(
             let mut out = String::with_capacity(truncate_ix + TITLE_ELLIPSIS.len_utf8());
             out.push_str(&title[..truncate_ix]);
             out.push(TITLE_ELLIPSIS);
-            return out;
+            return Cow::Owned(out);
         }
     }
-    title.to_string()
+    Cow::Borrowed(title)
 }
 
 /// Color picker constants
@@ -437,7 +450,7 @@ impl Island {
             sugarloaf.content().sel(tab_data.text_id).clear().new_line();
             add_span_with_fallback(sugarloaf, &title, base_style);
             sugarloaf.content().build();
-            tab_data.last_title = title.clone();
+            tab_data.last_title = title.into_owned();
 
             // Position text to measure, then re-center using actual rendered width
             sugarloaf.set_position(tab_data.text_id, x_position, 0.0);
@@ -1051,6 +1064,23 @@ mod tests {
     fn title_fits_is_returned_unchanged() {
         assert_eq!(fit_title_with_widths("hello", 10.0, fixed_unit_width), "hello");
         assert_eq!(fit_title_with_widths("hi", 2.0, fixed_unit_width), "hi");
+    }
+
+    #[test]
+    fn title_that_fits_borrows_without_allocating() {
+        // Confirms the zero-allocation "no truncation" hot path: when the
+        // full title fits, the returned Cow must stay Borrowed so the
+        // render loop doesn't allocate a new String every frame.
+        let out = fit_title_with_widths("ok", 10.0, fixed_unit_width);
+        assert!(matches!(out, Cow::Borrowed(_)), "expected borrowed, got {out:?}");
+    }
+
+    #[test]
+    fn title_zero_budget_returns_ellipsis() {
+        // Historically this was short-circuited to return the full title;
+        // now it falls through the loop and returns "…" consistently with
+        // tiny-but-positive budgets.
+        assert_eq!(fit_title_with_widths("abc", 0.0, fixed_unit_width), "…");
     }
 
     #[test]
