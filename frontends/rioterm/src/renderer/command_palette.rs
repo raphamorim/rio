@@ -23,6 +23,17 @@ const RESULT_FONT_SIZE: f32 = 13.0;
 const SHORTCUT_FONT_SIZE: f32 = 11.0;
 const MAX_VISIBLE_RESULTS: usize = 8;
 
+// Copy icon (two overlapping page outlines with rounded corners,
+// drawn by layering filled + cutout rounded rects). Sized to fit
+// comfortably inside RESULT_ITEM_HEIGHT.
+const COPY_ICON_PAGE_W: f32 = 10.0;
+const COPY_ICON_PAGE_H: f32 = 12.0;
+const COPY_ICON_OFFSET: f32 = 3.0;
+const COPY_ICON_STROKE: f32 = 1.0;
+const COPY_ICON_RADIUS: f32 = 2.0;
+const COPY_ICON_W: f32 = COPY_ICON_PAGE_W + COPY_ICON_OFFSET; // 13
+const COPY_ICON_H: f32 = COPY_ICON_PAGE_H + COPY_ICON_OFFSET; // 15
+
 const SEPARATOR_HEIGHT: f32 = 1.0;
 const RESULTS_MARGIN_TOP: f32 = 2.0;
 const CARET_WIDTH: f32 = 1.5;
@@ -69,6 +80,11 @@ pub enum PaletteAction {
     SearchBackward,
     ClearHistory,
     CloseCurrentSplitOrTab,
+    /// Browse the family names of every registered font. Does NOT
+    /// execute a one-shot action — the palette stays open with the
+    /// font list as its contents. Handled by `router`, not
+    /// `Screen::execute_palette_action`.
+    ListFonts,
     Quit,
 }
 
@@ -195,11 +211,167 @@ const COMMANDS: &[Command] = &[
         action: PaletteAction::ClearHistory,
     },
     Command {
+        title: "List Fonts",
+        shortcut: "",
+        action: PaletteAction::ListFonts,
+    },
+    Command {
         title: "Quit",
         shortcut: "Cmd+Q",
         action: PaletteAction::Quit,
     },
 ];
+
+/// What the palette is currently browsing and filtering over.
+///
+/// `Commands` is the default — fuzzy-matches against the static
+/// `COMMANDS` list and dispatches a `PaletteAction` on Enter.
+///
+/// `Fonts` is entered via the `ListFonts` command. The palette stays
+/// open, its content is replaced with the owned list of font family
+/// names, and Enter closes the palette (no font-switching action yet).
+/// The list is owned so the filter pass doesn't keep a borrow on the
+/// sugarloaf FontLibrary.
+enum PaletteMode {
+    Commands,
+    Fonts(Vec<String>),
+}
+
+/// One row in the filtered result list. Variants carry exactly the
+/// data the render pass needs — no `&'static Command` vs `&str`
+/// lifetime mixing.
+enum PaletteRow<'a> {
+    Command {
+        title: &'a str,
+        shortcut: &'a str,
+        action: PaletteAction,
+    },
+    Font {
+        family: &'a str,
+    },
+}
+
+impl<'a> PaletteRow<'a> {
+    fn title(&self) -> &'a str {
+        match *self {
+            PaletteRow::Command { title, .. } => title,
+            PaletteRow::Font { family } => family,
+        }
+    }
+
+    fn shortcut(&self) -> &'a str {
+        match *self {
+            PaletteRow::Command { shortcut, .. } => shortcut,
+            PaletteRow::Font { .. } => "",
+        }
+    }
+
+    fn action(&self) -> Option<PaletteAction> {
+        match *self {
+            PaletteRow::Command { action, .. } => Some(action),
+            PaletteRow::Font { .. } => None,
+        }
+    }
+}
+
+/// Paint a rounded-rect outline by layering two filled rounded rects:
+/// the outer one in `stroke_color`, then a smaller one in `fill_color`
+/// inset by `stroke` on all sides to carve out the interior. Sugarloaf
+/// has no stroked-rect primitive, so this is how we get a 1px border
+/// effect. Nine params is the irreducible minimum here — grouping them
+/// into a struct would just shuffle the same fields.
+#[allow(clippy::too_many_arguments)]
+fn stroke_rounded_rect(
+    sugarloaf: &mut Sugarloaf,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    stroke: f32,
+    radius: f32,
+    stroke_color: [f32; 4],
+    fill_color: [f32; 4],
+    depth: f32,
+    order: u8,
+) {
+    sugarloaf.rounded_rect(
+        None,
+        x,
+        y,
+        width,
+        height,
+        stroke_color,
+        depth,
+        radius,
+        order,
+    );
+    let inner_radius = (radius - stroke).max(0.0);
+    // Inset fill carves out the interior. Painted slightly deeper so
+    // it lands on top of the outer rect.
+    sugarloaf.rounded_rect(
+        None,
+        x + stroke,
+        y + stroke,
+        (width - stroke * 2.0).max(0.0),
+        (height - stroke * 2.0).max(0.0),
+        fill_color,
+        depth + 0.001,
+        inner_radius,
+        order,
+    );
+}
+
+/// Paint a "copy" icon (two overlapping rounded page outlines)
+/// anchored at `(x, y)`. Drawn from rects only — no font glyph
+/// dependency — so it renders consistently regardless of what the
+/// user's font stack can produce for ⎘ / 📋 / similar.
+///
+/// `row_fill_color` is the background behind the icon (palette BG when
+/// the row is idle, selection highlight when hovered/selected); it's
+/// used to cut out the page interiors so the outlines read as a
+/// proper border rather than two solid blobs. Back page painted
+/// slightly below the front via depth so the front's cutout
+/// correctly hides the overlapping portion of the back's stroke.
+#[allow(clippy::too_many_arguments)]
+fn draw_copy_icon(
+    sugarloaf: &mut Sugarloaf,
+    x: f32,
+    y: f32,
+    stroke_color: [f32; 4],
+    row_fill_color: [f32; 4],
+    depth: f32,
+    order: u8,
+) {
+    // Back page (upper-left).
+    stroke_rounded_rect(
+        sugarloaf,
+        x,
+        y,
+        COPY_ICON_PAGE_W,
+        COPY_ICON_PAGE_H,
+        COPY_ICON_STROKE,
+        COPY_ICON_RADIUS,
+        stroke_color,
+        row_fill_color,
+        depth,
+        order,
+    );
+    // Front page (offset down-right), painted above the back so its
+    // cutout hides the back's overlapping interior.
+    stroke_rounded_rect(
+        sugarloaf,
+        x + COPY_ICON_OFFSET,
+        y + COPY_ICON_OFFSET,
+        COPY_ICON_PAGE_W,
+        COPY_ICON_PAGE_H,
+        COPY_ICON_STROKE,
+        COPY_ICON_RADIUS,
+        stroke_color,
+        row_fill_color,
+        depth + 0.01,
+        order,
+    );
+}
 
 /// Fuzzy match: checks if all query chars appear in order in the target.
 /// Returns a score (higher = better match), or None if no match.
@@ -255,6 +427,8 @@ pub struct CommandPalette {
     pub selected_index: usize,
     scroll_offset: usize,
     pub has_adaptive_theme: bool,
+    /// Which list the palette is showing (commands or fonts).
+    mode: PaletteMode,
     /// Pre-allocated rich text ID for input (lazily initialized)
     input_text_id: Option<usize>,
     /// Pre-allocated rich text IDs for result rows (lazily initialized, fixed pool)
@@ -273,6 +447,7 @@ impl Default for CommandPalette {
             selected_index: 0,
             scroll_offset: 0,
             has_adaptive_theme: false,
+            mode: PaletteMode::Commands,
             input_text_id: None,
             result_text_ids: Vec::new(),
             shortcut_text_ids: Vec::new(),
@@ -297,11 +472,28 @@ impl CommandPalette {
             self.selected_index = 0;
             self.scroll_offset = 0;
             self.caret_blink_start = Instant::now();
+            // Always re-open into Commands mode — a stale Fonts list
+            // from a previous session would be misleading (fonts may
+            // have changed) and surprising (user toggles palette and
+            // finds themselves on the font list).
+            self.mode = PaletteMode::Commands;
         }
     }
 
     pub fn toggle(&mut self) {
         self.set_enabled(!self.enabled);
+    }
+
+    /// Swap the palette into font-browsing mode with the given family
+    /// list. Clears the query so the full list is visible, keeps the
+    /// palette open. Called by the router after the user picks the
+    /// `List Fonts` command.
+    pub fn enter_fonts_mode(&mut self, fonts: Vec<String>) {
+        self.mode = PaletteMode::Fonts(fonts);
+        self.query.clear();
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+        self.caret_blink_start = Instant::now();
     }
 
     pub fn set_query(&mut self, query: String) {
@@ -321,7 +513,7 @@ impl CommandPalette {
     }
 
     pub fn move_selection_down(&mut self) {
-        let count = self.filtered_commands().len();
+        let count = self.filtered_rows().len();
         if self.selected_index < count.saturating_sub(1) {
             self.selected_index += 1;
             if self.selected_index >= self.scroll_offset + MAX_VISIBLE_RESULTS {
@@ -331,29 +523,61 @@ impl CommandPalette {
     }
 
     pub fn get_selected_action(&self) -> Option<PaletteAction> {
-        let filtered = self.filtered_commands();
-        filtered
+        self.filtered_rows()
             .get(self.selected_index)
-            .map(|&(_, cmd)| cmd.action)
+            .and_then(|(_, row)| row.action())
     }
 
-    fn filtered_commands(&self) -> Vec<(i32, &Command)> {
-        let has_adaptive = self.has_adaptive_theme;
-        let mut results: Vec<(i32, &Command)> = COMMANDS
-            .iter()
-            .filter(|cmd| {
-                if cmd.action == PaletteAction::ToggleAppearanceTheme {
-                    return has_adaptive;
-                }
-                true
-            })
-            .filter_map(|cmd| {
-                let score = fuzzy_score(&self.query, cmd.title)?;
-                Some((score, cmd))
-            })
-            .collect();
+    /// Selected family name if (and only if) the palette is in fonts
+    /// mode and the selection points at a valid row. Owned `String`
+    /// so the caller can mutate the palette state (`set_enabled`) in
+    /// the same statement without fighting the borrow checker.
+    pub fn get_selected_font(&self) -> Option<String> {
+        self.filtered_rows().get(self.selected_index).and_then(
+            |(_, row)| match row {
+                PaletteRow::Font { family } => Some((*family).to_owned()),
+                PaletteRow::Command { .. } => None,
+            },
+        )
+    }
 
-        // Sort by score descending
+    /// Filtered list of rows for the current mode. Both modes share
+    /// the same fuzzy-score + sort pipeline so typing behaves
+    /// identically in either view.
+    fn filtered_rows(&self) -> Vec<(i32, PaletteRow<'_>)> {
+        let mut results: Vec<(i32, PaletteRow<'_>)> = match &self.mode {
+            PaletteMode::Commands => {
+                let has_adaptive = self.has_adaptive_theme;
+                COMMANDS
+                    .iter()
+                    .filter(|cmd| {
+                        if cmd.action == PaletteAction::ToggleAppearanceTheme {
+                            return has_adaptive;
+                        }
+                        true
+                    })
+                    .filter_map(|cmd| {
+                        let score = fuzzy_score(&self.query, cmd.title)?;
+                        Some((
+                            score,
+                            PaletteRow::Command {
+                                title: cmd.title,
+                                shortcut: cmd.shortcut,
+                                action: cmd.action,
+                            },
+                        ))
+                    })
+                    .collect()
+            }
+            PaletteMode::Fonts(fonts) => fonts
+                .iter()
+                .filter_map(|family| {
+                    let score = fuzzy_score(&self.query, family)?;
+                    Some((score, PaletteRow::Font { family }))
+                })
+                .collect(),
+        };
+
         results.sort_by(|a, b| b.0.cmp(&a.0));
         results
     }
@@ -397,7 +621,7 @@ impl CommandPalette {
 
         let relative_y = mouse_y - results_y;
         let row = (relative_y / RESULT_ITEM_HEIGHT) as usize;
-        let filtered_count = self.filtered_commands().len();
+        let filtered_count = self.filtered_rows().len();
         let actual_index = self.scroll_offset + row;
 
         if actual_index < filtered_count {
@@ -512,8 +736,12 @@ impl CommandPalette {
         // No separate input background — blends with palette bg for minimalism
 
         let input_id = self.input_text_id.unwrap();
+        let placeholder = match self.mode {
+            PaletteMode::Commands => "Type a command...",
+            PaletteMode::Fonts(_) => "Type a font name...",
+        };
         let display_text = if self.query.is_empty() {
-            "Type a command..."
+            placeholder
         } else {
             &self.query
         };
@@ -575,14 +803,14 @@ impl CommandPalette {
         );
 
         let results_y = sep_y + SEPARATOR_HEIGHT + RESULTS_MARGIN_TOP;
-        let filtered = self.filtered_commands();
+        let filtered = self.filtered_rows();
         let visible_count = filtered
             .iter()
             .skip(self.scroll_offset)
             .take(MAX_VISIBLE_RESULTS)
             .count();
 
-        for (display_i, &(_, cmd)) in filtered
+        for (display_i, (_, row)) in filtered
             .iter()
             .skip(self.scroll_offset)
             .take(MAX_VISIBLE_RESULTS)
@@ -617,7 +845,7 @@ impl CommandPalette {
                 ..SpanStyle::default()
             };
             sugarloaf.content().sel(result_id).clear().new_line();
-            add_span_with_fallback(sugarloaf, cmd.title, result_style);
+            add_span_with_fallback(sugarloaf, row.title(), result_style);
             sugarloaf.content().build();
 
             let row_text_x = input_x + INPUT_PADDING_X;
@@ -625,24 +853,54 @@ impl CommandPalette {
             sugarloaf.set_position(result_id, row_text_x, row_text_y);
             sugarloaf.set_visibility(result_id, true);
 
-            // Shortcut text (right-aligned)
+            // Right-side hint: shortcut for commands, copy icon for
+            // font rows (signals "Enter copies this to clipboard").
             let shortcut_id = self.shortcut_text_ids[display_i];
-            if !cmd.shortcut.is_empty() {
+            let shortcut = row.shortcut();
+            let is_font_row = matches!(row, PaletteRow::Font { .. });
+            if !shortcut.is_empty() {
                 let shortcut_style = SpanStyle {
                     color: SHORTCUT_TEXT_COLOR,
                     ..SpanStyle::default()
                 };
                 sugarloaf.content().sel(shortcut_id).clear().new_line();
-                add_span_with_fallback(sugarloaf, cmd.shortcut, shortcut_style);
+                add_span_with_fallback(sugarloaf, shortcut, shortcut_style);
                 sugarloaf.content().build();
 
-                let shortcut_width = cmd.shortcut.len() as f32 * 6.5;
+                let shortcut_width = shortcut.len() as f32 * 6.5;
                 let shortcut_x = input_x + input_width - INPUT_PADDING_X - shortcut_width;
                 let shortcut_y = item_y + (RESULT_ITEM_HEIGHT - SHORTCUT_FONT_SIZE) / 2.0;
                 sugarloaf.set_position(shortcut_id, shortcut_x, shortcut_y);
                 sugarloaf.set_visibility(shortcut_id, true);
             } else {
                 sugarloaf.set_visibility(shortcut_id, false);
+            }
+
+            if is_font_row {
+                let stroke_color = if is_selected {
+                    TEXT_COLOR
+                } else {
+                    SHORTCUT_TEXT_COLOR
+                };
+                // Cutout inside each page uses the row's own background
+                // so the border reads as a clean outline on either
+                // palette-bg (idle) or selection-highlight-bg (hovered).
+                let row_fill_color = if is_selected {
+                    SELECTED_BG_COLOR
+                } else {
+                    BG_COLOR
+                };
+                let icon_x = input_x + input_width - INPUT_PADDING_X - COPY_ICON_W;
+                let icon_y = item_y + (RESULT_ITEM_HEIGHT - COPY_ICON_H) / 2.0;
+                draw_copy_icon(
+                    sugarloaf,
+                    icon_x,
+                    icon_y,
+                    stroke_color,
+                    row_fill_color,
+                    DEPTH_ELEMENT,
+                    ORDER,
+                );
             }
         }
 
@@ -685,7 +943,7 @@ mod tests {
     #[test]
     fn test_filtered_commands_empty_query() {
         let palette = CommandPalette::new();
-        let filtered = palette.filtered_commands();
+        let filtered = palette.filtered_rows();
         // ToggleAppearanceTheme is hidden when has_adaptive_theme is false
         assert_eq!(filtered.len(), COMMANDS.len() - 1);
     }
@@ -694,11 +952,10 @@ mod tests {
     fn test_filtered_commands_by_title() {
         let mut palette = CommandPalette::new();
         palette.query = "split".to_string();
-        let filtered = palette.filtered_commands();
+        let filtered = palette.filtered_rows();
         assert!(filtered.len() >= 2);
-        // All results should contain "split" in some form
-        for (_, cmd) in &filtered {
-            assert!(cmd.title.to_lowercase().contains("split"));
+        for (_, row) in &filtered {
+            assert!(row.title().to_lowercase().contains("split"));
         }
     }
 
@@ -706,16 +963,16 @@ mod tests {
     fn test_filtered_commands_case_insensitive() {
         let mut palette = CommandPalette::new();
         palette.query = "QUIT".to_string();
-        let filtered = palette.filtered_commands();
+        let filtered = palette.filtered_rows();
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].1.title, "Quit");
+        assert_eq!(filtered[0].1.title(), "Quit");
     }
 
     #[test]
     fn test_fuzzy_matching() {
         let mut palette = CommandPalette::new();
         palette.query = "nt".to_string(); // Should match "New Tab", "Next Tab", etc.
-        let filtered = palette.filtered_commands();
+        let filtered = palette.filtered_rows();
         assert!(!filtered.is_empty());
     }
 
@@ -744,7 +1001,7 @@ mod tests {
     fn test_move_selection_down_boundary() {
         let mut palette = CommandPalette::new();
         palette.set_enabled(true);
-        let count = palette.filtered_commands().len();
+        let count = palette.filtered_rows().len();
         palette.selected_index = count - 1;
         palette.move_selection_down();
         assert_eq!(palette.selected_index, count - 1);
@@ -815,5 +1072,120 @@ mod tests {
         // Both should match
         assert!(score_new > -100);
         assert!(score_next > -100);
+    }
+
+    // --- Fonts-mode tests ------------------------------------------------
+
+    #[test]
+    fn enter_fonts_mode_switches_to_font_list() {
+        let mut palette = CommandPalette::new();
+        palette.set_enabled(true);
+        palette.set_query("ab".to_string());
+        palette.selected_index = 2;
+
+        let fonts = vec![
+            "JetBrains Mono".to_string(),
+            "Fira Code".to_string(),
+            "Cascadia Code".to_string(),
+        ];
+        palette.enter_fonts_mode(fonts);
+
+        // Query cleared, selection reset, full list visible.
+        assert!(palette.query.is_empty());
+        assert_eq!(palette.selected_index, 0);
+        assert_eq!(palette.filtered_rows().len(), 3);
+        // Every row is a Font row, so no executable action.
+        assert!(palette.get_selected_action().is_none());
+    }
+
+    #[test]
+    fn fonts_mode_filters_by_fuzzy_score() {
+        let mut palette = CommandPalette::new();
+        palette.enter_fonts_mode(vec![
+            "JetBrains Mono".to_string(),
+            "Fira Code".to_string(),
+            "Cascadia Code".to_string(),
+        ]);
+        palette.set_query("cas".to_string());
+        let filtered = palette.filtered_rows();
+        assert!(filtered.iter().any(|(_, r)| r.title() == "Cascadia Code"));
+        assert!(filtered.iter().all(|(_, r)| {
+            r.title().to_lowercase().contains('c')
+                && r.title().to_lowercase().contains('a')
+                && r.title().to_lowercase().contains('s')
+        }));
+    }
+
+    #[test]
+    fn fonts_mode_row_has_no_shortcut_column() {
+        let mut palette = CommandPalette::new();
+        palette.enter_fonts_mode(vec!["Fira Code".to_string()]);
+        let filtered = palette.filtered_rows();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].1.shortcut(), "");
+    }
+
+    #[test]
+    fn set_enabled_resets_fonts_mode_to_commands() {
+        // Re-opening the palette with the keyboard must drop any stale
+        // font list — reopening otherwise would land the user on fonts
+        // they saw yesterday, which is surprising.
+        let mut palette = CommandPalette::new();
+        palette.enter_fonts_mode(vec!["Fira Code".to_string()]);
+        palette.enabled = true;
+        palette.set_enabled(false);
+        palette.set_enabled(true);
+        assert!(matches!(palette.mode, PaletteMode::Commands));
+        // Commands list is back (non-empty modulo adaptive-theme filter).
+        assert!(!palette.filtered_rows().is_empty());
+    }
+
+    #[test]
+    fn get_selected_font_returns_family_in_fonts_mode() {
+        let mut palette = CommandPalette::new();
+        palette.enter_fonts_mode(vec![
+            "JetBrains Mono".to_string(),
+            "Fira Code".to_string(),
+        ]);
+        // First row (sorted alphabetically by fuzzy_score tie-break:
+        // both score 0 with empty query, so first-inserted wins).
+        let selected = palette.get_selected_font();
+        assert!(selected.is_some());
+        // The returned name must be one of the inputs, irrespective
+        // of fuzzy-sort ordering.
+        let s = selected.unwrap();
+        assert!(s == "JetBrains Mono" || s == "Fira Code");
+    }
+
+    #[test]
+    fn get_selected_font_none_in_commands_mode() {
+        let palette = CommandPalette::new();
+        // Default mode is Commands; no font to copy.
+        assert!(palette.get_selected_font().is_none());
+    }
+
+    #[test]
+    fn get_selected_font_none_when_empty_filter() {
+        let mut palette = CommandPalette::new();
+        palette.enter_fonts_mode(vec!["Fira Code".to_string()]);
+        palette.set_query("zzzz".to_string());
+        // Query doesn't match anything → no selected font.
+        assert!(palette.get_selected_font().is_none());
+    }
+
+    #[test]
+    fn list_fonts_command_is_present_and_actionable() {
+        // Confirms `List Fonts` shows up in the command list and
+        // reports the correct action when selected.
+        let mut palette = CommandPalette::new();
+        palette.set_query("list fonts".to_string());
+        let filtered = palette.filtered_rows();
+        assert!(!filtered.is_empty());
+        assert_eq!(filtered[0].1.title(), "List Fonts");
+        palette.selected_index = 0;
+        assert_eq!(
+            palette.get_selected_action(),
+            Some(PaletteAction::ListFonts)
+        );
     }
 }

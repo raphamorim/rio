@@ -252,6 +252,15 @@ impl Sugarloaf<'_> {
     /// kerning, ligatures, or emoji cluster formation. Callers that
     /// need those must build the full text span and measure via
     /// `get_text_rendered_width`.
+    /// Sorted, deduplicated family names of every registered font.
+    /// Reads the SFNT `name` table through `font_introspector`;
+    /// intended for UI listings (the command palette's "List Fonts"
+    /// browser). Not cached — the set changes rarely, and the one-off
+    /// cost of walking the library is fine for a human-triggered lookup.
+    pub fn font_family_names(&self) -> Vec<String> {
+        self.state.content.font_library().family_names()
+    }
+
     pub fn char_advance(&mut self, ch: char, attrs: Attributes, font_size: f32) -> f32 {
         let resolved = self.resolve_glyph(ch, attrs);
         if let Some(advance) = resolved.advance {

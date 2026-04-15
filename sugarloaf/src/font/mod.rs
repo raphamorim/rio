@@ -136,6 +136,31 @@ impl FontLibrary {
             sugarloaf_errors,
         )
     }
+
+    /// Sorted, deduplicated list of every font family name the host
+    /// system exposes via `font-kit`'s `SystemSource` (CoreText on
+    /// macOS, DirectWrite on Windows, fontconfig on Linux).
+    ///
+    /// Intended for the command-palette "List Fonts" browser, so users
+    /// can see what's installed without leaving the terminal. Does NOT
+    /// currently include fonts registered through rio's
+    /// `fonts.additional_dirs` config — those aren't retained on the
+    /// `FontLibrary` past load, and walking the dirs again would
+    /// duplicate I/O. A follow-up can widen this once `FontLibrary`
+    /// keeps a `Database` alive.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn family_names(&self) -> Vec<String> {
+        let source = font_kit::source::SystemSource::new();
+        let mut families = source.all_families().unwrap_or_default();
+        families.sort_unstable();
+        families.dedup();
+        families
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn family_names(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 impl Default for FontLibrary {

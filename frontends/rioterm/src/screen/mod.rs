@@ -574,24 +574,6 @@ impl Screen<'_> {
         let mode = self.get_mode();
         let mods = self.modifiers.state();
 
-        // Handle command palette toggle (Cmd+Shift+P on macOS, Ctrl+Shift+P elsewhere)
-        if key.state == ElementState::Pressed {
-            let is_command_palette_key = matches!(
-                key.logical_key.as_ref(),
-                Key::Character("p") | Key::Character("P")
-            );
-            #[cfg(target_os = "macos")]
-            let has_correct_modifiers = mods.super_key() && mods.shift_key();
-            #[cfg(not(target_os = "macos"))]
-            let has_correct_modifiers = mods.control_key() && mods.shift_key();
-
-            if is_command_palette_key && has_correct_modifiers {
-                self.renderer.command_palette.toggle();
-                self.render();
-                return;
-            }
-        }
-
         if key.state == ElementState::Released {
             if !mode.contains(Mode::REPORT_EVENT_TYPES)
                 || mode.contains(Mode::VI)
@@ -1181,6 +1163,10 @@ impl Screen<'_> {
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
                     Act::ToggleAppearanceTheme => {
                         self.context_manager.toggle_appearance_theme();
+                    }
+                    Act::ToggleCommandPalette => {
+                        self.renderer.command_palette.toggle();
+                        self.render();
                     }
                     Act::Minimize => {
                         self.context_manager.minimize();
@@ -3280,6 +3266,13 @@ impl Screen<'_> {
             PaletteAction::ClearHistory => {
                 let mut terminal = self.context_manager.current_mut().terminal.lock();
                 terminal.clear_saved_history();
+            }
+            PaletteAction::ListFonts => {
+                // Handled in the router: switches the palette into fonts
+                // mode and keeps it open. If we land here it's either a
+                // bug (router should have intercepted) or an external
+                // caller firing the action directly — do nothing so the
+                // palette just closes without side effects.
             }
             PaletteAction::Quit => {
                 self.context_manager.quit();
