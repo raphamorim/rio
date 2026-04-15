@@ -1888,7 +1888,7 @@ impl Screen<'_> {
 
             // Check regex patterns if specified
             if let Some(regex_pattern) = &hint_config.regex {
-                if let Ok(regex) = regex::Regex::new(regex_pattern) {
+                if let Ok(regex) = onig::Regex::new(regex_pattern) {
                     if let Some(regex_match) = self.find_regex_match_at_point(
                         terminal,
                         point,
@@ -1980,7 +1980,7 @@ impl Screen<'_> {
         &self,
         terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
         point: rio_backend::crosswords::pos::Pos,
-        regex: &regex::Regex,
+        regex: &onig::Regex,
         hint_config: std::rc::Rc<rio_backend::config::hints::Hint>,
     ) -> Option<crate::hints::HintMatch> {
         let grid = &terminal.grid;
@@ -1998,20 +1998,15 @@ impl Screen<'_> {
         }
         let line_text = line_text.trim_end();
 
-        // Find all matches in this line and check if point is within any of them
-        for mat in regex.find_iter(line_text) {
-            // Same mid-word rejection as `HintState::find_regex_matches`.
-            if crate::hints::is_midword_path_match(line_text, mat.start(), mat.as_str()) {
-                continue;
-            }
-
-            let start_col = rio_backend::crosswords::pos::Column(mat.start());
-            let end_col =
-                rio_backend::crosswords::pos::Column(mat.end().saturating_sub(1));
+        // Find all matches in this line and check if point is within any of them.
+        // Onig yields (byte_start, byte_end); we slice the source ourselves.
+        for (start, end) in regex.find_iter(line_text) {
+            let start_col = rio_backend::crosswords::pos::Column(start);
+            let end_col = rio_backend::crosswords::pos::Column(end.saturating_sub(1));
 
             // Check if the point is within this match
             if point.col >= start_col && point.col <= end_col {
-                let original_match_text = mat.as_str().to_string();
+                let original_match_text = line_text[start..end].to_string();
                 let mut match_text = original_match_text.clone();
 
                 // Apply grid-based post-processing
