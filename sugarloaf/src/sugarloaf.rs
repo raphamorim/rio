@@ -5,7 +5,7 @@ pub mod state;
 use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::font_cache::{resolve_with, FontCache, ResolvedGlyph};
+use crate::font_cache::{compute_advance, resolve_with, FontCache, ResolvedGlyph};
 use crate::font_introspector::Attributes;
 use crate::layout::{RootStyle, TextLayout};
 use crate::renderer::Renderer;
@@ -229,17 +229,45 @@ impl Sugarloaf<'_> {
     /// Horizontal advance in pixels for a single char rendered with
     /// `attrs` at `font_size`, using the same font fallback as
     /// `resolve_glyph`. Answered from the `FontCache` entry — no
-    /// `content().build()` round trip, no extra font-data load after
-    /// the first sighting of `ch`.
+    /// `content().build()` round trip.
+    ///
+    /// Returns `0.0` when the font library can't produce an advance
+    /// (font id unregistered or SFNT parse failure) — the same shape
+    /// an OS text engine returns for an unmapped glyph, so callers
+    /// can sum widths without branching. These failures shouldn't
+    /// happen outside a pathological font-library state; they are
+    /// not cached, so they re-query on every call.
+    ///
+    /// Lazy: the glyph cache keeps the advance `None` until the first
+    /// `char_advance` call for this `(char, attrs)`, then fills it for
+    /// the rest of the session (or until `update_font` swaps the font
+    /// library and clears the cache). The terminal grid path only
+    /// writes/reads `ResolvedGlyph::width` (cell count), so it never
+    /// pays for the hmtx / upem lookup that `char_advance` performs
+    /// on first sighting.
     ///
     /// Intended for proportional UI labels (tab titles, palette,
-    /// hints): per-char isolated advance, cached. Does NOT account
-    /// for kerning, ligatures, or emoji cluster formation — callers
-    /// that need those must build the full text span and measure via
+    /// hints). Per-char isolated advance: does NOT account for
+    /// kerning, ligatures, or emoji cluster formation. Callers that
+    /// need those must build the full text span and measure via
     /// `get_text_rendered_width`.
-    #[inline]
     pub fn char_advance(&mut self, ch: char, attrs: Attributes, font_size: f32) -> f32 {
-        self.resolve_glyph(ch, attrs).scaled_advance(font_size)
+        let resolved = self.resolve_glyph(ch, attrs);
+        if let Some(advance) = resolved.advance {
+            return advance.scaled(font_size);
+        }
+
+        let info = {
+            let font_ctx = self.state.content.font_library().inner.read();
+            compute_advance(&font_ctx, resolved.font_id, ch)
+        };
+        match info {
+            Some(info) => {
+                self.font_cache.set_advance((ch, attrs), info);
+                info.scaled(font_size)
+            }
+            None => 0.0,
+        }
     }
 
     /// Resolve a batch of glyph queries with a single FontLibrary
