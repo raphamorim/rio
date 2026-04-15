@@ -1788,12 +1788,18 @@ impl Screen<'_> {
         let current = self.context_manager.current_mut();
 
         if let Some(hint_match) = highlighted_hint {
-            // Mark the hint range as damaged so it gets re-rendered
+            // Mark the hint range as damaged so it gets re-rendered.
+            //
+            // Two damage signals are required:
+            //   * Terminal-side: `update_selection_damage` marks the affected
+            //     lines so the partial render path knows what to redraw.
+            //   * Renderer-side: `pending_update.set_terminal_damage(Full)`
+            //     ensures the render loop doesn't early-exit on
+            //     `!pending_update.is_dirty()`
             {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
 
-                // Create a temporary selection range for damage tracking
                 let hint_range = rio_backend::selection::SelectionRange::new(
                     hint_match.start,
                     hint_match.end,
@@ -1802,16 +1808,26 @@ impl Screen<'_> {
                 terminal.update_selection_damage(Some(hint_range), display_offset);
             }
 
+            current
+                .renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             current.renderable_content.highlighted_hint = Some(hint_match);
             true
         } else {
-            // Clear any previous hint damage
             if current.renderable_content.highlighted_hint.is_some() {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
                 terminal.update_selection_damage(None, display_offset);
             }
 
+            // Force a render so the previously-highlighted line clears.
+            if had_highlight {
+                current
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+            }
             current.renderable_content.highlighted_hint = None;
             had_highlight
         }
@@ -1985,8 +2001,7 @@ impl Screen<'_> {
         // Find all matches in this line and check if point is within any of them
         for mat in regex.find_iter(line_text) {
             // Same mid-word rejection as `HintState::find_regex_matches`.
-            if crate::hints::is_midword_path_match(line_text, mat.start(), mat.as_str())
-            {
+            if crate::hints::is_midword_path_match(line_text, mat.start(), mat.as_str()) {
                 continue;
             }
 

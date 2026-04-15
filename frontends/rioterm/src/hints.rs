@@ -744,17 +744,19 @@ mod tests {
     fn test_midword_filter_ignores_non_rooted_matches() {
         // Bare relative and scheme URLs never trigger the filter.
         assert!(!is_midword_path_match("foo src/main.rs", 4, "src/main.rs"));
-        assert!(!is_midword_path_match("see https://a.com", 4, "https://a.com"));
+        assert!(!is_midword_path_match(
+            "see https://a.com",
+            4,
+            "https://a.com"
+        ));
     }
 
     /// End-to-end: the default regex plus `is_midword_path_match` correctly
     /// rejects the `/bar` inside `foo/bar`.
     #[test]
     fn test_default_regex_plus_filter_rejects_midword_slash() {
-        let re = regex::Regex::new(
-            rio_backend::config::hints::DEFAULT_URL_REGEX,
-        )
-        .unwrap();
+        let re =
+            regex::Regex::new(rio_backend::config::hints::DEFAULT_URL_REGEX).unwrap();
         let line = "foo/bar";
         let matches: Vec<&str> = re
             .find_iter(line)
@@ -793,8 +795,7 @@ mod tests {
         let file = tmp.join("rio-test-resolve-abs.txt");
         std::fs::write(&file, "hi").unwrap();
 
-        let resolved =
-            resolve_path_for_opening(&file.to_string_lossy(), None).unwrap();
+        let resolved = resolve_path_for_opening(&file.to_string_lossy(), None).unwrap();
         // PathBuf::exists() follows symlinks; on macOS /tmp is a symlink to
         // /private/tmp, so compare existence rather than exact paths.
         assert!(resolved.exists());
@@ -810,8 +811,7 @@ mod tests {
         let file = subdir.join("child.txt");
         std::fs::write(&file, "hi").unwrap();
 
-        let resolved =
-            resolve_path_for_opening("child.txt", Some(&subdir)).unwrap();
+        let resolved = resolve_path_for_opening("child.txt", Some(&subdir)).unwrap();
         assert!(resolved.exists());
         assert!(resolved.ends_with("child.txt"));
 
