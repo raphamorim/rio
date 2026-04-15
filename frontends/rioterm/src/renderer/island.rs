@@ -1062,7 +1062,10 @@ mod tests {
 
     #[test]
     fn title_fits_is_returned_unchanged() {
-        assert_eq!(fit_title_with_widths("hello", 10.0, fixed_unit_width), "hello");
+        assert_eq!(
+            fit_title_with_widths("hello", 10.0, fixed_unit_width),
+            "hello"
+        );
         assert_eq!(fit_title_with_widths("hi", 2.0, fixed_unit_width), "hi");
     }
 
@@ -1072,7 +1075,10 @@ mod tests {
         // full title fits, the returned Cow must stay Borrowed so the
         // render loop doesn't allocate a new String every frame.
         let out = fit_title_with_widths("ok", 10.0, fixed_unit_width);
-        assert!(matches!(out, Cow::Borrowed(_)), "expected borrowed, got {out:?}");
+        assert!(
+            matches!(out, Cow::Borrowed(_)),
+            "expected borrowed, got {out:?}"
+        );
     }
 
     #[test]
