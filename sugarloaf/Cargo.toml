@@ -73,6 +73,8 @@ metal = "0.32.0"
 objc-rs = "0.2.8"
 core-graphics-types = "0.2.0"
 core-graphics = "0.24.0"
+# Used for Metal command-buffer completion handlers (triple-buffered pool).
+block = "0.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.10.0"
