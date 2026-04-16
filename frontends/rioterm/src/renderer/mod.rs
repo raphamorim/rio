@@ -523,11 +523,15 @@ impl Renderer {
                 );
             }
 
-            // Kitty Unicode placeholder (U+10EEEE): treat as a space.
-            // The overlay image renders on top — no per-cell virtual
-            // placement lookup needed (matches Ghostty's approach).
+            // Kitty Unicode placeholder (U+10EEEE): render as transparent
+            // space so the image overlay underneath shows through. The
+            // overlay is queued at z=-1 (BelowText) and rendered BEFORE
+            // text/quads — without clearing the bg the per-cell bg quad
+            // would cover the image. The encoded fg color carries the
+            // image_id and is meaningless to display.
             if square_content == '\u{10EEEE}' {
                 square_content = ' ';
+                style.background_color = None;
             }
 
             if square.has_graphics() {
@@ -1087,7 +1091,9 @@ impl Renderer {
             // Recalculate image overlay positions every frame when placements
             // exist. Positions depend on display_offset and history_size which
             // change on scroll and text output (like Ghostty's approach).
-            if !terminal_snapshot.kitty_placements.is_empty() {
+            let has_overlays = !terminal_snapshot.kitty_placements.is_empty();
+            let has_virtual = !terminal_snapshot.kitty_virtual_placements.is_empty();
+            if has_overlays || has_virtual {
                 let line_height = sugarloaf.style().line_height;
                 let content = sugarloaf.content();
                 content.sel(context.rich_text_id);
@@ -1097,25 +1103,41 @@ impl Renderer {
                 let cell_height = layout.dimension.height * line_height;
                 let origin_x = panel_rect[0] + grid_scaled_margin.left;
                 let origin_y = panel_rect[1] + grid_scaled_margin.top;
-                let history_size = terminal_snapshot.history_size as i64;
-                let display_offset = terminal_snapshot.display_offset as i64;
-                let screen_lines = terminal_snapshot.screen_lines as i64;
 
-                for p in &terminal_snapshot.kitty_placements {
-                    let screen_row = p.dest_row - (history_size - display_offset);
-                    let image_bottom_row = screen_row + p.rows as i64;
-                    // Cull only if fully off-screen (like Ghostty)
-                    if image_bottom_row <= 0 || screen_row >= screen_lines {
-                        continue;
+                if has_overlays {
+                    let history_size = terminal_snapshot.history_size as i64;
+                    let display_offset = terminal_snapshot.display_offset as i64;
+                    let screen_lines = terminal_snapshot.screen_lines as i64;
+
+                    for p in &terminal_snapshot.kitty_placements {
+                        let screen_row = p.dest_row - (history_size - display_offset);
+                        let image_bottom_row = screen_row + p.rows as i64;
+                        // Cull only if fully off-screen (like Ghostty)
+                        if image_bottom_row <= 0 || screen_row >= screen_lines {
+                            continue;
+                        }
+                        content.push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
+                            image_id: p.image_id,
+                            x: origin_x + p.dest_col as f32 * cell_width,
+                            y: origin_y + screen_row as f32 * cell_height,
+                            width: p.pixel_width as f32,
+                            height: p.pixel_height as f32,
+                            z_index: p.z_index,
+                            source_rect:
+                                rio_backend::sugarloaf::GraphicOverlay::FULL_SOURCE_RECT,
+                        });
                     }
-                    content.push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
-                        image_id: p.image_id,
-                        x: origin_x + p.dest_col as f32 * cell_width,
-                        y: origin_y + screen_row as f32 * cell_height,
-                        width: p.pixel_width as f32,
-                        height: p.pixel_height as f32,
-                        z_index: p.z_index,
-                    });
+                }
+
+                if has_virtual {
+                    Self::push_virtual_placeholder_overlays(
+                        content,
+                        &terminal_snapshot,
+                        origin_x,
+                        origin_y,
+                        cell_width,
+                        cell_height,
+                    );
                 }
             } else if terminal_snapshot.kitty_graphics_dirty {
                 // Placements were removed — clear overlays
@@ -1443,6 +1465,142 @@ impl Renderer {
             .hint_labels
             .iter()
             .find(|label| label.position == pos)
+    }
+
+    /// Scan visible rows for kitty Unicode-placeholder cells (U+10EEEE) and
+    /// push GraphicOverlays for each unique virtual placement. Mirrors
+    /// ghostty's `Placement.renderPlacement` (aspect-preserving fit +
+    /// centering inside the placement's `cols × rows` cell box).
+    ///
+    /// Each placeholder cell encodes its position within the image:
+    ///   - Foreground color → lower 24 bits of `image_id`
+    ///   - 1st combining diacritic → row index in the image
+    ///   - 2nd combining diacritic → column index in the image
+    ///   - 3rd combining diacritic → upper 8 bits of `image_id` (optional)
+    ///   - Underline color → `placement_id` (optional)
+    /// The virtual placement metadata (rows × columns) was registered
+    /// earlier via `_Ga=p,U=1,…\e\` and lives in
+    /// `kitty_virtual_placements`.
+    ///
+    /// The cell scan is only used to locate the top-left of each visible
+    /// placement (the cell with row_idx=0, col_idx=0). Once located, we
+    /// render ONE overlay per placement at the centered position with
+    /// the full image (`source_rect = [0, 0, 1, 1]`). This matches what
+    /// kitty actually renders — the per-cell diacritics describe where
+    /// the image *should be assembled*, not what each cell shows by
+    /// itself.
+    fn push_virtual_placeholder_overlays(
+        content: &mut rio_backend::sugarloaf::Content,
+        snapshot: &TerminalSnapshot,
+        origin_x: f32,
+        origin_y: f32,
+        cell_width: f32,
+        cell_height: f32,
+    ) {
+        use rio_backend::ansi::kitty_virtual;
+        use rustc_hash::FxHashMap;
+
+        // Below text — same as ghostty's default for virtual placements.
+        const VIRTUAL_Z_INDEX: i32 = -1;
+
+        // Track the screen position of the top-left cell (row=0,col=0)
+        // for each unique placement we see this frame.
+        struct TopLeft {
+            screen_line: usize,
+            screen_col: usize,
+        }
+        let mut top_lefts: FxHashMap<(u32, u32), TopLeft> = FxHashMap::default();
+
+        for (line_idx, row) in snapshot.visible_rows.iter().enumerate() {
+            for (col_idx, square) in row.inner.iter().enumerate() {
+                if square.c() != kitty_virtual::PLACEHOLDER {
+                    continue;
+                }
+
+                let style = snapshot.style_set.get(square.style_id());
+                let combining: &[char] = square
+                    .extras_id()
+                    .and_then(|eid| snapshot.extras_table.get(eid))
+                    .map(|e| e.zerowidth.as_slice())
+                    .unwrap_or(&[]);
+
+                let cell = match kitty_virtual::decode_cell(
+                    style.fg,
+                    style.underline_color,
+                    combining,
+                ) {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+                // We only care about the (0,0) cell of each placement —
+                // it pins the top-left corner. Subsequent cells just
+                // confirm the placement is on screen, but they don't
+                // change the overlay we push.
+                if cell.row_idx != 0 || cell.col_idx != 0 {
+                    continue;
+                }
+
+                top_lefts
+                    .entry((cell.image_id, cell.placement_id))
+                    .or_insert(TopLeft {
+                        screen_line: line_idx,
+                        screen_col: col_idx,
+                    });
+            }
+        }
+
+        for ((image_id, placement_id), tl) in top_lefts {
+            // Look up the virtual placement metadata. Try
+            // (image_id, placement_id) first; fall back to
+            // (image_id, 0) for applications that omit placement_id.
+            let vp = snapshot
+                .kitty_virtual_placements
+                .get(&(image_id, placement_id))
+                .or_else(|| {
+                    snapshot.kitty_virtual_placements.get(&(image_id, 0))
+                });
+            let vp = match vp {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let img = match snapshot.kitty_images.get(&image_id) {
+                Some(i) => i,
+                None => continue,
+            };
+
+            let p_cols_px = vp.columns.max(1) as f32 * cell_width;
+            let p_rows_px = vp.rows.max(1) as f32 * cell_height;
+            let img_w = img.data.width as f32;
+            let img_h = img.data.height as f32;
+            if img_w <= 0.0 || img_h <= 0.0 {
+                continue;
+            }
+
+            // Aspect-preserving fit. Match ghostty's
+            // `renderPlacement` (`graphics_unicode.zig:166-190`):
+            // pick the smaller scale so the image fits inside the
+            // placement box, then center the leftover gap.
+            let scale = (p_cols_px / img_w).min(p_rows_px / img_h);
+            let dest_w = img_w * scale;
+            let dest_h = img_h * scale;
+            let x_offset = (p_cols_px - dest_w) * 0.5;
+            let y_offset = (p_rows_px - dest_h) * 0.5;
+
+            content.push_image_overlay(
+                rio_backend::sugarloaf::GraphicOverlay {
+                    image_id,
+                    x: origin_x + tl.screen_col as f32 * cell_width + x_offset,
+                    y: origin_y + tl.screen_line as f32 * cell_height + y_offset,
+                    width: dest_w,
+                    height: dest_h,
+                    z_index: VIRTUAL_Z_INDEX,
+                    source_rect:
+                        rio_backend::sugarloaf::GraphicOverlay::FULL_SOURCE_RECT,
+                },
+            );
+        }
     }
 }
 

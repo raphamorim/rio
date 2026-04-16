@@ -1902,7 +1902,7 @@ impl Renderer {
                 instance: ImageInstance {
                     dest_pos: [overlay.x, overlay.y],
                     dest_size: [overlay.width, overlay.height],
-                    source_rect: [0.0, 0.0, 1.0, 1.0],
+                    source_rect: overlay.source_rect,
                 },
                 layer: if overlay.z_index < 0 {
                     ImageLayer::BelowText
@@ -2426,7 +2426,10 @@ impl Renderer {
                 // sized for `MAX_IMAGE_INSTANCES` instances; the same
                 // index space is used by the AboveText pass below so
                 // both layers see consistent instance data.
-                const MAX_IMAGE_INSTANCES: usize = 64;
+                // Bumped from 64 to accommodate kitty Unicode placeholders
+                // which can produce up to cols*rows draws per visible image
+                // (one per placeholder cell with its own source rect).
+                const MAX_IMAGE_INSTANCES: usize = 1024;
                 if image_draws.len() > MAX_IMAGE_INSTANCES {
                     tracing::warn!(
                         "image_draws ({}) exceeds vertex buffer capacity ({}); \
@@ -2589,7 +2592,10 @@ impl Renderer {
                 // See BelowText pass above for the rationale; both
                 // passes share the same indexing into image_draws so
                 // each placement always reads its own slot.
-                const MAX_IMAGE_INSTANCES: usize = 64;
+                // Bumped from 64 to accommodate kitty Unicode placeholders
+                // which can produce up to cols*rows draws per visible image
+                // (one per placeholder cell with its own source rect).
+                const MAX_IMAGE_INSTANCES: usize = 1024;
                 let limit = image_draws.len().min(MAX_IMAGE_INSTANCES);
                 let stride = std::mem::size_of::<ImageInstance>() as u64;
 
@@ -3277,7 +3283,8 @@ impl WgpuRenderer {
 
         let image_vertex_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("image instance buffer"),
-            size: mem::size_of::<ImageInstance>() as u64 * 64, // 64 images max
+            // 1024 max — see `MAX_IMAGE_INSTANCES` comment in render path.
+            size: mem::size_of::<ImageInstance>() as u64 * 1024,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });

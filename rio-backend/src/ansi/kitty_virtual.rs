@@ -1,6 +1,11 @@
 // Kitty graphics protocol virtual placement encoding/decoding
 
-use crate::config::colors::ColorRgb;
+use crate::config::colors::{AnsiColor, ColorRgb};
+
+/// The Kitty Unicode placeholder codepoint (U+10EEEE). Cells containing
+/// this codepoint are interpreted as image placeholders; their fg color
+/// + grapheme combining marks encode which image and which slice.
+pub const PLACEHOLDER: char = '\u{10EEEE}';
 
 /// Diacritics used for row/column encoding in Kitty virtual placements
 /// Index in array = the value being encoded
@@ -89,10 +94,8 @@ pub const DIACRITICS: &[char] = &[
     '\u{06E4}',
     '\u{06E7}',
     '\u{06E8}',
-    '\u{06EA}',
     '\u{06EB}',
     '\u{06EC}',
-    '\u{06ED}',
     '\u{0730}',
     '\u{0732}',
     '\u{0733}',
@@ -305,6 +308,7 @@ pub const DIACRITICS: &[char] = &[
     '\u{1D242}',
     '\u{1D243}',
     '\u{1D244}',
+
 ];
 
 /// Convert an index (0-based) to a diacritic character
@@ -399,6 +403,71 @@ pub fn decode_placeholder(s: &str) -> Option<(u32, u32, Option<u8>)> {
     Some((row, col, high))
 }
 
+/// Decoded placeholder cell metadata. `image_id_low` is the lower 24 bits
+/// (from the cell's foreground color); `image_id_high` is the upper 8 bits
+/// (from the optional 3rd diacritic). `placement_id` is from the underline
+/// color, 0 if absent. `row_idx`/`col_idx` are the cell's position WITHIN
+/// the image (not on the screen) — they index into the virtual placement's
+/// (rows × columns) grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlaceholderCell {
+    pub image_id: u32,
+    pub placement_id: u32,
+    pub row_idx: u32,
+    pub col_idx: u32,
+}
+
+/// Map an `AnsiColor` to a 24-bit id used by the placeholder protocol.
+///
+/// Per the kitty spec the foreground/underline color encodes the lower 24
+/// bits of the image (or placement) id. The encoding depends on color mode:
+/// - `Indexed(n)`: id = n (0..=255). 256-color slot maps to itself.
+/// - `Spec(rgb)`: id = (R << 16) | (G << 8) | B (full 24 bits).
+/// - `Named(_)`: id = 0 (no encoding possible — caller treats as "no id").
+fn color_to_id(color: AnsiColor) -> u32 {
+    match color {
+        AnsiColor::Indexed(n) => n as u32,
+        AnsiColor::Spec(rgb) => rgb_to_id(rgb),
+        AnsiColor::Named(_) => 0,
+    }
+}
+
+/// Decode a placeholder cell from its foreground / underline colors and
+/// the combining marks attached to the cell. Mirrors ghostty's
+/// `graphics_unicode.zig:540-562`.
+///
+/// `combining` is the slice of grapheme zerowidth chars stored on the
+/// cell (rio: `Extras.zerowidth`, ghostty: grapheme cluster). The first
+/// up to 3 valid diacritics encode (row_idx, col_idx, image_id_high).
+/// Missing diacritics cause `None` to return — caller should fall back
+/// to the previous cell's values per kitty's continuation rules
+/// (currently not implemented; see kitty `graphics_unicode.zig:500-513`).
+pub fn decode_cell(
+    fg: AnsiColor,
+    underline: Option<AnsiColor>,
+    combining: &[char],
+) -> Option<PlaceholderCell> {
+    // Need at least row + col diacritics for a complete decode.
+    let row_idx = combining.first().copied().and_then(diacritic_to_index)?;
+    let col_idx = combining.get(1).copied().and_then(diacritic_to_index)?;
+    let image_id_high =
+        combining.get(2).copied().and_then(diacritic_to_index).and_then(
+            |i| if i <= 255 { Some(i as u8) } else { None },
+        );
+
+    let image_id_low = color_to_id(fg);
+    let image_id =
+        ((image_id_high.unwrap_or(0) as u32) << 24) | (image_id_low & 0x00FF_FFFF);
+    let placement_id = underline.map(color_to_id).unwrap_or(0);
+
+    Some(PlaceholderCell {
+        image_id,
+        placement_id,
+        row_idx,
+        col_idx,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -450,5 +519,87 @@ mod tests {
         let encoded = encode_placeholder(5, 10, Some(42));
         let decoded = decode_placeholder(&encoded).unwrap();
         assert_eq!(decoded, (5, 10, Some(42)));
+    }
+
+    use crate::config::colors::NamedColor;
+
+    #[test]
+    fn decode_cell_indexed_fg_two_diacritics() {
+        // Mode kitten icat uses with palette IDs ≤ 255: image_id_low =
+        // palette index, no high byte, no placement_id.
+        let combining = [DIACRITICS[3], DIACRITICS[7]]; // row=3, col=7
+        let cell =
+            decode_cell(AnsiColor::Indexed(42), None, &combining).expect("decoded");
+        assert_eq!(cell.image_id, 42);
+        assert_eq!(cell.placement_id, 0);
+        assert_eq!(cell.row_idx, 3);
+        assert_eq!(cell.col_idx, 7);
+    }
+
+    #[test]
+    fn decode_cell_rgb_fg_three_diacritics() {
+        // Mode kitten icat actually uses by default (--unicode-placeholder
+        // generates a 32-bit id): true-color fg encodes lower 24 bits, 3rd
+        // diacritic encodes upper 8 bits. Reproduces the wire format from
+        // kitty's `kittens/icat/transmit.go:236-244`.
+        let rgb = ColorRgb {
+            r: 0xAB,
+            g: 0xCD,
+            b: 0xEF,
+        };
+        let combining = [DIACRITICS[0], DIACRITICS[1], DIACRITICS[2]];
+        // 1st = row=0, 2nd = col=1, 3rd = high=2
+        let cell = decode_cell(AnsiColor::Spec(rgb), None, &combining).unwrap();
+        assert_eq!(cell.image_id, 0x0200_0000 | 0x00AB_CDEF);
+        assert_eq!(cell.placement_id, 0);
+        assert_eq!(cell.row_idx, 0);
+        assert_eq!(cell.col_idx, 1);
+    }
+
+    #[test]
+    fn decode_cell_with_placement_id_underline() {
+        // Underline color encodes placement_id; rgb_to_id packs RGB into 24
+        // bits. Tests the dual-color encoding path.
+        let fg_rgb = ColorRgb { r: 1, g: 2, b: 3 };
+        let ul_rgb = ColorRgb {
+            r: 0,
+            g: 0,
+            b: 99,
+        };
+        let combining = [DIACRITICS[0], DIACRITICS[0]];
+        let cell = decode_cell(
+            AnsiColor::Spec(fg_rgb),
+            Some(AnsiColor::Spec(ul_rgb)),
+            &combining,
+        )
+        .unwrap();
+        assert_eq!(cell.image_id, 0x0001_0203);
+        assert_eq!(cell.placement_id, 99);
+    }
+
+    #[test]
+    fn decode_cell_missing_diacritics_returns_none() {
+        // Continuation-rule fallbacks (inherit from previous cell) are not
+        // yet implemented — for now we just refuse to decode.
+        let combining = [DIACRITICS[0]]; // only row, no col
+        let cell = decode_cell(AnsiColor::Indexed(1), None, &combining);
+        assert!(cell.is_none());
+
+        let cell = decode_cell(AnsiColor::Indexed(1), None, &[]);
+        assert!(cell.is_none());
+    }
+
+    #[test]
+    fn decode_cell_named_fg_yields_zero_id() {
+        // Named colors (default fg/bg) can't carry an image id. Decoder
+        // returns image_id=0 in that case so the renderer skips it.
+        let combining = [DIACRITICS[0], DIACRITICS[0]];
+        let cell = decode_cell(
+            AnsiColor::Named(NamedColor::Foreground),
+            None,
+            &combining,
+        )
+        .unwrap();
+        assert_eq!(cell.image_id, 0);
     }
 }
