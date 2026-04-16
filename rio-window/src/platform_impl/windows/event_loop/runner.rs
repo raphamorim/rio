@@ -37,9 +37,6 @@ pub(crate) struct EventLoopRunner<T: 'static> {
     event_buffer: RefCell<VecDeque<BufferedEvent<T>>>,
 
     panic_error: Cell<Option<PanicError>>,
-
-    /// Timestamp of the most recent input event.
-    last_input_timestamp: Cell<Instant>,
 }
 
 pub type PanicError = Box<dyn Any + Send + 'static>;
@@ -75,18 +72,7 @@ impl<T> EventLoopRunner<T> {
             last_events_cleared: Cell::new(Instant::now()),
             event_handler: Cell::new(None),
             event_buffer: RefCell::new(VecDeque::new()),
-            last_input_timestamp: Cell::new(Instant::now()),
         }
-    }
-
-    #[inline]
-    pub(crate) fn mark_input_received(&self) {
-        self.last_input_timestamp.set(Instant::now());
-    }
-
-    #[inline]
-    pub(crate) fn should_present_after_input(&self) -> bool {
-        self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
     }
 
     /// Associate the application's event handler with the runner
@@ -130,7 +116,6 @@ impl<T> EventLoopRunner<T> {
             last_events_cleared: _,
             event_handler,
             event_buffer: _,
-            last_input_timestamp: _,
         } = self;
         interrupt_msg_dispatch.set(false);
         runner_state.set(RunnerState::Uninitialized);
