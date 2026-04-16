@@ -40,10 +40,6 @@ pub struct Sugarloaf<'a> {
     /// width (for the grid) and unscaled glyph advance (for
     /// proportional UI via `char_advance`).
     font_cache: FontCache,
-    /// Cached input colorspace from the renderer config — used by the
-    /// Metal clear-color path to keep the first HW-cleared pixel in the
-    /// same colorspace the shader will emit subsequent pixels in.
-    colorspace: Colorspace,
 }
 
 #[derive(Debug)]
@@ -95,89 +91,6 @@ pub enum Colorspace {
     Srgb,
     DisplayP3,
     Rec2020,
-}
-
-/// sRGB transfer curve (IEC 61966-2-1) and its inverse. Mirror the
-/// `srgb_to_linear` / `linear_to_srgb` helpers in `renderer.metal` so the
-/// clear color goes through the exact same encode chain the fragment shader
-/// uses, producing a background pixel that matches shader output for the
-/// same theme bytes. Alpha is linear by convention — never route through
-/// these.
-#[cfg(target_os = "macos")]
-#[inline]
-fn srgb_channel_to_linear(c: f64) -> f64 {
-    if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-#[cfg(target_os = "macos")]
-#[inline]
-fn linear_channel_to_srgb(c: f64) -> f64 {
-    if c <= 0.0031308 {
-        c * 12.92
-    } else {
-        c.powf(1.0 / 2.4) * 1.055 - 0.055
-    }
-}
-
-/// Bradford-adapted sRGB D65 → DisplayP3 D65 matrix applied in linear light.
-/// Must stay in sync with the `srgb_to_p3` helper in `renderer.metal` so the
-/// clear color lands in the same colorspace as shader-emitted pixels.
-#[cfg(target_os = "macos")]
-#[inline]
-fn linear_srgb_to_linear_p3(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
-    (
-        0.82246197 * r + 0.17753803 * g,
-        0.03319420 * r + 0.96680580 * g,
-        0.01708263 * r + 0.07239744 * g + 0.91051993 * b,
-    )
-}
-
-/// Bradford-adapted Rec.2020 D65 → DisplayP3 D65 matrix, linear light. Mirrors
-/// `rec2020_to_p3` in `renderer.metal`. Can produce components outside [0, 1]
-/// because Rec.2020 is wider than P3 — clip at framebuffer write time.
-#[cfg(target_os = "macos")]
-#[inline]
-fn linear_rec2020_to_linear_p3(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
-    (
-        1.34357825 * r + -0.28217967 * g + -0.06139858 * b,
-        -0.06529745 * r + 1.08782226 * g + -0.02252481 * b,
-        0.00282179 * r + -0.02598807 * g + 1.02316628 * b,
-    )
-}
-
-/// Prepare a CPU-side theme color for a plain `BGRA8Unorm` + DisplayP3-tagged
-/// render target. With the non-sRGB pixel format Metal stores MTLClearColor
-/// components verbatim, so we need to emit the exact byte pattern we want on
-/// screen: linearize → sRGB/Rec.2020 → P3 primaries (if input isn't already
-/// P3) → re-encode with the sRGB transfer curve. Produces the same pixel the
-/// fragment shader's `prepare_output_rgb` produces for the same input bytes,
-/// which is what makes a clear-filled cell look identical to a shader-drawn
-/// quad of the same colour.
-#[cfg(target_os = "macos")]
-#[inline]
-fn prepare_output_rgb_f64(
-    r: f64,
-    g: f64,
-    b: f64,
-    colorspace: Colorspace,
-) -> (f64, f64, f64) {
-    let r = srgb_channel_to_linear(r);
-    let g = srgb_channel_to_linear(g);
-    let b = srgb_channel_to_linear(b);
-    let (r, g, b) = match colorspace {
-        Colorspace::Srgb => linear_srgb_to_linear_p3(r, g, b),
-        Colorspace::DisplayP3 => (r, g, b),
-        Colorspace::Rec2020 => linear_rec2020_to_linear_p3(r, g, b),
-    };
-    (
-        linear_channel_to_srgb(r),
-        linear_channel_to_srgb(g),
-        linear_channel_to_srgb(b),
-    )
 }
 
 #[allow(clippy::derivable_impls)]
@@ -266,7 +179,6 @@ impl Sugarloaf<'_> {
             image_data: rustc_hash::FxHashMap::default(),
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
             font_cache,
-            colorspace,
         };
 
         Ok(instance)
@@ -1136,38 +1048,26 @@ impl Sugarloaf<'_> {
                 color_attachment.set_store_action(MTLStoreAction::Store);
                 color_attachment.set_load_action(MTLLoadAction::Clear);
 
-                // Set background color.
-                //
-                // The drawable is plain `BGRA8Unorm` + DisplayP3-tagged (see
-                // `context/metal.rs`) — Metal writes `MTLClearColor` bytes
-                // verbatim, no transfer curve applied. To make the cleared
-                // pixel look identical to a shader-drawn quad of the same
-                // theme colour, we put the input through the same chain
-                // `renderer.metal`'s `prepare_output_rgb` does:
-                // 1. linearize the sRGB-encoded theme bytes,
-                // 2. gamut-map to DisplayP3 primaries (unless the config
-                //    says inputs are already P3),
-                // 3. re-apply the sRGB transfer curve.
-                let clear_color = if let Some(background_color) = self.background_color {
-                    let (r, g, b) = prepare_output_rgb_f64(
-                        background_color.r,
-                        background_color.g,
-                        background_color.b,
-                        self.colorspace,
-                    );
-                    MTLClearColor::new(r, g, b, background_color.a)
-                } else {
-                    // Default to transparent black if no background color set
-                    MTLClearColor::new(0.0, 0.0, 0.0, 0.0)
-                };
-                color_attachment.set_clear_color(clear_color);
+                // Always clear to transparent black; the bg color is
+                // painted by a GPU full-screen quad in
+                // `Renderer::render_metal`, which routes through the
+                // shader's `prepare_output_rgb` so colorspace + transfer
+                // curve handling lives in one place (`renderer.metal`).
+                // For translucent windows this also writes correctly
+                // premultiplied bytes — the previous `MTLClearColor`
+                // path stored straight (non-premultiplied) components,
+                // which the compositor read as too bright.
+                color_attachment.set_clear_color(MTLClearColor::new(0.0, 0.0, 0.0, 0.0));
 
                 // Create render command encoder
                 let render_encoder =
                     command_buffer.new_render_command_encoder(render_pass_descriptor);
                 render_encoder.set_label("Sugarloaf Metal Render Pass");
 
-                self.renderer.render_metal(ctx, render_encoder);
+                let bg_color = self
+                    .background_color
+                    .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32]);
+                self.renderer.render_metal(ctx, render_encoder, bg_color);
 
                 render_encoder.end_encoding();
                 command_buffer.present_drawable(&surface_texture.drawable);
