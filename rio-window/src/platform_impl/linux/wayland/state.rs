@@ -115,6 +115,33 @@ pub struct WinitState {
     /// Whether we have dispatched events to the user thus we want to
     /// send `AboutToWait` and normally wakeup the user.
     pub dispatched_events: bool,
+
+    /// Timestamp of the most recent input event. Mirrors macOS's
+    /// `last_input_timestamp` in
+    /// `rio-window/src/platform_impl/macos/window_delegate.rs:139`.
+    /// The Wayland frame-callback auto-loop checks
+    /// `should_present_after_input` (1 s window) before emitting a
+    /// `RedrawRequested` for ticks that have no other reason to render
+    /// — keeps ProMotion / 144Hz at peak refresh during interaction
+    /// without burning CPU on idle.
+    pub last_input_timestamp: std::cell::Cell<std::time::Instant>,
+}
+
+impl WinitState {
+    /// Set `last_input_timestamp` to `now`. Called from each Wayland
+    /// input handler (keyboard, pointer, scroll). Mirrors macOS
+    /// `mark_input_received` in `window_delegate.rs:986`.
+    #[inline]
+    pub fn mark_input_received(&self) {
+        self.last_input_timestamp.set(std::time::Instant::now());
+    }
+
+    /// True for 1 second after the most recent input event. Mirrors
+    /// macOS `should_present_after_input` in `window_delegate.rs:997`.
+    #[inline]
+    pub fn should_present_after_input(&self) -> bool {
+        self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
+    }
 }
 
 impl WinitState {
@@ -195,6 +222,7 @@ impl WinitState {
             loop_handle,
             // Make it true by default.
             dispatched_events: true,
+            last_input_timestamp: std::cell::Cell::new(std::time::Instant::now()),
         })
     }
 

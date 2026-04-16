@@ -181,6 +181,7 @@ impl EventProcessor {
                     ElementState::Released
                 };
 
+                Self::window_target(&self.target).mark_input_received();
                 self.xinput_key_input(xev.as_mut(), state, &mut callback);
             }
             xlib::GenericEvent => {
@@ -202,6 +203,7 @@ impl EventProcessor {
                         };
 
                         let xev: &XIDeviceEvent = unsafe { xev.as_event() };
+                        Self::window_target(&self.target).mark_input_received();
                         self.update_mods_from_xinput2_event(
                             &xev.mods,
                             &xev.group,
@@ -212,6 +214,7 @@ impl EventProcessor {
                     }
                     xinput2::XI_Motion => {
                         let xev: &XIDeviceEvent = unsafe { xev.as_event() };
+                        Self::window_target(&self.target).mark_input_received();
                         self.update_mods_from_xinput2_event(
                             &xev.mods,
                             &xev.group,

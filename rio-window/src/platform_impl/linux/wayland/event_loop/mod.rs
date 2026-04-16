@@ -502,8 +502,25 @@ impl<T: 'static> EventLoop<T> {
                     return None;
                 }
 
-                // Reset the frame callbacks state.
+                // Auto-loop: when the compositor delivers a Done
+                // (state == Received), re-arm the next frame callback
+                // unconditionally. Then decide whether to actually emit
+                // a RedrawRequested for this tick — the gate is the
+                // 1-second post-input window (`should_present_after_input`),
+                // mirroring macOS in
+                // `rio-window/src/platform_impl/macos/window_delegate.rs:997`.
+                // During interaction every vsync ticks a redraw to keep
+                // ProMotion/144Hz at peak refresh; on idle the auto-loop
+                // keeps the callback armed but doesn't burn CPU rendering.
+                // Compositors stop delivering Done for occluded windows
+                // so the loop pauses naturally.
+                let was_received =
+                    window.frame_callback_state() == FrameCallbackState::Received;
                 window.frame_callback_reset();
+                if was_received {
+                    window.request_frame_callback();
+                }
+
                 let mut redraw_requested = window_requests
                     .get(window_id)
                     .unwrap()
@@ -511,6 +528,7 @@ impl<T: 'static> EventLoop<T> {
 
                 // Redraw the frame while at it.
                 redraw_requested |= window.refresh_frame();
+                redraw_requested |= was_received && state.should_present_after_input();
 
                 redraw_requested.then_some(WindowEvent::RedrawRequested)
             });
