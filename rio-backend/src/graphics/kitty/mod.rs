@@ -412,6 +412,7 @@ fn test_cursor_movement_default() {
         columns: 0,
         rows: 2,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
     };
@@ -489,6 +490,7 @@ fn test_cursor_movement_no_move() {
         columns: 0,
         rows: 2,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 1, // Don't move cursor
     };
@@ -593,6 +595,7 @@ fn test_image_row_occupation_exact_fit() {
         columns: 0,
         rows: 2,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
     };
@@ -660,6 +663,7 @@ fn test_image_row_occupation_single_row() {
         columns: 0,
         rows: 1,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
     };
@@ -726,6 +730,7 @@ fn test_image_row_occupation_three_rows() {
         columns: 0,
         rows: 3,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
     };
@@ -797,6 +802,7 @@ fn test_image_row_occupation_from_middle() {
         columns: 0,
         rows: 2,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
     };
@@ -908,6 +914,7 @@ fn test_place_nonexistent_graphic() {
         columns: 2,
         rows: 2,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
     };
@@ -2597,6 +2604,7 @@ fn test_swap_alt_isolates_placements() {
         columns: 0,
         rows: 1,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 1,
     };
@@ -3055,6 +3063,7 @@ fn test_resize_widen_unwraps_command_image_follows() {
         columns: 1,
         rows: 1,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 1,
     };
@@ -3132,6 +3141,7 @@ fn test_resize_narrow_wraps_command_image_follows() {
         columns: 1,
         rows: 1,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 1,
     };
@@ -3249,6 +3259,7 @@ fn test_debug_widen_visible_layout() {
         columns: 1,
         rows: 1,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
     };
@@ -3306,6 +3317,7 @@ fn test_debug_narrow_visible_layout() {
         columns: 1,
         rows: 1,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
     };
@@ -3365,6 +3377,7 @@ fn test_resize_narrow_combined_col_and_row_change() {
         columns: 1,
         rows: 1,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
     };
@@ -3461,6 +3474,7 @@ fn test_resize_narrow_with_multi_row_image() {
         columns: 1,
         rows: 8, // 8-row image
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0, // Default: cursor moves to last row of image
     };
@@ -3572,6 +3586,7 @@ fn test_resize_narrow_with_cursor_at_bottom_of_screen() {
         columns: 1,
         rows: 1,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
     };
@@ -3671,6 +3686,7 @@ fn test_resize_narrow_with_prompt_after_image() {
         columns: 1,
         rows: 1,
         z_index: 0,
+        virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0, // Default kitty behaviour: cursor stays on the last row of image
     };

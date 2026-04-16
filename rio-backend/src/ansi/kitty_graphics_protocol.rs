@@ -101,6 +101,17 @@ pub struct PlacementRequest {
     pub columns: u32,
     pub rows: u32,
     pub z_index: i32,
+    /// Set when the request came in with `U=1` — the kitty Unicode-
+    /// placeholder mode. The terminal should only register the
+    /// placement metadata; the application emits the U+10EEEE
+    /// placeholder cells itself afterwards (see kitty
+    /// `kittens/icat/transmit.go:221` `write_unicode_placeholder`). The
+    /// renderer scans visible cells for U+10EEEE and composites the
+    /// image at the matching positions.
+    pub virtual_placement: bool,
+    /// Value of `u=N` (decimal codepoint that the application embedded
+    /// in the placement). Distinct from `virtual_placement` (which is
+    /// the uppercase `U=1` flag). Currently informational only.
     pub unicode_placeholder: u32,
     pub cursor_movement: u8, // 0 = move cursor to after image (default), 1 = don't move cursor
 }
@@ -620,6 +631,7 @@ pub fn parse(
                     columns: cmd.columns,
                     rows: cmd.rows,
                     z_index: cmd.z_index,
+                    virtual_placement: cmd.virtual_placement,
                     unicode_placeholder: cmd.unicode_placeholder,
                     cursor_movement: cmd.cursor_movement,
                 })
@@ -647,6 +659,7 @@ pub fn parse(
                 columns: cmd.columns,
                 rows: cmd.rows,
                 z_index: cmd.z_index,
+                virtual_placement: cmd.virtual_placement,
                 unicode_placeholder: cmd.unicode_placeholder,
                 cursor_movement: cmd.cursor_movement,
             };
@@ -1602,6 +1615,27 @@ mod tests {
 
         let placement = response.placement_request.unwrap();
         assert_eq!(placement.unicode_placeholder, 128512);
+        // `u=N` is an informational hint, not the virtual-placement
+        // trigger — leave that flag clear.
+        assert!(!placement.virtual_placement);
+    }
+
+    #[test]
+    fn test_parse_with_virtual_placement() {
+        // What `kitten icat --unicode-placeholder` actually emits:
+        // `_Ga=p,U=1,i=N,c=cols,r=rows,q=2\e\` to register the placement.
+        // The parser must propagate `U=1` so `place_graphic` routes to
+        // the virtual-placement path (metadata only, no cell writes).
+        let result =
+            parse_kitty_graphics_protocol("a=p,U=1,i=42,c=10,r=4,q=2", "");
+        let response = result.expect("parse ok");
+        let placement = response.placement_request.expect("placement");
+        assert!(placement.virtual_placement);
+        assert_eq!(placement.image_id, 42);
+        assert_eq!(placement.columns, 10);
+        assert_eq!(placement.rows, 4);
+        // `U=1` doesn't set the lowercase `u` field.
+        assert_eq!(placement.unicode_placeholder, 0);
     }
 
     #[test]
