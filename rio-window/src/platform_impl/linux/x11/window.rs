@@ -130,7 +130,6 @@ pub struct UnownedWindow {
     cursor_visible: Mutex<bool>,
     ime_sender: Mutex<ImeSender>,
     pub shared_state: Mutex<SharedState>,
-    redraw_sender: WakeSender<WindowId>,
     activation_sender: WakeSender<super::ActivationToken>,
     /// Per-window dirty flag set by `request_redraw`. The vsync
     /// timer tick checks this to decide whether to emit
@@ -376,7 +375,6 @@ impl UnownedWindow {
             cursor_visible: Mutex::new(true),
             ime_sender: Mutex::new(event_loop.ime_sender.clone()),
             shared_state: SharedState::new(guessed_monitor, &window_attrs),
-            redraw_sender: event_loop.redraw_sender.clone(),
             activation_sender: event_loop.activation_sender.clone(),
             redraw_pending: std::sync::atomic::AtomicBool::new(false),
         };
