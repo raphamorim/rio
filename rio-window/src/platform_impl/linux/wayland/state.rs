@@ -116,14 +116,7 @@ pub struct WinitState {
     /// send `AboutToWait` and normally wakeup the user.
     pub dispatched_events: bool,
 
-    /// Timestamp of the most recent input event. Mirrors macOS's
-    /// `last_input_timestamp` in
-    /// `rio-window/src/platform_impl/macos/window_delegate.rs:139`.
-    /// The Wayland frame-callback auto-loop checks
-    /// `should_present_after_input` (1 s window) before emitting a
-    /// `RedrawRequested` for ticks that have no other reason to render
-    /// — keeps ProMotion / 144Hz at peak refresh during interaction
-    /// without burning CPU on idle.
+    /// Timestamp of the most recent input event.
     pub last_input_timestamp: std::cell::Cell<std::time::Instant>,
 }
 

@@ -31,9 +31,6 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
         _: &Connection,
         _: &QueueHandle<WinitState>,
     ) {
-        // Mirror macOS: any keyboard event keeps the 1-second post-input
-        // window alive so the Wayland frame-callback auto-loop emits
-        // RedrawRequested even on idle ticks during interaction.
         state.mark_input_received();
 
         let seat_state = match state.seats.get_mut(&data.seat.id()) {
