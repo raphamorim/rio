@@ -150,6 +150,18 @@ pub struct Navigation {
         rename = "unfocused-split-fill"
     )]
     pub unfocused_split_fill: Option<ColorArray>,
+    /// Habilita uma borda colorida ao redor do painel de divisão ativo.
+    /// Quando `false` (padrão), nenhum destaque é desenhado.
+    #[serde(default = "bool::default", rename = "highlight-active-split")]
+    pub destacar_pane_ativo: bool,
+    /// Cor RGBA da borda de destaque do painel ativo.
+    /// Quando `None`, usa azul padrão `[0.20, 0.52, 0.93, 0.85]`.
+    #[serde(
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
+        rename = "active-split-color"
+    )]
+    pub cor_borda_pane_ativo: Option<ColorArray>,
 }
 
 impl Default for Navigation {
@@ -165,6 +177,8 @@ impl Default for Navigation {
             unfocused_split_opacity: default_unfocused_split_opacity(),
             unfocused_split_fill: None,
             open_config_with_split: true,
+            destacar_pane_ativo: false,
+            cor_borda_pane_ativo: None,
         }
     }
 }

@@ -974,7 +974,25 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             _ => ClickState::Click,
                         };
 
+                        if let MouseButton::Right = button {
+                            if route
+                                .window
+                                .screen
+                                .handle_context_menu_click(&mut self.router.clipboard)
+                            {
+                                route.request_redraw();
+                                return;
+                            }
+                        }
+
                         if let MouseButton::Left = button {
+                            // Fechar menu de contexto se estiver aberto
+                            if route.window.screen.renderer.context_menu.is_enabled() {
+                                route.window.screen.renderer.context_menu.hide();
+                                route.request_redraw();
+                                return;
+                            }
+
                             // Check if clicking on a panel border to start resize
                             {
                                 let mx = route.window.screen.mouse.x as f32;
@@ -1236,6 +1254,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .command_palette
                         .hover(mx, my, win_w, scale)
                     {
+                        route.window.screen.render();
+                        route.request_redraw();
+                    }
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    return;
+                }
+
+                // Handle context menu hover
+                if route.window.screen.renderer.context_menu.is_enabled() {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    let win_size = route.window.screen.sugarloaf.window_size();
+                    if route.window.screen.renderer.context_menu.hover(
+                        x as f32,
+                        y as f32,
+                        win_size.width,
+                        win_size.height,
+                        scale,
+                    ) {
                         route.window.screen.render();
                         route.request_redraw();
                     }

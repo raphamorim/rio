@@ -1,6 +1,7 @@
 pub mod bell;
 pub mod bindings;
 pub mod colors;
+pub mod context_menu;
 pub mod defaults;
 pub mod effects;
 pub mod hints;
@@ -169,6 +170,11 @@ pub struct Config {
     pub scrollback_history_limit: usize,
     #[serde(default = "effects::Effects::default")]
     pub effects: effects::Effects,
+    #[serde(
+        default = "context_menu::ConfiguracaoMenuContexto::default",
+        rename = "context-menu"
+    )]
+    pub menu_contexto: context_menu::ConfiguracaoMenuContexto,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -585,6 +591,12 @@ impl Config {
             if let Some(fill) = navigation_overwrite.unfocused_split_fill {
                 self.navigation.unfocused_split_fill = Some(fill);
             }
+            if let Some(destacar) = navigation_overwrite.destacar_pane_ativo {
+                self.navigation.destacar_pane_ativo = destacar;
+            }
+            if let Some(cor) = navigation_overwrite.cor_borda_pane_ativo {
+                self.navigation.cor_borda_pane_ativo = Some(cor);
+            }
         }
 
         // Clamp after platform merge so both the base and any override go
@@ -666,6 +678,7 @@ impl Default for Config {
             enable_scroll_bar: true,
             scrollback_history_limit: default_scrollback_history_limit(),
             effects: effects::Effects::default(),
+            menu_contexto: context_menu::ConfiguracaoMenuContexto::default(),
         }
     }
 }

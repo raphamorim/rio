@@ -1,5 +1,6 @@
 pub mod assistant;
 pub mod command_palette;
+pub mod context_menu;
 pub mod custom_cursor;
 pub mod island;
 pub mod scrollbar;
@@ -49,6 +50,10 @@ pub struct Renderer {
     pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
     unfocused_split_fill: Option<ColorArray>,
+    /// Habilita borda colorida ao redor do painel ativo quando há múltiplas divisões.
+    destacar_pane_ativo: bool,
+    /// Cor RGBA da borda do painel ativo; `None` usa o azul padrão.
+    cor_borda_pane_ativo: Option<ColorArray>,
     last_active: Option<NodeId>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
@@ -56,6 +61,8 @@ pub struct Renderer {
     pub search: search::SearchOverlay,
     pub assistant: assistant::AssistantOverlay,
     pub scrollbar: scrollbar::Scrollbar,
+    /// Menu de contexto exibido ao clicar com o botão direito.
+    pub context_menu: context_menu::ContextMenu,
     #[allow(unused)]
     pub option_as_alt: String,
     #[allow(unused)]
@@ -157,6 +164,8 @@ impl Renderer {
         Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
             unfocused_split_fill: config.navigation.unfocused_split_fill,
+            destacar_pane_ativo: config.navigation.destacar_pane_ativo,
+            cor_borda_pane_ativo: config.navigation.cor_borda_pane_ativo,
             last_active: None,
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
@@ -180,6 +189,7 @@ impl Renderer {
             search: search::SearchOverlay::default(),
             assistant: assistant::AssistantOverlay::default(),
             scrollbar: scrollbar::Scrollbar::new(config.enable_scroll_bar),
+            context_menu: context_menu::ContextMenu::new(),
             is_game_mode_enabled: config.renderer.strategy.is_game(),
             custom_mouse_cursor: config.effects.custom_mouse_cursor,
             trail_cursor_enabled: config.effects.trail_cursor,
@@ -1331,6 +1341,49 @@ impl Renderer {
             }
         }
 
+        // Highlight border for the active split. Drawn after the dim overlay so
+        // it always appears on top of inactive panes. Skipped when the feature
+        // is disabled (`destacar_pane_ativo = false`).
+        if self.destacar_pane_ativo && grid.contexts_mut().len() > 1 {
+            let cor_destaque = self
+                .cor_borda_pane_ativo
+                .unwrap_or([0.20, 0.52, 0.93, 0.85]);
+            if let Some(grid_context) = grid.contexts_mut().get(&active_key) {
+                let panel_rect = grid_context.layout_rect;
+                let x = (panel_rect[0] + grid_scaled_margin.left) / scale_factor;
+                let y = (panel_rect[1] + grid_scaled_margin.top) / scale_factor;
+                let w = panel_rect[2] / scale_factor;
+                let h = panel_rect[3] / scale_factor;
+                let espessura = 2.0_f32;
+                // Topo
+                sugarloaf.rect(None, x, y, w, espessura, cor_destaque, 0.0, 4);
+                // Fundo
+                sugarloaf.rect(
+                    None,
+                    x,
+                    y + h - espessura,
+                    w,
+                    espessura,
+                    cor_destaque,
+                    0.0,
+                    4,
+                );
+                // Esquerda
+                sugarloaf.rect(None, x, y, espessura, h, cor_destaque, 0.0, 4);
+                // Direita
+                sugarloaf.rect(
+                    None,
+                    x + w - espessura,
+                    y,
+                    espessura,
+                    h,
+                    cor_destaque,
+                    0.0,
+                    4,
+                );
+            }
+        }
+
         if let Some(island) = &mut self.island {
             island.render(
                 sugarloaf,
@@ -1350,6 +1403,11 @@ impl Renderer {
         );
 
         self.command_palette.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
+
+        self.context_menu.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
         );
