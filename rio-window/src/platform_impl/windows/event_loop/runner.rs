@@ -37,6 +37,13 @@ pub(crate) struct EventLoopRunner<T: 'static> {
     event_buffer: RefCell<VecDeque<BufferedEvent<T>>>,
 
     panic_error: Cell<Option<PanicError>>,
+
+    /// Timestamp of the most recent input event. Mirrors macOS's
+    /// `last_input_timestamp` and the Wayland/X11 implementations.
+    /// The DwmFlush vsync worker uses `should_present_after_input`
+    /// (1 s window) to decide whether to fan out a per-vsync
+    /// `RDW_INTERNALPAINT` to visible windows.
+    last_input_timestamp: Cell<Instant>,
 }
 
 pub type PanicError = Box<dyn Any + Send + 'static>;
@@ -72,7 +79,23 @@ impl<T> EventLoopRunner<T> {
             last_events_cleared: Cell::new(Instant::now()),
             event_handler: Cell::new(None),
             event_buffer: RefCell::new(VecDeque::new()),
+            last_input_timestamp: Cell::new(Instant::now()),
         }
+    }
+
+    /// Set `last_input_timestamp` to `now`. Called from each Win32
+    /// input handler. Mirrors macOS `mark_input_received` in
+    /// `window_delegate.rs:986` and the Wayland/X11 equivalents.
+    #[inline]
+    pub(crate) fn mark_input_received(&self) {
+        self.last_input_timestamp.set(Instant::now());
+    }
+
+    /// True for 1 second after the most recent input event. Mirrors
+    /// macOS `should_present_after_input` in `window_delegate.rs:997`.
+    #[inline]
+    pub(crate) fn should_present_after_input(&self) -> bool {
+        self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
     }
 
     /// Associate the application's event handler with the runner
@@ -116,6 +139,7 @@ impl<T> EventLoopRunner<T> {
             last_events_cleared: _,
             event_handler,
             event_buffer: _,
+            last_input_timestamp: _,
         } = self;
         interrupt_msg_dispatch.set(false);
         runner_state.set(RunnerState::Uninitialized);

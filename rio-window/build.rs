@@ -40,11 +40,19 @@ fn main() {
 
     println!("cargo:rustc-check-cfg=cfg(unreleased_changelogs)");
 
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+
     #[cfg(target_os = "macos")]
-    generate_dispatch_bindings();
+    if target_os == "macos" {
+        generate_dispatch_bindings();
+    }
 
     #[cfg(target_os = "windows")]
-    load_app_icon();
+    if target_os == "windows" {
+        load_app_icon();
+    }
+
+    let _ = target_os;
 }
 
 #[cfg(target_os = "macos")]
