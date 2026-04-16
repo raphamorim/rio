@@ -1,20 +1,26 @@
-//! DwmFlush-driven vsync worker that posts a tick message to the
-//! event loop's `thread_msg_target` per composition cycle.
+//! DwmFlush-driven vsync worker that drives all window repaints.
 //!
-//! Modelled on zed's `crates/gpui_windows/src/vsync.rs` +
-//! `begin_vsync_thread` in `crates/gpui_windows/src/platform.rs`.
-//! The handler in `event_loop::thread_event_target_callback` decides
-//! per tick whether to fan out a `RedrawRequested` to visible
-//! windows, gated by `EventLoopRunner::should_present_after_input`
-//! (1 s window, matches macOS).
+//! Mirrors the macOS CVDisplayLink model: `Window::request_redraw`
+//! sets a per-window `Arc<AtomicBool>` dirty flag, and the worker
+//! is the single source of frame timing. Per composition cycle it
+//! iterates the window registry and, for each window where
+//! `dirty || should_present_after_input`, fires
+//! `RedrawWindow(.., RDW_INVALIDATE)`. The app's `WM_PAINT` /
+//! `RedrawRequested` path is unchanged.
 //!
-//! When DWM is disabled, when the monitor is unplugged, or under
-//! some RDP modes, `DwmFlush` returns immediately. We detect that
-//! via a 1 ms threshold and fall back to `thread::sleep` at the
-//! queried refresh interval.
+//! `should_present_after_input` keeps the loop firing for one
+//! second after any input even if the app never sets the dirty
+//! flag — same gate macOS / Wayland / X11 use.
+//!
+//! When DWM is disabled, the monitor is unplugged, or under some
+//! RDP modes, `DwmFlush` returns immediately. The 1 ms threshold
+//! catches that and we fall back to `thread::sleep` at the queried
+//! refresh interval. Same heuristic as zed's
+//! `gpui_windows/src/vsync.rs`.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -22,72 +28,63 @@ use windows_sys::Win32::Foundation::{HWND, S_OK};
 use windows_sys::Win32::Graphics::Dwm::{
     DwmFlush, DwmGetCompositionTimingInfo, DWM_TIMING_INFO,
 };
+use windows_sys::Win32::Graphics::Gdi::{RedrawWindow, RDW_INVALIDATE};
 use windows_sys::Win32::System::Performance::QueryPerformanceFrequency;
-use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, RegisterWindowMessageA};
+use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 
 const VSYNC_INTERVAL_THRESHOLD: Duration = Duration::from_millis(1);
 const DEFAULT_VSYNC_INTERVAL: Duration = Duration::from_micros(16_666); // ~60Hz
+const POST_INPUT_PRESENT_WINDOW: Duration = Duration::from_secs(1);
 
-/// Custom window message posted from the worker thread to
-/// `thread_msg_target` once per vsync. The event-loop side
-/// dispatches it in `thread_event_target_callback`.
-pub(super) static VSYNC_TICK_MSG_ID: LazyVsyncMsgId =
-    LazyVsyncMsgId::new("Winit::VsyncTick\0");
-
-/// Lazy `RegisterWindowMessageA` wrapper. Mirrors the
-/// `LazyMessageId` pattern in `event_loop.rs` but kept here to
-/// avoid widening the visibility of that type.
-pub(super) struct LazyVsyncMsgId {
-    id: AtomicU32,
-    name: &'static str,
+/// State shared between the event loop, window-callback thread,
+/// and the DwmFlush worker thread. Holds the per-window dirty-flag
+/// registry plus the most recent input timestamp.
+pub(crate) struct VSyncSharedState {
+    /// HWND (as `usize` for `Hash`/`Eq`) → per-window dirty flag.
+    /// `Window::request_redraw` sets the flag; the worker reads
+    /// and clears it on each tick.
+    windows: RwLock<HashMap<usize, Arc<AtomicBool>>>,
+    /// Updated by every input handler; checked by the worker to
+    /// decide whether to fan out a redraw even for windows whose
+    /// dirty flag is clear.
+    last_input_timestamp: Mutex<Instant>,
 }
 
-impl LazyVsyncMsgId {
-    pub(super) const fn new(name: &'static str) -> Self {
-        Self {
-            id: AtomicU32::new(0),
-            name,
-        }
+impl VSyncSharedState {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
+            windows: RwLock::new(HashMap::new()),
+            last_input_timestamp: Mutex::new(Instant::now()),
+        })
     }
 
-    pub(super) fn get(&self) -> u32 {
-        let id = self.id.load(Ordering::Relaxed);
-        if id != 0 {
-            return id;
-        }
-        assert!(self.name.ends_with('\0'));
-        let new_id = unsafe { RegisterWindowMessageA(self.name.as_ptr()) };
-        assert_ne!(
-            new_id, 0,
-            "RegisterWindowMessageA failed for '{}'",
-            self.name
-        );
-        self.id.store(new_id, Ordering::Relaxed);
-        new_id
-    }
-}
-
-/// Send-able HWND wrapper. HWND is `*mut c_void` (`!Send`), and
-/// edition-2021 disjoint-capture would otherwise capture the inner
-/// pointer field directly into the worker closure. Stashing the
-/// raw bits as `usize` sidesteps that and keeps the cast local.
-#[derive(Clone, Copy)]
-struct SendHwnd(usize);
-
-impl SendHwnd {
-    fn new(hwnd: HWND) -> Self {
-        Self(hwnd as usize)
+    /// Insert a window and return its dirty-flag handle. The
+    /// caller (the `Window` constructor) keeps the returned `Arc`
+    /// so `request_redraw` can flip it without taking the registry
+    /// lock.
+    pub(crate) fn register_window(&self, hwnd: HWND) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        self.windows
+            .write()
+            .unwrap()
+            .insert(hwnd as usize, flag.clone());
+        flag
     }
 
-    fn raw(self) -> HWND {
-        self.0 as HWND
+    pub(crate) fn unregister_window(&self, hwnd: HWND) {
+        self.windows.write().unwrap().remove(&(hwnd as usize));
+    }
+
+    #[inline]
+    pub(crate) fn mark_input_received(&self) {
+        *self.last_input_timestamp.lock().unwrap() = Instant::now();
+    }
+
+    #[inline]
+    pub(crate) fn should_present_after_input(&self) -> bool {
+        self.last_input_timestamp.lock().unwrap().elapsed() < POST_INPUT_PRESENT_WINDOW
     }
 }
-
-// SAFETY: HWND is treated as opaque by the worker — it is only
-// used as the destination of `PostMessageW`, which is documented
-// to be thread-safe.
-unsafe impl Send for SendHwnd {}
 
 /// Owns the worker thread. Drop signals stop and joins.
 pub(super) struct VSyncThread {
@@ -96,21 +93,9 @@ pub(super) struct VSyncThread {
 }
 
 impl VSyncThread {
-    /// A no-op `VSyncThread` used to swap out the real worker
-    /// during `EventLoop::drop` so that joining can happen before
-    /// the target window is destroyed.
-    pub(super) fn stub() -> Self {
-        Self {
-            stop: Arc::new(AtomicBool::new(true)),
-            handle: None,
-        }
-    }
-
-    pub(super) fn spawn(thread_msg_target: HWND) -> Self {
+    pub(super) fn spawn(state: Arc<VSyncSharedState>) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let stop_worker = stop.clone();
-        let target = SendHwnd::new(thread_msg_target);
-        let tick_msg = VSYNC_TICK_MSG_ID.get();
 
         let handle = std::thread::Builder::new()
             .name("rio-window::vsync".to_owned())
@@ -121,12 +106,37 @@ impl VSyncThread {
                     if stop_worker.load(Ordering::Acquire) {
                         break;
                     }
-                    // SAFETY: PostMessageW with a valid registered
-                    // message id is sound; failure means the target
-                    // window has been destroyed, so we exit.
-                    let posted = unsafe { PostMessageW(target.raw(), tick_msg, 0, 0) };
-                    if posted == 0 {
-                        break;
+
+                    let present_after_input = state.should_present_after_input();
+
+                    // Snapshot HWND + flag pairs so we don't hold
+                    // the registry lock across `RedrawWindow`.
+                    let snapshot: Vec<(usize, Arc<AtomicBool>)> = state
+                        .windows
+                        .read()
+                        .unwrap()
+                        .iter()
+                        .map(|(&hwnd, flag)| (hwnd, flag.clone()))
+                        .collect();
+
+                    for (hwnd_bits, flag) in snapshot {
+                        let was_dirty = flag.swap(false, Ordering::AcqRel);
+                        if !(was_dirty || present_after_input) {
+                            continue;
+                        }
+                        let hwnd = hwnd_bits as HWND;
+                        // SAFETY: `IsWindowVisible` and
+                        // `RedrawWindow` are documented thread-safe.
+                        unsafe {
+                            if IsWindowVisible(hwnd) != 0 {
+                                RedrawWindow(
+                                    hwnd,
+                                    std::ptr::null(),
+                                    std::ptr::null_mut(),
+                                    RDW_INVALIDATE,
+                                );
+                            }
+                        }
                     }
                 }
             })
@@ -143,8 +153,8 @@ impl Drop for VSyncThread {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
         if let Some(handle) = self.handle.take() {
-            // The worker exits at the start of the next iteration
-            // after the current DwmFlush returns (typically <16 ms).
+            // Worker exits at the start of the next iteration after
+            // the current DwmFlush returns (typically <16 ms).
             let _ = handle.join();
         }
     }
@@ -164,11 +174,6 @@ impl VSyncProvider {
         let start = Instant::now();
         let hr = unsafe { DwmFlush() };
         let elapsed = start.elapsed();
-        // DwmFlush returns immediately when DWM is disabled, when
-        // the monitor is asleep / unplugged, or under some RDP
-        // modes. The 1 ms threshold catches that and we sleep the
-        // queried refresh interval as a fallback. Same heuristic
-        // zed uses in vsync.rs:51.
         if hr != S_OK || elapsed < VSYNC_INTERVAL_THRESHOLD {
             std::thread::sleep(self.interval);
         }
@@ -192,9 +197,6 @@ fn query_dwm_interval() -> Option<Duration> {
     if interval >= VSYNC_INTERVAL_THRESHOLD {
         return Some(interval);
     }
-    // qpcRefreshPeriod is sometimes spuriously low (a value of 60
-    // ticks → 29 microseconds was observed in zed). Fall back to
-    // the rateRefresh ratio when that happens.
     if info.rateRefresh.uiNumerator == 0 {
         return None;
     }
