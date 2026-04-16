@@ -496,7 +496,8 @@ impl<T: 'static> EventLoop<T> {
     }
 
     fn has_pending(&mut self) -> bool {
-        self.event_processor.poll()
+        self.state.vsync_pending
+            || self.event_processor.poll()
             || self.user_receiver.has_incoming()
             || self.redraw_receiver.has_incoming()
     }
