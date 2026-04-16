@@ -119,6 +119,11 @@ pub struct MetalRenderer {
     /// kept separate from the kitty `image_vertex_buffer` so it cannot
     /// collide with kitty placement slots.
     background_image_vertex_buffer: Buffer,
+    /// One-slot QuadInstance buffer for the GPU bg-color fill pass —
+    /// drawn first every frame so the shader can do the sRGB→DisplayP3
+    /// + transfer-curve conversion per pixel (single source of truth in
+    /// `renderer.metal`, no Rust-side colorimetry to keep in sync).
+    bg_fill_instance_buffer: Buffer,
 }
 
 #[cfg(target_os = "macos")]
@@ -419,6 +424,12 @@ impl MetalRenderer {
         background_image_vertex_buffer
             .set_label("sugarloaf::background image instance buffer");
 
+        let bg_fill_instance_buffer = context.device.new_buffer(
+            mem::size_of::<crate::renderer::batch::QuadInstance>() as u64,
+            MTLResourceOptions::StorageModeShared,
+        );
+        bg_fill_instance_buffer.set_label("sugarloaf::bg fill instance buffer");
+
         Self {
             pipeline_state,
             instanced_pipeline_state,
@@ -433,6 +444,7 @@ impl MetalRenderer {
             image_pipeline_state,
             image_vertex_buffer,
             background_image_vertex_buffer,
+            bg_fill_instance_buffer,
         }
     }
 
@@ -1969,6 +1981,61 @@ impl Renderer {
         render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
     }
 
+    /// Full-screen GPU bg-color fill — runs first every frame on a
+    /// transparent-cleared surface. Drives the bg through the shader's
+    /// `prepare_output_rgb` so the colorspace + transfer-curve work
+    /// happens once, on the GPU, exactly the same as every other quad.
+    /// Replaces the previous `MTLClearColor` + Rust-side
+    /// `prepare_output_rgb_f64` path (one-shot CPU encode, with a
+    /// matrix that had to stay in sync with `renderer.metal`).
+    ///
+    /// The instanced pipeline blend factors are
+    /// `SrcAlpha / OneMinusSrcAlpha` for RGB and `One / OneMinusSrcAlpha`
+    /// for alpha; on the cleared `(0,0,0,0)` surface this writes
+    /// `(bg_gamma * bg.a, bg.a)`, which is correctly premultiplied —
+    /// translucent windows now pass the right bytes to the compositor
+    /// (the old `MTLClearColor` path stored non-premultiplied components
+    /// and made translucent bgs read too bright).
+    #[cfg(target_os = "macos")]
+    fn draw_bg_fill_metal(
+        brush: &MetalRenderer,
+        render_encoder: &metal::RenderCommandEncoderRef,
+        physical_size: (f32, f32),
+        bg_color: [f32; 4],
+    ) {
+        use crate::renderer::batch::QuadInstance;
+
+        let instance = QuadInstance {
+            pos: [0.0, 0.0, 0.0],
+            color: bg_color,
+            uv_rect: [0.0; 4],
+            layers: [0, 0],
+            size: [physical_size.0, physical_size.1],
+            corner_radii: [0.0; 4],
+            underline_style: 0,
+            clip_rect: [0.0; 4],
+        };
+        unsafe {
+            *(brush.bg_fill_instance_buffer.contents() as *mut QuadInstance) = instance;
+        }
+
+        render_encoder.set_render_pipeline_state(&brush.instanced_pipeline_state);
+        render_encoder.set_vertex_buffer(0, Some(&brush.bg_fill_instance_buffer), 0);
+        render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
+        render_encoder.set_fragment_buffer(1, Some(&brush.uniform_buffer), 0);
+        render_encoder.draw_primitives_instanced(
+            metal::MTLPrimitiveType::TriangleStrip,
+            0,
+            4,
+            1,
+        );
+
+        // Restore text pipeline state for downstream batches.
+        render_encoder.set_render_pipeline_state(&brush.pipeline_state);
+        render_encoder.set_vertex_buffer(0, Some(&brush.vertex_buffer), 0);
+        render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
+    }
+
     /// Find the least recently used graphic ID for eviction.
     /// Returns the GraphicId to evict, or None if cache is empty.
     fn find_oldest_graphic(&self) -> Option<GraphicId> {
@@ -2482,11 +2549,26 @@ impl Renderer {
         &mut self,
         context: &MetalContext,
         render_encoder: &metal::RenderCommandEncoderRef,
+        bg_color: Option<[f32; 4]>,
     ) {
         if let RendererType::Metal(brush) = &mut self.brush_type {
             let has_images = !self.image_draws.is_empty();
 
-            // Background image: drawn first so all subsequent text/rects
+            // Bg fill first, on a transparent-cleared surface — runs the
+            // shader's `prepare_output_rgb` per pixel so colorspace work
+            // happens on the GPU, matching ghostty's `bg_color_fragment`.
+            // No-op when there's no theme bg (the surface stays
+            // transparent and the desktop shows through).
+            if let Some(rgba) = bg_color {
+                Self::draw_bg_fill_metal(
+                    brush,
+                    render_encoder,
+                    (context.size.width, context.size.height),
+                    rgba,
+                );
+            }
+
+            // Background image: drawn next so all subsequent text/rects
             // composite on top.
             Self::draw_background_image_metal(
                 &self.background_image_texture,
