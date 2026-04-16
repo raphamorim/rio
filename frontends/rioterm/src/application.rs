@@ -64,7 +64,7 @@ impl Application<'_> {
         let scheduler = Scheduler::new(proxy);
         event_loop.listen_device_events(DeviceEvents::Never);
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         event_loop.set_confirm_before_quit(config.confirm_before_quit);
 
         rio_notifier::request_authorization();
