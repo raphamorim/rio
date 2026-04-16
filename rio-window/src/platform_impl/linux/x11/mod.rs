@@ -292,14 +292,9 @@ impl<T: 'static> EventLoop<T> {
         // sets `state.vsync_pending` for the main pump to fan out.
         let vblank_interval = {
             let primary_rate_mhz = xconn
-                .available_monitors()
+                .primary_monitor()
                 .ok()
-                .and_then(|monitors| {
-                    monitors
-                        .into_iter()
-                        .find(|m| m.is_primary())
-                        .and_then(|m| m.refresh_rate_millihertz())
-                })
+                .and_then(|m| m.refresh_rate_millihertz())
                 .unwrap_or(60_000);
             // millihertz → microseconds per frame: 1_000_000_000 / mHz.
             let micros = 1_000_000_000u64 / primary_rate_mhz.max(1) as u64;
@@ -643,12 +638,14 @@ impl<T: 'static> EventLoop<T> {
             let wt = EventProcessor::window_target(&self.event_processor.target);
             let present_after_input = wt.should_present_after_input();
             let windows = wt.windows.borrow();
-            for (&id, window) in windows.iter() {
-                let was_dirty = window
-                    .redraw_pending
-                    .swap(false, std::sync::atomic::Ordering::AcqRel);
-                if was_dirty || present_after_input {
-                    let _ = wt.redraw_sender.sender.send(id);
+            for (&id, weak) in windows.iter() {
+                if let Some(window) = weak.upgrade() {
+                    let was_dirty = window
+                        .redraw_pending
+                        .swap(false, std::sync::atomic::Ordering::AcqRel);
+                    if was_dirty || present_after_input {
+                        let _ = wt.redraw_sender.sender.send(id);
+                    }
                 }
             }
         }
