@@ -1538,7 +1538,7 @@ impl Renderer {
                     .map(|e| e.zerowidth.as_slice())
                     .unwrap_or(&[]);
 
-                let cell = IncompletePlacement::from_cell(
+                let mut cell = IncompletePlacement::from_cell(
                     style.fg,
                     style.underline_color,
                     combining,
@@ -1562,6 +1562,18 @@ impl Renderer {
                                 cell_height,
                                 VIRTUAL_Z_INDEX,
                             );
+                        }
+                        // Default missing row/col on the FIRST cell of a
+                        // run — matches ghostty's
+                        // `graphics_unicode.zig:84-86`. Without this,
+                        // a subsequent cell with `Some(col)` couldn't
+                        // sequentially extend a run started by a cell
+                        // with `None`.
+                        if cell.row.is_none() {
+                            cell.row = Some(0);
+                        }
+                        if cell.col.is_none() {
+                            cell.col = Some(0);
                         }
                         run = Some((cell, col_idx));
                     }
