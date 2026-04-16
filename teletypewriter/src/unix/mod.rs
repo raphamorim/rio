@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+#[cfg(target_os = "linux")]
+mod flatpak;
 #[cfg(target_os = "macos")]
 mod macos;
 mod signals;
@@ -497,36 +499,100 @@ pub fn create_pty_with_spawn(
 
     #[cfg(target_os = "linux")]
     {
-        // If running inside a flatpak sandbox.
-        // Must retrieve $SHELL from outside the sandbox, so ask the host.
-        if std::path::PathBuf::from("/.flatpak-info").exists() {
-            builder = Command::new("flatpak-spawn");
+        // Se executando dentro de um sandbox Flatpak, precisamos obter $SHELL
+        // de fora do sandbox via flatpak-spawn.
+        if flatpak::detectar_flatpak() {
+            if let Some(pty_host_path) = flatpak::caminho_rio_pty_host() {
+                // Caminho preferido: rio-pty-host aloca PTY no host.
+                // Resolve ENODEV em ttyname (gnupg2.sh, GPG_TTY, etc.).
+                // O controlling terminal é configurado pelo rio-pty-host no filho
+                // via setsid + TIOCSCTTY, por isso is_controling_terminal = false.
+                builder = Command::new("flatpak-spawn");
 
-            let mut with_args = vec![
-                "--host".to_string(),
-                "--watch-bus".to_string(),
-                "--env=COLORTERM=truecolor".to_string(),
-                "--env=TERM=rio".to_string(),
-            ];
+                let mut com_args = vec![
+                    "--host".to_string(),
+                    "--watch-bus".to_string(),
+                    "--env=COLORTERM=truecolor".to_string(),
+                    "--env=TERM=rio".to_string(),
+                ];
 
-            if let Some(directory) = working_directory {
-                with_args.push(format!(
-                    "--directory={}",
-                    std::path::Path::new(directory).display()
-                ));
+                if let Some(diretorio) = working_directory {
+                    com_args.push(format!(
+                        "--directory={}",
+                        std::path::Path::new(diretorio).display()
+                    ));
+                }
+
+                // Passar caminho do rio-pty-host seguido de COLS ROWS SHELL [-l]
+                com_args.push(pty_host_path.to_string_lossy().to_string());
+                com_args.push(columns.to_string());
+                com_args.push(rows.to_string());
+
+                let shell_host = {
+                    let output = std::process::Command::new("flatpak-spawn")
+                        .args(["--host", "sh", "-c", "echo $SHELL"])
+                        .output()?;
+                    let raw = String::from_utf8_lossy(&output.stdout);
+                    let trimado = raw.trim();
+                    if trimado.is_empty() {
+                        tracing::warn!(
+                            "flatpak: $SHELL vazio no host, usando /bin/sh como fallback"
+                        );
+                        "/bin/sh".to_string()
+                    } else {
+                        trimado.to_string()
+                    }
+                };
+
+                com_args.push(shell_host);
+                com_args.push("-l".to_string());
+
+                builder.args(com_args);
+                is_controling_terminal = false;
+            } else {
+                // Fallback legado: comportamento anterior ao rio-pty-host.
+                // GPG_TTY pode falhar com ENODEV em ttyname — aviso cosmético.
+                tracing::warn!(
+                    "flatpak: rio-pty-host indisponível — usando flatpak-spawn direto \
+                     (GPG_TTY pode falhar com ENODEV em ttyname)"
+                );
+                builder = Command::new("flatpak-spawn");
+
+                let mut with_args = vec![
+                    "--host".to_string(),
+                    "--watch-bus".to_string(),
+                    "--env=COLORTERM=truecolor".to_string(),
+                    "--env=TERM=rio".to_string(),
+                ];
+
+                if let Some(directory) = working_directory {
+                    with_args.push(format!(
+                        "--directory={}",
+                        std::path::Path::new(directory).display()
+                    ));
+                }
+
+                let output = std::process::Command::new("flatpak-spawn")
+                    .args(["--host", "sh", "-c", "echo $SHELL"])
+                    .output()?;
+                let shell_raw = String::from_utf8_lossy(&output.stdout);
+                let shell_trimado = shell_raw.trim();
+                let shell_fallback = if shell_trimado.is_empty() {
+                    tracing::warn!(
+                        "flatpak: $SHELL vazio no host (fallback legado), \
+                         usando /bin/sh como fallback"
+                    );
+                    "/bin/sh".to_string()
+                } else {
+                    shell_trimado.to_string()
+                };
+
+                with_args.push(shell_fallback);
+                with_args.push("-l".to_string());
+
+                builder.args(with_args);
+                is_controling_terminal = false;
             }
-
-            let output = std::process::Command::new("flatpak-spawn")
-                .args(["--host", "sh", "-c", "echo $SHELL"])
-                .output()?;
-            let shell = String::from_utf8_lossy(&output.stdout);
-
-            with_args.push(shell.trim().to_string());
-            with_args.push("-l".to_string());
-
-            builder.args(with_args);
-
-            is_controling_terminal = false;
         }
     }
 
