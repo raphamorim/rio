@@ -132,6 +132,10 @@ pub struct UnownedWindow {
     pub shared_state: Mutex<SharedState>,
     redraw_sender: WakeSender<WindowId>,
     activation_sender: WakeSender<super::ActivationToken>,
+    /// Per-window dirty flag set by `request_redraw`. The vsync
+    /// timer tick checks this to decide whether to emit
+    /// `RedrawRequested` (matches macOS / Windows).
+    pub(crate) redraw_pending: std::sync::atomic::AtomicBool,
 }
 
 macro_rules! leap {
@@ -374,6 +378,7 @@ impl UnownedWindow {
             shared_state: SharedState::new(guessed_monitor, &window_attrs),
             redraw_sender: event_loop.redraw_sender.clone(),
             activation_sender: event_loop.activation_sender.clone(),
+            redraw_pending: std::sync::atomic::AtomicBool::new(false),
         };
 
         // Title must be set before mapping. Some tiling window managers (i.e. i3) use the window
@@ -1983,9 +1988,8 @@ impl UnownedWindow {
 
     #[inline]
     pub fn request_redraw(&self) {
-        self.redraw_sender
-            .send(WindowId(self.xwindow as _))
-            .unwrap();
+        self.redraw_pending
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     #[inline]

@@ -635,15 +635,19 @@ impl<T: 'static> EventLoop<T> {
             }
         }
 
-        // Vsync tick → fan out `RedrawRequested` to visible windows
-        // when within the 1-second post-input window.
+        // Vsync tick → fan out `RedrawRequested` per window when
+        // dirty OR within the 1-second post-input window (matches
+        // macOS CVDisplayLink and Windows DwmFlush models).
         if self.state.vsync_pending {
             self.state.vsync_pending = false;
             let wt = EventProcessor::window_target(&self.event_processor.target);
-            if wt.should_present_after_input() {
-                let visible_ids: Vec<WindowId> =
-                    wt.windows.borrow().keys().copied().collect();
-                for id in visible_ids {
+            let present_after_input = wt.should_present_after_input();
+            let windows = wt.windows.borrow();
+            for (&id, window) in windows.iter() {
+                let was_dirty = window
+                    .redraw_pending
+                    .swap(false, std::sync::atomic::Ordering::AcqRel);
+                if was_dirty || present_after_input {
                     let _ = wt.redraw_sender.sender.send(id);
                 }
             }
