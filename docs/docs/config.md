@@ -1705,6 +1705,8 @@ blur = true
 
 ![Demo blur and background opacity 2](/assets/demos/demos-nixos-blur.png)
 
+![Demo blur on Windows](/assets/demos/demo-windows-blur.webp)
+
 ## window.background-image
 
 Set an image as the window background. The image is uploaded once into a dedicated GPU texture sized to the source dimensions and stretched to cover the full window.
