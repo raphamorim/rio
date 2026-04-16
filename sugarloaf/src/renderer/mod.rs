@@ -48,6 +48,13 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     },
 });
 
+// `WgpuRenderer` is much larger than `MetalRenderer` (which shrunk to a
+// pool handle + a few pipeline states after the triple-buffer refactor),
+// so the enum-variant size disparity is intentional. We don't `Box` the
+// hot variants — they're each constructed exactly once per Sugarloaf
+// instance, and the inline storage avoids an extra allocation + indirection
+// on every render call.
+#[allow(clippy::large_enum_variant)]
 pub enum RendererType {
     Wgpu(WgpuRenderer),
     #[cfg(target_os = "macos")]
@@ -543,6 +550,7 @@ impl MetalRenderer {
     /// `set_vertex_bytes` / `set_fragment_bytes` (no buffer needed for an
     /// 80-byte struct).
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn render(
         &mut self,
         instances: &[batch::QuadInstance],
@@ -1916,6 +1924,7 @@ impl Renderer {
     /// only ever render the most recent one.
     #[cfg(target_os = "macos")]
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     fn draw_images_metal(
         image_draws: &[ImageDraw],
         image_textures: &FxHashMap<u32, ImageTextureEntry>,
