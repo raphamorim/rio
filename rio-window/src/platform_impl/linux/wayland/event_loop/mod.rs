@@ -483,6 +483,9 @@ impl<T: 'static> EventLoop<T> {
 
         for window_id in window_ids.iter() {
             let event = self.with_state(|state| {
+                // Cache before mutably borrowing state.windows.
+                let present_after_input = state.should_present_after_input();
+
                 let window_requests = state.window_requests.get_mut();
                 if window_requests.get(window_id).unwrap().take_closed() {
                     mem::drop(window_requests.remove(window_id));
@@ -502,18 +505,6 @@ impl<T: 'static> EventLoop<T> {
                     return None;
                 }
 
-                // Auto-loop: when the compositor delivers a Done
-                // (state == Received), re-arm the next frame callback
-                // unconditionally. Then decide whether to actually emit
-                // a RedrawRequested for this tick — the gate is the
-                // 1-second post-input window (`should_present_after_input`),
-                // mirroring macOS in
-                // `rio-window/src/platform_impl/macos/window_delegate.rs:997`.
-                // During interaction every vsync ticks a redraw to keep
-                // ProMotion/144Hz at peak refresh; on idle the auto-loop
-                // keeps the callback armed but doesn't burn CPU rendering.
-                // Compositors stop delivering Done for occluded windows
-                // so the loop pauses naturally.
                 let was_received =
                     window.frame_callback_state() == FrameCallbackState::Received;
                 window.frame_callback_reset();
@@ -526,9 +517,8 @@ impl<T: 'static> EventLoop<T> {
                     .unwrap()
                     .take_redraw_requested();
 
-                // Redraw the frame while at it.
                 redraw_requested |= window.refresh_frame();
-                redraw_requested |= was_received && state.should_present_after_input();
+                redraw_requested |= was_received && present_after_input;
 
                 redraw_requested.then_some(WindowEvent::RedrawRequested)
             });
