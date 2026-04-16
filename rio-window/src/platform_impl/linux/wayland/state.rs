@@ -121,16 +121,11 @@ pub struct WinitState {
 }
 
 impl WinitState {
-    /// Set `last_input_timestamp` to `now`. Called from each Wayland
-    /// input handler (keyboard, pointer, scroll). Mirrors macOS
-    /// `mark_input_received` in `window_delegate.rs:986`.
     #[inline]
     pub fn mark_input_received(&self) {
         self.last_input_timestamp.set(std::time::Instant::now());
     }
 
-    /// True for 1 second after the most recent input event. Mirrors
-    /// macOS `should_present_after_input` in `window_delegate.rs:997`.
     #[inline]
     pub fn should_present_after_input(&self) -> bool {
         self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
