@@ -246,8 +246,9 @@ impl MetalRenderer {
             .object_at(0)
             .unwrap();
         // Must match the drawable format in `context/metal.rs` — HW will
-        // reject the pipeline otherwise. `_sRGB` enables linear-light blending.
-        color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm_sRGB);
+        // reject the pipeline otherwise. Plain `BGRA8Unorm` → gamma-space
+        // alpha blending (ghostty `alpha-blending = native`).
+        color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         color_attachment.set_blending_enabled(true);
         // Match WGSL BLEND settings exactly:
         // color: src_factor: SrcAlpha, dst_factor: OneMinusSrcAlpha, operation: Add
@@ -279,7 +280,7 @@ impl MetalRenderer {
             .color_attachments()
             .object_at(0)
             .unwrap();
-        inst_color.set_pixel_format(MTLPixelFormat::BGRA8Unorm_sRGB);
+        inst_color.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         inst_color.set_blending_enabled(true);
         inst_color.set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
         inst_color.set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
@@ -388,7 +389,7 @@ impl MetalRenderer {
             .color_attachments()
             .object_at(0)
             .unwrap();
-        image_color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm_sRGB);
+        image_color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         image_color_attachment.set_blending_enabled(true);
         // Premultiplied alpha: One, OneMinusSrcAlpha
         image_color_attachment.set_source_rgb_blend_factor(MTLBlendFactor::One);
@@ -764,7 +765,18 @@ fn upload_background_image_texture(
         #[cfg(target_os = "macos")]
         crate::context::ContextType::Metal(ctx) => {
             let desc = metal::TextureDescriptor::new();
-            desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
+            // `_sRGB` is mandatory: with bilinear sampling enabled on the
+            // image sampler, the HW interpolates between texels in the
+            // texture's native space. With a non-sRGB format the texels
+            // are gamma-encoded, so interpolation happens in gamma space
+            // and midtones at scaled edges come out visibly darker than
+            // ghostty's. With `_sRGB` the HW decodes each texel to linear
+            // before mixing, producing the correct linear-light blend
+            // (matches ghostty's `bgra8unorm_srgb` in `Metal.zig:374`).
+            // The fragment shader then `unlinearize`s the sampled value
+            // back to gamma-encoded sRGB before writing to the gamma
+            // framebuffer.
+            desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm_sRGB);
             desc.set_width(pixels.width as u64);
             desc.set_height(pixels.height as u64);
             desc.set_usage(
@@ -1757,7 +1769,11 @@ impl Renderer {
                 #[cfg(target_os = "macos")]
                 crate::context::ContextType::Metal(ctx) => {
                     let desc = metal::TextureDescriptor::new();
-                    desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
+                    // `_sRGB`: bilinear sampling must interpolate in
+                    // linear light, otherwise scaled midtones come out
+                    // dark — see the matching note on the background-image
+                    // texture above.
+                    desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm_sRGB);
                     desc.set_width(width as u64);
                     desc.set_height(height as u64);
                     desc.set_usage(

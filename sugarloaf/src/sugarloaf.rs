@@ -97,11 +97,12 @@ pub enum Colorspace {
     Rec2020,
 }
 
-/// Linearize a single sRGB channel (IEC 61966-2-1). Mirrors the
-/// `srgb_to_linear` helper in `renderer.metal` / `image.metal` — used at the
-/// Rust boundary when handing colors to `_sRGB` render targets (clear colors,
-/// etc.) so we don't double-encode a value that the HW will gamma-encode on
-/// write. Alpha is linear by convention; never pass it through this.
+/// sRGB transfer curve (IEC 61966-2-1) and its inverse. Mirror the
+/// `srgb_to_linear` / `linear_to_srgb` helpers in `renderer.metal` so the
+/// clear color goes through the exact same encode chain the fragment shader
+/// uses, producing a background pixel that matches shader output for the
+/// same theme bytes. Alpha is linear by convention — never route through
+/// these.
 #[cfg(target_os = "macos")]
 #[inline]
 fn srgb_channel_to_linear(c: f64) -> f64 {
@@ -109,6 +110,16 @@ fn srgb_channel_to_linear(c: f64) -> f64 {
         c / 12.92
     } else {
         ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[inline]
+fn linear_channel_to_srgb(c: f64) -> f64 {
+    if c <= 0.0031308 {
+        c * 12.92
+    } else {
+        c.powf(1.0 / 2.4) * 1.055 - 0.055
     }
 }
 
@@ -138,10 +149,14 @@ fn linear_rec2020_to_linear_p3(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     )
 }
 
-/// Prepare a CPU-side theme color for an `_sRGB` + DisplayP3-tagged render
-/// target. Linearizes (mandatory for the HW encode to work) and, depending
-/// on `colorspace`, runs the matching primaries matrix so the clear color
-/// matches what the shader emits for the same input bytes.
+/// Prepare a CPU-side theme color for a plain `BGRA8Unorm` + DisplayP3-tagged
+/// render target. With the non-sRGB pixel format Metal stores MTLClearColor
+/// components verbatim, so we need to emit the exact byte pattern we want on
+/// screen: linearize → sRGB/Rec.2020 → P3 primaries (if input isn't already
+/// P3) → re-encode with the sRGB transfer curve. Produces the same pixel the
+/// fragment shader's `prepare_output_rgb` produces for the same input bytes,
+/// which is what makes a clear-filled cell look identical to a shader-drawn
+/// quad of the same colour.
 #[cfg(target_os = "macos")]
 #[inline]
 fn prepare_output_rgb_f64(
@@ -153,11 +168,16 @@ fn prepare_output_rgb_f64(
     let r = srgb_channel_to_linear(r);
     let g = srgb_channel_to_linear(g);
     let b = srgb_channel_to_linear(b);
-    match colorspace {
+    let (r, g, b) = match colorspace {
         Colorspace::Srgb => linear_srgb_to_linear_p3(r, g, b),
         Colorspace::DisplayP3 => (r, g, b),
         Colorspace::Rec2020 => linear_rec2020_to_linear_p3(r, g, b),
-    }
+    };
+    (
+        linear_channel_to_srgb(r),
+        linear_channel_to_srgb(g),
+        linear_channel_to_srgb(b),
+    )
 }
 
 #[allow(clippy::derivable_impls)]
@@ -1118,17 +1138,16 @@ impl Sugarloaf<'_> {
 
                 // Set background color.
                 //
-                // The drawable is `BGRA8Unorm_sRGB` + DisplayP3-tagged (see
-                // `context/metal.rs`). That means Metal reads `MTLClearColor`
-                // components as *linear* RGB in the drawable's color space
-                // and applies the sRGB transfer curve on write. Rio's theme
-                // colors arrive here sRGB-encoded with their primaries
-                // declared by `[window] colorspace`, so we need to:
-                // 1. Linearize (mandatory — HW-encode expects linear input),
-                // 2. Convert sRGB → P3 primaries if the config says the
-                //    inputs are sRGB, so the clear pixel matches what the
-                //    shader emits for the same theme bytes (see
-                //    `renderer.metal`'s `prepare_output_rgb`).
+                // The drawable is plain `BGRA8Unorm` + DisplayP3-tagged (see
+                // `context/metal.rs`) — Metal writes `MTLClearColor` bytes
+                // verbatim, no transfer curve applied. To make the cleared
+                // pixel look identical to a shader-drawn quad of the same
+                // theme colour, we put the input through the same chain
+                // `renderer.metal`'s `prepare_output_rgb` does:
+                // 1. linearize the sRGB-encoded theme bytes,
+                // 2. gamut-map to DisplayP3 primaries (unless the config
+                //    says inputs are already P3),
+                // 3. re-apply the sRGB transfer curve.
                 let clear_color = if let Some(background_color) = self.background_color {
                     let (r, g, b) = prepare_output_rgb_f64(
                         background_color.r,
