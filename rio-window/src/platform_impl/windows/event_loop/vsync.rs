@@ -75,6 +75,10 @@ impl VSyncSharedState {
         self.windows.write().unwrap().remove(&(hwnd as usize));
     }
 
+    pub(crate) fn window_count(&self) -> usize {
+        self.windows.read().unwrap().len()
+    }
+
     #[inline]
     pub(crate) fn mark_input_received(&self) {
         *self.last_input_timestamp.lock().unwrap() = Instant::now();
