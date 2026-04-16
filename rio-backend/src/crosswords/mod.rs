@@ -2552,6 +2552,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
+        // Set the per-row kitty placeholder flag so the renderer can
+        // skip the U+10EEEE scan on rows that don't have any. Mirrors
+        // ghostty's `page.zig:1953-1958` approach.
+        if c == crate::ansi::kitty_virtual::PLACEHOLDER {
+            let line = self.grid.cursor.pos.row;
+            self.grid[line].kitty_virtual_placeholder = true;
+        }
+
         if width == 1 {
             self.write_at_cursor(c);
         } else {
@@ -3541,7 +3549,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // as blank space.
         if placement.virtual_placement {
             let pixel_data = graphic_data.clone();
-            self.graphics.store_kitty_image(image_id, None, graphic_data);
+            self.graphics
+                .store_kitty_image(image_id, None, graphic_data);
             self.graphics.pending_images.push((image_id, pixel_data));
             self.graphics.kitty_graphics_dirty = true;
             self.send_graphics_updates();
@@ -5815,17 +5824,13 @@ mod tests {
         //    don't care about the pixel data — we just need an entry in
         //    `kitty_images` so the renderer's existence check passes).
         //    base64("\xFF\x00\x00\xFF") = "/wAA/w==".
-        let xmit = format!(
-            "\x1b_Gf=32,a=t,i={image_id},s=1,v=1;/wAA/w==\x1b\\"
-        );
+        let xmit = format!("\x1b_Gf=32,a=t,i={image_id},s=1,v=1;/wAA/w==\x1b\\");
         processor.advance(&mut cw, xmit.as_bytes());
 
         // 2) Register the virtual placement: 4 cols × 2 rows.
         let cols = 4u32;
         let rows = 2u32;
-        let place = format!(
-            "\x1b_Ga=p,U=1,i={image_id},c={cols},r={rows},q=2\x1b\\"
-        );
+        let place = format!("\x1b_Ga=p,U=1,i={image_id},c={cols},r={rows},q=2\x1b\\");
         processor.advance(&mut cw, place.as_bytes());
 
         // 3) Emit the placeholder cells themselves (what icat writes
@@ -5893,11 +5898,43 @@ mod tests {
                     .and_then(|id| extras.get(id))
                     .map(|e| e.zerowidth.as_slice())
                     .unwrap_or(&[]);
-                assert_eq!(zw.len(), 3, "expected 3 diacritics at ({row},{col}), got {}", zw.len());
-                assert_eq!(zw[0], DIACRITICS[row], "row diacritic mismatch at ({row},{col})");
-                assert_eq!(zw[1], DIACRITICS[col], "col diacritic mismatch at ({row},{col})");
-                assert_eq!(zw[2], id_high_diac, "high diacritic mismatch at ({row},{col})");
+                assert_eq!(
+                    zw.len(),
+                    3,
+                    "expected 3 diacritics at ({row},{col}), got {}",
+                    zw.len()
+                );
+                assert_eq!(
+                    zw[0], DIACRITICS[row],
+                    "row diacritic mismatch at ({row},{col})"
+                );
+                assert_eq!(
+                    zw[1], DIACRITICS[col],
+                    "col diacritic mismatch at ({row},{col})"
+                );
+                assert_eq!(
+                    zw[2], id_high_diac,
+                    "high diacritic mismatch at ({row},{col})"
+                );
             }
+        }
+
+        // Per-row dirty flag: rows that received placeholder cells must
+        // have it set; other rows must not. Mirrors ghostty's
+        // `page.zig:1953-1958` `kitty_virtual_placeholder`.
+        for row in 0..(rows as i32) {
+            assert!(
+                cw.grid[Line(row)].kitty_virtual_placeholder,
+                "row {row} should have kitty_virtual_placeholder = true",
+            );
+        }
+        // A row past the placement (no placeholder cells written there).
+        let past = rows as i32;
+        if past < cw.grid.screen_lines() as i32 {
+            assert!(
+                !cw.grid[Line(past)].kitty_virtual_placeholder,
+                "row {past} (no placeholders) must not have the flag set",
+            );
         }
     }
 
