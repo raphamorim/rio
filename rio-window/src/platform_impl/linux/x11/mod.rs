@@ -359,6 +359,8 @@ impl<T: 'static> EventLoop<T> {
         // Set initial device event filter.
         window_target.update_listen_device_events(true);
 
+        let redraw_flag = window_target.redraw_flag.clone();
+
         let root_window_target = RootAEL {
             p: PlatformActiveEventLoop::X(window_target),
             _marker: PhantomData,
@@ -421,7 +423,7 @@ impl<T: 'static> EventLoop<T> {
             state: EventLoopState {
                 x11_readiness: Readiness::EMPTY,
                 vsync_pending: false,
-                redraw_flag: wt.redraw_flag.clone(),
+                redraw_flag,
             },
         }
     }
