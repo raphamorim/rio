@@ -5838,9 +5838,7 @@ mod tests {
         //    write `<U+10EEEE><row><col><high>` per cell.
         let id_high_diac = DIACRITICS[high as usize];
         let mut cells = format!("\x1b[38:2:{r}:{g}:{b}m");
-        for (row, &row_diac) in
-            DIACRITICS.iter().enumerate().take(rows as usize)
-        {
+        for (row, &row_diac) in DIACRITICS.iter().enumerate().take(rows as usize) {
             for &col_diac in DIACRITICS.iter().take(cols as usize) {
                 cells.push(PLACEHOLDER);
                 cells.push(row_diac);
@@ -5875,12 +5873,8 @@ mod tests {
         let style_set = cw.grid.style_set.clone();
         let extras = cw.grid.extras_table.clone();
         let _ = columns;
-        for (row, &row_diac) in
-            DIACRITICS.iter().enumerate().take(rows as usize)
-        {
-            for (col, &col_diac) in
-                DIACRITICS.iter().enumerate().take(cols as usize)
-            {
+        for (row, &row_diac) in DIACRITICS.iter().enumerate().take(rows as usize) {
+            for (col, &col_diac) in DIACRITICS.iter().enumerate().take(cols as usize) {
                 let sq = cw.grid[Line(row as i32)][Column(col)];
                 assert_eq!(
                     sq.c(),
@@ -5908,14 +5902,8 @@ mod tests {
                     "expected 3 diacritics at ({row},{col}), got {}",
                     zw.len()
                 );
-                assert_eq!(
-                    zw[0], DIACRITICS[row],
-                    "row diacritic mismatch at ({row},{col})"
-                );
-                assert_eq!(
-                    zw[1], DIACRITICS[col],
-                    "col diacritic mismatch at ({row},{col})"
-                );
+                assert_eq!(zw[0], row_diac, "row diacritic mismatch at ({row},{col})");
+                assert_eq!(zw[1], col_diac, "col diacritic mismatch at ({row},{col})");
                 assert_eq!(
                     zw[2], id_high_diac,
                     "high diacritic mismatch at ({row},{col})"
