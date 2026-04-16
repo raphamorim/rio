@@ -145,12 +145,7 @@ pub struct ActiveEventLoop {
     redraw_sender: WakeSender<WindowId>,
     activation_sender: WakeSender<ActivationToken>,
     device_events: Cell<DeviceEvents>,
-    /// Timestamp of the most recent input event. Mirrors macOS's
-    /// `last_input_timestamp` in
-    /// `rio-window/src/platform_impl/macos/window_delegate.rs:139`.
-    /// The vsync timer's fan-out checks `should_present_after_input` to
-    /// decide whether to emit `RedrawRequested` to keep ProMotion /
-    /// 144Hz at peak refresh during interaction.
+    /// Timestamp of the most recent input event.
     last_input_timestamp: Cell<std::time::Instant>,
 }
 

@@ -38,11 +38,7 @@ pub(crate) struct EventLoopRunner<T: 'static> {
 
     panic_error: Cell<Option<PanicError>>,
 
-    /// Timestamp of the most recent input event. Mirrors macOS's
-    /// `last_input_timestamp` and the Wayland/X11 implementations.
-    /// The DwmFlush vsync worker uses `should_present_after_input`
-    /// (1 s window) to decide whether to fan out a per-vsync
-    /// `RDW_INTERNALPAINT` to visible windows.
+    /// Timestamp of the most recent input event.
     last_input_timestamp: Cell<Instant>,
 }
 
@@ -83,16 +79,11 @@ impl<T> EventLoopRunner<T> {
         }
     }
 
-    /// Set `last_input_timestamp` to `now`. Called from each Win32
-    /// input handler. Mirrors macOS `mark_input_received` in
-    /// `window_delegate.rs:986` and the Wayland/X11 equivalents.
     #[inline]
     pub(crate) fn mark_input_received(&self) {
         self.last_input_timestamp.set(Instant::now());
     }
 
-    /// True for 1 second after the most recent input event. Mirrors
-    /// macOS `should_present_after_input` in `window_delegate.rs:997`.
     #[inline]
     pub(crate) fn should_present_after_input(&self) -> bool {
         self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
