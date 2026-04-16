@@ -293,14 +293,8 @@ impl<T: 'static> EventLoop<T> {
             })
             .expect("Failed to register the event loop waker source");
 
-        // Vsync tick source — fires at the primary monitor's refresh rate
-        // and sets `state.vsync_pending` so the main pump can fan out a
-        // synthetic `RedrawRequested` to every visible window. Mirrors
-        // zed's X11 timer at `gpui_linux/src/linux/x11/client.rs:1934-1971`
-        // and is what makes the cross-platform input-rate sustain (zed's
-        // `InputRateTracker`) actually keep ProMotion / 144Hz at peak
-        // refresh — without a continuous tick source the sustain would
-        // have no edge to fire on.
+        // Vsync tick source at the primary monitor's refresh rate;
+        // sets `state.vsync_pending` for the main pump to fan out.
         let vblank_interval = {
             let primary_rate_mhz = xconn
                 .available_monitors()
@@ -646,14 +640,8 @@ impl<T: 'static> EventLoop<T> {
             }
         }
 
-        // Vsync tick → synthesize a `RedrawRequested` for every visible
-        // window when we're inside the 1-second post-input window. The
-        // gate matches macOS (`should_present_after_input` in
-        // `rio-window/src/platform_impl/macos/window_delegate.rs:997`):
-        // outside the window we let the timer tick but don't fan out
-        // any redraws, so an idle terminal doesn't burn CPU. During
-        // interaction the synthetic ticks keep ProMotion / 144Hz at
-        // peak refresh.
+        // Vsync tick → fan out `RedrawRequested` to visible windows
+        // when within the 1-second post-input window.
         if self.state.vsync_pending {
             self.state.vsync_pending = false;
             let wt = EventProcessor::window_target(&self.event_processor.target);
@@ -750,18 +738,11 @@ impl<T> AsRawFd for EventLoop<T> {
 }
 
 impl ActiveEventLoop {
-    /// Set `last_input_timestamp` to `now`. Called from each input
-    /// handler in `event_processor` (key, button, motion, scroll).
-    /// Mirrors macOS `mark_input_received` in `window_delegate.rs:986`.
     #[inline]
     pub(crate) fn mark_input_received(&self) {
         self.last_input_timestamp.set(std::time::Instant::now());
     }
 
-    /// True for 1 second after the most recent input event. Mirrors
-    /// macOS `should_present_after_input` in `window_delegate.rs:997`.
-    /// The vsync fan-out uses this to keep emitting `RedrawRequested`
-    /// during interaction so the display stays at peak refresh.
     #[inline]
     pub(crate) fn should_present_after_input(&self) -> bool {
         self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
