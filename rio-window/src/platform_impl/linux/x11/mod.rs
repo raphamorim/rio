@@ -147,6 +147,12 @@ pub struct ActiveEventLoop {
     device_events: Cell<DeviceEvents>,
     /// Timestamp of the most recent input event.
     last_input_timestamp: Cell<std::time::Instant>,
+    /// Shared with `EventLoopState` and every window. Set by
+    /// `request_redraw`, checked by `has_pending`, cleared by
+    /// the vsync tick after fanning out.
+    pub(super) redraw_flag: Arc<std::sync::atomic::AtomicBool>,
+    /// Waker ping so `request_redraw` can unblock calloop dispatch.
+    pub(super) waker: Ping,
 }
 
 pub struct EventLoop<T: 'static> {
@@ -168,13 +174,11 @@ type ActivationToken = (WindowId, crate::event_loop::AsyncRequestSerial);
 struct EventLoopState {
     /// The latest readiness state for the x11 file descriptor
     x11_readiness: Readiness,
-    /// Set by the vsync timer source on every tick. The main pump
-    /// reads + clears it and emits a synthetic `RedrawRequested` for
-    /// every visible window. Mirrors zed's
-    /// `gpui_linux/src/linux/x11/client.rs:1934-1971` continuous-tick
-    /// approach so the cross-platform input-rate sustain logic always
-    /// has a vsync edge to act on.
     vsync_pending: bool,
+    /// Set by `request_redraw` (via the shared `Arc<AtomicBool>`).
+    /// Checked by `has_pending` so the event loop wakes even when
+    /// the timer hasn't fired yet.
+    redraw_flag: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub struct EventLoopProxy<T: 'static> {
@@ -348,6 +352,8 @@ impl<T: 'static> EventLoop<T> {
             },
             device_events: Default::default(),
             last_input_timestamp: Cell::new(std::time::Instant::now()),
+            redraw_flag: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            waker: waker.clone(),
         };
 
         // Set initial device event filter.
@@ -415,6 +421,7 @@ impl<T: 'static> EventLoop<T> {
             state: EventLoopState {
                 x11_readiness: Readiness::EMPTY,
                 vsync_pending: false,
+                redraw_flag: wt.redraw_flag.clone(),
             },
         }
     }
@@ -497,6 +504,10 @@ impl<T: 'static> EventLoop<T> {
 
     fn has_pending(&mut self) -> bool {
         self.state.vsync_pending
+            || self
+                .state
+                .redraw_flag
+                .load(std::sync::atomic::Ordering::Acquire)
             || self.event_processor.poll()
             || self.user_receiver.has_incoming()
             || self.redraw_receiver.has_incoming()
@@ -631,9 +642,8 @@ impl<T: 'static> EventLoop<T> {
             }
         }
 
-        // Vsync tick → fan out `RedrawRequested` per window when
-        // dirty OR within the 1-second post-input window (matches
-        // macOS CVDisplayLink and Windows DwmFlush models).
+        // Vsync tick → per-window dirty OR sustain check (matches
+        // macOS CVDisplayLink / Windows DwmFlush / zed X11 timer).
         if self.state.vsync_pending {
             self.state.vsync_pending = false;
             let wt = EventProcessor::window_target(&self.event_processor.target);
