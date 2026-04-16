@@ -44,6 +44,12 @@ impl PointerHandler for WinitState {
         pointer: &WlPointer,
         events: &[PointerEvent],
     ) {
+        // Mirror macOS: any pointer activity keeps the 1-second
+        // post-input window alive so the Wayland frame-callback
+        // auto-loop emits RedrawRequested even on idle ticks during
+        // interaction (mouse drag, scroll, hover-to-select).
+        self.mark_input_received();
+
         let seat = pointer.winit_data().seat();
         let seat_state = match self.seats.get(&seat.id()) {
             Some(seat_state) => seat_state,

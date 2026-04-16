@@ -145,6 +145,13 @@ pub struct ActiveEventLoop {
     redraw_sender: WakeSender<WindowId>,
     activation_sender: WakeSender<ActivationToken>,
     device_events: Cell<DeviceEvents>,
+    /// Timestamp of the most recent input event. Mirrors macOS's
+    /// `last_input_timestamp` in
+    /// `rio-window/src/platform_impl/macos/window_delegate.rs:139`.
+    /// The vsync timer's fan-out checks `should_present_after_input` to
+    /// decide whether to emit `RedrawRequested` to keep ProMotion /
+    /// 144Hz at peak refresh during interaction.
+    last_input_timestamp: Cell<std::time::Instant>,
 }
 
 pub struct EventLoop<T: 'static> {
@@ -166,6 +173,13 @@ type ActivationToken = (WindowId, crate::event_loop::AsyncRequestSerial);
 struct EventLoopState {
     /// The latest readiness state for the x11 file descriptor
     x11_readiness: Readiness,
+    /// Set by the vsync timer source on every tick. The main pump
+    /// reads + clears it and emits a synthetic `RedrawRequested` for
+    /// every visible window. Mirrors zed's
+    /// `gpui_linux/src/linux/x11/client.rs:1934-1971` continuous-tick
+    /// approach so the cross-platform input-rate sustain logic always
+    /// has a vsync edge to act on.
+    vsync_pending: bool,
 }
 
 pub struct EventLoopProxy<T: 'static> {
@@ -279,6 +293,41 @@ impl<T: 'static> EventLoop<T> {
             })
             .expect("Failed to register the event loop waker source");
 
+        // Vsync tick source — fires at the primary monitor's refresh rate
+        // and sets `state.vsync_pending` so the main pump can fan out a
+        // synthetic `RedrawRequested` to every visible window. Mirrors
+        // zed's X11 timer at `gpui_linux/src/linux/x11/client.rs:1934-1971`
+        // and is what makes the cross-platform input-rate sustain (zed's
+        // `InputRateTracker`) actually keep ProMotion / 144Hz at peak
+        // refresh — without a continuous tick source the sustain would
+        // have no edge to fire on.
+        let vblank_interval = {
+            let primary_rate_mhz = xconn
+                .available_monitors()
+                .ok()
+                .and_then(|monitors| {
+                    monitors
+                        .into_iter()
+                        .find(|m| m.is_primary())
+                        .and_then(|m| m.refresh_rate_millihertz())
+                })
+                .unwrap_or(60_000);
+            // millihertz → microseconds per frame: 1_000_000_000 / mHz.
+            let micros = 1_000_000_000u64 / primary_rate_mhz.max(1) as u64;
+            std::time::Duration::from_micros(micros)
+        };
+        let vsync_timer = calloop::timer::Timer::from_duration(vblank_interval);
+        event_loop
+            .handle()
+            .insert_source(vsync_timer, move |_deadline, _, state| {
+                state.vsync_pending = true;
+                // Reschedule for the next vblank.
+                calloop::timer::TimeoutAction::ToInstant(
+                    std::time::Instant::now() + vblank_interval,
+                )
+            })
+            .expect("Failed to register the vsync timer source");
+
         // Create a channel for handling redraw requests.
         let (redraw_sender, redraw_channel) = mpsc::channel();
 
@@ -314,6 +363,7 @@ impl<T: 'static> EventLoop<T> {
                 waker: waker.clone(),
             },
             device_events: Default::default(),
+            last_input_timestamp: Cell::new(std::time::Instant::now()),
         };
 
         // Set initial device event filter.
@@ -380,6 +430,7 @@ impl<T: 'static> EventLoop<T> {
             user_sender,
             state: EventLoopState {
                 x11_readiness: Readiness::EMPTY,
+                vsync_pending: false,
             },
         }
     }
@@ -595,6 +646,26 @@ impl<T: 'static> EventLoop<T> {
             }
         }
 
+        // Vsync tick → synthesize a `RedrawRequested` for every visible
+        // window when we're inside the 1-second post-input window. The
+        // gate matches macOS (`should_present_after_input` in
+        // `rio-window/src/platform_impl/macos/window_delegate.rs:997`):
+        // outside the window we let the timer tick but don't fan out
+        // any redraws, so an idle terminal doesn't burn CPU. During
+        // interaction the synthetic ticks keep ProMotion / 144Hz at
+        // peak refresh.
+        if self.state.vsync_pending {
+            self.state.vsync_pending = false;
+            let wt = EventProcessor::window_target(&self.event_processor.target);
+            if wt.should_present_after_input() {
+                let visible_ids: Vec<WindowId> =
+                    wt.windows.borrow().keys().copied().collect();
+                for id in visible_ids {
+                    let _ = wt.redraw_sender.sender.send(id);
+                }
+            }
+        }
+
         // Empty the redraw requests
         {
             let mut windows = HashSet::new();
@@ -679,6 +750,23 @@ impl<T> AsRawFd for EventLoop<T> {
 }
 
 impl ActiveEventLoop {
+    /// Set `last_input_timestamp` to `now`. Called from each input
+    /// handler in `event_processor` (key, button, motion, scroll).
+    /// Mirrors macOS `mark_input_received` in `window_delegate.rs:986`.
+    #[inline]
+    pub(crate) fn mark_input_received(&self) {
+        self.last_input_timestamp.set(std::time::Instant::now());
+    }
+
+    /// True for 1 second after the most recent input event. Mirrors
+    /// macOS `should_present_after_input` in `window_delegate.rs:997`.
+    /// The vsync fan-out uses this to keep emitting `RedrawRequested`
+    /// during interaction so the display stays at peak refresh.
+    #[inline]
+    pub(crate) fn should_present_after_input(&self) -> bool {
+        self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
+    }
+
     /// Returns the `XConnection` of this events loop.
     #[inline]
     pub(crate) fn x_connection(&self) -> &Arc<XConnection> {
