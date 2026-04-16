@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
 mod runner;
+mod vsync;
 
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -48,26 +49,27 @@ use windows_sys::Win32::UI::Input::{
     MOUSE_MOVE_RELATIVE, RAWINPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
-    GetCursorPos, GetMenu, LoadCursorW, MsgWaitForMultipleObjectsEx, PeekMessageW,
-    PostMessageW, RegisterClassExW, RegisterWindowMessageA, SetCursor, SetWindowPos,
-    TranslateMessage, CREATESTRUCTW, GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE, GWL_USERDATA,
-    HTCAPTION, HTCLIENT, MINMAXINFO, MNC_CLOSE, MSG, MWMO_INPUTAVAILABLE,
-    NCCALCSIZE_PARAMS, PM_REMOVE, PT_PEN, PT_TOUCH, QS_ALLINPUT, RI_MOUSE_HWHEEL,
-    RI_MOUSE_WHEEL, SC_MINIMIZE, SC_RESTORE, SIZE_MAXIMIZED, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, WHEEL_DELTA, WINDOWPOS, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT,
-    WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
-    WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_ENTERSIZEMOVE,
-    WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
-    WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUT, WM_INPUT_DEVICE_CHANGE,
-    WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-    WM_MBUTTONUP, WM_MENUCHAR, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCDESTROY, WM_NCLBUTTONDOWN, WM_PAINT,
-    WM_POINTERDOWN, WM_POINTERUP, WM_POINTERUPDATE, WM_RBUTTONDOWN, WM_RBUTTONUP,
-    WM_SETCURSOR, WM_SETFOCUS, WM_SETTINGCHANGE, WM_SIZE, WM_SIZING, WM_SYSCOMMAND,
-    WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TOUCH, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
-    WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EnumThreadWindows,
+    GetClientRect, GetCursorPos, GetMenu, IsWindowVisible, LoadCursorW,
+    MsgWaitForMultipleObjectsEx, PeekMessageW, PostMessageW, RegisterClassExW,
+    RegisterWindowMessageA, SetCursor, SetWindowPos, TranslateMessage, CREATESTRUCTW,
+    GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE, GWL_USERDATA, HTCAPTION, HTCLIENT, MINMAXINFO,
+    MNC_CLOSE, MSG, MWMO_INPUTAVAILABLE, NCCALCSIZE_PARAMS, PM_REMOVE, PT_PEN, PT_TOUCH,
+    QS_ALLINPUT, RI_MOUSE_HWHEEL, RI_MOUSE_WHEEL, SC_MINIMIZE, SC_RESTORE,
+    SIZE_MAXIMIZED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WHEEL_DELTA,
+    WINDOWPOS, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT,
+    WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE,
+    WM_DESTROY, WM_DPICHANGED, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_GETMINMAXINFO,
+    WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT,
+    WM_IME_STARTCOMPOSITION, WM_INPUT, WM_INPUT_DEVICE_CHANGE, WM_KEYDOWN, WM_KEYUP,
+    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+    WM_MENUCHAR, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE,
+    WM_NCCALCSIZE, WM_NCCREATE, WM_NCDESTROY, WM_NCLBUTTONDOWN, WM_PAINT, WM_POINTERDOWN,
+    WM_POINTERUP, WM_POINTERUPDATE, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR,
+    WM_SETFOCUS, WM_SETTINGCHANGE, WM_SIZE, WM_SIZING, WM_SYSCOMMAND, WM_SYSKEYDOWN,
+    WM_SYSKEYUP, WM_TOUCH, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WM_XBUTTONDOWN,
+    WM_XBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
 };
 
 use crate::dpi::{PhysicalPosition, PhysicalSize};
@@ -170,6 +172,10 @@ pub struct EventLoop<T: 'static> {
     // It is created lazily in case if we have `ControlFlow::WaitUntil`.
     // Keep it as a field to avoid recreating it on every `ControlFlow::WaitUntil`.
     high_resolution_timer: Option<OwnedHandle>,
+    // DwmFlush-driven vsync source. Posts `VSYNC_TICK_MSG_ID` to
+    // `thread_msg_target` per composition cycle. Dropped before
+    // `thread_msg_target` is destroyed (see `Drop for EventLoop`).
+    _vsync_thread: vsync::VSyncThread,
 }
 
 pub(crate) struct PlatformSpecificEventLoopAttributes {
@@ -224,6 +230,8 @@ impl<T: 'static> EventLoop<T> {
             Default::default(),
         );
 
+        let vsync_thread = vsync::VSyncThread::spawn(thread_msg_target);
+
         Ok(EventLoop {
             user_event_sender,
             user_event_receiver,
@@ -237,6 +245,7 @@ impl<T: 'static> EventLoop<T> {
             },
             msg_hook: attributes.msg_hook.take(),
             high_resolution_timer: None,
+            _vsync_thread: vsync_thread,
         })
     }
 
@@ -479,6 +488,12 @@ impl<T: 'static> EventLoop<T> {
 
 impl<T> Drop for EventLoop<T> {
     fn drop(&mut self) {
+        // Stop and join the vsync worker before destroying the
+        // message target it posts to, otherwise the worker can
+        // briefly call `PostMessageW` against a freed HWND.
+        // `vsync::VSyncThread::drop` joins the worker.
+        let stub_thread = vsync::VSyncThread::stub();
+        let _ = std::mem::replace(&mut self._vsync_thread, stub_thread);
         unsafe {
             DestroyWindow(self.window_target.p.thread_msg_target);
         }
@@ -1185,6 +1200,20 @@ unsafe fn public_window_callback_inner(
     userdata: &WindowData,
 ) -> LRESULT {
     let mut result = ProcResult::DefWindowProc(wparam);
+
+    // Mark any input message before further processing so the
+    // DwmFlush worker's `should_present_after_input` window stays
+    // open. Mirrors macOS / Wayland / X11.
+    match msg {
+        WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP | WM_MOUSEMOVE
+        | WM_MOUSEWHEEL | WM_MOUSEHWHEEL | WM_LBUTTONDOWN | WM_LBUTTONUP
+        | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP
+        | WM_XBUTTONDOWN | WM_XBUTTONUP | WM_TOUCH | WM_POINTERDOWN
+        | WM_POINTERUPDATE | WM_POINTERUP => {
+            userdata.event_loop_runner.mark_input_received();
+        }
+        _ => (),
+    }
 
     // Send new modifiers before sending key events.
     let mods_changed_callback = || match msg {
@@ -2626,6 +2655,20 @@ unsafe fn public_window_callback_inner(
     }
 }
 
+/// `EnumThreadWindows` callback used by the vsync tick handler:
+/// for each window owned by the event-loop thread, post
+/// `RDW_INTERNALPAINT` if it is visible. Skips the hidden
+/// `thread_msg_target` (it has `WS_EX_TOOLWINDOW` and is never
+/// shown). Returning `1` (TRUE) continues enumeration.
+unsafe extern "system" fn redraw_visible_window(window: HWND, _: LPARAM) -> i32 {
+    if unsafe { IsWindowVisible(window) } != 0 {
+        unsafe {
+            RedrawWindow(window, ptr::null(), ptr::null_mut(), RDW_INTERNALPAINT);
+        }
+    }
+    1
+}
+
 unsafe extern "system" fn thread_event_target_callback(
     window: HWND,
     msg: u32,
@@ -2709,6 +2752,24 @@ unsafe extern "system" fn thread_event_target_callback(
             };
             let mut function: ThreadExecFn = unsafe { Box::from_raw(wparam as *mut _) };
             function();
+            0
+        }
+        // Per-vsync tick from `vsync::VSyncThread`. Fan out a
+        // `RDW_INTERNALPAINT` to every visible window owned by this
+        // thread when input arrived in the last second. The
+        // resulting `WM_PAINT` flows through the existing handler
+        // and emits `RedrawRequested` — frontends are unaware of
+        // the vsync source. Mirrors the Wayland/X11 pattern in
+        // `rio-window/src/platform_impl/linux/{wayland,x11}` and
+        // zed's `begin_vsync_thread` in
+        // `crates/gpui_windows/src/platform.rs:293`.
+        _ if msg == vsync::VSYNC_TICK_MSG_ID.get() => {
+            if userdata.event_loop_runner.should_present_after_input() {
+                let thread_id = unsafe { GetCurrentThreadId() };
+                unsafe {
+                    EnumThreadWindows(thread_id, Some(redraw_visible_window), 0);
+                }
+            }
             0
         }
         _ => unsafe { DefWindowProcW(window, msg, wparam, lparam) },
