@@ -5815,10 +5815,10 @@ mod tests {
         // 32-bit image_id with high byte non-zero (matches icat's
         // rejection-sample loop in `transmit.go:280-288`).
         let image_id: u32 = 0x0201_0203;
-        let high = ((image_id >> 24) & 0xFF) as u32;
-        let r = ((image_id >> 16) & 0xFF) as u32;
-        let g = ((image_id >> 8) & 0xFF) as u32;
-        let b = (image_id & 0xFF) as u32;
+        let high = (image_id >> 24) & 0xFF;
+        let r = (image_id >> 16) & 0xFF;
+        let g = (image_id >> 8) & 0xFF;
+        let b = image_id & 0xFF;
 
         // 1) Transmit a 1×1 RGBA pixel under the chosen image_id (we
         //    don't care about the pixel data — we just need an entry in
@@ -5838,10 +5838,10 @@ mod tests {
         //    write `<U+10EEEE><row><col><high>` per cell.
         let id_high_diac = DIACRITICS[high as usize];
         let mut cells = format!("\x1b[38:2:{r}:{g}:{b}m");
-        for row in 0..rows as usize {
-            let row_diac = DIACRITICS[row];
-            for col in 0..cols as usize {
-                let col_diac = DIACRITICS[col];
+        for (row, &row_diac) in
+            DIACRITICS.iter().enumerate().take(rows as usize)
+        {
+            for &col_diac in DIACRITICS.iter().take(cols as usize) {
                 cells.push(PLACEHOLDER);
                 cells.push(row_diac);
                 cells.push(col_diac);
@@ -5875,8 +5875,12 @@ mod tests {
         let style_set = cw.grid.style_set.clone();
         let extras = cw.grid.extras_table.clone();
         let _ = columns;
-        for row in 0..rows as usize {
-            for col in 0..cols as usize {
+        for (row, &row_diac) in
+            DIACRITICS.iter().enumerate().take(rows as usize)
+        {
+            for (col, &col_diac) in
+                DIACRITICS.iter().enumerate().take(cols as usize)
+            {
                 let sq = cw.grid[Line(row as i32)][Column(col)];
                 assert_eq!(
                     sq.c(),
