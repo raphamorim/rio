@@ -1626,8 +1626,7 @@ mod tests {
         // `_Ga=p,U=1,i=N,c=cols,r=rows,q=2\e\` to register the placement.
         // The parser must propagate `U=1` so `place_graphic` routes to
         // the virtual-placement path (metadata only, no cell writes).
-        let result =
-            parse_kitty_graphics_protocol("a=p,U=1,i=42,c=10,r=4,q=2", "");
+        let result = parse_kitty_graphics_protocol("a=p,U=1,i=42,c=10,r=4,q=2", "");
         let response = result.expect("parse ok");
         let placement = response.placement_request.expect("placement");
         assert!(placement.virtual_placement);

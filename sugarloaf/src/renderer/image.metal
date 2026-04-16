@@ -37,7 +37,11 @@ vertex ImageVertexOut image_vs_main(
     corner.x = float(vid == 1 || vid == 3);
     corner.y = float(vid == 2 || vid == 3);
 
-    float2 tex_coord = instance.source_rect.xy + instance.source_rect.zw * corner;
+    // `source_rect` is `[u0, v0, u1, v1]` (origin, end), not (origin, size).
+    // `mix(a, b, t)` computes `a + (b-a)*t`, so corner=(0,0) → (u0,v0)
+    // and corner=(1,1) → (u1,v1). The previous `xy + zw * corner` form
+    // only worked when `xy == [0,0]` (the full-image default).
+    float2 tex_coord = mix(instance.source_rect.xy, instance.source_rect.zw, corner);
     float2 image_pos = instance.dest_pos + instance.dest_size * corner;
 
     ImageVertexOut out;

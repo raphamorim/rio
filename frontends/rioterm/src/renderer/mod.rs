@@ -1116,7 +1116,8 @@ impl Renderer {
                         if image_bottom_row <= 0 || screen_row >= screen_lines {
                             continue;
                         }
-                        content.push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
+                        content
+                            .push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
                             image_id: p.image_id,
                             x: origin_x + p.dest_col as f32 * cell_width,
                             y: origin_y + screen_row as f32 * cell_height,
@@ -1468,27 +1469,21 @@ impl Renderer {
     }
 
     /// Scan visible rows for kitty Unicode-placeholder cells (U+10EEEE) and
-    /// push GraphicOverlays for each unique virtual placement. Mirrors
-    /// ghostty's `Placement.renderPlacement` (aspect-preserving fit +
-    /// centering inside the placement's `cols × rows` cell box).
+    /// push one `GraphicOverlay` per row-run. Ports the four key behaviors
+    /// from ghostty's `graphics_unicode.zig`:
     ///
-    /// Each placeholder cell encodes its position within the image:
-    ///   - Foreground color → lower 24 bits of `image_id`
-    ///   - 1st combining diacritic → row index in the image
-    ///   - 2nd combining diacritic → column index in the image
-    ///   - 3rd combining diacritic → upper 8 bits of `image_id` (optional)
-    ///   - Underline color → `placement_id` (optional)
-    /// The virtual placement metadata (rows × columns) was registered
-    /// earlier via `_Ga=p,U=1,…\e\` and lives in
-    /// `kitty_virtual_placements`.
-    ///
-    /// The cell scan is only used to locate the top-left of each visible
-    /// placement (the cell with row_idx=0, col_idx=0). Once located, we
-    /// render ONE overlay per placement at the centered position with
-    /// the full image (`source_rect = [0, 0, 1, 1]`). This matches what
-    /// kitty actually renders — the per-cell diacritics describe where
-    /// the image *should be assembled*, not what each cell shows by
-    /// itself.
+    ///   1. Per-row `kitty_virtual_placeholder` flag check skips rows
+    ///      with no placeholders (`page.zig:1953-1958`).
+    ///   2. Continuation rules — a cell with missing diacritics inherits
+    ///      from the previous cell on the row (`canAppend`,
+    ///      `graphics_unicode.zig:506-513`).
+    ///   3. Run aggregation — consecutive cells with same image / row /
+    ///      sequential column collapse into one Placement
+    ///      (`PlacementIterator.next`, `graphics_unicode.zig:36-99`).
+    ///   4. Per-run source rect with aspect-fit + centering — handles
+    ///      partial visibility (placement scrolled half off-screen) and
+    ///      cells that fall in the centering padding
+    ///      (`renderPlacement`, `graphics_unicode.zig:212-329`).
     fn push_virtual_placeholder_overlays(
         content: &mut rio_backend::sugarloaf::Content,
         snapshot: &TerminalSnapshot,
@@ -1497,23 +1492,42 @@ impl Renderer {
         cell_width: f32,
         cell_height: f32,
     ) {
-        use rio_backend::ansi::kitty_virtual;
-        use rustc_hash::FxHashMap;
+        use rio_backend::ansi::kitty_virtual::{
+            IncompletePlacement, PlaceholderRun, PLACEHOLDER,
+        };
 
-        // Below text — same as ghostty's default for virtual placements.
+        // Below text — matches ghostty's default for virtual placements.
         const VIRTUAL_Z_INDEX: i32 = -1;
 
-        // Track the screen position of the top-left cell (row=0,col=0)
-        // for each unique placement we see this frame.
-        struct TopLeft {
-            screen_line: usize,
-            screen_col: usize,
-        }
-        let mut top_lefts: FxHashMap<(u32, u32), TopLeft> = FxHashMap::default();
-
         for (line_idx, row) in snapshot.visible_rows.iter().enumerate() {
+            // Per-row dirty flag: skip rows that never had a placeholder
+            // written. O(visible_w · visible_h) → O(rows_with_placeholders).
+            if !row.kitty_virtual_placeholder {
+                continue;
+            }
+
+            // Walk the row left-to-right, building a single in-flight run.
+            // When the next cell can't extend it (different image, col
+            // discontinuity, etc.) we flush the run as one overlay and
+            // start a new one. Mirrors `PlacementIterator.next`.
+            let mut run: Option<(IncompletePlacement, usize)> = None;
+
             for (col_idx, square) in row.inner.iter().enumerate() {
-                if square.c() != kitty_virtual::PLACEHOLDER {
+                if square.c() != PLACEHOLDER {
+                    if let Some((p, start_col)) = run.take() {
+                        flush_run(
+                            content,
+                            snapshot,
+                            p.complete(),
+                            line_idx,
+                            start_col,
+                            origin_x,
+                            origin_y,
+                            cell_width,
+                            cell_height,
+                            VIRTUAL_Z_INDEX,
+                        );
+                    }
                     continue;
                 }
 
@@ -1524,82 +1538,110 @@ impl Renderer {
                     .map(|e| e.zerowidth.as_slice())
                     .unwrap_or(&[]);
 
-                let cell = match kitty_virtual::decode_cell(
+                let cell = IncompletePlacement::from_cell(
                     style.fg,
                     style.underline_color,
                     combining,
-                ) {
-                    Some(c) => c,
-                    None => continue,
-                };
+                );
 
-                // We only care about the (0,0) cell of each placement —
-                // it pins the top-left corner. Subsequent cells just
-                // confirm the placement is on screen, but they don't
-                // change the overlay we push.
-                if cell.row_idx != 0 || cell.col_idx != 0 {
-                    continue;
+                match &mut run {
+                    Some((current, _)) if current.can_append(&cell) => {
+                        current.append();
+                    }
+                    _ => {
+                        if let Some((p, start_col)) = run.take() {
+                            flush_run(
+                                content,
+                                snapshot,
+                                p.complete(),
+                                line_idx,
+                                start_col,
+                                origin_x,
+                                origin_y,
+                                cell_width,
+                                cell_height,
+                                VIRTUAL_Z_INDEX,
+                            );
+                        }
+                        run = Some((cell, col_idx));
+                    }
                 }
+            }
 
-                top_lefts
-                    .entry((cell.image_id, cell.placement_id))
-                    .or_insert(TopLeft {
-                        screen_line: line_idx,
-                        screen_col: col_idx,
-                    });
+            if let Some((p, start_col)) = run {
+                flush_run(
+                    content,
+                    snapshot,
+                    p.complete(),
+                    line_idx,
+                    start_col,
+                    origin_x,
+                    origin_y,
+                    cell_width,
+                    cell_height,
+                    VIRTUAL_Z_INDEX,
+                );
             }
         }
 
-        for ((image_id, placement_id), tl) in top_lefts {
-            // Look up the virtual placement metadata. Try
-            // (image_id, placement_id) first; fall back to
-            // (image_id, 0) for applications that omit placement_id.
+        /// Look up metadata + image for a completed `PlaceholderRun`,
+        /// compute its on-screen geometry via
+        /// `kitty_virtual::compute_run_geometry`, and push one
+        /// `GraphicOverlay`. Returns silently when the placement isn't
+        /// registered, the image isn't transmitted yet, or the run lies
+        /// entirely in the aspect-fit centering padding.
+        #[allow(clippy::too_many_arguments)]
+        fn flush_run(
+            content: &mut rio_backend::sugarloaf::Content,
+            snapshot: &TerminalSnapshot,
+            run: PlaceholderRun,
+            screen_line: usize,
+            start_screen_col: usize,
+            origin_x: f32,
+            origin_y: f32,
+            cell_width: f32,
+            cell_height: f32,
+            z_index: i32,
+        ) {
             let vp = snapshot
                 .kitty_virtual_placements
-                .get(&(image_id, placement_id))
-                .or_else(|| {
-                    snapshot.kitty_virtual_placements.get(&(image_id, 0))
-                });
+                .get(&(run.image_id, run.placement_id))
+                .or_else(|| snapshot.kitty_virtual_placements.get(&(run.image_id, 0)));
             let vp = match vp {
                 Some(v) => v,
-                None => continue,
+                None => return,
             };
-
-            let img = match snapshot.kitty_images.get(&image_id) {
+            let img = match snapshot.kitty_images.get(&run.image_id) {
                 Some(i) => i,
-                None => continue,
+                None => return,
             };
 
-            let p_cols_px = vp.columns.max(1) as f32 * cell_width;
-            let p_rows_px = vp.rows.max(1) as f32 * cell_height;
-            let img_w = img.data.width as f32;
-            let img_h = img.data.height as f32;
-            if img_w <= 0.0 || img_h <= 0.0 {
-                continue;
-            }
+            let geom = match rio_backend::ansi::kitty_virtual::compute_run_geometry(
+                &run,
+                vp.columns,
+                vp.rows,
+                img.data.width as u32,
+                img.data.height as u32,
+                cell_width,
+                cell_height,
+                origin_x,
+                origin_y,
+                screen_line,
+                start_screen_col,
+            ) {
+                Some(g) => g,
+                None => return,
+            };
 
-            // Aspect-preserving fit. Match ghostty's
-            // `renderPlacement` (`graphics_unicode.zig:166-190`):
-            // pick the smaller scale so the image fits inside the
-            // placement box, then center the leftover gap.
-            let scale = (p_cols_px / img_w).min(p_rows_px / img_h);
-            let dest_w = img_w * scale;
-            let dest_h = img_h * scale;
-            let x_offset = (p_cols_px - dest_w) * 0.5;
-            let y_offset = (p_rows_px - dest_h) * 0.5;
-
-            content.push_image_overlay(
-                rio_backend::sugarloaf::GraphicOverlay {
-                    image_id,
-                    x: origin_x + tl.screen_col as f32 * cell_width + x_offset,
-                    y: origin_y + tl.screen_line as f32 * cell_height + y_offset,
-                    width: dest_w,
-                    height: dest_h,
-                    z_index: VIRTUAL_Z_INDEX,
-                    source_rect:
-                        rio_backend::sugarloaf::GraphicOverlay::FULL_SOURCE_RECT,
-                },
-            );
+            content.push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
+                image_id: run.image_id,
+                x: geom.x,
+                y: geom.y,
+                width: geom.width,
+                height: geom.height,
+                z_index,
+                source_rect: geom.source_rect,
+            });
         }
     }
 }
