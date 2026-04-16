@@ -50,9 +50,10 @@ use windows_sys::Win32::UI::Input::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
-    GetCursorPos, GetMenu, LoadCursorW, MsgWaitForMultipleObjectsEx, PeekMessageW,
-    PostMessageW, RegisterClassExW, RegisterWindowMessageA, SetCursor, SetWindowPos,
-    TranslateMessage, CREATESTRUCTW, GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE, GWL_USERDATA,
+    GetCursorPos, GetMenu, LoadCursorW, MessageBoxW, MsgWaitForMultipleObjectsEx,
+    PeekMessageW, PostMessageW, RegisterClassExW, RegisterWindowMessageA, SetCursor,
+    SetWindowPos, TranslateMessage, CREATESTRUCTW, GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE,
+    GWL_USERDATA, IDYES, MB_ICONQUESTION, MB_TASKMODAL, MB_YESNO,
     HTCAPTION, HTCLIENT, MINMAXINFO, MNC_CLOSE, MSG, MWMO_INPUTAVAILABLE,
     NCCALCSIZE_PARAMS, PM_REMOVE, PT_PEN, PT_TOUCH, QS_ALLINPUT, RI_MOUSE_HWHEEL,
     RI_MOUSE_WHEEL, SC_MINIMIZE, SC_RESTORE, SIZE_MAXIMIZED, SWP_NOACTIVATE, SWP_NOMOVE,
@@ -253,6 +254,17 @@ impl<T: 'static> EventLoop<T> {
 
     pub fn window_target(&self) -> &RootAEL {
         &self.window_target
+    }
+
+    /// When enabled, a native `MessageBoxW` confirmation prompt
+    /// is shown before `WindowEvent::CloseRequested` fires for
+    /// any window. Mirrors the macOS implementation in
+    /// `app_delegate.rs`.
+    pub fn set_confirm_before_quit(&self, confirmation: bool) {
+        self.window_target
+            .p
+            .runner_shared
+            .set_confirm_before_quit(confirmation);
     }
 
     pub fn run<F>(mut self, event_handler: F) -> Result<(), EventLoopError>
@@ -1322,6 +1334,17 @@ unsafe fn public_window_callback_inner(
 
         WM_CLOSE => {
             use crate::event::WindowEvent::CloseRequested;
+            // Mirrors macOS's `applicationShouldTerminate` NSAlert
+            // (rio-window/src/platform_impl/macos/app_delegate.rs).
+            // Frontends just see `CloseRequested` — confirmation
+            // is handled here.
+            if userdata.event_loop_runner.confirm_before_quit()
+                && !unsafe { confirm_close_native(window) }
+            {
+                // User dismissed the dialog; suppress the close.
+                result = ProcResult::Value(0);
+                return;
+            }
             userdata.send_event(Event::WindowEvent {
                 window_id: RootWindowId(WindowId(window)),
                 event: CloseRequested,
@@ -2878,4 +2901,31 @@ fn get_pointer_move_kind(
     } else {
         PointerMoveKind::None
     }
+}
+
+/// Show a modal Yes/No `MessageBoxW` parented to `hwnd`. Returns
+/// `true` if the user confirmed the close. Mirrors macOS's NSAlert
+/// in `app_delegate.rs:applicationShouldTerminate`.
+unsafe fn confirm_close_native(hwnd: HWND) -> bool {
+    use std::ffi::OsStr;
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+
+    let title: Vec<u16> = OsStr::new("Close Rio terminal?")
+        .encode_wide()
+        .chain(once(0))
+        .collect();
+    let message: Vec<u16> = OsStr::new("All sessions in this window will be closed.")
+        .encode_wide()
+        .chain(once(0))
+        .collect();
+    let response = unsafe {
+        MessageBoxW(
+            hwnd,
+            message.as_ptr(),
+            title.as_ptr(),
+            MB_YESNO | MB_ICONQUESTION | MB_TASKMODAL,
+        )
+    };
+    response == IDYES as i32
 }
