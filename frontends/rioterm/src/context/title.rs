@@ -1,10 +1,10 @@
 use crate::context::Context;
 use rustc_hash::FxHashMap;
+use std::path::Path;
 use std::time::Instant;
 
 pub struct ContextTitleExtra {
     pub program: String,
-    pub path: String,
 }
 
 pub struct ContextTitle {
@@ -54,22 +54,13 @@ pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
     context: &Context<T>,
 ) -> Option<ContextTitleExtra> {
     #[cfg(unix)]
-    let path =
-        teletypewriter::foreground_process_path(*context.main_fd, context.shell_pid)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-    #[cfg(not(unix))]
-    let path = String::default();
-
-    #[cfg(unix)]
     let program =
         teletypewriter::foreground_process_name(*context.main_fd, context.shell_pid);
 
     #[cfg(not(unix))]
     let program = String::default();
 
-    Some(ContextTitleExtra { program, path })
+    Some(ContextTitleExtra { program })
 }
 
 // Possible options:
@@ -77,9 +68,47 @@ pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
 // - `TITLE`: terminal title via OSC sequences for setting terminal title
 // - `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
 // - `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
-// - `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`)
+// - `RELATIVE_PATH`: (e.g `~/Documents/a/rio` or `…/a/psone/starpsx`)
 // - `COLUMNS`: current columns
 // - `LINES`: current lines
+
+/// Shorten an absolute path for display:
+/// - Replace home directory prefix with `~`
+/// - If 4+ components deep, show `…/last/three/components`
+fn shorten_path(absolute: &str) -> String {
+    let path = Path::new(absolute);
+
+    // Replace home prefix with ~
+    #[cfg(unix)]
+    let display_path = {
+        if let Some(home) = dirs::home_dir() {
+            if let Ok(stripped) = path.strip_prefix(&home) {
+                let s = stripped.to_string_lossy();
+                if s.is_empty() {
+                    "~".to_string()
+                } else {
+                    format!("~/{s}")
+                }
+            } else {
+                absolute.to_string()
+            }
+        } else {
+            absolute.to_string()
+        }
+    };
+
+    #[cfg(not(unix))]
+    let display_path = absolute.to_string();
+
+    // If 4+ components, show …/last3
+    let components: Vec<&str> =
+        display_path.split('/').filter(|s| !s.is_empty()).collect();
+    if components.len() >= 4 {
+        format!("…/{}", components[components.len() - 3..].join("/"))
+    } else {
+        display_path
+    }
+}
 
 #[inline]
 pub fn update_title<T: rio_backend::event::EventListener>(
@@ -193,19 +222,43 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                         }
                     }
                 }
-                // TODO:
-                // "path_relative" => {
-                //     #[cfg(unix)]
-                //     {
-                //         let path = teletypewriter::foreground_process_path(
-                //             *context.main_fd,
-                //             context.shell_pid,
-                //         )
-                //         .map(|p| p.canonicalize().unwrap_or_default().to_string_lossy().to_string())
-                //         .unwrap_or_default();
-                //         new_template = new_template.replace(to_replace_str, &path);
-                //     }
-                // },
+                "relative_path" => {
+                    {
+                        let terminal = context.terminal.lock();
+                        if let Some(current_directory) = &terminal.current_directory {
+                            if let Ok(dir_str) =
+                                current_directory.clone().into_os_string().into_string()
+                            {
+                                new_template = new_template
+                                    .replace(to_replace_str, &shorten_path(&dir_str));
+                                matched = true;
+                                continue;
+                            }
+                        };
+                    }
+
+                    #[cfg(unix)]
+                    {
+                        let path = teletypewriter::foreground_process_path(
+                            *context.main_fd,
+                            context.shell_pid,
+                        )
+                        .map(|p| shorten_path(&p.to_string_lossy()))
+                        .unwrap_or_default();
+
+                        let is_only_one = variables.len() == 1;
+                        let is_last = i == variables.len() - 1;
+                        if is_only_one || is_last {
+                            new_template = new_template.replace(to_replace_str, &path);
+                            continue;
+                        }
+
+                        if !path.is_empty() {
+                            new_template = new_template.replace(to_replace_str, &path);
+                            matched = true;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -219,9 +272,9 @@ pub mod test {
     use super::*;
     use crate::context::create_mock_context;
     use crate::context::ContextDimension;
-    use crate::context::Delta;
+    use rio_backend::config::layout::Margin;
     use rio_backend::event::VoidListener;
-    use rio_backend::sugarloaf::layout::SugarDimensions;
+    use rio_backend::sugarloaf::layout::TextDimensions;
     use rio_window::window::WindowId;
 
     #[test]
@@ -229,17 +282,17 @@ pub mod test {
         let context_dimension = ContextDimension::build(
             1200.0,
             800.0,
-            SugarDimensions {
+            TextDimensions {
                 scale: 2.,
                 width: 18.,
                 height: 9.,
             },
             1.0,
-            Delta::<f32>::default(),
+            Margin::default(),
         );
 
-        assert_eq!(context_dimension.columns, 66);
-        assert_eq!(context_dimension.lines, 88);
+        assert_eq!(context_dimension.columns, 64);
+        assert_eq!(context_dimension.lines, 84);
 
         let rich_text_id = 0;
         let context = create_mock_context(
@@ -249,21 +302,21 @@ pub mod test {
             context_dimension,
         );
         assert_eq!(update_title("", &context), String::from(""));
-        assert_eq!(update_title("{{columns}}", &context), String::from("66"));
-        assert_eq!(update_title("{{COLUMNS}}", &context), String::from("66"));
-        assert_eq!(update_title("{{ COLUMNS }}", &context), String::from("66"));
-        assert_eq!(update_title("{{ columns }}", &context), String::from("66"));
+        assert_eq!(update_title("{{columns}}", &context), String::from("64"));
+        assert_eq!(update_title("{{COLUMNS}}", &context), String::from("64"));
+        assert_eq!(update_title("{{ COLUMNS }}", &context), String::from("64"));
+        assert_eq!(update_title("{{ columns }}", &context), String::from("64"));
         assert_eq!(
             update_title("hello {{ COLUMNS }} AbC", &context),
-            String::from("hello 66 AbC")
+            String::from("hello 64 AbC")
         );
         assert_eq!(
             update_title("hello {{ Lines }} AbC", &context),
-            String::from("hello 88 AbC")
+            String::from("hello 84 AbC")
         );
         assert_eq!(
             update_title("{{ columns }}x{{lines}}", &context),
-            String::from("66x88")
+            String::from("64x84")
         );
 
         assert_eq!(update_title("{{ title }}", &context), String::from(""));
@@ -280,17 +333,17 @@ pub mod test {
         let context_dimension = ContextDimension::build(
             1200.0,
             800.0,
-            SugarDimensions {
+            TextDimensions {
                 scale: 2.,
                 width: 18.,
                 height: 9.,
             },
             1.0,
-            Delta::<f32>::default(),
+            Margin::default(),
         );
 
-        assert_eq!(context_dimension.columns, 66);
-        assert_eq!(context_dimension.lines, 88);
+        assert_eq!(context_dimension.columns, 64);
+        assert_eq!(context_dimension.lines, 84);
 
         let rich_text_id = 0;
         let context = create_mock_context(
@@ -305,7 +358,7 @@ pub mod test {
 
         assert_eq!(
             update_title("{{ title || columns }}", &context),
-            String::from("66")
+            String::from("64")
         );
 
         assert_eq!(
@@ -326,19 +379,47 @@ pub mod test {
 
         assert_eq!(
             update_title("{{ columns || title }}", &context),
-            String::from("66")
+            String::from("64")
         );
 
-        // let's modify current_directory to actually be something
+        // Use a path that can't plausibly be $HOME on any realistic system.
+        // Sandboxed builds (e.g. Void's xbps-src) often set HOME=/tmp, so a
+        // literal "/tmp" here would get collapsed to "~" and break the test.
         {
-            let path = std::path::PathBuf::from("/tmp");
+            let path = std::path::PathBuf::from("/rio-sandbox-test-dir");
             let mut term = context.terminal.lock();
             term.current_directory = Some(path);
         };
 
         assert_eq!(
             update_title("{{ absolute_path || title }}", &context),
-            String::from("/tmp"),
+            String::from("/rio-sandbox-test-dir"),
         );
+
+        assert_eq!(
+            update_title("{{ relative_path || title }}", &context),
+            String::from("/rio-sandbox-test-dir"),
+        );
+    }
+
+    #[test]
+    fn test_shorten_path() {
+        // Use a path prefix that can't plausibly be $HOME to keep the test
+        // deterministic in build sandboxes that set HOME=/tmp or similar.
+        assert_eq!(
+            shorten_path("/rio-sandbox-test-dir"),
+            "/rio-sandbox-test-dir",
+        );
+        assert_eq!(
+            shorten_path("/rio-sandbox-test-dir/sub"),
+            "/rio-sandbox-test-dir/sub",
+        );
+
+        // Deep paths get truncated to last 3 components
+        assert_eq!(shorten_path("/a/b/c/d/e"), "…/c/d/e");
+        assert_eq!(shorten_path("/a/b/c/d"), "…/b/c/d");
+
+        // 3 components stays as-is
+        assert_eq!(shorten_path("/a/b/c"), "/a/b/c");
     }
 }

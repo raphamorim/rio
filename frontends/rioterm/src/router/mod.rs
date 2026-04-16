@@ -1,7 +1,10 @@
 pub mod routes;
 mod window;
 use crate::event::EventProxy;
-use crate::router::window::{configure_window, create_window_builder};
+use crate::router::window::{
+    configure_window, create_window_builder, DEFAULT_MINIMUM_WINDOW_HEIGHT,
+    DEFAULT_MINIMUM_WINDOW_WIDTH,
+};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -9,6 +12,7 @@ use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 
+use rio_window::dpi::{PhysicalPosition, PhysicalSize};
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -18,8 +22,6 @@ use rio_window::platform::startup_notify::{
 use rio_window::window::{Window, WindowId};
 use routes::{assistant, RoutePath};
 use rustc_hash::FxHashMap;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 // 𜱭𜱭 unicode is not available yet for all OS
@@ -93,95 +95,6 @@ impl Route<'_> {
     #[inline]
     pub fn begin_render(&mut self) {
         self.window.render_timestamp = Instant::now();
-
-        // // Track frame count for performance monitoring
-        // use std::collections::HashMap;
-        // use std::sync::Mutex;
-
-        // static FRAME_COUNTERS: Mutex<
-        //     Option<HashMap<rio_window::window::WindowId, (u64, std::time::Instant)>>,
-        // > = Mutex::new(None);
-        // static LAST_LOG: Mutex<Option<std::time::Instant>> = Mutex::new(None);
-
-        // let window_id = self.window.winit_window.id();
-
-        // {
-        //     // Use try_lock to avoid blocking other windows during performance logging
-        //     let mut counters = match FRAME_COUNTERS.try_lock() {
-        //         Ok(guard) => guard,
-        //         Err(_) => return, // Skip performance logging if another window is using it
-        //     };
-        //     if counters.is_none() {
-        //         *counters = Some(HashMap::new());
-        //     }
-
-        //     let mut last_log = match LAST_LOG.try_lock() {
-        //         Ok(guard) => guard,
-        //         Err(_) => return, // Skip performance logging if another window is using it
-        //     };
-        //     if last_log.is_none() {
-        //         *last_log = Some(std::time::Instant::now());
-        //     }
-
-        //     if let (Some(ref mut counters_map), Some(ref mut last_log_time)) =
-        //         (counters.as_mut(), last_log.as_mut())
-        //     {
-        //         let entry = counters_map
-        //             .entry(window_id)
-        //             .or_insert((0, std::time::Instant::now()));
-        //         entry.0 += 1;
-
-        //         // Log performance stats every 5 seconds
-        //         if last_log_time.elapsed().as_secs() >= 5 {
-        //             let total_windows = counters_map.len();
-        //             if total_windows > 1 {
-        //                 tracing::warn!(
-        //                     "[PERF] Multi-window performance stats ({} windows):",
-        //                     total_windows
-        //                 );
-        //                 let mut sorted_windows: Vec<_> = counters_map.iter().collect();
-        //                 sorted_windows.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // Sort by frame count descending
-
-        //                 for (i, (id, (frames, start_time))) in
-        //                     sorted_windows.iter().enumerate()
-        //                 {
-        //                     let fps = *frames as f64 / start_time.elapsed().as_secs_f64();
-        //                     let priority = if i == 0 { "HIGH" } else { "LOW" };
-        //                     tracing::warn!(
-        //                         "[PERF]   Window {:?}: {:.1} FPS ({} frames) [{}]",
-        //                         id,
-        //                         fps,
-        //                         frames,
-        //                         priority
-        //                     );
-        //                 }
-
-        //                 // Check for significant FPS differences
-        //                 if sorted_windows.len() >= 2 {
-        //                     let highest_fps = sorted_windows[0].1 .0 as f64
-        //                         / sorted_windows[0].1 .1.elapsed().as_secs_f64();
-        //                     let lowest_fps = sorted_windows.last().unwrap().1 .0 as f64
-        //                         / sorted_windows
-        //                             .last()
-        //                             .unwrap()
-        //                             .1
-        //                              .1
-        //                             .elapsed()
-        //                             .as_secs_f64();
-        //                     if highest_fps > lowest_fps * 2.0 {
-        //                         tracing::error!("[PERF] SIGNIFICANT FPS DIFFERENCE: {:.1} vs {:.1} FPS - window prioritization detected!", highest_fps, lowest_fps);
-        //                     }
-        //                 }
-        //             }
-        //             **last_log_time = std::time::Instant::now();
-        //             // Reset counters
-        //             for (_, (frames, start_time)) in counters_map.iter_mut() {
-        //                 *frames = 0;
-        //                 *start_time = std::time::Instant::now();
-        //             }
-        //         }
-        //     }
-        // }
     }
 
     #[inline]
@@ -216,12 +129,17 @@ impl Route<'_> {
         }
 
         self.assistant.set(error.to_owned());
-        self.path = RoutePath::Assistant;
+        self.window
+            .screen
+            .renderer
+            .assistant
+            .set_error(error.to_owned());
     }
 
     #[inline]
     pub fn clear_errors(&mut self) {
         self.assistant.clear();
+        self.window.screen.renderer.assistant.clear();
         self.path = RoutePath::Terminal;
     }
 
@@ -236,29 +154,209 @@ impl Route<'_> {
     }
 
     #[inline]
-    pub fn has_key_wait(&mut self, key_event: &rio_window::event::KeyEvent) -> bool {
+    pub fn has_key_wait(
+        &mut self,
+        key_event: &rio_window::event::KeyEvent,
+        clipboard: &mut Clipboard,
+    ) -> bool {
+        use rio_window::event::ElementState;
+
+        // Handle island color picker / rename input
+        if let Some(ref mut island) = self.window.screen.renderer.island {
+            if island.is_color_picker_open() {
+                let consumed = island.handle_rename_input(key_event);
+                if consumed {
+                    self.window.screen.render();
+                    return true;
+                }
+            }
+        }
+
+        // Handle command palette input first (works in all routes)
+        if self.window.screen.renderer.command_palette.is_enabled() {
+            if key_event.state == ElementState::Pressed {
+                match &key_event.logical_key {
+                    Key::Named(NamedKey::Escape) => {
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .set_enabled(false);
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::ArrowUp) => {
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .move_selection_up();
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::ArrowDown) => {
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .move_selection_down();
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::Tab) => {
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .move_selection_down();
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::Enter) => {
+                        // Snapshot what the palette wants to do FIRST,
+                        // before taking a mut-borrow on it, so we can
+                        // freely call other `self.window.screen.*`
+                        // methods in the match arms without tripping
+                        // the borrow checker on nested disjoint borrows.
+                        let selected_font = self
+                            .window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .get_selected_font();
+                        let selected_action = self
+                            .window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .get_selected_action();
+                        use crate::renderer::command_palette::PaletteAction;
+
+                        // Fonts-mode Enter: copy the family name to
+                        // the system clipboard and close. The copy
+                        // icon on each row advertises this.
+                        if let Some(font) = selected_font {
+                            clipboard.set(
+                                rio_backend::clipboard::ClipboardType::Clipboard,
+                                font,
+                            );
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .set_enabled(false);
+                            self.window.screen.render();
+                            return true;
+                        }
+
+                        match selected_action {
+                            // `ListFonts` stays inside the palette —
+                            // swap the palette's contents from the
+                            // command list to the registered font
+                            // family names and keep it open.
+                            Some(PaletteAction::ListFonts) => {
+                                let fonts =
+                                    self.window.screen.sugarloaf.font_family_names();
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .enter_fonts_mode(fonts);
+                            }
+                            // Any other command is a one-shot: close
+                            // the palette first, then dispatch.
+                            Some(action) => {
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .set_enabled(false);
+                                self.window
+                                    .screen
+                                    .execute_palette_action(action, clipboard);
+                            }
+                            // No match at all — Enter just closes.
+                            None => {
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .set_enabled(false);
+                            }
+                        }
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::Backspace) => {
+                        let current_query =
+                            self.window.screen.renderer.command_palette.query.clone();
+                        if !current_query.is_empty() {
+                            let mut chars = current_query.chars().collect::<Vec<_>>();
+                            chars.pop();
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .set_query(chars.into_iter().collect());
+                            self.window.screen.render();
+                        }
+                    }
+                    _ => {
+                        if let Some(text) = key_event.text.as_ref() {
+                            // Filter out control characters
+                            let text_str = text.as_str();
+                            if !text_str.is_empty()
+                                && text_str.chars().all(|c| !c.is_control())
+                            {
+                                let current_query = self
+                                    .window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .query
+                                    .clone();
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .set_query(format!("{}{}", current_query, text_str));
+                                self.window.screen.render();
+                            }
+                        }
+                    }
+                }
+            }
+            return true; // Block all input when command palette is active
+        }
+
         if self.path == RoutePath::Terminal {
             return false;
         }
 
         let is_enter = key_event.logical_key == Key::Named(NamedKey::Enter);
-        if self.path == RoutePath::Assistant {
-            if self.assistant.is_warning() && is_enter {
+
+        // Handle assistant overlay dismiss
+        if self.window.screen.renderer.assistant.is_active() {
+            if is_enter {
                 self.assistant.clear();
-                self.path = RoutePath::Terminal;
-            } else {
-                return true;
+                self.window.screen.renderer.assistant.clear();
+                self.window.screen.render();
             }
+            return true;
         }
 
         if self.path == RoutePath::ConfirmQuit {
-            if key_event.logical_key == Key::Named(NamedKey::Escape) {
-                self.path = RoutePath::Terminal;
-            } else if is_enter {
-                self.quit();
-
-                return true;
+            if key_event.state == rio_window::event::ElementState::Pressed {
+                match &key_event.logical_key {
+                    Key::Character(c) if c.as_str() == "n" || c.as_str() == "N" => {
+                        self.path = RoutePath::Terminal;
+                    }
+                    Key::Named(NamedKey::Escape) => {
+                        self.path = RoutePath::Terminal;
+                    }
+                    Key::Character(c) if c.as_str() == "y" || c.as_str() == "Y" => {
+                        self.quit();
+                        return true;
+                    }
+                    _ => {}
+                }
             }
+            return true;
         }
 
         if self.path == RoutePath::Welcome && is_enter {
@@ -275,7 +373,7 @@ pub struct Router<'a> {
     propagated_report: Option<RioError>,
     pub font_library: Box<rio_backend::sugarloaf::font::FontLibrary>,
     pub config_route: Option<WindowId>,
-    pub clipboard: Rc<RefCell<Clipboard>>,
+    pub clipboard: Clipboard,
     current_tab_id: u64,
 }
 
@@ -295,8 +393,6 @@ impl Router<'_> {
                 level: RioErrorLevel::Warning,
             });
         }
-
-        let clipboard = Rc::new(RefCell::new(clipboard));
 
         Router {
             routes: FxHashMap::default(),
@@ -374,7 +470,6 @@ impl Router<'_> {
             "Rio Settings",
             None,
             None,
-            self.clipboard.clone(),
             None,
         );
         let id = window.winit_window.id();
@@ -438,7 +533,6 @@ impl Router<'_> {
             RIO_TITLE,
             tab_id.as_deref(),
             open_url,
-            self.clipboard.clone(),
             app_id,
         );
         let id = window.winit_window.id();
@@ -475,7 +569,6 @@ impl Router<'_> {
             RIO_TITLE,
             tab_id,
             open_url,
-            self.clipboard.clone(),
             None,
         );
         self.routes.insert(
@@ -498,9 +591,6 @@ pub struct RouteWindow<'a> {
     pub vblank_interval: Duration,
     pub winit_window: Window,
     pub screen: Screen<'a>,
-
-    #[cfg(target_os = "macos")]
-    pub is_macos_deadzone: bool,
 }
 
 impl<'a> RouteWindow<'a> {
@@ -595,7 +685,6 @@ impl<'a> RouteWindow<'a> {
         window_name: &str,
         tab_id: Option<&str>,
         open_url: Option<String>,
-        clipboard: Rc<RefCell<Clipboard>>,
         app_id: Option<&str>,
     ) -> RouteWindow<'a> {
         #[allow(unused_mut)]
@@ -622,15 +711,27 @@ impl<'a> RouteWindow<'a> {
             window_id: winit_window.id(),
         };
 
-        let screen = Screen::new(
-            properties,
-            config,
-            event_proxy,
-            font_library,
-            open_url,
-            clipboard,
-        )
-        .expect("Screen not created");
+        let screen = Screen::new(properties, config, event_proxy, font_library, open_url)
+            .expect("Screen not created");
+
+        if config.window.columns.is_some() || config.window.rows.is_some() {
+            let (physical_width, physical_height) = compute_window_size_from_grid(
+                config.window.columns,
+                config.window.rows,
+                &config.panel,
+                &screen.ctx().current().dimension,
+                winit_window.inner_size(),
+            );
+            let _ = winit_window.request_inner_size(PhysicalSize {
+                width: physical_width,
+                height: physical_height,
+            });
+            if let Some(pos) =
+                centered_position(event_loop, physical_width, physical_height)
+            {
+                winit_window.set_outer_position(pos);
+            }
+        }
 
         #[cfg(target_os = "windows")]
         {
@@ -667,8 +768,214 @@ impl<'a> RouteWindow<'a> {
             needs_render_after_occlusion: false,
             winit_window,
             screen,
-            #[cfg(target_os = "macos")]
-            is_macos_deadzone: false,
         }
+    }
+}
+
+fn centered_position(
+    event_loop: &ActiveEventLoop,
+    width: u32,
+    height: u32,
+) -> Option<PhysicalPosition<i32>> {
+    let monitor = event_loop.primary_monitor()?;
+    let monitor_size = monitor.size();
+    let monitor_pos = monitor.position();
+    let x = monitor_pos.x + (monitor_size.width as i32 - width as i32) / 2;
+    let y = monitor_pos.y + (monitor_size.height as i32 - height as i32) / 2;
+    Some(PhysicalPosition::new(x, y))
+}
+
+fn compute_window_size_from_grid(
+    columns: Option<u16>,
+    rows: Option<u16>,
+    panel: &rio_backend::config::layout::Panel,
+    dim: &crate::layout::ContextDimension,
+    window_size: PhysicalSize<u32>,
+) -> (u32, u32) {
+    let scale = dim.dimension.scale;
+    let scale_u32 = scale.round().max(1.0) as u32;
+
+    let physical_width = match columns {
+        Some(columns) if columns > 0 => {
+            let margin = (dim.margin.left + dim.margin.right) * scale;
+            let panel_edge = (panel.padding.left
+                + panel.padding.right
+                + panel.margin.left
+                + panel.margin.right)
+                * scale;
+            let raw = (columns as f32 * dim.dimension.width).ceil() as u32
+                + margin as u32
+                + panel_edge as u32;
+            raw.next_multiple_of(scale_u32)
+        }
+        _ => window_size.width,
+    };
+
+    let physical_height = match rows {
+        Some(rows) if rows > 0 => {
+            let margin = (dim.margin.top + dim.margin.bottom) * scale;
+            let panel_edge = (panel.padding.top
+                + panel.padding.bottom
+                + panel.margin.top
+                + panel.margin.bottom)
+                * scale;
+            let raw = (rows as f32 * dim.dimension.height).ceil() as u32
+                + margin as u32
+                + panel_edge as u32;
+            raw.next_multiple_of(scale_u32)
+        }
+        _ => window_size.height,
+    };
+
+    let min_w = (DEFAULT_MINIMUM_WINDOW_WIDTH as f32 * scale).ceil() as u32;
+    let min_h = (DEFAULT_MINIMUM_WINDOW_HEIGHT as f32 * scale).ceil() as u32;
+
+    (physical_width.max(min_w), physical_height.max(min_h))
+}
+
+#[cfg(test)]
+mod grid_size_tests {
+    use super::*;
+    use rio_backend::config::layout::{Margin, Panel};
+    use rio_backend::sugarloaf::layout::TextDimensions;
+
+    fn make_dim(
+        width: f32,
+        height: f32,
+        scale: f32,
+        margin: Margin,
+    ) -> crate::layout::ContextDimension {
+        crate::layout::ContextDimension {
+            dimension: TextDimensions {
+                width,
+                height,
+                scale,
+            },
+            margin,
+            ..Default::default()
+        }
+    }
+
+    fn win(w: u32, h: u32) -> PhysicalSize<u32> {
+        PhysicalSize {
+            width: w,
+            height: h,
+        }
+    }
+
+    fn panel_zero() -> Panel {
+        Panel {
+            padding: Margin::all(0.0),
+            margin: Margin::all(0.0),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn applies_only_columns_override() {
+        let dim = make_dim(10.0, 20.0, 2.0, Margin::all(0.0));
+        // 80 * 10.0 = 800, next_multiple_of(2) = 800; height stays at window size
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(80),
+                None,
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (800, 600)
+        );
+    }
+
+    #[test]
+    fn applies_only_rows_override() {
+        let dim = make_dim(10.0, 20.0, 2.0, Margin::all(0.0));
+        // 24 * 20.0 = 480, next_multiple_of(2) = 480; width stays at window size
+        assert_eq!(
+            compute_window_size_from_grid(
+                None,
+                Some(24),
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (1000, 480)
+        );
+    }
+
+    #[test]
+    fn applies_both_overrides() {
+        let dim = make_dim(10.0, 20.0, 1.0, Margin::all(0.0));
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(100),
+                Some(40),
+                &panel_zero(),
+                &dim,
+                win(500, 300)
+            ),
+            (1000, 800)
+        );
+    }
+
+    #[test]
+    fn ignores_zero_overrides_and_keeps_window_size() {
+        let dim = make_dim(10.0, 20.0, 2.0, Margin::all(0.0));
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(0),
+                Some(0),
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (1000, 600)
+        );
+    }
+
+    #[test]
+    fn rounds_up_on_hidpi() {
+        let dim = make_dim(16.41, 33.0, 2.0, Margin::all(0.0));
+        // 80 * 16.41 = 1312.8 → ceil = 1313, next_multiple_of(2) = 1314
+        // 24 * 33.0 = 792, next_multiple_of(2) = 792
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(80),
+                Some(24),
+                &panel_zero(),
+                &dim,
+                win(1000, 600)
+            ),
+            (1314, 792)
+        );
+    }
+
+    #[test]
+    fn includes_terminal_and_panel_margins() {
+        let panel = Panel {
+            padding: Margin::new(3.0, 2.0, 4.0, 1.0),
+            margin: Margin::new(7.0, 6.0, 8.0, 5.0),
+            ..Default::default()
+        };
+        let dim = make_dim(10.0, 20.0, 1.0, Margin::new(4.0, 3.0, 5.0, 2.0));
+        assert_eq!(
+            compute_window_size_from_grid(Some(10), Some(5), &panel, &dim, win(500, 300)),
+            (300, 200)
+        );
+    }
+
+    #[test]
+    fn never_goes_under_minimum() {
+        let dim = make_dim(1.0, 1.0, 1.0, Margin::all(0.0));
+        assert_eq!(
+            compute_window_size_from_grid(
+                Some(1),
+                Some(1),
+                &panel_zero(),
+                &dim,
+                win(50, 50)
+            ),
+            (300, 200)
+        );
     }
 }

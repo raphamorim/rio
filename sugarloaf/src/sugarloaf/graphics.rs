@@ -3,53 +3,44 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::sugarloaf::types;
 use crate::sugarloaf::Handle;
 use image_rs::DynamicImage;
 use rustc_hash::FxHashMap;
 use std::cmp;
 
-/// Max allowed dimensions (width, height) for the graphic, in pixels.
 pub const MAX_GRAPHIC_DIMENSIONS: [usize; 2] = [4096, 4096];
 
 pub struct GraphicDataEntry {
     pub handle: Handle,
     pub width: f32,
     pub height: f32,
+    pub transmit_time: std::time::Instant,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct GraphicRenderRequest {
-    pub id: GraphicId,
-    pub pos_x: f32,
-    pub pos_y: f32,
-    pub width: Option<f32>,
-    pub height: Option<f32>,
-}
-
-pub struct BottomLayer {
-    pub data: types::Raster,
-    pub should_fit: bool,
+impl GraphicDataEntry {
+    /// Create from a GraphicData, taking ownership of pixel data.
+    pub fn from_graphic_data(data: GraphicData) -> Self {
+        let display_w = data.display_width.unwrap_or(data.width) as f32;
+        let display_h = data.display_height.unwrap_or(data.height) as f32;
+        Self {
+            handle: Handle::from_pixels(
+                data.width as u32,
+                data.height as u32,
+                data.pixels,
+            ),
+            width: display_w,
+            height: display_h,
+            transmit_time: data.transmit_time,
+        }
+    }
 }
 
 #[derive(Default)]
 pub struct Graphics {
     inner: FxHashMap<GraphicId, GraphicDataEntry>,
-    pub bottom_layer: Option<BottomLayer>,
-    pub top_layer: Vec<GraphicRenderRequest>,
 }
 
 impl Graphics {
-    #[inline]
-    pub fn has_graphics_on_top_layer(&self) -> bool {
-        !self.top_layer.is_empty()
-    }
-
-    #[inline]
-    pub fn clear_top_layer(&mut self) {
-        self.top_layer.clear();
-    }
-
     #[inline]
     pub fn get(&self, id: &GraphicId) -> Option<&GraphicDataEntry> {
         self.inner.get(id)
@@ -57,10 +48,15 @@ impl Graphics {
 
     #[inline]
     pub fn insert(&mut self, graphic_data: GraphicData) {
-        if self.inner.contains_key(&graphic_data.id) {
-            return;
+        // Check if existing entry has the same generation (skip re-upload)
+        if let Some(existing) = self.inner.get(&graphic_data.id) {
+            if existing.transmit_time == graphic_data.transmit_time {
+                return;
+            }
         }
 
+        let display_w = graphic_data.display_width.unwrap_or(graphic_data.width) as f32;
+        let display_h = graphic_data.display_height.unwrap_or(graphic_data.height) as f32;
         self.inner.insert(
             graphic_data.id,
             GraphicDataEntry {
@@ -69,8 +65,9 @@ impl Graphics {
                     graphic_data.height as u32,
                     graphic_data.pixels,
                 ),
-                width: graphic_data.width as f32,
-                height: graphic_data.height as f32,
+                width: display_w,
+                height: display_h,
+                transmit_time: graphic_data.transmit_time,
             },
         );
     }
@@ -88,9 +85,41 @@ pub struct Graphic {
     pub offset_y: u16,
 }
 
+/// An overlay image placement.
+/// Used by the renderer to draw images on top of (or behind) terminal content.
+#[derive(Debug, Clone)]
+pub struct GraphicOverlay {
+    /// Image identifier (kitty protocol image_id).
+    pub image_id: u32,
+    /// Screen position (physical pixels).
+    pub x: f32,
+    pub y: f32,
+    /// Display dimensions (physical pixels).
+    pub width: f32,
+    pub height: f32,
+    /// Z-index for layering.
+    pub z_index: i32,
+}
+
 /// Unique identifier for every graphic added to a grid.
+/// An id of 0 represents a temporary, non-referenceable image
+/// (matching kitty's behavior).
 #[derive(Eq, PartialEq, Clone, Debug, Copy, Hash, PartialOrd, Ord)]
 pub struct GraphicId(pub u64);
+
+impl GraphicId {
+    /// Create a new GraphicId from a u64 value.
+    #[inline]
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Get the inner u64 value.
+    #[inline]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
 
 /// Specifies the format of the pixel data.
 #[derive(Eq, PartialEq, Clone, Debug, Copy)]
@@ -125,6 +154,18 @@ pub struct GraphicData {
 
     /// Render graphic in a different size.
     pub resize: Option<ResizeCommand>,
+
+    /// Display width in pixels (set when GPU scaling is used instead of CPU resize).
+    /// If None, display at the original pixel width.
+    pub display_width: Option<usize>,
+
+    /// Display height in pixels (set when GPU scaling is used instead of CPU resize).
+    /// If None, display at the original pixel height.
+    pub display_height: Option<usize>,
+
+    /// Generation counter for cache invalidation.
+    /// Incremented when image data changes (re-transmission with same ID).
+    pub transmit_time: std::time::Instant,
 }
 
 impl GraphicData {
@@ -205,7 +246,76 @@ impl GraphicData {
             pixels,
             is_opaque: false,
             resize: None,
+            display_width: None,
+            display_height: None,
+            transmit_time: std::time::Instant::now(),
         }
+    }
+
+    /// Compute the display dimensions for this graphic without modifying pixels.
+    /// Returns (display_width, display_height) in pixels. If no resize is needed,
+    /// returns the original dimensions.
+    pub fn compute_display_dimensions(
+        &self,
+        cell_width: usize,
+        cell_height: usize,
+        view_width: usize,
+        view_height: usize,
+    ) -> (usize, usize) {
+        let resize = match self.resize {
+            Some(resize) => resize,
+            None => return (self.width, self.height),
+        };
+
+        if (resize.width == ResizeParameter::Auto
+            && resize.height == ResizeParameter::Auto)
+            || self.height == 0
+            || self.width == 0
+        {
+            return (self.width, self.height);
+        }
+
+        let mut width = match resize.width {
+            ResizeParameter::Auto => 1,
+            ResizeParameter::Pixels(n) => n as usize,
+            ResizeParameter::Cells(n) => n as usize * cell_width,
+            ResizeParameter::WindowPercent(n) => n as usize * view_width / 100,
+        };
+
+        let mut height = match resize.height {
+            ResizeParameter::Auto => 1,
+            ResizeParameter::Pixels(n) => n as usize,
+            ResizeParameter::Cells(n) => n as usize * cell_height,
+            ResizeParameter::WindowPercent(n) => n as usize * view_height / 100,
+        };
+
+        if width == 0 || height == 0 {
+            return (self.width, self.height);
+        }
+
+        if resize.width == ResizeParameter::Auto {
+            width =
+                (self.width as f64 * height as f64 / self.height as f64).round() as usize;
+        }
+
+        if resize.height == ResizeParameter::Auto {
+            height =
+                (self.height as f64 * width as f64 / self.width as f64).round() as usize;
+        }
+
+        width = cmp::min(width, MAX_GRAPHIC_DIMENSIONS[0]);
+        height = cmp::min(height, MAX_GRAPHIC_DIMENSIONS[1]);
+
+        if resize.preserve_aspect_ratio {
+            // Preserve aspect ratio: fit within width x height
+            let scale_w = width as f64 / self.width as f64;
+            let scale_h = height as f64 / self.height as f64;
+            let scale = scale_w.min(scale_h);
+            width = (self.width as f64 * scale).round() as usize;
+            height = (self.height as f64 * scale).round() as usize;
+        }
+
+        (width, height)
     }
 
     /// Resize the graphic according to the dimensions in the `resize` field.
@@ -328,13 +438,16 @@ pub struct ResizeCommand {
 #[test]
 fn check_opaque_region() {
     let graphic = GraphicData {
-        id: GraphicId(0),
+        id: GraphicId::new(1),
         width: 10,
         height: 10,
         color_type: ColorType::Rgb,
         pixels: vec![255; 10 * 10 * 3],
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -351,13 +464,16 @@ fn check_opaque_region() {
     };
 
     let graphic = GraphicData {
-        id: GraphicId(0),
+        id: GraphicId::new(1),
         pixels,
         width: 10,
         height: 10,
         color_type: ColorType::Rgba,
         is_opaque: false,
         resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));

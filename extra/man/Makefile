@@ -16,9 +16,10 @@ rio-bindings.5: rio-bindings.5.scd
 	$(SCDOC) < $< > $@
 
 install: all
-	install -Dm644 rio.1 $(DESTDIR)$(MANDIR)/man1/rio.1
-	install -Dm644 rio.5 $(DESTDIR)$(MANDIR)/man5/rio.5
-	install -Dm644 rio-bindings.5 $(DESTDIR)$(MANDIR)/man5/rio-bindings.5
+	mkdir -p $(DESTDIR)$(MANDIR)/man1 $(DESTDIR)$(MANDIR)/man5
+	install -m644 rio.1 $(DESTDIR)$(MANDIR)/man1/rio.1
+	install -m644 rio.5 $(DESTDIR)$(MANDIR)/man5/rio.5
+	install -m644 rio-bindings.5 $(DESTDIR)$(MANDIR)/man5/rio-bindings.5
 
 clean:
 	rm -f rio.1 rio.5 rio-bindings.5

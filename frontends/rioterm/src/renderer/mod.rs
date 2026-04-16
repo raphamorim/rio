@@ -1,34 +1,39 @@
-mod char_cache;
-mod font_cache;
-pub mod navigation;
-mod search;
+pub mod assistant;
+pub mod command_palette;
+pub mod custom_cursor;
+pub mod island;
+pub mod scrollbar;
+pub mod search;
+pub mod trail_cursor;
 pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;
-use crate::renderer::font_cache::FontCache;
-use char_cache::CharCache;
 use rio_backend::crosswords::LineDamage;
 use rio_backend::event::TerminalDamage;
+use taffy::NodeId;
 
 use crate::ansi::CursorShape;
-use crate::context::renderable::{Cursor, RenderableContent};
+use crate::context::renderable::{Cursor, PendingUpdate, RenderableContent};
 use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
-use crate::crosswords::square::{Flags, Square};
-use navigation::ScreenNavigation;
+use crate::crosswords::square::{Square, Wide};
+use crate::crosswords::style::{Style as CellStyle, StyleFlags, StyleSet};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
+use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
+use rio_backend::sugarloaf::font_introspector::Attributes;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Quad,
-    Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    drawable_character, is_private_user_area, CursorKind, Graphic, SpanStyle,
+    SpanStyleDecoration, Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo,
+    UnderlineShape, Weight,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 
 use crate::ime::Preedit;
@@ -110,13 +115,6 @@ impl PreeditOverlay {
         self.cells.get(idx).copied().flatten()
     }
 }
-
-#[derive(Default)]
-pub struct Search {
-    rich_text_id: Option<usize>,
-    active_search: Option<String>,
-}
-
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
@@ -124,13 +122,19 @@ pub struct Renderer {
     use_drawable_chars: bool,
     pub named_colors: Colors,
     pub colors: List,
-    pub navigation: ScreenNavigation,
+    pub navigation: Navigation,
+    pub margin: rio_backend::config::layout::Margin,
+    pub island: Option<island::Island>,
+    pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
-    last_active: Option<usize>,
+    unfocused_split_fill: Option<ColorArray>,
+    last_active: Option<NodeId>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
-    pub search: Search,
+    pub search: search::SearchOverlay,
+    pub assistant: assistant::AssistantOverlay,
+    pub scrollbar: scrollbar::Scrollbar,
     #[allow(unused)]
     pub option_as_alt: String,
     #[allow(unused)]
@@ -138,19 +142,73 @@ pub struct Renderer {
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
-    // Visual bell state
-    visual_bell_active: bool,
-    visual_bell_start: Option<std::time::Instant>,
-    font_context: rio_backend::sugarloaf::font::FontLibrary,
-    font_cache: FontCache,
-    char_cache: CharCache,
+    pub custom_mouse_cursor: bool,
+    pub trail_cursor_enabled: bool,
+    pub trail_cursor: trail_cursor::TrailCursor,
+}
+
+/// Check if two styles are compatible for shaping (can be in the same text run)
+/// Background color is intentionally excluded because it doesn't affect text shaping.
+/// This allows runs with varying background colors to share cache entries,
+/// dramatically improving cache hit rates for highlighted/selected text.
+fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
+    // PUA glyphs (and any glyph with a per-codepoint Nerd Font
+    // constraint) must each be in their own run so the compositor can
+    // individually constrain / scale them.
+    if a.pua_constraint.is_some()
+        || b.pua_constraint.is_some()
+        || a.nerd_font_constraint.is_some()
+        || b.nerd_font_constraint.is_some()
+    {
+        return false;
+    }
+    a.font_id == b.font_id
+        && a.color == b.color
+        && a.font_attrs == b.font_attrs
+        && a.decoration == b.decoration
+        && a.decoration_color == b.decoration_color
+        && a.cursor == b.cursor
+        && a.media == b.media
+        && a.drawable_char == b.drawable_char
+        && a.font_vars == b.font_vars
+        && a.width == b.width
+    // note: background_color is intentionally excluded
+}
+
+#[inline]
+fn is_powerline(c: char) -> bool {
+    ('\u{E0B0}'..='\u{E0D7}').contains(&c)
+}
+
+/// Compute the constraint width for a PUA (Nerd Font) glyph based on adjacent cells.
+/// Returns 1.0 (fit in 1 cell) or 2.0 (expand to 2 cells).
+fn pua_constraint_width(row: &Row<Square>, col: usize, cols: usize) -> f32 {
+    // At end of line -> constrain to 1 cell
+    if col + 1 >= cols {
+        return 1.0;
+    }
+
+    // If previous cell is also a PUA glyph (but not a graphics element
+    // like powerline), constrain to 1 so consecutive icons align properly.
+    if col > 0 {
+        let prev = row.inner[col - 1].c();
+        if is_private_user_area(&prev) && !is_powerline(prev) {
+            return 1.0;
+        }
+    }
+
+    // If next cell is empty, space, or wide char spacer, expand to 2 cells.
+    let next = &row.inner[col + 1];
+    if next.c() == '\0' || next.c() == ' ' || matches!(next.wide(), Wide::Spacer) {
+        return 2.0;
+    }
+
+    // Next cell is occupied -> constrain to 1 cell
+    1.0
 }
 
 impl Renderer {
-    pub fn new(
-        config: &Config,
-        font_context: &rio_backend::sugarloaf::font::FontLibrary,
-    ) -> Renderer {
+    pub fn new(config: &Config) -> Renderer {
         let colors = List::from(&config.colors);
         let named_colors = config.colors;
 
@@ -164,18 +222,20 @@ impl Renderer {
             dynamic_background.2 = true;
         }
 
-        let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
-            HashMap::new();
+        let island = if config.navigation.is_enabled() {
+            Some(island::Island::new(
+                named_colors.tabs,
+                named_colors.tabs_active,
+                named_colors.tab_border,
+                config.navigation.hide_if_single,
+            ))
+        } else {
+            None
+        };
 
-        for rule in &config.navigation.color_automation {
-            color_automation
-                .entry(rule.program.clone())
-                .or_default()
-                .insert(rule.path.clone(), rule.color);
-        }
-
-        let mut renderer = Renderer {
+        Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
+            unfocused_split_fill: config.navigation.unfocused_split_fill,
             last_active: None,
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
@@ -186,54 +246,53 @@ impl Renderer {
             config_has_blinking_enabled: config.cursor.blinking,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
-            navigation: ScreenNavigation::new(
-                config.navigation.clone(),
-                color_automation,
-                config.padding_y,
-            ),
+            navigation: config.navigation.clone(),
+            margin: config.margin,
+            island,
+            command_palette: {
+                let mut palette = command_palette::CommandPalette::new();
+                palette.has_adaptive_theme = config.adaptive_colors.is_some();
+                palette
+            },
             named_colors,
             dynamic_background,
-            visual_bell_active: false,
-            visual_bell_start: None,
-            search: Search::default(),
-            font_cache: FontCache::new(),
-            font_context: font_context.clone(),
-            char_cache: CharCache::new(),
+            search: search::SearchOverlay::default(),
+            assistant: assistant::AssistantOverlay::default(),
+            scrollbar: scrollbar::Scrollbar::new(config.enable_scroll_bar),
             is_game_mode_enabled: config.renderer.strategy.is_game(),
-        };
-
-        // Pre-populate font cache with common characters for better performance
-        renderer.font_cache.pre_populate(font_context);
-
-        renderer
+            custom_mouse_cursor: config.effects.custom_mouse_cursor,
+            trail_cursor_enabled: config.effects.trail_cursor,
+            trail_cursor: trail_cursor::TrailCursor::new(),
+        }
     }
 
     #[inline]
     pub fn set_active_search(&mut self, active_search: Option<String>) {
-        self.search.active_search = active_search;
+        self.search.set_active_search(active_search);
     }
 
     #[inline]
     fn create_style(
         &mut self,
         square: &Square,
+        cell_style: &CellStyle,
         term_colors: &TermColors,
-    ) -> (FragmentStyle, char) {
-        let flags = square.flags;
+    ) -> (SpanStyle, char) {
+        let flags = cell_style.flags;
 
-        let mut foreground_color = self.compute_color(&square.fg, flags, term_colors);
-        let mut background_color = self.compute_bg_color(square, term_colors);
+        let mut foreground_color = self.compute_color(&cell_style.fg, flags, term_colors);
+        let mut background_color = self.compute_bg_color(cell_style, term_colors);
 
-        let content = if square.c == '\t' || flags.contains(Flags::HIDDEN) {
+        let content = if square.c() == '\t' || flags.contains(StyleFlags::HIDDEN) {
             ' '
         } else {
-            square.c
+            square.c()
         };
 
         let font_attrs = match (
-            flags.contains(Flags::ITALIC),
-            flags.contains(Flags::BOLD_ITALIC),
-            flags.contains(Flags::BOLD),
+            flags.contains(StyleFlags::ITALIC),
+            flags.contains(StyleFlags::ITALIC) && flags.contains(StyleFlags::BOLD),
+            flags.contains(StyleFlags::BOLD),
         ) {
             (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
             (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
@@ -241,7 +300,7 @@ impl Renderer {
             _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
         };
 
-        if flags.contains(Flags::INVERSE) {
+        if flags.contains(StyleFlags::INVERSE) {
             std::mem::swap(&mut background_color, &mut foreground_color);
         }
 
@@ -255,16 +314,17 @@ impl Renderer {
             Some(background_color)
         };
 
-        let (decoration, decoration_color) = self.compute_decoration(square, term_colors);
+        let (decoration, decoration_color) =
+            self.compute_decoration(cell_style, term_colors);
 
         (
-            FragmentStyle {
+            SpanStyle {
                 color: foreground_color,
                 background_color,
                 font_attrs: font_attrs.into(),
                 decoration,
                 decoration_color,
-                ..FragmentStyle::default()
+                ..SpanStyle::default()
             },
             content,
         )
@@ -273,45 +333,45 @@ impl Renderer {
     #[inline]
     fn compute_decoration(
         &self,
-        square: &Square,
+        cell_style: &CellStyle,
         term_colors: &TermColors,
-    ) -> (Option<FragmentStyleDecoration>, Option<[f32; 4]>) {
+    ) -> (Option<SpanStyleDecoration>, Option<[f32; 4]>) {
         let mut decoration = None;
         let mut decoration_color = None;
 
-        if square.flags.contains(Flags::UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+        if cell_style.flags.contains(StyleFlags::UNDERLINE) {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Regular,
             }));
-        } else if square.flags.contains(Flags::STRIKEOUT) {
-            decoration = Some(FragmentStyleDecoration::Strikethrough);
-        } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+        } else if cell_style.flags.contains(StyleFlags::STRIKEOUT) {
+            decoration = Some(SpanStyleDecoration::Strikethrough);
+        } else if cell_style.flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: true,
                 shape: UnderlineShape::Regular,
             }));
-        } else if square.flags.contains(Flags::DOTTED_UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+        } else if cell_style.flags.contains(StyleFlags::DOTTED_UNDERLINE) {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Dotted,
             }));
-        } else if square.flags.contains(Flags::DASHED_UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+        } else if cell_style.flags.contains(StyleFlags::DASHED_UNDERLINE) {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Dashed,
             }));
-        } else if square.flags.contains(Flags::UNDERCURL) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+        } else if cell_style.flags.contains(StyleFlags::UNDERCURL) {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Curly,
             }));
         }
 
         if decoration.is_some() {
-            if let Some(color) = square.underline_color() {
+            if let Some(color) = cell_style.underline_color {
                 decoration_color =
-                    Some(self.compute_color(&color, square.flags, term_colors));
+                    Some(self.compute_color(&color, cell_style.flags, term_colors));
             }
         };
 
@@ -331,8 +391,10 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     fn create_line(
         &mut self,
-        builder: &mut Content,
+        sugarloaf: &mut Sugarloaf,
         row: &Row<Square>,
+        style_set: &StyleSet,
+        extras_table: &rio_backend::crosswords::grid::ExtrasTable,
         has_cursor: bool,
         visible_row_index: usize,
         line_opt: Option<usize>,
@@ -349,12 +411,24 @@ impl Renderer {
         let selection_range = renderable_content.selection_range;
         let columns: usize = row.len();
         let mut content = String::with_capacity(columns);
-        let mut last_char_was_space = false;
-        let mut last_style = FragmentStyle::default();
+        let mut last_style = SpanStyle::default();
 
         // Collect all characters that need font lookups to batch them
         let mut font_lookups = Vec::new();
         let mut styles_and_chars = Vec::with_capacity(columns);
+
+        // Cache the looked-up cell style across consecutive cells with the
+        // same `style_id` — this is the common case (most rows have long
+        // runs of identically-styled cells), and avoids the StyleSet lookup
+        // per cell. Bg-only cells (Ghostty's `bg_color_palette`/`bg_color_rgb`
+        // trick) skip the lookup entirely; we synthesize a Style with the
+        // inline bg and reuse the same cache slot.
+        let mut cached_style_id: Option<crate::crosswords::style::StyleId> = None;
+        let mut cached_style: CellStyle = CellStyle::default();
+        // Bg-only cells don't have a style id; track them by a tag instead
+        // so the cache invalidates correctly when transitioning between
+        // bg-only and codepoint cells.
+        let mut cached_bg_only: u64 = u64::MAX;
 
         // First pass: collect all styles and identify font cache misses
         for column in 0..columns {
@@ -362,19 +436,103 @@ impl Renderer {
             let preedit_cell =
                 ime_preedit.and_then(|preedit| preedit.get(visible_row_index, column));
 
-            if square.flags.contains(Flags::WIDE_CHAR_SPACER) && preedit_cell.is_none() {
+            if matches!(square.wide(), Wide::Spacer) && preedit_cell.is_none() {
                 continue;
             }
 
+            // Resolve the cell style. For bg-only cells we synthesize a
+            // Style with the inline bg and skip the StyleSet entirely.
+            // For codepoint cells we cache the looked-up style across runs
+            // of identical style_ids.
+            use crate::crosswords::square::ContentTag;
+            match square.content_tag() {
+                ContentTag::BgPalette => {
+                    let idx = square.bg_palette_index();
+                    let key = 0x0100_0000 | idx as u64;
+                    if cached_bg_only != key {
+                        cached_style = CellStyle {
+                            bg: AnsiColor::Indexed(idx),
+                            ..CellStyle::default()
+                        };
+                        cached_bg_only = key;
+                        cached_style_id = None;
+                    }
+                }
+                ContentTag::BgRgb => {
+                    let (r, g, b) = square.bg_rgb();
+                    let key =
+                        0x0200_0000 | ((r as u64) << 16) | ((g as u64) << 8) | b as u64;
+                    if cached_bg_only != key {
+                        cached_style =
+                            CellStyle {
+                                bg: AnsiColor::Spec(
+                                    rio_backend::config::colors::ColorRgb { r, g, b },
+                                ),
+                                ..CellStyle::default()
+                            };
+                        cached_bg_only = key;
+                        cached_style_id = None;
+                    }
+                }
+                ContentTag::Codepoint => {
+                    let sid = square.style_id();
+                    if Some(sid) != cached_style_id {
+                        cached_style = style_set.get(sid);
+                        cached_style_id = Some(sid);
+                        cached_bg_only = u64::MAX;
+                    }
+                }
+            }
+            let cell_style = &cached_style;
+
             let (mut style, mut square_content) =
                 if has_cursor && column == cursor.state.pos.col {
-                    self.create_cursor_style(square, cursor, is_active, term_colors)
+                    self.create_cursor_style(
+                        square,
+                        cell_style,
+                        cursor,
+                        is_active,
+                        term_colors,
+                    )
                 } else {
-                    self.create_style(square, term_colors)
+                    self.create_style(square, cell_style, term_colors)
                 };
 
-            // Apply underline for hyperlinks (OSC 8) or highlighted hints (hover)
-            let should_underline = square.hyperlink().is_some() || {
+            // Check selection before any early returns so '\0' cells get highlights
+            if let Some(ref range) = selection_range {
+                let pos = Pos::new(line, Column(column));
+                if range.contains(pos) {
+                    style.color = if self.ignore_selection_fg_color {
+                        self.compute_color(&cell_style.fg, cell_style.flags, term_colors)
+                    } else {
+                        self.named_colors.selection_foreground
+                    };
+                    style.background_color = Some(self.named_colors.selection_background);
+                }
+            }
+
+            if square_content == '\0' {
+                if square.has_graphics() {
+                    if let Some(eid) = square.extras_id() {
+                        if let Some(gc) = extras_table
+                            .get(eid)
+                            .and_then(|e| e.graphic.as_ref())
+                            .and_then(|g| g.first())
+                        {
+                            style.media = Some(Graphic {
+                                id: gc.texture.id,
+                                offset_x: gc.offset_x,
+                                offset_y: gc.offset_y,
+                            });
+                        }
+                    }
+                }
+                styles_and_chars.push((style, square_content, column));
+                continue;
+            }
+
+            // Apply underline for hyperlinks (OSC 8) or highlighted hints (hover).
+            let should_underline = {
                 if let Some(highlighted_hint) = &renderable_content.highlighted_hint {
                     let current_pos = Pos::new(line, Column(column));
                     highlighted_hint.start <= current_pos
@@ -385,37 +543,29 @@ impl Renderer {
             };
 
             if should_underline {
-                style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        is_doubled: false,
-                        shape: UnderlineShape::Regular,
-                    }));
+                style.decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
+                    is_doubled: false,
+                    shape: UnderlineShape::Regular,
+                }));
             }
 
-            // Check selection more efficiently
-            if let Some(ref range) = selection_range {
-                let pos = Pos::new(line, Column(column));
-                if range.contains(pos) {
-                    style.color = if self.ignore_selection_fg_color {
-                        self.compute_color(&square.fg, square.flags, term_colors)
-                    } else {
-                        self.named_colors.selection_foreground
-                    };
-                    style.background_color = Some(self.named_colors.selection_background);
-                }
-            } else if let Some(matches) = hint_matches {
-                let pos = Pos::new(line, Column(column));
-                if Self::is_position_in_hint_matches(matches, pos) {
-                    let is_focused =
-                        focused_match.as_ref().is_some_and(|fm| fm.contains(&pos));
-                    if is_focused {
-                        style.color = self.named_colors.search_focused_match_foreground;
-                        style.background_color =
-                            Some(self.named_colors.search_focused_match_background);
-                    } else {
-                        style.color = self.named_colors.search_match_foreground;
-                        style.background_color =
-                            Some(self.named_colors.search_match_background);
+            // Check hints (only for non-empty cells, selection already handled above)
+            if selection_range.is_none() {
+                if let Some(matches) = hint_matches {
+                    let pos = Pos::new(line, Column(column));
+                    if Self::is_position_in_hint_matches(matches, pos) {
+                        let is_focused =
+                            focused_match.as_ref().is_some_and(|fm| fm.contains(&pos));
+                        if is_focused {
+                            style.color =
+                                self.named_colors.search_focused_match_foreground;
+                            style.background_color =
+                                Some(self.named_colors.search_focused_match_background);
+                        } else {
+                            style.color = self.named_colors.search_match_foreground;
+                            style.background_color =
+                                Some(self.named_colors.search_match_background);
+                        }
                     }
                 }
             }
@@ -473,22 +623,27 @@ impl Renderer {
                 }
             }
 
-            if !is_active {
-                style.color[3] = self.unfocused_split_opacity;
-                if let Some(mut background_color) = style.background_color {
-                    background_color[3] = self.unfocused_split_opacity;
-                    style.background_color = Some(background_color);
-                }
+            // Kitty Unicode placeholder (U+10EEEE): treat as a space.
+            // The overlay image renders on top — no per-cell virtual
+            // placement lookup needed (matches Ghostty's approach).
+            if square_content == '\u{10EEEE}' {
+                square_content = ' ';
             }
 
-            if square.flags.contains(Flags::GRAPHICS) {
-                let graphic = &square.graphics().unwrap()[0];
-                style.media = Some(Graphic {
-                    id: graphic.texture.id,
-                    offset_x: graphic.offset_x,
-                    offset_y: graphic.offset_y,
-                });
-                style.background_color = None;
+            if square.has_graphics() {
+                if let Some(eid) = square.extras_id() {
+                    if let Some(gc) = extras_table
+                        .get(eid)
+                        .and_then(|e| e.graphic.as_ref())
+                        .and_then(|g| g.first())
+                    {
+                        style.media = Some(Graphic {
+                            id: gc.texture.id,
+                            offset_x: gc.offset_x,
+                            offset_y: gc.offset_y,
+                        });
+                    }
+                }
             }
 
             // Handle drawable characters
@@ -500,11 +655,18 @@ impl Renderer {
 
             let has_drawable_char = style.drawable_char.is_some();
             if !has_drawable_char {
-                if let Some((font_id, width)) =
-                    self.font_cache.get(&(square_content, style.font_attrs))
+                if let Some(cached) =
+                    sugarloaf.try_glyph_cached(square_content, style.font_attrs)
                 {
-                    style.font_id = *font_id;
-                    style.width = *width;
+                    style.font_id = cached.font_id;
+                    style.width = cached.width;
+                    if cached.is_pua {
+                        style.pua_constraint =
+                            Some(pua_constraint_width(row, column, columns));
+                        style.nerd_font_constraint = rio_backend::sugarloaf::font::nerd_font_attributes::get_constraint(
+                            square_content as u32,
+                        );
+                    }
                 } else {
                     // Mark this character for font lookup
                     font_lookups.push((
@@ -518,77 +680,106 @@ impl Renderer {
             styles_and_chars.push((style, square_content, column));
         }
 
-        // Batch font lookups with a single lock acquisition
+        // Batch font lookups with a single lock acquisition (the
+        // batch lives behind sugarloaf so the cache + FontLibrary
+        // stay co-located).
         if !font_lookups.is_empty() {
-            let font_ctx = self.font_context.inner.read();
-            for (style_index, square_content, font_attrs) in font_lookups {
-                let mut width = square_content.width().unwrap_or(1) as f32;
-                let style = &mut styles_and_chars[style_index].0;
-
-                if let Some((font_id, is_emoji)) =
-                    font_ctx.find_best_font_match(square_content, style)
-                {
-                    style.font_id = font_id;
-                    if is_emoji {
-                        width = 2.0;
-                    }
+            let queries: Vec<(char, Attributes)> = font_lookups
+                .iter()
+                .map(|&(_, ch, attrs)| (ch, attrs))
+                .collect();
+            let resolved = sugarloaf.resolve_glyphs_batch(&queries);
+            for ((style_index, ch, _), glyph) in font_lookups.iter().zip(resolved.iter())
+            {
+                let column = styles_and_chars[*style_index].2;
+                let style = &mut styles_and_chars[*style_index].0;
+                style.font_id = glyph.font_id;
+                style.width = glyph.width;
+                if glyph.is_pua {
+                    style.pua_constraint =
+                        Some(pua_constraint_width(row, column, columns));
+                    style.nerd_font_constraint = rio_backend::sugarloaf::font::nerd_font_attributes::get_constraint(
+                        *ch as u32,
+                    );
                 }
-                style.width = width;
-
-                self.font_cache
-                    .insert((square_content, font_attrs), (style.font_id, style.width));
             }
         }
 
-        // Second pass: render the line using the resolved styles
+        // Second pass: render the line using the resolved styles.
+        // Grab the content builder now — pass 1 only touched the
+        // sugarloaf font cache, so we can take a fresh `&mut Content`
+        // here without conflict.
+        let builder = sugarloaf.content();
+        // Track consecutive blank cells ('\0' and ' ') to batch into a single rect
+        let mut pending_blank_width: f32 = 0.0;
+        let mut pending_blank_style = SpanStyle::default();
+
         for (style, square_content, column) in styles_and_chars {
+            // Cells carrying a graphic (sixel/iTerm2/Kitty) must go
+            // through the normal text path so the renderer paints
+            // their image. They are NOT blank — even when their
+            // character slot is `'\0'` or `' '`.
+            let has_media = style.media.is_some();
+            let is_blank =
+                (square_content == '\0' || square_content == ' ') && !has_media;
+
+            // Flush pending blank run if this cell breaks the batch
+            if pending_blank_width > 0.0
+                && (!is_blank
+                    || style.background_color != pending_blank_style.background_color
+                    || style.cursor != pending_blank_style.cursor
+                    || style.decoration != pending_blank_style.decoration
+                    || style.decoration_color != pending_blank_style.decoration_color)
+            {
+                let mut rect_style = pending_blank_style;
+                rect_style.width = pending_blank_width;
+                if let Some(line) = line_opt {
+                    builder.add_span_as_rect_on_line(line, rect_style);
+                } else {
+                    builder.add_span_as_rect(rect_style);
+                }
+                pending_blank_width = 0.0;
+            }
+
             // Handle drawable characters
             if style.drawable_char.is_some() {
                 if !content.is_empty() {
                     if let Some(line) = line_opt {
-                        builder.add_text_on_line(line, &content, last_style);
+                        builder.add_span_on_line(line, &content, last_style);
                     } else {
-                        builder.add_text(&content, last_style);
+                        builder.add_span(&content, last_style);
                     }
                     content.clear();
                 }
 
                 last_style = style;
                 content.push(' '); // Ignore font shaping
-            } else {
-                if square_content == ' ' {
-                    if !last_char_was_space {
-                        if !content.is_empty() {
-                            if let Some(line) = line_opt {
-                                builder.add_text_on_line(line, &content, last_style);
-                            } else {
-                                builder.add_text(&content, last_style);
-                            }
-                            content.clear();
-                        }
-
-                        last_char_was_space = true;
-                        last_style = style;
+            } else if is_blank {
+                // Accumulate into pending blank run
+                if !content.is_empty() {
+                    if let Some(line) = line_opt {
+                        builder.add_span_on_line(line, &content, last_style);
+                    } else {
+                        builder.add_span(&content, last_style);
                     }
-                } else {
-                    if last_char_was_space && !content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_text_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_text(&content, last_style);
-                        }
-                        content.clear();
-                    }
-
-                    last_char_was_space = false;
+                    content.clear();
                 }
-
-                if last_style != style {
+                if pending_blank_width == 0.0 {
+                    pending_blank_style = style;
+                }
+                pending_blank_width += 1.0;
+                last_style = style;
+            } else {
+                // Break runs when styles differ in ways that affect shaping
+                // or when background color changes (for search highlights, etc.)
+                if !styles_are_compatible_for_shaping(&last_style, &style)
+                    || last_style.background_color != style.background_color
+                {
                     if !content.is_empty() {
                         if let Some(line) = line_opt {
-                            builder.add_text_on_line(line, &content, last_style);
+                            builder.add_span_on_line(line, &content, last_style);
                         } else {
-                            builder.add_text(&content, last_style);
+                            builder.add_span(&content, last_style);
                         }
                         content.clear();
                     }
@@ -596,16 +787,35 @@ impl Renderer {
                     last_style = style;
                 }
 
-                content.push(square_content);
+                // A '\0' cell with a graphic still needs a glyph to
+                // anchor the image draw. Substitute a space so the
+                // shaper produces a real run.
+                let push_char = if has_media && square_content == '\0' {
+                    ' '
+                } else {
+                    square_content
+                };
+                content.push(push_char);
             }
 
             // Render last column and break row
             if column == (columns - 1) {
                 if !content.is_empty() {
                     if let Some(line) = line_opt {
-                        builder.add_text_on_line(line, &content, last_style);
+                        builder.add_span_on_line(line, &content, last_style);
                     } else {
-                        builder.add_text(&content, last_style);
+                        builder.add_span(&content, last_style);
+                    }
+                }
+
+                // Flush any remaining pending blank cells
+                if pending_blank_width > 0.0 {
+                    let mut rect_style = pending_blank_style;
+                    rect_style.width = pending_blank_width;
+                    if let Some(line) = line_opt {
+                        builder.add_span_as_rect_on_line(line, rect_style);
+                    } else {
+                        builder.add_span_as_rect(rect_style);
                     }
                 }
 
@@ -630,28 +840,27 @@ impl Renderer {
     fn compute_color(
         &self,
         color: &AnsiColor,
-        flags: Flags,
+        flags: StyleFlags,
         term_colors: &TermColors,
     ) -> ColorArray {
+        let dim = flags.contains(StyleFlags::DIM);
+        let bold = flags.contains(StyleFlags::BOLD);
         match color {
             AnsiColor::Named(ansi) => {
-                match (
-                    self.draw_bold_text_with_light_colors,
-                    flags & Flags::DIM_BOLD,
-                ) {
+                match (self.draw_bold_text_with_light_colors, dim, bold) {
                     // If no bright foreground is set, treat it like the BOLD flag doesn't exist.
-                    (_, Flags::DIM_BOLD)
+                    (_, true, true)
                         if ansi == &NamedColor::Foreground
                             && self.named_colors.light_foreground.is_none() =>
                     {
                         self.color(NamedColor::DimForeground as usize, term_colors)
                     }
                     // Draw bold text in bright colors *and* contains bold flag.
-                    (true, Flags::BOLD) => {
+                    (true, false, true) => {
                         self.color(ansi.to_light() as usize, term_colors)
                     }
                     // Cell is marked as dim and not bold.
-                    (_, Flags::DIM) | (false, Flags::DIM_BOLD) => {
+                    (_, true, false) | (false, true, true) => {
                         self.color(ansi.to_dim() as usize, term_colors)
                     }
                     // None of the above, keep original color..
@@ -659,18 +868,16 @@ impl Renderer {
                 }
             }
             AnsiColor::Spec(rgb) => {
-                if !flags.contains(Flags::DIM) {
+                if !dim {
                     rgb.to_arr()
                 } else {
                     rgb.to_arr_with_dim()
                 }
             }
             AnsiColor::Indexed(index) => {
-                let index = match (flags & Flags::DIM_BOLD, index) {
-                    (Flags::DIM, 8..=15) => *index as usize - 8,
-                    (Flags::DIM, 0..=7) => {
-                        NamedColor::DimBlack as usize + *index as usize
-                    }
+                let index = match (dim, index) {
+                    (true, 8..=15) => *index as usize - 8,
+                    (true, 0..=7) => NamedColor::DimBlack as usize + *index as usize,
                     _ => *index as usize,
                 };
 
@@ -680,22 +887,27 @@ impl Renderer {
     }
 
     #[inline]
-    fn compute_bg_color(&self, square: &Square, term_colors: &TermColors) -> ColorArray {
-        match square.bg {
+    fn compute_bg_color(
+        &self,
+        cell_style: &CellStyle,
+        term_colors: &TermColors,
+    ) -> ColorArray {
+        let dim = cell_style.flags.contains(StyleFlags::DIM);
+        let bold = cell_style.flags.contains(StyleFlags::BOLD);
+        match cell_style.bg {
             AnsiColor::Named(ansi) => self.color(ansi as usize, term_colors),
-            AnsiColor::Spec(rgb) => match square.flags & Flags::DIM {
-                Flags::DIM => (&(rgb * DIM_FACTOR)).into(),
-                _ => (&rgb).into(),
-            },
+            AnsiColor::Spec(rgb) => {
+                if dim {
+                    (&(rgb * DIM_FACTOR)).into()
+                } else {
+                    (&rgb).into()
+                }
+            }
             AnsiColor::Indexed(idx) => {
-                let idx = match (
-                    self.draw_bold_text_with_light_colors,
-                    square.flags & Flags::DIM_BOLD,
-                    idx,
-                ) {
-                    (true, Flags::BOLD, 0..=7) => idx as usize + 8,
-                    (false, Flags::DIM, 8..=15) => idx as usize - 8,
-                    (false, Flags::DIM, 0..=7) => {
+                let idx = match (self.draw_bold_text_with_light_colors, dim, bold, idx) {
+                    (true, false, true, 0..=7) => idx as usize + 8,
+                    (false, true, false, 8..=15) => idx as usize - 8,
+                    (false, true, false, 0..=7) => {
                         NamedColor::DimBlack as usize + idx as usize
                     }
                     _ => idx as usize,
@@ -710,14 +922,16 @@ impl Renderer {
     fn create_cursor_style(
         &self,
         square: &Square,
+        cell_style: &CellStyle,
         cursor: &Cursor,
         is_active: bool,
         term_colors: &TermColors,
-    ) -> (FragmentStyle, char) {
+    ) -> (SpanStyle, char) {
+        let flags = cell_style.flags;
         let font_attrs = match (
-            square.flags.contains(Flags::ITALIC),
-            square.flags.contains(Flags::BOLD_ITALIC),
-            square.flags.contains(Flags::BOLD),
+            flags.contains(StyleFlags::ITALIC),
+            flags.contains(StyleFlags::ITALIC) && flags.contains(StyleFlags::BOLD),
+            flags.contains(StyleFlags::BOLD),
         ) {
             (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
             (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
@@ -725,16 +939,18 @@ impl Renderer {
             _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
         };
 
-        let mut color = self.compute_color(&square.fg, square.flags, term_colors);
-        let mut background_color = self.compute_bg_color(square, term_colors);
+        let mut color = self.compute_color(&cell_style.fg, flags, term_colors);
+        let mut background_color = self.compute_bg_color(cell_style, term_colors);
         // If IME is enabled we get the current content to cursor
         let content = if cursor.is_ime_enabled {
             cursor.content
+        } else if square.c() == '\0' {
+            ' '
         } else {
-            square.c
+            square.c()
         };
 
-        if square.flags.contains(Flags::INVERSE) {
+        if flags.contains(StyleFlags::INVERSE) {
             std::mem::swap(&mut background_color, &mut color);
         }
 
@@ -765,11 +981,11 @@ impl Renderer {
             (false, false) => {}
         }
 
-        let mut style = FragmentStyle {
+        let mut style = SpanStyle {
             color,
             background_color,
             font_attrs: font_attrs.into(),
-            ..FragmentStyle::default()
+            ..SpanStyle::default()
         };
 
         let cursor_color = if !self.is_vi_mode_enabled {
@@ -778,31 +994,43 @@ impl Renderer {
             self.named_colors.vi_cursor
         };
 
-        let (decoration, decoration_color) = self.compute_decoration(square, term_colors);
+        let (decoration, decoration_color) =
+            self.compute_decoration(cell_style, term_colors);
         style.decoration = decoration;
         style.decoration_color = decoration_color;
 
         match cursor.state.content {
             CursorShape::Underline => {
-                style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        is_doubled: false,
-                        shape: UnderlineShape::Regular,
-                    }));
+                style.decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
+                    is_doubled: false,
+                    shape: UnderlineShape::Regular,
+                }));
                 style.decoration_color = Some(cursor_color);
             }
             CursorShape::Block => {
-                style.cursor = Some(SugarCursor::Block(cursor_color));
+                style.cursor = Some(SugarCursor {
+                    kind: CursorKind::Block,
+                    color: cursor_color,
+                    order: 0,
+                });
             }
             CursorShape::Beam => {
-                style.cursor = Some(SugarCursor::Caret(cursor_color));
+                style.cursor = Some(SugarCursor {
+                    kind: CursorKind::Caret,
+                    color: cursor_color,
+                    order: 0,
+                });
             }
             CursorShape::Hidden => {}
         }
 
         if !is_active {
             style.decoration = None;
-            style.cursor = Some(SugarCursor::HollowBlock(cursor_color));
+            style.cursor = Some(SugarCursor {
+                kind: CursorKind::HollowBlock,
+                color: cursor_color,
+                order: 0,
+            });
         }
 
         (style, content)
@@ -813,119 +1041,10 @@ impl Renderer {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
 
-    /// Trigger the visual bell
-    #[inline]
-    pub fn trigger_visual_bell(&mut self) {
-        self.visual_bell_active = true;
-        self.visual_bell_start = Some(std::time::Instant::now());
-    }
-
-    /// Check if visual bell should be displayed and update its state
-    #[inline]
-    pub fn update_visual_bell(&mut self) -> bool {
-        if !self.visual_bell_active {
-            return false;
-        }
-
-        if let Some(start_time) = self.visual_bell_start {
-            if start_time.elapsed() >= crate::constants::BELL_DURATION {
-                self.visual_bell_active = false;
-                self.visual_bell_start = None;
-                false
-            } else {
-                true
-            }
-        } else {
-            false
-        }
-    }
-
     // Get the RGB value for a color index.
     #[inline]
     pub fn color(&self, color: usize, term_colors: &TermColors) -> ColorArray {
         term_colors[color].unwrap_or(self.colors[color])
-    }
-
-    #[inline]
-    fn update_search_rich_text(&mut self, content: &mut Content) {
-        if let Some(active_search_content) = &self.search.active_search {
-            if let Some(search_rich_text) = self.search.rich_text_id {
-                if active_search_content.is_empty() {
-                    content
-                        .sel(search_rich_text)
-                        .clear()
-                        .new_line()
-                        .add_text(
-                            &String::from("Search: type something..."),
-                            FragmentStyle {
-                                color: [
-                                    self.named_colors.foreground[0],
-                                    self.named_colors.foreground[1],
-                                    self.named_colors.foreground[2],
-                                    self.named_colors.foreground[3] - 0.3,
-                                ],
-                                ..FragmentStyle::default()
-                            },
-                        )
-                        .build();
-                } else {
-                    let style = FragmentStyle {
-                        color: self.named_colors.foreground,
-                        ..FragmentStyle::default()
-                    };
-                    let line = content.sel(search_rich_text);
-                    line.clear().new_line().add_text("Search: ", style);
-
-                    // Collect characters that need font lookups
-                    let mut font_lookups = Vec::new();
-                    let mut char_styles = Vec::new();
-
-                    for character in active_search_content.chars() {
-                        let mut char_style = style;
-                        if let Some((font_id, width)) =
-                            self.font_cache.get(&(character, style.font_attrs))
-                        {
-                            char_style.font_id = *font_id;
-                            char_style.width = *width;
-                        } else {
-                            font_lookups.push((char_styles.len(), character));
-                        }
-                        char_styles.push((char_style, character));
-                    }
-
-                    // Batch font lookups with a single lock acquisition
-                    if !font_lookups.is_empty() {
-                        let font_ctx = self.font_context.inner.read();
-                        for (style_index, character) in font_lookups {
-                            let mut width = character.width().unwrap_or(1) as f32;
-                            let char_style = &mut char_styles[style_index].0;
-
-                            if let Some((font_id, is_emoji)) =
-                                font_ctx.find_best_font_match(character, char_style)
-                            {
-                                char_style.font_id = font_id;
-                                if is_emoji {
-                                    width = 2.0;
-                                }
-                            }
-                            char_style.width = width;
-                        }
-                    }
-
-                    // Render all characters
-                    for (char_style, character) in char_styles {
-                        line.add_text_on_line(
-                            // Add on first line
-                            1,
-                            self.char_cache.get_str(character),
-                            char_style,
-                        );
-                    }
-
-                    line.build();
-                }
-            }
-        }
     }
 
     #[inline]
@@ -935,26 +1054,36 @@ impl Renderer {
         context_manager: &mut ContextManager<EventProxy>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) -> Option<crate::context::renderable::WindowUpdate> {
-        // let start = std::time::Instant::now();
-
-        // In case rich text for search was not created
-        let has_search = self.search.active_search.is_some();
-        if has_search && self.search.rich_text_id.is_none() {
-            let search_rich_text = sugarloaf.create_temp_rich_text();
-            sugarloaf.set_rich_text_font_size(&search_rich_text, 12.0);
-            self.search.rich_text_id = Some(search_rich_text);
-        }
-
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
+        let grid_scaled_margin = grid.get_scaled_margin();
         let mut has_active_changed = false;
         if self.last_active != Some(active_key) {
             has_active_changed = true;
             self.last_active = Some(active_key);
         }
 
+        // Update per-panel scroll state for scrollbar rendering (all panels, not just dirty ones)
+        if self.scrollbar.is_enabled() {
+            self.scrollbar.clear_panel_states();
+            for grid_context in grid.contexts_mut().values() {
+                let panel_rect = grid_context.layout_rect;
+                let ctx = grid_context.context();
+                let terminal = ctx.terminal.lock();
+                self.scrollbar
+                    .push_panel_state(scrollbar::PanelScrollState {
+                        rich_text_id: ctx.rich_text_id,
+                        panel_rect,
+                        display_offset: terminal.display_offset(),
+                        history_size: terminal.history_size(),
+                        screen_lines: terminal.screen_lines(),
+                    });
+            }
+        }
+
         for (key, grid_context) in grid.contexts_mut().iter_mut() {
             let is_active = &active_key == key;
+            let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
 
             let mut has_ime = false;
@@ -981,65 +1110,125 @@ impl Renderer {
                 continue;
             }
 
-            // Get UI damage before resetting
-            let ui_damage = context.renderable_content.pending_update.take_ui_damage();
+            // UI-side damage (scroll, selection, resize, etc.)
+            let ui_terminal_damage = context
+                .renderable_content
+                .pending_update
+                .take_terminal_damage();
+            let _ui_damage = context.renderable_content.pending_update.take_ui_damage();
             context.renderable_content.pending_update.reset();
 
-            // Compute snapshot at render time
+            // Compute snapshot at render time — extract PTY-side damage from the
+            // terminal, merge with any UI-side damage, and clear the in-flight
+            // flag so the PTY thread can send a new notification.
             let terminal_snapshot = {
                 let mut terminal = context.terminal.lock();
 
-                // Get damage from terminal
-                let terminal_damage = if force_full_damage {
-                    Some(TerminalDamage::Full)
-                } else {
-                    terminal.peek_damage_event()
-                };
+                // Clear in-flight flag so PTY thread can notify again
+                terminal.damage_event_in_flight = false;
 
-                // Merge terminal damage with UI damage
-                let damage = match (terminal_damage, ui_damage) {
-                    (Some(TerminalDamage::Full), _) | (_, Some(TerminalDamage::Full)) => {
-                        TerminalDamage::Full
-                    }
-                    (Some(term), Some(ui)) => {
-                        // Merge partial damages
-                        match (term, ui) {
-                            (
-                                TerminalDamage::Partial(mut lines1),
-                                TerminalDamage::Partial(lines2),
-                            ) => {
-                                lines1.extend(lines2);
-                                TerminalDamage::Partial(lines1)
-                            }
-                            _ => TerminalDamage::Full,
+                let pty_damage = terminal.peek_damage_event();
+
+                let damage = if force_full_damage {
+                    TerminalDamage::Full
+                } else {
+                    match (ui_terminal_damage, pty_damage) {
+                        (Some(ui), Some(pty)) => {
+                            PendingUpdate::merge_terminal_damages(ui, pty)
+                        }
+                        (Some(d), None) | (None, Some(d)) => d,
+                        (None, None) => {
+                            drop(terminal);
+                            continue;
                         }
                     }
-                    (Some(damage), None) => damage,
-                    (None, Some(damage)) => damage,
-                    (None, None) => TerminalDamage::Full,
                 };
+
+                terminal.reset_damage();
 
                 let snapshot = TerminalSnapshot {
                     colors: terminal.colors,
                     display_offset: terminal.display_offset(),
                     blinking_cursor: terminal.blinking_cursor,
                     visible_rows: terminal.visible_rows(),
+                    style_set: terminal.grid.style_set.clone(),
+                    extras_table: terminal.grid.extras_table.clone(),
                     cursor: terminal.cursor(),
                     damage,
                     columns: terminal.columns(),
                     screen_lines: terminal.screen_lines(),
+                    history_size: terminal.history_size(),
+                    kitty_virtual_placements: terminal
+                        .graphics
+                        .kitty_virtual_placements
+                        .clone(),
+                    kitty_images: terminal.graphics.kitty_images.clone(),
+                    kitty_placements: {
+                        let mut placements: Vec<_> = terminal
+                            .graphics
+                            .kitty_placements
+                            .values()
+                            .filter(|p| {
+                                terminal.graphics.kitty_images.contains_key(&p.image_id)
+                            })
+                            .cloned()
+                            .collect();
+                        placements.sort_by_key(|p| p.z_index);
+                        placements
+                    },
+                    kitty_graphics_dirty: terminal.graphics.kitty_graphics_dirty,
                 };
-                terminal.reset_damage();
+                terminal.graphics.kitty_graphics_dirty = false;
                 drop(terminal);
 
                 snapshot
             };
 
+            // Recalculate image overlay positions every frame when placements
+            // exist. Positions depend on display_offset and history_size which
+            // change on scroll and text output (like Ghostty's approach).
+            if !terminal_snapshot.kitty_placements.is_empty() {
+                let line_height = sugarloaf.style().line_height;
+                let content = sugarloaf.content();
+                content.sel(context.rich_text_id);
+                content.clear_image_overlays();
+                let layout = context.dimension;
+                let cell_width = layout.dimension.width;
+                let cell_height = layout.dimension.height * line_height;
+                let origin_x = panel_rect[0] + grid_scaled_margin.left;
+                let origin_y = panel_rect[1] + grid_scaled_margin.top;
+                let history_size = terminal_snapshot.history_size as i64;
+                let display_offset = terminal_snapshot.display_offset as i64;
+                let screen_lines = terminal_snapshot.screen_lines as i64;
+
+                for p in &terminal_snapshot.kitty_placements {
+                    let screen_row = p.dest_row - (history_size - display_offset);
+                    let image_bottom_row = screen_row + p.rows as i64;
+                    // Cull only if fully off-screen (like Ghostty)
+                    if image_bottom_row <= 0 || screen_row >= screen_lines {
+                        continue;
+                    }
+                    content.push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
+                        image_id: p.image_id,
+                        x: origin_x + p.dest_col as f32 * cell_width,
+                        y: origin_y + screen_row as f32 * cell_height,
+                        width: p.pixel_width as f32,
+                        height: p.pixel_height as f32,
+                        z_index: p.z_index,
+                    });
+                }
+            } else if terminal_snapshot.kitty_graphics_dirty {
+                // Placements were removed — clear overlays
+                let content = sugarloaf.content();
+                content.sel(context.rich_text_id);
+                content.clear_image_overlays();
+            }
+
             // Get hint matches from renderable content
             let hint_matches = context.renderable_content.hint_matches.as_deref();
 
             // Update cursor state from snapshot
-            context.renderable_content.cursor.state = terminal_snapshot.cursor;
+            context.renderable_content.cursor.state = terminal_snapshot.cursor.clone();
             let preedit_overlay = context.ime.preedit().and_then(|preedit| {
                 PreeditOverlay::new(
                     preedit,
@@ -1054,7 +1243,11 @@ impl Renderer {
 
             // Check for partial damage to optimize rendering
             if !force_full_damage {
-                match terminal_snapshot.damage {
+                match &terminal_snapshot.damage {
+                    TerminalDamage::Noop => {
+                        // Should not reach here — Noop is handled before snapshot
+                        continue;
+                    }
                     TerminalDamage::Full => {
                         // Full damage, render everything
                     }
@@ -1134,17 +1327,17 @@ impl Renderer {
                 is_cursor_visible = true;
             }
 
-            let content = sugarloaf.content();
             match specific_lines {
                 None => {
-                    content.sel(rich_text_id);
-                    content.clear();
+                    sugarloaf.content().sel(rich_text_id).clear();
                     for (i, row) in terminal_snapshot.visible_rows.iter().enumerate() {
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == i;
                         self.create_line(
-                            content,
+                            sugarloaf,
                             row,
+                            &terminal_snapshot.style_set,
+                            &terminal_snapshot.extras_table,
                             has_cursor,
                             i,
                             None,
@@ -1157,22 +1350,24 @@ impl Renderer {
                             is_active,
                         );
                     }
-                    content.build();
+                    sugarloaf.content().build();
                     // let _duration = start.elapsed();
                 }
                 Some(lines) => {
-                    content.sel(rich_text_id);
+                    sugarloaf.content().sel(rich_text_id);
                     for line in lines {
                         let line = line.line;
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == line;
-                        content.clear_line(line);
+                        sugarloaf.content().clear_line(line);
                         if let Some(visible_row) =
                             terminal_snapshot.visible_rows.get(line)
                         {
                             self.create_line(
-                                content,
+                                sugarloaf,
                                 visible_row,
+                                &terminal_snapshot.style_set,
+                                &terminal_snapshot.extras_table,
                                 has_cursor,
                                 line,
                                 Some(line),
@@ -1195,55 +1390,121 @@ impl Renderer {
             }
         }
 
-        self.update_search_rich_text(sugarloaf.content());
-
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
-        let mut objects = Vec::with_capacity(15);
-        self.navigation.build_objects(
-            sugarloaf,
-            (window_size.width, window_size.height, scale_factor),
-            &self.named_colors,
-            context_manager,
-            self.search.active_search.is_some(),
-            &mut objects,
-        );
 
-        if has_search {
-            if let Some(rich_text_id) = self.search.rich_text_id {
-                search::draw_search_bar(
-                    &mut objects,
-                    rich_text_id,
-                    &self.named_colors,
-                    (window_size.width, window_size.height, scale_factor),
-                );
+        // Dim overlay for unfocused splits. Drawn after the split content is
+        // built so it composites on top. The tint comes from
+        // `unfocused_split_fill` (falling back to the terminal background)
+        // and its strength is `1.0 - unfocused_split_opacity`. Skipped
+        // entirely when the feature is disabled.
+        if self.unfocused_split_opacity < 1.0 {
+            let tint = self
+                .unfocused_split_fill
+                .unwrap_or(self.dynamic_background.0);
+            let dim_color = [
+                tint[0],
+                tint[1],
+                tint[2],
+                1.0 - self.unfocused_split_opacity,
+            ];
+            for (key, grid_context) in grid.contexts_mut().iter() {
+                if &active_key == key {
+                    continue;
+                }
+                let panel_rect = grid_context.layout_rect;
+                let x = (panel_rect[0] + grid_scaled_margin.left) / scale_factor;
+                let y = (panel_rect[1] + grid_scaled_margin.top) / scale_factor;
+                let w = panel_rect[2] / scale_factor;
+                let h = panel_rect[3] / scale_factor;
+                sugarloaf.rect(None, x, y, w, h, dim_color, 0.0, 3);
             }
-
-            self.search.active_search = None;
-            self.search.rich_text_id = None;
         }
 
-        // let _duration = start.elapsed();
-        context_manager.extend_with_grid_objects(&mut objects);
-        // let _duration = start.elapsed();
+        if let Some(island) = &mut self.island {
+            island.render(
+                sugarloaf,
+                (window_size.width, window_size.height, scale_factor),
+                context_manager,
+            );
+        }
 
-        // Update visual bell state and set overlay if needed
-        let visual_bell_active = self.update_visual_bell();
+        self.assistant.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
 
-        // Set visual bell overlay that renders on top of everything
-        let bell_overlay = if visual_bell_active {
-            Some(Quad {
-                position: [0.0, 0.0],
-                size: [window_size.width, window_size.height],
-                color: self.named_colors.foreground,
-                ..Quad::default()
-            })
-        } else {
-            None
-        };
-        sugarloaf.set_visual_bell_overlay(bell_overlay);
+        self.search.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
 
-        sugarloaf.set_objects(objects);
+        self.command_palette.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
+
+        // Render scrollbars for each panel
+        let grid_scaled_margin_sb = context_manager.get_current_grid_scaled_margin();
+        let grid_margin_sb = (grid_scaled_margin_sb.left, grid_scaled_margin_sb.top);
+        let panel_count = self.scrollbar.panel_states().len();
+        for i in 0..panel_count {
+            let state = self.scrollbar.panel_states()[i];
+            self.scrollbar.render(
+                sugarloaf,
+                state.panel_rect,
+                scale_factor,
+                state.display_offset,
+                state.history_size,
+                state.screen_lines,
+                state.rich_text_id,
+                grid_margin_sb,
+            );
+        }
+
+        // Render panel borders (on top of terminal content)
+        let grid_scaled_margin = context_manager.get_current_grid_scaled_margin();
+        for border_object in context_manager.get_panel_borders() {
+            match border_object {
+                rio_backend::sugarloaf::Object::Quad(quad) => {
+                    // Convert from physical pixels to logical coordinates
+                    let x = (quad.x + grid_scaled_margin.left) / scale_factor;
+                    let y = (quad.y + grid_scaled_margin.top) / scale_factor;
+                    let width = quad.width / scale_factor;
+                    let height = quad.height / scale_factor;
+
+                    let corner_radii = [
+                        quad.corner_radii.top_left / scale_factor,
+                        quad.corner_radii.top_right / scale_factor,
+                        quad.corner_radii.bottom_right / scale_factor,
+                        quad.corner_radii.bottom_left / scale_factor,
+                    ];
+
+                    // Render quad with rounded corners
+                    sugarloaf.quad(
+                        None,
+                        x,
+                        y,
+                        width,
+                        height,
+                        quad.background_color,
+                        corner_radii,
+                        0.0,
+                        1, // Higher order renders on top
+                    );
+                }
+                rio_backend::sugarloaf::Object::Rect(rect) => {
+                    // Simple rectangle (no rounded corners or borders)
+                    let x = (rect.x + grid_scaled_margin.left) / scale_factor;
+                    let y = (rect.y + grid_scaled_margin.top) / scale_factor;
+                    let width = rect.width / scale_factor;
+                    let height = rect.height / scale_factor;
+
+                    sugarloaf.rect(None, x, y, width, height, rect.color, 0.0, 1);
+                }
+                _ => {}
+            }
+        }
 
         // Apply background color from current context if changed
         let current_context = context_manager.current_grid_mut().current_mut();
@@ -1266,10 +1527,23 @@ impl Renderer {
             None
         };
 
-        sugarloaf.render();
-
-        // let _duration = start.elapsed();
         window_update
+    }
+
+    /// Check if the renderer needs continuous redraw (for animations)
+    #[inline]
+    pub fn needs_redraw(&mut self) -> bool {
+        if self.trail_cursor.is_animating() {
+            return true;
+        }
+        if self.scrollbar.needs_redraw() {
+            return true;
+        }
+        if let Some(island) = &self.island {
+            island.needs_redraw()
+        } else {
+            false
+        }
     }
 
     /// Find hint label at the specified position
@@ -1447,5 +1721,116 @@ mod tests {
         assert_eq!(overlay.get(0, 2), None);
         assert_eq!(overlay.get(1, 0), Some(PreeditCell::Char('啊')));
         assert_eq!(overlay.get(1, 1), Some(PreeditCell::Spacer));
+    }
+
+    /// Helper: create a row and set specific characters.
+    /// All written cells get a non-default fg so they are NOT is_empty().
+    /// Unwritten cells (beyond chars.len()) remain default (is_empty() == true).
+    fn make_row(chars: &[char], cols: usize) -> Row<Square> {
+        let mut row = Row::<Square>::new(cols);
+        for (i, &ch) in chars.iter().enumerate() {
+            row[Column(i)].set_c(ch);
+        }
+        row
+    }
+
+    // PUA icon = U+F115 (Nerd Font file icon)
+    const ICON: char = '\u{F115}';
+
+    #[test]
+    fn test_pua_icon_then_nothing() {
+        // symbol→nothing: 2
+        let row = make_row(&[ICON], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
+    }
+
+    #[test]
+    fn test_pua_icon_followed_by_char() {
+        // symbol→character: 1
+        let row = make_row(&[ICON, 'a'], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
+    }
+
+    #[test]
+    fn test_pua_icon_followed_by_space() {
+        // symbol→space: 2
+        let row = make_row(&[ICON, ' ', 'a'], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
+    }
+
+    #[test]
+    fn test_pua_two_icons() {
+        // symbol→symbol: 1, 1
+        let row = make_row(&[ICON, ICON], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
+        assert_eq!(pua_constraint_width(&row, 1, 10), 1.0);
+    }
+
+    #[test]
+    fn test_pua_icon_at_end_of_row() {
+        // symbol at end of row: 1
+        let row = make_row(&[' ', ' ', ICON], 3);
+        assert_eq!(pua_constraint_width(&row, 2, 3), 1.0);
+    }
+
+    #[test]
+    fn test_pua_icon_space_icon() {
+        // symbol→space→symbol: 2, 2
+        let row = make_row(&[ICON, ' ', ICON], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
+        assert_eq!(pua_constraint_width(&row, 2, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_char_then_icon_then_nothing() {
+        // character→symbol→nothing: 2
+        let row = make_row(&['z', ICON], 4);
+        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_char_then_icon_then_space() {
+        // character→symbol→space: 2
+        let row = make_row(&['z', ICON, ' '], 4);
+        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_icon_followed_by_no_break_space() {
+        // symbol→no-break space (U+00A0): 1 (not a regular space)
+        let row = make_row(&[ICON, '\u{00A0}', 'z'], 10);
+        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
+    }
+
+    // Powerline U+E0B0 is in PUA range but is a graphics element.
+    // Our is_private_user_area includes it, so it gets PUA treatment.
+    const POWERLINE: char = '\u{E0B0}';
+
+    #[test]
+    fn test_pua_icon_then_powerline() {
+        // symbol→powerline: 1 (next is not space/empty)
+        let row = make_row(&[ICON, POWERLINE], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 1.0);
+    }
+
+    #[test]
+    fn test_pua_powerline_then_icon() {
+        // powerline→symbol: 2 (powerline is a graphics element, excluded from prev check)
+        let row = make_row(&[POWERLINE, ICON], 4);
+        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_powerline_then_nothing() {
+        // powerline→nothing: 2
+        let row = make_row(&[POWERLINE], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
+    }
+
+    #[test]
+    fn test_pua_powerline_then_space() {
+        // powerline→space: 2
+        let row = make_row(&[POWERLINE, ' ', 'z'], 4);
+        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
     }
 }

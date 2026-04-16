@@ -4,10 +4,10 @@ use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 
 use libc;
 
-use event::Evented;
-use sys::unix::cvt;
-use unix::EventedFd;
-use {io, Poll, PollOpt, Ready, Token};
+use crate::event::Evented;
+use crate::sys::unix::cvt;
+use crate::unix::EventedFd;
+use crate::{io, Poll, PollOpt, Ready, Token};
 
 #[allow(unused)]
 pub fn set_nonblock(fd: libc::c_int) -> io::Result<()> {

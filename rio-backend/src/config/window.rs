@@ -24,18 +24,14 @@ pub enum Colorspace {
     Rec2020,
 }
 
-#[cfg(target_os = "macos")]
 #[allow(clippy::derivable_impls)]
 impl Default for Colorspace {
     fn default() -> Colorspace {
-        Colorspace::DisplayP3
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-#[allow(clippy::derivable_impls)]
-impl Default for Colorspace {
-    fn default() -> Colorspace {
+        // `[window] colorspace` = how to interpret hex / ANSI color values
+        // (matches ghostty's `window-colorspace` semantics). The surface
+        // itself is always wide-gamut on macOS; the config picks which
+        // primaries the input bytes are assumed to be in. Default `srgb`
+        // keeps `#ff0000` looking like the sRGB standard red most apps use.
         Colorspace::Srgb
     }
 }
@@ -52,6 +48,15 @@ pub enum Decorations {
     Buttonless,
 }
 
+#[cfg(target_os = "macos")]
+#[allow(clippy::derivable_impls)]
+impl Default for Decorations {
+    fn default() -> Decorations {
+        Decorations::Transparent
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 #[allow(clippy::derivable_impls)]
 impl Default for Decorations {
     fn default() -> Decorations {
@@ -91,6 +96,10 @@ pub struct Window {
     pub macos_use_unified_titlebar: bool,
     #[serde(rename = "macos-use-shadow", default = "default_bool_true")]
     pub macos_use_shadow: bool,
+    #[serde(rename = "macos-traffic-light-position-x", default = "Option::default")]
+    pub macos_traffic_light_position_x: Option<f64>,
+    #[serde(rename = "macos-traffic-light-position-y", default = "Option::default")]
+    pub macos_traffic_light_position_y: Option<f64>,
     #[serde(rename = "initial-title", skip_serializing)]
     pub initial_title: Option<String>,
     #[serde(rename = "windows-use-undecorated-shadow", default = "Option::default")]
@@ -104,6 +113,10 @@ pub struct Window {
     pub windows_corner_preference: Option<WindowsCornerPreference>,
     #[serde(default = "Colorspace::default")]
     pub colorspace: Colorspace,
+    #[serde(default = "Option::default")]
+    pub columns: Option<u16>,
+    #[serde(default = "Option::default")]
+    pub rows: Option<u16>,
 }
 
 impl Default for Window {
@@ -118,11 +131,15 @@ impl Default for Window {
             blur: false,
             macos_use_unified_titlebar: false,
             macos_use_shadow: true,
+            macos_traffic_light_position_x: None,
+            macos_traffic_light_position_y: None,
             initial_title: None,
             windows_use_undecorated_shadow: None,
             windows_use_no_redirection_bitmap: None,
             windows_corner_preference: None,
             colorspace: Colorspace::default(),
+            columns: None,
+            rows: None,
         }
     }
 }

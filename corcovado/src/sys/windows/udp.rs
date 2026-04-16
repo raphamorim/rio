@@ -11,6 +11,7 @@ use std::io::prelude::*;
 use std::mem;
 use std::net::{self, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Mutex, MutexGuard};
+use tracing::trace;
 use windows_sys::Win32::Networking::WinSock::WSAEMSGSIZE;
 use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
 
@@ -20,10 +21,10 @@ use miow::net::UdpSocketExt as MiowUdpSocketExt;
 #[allow(unused_imports)]
 use net2::{UdpBuilder, UdpSocketExt};
 
-use event::Evented;
-use sys::windows::from_raw_arc::FromRawArc;
-use sys::windows::selector::{Overlapped, ReadyBinding};
-use {poll, Poll, PollOpt, Ready, Token};
+use crate::event::Evented;
+use crate::sys::windows::from_raw_arc::FromRawArc;
+use crate::sys::windows::selector::{Overlapped, ReadyBinding};
+use crate::{poll, Poll, PollOpt, Ready, Token};
 
 pub struct UdpSocket {
     imp: Imp,

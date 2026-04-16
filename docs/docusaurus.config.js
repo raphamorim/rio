@@ -2,7 +2,7 @@
 // Note: type annotations allow type checking and IDEs autocompletion
 
 const { themes } = require('prism-react-renderer');
-const lightCodeTheme = themes.github;
+const lightCodeTheme = themes.dracula;
 const darkCodeTheme = themes.dracula;
 
 const defaultLocale = 'en';
@@ -30,7 +30,11 @@ const config = {
   organizationName: 'raphamorim',
   projectName: 'rio',
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
   i18n: {
     defaultLocale,
     locales: ['en', 'ko', 'pt-br', 'es', 'pl', 'ja', 'zh-hans', 'zh-hant'],
@@ -97,29 +101,37 @@ const config = {
       // Replace with your project's social card
       image: '/assets/banner.png',
       navbar: {
-        logo: {
-          src: '/assets/rio-logo.svg',
-        },
+        title: 'Rio',
+        style: 'dark',
         items: [
-          { to: '/docs/install', label: 'Install', position: 'left' },
-          { to: '/docs/config', label: 'Config', position: 'left', },
-          { to: '/docs/features', label: 'Features', position: 'left' },
+          {
+            type: 'dropdown',
+            label: 'Docs',
+            position: 'left',
+            items: [
+              { to: '/docs/install', label: 'Install' },
+              { to: '/docs/config', label: 'Config' },
+              { to: '/docs/features', label: 'Features' },
+              { to: '/docs/key-bindings', label: 'Key Bindings' },
+            ],
+          },
           { to: '/changelog', label: 'Changelog', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
-          {
-            href: 'https://discord.gg/zRvJjmKGwS',
-            label: 'Discord',
-            position: 'left',
-          },
+          { to: '/contributing', label: 'Contributing', position: 'left' },
           {
             type: 'localeDropdown',
             position: 'right',
           },
           {
-            href: 'https://github.com/raphamorim/rio',
-            label: 'GitHub',
+            href: 'https://discord.gg/zRvJjmKGwS',
+            label: 'Discord',
             position: 'right',
-            // image: '/assets/github-mark.svg',
+          },
+          {
+            href: 'https://github.com/raphamorim/rio',
+            position: 'right',
+            className: 'header-github-link',
+            'aria-label': 'GitHub repository',
           },
         ],
       },
@@ -187,8 +199,8 @@ const config = {
       announcementBar: {
         id: 'support_us',
         content:
-          'Support Rio Terminal via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">GitHub Sponsors</a>',
-        backgroundColor: '#f712ff',
+          'Enjoying Rio? <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">Sponsor the project</a> to keep it going',
+        backgroundColor: 'transparent',
         textColor: '#FFFFFF',
         isCloseable: true,
       },

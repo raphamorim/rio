@@ -7,10 +7,10 @@ use std::ptr;
 
 use libc;
 
-use event::Evented;
-use sys::unix::io::{set_cloexec, set_nonblock};
-use sys::unix::{cvt, Io};
-use {io, Poll, PollOpt, Ready, Token};
+use crate::event::Evented;
+use crate::sys::unix::io::{set_cloexec, set_nonblock};
+use crate::sys::unix::{cvt, Io};
+use crate::{io, Poll, PollOpt, Ready, Token};
 
 trait MyInto<T> {
     fn my_into(self) -> T;

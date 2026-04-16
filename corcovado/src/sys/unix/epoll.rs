@@ -9,10 +9,10 @@ use libc::{self, c_int};
 use libc::{EPOLLERR, EPOLLHUP, EPOLLONESHOT};
 use libc::{EPOLLET, EPOLLIN, EPOLLOUT, EPOLLPRI};
 
-use event_imp::Event;
-use sys::unix::io::set_cloexec;
-use sys::unix::{cvt, UnixReady};
-use {io, PollOpt, Ready, Token};
+use crate::event_imp::Event;
+use crate::sys::unix::io::set_cloexec;
+use crate::sys::unix::{cvt, UnixReady};
+use crate::{io, PollOpt, Ready, Token};
 
 /// Each Selector has a globally unique(ish) ID associated with it. This ID
 /// gets tracked by `TcpStream`, `TcpListener`, etc... when they are first

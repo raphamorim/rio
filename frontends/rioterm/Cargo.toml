@@ -31,6 +31,7 @@ bitflags = { workspace = true }
 futures = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
+onig = { workspace = true }
 raw-window-handle = { workspace = true }
 clap = { version = "4.5.42", features = ["derive"] }
 dirs = "6.0.0"
@@ -40,6 +41,7 @@ image_rs = { workspace = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
+taffy = { version = "0.9.2", features = ["flexbox","grid"] }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
@@ -47,6 +49,7 @@ url = { workspace = true }
 smallvec = { workspace = true }
 rio-window = { workspace = true }
 lru = "0.16.0"
+rio-notifier = { workspace = true }
 
 [target.'cfg(all(not(target_os = "macos"), not(target_os = "windows")))'.dependencies]
 cpal = { version = "0.15", optional = true }
@@ -105,7 +108,3 @@ assets = [
 extended-description = """\
 Rio terminal is a hardware-accelerated GPU terminal emulator, focusing to run in desktops and browsers.
 The supported platforms currently consist of BSD, Linux, MacOS and Windows."""
-
-[[bench]]
-name = "renderer_bench"
-harness = false

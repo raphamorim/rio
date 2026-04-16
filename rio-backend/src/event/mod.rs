@@ -49,6 +49,8 @@ pub enum ClickState {
 /// Terminal damage information for efficient rendering
 #[derive(Debug, Clone, PartialEq)]
 pub enum TerminalDamage {
+    /// Nothing changed — skip rendering entirely
+    Noop,
     /// The entire terminal needs to be redrawn
     Full,
     /// Only specific lines need to be redrawn
@@ -66,8 +68,9 @@ pub enum RioEvent {
     Render,
     /// New terminal content available per route.
     RenderRoute(usize),
-    /// Wake up and check for terminal updates.
-    Wakeup(usize),
+    /// Terminal content changed — lightweight notification (no damage payload).
+    /// Damage stays in the terminal; renderer extracts it when it locks.
+    TerminalDamaged(usize),
     /// Graphics update available from terminal.
     UpdateGraphics {
         route_id: usize,
@@ -78,6 +81,7 @@ pub enum RioEvent {
     UpdateFontSize(u8),
     Scroll(Scroll),
     ToggleFullScreen,
+    ToggleAppearanceTheme,
     Minimize(bool),
     Hide,
     HideOtherApplications,
@@ -137,8 +141,17 @@ pub enum RioEvent {
 
     CursorBlinkingChangeOnRoute(usize),
 
+    /// Progress bar report from OSC 9;4 sequence
+    ProgressReport(ProgressReport),
+
     /// Terminal bell ring.
     Bell,
+
+    /// Desktop notification from OSC 9 or OSC 777.
+    DesktopNotification {
+        title: String,
+        body: String,
+    },
 
     /// Shutdown request.
     Exit,
@@ -150,6 +163,9 @@ pub enum RioEvent {
     CloseTerminal(usize),
 
     BlinkCursor(u64, usize),
+
+    /// Selection scroll tick — auto-scroll while dragging outside viewport.
+    SelectionScrollTick,
 
     /// Update window titles.
     UpdateTitles,
@@ -185,6 +201,9 @@ impl Debug for RioEvent {
             RioEvent::CursorBlinkingChangeOnRoute(route_id) => {
                 write!(f, "CursorBlinkingChangeOnRoute {route_id}")
             }
+            RioEvent::ProgressReport(report) => {
+                write!(f, "ProgressReport({:?})", report)
+            }
             RioEvent::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
             RioEvent::PrepareUpdateConfig => write!(f, "PrepareUpdateConfig"),
@@ -194,11 +213,14 @@ impl Debug for RioEvent {
             }
             RioEvent::Render => write!(f, "Render"),
             RioEvent::RenderRoute(route) => write!(f, "Render route {route}"),
-            RioEvent::Wakeup(route) => {
-                write!(f, "Wakeup route {route}")
+            RioEvent::TerminalDamaged(route_id) => {
+                write!(f, "TerminalDamaged route {route_id}")
             }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
+            RioEvent::DesktopNotification { title, body } => {
+                write!(f, "DesktopNotification({title}, {body})")
+            }
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::Quit => write!(f, "Quit"),
             RioEvent::CloseTerminal(route) => write!(f, "CloseTerminal {route}"),
@@ -217,9 +239,11 @@ impl Debug for RioEvent {
                 write!(f, "ReportToAssistant({})", error_report.report)
             }
             RioEvent::ToggleFullScreen => write!(f, "FullScreen"),
+            RioEvent::ToggleAppearanceTheme => write!(f, "ToggleAppearanceTheme"),
             RioEvent::BlinkCursor(timeout, route_id) => {
                 write!(f, "BlinkCursor {timeout} {route_id}")
             }
+            RioEvent::SelectionScrollTick => write!(f, "SelectionScrollTick"),
             RioEvent::UpdateTitles => write!(f, "UpdateTitles"),
             RioEvent::Noop => write!(f, "Noop"),
             RioEvent::Copy(_) => write!(f, "Copy"),
@@ -390,4 +414,28 @@ impl Default for SearchState {
             dfas: Default::default(),
         }
     }
+}
+
+/// Progress bar state for OSC 9;4 ConEmu/Windows Terminal progress reporting
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressState {
+    /// Remove/hide the progress bar (state 0)
+    Remove,
+    /// Set progress with a specific percentage (state 1)
+    Set,
+    /// Show error state (state 2)
+    Error,
+    /// Indeterminate/pulsing progress (state 3)
+    Indeterminate,
+    /// Paused progress (state 4)
+    Pause,
+}
+
+/// Progress report from OSC 9;4 sequence
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ProgressReport {
+    /// The progress bar state
+    pub state: ProgressState,
+    /// Optional progress percentage (0-100), only used with Set, Error, and Pause states
+    pub progress: Option<u8>,
 }

@@ -1,19 +1,19 @@
-pub mod grid;
 pub mod renderable;
 pub mod title;
 
 use crate::ansi::CursorShape;
-use crate::context::grid::{ContextDimension, ContextGrid, ContextGridItem, Delta};
 use crate::context::title::{
     create_title_extra_from_context, update_title, ContextManagerTitles,
 };
 use crate::event::sync::FairMutex;
 use crate::event::{Msg, RioEvent};
 use crate::ime::Ime;
+pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
 use crate::performer::{self, Machine};
 use renderable::Cursor;
 use renderable::RenderableContent;
+use rio_backend::config::layout::Margin;
 use rio_backend::config::Shell;
 use smallvec::{smallvec, SmallVec};
 
@@ -22,7 +22,7 @@ use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::event::WindowId;
 use rio_backend::selection::SelectionRange;
-use rio_backend::sugarloaf::{font::SugarloafFont, Object, SugarloafErrors};
+use rio_backend::sugarloaf::{font::SugarloafFont, Object, Sugarloaf, SugarloafErrors};
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -32,6 +32,14 @@ use std::time::{Duration, Instant};
 
 // Global atomic counter for generating unique route IDs
 static ROUTE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+// Global atomic counter for generating unique rich text IDs
+static RICH_TEXT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+/// Generate a unique rich text ID for terminal contexts
+pub fn next_rich_text_id() -> usize {
+    RICH_TEXT_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
 
 #[cfg(target_os = "windows")]
 use teletypewriter::create_pty;
@@ -70,9 +78,10 @@ impl<T: EventListener> Context<T> {
         let has_updated = old_selection != selection_range;
 
         if has_updated {
-            // Calculate partial damage for selection changes
-            let damage = calculate_selection_damage(old_selection, selection_range);
-            self.renderable_content.pending_update.set_ui_damage(damage);
+            // Selection affects terminal line rendering, so use terminal damage
+            self.renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
         }
 
         self.renderable_content.selection_range = selection_range;
@@ -83,10 +92,10 @@ impl<T: EventListener> Context<T> {
         let old_hyperlink = self.renderable_content.hyperlink_range;
 
         if old_hyperlink != hyperlink_range {
-            // For hyperlinks, use full damage as they're less frequent
+            // Hyperlinks affect terminal line rendering, so use terminal damage
             self.renderable_content
                 .pending_update
-                .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
         }
 
         self.renderable_content.hyperlink_range = hyperlink_range;
@@ -119,8 +128,11 @@ pub struct ContextManagerConfig {
     pub is_native: bool,
     pub should_update_title_extra: bool,
     pub split_color: [f32; 4],
+    pub split_active_color: [f32; 4],
+    pub panel: rio_backend::config::layout::Panel,
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
+    pub scrollback_history_limit: usize,
 }
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
@@ -150,6 +162,8 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         event_proxy,
         window_id,
         route_id,
+        // Dead context never sees new input — no scrollback needed.
+        0,
     );
     let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
     let (sender, _receiver) = corcovado::channel::channel();
@@ -224,6 +238,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy.clone(),
             window_id,
             route_id,
+            config.scrollback_history_limit,
         );
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
@@ -326,7 +341,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         rich_text_id: usize,
         ctx_config: ContextManagerConfig,
         size: ContextDimension,
-        margin: Delta<f32>,
+        scaled_margin: Margin,
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = match ContextManager::create_context(
@@ -383,8 +398,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             current_route: 0,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
-                margin,
+                scaled_margin,
                 ctx_config.split_color,
+                ctx_config.split_active_color,
+                ctx_config.panel,
             )],
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
@@ -430,8 +447,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             current_route: 0,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
-                Delta::<f32>::default(),
+                Margin::default(),
                 config.split_color,
+                config.split_active_color,
+                config.panel,
             )],
             capacity,
             event_proxy,
@@ -442,7 +461,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn should_close_context_manager(&mut self, route_id: usize) -> bool {
+    pub fn should_close_context_manager(
+        &mut self,
+        route_id: usize,
+        sugarloaf: &mut Sugarloaf,
+    ) -> bool {
         let requires_change_route = self.current_route == route_id;
 
         // should_close_context_manager is only called when terminal.exit()
@@ -459,7 +482,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // In case Grid has more than one item
             if self.current_grid().len() > 1 {
                 if self.current().route_id == route_id {
-                    self.remove_current_grid();
+                    self.remove_current_grid(sugarloaf);
                 }
 
                 return false;
@@ -479,11 +502,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         should_set_current = true;
                     }
                 }
+                self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
                 self.contexts.remove(index_to_remove);
                 self.titles.titles.remove(&index_to_remove);
 
                 if should_set_current {
                     self.set_current(0);
+                }
+
+                if !self.contexts.is_empty() {
+                    self.keep_only_active_context_visible(sugarloaf);
                 }
             };
         }
@@ -587,23 +615,23 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn move_divider_up(&mut self, amount: f32) -> bool {
-        self.contexts[self.current_index].move_divider_up(amount)
+    pub fn move_divider_up(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
+        self.contexts[self.current_index].move_divider_up(amount, sugarloaf)
     }
 
     #[inline]
-    pub fn move_divider_down(&mut self, amount: f32) -> bool {
-        self.contexts[self.current_index].move_divider_down(amount)
+    pub fn move_divider_down(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
+        self.contexts[self.current_index].move_divider_down(amount, sugarloaf)
     }
 
     #[inline]
-    pub fn move_divider_left(&mut self, amount: f32) -> bool {
-        self.contexts[self.current_index].move_divider_left(amount)
+    pub fn move_divider_left(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
+        self.contexts[self.current_index].move_divider_left(amount, sugarloaf)
     }
 
     #[inline]
-    pub fn move_divider_right(&mut self, amount: f32) -> bool {
-        self.contexts[self.current_index].move_divider_right(amount)
+    pub fn move_divider_right(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
+        self.contexts[self.current_index].move_divider_right(amount, sugarloaf)
     }
 
     #[inline]
@@ -621,6 +649,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn toggle_full_screen(&mut self) {
         self.event_proxy
             .send_event(RioEvent::ToggleFullScreen, self.window_id);
+    }
+
+    #[inline]
+    pub fn toggle_appearance_theme(&mut self) {
+        self.event_proxy
+            .send_event(RioEvent::ToggleAppearanceTheme, self.window_id);
     }
 
     #[inline]
@@ -669,13 +703,20 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn extend_with_grid_objects(&self, target: &mut Vec<Object>) {
-        self.contexts[self.current_index].extend_with_objects(target);
+    pub fn len(&self) -> usize {
+        self.contexts.len()
     }
 
     #[inline]
-    pub fn len(&self) -> usize {
-        self.contexts.len()
+    pub fn resize_all_grids(
+        &mut self,
+        width: f32,
+        height: f32,
+        sugarloaf: &mut Sugarloaf,
+    ) {
+        for context_grid in self.contexts.iter_mut() {
+            context_grid.resize(width, height, sugarloaf);
+        }
     }
 
     pub fn update_titles(&mut self) {
@@ -712,8 +753,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn get_mut(&mut self, route_id: usize) -> Option<&mut ContextGridItem<T>> {
-        self.contexts[self.current_index].get_mut(route_id)
+    pub fn get_by_route_id(
+        &mut self,
+        route_id: usize,
+    ) -> Option<&mut ContextGridItem<T>> {
+        self.contexts[self.current_index].get_by_route_id(route_id)
     }
 
     #[inline]
@@ -729,8 +773,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn remove_current_grid(&mut self) {
-        self.contexts[self.current_index].remove_current();
+    pub fn remove_current_grid(&mut self, sugarloaf: &mut Sugarloaf) {
+        self.contexts[self.current_index].remove_current(sugarloaf);
         self.current_route = self.contexts[self.current_index].current().route_id;
     }
 
@@ -742,6 +786,18 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn current_grid(&self) -> &ContextGrid<T> {
         &self.contexts[self.current_index]
+    }
+
+    /// Get panel borders for the current grid (returns empty vec if single panel)
+    #[inline]
+    pub fn get_panel_borders(&self) -> Vec<Object> {
+        self.contexts[self.current_index].get_panel_borders()
+    }
+
+    /// Get the scaled margin of the current grid (in physical pixels, for border positioning)
+    #[inline]
+    pub fn get_current_grid_scaled_margin(&self) -> rio_backend::config::layout::Margin {
+        self.contexts[self.current_index].get_scaled_margin()
     }
 
     #[cfg(test)]
@@ -758,7 +814,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn close_current_context(&mut self) {
+    pub fn close_current_context(&mut self, sugarloaf: &mut Sugarloaf) {
         if self.contexts.len() == 1 {
             // MacOS: Close last tab will work, leading to hide and
             // keep Rio running in background.
@@ -778,12 +834,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             should_set_current = true;
         }
 
+        // Remove all rich text from the grid before removing the context
+        self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
         self.titles.titles.remove(&index_to_remove);
         self.contexts.remove(index_to_remove);
 
         if should_set_current {
             self.set_current(0);
         }
+
+        self.keep_only_active_context_visible(sugarloaf);
     }
 
     #[inline]
@@ -866,7 +926,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.select_tab(target_index);
     }
 
-    pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
+    pub fn split(
+        &mut self,
+        rich_text_id: usize,
+        split_down: bool,
+        sugarloaf: &mut Sugarloaf,
+    ) {
         let mut working_dir = self.config.working_dir.clone();
         if self.config.cwd {
             #[cfg(not(target_os = "windows"))]
@@ -909,9 +974,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             Ok(new_context) => {
                 let new_route_id = new_context.route_id;
                 if split_down {
-                    self.contexts[self.current_index].split_down(new_context);
+                    self.contexts[self.current_index].split_down(new_context, sugarloaf);
                 } else {
-                    self.contexts[self.current_index].split_right(new_context);
+                    self.contexts[self.current_index].split_right(new_context, sugarloaf);
                 }
 
                 self.current_route = new_route_id;
@@ -927,6 +992,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         rich_text_id: usize,
         split_down: bool,
         config: rio_backend::config::Config,
+        sugarloaf: &mut Sugarloaf,
     ) {
         let (shell, working_dir) = process_open_url(
             config.shell.to_owned(),
@@ -947,8 +1013,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // does not make sense fetch for foreground process names
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
+            split_active_color: config.colors.split_active,
+            panel: config.panel,
             title: config.title,
             keyboard: config.keyboard,
+            scrollback_history_limit: config.scrollback_history_limit,
         };
 
         let current = self.current();
@@ -965,9 +1034,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             Ok(new_context) => {
                 let new_route_id = new_context.route_id;
                 if split_down {
-                    self.contexts[self.current_index].split_down(new_context);
+                    self.contexts[self.current_index].split_down(new_context, sugarloaf);
                 } else {
-                    self.contexts[self.current_index].split_right(new_context);
+                    self.contexts[self.current_index].split_right(new_context, sugarloaf);
                 }
 
                 self.current_route = new_route_id;
@@ -1036,11 +1105,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 &cloned_config,
             ) {
                 Ok(new_context) => {
-                    let previous_margin = self.contexts[self.current_index].margin;
+                    let previous_scaled_margin =
+                        self.contexts[self.current_index].scaled_margin;
                     self.contexts.push(ContextGrid::new(
                         new_context,
-                        previous_margin,
+                        previous_scaled_margin,
                         self.config.split_color,
+                        self.config.split_active_color,
+                        self.config.panel,
                     ));
                     if redirect {
                         self.current_index = last_index;
@@ -1051,6 +1123,36 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     tracing::error!("not able to create a new context");
                 }
             }
+        }
+    }
+
+    /// Hide all rich text components except for the current tab
+    #[inline]
+    pub fn keep_only_active_context_visible(&self, sugarloaf: &mut Sugarloaf) {
+        for (idx, context) in self.contexts.iter().enumerate() {
+            // Skip the current tab
+            if idx == self.current_index {
+                context.set_all_rich_text_visibility(sugarloaf, true);
+                continue;
+            }
+
+            context.set_all_rich_text_visibility(sugarloaf, false);
+        }
+    }
+
+    /// Switch visibility between two contexts (hide old, show new)
+    #[inline]
+    pub fn switch_context_visibility(
+        &self,
+        sugarloaf: &mut Sugarloaf,
+        old_index: usize,
+        new_index: usize,
+    ) {
+        if let Some(old_context) = self.contexts.get(old_index) {
+            old_context.set_all_rich_text_visibility(sugarloaf, false);
+        }
+        if let Some(new_context) = self.contexts.get(new_index) {
+            new_context.set_all_rich_text_visibility(sugarloaf, true);
         }
     }
 }
@@ -1083,224 +1185,6 @@ pub fn process_open_url(
     }
 
     (shell, working_dir)
-}
-
-// Standalone function for calculating selection damage
-#[inline]
-fn calculate_selection_damage(
-    old: Option<SelectionRange>,
-    new: Option<SelectionRange>,
-) -> rio_backend::event::TerminalDamage {
-    use rio_backend::crosswords::LineDamage;
-    use std::collections::BTreeSet;
-
-    match (old, new) {
-        // No selection -> No selection: no damage
-        (None, None) => rio_backend::event::TerminalDamage::CursorOnly,
-
-        // Selection cleared or created: need full damage
-        (None, Some(_)) | (Some(_), None) => rio_backend::event::TerminalDamage::Full,
-
-        // Selection changed: calculate partial damage
-        (Some(old_range), Some(new_range)) => {
-            let mut damaged_lines = BTreeSet::new();
-
-            // If block selection mode changed, use full damage
-            if old_range.is_block != new_range.is_block {
-                return rio_backend::event::TerminalDamage::Full;
-            }
-
-            // Calculate the range of lines that need updating
-            let min_start_row = old_range.start.row.min(new_range.start.row);
-            let max_start_row = old_range.start.row.max(new_range.start.row);
-            let min_end_row = old_range.end.row.min(new_range.end.row);
-            let max_end_row = old_range.end.row.max(new_range.end.row);
-
-            // Start row changes
-            if old_range.start.row != new_range.start.row {
-                for row in min_start_row.0..=max_start_row.0 {
-                    damaged_lines.insert(LineDamage::new(row as usize, true));
-                }
-            }
-
-            // End row changes
-            if old_range.end.row != new_range.end.row {
-                for row in min_end_row.0..=max_end_row.0 {
-                    damaged_lines.insert(LineDamage::new(row as usize, true));
-                }
-            }
-
-            // If only columns changed on the same rows
-            if old_range.start.row == new_range.start.row
-                && old_range.start.col != new_range.start.col
-            {
-                damaged_lines
-                    .insert(LineDamage::new(old_range.start.row.0 as usize, true));
-            }
-
-            if old_range.end.row == new_range.end.row
-                && old_range.end.col != new_range.end.col
-            {
-                damaged_lines.insert(LineDamage::new(old_range.end.row.0 as usize, true));
-            }
-
-            rio_backend::event::TerminalDamage::Partial(damaged_lines)
-        }
-    }
-}
-
-#[cfg(test)]
-mod selection_damage_tests {
-    use super::*;
-    use rio_backend::crosswords::pos::{Column, Line, Pos};
-    use rio_backend::selection::SelectionRange;
-
-    #[test]
-    fn test_no_selection_to_no_selection() {
-        let damage = calculate_selection_damage(None, None);
-        assert!(matches!(
-            damage,
-            rio_backend::event::TerminalDamage::CursorOnly
-        ));
-    }
-
-    #[test]
-    fn test_new_selection_created() {
-        let new_selection = Some(SelectionRange::new(
-            Pos::new(Line(0), Column(0)),
-            Pos::new(Line(2), Column(10)),
-            false,
-        ));
-        let damage = calculate_selection_damage(None, new_selection);
-        assert!(matches!(damage, rio_backend::event::TerminalDamage::Full));
-    }
-
-    #[test]
-    fn test_selection_cleared() {
-        let old_selection = Some(SelectionRange::new(
-            Pos::new(Line(0), Column(0)),
-            Pos::new(Line(2), Column(10)),
-            false,
-        ));
-        let damage = calculate_selection_damage(old_selection, None);
-        assert!(matches!(damage, rio_backend::event::TerminalDamage::Full));
-    }
-
-    #[test]
-    fn test_block_mode_change() {
-        let old_selection = Some(SelectionRange::new(
-            Pos::new(Line(0), Column(0)),
-            Pos::new(Line(2), Column(10)),
-            false, // regular selection
-        ));
-        let new_selection = Some(SelectionRange::new(
-            Pos::new(Line(0), Column(0)),
-            Pos::new(Line(2), Column(10)),
-            true, // block selection
-        ));
-        let damage = calculate_selection_damage(old_selection, new_selection);
-        assert!(matches!(damage, rio_backend::event::TerminalDamage::Full));
-    }
-
-    #[test]
-    fn test_selection_extend_down() {
-        let old_selection = Some(SelectionRange::new(
-            Pos::new(Line(0), Column(0)),
-            Pos::new(Line(2), Column(10)),
-            false,
-        ));
-        let new_selection = Some(SelectionRange::new(
-            Pos::new(Line(0), Column(0)),
-            Pos::new(Line(3), Column(10)), // Extended down by one line
-            false,
-        ));
-        let damage = calculate_selection_damage(old_selection, new_selection);
-
-        if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
-            // Should only damage lines 2 and 3 (the changed end rows)
-            assert_eq!(lines.len(), 2);
-            let damaged: Vec<_> = lines.iter().map(|l| l.line).collect();
-            assert!(damaged.contains(&2));
-            assert!(damaged.contains(&3));
-        } else {
-            panic!("Expected partial damage");
-        }
-    }
-
-    #[test]
-    fn test_selection_shrink_up() {
-        let old_selection = Some(SelectionRange::new(
-            Pos::new(Line(0), Column(0)),
-            Pos::new(Line(3), Column(10)),
-            false,
-        ));
-        let new_selection = Some(SelectionRange::new(
-            Pos::new(Line(1), Column(0)), // Start moved down
-            Pos::new(Line(3), Column(10)),
-            false,
-        ));
-        let damage = calculate_selection_damage(old_selection, new_selection);
-
-        if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
-            // Should damage lines 0 and 1 (the changed start rows)
-            assert_eq!(lines.len(), 2);
-            let damaged: Vec<_> = lines.iter().map(|l| l.line).collect();
-            assert!(damaged.contains(&0));
-            assert!(damaged.contains(&1));
-        } else {
-            panic!("Expected partial damage");
-        }
-    }
-
-    #[test]
-    fn test_column_change_same_line() {
-        let old_selection = Some(SelectionRange::new(
-            Pos::new(Line(1), Column(5)),
-            Pos::new(Line(1), Column(10)),
-            false,
-        ));
-        let new_selection = Some(SelectionRange::new(
-            Pos::new(Line(1), Column(5)),
-            Pos::new(Line(1), Column(15)), // Extended right on same line
-            false,
-        ));
-        let damage = calculate_selection_damage(old_selection, new_selection);
-
-        if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
-            // Should only damage line 1
-            assert_eq!(lines.len(), 1);
-            assert_eq!(lines.iter().next().unwrap().line, 1);
-        } else {
-            panic!("Expected partial damage");
-        }
-    }
-
-    #[test]
-    fn test_both_ends_change() {
-        let old_selection = Some(SelectionRange::new(
-            Pos::new(Line(2), Column(5)),
-            Pos::new(Line(4), Column(10)),
-            false,
-        ));
-        let new_selection = Some(SelectionRange::new(
-            Pos::new(Line(1), Column(0)),  // Start moved up
-            Pos::new(Line(5), Column(15)), // End moved down
-            false,
-        ));
-        let damage = calculate_selection_damage(old_selection, new_selection);
-
-        if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
-            // Should damage lines 1-2 (start change) and 4-5 (end change)
-            assert_eq!(lines.len(), 4);
-            let damaged: Vec<_> = lines.iter().map(|l| l.line).collect();
-            assert!(damaged.contains(&1));
-            assert!(damaged.contains(&2));
-            assert!(damaged.contains(&4));
-            assert!(damaged.contains(&5));
-        } else {
-            panic!("Expected partial damage");
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1390,81 +1274,6 @@ pub mod test {
     }
 
     #[test]
-    fn test_close_context() {
-        let window_id: WindowId = WindowId::from(0);
-
-        let mut context_manager =
-            ContextManager::start_with_capacity(3, VoidListener {}, window_id).unwrap();
-        let should_redirect = false;
-
-        context_manager.add_context(should_redirect, 0);
-        context_manager.add_context(should_redirect, 0);
-        assert_eq!(context_manager.len(), 3);
-
-        assert_eq!(context_manager.current_index, 0);
-        context_manager.set_current(2);
-        assert_eq!(context_manager.current_index, 2);
-        context_manager.set_current(0);
-
-        context_manager.close_current_context();
-        context_manager.set_current(2);
-        assert_eq!(context_manager.current_index, 0);
-        assert_eq!(context_manager.len(), 2);
-    }
-
-    #[test]
-    fn test_close_context_upcoming_ids() {
-        let window_id: WindowId = WindowId::from(0);
-
-        let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
-        let should_redirect = false;
-
-        context_manager.add_context(should_redirect, 0);
-        context_manager.add_context(should_redirect, 0);
-        context_manager.add_context(should_redirect, 0);
-        context_manager.add_context(should_redirect, 0);
-
-        context_manager.close_current_context();
-        context_manager.close_current_context();
-        context_manager.close_current_context();
-        context_manager.close_current_context();
-
-        assert_eq!(context_manager.len(), 1);
-        assert_eq!(context_manager.current_index, 0);
-
-        context_manager.add_context(should_redirect, 0);
-
-        assert_eq!(context_manager.len(), 2);
-        context_manager.set_current(1);
-        assert_eq!(context_manager.current_index, 1);
-        context_manager.close_current_context();
-        assert_eq!(context_manager.len(), 1);
-        assert_eq!(context_manager.current_index, 0);
-    }
-
-    #[test]
-    fn test_close_last_context() {
-        let window_id: WindowId = WindowId::from(0);
-
-        let mut context_manager =
-            ContextManager::start_with_capacity(2, VoidListener {}, window_id).unwrap();
-        let should_redirect = false;
-
-        context_manager.add_context(should_redirect, 0);
-        context_manager.add_context(should_redirect, 0);
-        assert_eq!(context_manager.len(), 2);
-        assert_eq!(context_manager.current_index, 0);
-
-        context_manager.close_current_context();
-        assert_eq!(context_manager.len(), 1);
-
-        // Last context should not be closed
-        context_manager.close_current_context();
-        assert_eq!(context_manager.len(), 1);
-    }
-
-    #[test]
     fn test_switch_to_next() {
         let window_id: WindowId = WindowId::from(0);
 
@@ -1492,194 +1301,6 @@ pub mod test {
         assert_eq!(context_manager.current_index, 0);
         context_manager.switch_to_next();
         assert_eq!(context_manager.current_index, 1);
-    }
-
-    #[test]
-    fn test_switch_to_next_split_or_tab() {
-        let window_id: WindowId = WindowId::from(0);
-
-        let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
-        let should_redirect = true;
-        let split_down = false;
-
-        context_manager.add_context(should_redirect, 0);
-        context_manager.split(0, split_down);
-        context_manager.split(0, split_down);
-        context_manager.add_context(should_redirect, 0);
-        context_manager.add_context(should_redirect, 0);
-        context_manager.split(0, split_down);
-        context_manager.add_context(should_redirect, 0);
-        context_manager.set_current(0);
-        assert_eq!(context_manager.len(), 5);
-        assert_eq!(context_manager.current_index, 0);
-
-        let mut current_index;
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 2);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 4);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 0);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-    }
-
-    #[test]
-    fn test_switch_to_prev_split_or_tab() {
-        let window_id: WindowId = WindowId::from(0);
-
-        let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
-        let should_redirect = true;
-        let split_down = false;
-
-        context_manager.add_context(should_redirect, 0);
-        context_manager.split(0, split_down);
-        context_manager.split(0, split_down);
-        context_manager.add_context(should_redirect, 0);
-        context_manager.add_context(should_redirect, 0);
-        context_manager.split(0, split_down);
-        context_manager.add_context(should_redirect, 0);
-        context_manager.set_current(0);
-        assert_eq!(context_manager.len(), 5);
-        assert_eq!(context_manager.current_index, 0);
-
-        let mut current_index;
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 4);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 2);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 0);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-    }
-
-    #[test]
-    fn test_switch_to_next_and_prev_split_or_tab() {
-        let window_id: WindowId = WindowId::from(0);
-
-        let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
-        let should_redirect = true;
-        let split_down = false;
-
-        context_manager.add_context(should_redirect, 0);
-        context_manager.split(0, split_down);
-        context_manager.split(0, split_down);
-        context_manager.add_context(should_redirect, 0);
-        context_manager.set_current(0);
-        assert_eq!(context_manager.len(), 3);
-        assert_eq!(context_manager.current_index, 0);
-
-        let mut current_index;
-
-        // Next
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
-
-        context_manager.switch_to_next_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 2);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        // Prev
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
-
-        context_manager.switch_to_prev_split_or_tab();
-        current_index = context_manager.current_index;
-        assert_eq!(current_index, 0);
-        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
     }
 
     #[test]

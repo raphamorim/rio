@@ -2,10 +2,10 @@ pub use self::pipe::Awakener;
 
 /// Default awakener backed by a pipe
 mod pipe {
-    use event::Evented;
+    use crate::event::Evented;
+    use crate::sys::unix;
+    use crate::{io, Poll, PollOpt, Ready, Token};
     use std::io::{Read, Write};
-    use sys::unix;
-    use {io, Poll, PollOpt, Ready, Token};
 
     /*
      *

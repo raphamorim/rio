@@ -3,8 +3,57 @@ use serde::{Deserialize, Serialize};
 /// Default alphabet for hint labels
 pub const DEFAULT_HINTS_ALPHABET: &str = "jfkdls;ahgurieowpq";
 
-/// Default URL regex pattern (same as Alacritty)
-pub const DEFAULT_URL_REGEX: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+";
+/// Default URL/path regex pattern.
+///
+/// Ported verbatim from ghostty's `src/config/url.zig`. Requires a regex
+/// engine with lookbehind support — rio uses oniguruma via the `onig`
+/// crate. Three alternations:
+///
+/// 1. **Schemed URLs** — `http://`, `https://`, `mailto:`, `file:`, `ssh:`,
+///    `magnet:`, `ipfs://`, `gemini://`, etc. IPv6 literals supported.
+///    Trailing `.` / `,` and unbalanced parens are excluded via lookbehind.
+/// 2. **Rooted or explicitly-relative paths** — `/abs`, `./rel`, `../rel`,
+///    `~/x`, `.hidden/x`, `$VAR/x`. Each prefix is guarded by lookbehinds
+///    so the `~/` inside `foo~/bar` and the `/` inside `foo/bar` aren't
+///    mis-matched. Paths with internal spaces are supported when they
+///    contain a dotted filename segment.
+/// 3. **Bare relative paths** — `word/.../name.ext`. A dotted segment is
+///    required, and lookbehinds prevent matching mid-word starts.
+pub const DEFAULT_URL_REGEX: &str = concat!(
+    // schemed URLs
+    "(?:https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:)",
+    "(?:",
+        r"(?:\[[:0-9a-fA-F]+(?:[:0-9a-fA-F]*)+\](?::[0-9]+)?)",
+        "|",
+        r"[\w\-.~:/?#@!$&*+,;=%]+(?:[\(\[]\w*[\)\]])?",
+    ")+",
+    r"(?<![,.])",
+    "|",
+    // rooted or explicitly-relative paths
+    r"(?:\.\./|\./|(?<!\w)~/|(?:[\w][\w\-.]*/)*(?<!\w)\$[A-Za-z_]\w*/|\.[\w][\w\-.]*/|(?<![\w~/])/(?!/))",
+    "(?:",
+        // Dotted: file-like, allows internal spaces around dotted segments.
+        r"(?=[\w\-.~:/?#@!$&*+;=%]*\.)",
+        r"[\w\-.~:/?#@!$&*+;=%]+",
+        r"(?:(?<!:) (?!\w+://)(?!\.{0,2}/)(?!~/)[\w\-.~:/?#@!$&*+;=%]*[/.])*",
+        r"(?<!:)",
+        r"(?: +(?= *$))?",
+        "|",
+        // Non-dotted: directory-like, broader.
+        r"(?![\w\-.~:/?#@!$&*+;=%]*\.)",
+        r"[\w\-.~:/?#@!$&*+;=%]+",
+        r"(?:(?<!:) (?!\w+://)(?!\.{0,2}/)(?!~/)[\w\-.~:/?#@!$&*+;=%]+)*",
+        r"(?<!:)",
+        r"(?: +(?= *$))?",
+    ")",
+    "|",
+    // bare relative paths (word/foo.ext)
+    r"(?=[\w\-.~:/?#@!$&*+;=%]*\.)",
+    r"(?<!\$\d*)(?<!\w)[\w][\w\-.]*/",
+    r"[\w\-.~:/?#@!$&*+;=%]+",
+    r"(?<!:)",
+    r"(?: +(?= *$))?",
+);
 
 /// Hints configuration
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -218,6 +267,96 @@ mod tests {
         let serialized = toml::to_string(&hint).unwrap();
         let deserialized: Hint = toml::from_str(&serialized).unwrap();
         assert_eq!(hint, deserialized);
+    }
+
+    #[test]
+    fn test_default_regex_compiles() {
+        onig::Regex::new(DEFAULT_URL_REGEX).expect("default regex must compile");
+    }
+
+    /// Given input text, return every leftmost non-overlapping match produced
+    /// by `DEFAULT_URL_REGEX`. Used to verify the path branches.
+    fn find_all(input: &str) -> Vec<&str> {
+        let re = onig::Regex::new(DEFAULT_URL_REGEX).unwrap();
+        re.find_iter(input).map(|(s, e)| &input[s..e]).collect()
+    }
+
+    #[test]
+    fn test_default_regex_matches_schemed_urls() {
+        assert_eq!(
+            find_all("visit https://rioterm.com here"),
+            vec!["https://rioterm.com"]
+        );
+        assert_eq!(find_all("file://foo"), vec!["file://foo"]);
+    }
+
+    #[test]
+    fn test_default_regex_matches_rooted_paths() {
+        // Dotted paths (file-like): match stops at the next non-dotted token.
+        assert_eq!(find_all("open ~/notes.md please"), vec!["~/notes.md"],);
+        assert_eq!(find_all("see ./script.sh"), vec!["./script.sh"]);
+        assert_eq!(
+            find_all("check ../parent/file.txt"),
+            vec!["../parent/file.txt"],
+        );
+
+        // Non-dotted (directory-like): absorbs trailing spaces+words because
+        // the path could be a directory whose name contains spaces (e.g.
+        // `~/Desktop please/...`). This matches ghostty's behavior.
+        assert_eq!(find_all("open ~/Desktop please"), vec!["~/Desktop please"]);
+        assert_eq!(find_all("cd /tmp/foo"), vec!["/tmp/foo"]);
+        assert_eq!(find_all("logs at $HOME/logs"), vec!["$HOME/logs"]);
+    }
+
+    #[test]
+    fn test_default_regex_matches_bare_relative_paths_with_extension() {
+        assert_eq!(find_all("edit src/main.rs now"), vec!["src/main.rs"]);
+        assert_eq!(
+            find_all("see frontends/rioterm/src/hints.rs"),
+            vec!["frontends/rioterm/src/hints.rs"]
+        );
+    }
+
+    #[test]
+    fn test_default_regex_rejects_midword_slash() {
+        // Lookbehind `(?<![\w~/])/` keeps the `/` inside `foo/bar` from
+        // anchoring the rooted-path branch. Branch 3 also fails (no dot).
+        assert!(find_all("foo/bar").is_empty());
+    }
+
+    #[test]
+    fn test_default_regex_rejects_midword_tilde() {
+        // Lookbehind `(?<!\w)~/` rejects the `~/bar` inside `foo~/bar`.
+        assert!(find_all("foo~/bar").is_empty());
+    }
+
+    #[test]
+    fn test_default_regex_strips_trailing_punctuation_on_urls() {
+        // `(?<![,.])` excludes the trailing period.
+        assert_eq!(
+            find_all("see https://example.com."),
+            vec!["https://example.com"],
+        );
+    }
+
+    #[test]
+    fn test_default_regex_matches_dot_prefixed_paths() {
+        // `.config/foo.txt` matches the `.word/` branch (hidden dirs).
+        assert_eq!(
+            find_all(".config/rio/config.toml"),
+            vec![".config/rio/config.toml"]
+        );
+    }
+
+    #[test]
+    fn test_default_regex_prefers_bare_relative_over_embedded_slash() {
+        // `Compiling src/config/url.zig` — the bare-relative branch anchors
+        // at `src/...` and wins over the rooted `/config/url.zig` because
+        // it starts earlier in the text.
+        assert_eq!(
+            find_all("Compiling src/config/url.zig"),
+            vec!["src/config/url.zig"],
+        );
     }
 
     #[test]

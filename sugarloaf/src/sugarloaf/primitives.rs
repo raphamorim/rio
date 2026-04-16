@@ -3,29 +3,114 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::Quad;
 use serde::Deserialize;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum SugarCursor {
-    Block([f32; 4]),
-    HollowBlock([f32; 4]),
-    Caret([f32; 4]),
-    Underline([f32; 4]),
+/// Corner radii for a rounded rectangle.
+/// Each corner can have a different radius.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[repr(C)]
+pub struct Corners {
+    pub top_left: f32,
+    pub top_right: f32,
+    pub bottom_right: f32,
+    pub bottom_left: f32,
 }
 
-#[derive(Default, Clone, Deserialize, Debug, PartialEq)]
+impl Corners {
+    /// Create corners with the same radius for all corners.
+    #[inline]
+    pub fn all(radius: f32) -> Self {
+        Self {
+            top_left: radius,
+            top_right: radius,
+            bottom_right: radius,
+            bottom_left: radius,
+        }
+    }
+
+    /// Create corners with zero radius (sharp corners).
+    #[inline]
+    pub fn zero() -> Self {
+        Self::default()
+    }
+
+    /// Check if all corners are zero (no rounding).
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.top_left == 0.0
+            && self.top_right == 0.0
+            && self.bottom_right == 0.0
+            && self.bottom_left == 0.0
+    }
+
+    /// Convert to array [top_left, top_right, bottom_right, bottom_left].
+    #[inline]
+    pub fn to_array(&self) -> [f32; 4] {
+        [
+            self.top_left,
+            self.top_right,
+            self.bottom_right,
+            self.bottom_left,
+        ]
+    }
+}
+
+impl From<f32> for Corners {
+    fn from(radius: f32) -> Self {
+        Self::all(radius)
+    }
+}
+
+impl From<[f32; 4]> for Corners {
+    fn from(arr: [f32; 4]) -> Self {
+        Self {
+            top_left: arr[0],
+            top_right: arr[1],
+            bottom_right: arr[2],
+            bottom_left: arr[3],
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[repr(u8)]
+pub enum CursorKind {
+    Block,
+    HollowBlock,
+    Caret,
+    Underline,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct SugarCursor {
+    pub kind: CursorKind,
+    pub color: [f32; 4],
+    pub order: u8,
+}
+
+#[derive(Clone, Deserialize, Debug, PartialEq)]
 pub struct ImageProperties {
     #[serde(default = "String::default")]
     pub path: String,
-    #[serde(default = "Option::default")]
-    pub width: Option<f32>,
-    #[serde(default = "Option::default")]
-    pub height: Option<f32>,
-    #[serde(default = "f32::default")]
-    pub x: f32,
-    #[serde(default = "f32::default")]
-    pub y: f32,
+    /// Multiplier applied to the image's alpha channel before upload.
+    /// Clamped to `[0.0, 1.0]`. `1.0` (the default) means fully opaque;
+    /// lower values let the terminal background show through.
+    #[serde(default = "default_image_opacity")]
+    pub opacity: f32,
+}
+
+#[inline]
+fn default_image_opacity() -> f32 {
+    1.0
+}
+
+impl Default for ImageProperties {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            opacity: default_image_opacity(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -35,37 +120,139 @@ pub struct RichTextLinesRange {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RichTextRenderData {
+    pub position: [f32; 2],
+    pub should_repaint: bool,
+    pub should_remove: bool,
+    pub hidden: bool,
+}
+
+impl Default for RichTextRenderData {
+    fn default() -> Self {
+        Self {
+            position: [0.0, 0.0],
+            should_repaint: false,
+            should_remove: false,
+            hidden: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RichText {
     pub id: usize,
-    pub position: [f32; 2],
     pub lines: Option<RichTextLinesRange>,
+    pub render_data: RichTextRenderData,
+}
+
+impl RichText {
+    pub fn new(id: usize) -> Self {
+        Self {
+            id,
+            lines: None,
+            render_data: RichTextRenderData::default(),
+        }
+    }
+
+    pub fn with_position(mut self, x: f32, y: f32) -> Self {
+        self.render_data.position = [x, y];
+        self
+    }
+
+    pub fn with_lines(mut self, start: usize, end: usize) -> Self {
+        self.lines = Some(RichTextLinesRange { start, end });
+        self
+    }
+
+    pub fn hidden(mut self, hidden: bool) -> Self {
+        self.render_data.hidden = hidden;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub color: [f32; 4],
+}
+
+impl Rect {
+    pub fn new(x: f32, y: f32, width: f32, height: f32, color: [f32; 4]) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            color,
+        }
+    }
+}
+
+/// A quad with per-corner radii.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Quad {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub background_color: [f32; 4],
+    pub corner_radii: Corners,
+}
+
+impl Quad {
+    pub fn new(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        background_color: [f32; 4],
+        corner_radii: Corners,
+    ) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            background_color,
+            corner_radii,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Object {
+    Rect(Rect),
     Quad(Quad),
     RichText(RichText),
 }
 
-pub enum CornerType {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
+#[inline]
+pub fn is_private_user_area(character: &char) -> bool {
+    matches!(
+        character,
+        '\u{E000}'..='\u{F8FF}'
+            | '\u{F0000}'..='\u{FFFFD}'
+            | '\u{100000}'..='\u{10FFFD}'
+    )
 }
 
 pub fn drawable_character(character: char) -> Option<DrawableChar> {
     match character {
-        '\u{2500}'..='\u{259f}'
-        | '\u{1fb00}'..='\u{1fb3b}'
-        // Powerlines
-        | '\u{e0b0}'..='\u{e0bf}'
-        // Brailles
-        | '\u{2800}'..='\u{28FF}'
-        // Sextants
-        | '\u{1FB00}'..='\u{1FB3F}'
-        // Octants
-        | '\u{1CD00}'..='\u{1CDE5}' => {
+'\u{2500}'..='\u{259f}'
+| '\u{1fb00}'..='\u{1fb3b}'
+// Powerlines
+| '\u{e0b0}'..='\u{e0bf}'
+// Brailles
+| '\u{2800}'..='\u{28FF}'
+// Sextants
+| '\u{1FB00}'..='\u{1FB3F}'
+// Octants
+| '\u{1CD00}'..='\u{1CDE5}'
+        // Legacy Computing Supplement
+        | '\u{1CC00}'..='\u{1CEBF}' => {
             if let Ok(character) = DrawableChar::try_from(character) {
                 return Some(character)
             }
@@ -209,6 +396,9 @@ pub enum DrawableChar {
     DiagonalFallingBar, // ╲
     DiagonalCross,      // ╳
 
+    // Legacy Computing Supplement
+    BlackLargeCircleMinusRightQuarterSection, // 𜱭
+
     Sextant(u8), // Represents any of the 64 possible sextant patterns
     Octant(u8),  // Represents any of the 256 possible octant patterns
 
@@ -240,6 +430,7 @@ pub enum DrawableChar {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
 pub enum Braille {
     Dots1,      // ⠁ U+2801 BRAILLE PATTERN DOTS-1
     Dots2,      // ⠂ U+2802 BRAILLE PATTERN DOTS-2
@@ -630,6 +821,9 @@ impl TryFrom<char> for DrawableChar {
             '╱' => DrawableChar::DiagonalRisingBar,
             '╲' => DrawableChar::DiagonalFallingBar,
             '╳' => DrawableChar::DiagonalCross,
+
+            // Legacy Computing Supplement
+            '\u{1CC6D}' => DrawableChar::BlackLargeCircleMinusRightQuarterSection,
 
             // Quick test:
             // echo "\ue0b0 \ue0b1 \ue0b2 \ue0b3 \ue0b4 \ue0b5 \ue0b6 \ue0b7"

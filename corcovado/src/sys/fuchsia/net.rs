@@ -1,3 +1,5 @@
+use crate::sys::fuchsia::{recv_from, set_nonblock, DontDrop, EventedFd};
+use crate::{io, Evented, Poll, PollOpt, Ready, Token};
 use iovec::unix as iovec;
 use iovec::IoVec;
 use libc;
@@ -9,8 +11,6 @@ use std::io::{Read, Write};
 use std::net::{self, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::unix::io::AsRawFd;
 use std::time::Duration;
-use sys::fuchsia::{recv_from, set_nonblock, DontDrop, EventedFd};
-use {io, Evented, Poll, PollOpt, Ready, Token};
 
 #[derive(Debug)]
 pub struct TcpStream {

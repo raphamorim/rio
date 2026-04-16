@@ -3,35 +3,28 @@ title: 'Wide Color Gamut Support'
 language: 'en'
 ---
 
-Rio terminal supports wide color gamut displays, allowing you to take advantage of the expanded color range available on modern displays.
-
-## What is Wide Color Gamut?
-
-Wide color gamut refers to displays that can reproduce a larger range of colors than traditional sRGB displays. This includes:
-
-- **Display P3**: Used in modern Apple devices, offering about 25% more colors than sRGB
-- **Rec. 2020**: An even wider color space used in HDR content, offering significantly more colors
+Rio renders onto a wide-gamut surface on macOS (Display P3) so themes that use vivid, saturated colors can reach more of the display's range. The `[window] colorspace` setting controls how Rio *interprets* the color bytes in your config and in ANSI / direct-color escape sequences — it does **not** change the surface.
 
 ## Configuration
 
-You can configure the colorspace in your Rio configuration file:
-
 ```toml
 [window]
-colorspace = "display-p3"
+colorspace = "srgb"
 ```
 
-### Available Options
+### Available options
 
-- `srgb` - Standard sRGB colorspace (default on non-macOS platforms)
-- `display-p3` - Display P3 wide color gamut (default on macOS)
-- `rec2020` - Rec. 2020 ultra-wide color gamut
+- `srgb` — **default.** Interpret hex values (`#ff0000`) and ANSI direct colors as sRGB. Rio converts them to Display P3 primaries before rendering, so `#ff0000` displays as the same red other apps draw (no oversaturation).
+- `display-p3` — Interpret input values as already being in Display P3 primaries. A pure-red theme color will reach the full P3 red gamut and look more saturated than the sRGB standard. Use this if your theme was designed with a P3-aware color picker.
+- `rec2020` — Interpret input values as Rec. 2020. Treated like `display-p3` for now; a proper Rec. 2020 → Display P3 matrix is planned.
 
-## Platform Support
+## Platform support
 
 ### macOS
 
-Wide color gamut support is fully implemented on macOS, where Rio automatically defaults to Display P3 colorspace on compatible displays. This takes advantage of the P3 displays found in:
+On macOS, Rio always uses a DisplayP3-tagged `CAMetalLayer` with a gamma-correct (`BGRA8Unorm_sRGB`) framebuffer, regardless of the setting above. This yields linear-light alpha blending (no dark halos around text) and access to the wider-gamut range. The colorspace config only affects color *interpretation*.
+
+Compatible wide-gamut displays include:
 
 - MacBook Pro (2016 and later)
 - iMac (2017 and later)
@@ -39,24 +32,25 @@ Wide color gamut support is fully implemented on macOS, where Rio automatically 
 - Pro Display XDR
 - Studio Display
 
-### Other Platforms
+### Linux / Windows
 
-On Linux and Windows, the colorspace setting is available but may have limited effect depending on the display and graphics drivers. Rio will attempt to configure the appropriate colorspace but falls back to sRGB if wide color gamut is not supported.
+The wgpu path does not yet implement the linear-light + wide-gamut pipeline. The config value is accepted but most platforms effectively behave as `srgb` until that path is updated.
 
-## Benefits
+## Matching other terminals
 
-When using a wide color gamut display with appropriate colorspace configuration:
+Rio's default (`srgb`) matches [ghostty's `window-colorspace` default](https://ghostty.org/docs/config/reference#window-colorspace) — meaning a given hex value renders identically in both terminals. If you want the old Rio macOS behaviour (colors treated as P3, looking more saturated), set:
 
-- More vibrant and accurate colors in terminal output
-- Better color reproduction for images displayed via iTerm2 image protocol or Sixel
-- Improved visual experience when using colorful themes and syntax highlighting
+```toml
+[window]
+colorspace = "display-p3"
+```
 
-## Technical Details
+## Technical details
 
-Rio implements wide color gamut support by:
+The Metal path (`sugarloaf/src/renderer/renderer.metal`):
 
-1. Configuring the window's colorspace at the platform level
-2. Setting up the appropriate WGPU surface format for the selected colorspace
-3. Ensuring proper color space handling throughout the rendering pipeline
+1. Linearizes sRGB-encoded input RGB (fragment side) with the IEC 61966-2-1 transfer curve.
+2. If `input_colorspace == 0` (sRGB), applies a Bradford-adapted sRGB D65 → Display P3 D65 primaries matrix in linear light.
+3. Writes the result to the `_sRGB` DisplayP3 drawable, so the hardware sRGB-encodes on write and alpha blends subsequent pixels in linear light.
 
-The implementation automatically handles the differences between colorspaces, ensuring that colors are displayed correctly regardless of the selected option.
+The clear color (`MTLClearColor`) goes through the same transform on the Rust side (`sugarloaf::prepare_output_rgb_f64`) so the first cleared pixel lands in the same colorspace as shader-emitted pixels.

@@ -11,6 +11,29 @@ Rio's hints system allows you to quickly interact with text patterns in your ter
 
 When you activate hint mode, Rio scans the visible terminal content for patterns you've configured (like URLs, file paths, or email addresses) and displays keyboard shortcuts over each match. You can then press the corresponding keys to perform actions on the matched text.
 
+## Default hints
+
+Rio ships with one rule out of the box that matches three kinds of clickable text. The default regex is ported verbatim from ghostty and uses oniguruma syntax (lookbehinds, lookaheads supported):
+
+1. **Schemed URLs** — `http://`, `https://`, `file:`, `ssh:`, `mailto:`, `magnet:`, `ipfs://`, `gemini://`, `gopher://`, `git://`, `news:`, `ipns:`, `ftp://`, `tel:`. IPv6 literals and bracketed parentheses inside URLs are handled.
+2. **Rooted or explicitly-relative paths** — `/abs/path`, `./rel`, `../rel`, `~/Desktop`, `.config/foo`, `$HOME/x`, `$XDG_CONFIG_HOME/x`. Mid-word slashes (the `/bar` inside `foo/bar`) are rejected via lookbehind. Paths with internal spaces are matched when they contain a dotted filename segment (e.g. `~/My\ Documents/notes.md`).
+3. **Bare relative paths with a dotted filename** — `src/main.rs`, `lib/foo.zig:42:10`. A dotted segment is required, so ambiguous strings like `foo/bar` aren't matched.
+
+When you click a path-like match (or use the keyboard hint), rio resolves it against the terminal's working directory (reported by your shell via OSC 7), expands `~/` and `$VAR/`, and dispatches the absolute path to the OS opener (`open`/`xdg-open`/`cmd /c start`) only if the file exists. URL-scheme matches are passed through unchanged.
+
+To get OSC 7 working from your shell:
+
+```sh
+# bash/zsh — emit OSC 7 on every prompt
+PROMPT_COMMAND='printf "\033]7;file://%s%s\033\\" "$HOSTNAME" "$PWD"'
+# fish
+function osc7_cwd --on-event fish_prompt
+    printf "\033]7;file://%s%s\033\\" $hostname (pwd)
+end
+```
+
+OSC 8 hyperlinks (escape-sequence-marked links emitted by tools like `ls --hyperlink=auto` or modern shell prompts) are detected separately and always underlined while visible — no modifier required.
+
 ## Basic Usage
 
 1. **Activate hint mode**: Press the configured key binding (default varies by hint type)

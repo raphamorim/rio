@@ -14,11 +14,9 @@ use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
 };
-#[cfg(target_os = "macos")]
-use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
-use crate::context::grid::{ContextDimension, Delta};
+use crate::context;
 use crate::context::renderable::{Cursor, RenderableContent};
-use crate::context::{self, process_open_url, ContextManager};
+use crate::context::{next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},
@@ -27,26 +25,24 @@ use crate::crosswords::{
     Mode,
 };
 use crate::hints::HintState;
+use crate::layout::ContextDimension;
 use crate::mouse::{calculate_mouse_position, Mouse};
-use crate::renderer::{
-    utils::{padding_bottom_from_config, padding_top_from_config},
-    Renderer,
-};
+use crate::renderer::{utils::padding_top_from_config, Renderer};
 use crate::screen::hint::HintMatches;
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
-use rio_backend::config::renderer::{
-    Backend as RendererBackend, Performance as RendererPerformance,
-};
+use rio_backend::config::layout::Margin;
+use rio_backend::config::renderer::{Backend, Performance as RendererPerformance};
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
+use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
-    layout::RootStyle, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
+    SugarloafWindow, SugarloafWindowSize,
 };
 use rio_window::event::ElementState;
 use rio_window::event::Modifiers;
@@ -55,18 +51,9 @@ use rio_window::event::MouseButton;
 use rio_window::keyboard::ModifiersKeyState;
 use rio_window::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
 use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
-use std::cell::RefCell;
-use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
-use std::rc::Rc;
 use touch::TouchPurpose;
-
-/// Minimum number of pixels at the bottom/top where selection scrolling is performed.
-const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
-
-/// Number of pixels for increasing the selection scrolling speed factor by one.
-const SELECTION_SCROLLING_STEP: f32 = 10.;
 
 /// Maximum number of lines for the blocking search while still typing the search regex.
 const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
@@ -85,9 +72,9 @@ pub struct Screen<'screen> {
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
-    pub clipboard: Rc<RefCell<Clipboard>>,
     last_ime_cursor_pos: Option<(f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
+    pub resize_state: Option<crate::layout::ResizeState>,
 }
 
 pub struct ScreenWindowProperties {
@@ -105,7 +92,6 @@ impl Screen<'_> {
         event_proxy: EventProxy,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
-        clipboard: Rc<RefCell<Clipboard>>,
     ) -> Result<Screen<'screen>, Box<dyn Error>> {
         let size = window_properties.size;
         let scale = window_properties.scale;
@@ -115,13 +101,12 @@ impl Screen<'_> {
 
         let padding_y_top = padding_top_from_config(
             &config.navigation,
-            config.padding_y[0],
+            config.margin.top,
             1,
             config.window.macos_use_unified_titlebar,
         );
 
-        let padding_y_bottom =
-            padding_bottom_from_config(&config.navigation, config.padding_y[1], 1, false);
+        let padding_y_bottom = config.margin.bottom;
         let sugarloaf_layout =
             RootStyle::new(scale as f32, config.fonts.size, config.line_height);
 
@@ -142,19 +127,26 @@ impl Screen<'_> {
             RendererPerformance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        let backend = match config.renderer.backend {
-            RendererBackend::Automatic => {
-                #[cfg(target_arch = "wasm32")]
-                let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-                #[cfg(not(target_arch = "wasm32"))]
-                let default_backend = wgpu::Backends::all();
+        let backend = if config.renderer.use_cpu {
+            SugarloafBackend::Cpu
+        } else {
+            match config.renderer.backend {
+                Backend::Automatic => {
+                    #[cfg(target_arch = "wasm32")]
+                    let default_backend =
+                        wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let default_backend = wgpu::Backends::all();
 
-                default_backend
+                    SugarloafBackend::Wgpu(default_backend)
+                }
+                Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
+                Backend::GL => SugarloafBackend::Wgpu(wgpu::Backends::GL),
+                Backend::WgpuMetal => SugarloafBackend::Wgpu(wgpu::Backends::METAL),
+                #[cfg(target_os = "macos")]
+                Backend::Metal => SugarloafBackend::Metal,
+                Backend::DX12 => SugarloafBackend::Wgpu(wgpu::Backends::DX12),
             }
-            RendererBackend::Vulkan => wgpu::Backends::VULKAN,
-            RendererBackend::GL => wgpu::Backends::GL,
-            RendererBackend::Metal => wgpu::Backends::METAL,
-            RendererBackend::DX12 => wgpu::Backends::DX12,
         };
 
         let sugarloaf_renderer = SugarloafRenderer {
@@ -179,7 +171,7 @@ impl Screen<'_> {
 
         sugarloaf.update_filters(config.renderer.filters.as_slice());
 
-        let renderer = Renderer::new(config, font_library);
+        let mut renderer = Renderer::new(config);
 
         let bindings = crate::bindings::default_key_bindings(config);
 
@@ -204,21 +196,38 @@ impl Screen<'_> {
             // does not make sense fetch for foreground process names/path
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
+            split_active_color: config.colors.split_active,
+            panel: config.panel,
             title: config.title.clone(),
             keyboard: config.keyboard,
+            scrollback_history_limit: config.scrollback_history_limit,
         };
 
-        let rich_text_id = sugarloaf.create_rich_text();
+        // Create rich text with initial position accounting for island
+        let rich_text_id = next_rich_text_id();
+        let _ = sugarloaf.text(Some(rich_text_id));
+        sugarloaf.set_position(rich_text_id, config.margin.left, padding_y_top);
 
-        let margin = Delta {
-            x: config.padding_x,
-            top_y: padding_y_top,
-            bottom_y: padding_y_bottom,
-        };
+        // Create unscaled margin for ContextDimension (compute() will scale it)
+        let margin = Margin::new(
+            padding_y_top,
+            config.margin.right,
+            padding_y_bottom,
+            config.margin.left,
+        );
+        // Create scaled margin for ContextGrid (already in physical pixels)
+        let scaled_margin = Margin::new(
+            padding_y_top * scale as f32,
+            config.margin.right * scale as f32,
+            padding_y_bottom * scale as f32,
+            config.margin.left * scale as f32,
+        );
         let context_dimension = ContextDimension::build(
             size.width as f32,
             size.height as f32,
-            sugarloaf.get_rich_text_dimensions(&rich_text_id),
+            sugarloaf
+                .get_text_dimensions(&rich_text_id)
+                .unwrap_or_default(),
             config.line_height,
             margin,
         );
@@ -239,20 +248,22 @@ impl Screen<'_> {
             rich_text_id,
             context_manager_config,
             context_dimension,
-            margin,
+            scaled_margin,
             sugarloaf_errors,
         )?;
 
-        if cfg!(target_os = "macos") {
-            sugarloaf.set_background_color(None);
-        } else {
-            sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
-        }
+        sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
 
         if let Some(image) = &config.window.background_image {
-            sugarloaf.set_background_image(image);
+            if let Err(message) = sugarloaf.set_background_image(image) {
+                renderer.assistant.set_error(RioError {
+                    level: RioErrorLevel::Warning,
+                    report: RioErrorType::BackgroundImageLoadFailure(message),
+                });
+            }
+        } else {
+            sugarloaf.clear_background_image();
         }
-        sugarloaf.render();
 
         Ok(Screen {
             search_state: SearchState::default(),
@@ -271,8 +282,8 @@ impl Screen<'_> {
             touchpurpose: TouchPurpose::default(),
             renderer,
             bindings,
-            clipboard,
             last_ime_cursor_pos: None,
+            resize_state: None,
         })
     }
 
@@ -302,14 +313,16 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn select_current_based_on_mouse(&mut self) {
+    pub fn select_current_based_on_mouse(&mut self) -> bool {
         if self
             .context_manager
             .current_grid_mut()
             .select_current_based_on_mouse(&self.mouse)
         {
             self.context_manager.select_route_from_current_grid();
+            return true;
         }
+        false
     }
 
     #[inline]
@@ -321,10 +334,9 @@ impl Screen<'_> {
         calculate_mouse_position(
             &self.mouse,
             display_offset,
-            style.scale_factor,
             (context_dimension.columns, context_dimension.lines),
-            margin.x,
-            margin.top_y,
+            margin.left,
+            margin.top,
             (
                 context_dimension.dimension.width,
                 context_dimension.dimension.height * style.line_height,
@@ -335,16 +347,6 @@ impl Screen<'_> {
     #[inline]
     pub fn touch_purpose(&mut self) -> &mut TouchPurpose {
         &mut self.touchpurpose
-    }
-
-    #[inline]
-    #[cfg(target_os = "macos")]
-    pub fn is_macos_deadzone(&self, pos_y: f64) -> bool {
-        let layout = self
-            .sugarloaf
-            .rich_text_layout(&self.context_manager.current().rich_text_id);
-        let scale_f64 = layout.dimensions.scale as f64;
-        pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
     }
 
     /// update_config is triggered in any configuration file update
@@ -358,16 +360,11 @@ impl Screen<'_> {
         let num_tabs = self.ctx().len();
         let padding_y_top = padding_top_from_config(
             &config.navigation,
-            config.padding_y[0],
+            config.margin.top,
             num_tabs,
             config.window.macos_use_unified_titlebar,
         );
-        let padding_y_bottom = padding_bottom_from_config(
-            &config.navigation,
-            config.padding_y[1],
-            num_tabs,
-            self.search_active(),
-        );
+        let padding_y_bottom = config.margin.bottom;
 
         if should_update_font_library {
             self.sugarloaf.update_font(font_library);
@@ -378,30 +375,45 @@ impl Screen<'_> {
 
         self.sugarloaf
             .update_filters(config.renderer.filters.as_slice());
-        self.renderer = Renderer::new(config, font_library);
 
+        // Preserve existing Island (tab state) and update its colors
+        let old_island = self.renderer.island.take();
+        self.renderer = Renderer::new(config);
+        if let Some(mut island) = old_island {
+            island.update_colors(
+                config.colors.tabs,
+                config.colors.tabs_active,
+                config.colors.tab_border,
+            );
+            self.renderer.island = Some(island);
+        }
+
+        let scale = self.sugarloaf.scale_factor();
         for context_grid in self.context_manager.contexts_mut() {
             context_grid.update_line_height(config.line_height);
 
-            context_grid.update_margin((
-                config.padding_x,
-                padding_y_top,
-                padding_y_bottom,
+            context_grid.update_scaled_margin(Margin::new(
+                padding_y_top * scale,
+                config.margin.right * scale,
+                padding_y_bottom * scale,
+                config.margin.left * scale,
             ));
 
-            context_grid.update_dimensions(&self.sugarloaf);
-
+            // Update font size and line height BEFORE update_dimensions
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
-                self.sugarloaf.set_rich_text_font_size(
-                    &current_context.rich_text_id,
-                    config.fonts.size,
-                );
-                self.sugarloaf.set_rich_text_line_height(
+                self.sugarloaf
+                    .set_text_font_size(&current_context.rich_text_id, config.fonts.size);
+                self.sugarloaf.set_text_line_height(
                     &current_context.rich_text_id,
                     current_context.dimension.line_height,
                 );
+            }
 
+            context_grid.update_dimensions(&mut self.sugarloaf);
+
+            for current_context in context_grid.contexts_mut().values_mut() {
+                let current_context = current_context.context_mut();
                 let mut terminal = current_context.terminal.lock();
                 current_context.renderable_content =
                     RenderableContent::from_cursor_config(&config.cursor);
@@ -419,15 +431,18 @@ impl Screen<'_> {
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
 
-        if cfg!(target_os = "macos") {
-            self.sugarloaf.set_background_color(None);
-        } else {
-            self.sugarloaf
-                .set_background_color(Some(self.renderer.dynamic_background.1));
-        }
+        self.sugarloaf
+            .set_background_color(Some(self.renderer.dynamic_background.1));
 
         if let Some(image) = &config.window.background_image {
-            self.sugarloaf.set_background_image(image);
+            if let Err(message) = self.sugarloaf.set_background_image(image) {
+                self.renderer.assistant.set_error(RioError {
+                    level: RioErrorLevel::Warning,
+                    report: RioErrorType::BackgroundImageLoadFailure(message),
+                });
+            }
+        } else {
+            self.sugarloaf.clear_background_image();
         }
 
         self.resize_all_contexts();
@@ -441,14 +456,14 @@ impl Screen<'_> {
             FontSizeAction::Reset => 0,
         };
 
-        self.sugarloaf.set_rich_text_font_size_based_on_action(
+        self.sugarloaf.set_text_font_size_action(
             &self.context_manager.current().rich_text_id,
             action,
         );
 
         self.context_manager
             .current_grid_mut()
-            .update_dimensions(&self.sugarloaf);
+            .update_dimensions(&mut self.sugarloaf);
 
         self.render();
         self.resize_all_contexts();
@@ -469,9 +484,8 @@ impl Screen<'_> {
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
-        for context_grid in self.context_manager.contexts_mut() {
-            context_grid.resize(width, height);
-        }
+        self.context_manager
+            .resize_all_grids(width, height, &mut self.sugarloaf);
 
         self
     }
@@ -488,13 +502,12 @@ impl Screen<'_> {
         self.resize_all_contexts();
         self.context_manager
             .current_grid_mut()
-            .update_dimensions(&self.sugarloaf);
+            .update_dimensions(&mut self.sugarloaf);
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
-        for context_grid in self.context_manager.contexts_mut() {
-            context_grid.resize(width, height);
-        }
+        self.context_manager
+            .resize_all_grids(width, height, &mut self.sugarloaf);
 
         self
     }
@@ -549,7 +562,11 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn process_key_event(&mut self, key: &rio_window::event::KeyEvent) {
+    pub fn process_key_event(
+        &mut self,
+        key: &rio_window::event::KeyEvent,
+        clipboard: &mut Clipboard,
+    ) {
         if self.context_manager.current().ime.preedit().is_some() {
             return;
         }
@@ -623,7 +640,7 @@ impl Screen<'_> {
                     self.hint_state.keyboard_input(&*terminal, character)
                 {
                     drop(terminal);
-                    self.execute_hint_action(&hint_match);
+                    self.execute_hint_action(&hint_match, clipboard);
                     // Stop hint mode and update state with proper damage tracking
                     self.hint_state.stop();
                     self.update_hint_state();
@@ -637,7 +654,7 @@ impl Screen<'_> {
             return;
         }
 
-        let ignore_chars = self.process_key_bindings(key, &mode, mods);
+        let ignore_chars = self.process_key_bindings(key, &mode, mods, clipboard);
         if ignore_chars {
             return;
         }
@@ -719,7 +736,11 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn process_mouse_bindings(&mut self, button: MouseButton) {
+    pub fn process_mouse_bindings(
+        &mut self,
+        button: MouseButton,
+        clipboard: &mut Clipboard,
+    ) {
         let mode = self.get_mode();
         let binding_mode = BindingMode::new(&mode, self.search_active());
         let mouse_mode = self.mouse_mode();
@@ -736,7 +757,7 @@ impl Screen<'_> {
             if binding.is_triggered_by(binding_mode.to_owned(), mods, &button)
                 && binding.action == Act::PasteSelection
             {
-                let content = self.clipboard.borrow_mut().get(ClipboardType::Selection);
+                let content = clipboard.get(ClipboardType::Selection);
                 self.paste(&content, true);
             }
         }
@@ -747,6 +768,7 @@ impl Screen<'_> {
         key: &rio_window::event::KeyEvent,
         mode: &Mode,
         mods: ModifiersState,
+        clipboard: &mut Clipboard,
     ) -> bool {
         let search_active = self.search_active();
         let binding_mode = BindingMode::new(mode, search_active);
@@ -798,20 +820,18 @@ impl Screen<'_> {
                         self.paste(s, false);
                     }
                     Act::Paste => {
-                        let content =
-                            self.clipboard.borrow_mut().get(ClipboardType::Clipboard);
+                        let content = clipboard.get(ClipboardType::Clipboard);
                         self.paste(&content, true);
                     }
                     Act::ClearSelection => {
                         self.clear_selection();
                     }
                     Act::PasteSelection => {
-                        let content =
-                            self.clipboard.borrow_mut().get(ClipboardType::Selection);
+                        let content = clipboard.get(ClipboardType::Selection);
                         self.paste(&content, true);
                     }
                     Act::Copy => {
-                        self.copy_selection(ClipboardType::Clipboard);
+                        self.copy_selection(ClipboardType::Clipboard, clipboard);
                     }
                     Act::Hint(hint_config) => {
                         self.start_hint_mode(hint_config.clone());
@@ -827,18 +847,18 @@ impl Screen<'_> {
                         self.render();
                     }
                     Act::Search(SearchAction::SearchConfirm) => {
-                        self.confirm_search();
+                        self.confirm_search(clipboard);
                         self.resize_top_or_bottom_line(self.ctx().len());
                         self.render();
                     }
                     Act::Search(SearchAction::SearchCancel) => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.resize_top_or_bottom_line(self.ctx().len());
                         self.render();
                     }
                     Act::Search(SearchAction::SearchClear) => {
                         let direction = self.search_state.direction;
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.start_search(direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
                         self.render();
@@ -875,7 +895,9 @@ impl Screen<'_> {
                         context
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.renderer.set_vi_mode(has_vi_mode_enabled);
                         self.render();
                     }
@@ -894,7 +916,9 @@ impl Screen<'_> {
                         context
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
@@ -911,43 +935,69 @@ impl Screen<'_> {
                         context
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
-                        self.toggle_selection(SelectionType::Simple, Side::Left);
+                        self.toggle_selection(
+                            SelectionType::Simple,
+                            Side::Left,
+                            clipboard,
+                        );
                         self.context_manager
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
-                        self.toggle_selection(SelectionType::Lines, Side::Left);
+                        self.toggle_selection(
+                            SelectionType::Lines,
+                            Side::Left,
+                            clipboard,
+                        );
                         self.context_manager
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
-                        self.toggle_selection(SelectionType::Block, Side::Left);
+                        self.toggle_selection(
+                            SelectionType::Block,
+                            Side::Left,
+                            clipboard,
+                        );
                         self.context_manager
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
-                        self.toggle_selection(SelectionType::Semantic, Side::Left);
+                        self.toggle_selection(
+                            SelectionType::Semantic,
+                            Side::Left,
+                            clipboard,
+                        );
                         self.context_manager
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::SplitRight => {
@@ -977,17 +1027,17 @@ impl Screen<'_> {
                         self.context_manager.create_new_window();
                     }
                     Act::CloseCurrentSplitOrTab => {
-                        self.close_split_or_tab();
+                        self.close_split_or_tab(clipboard);
                     }
                     Act::TabCreateNew => {
-                        self.create_tab();
+                        self.create_tab(clipboard);
                     }
                     Act::TabCloseCurrent => {
-                        self.close_tab();
+                        self.close_tab(clipboard);
                     }
                     Act::TabCloseUnfocused => {
                         self.clear_selection();
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         if self.ctx().len() <= 1 {
                             return true;
                         }
@@ -1009,19 +1059,22 @@ impl Screen<'_> {
                     }
                     Act::ScrollPageUp => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = terminal.grid.screen_lines() as i32;
                         terminal.vi_mode_cursor =
                             terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
                         terminal.scroll_display(Scroll::PageUp);
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ScrollPageDown => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = -(terminal.grid.screen_lines() as i32);
 
                         terminal.vi_mode_cursor =
@@ -1029,12 +1082,14 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::PageDown);
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ScrollHalfPageUp => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = terminal.grid.screen_lines() as i32 / 2;
 
                         terminal.vi_mode_cursor =
@@ -1042,12 +1097,14 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ScrollHalfPageDown => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = -(terminal.grid.screen_lines() as i32 / 2);
 
                         terminal.vi_mode_cursor =
@@ -1055,22 +1112,26 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ScrollToTop => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         terminal.scroll_display(Scroll::Top);
 
                         let topmost_line = terminal.grid.topmost_line();
                         terminal.vi_mode_cursor.pos.row = topmost_line;
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ScrollToBottom => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         terminal.scroll_display(Scroll::Bottom);
 
                         // Move vi mode cursor.
@@ -1080,13 +1141,16 @@ impl Screen<'_> {
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::Scroll(delta) => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         terminal.scroll_display(Scroll::Delta(*delta));
                         drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
                         self.render();
                     }
                     Act::ClearHistory => {
@@ -1097,6 +1161,21 @@ impl Screen<'_> {
                         self.render();
                     }
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
+                    Act::ToggleAppearanceTheme => {
+                        self.context_manager.toggle_appearance_theme();
+                    }
+                    Act::OpenCommandPalette => {
+                        // One-way "open": the action never closes an
+                        // already-visible palette. Users close it via
+                        // Esc (handled inside the palette's own key
+                        // dispatcher in `router::mod`). Idempotent —
+                        // re-firing while the palette is already open
+                        // must NOT wipe the user's in-progress query.
+                        if !self.renderer.command_palette.is_enabled() {
+                            self.renderer.command_palette.set_enabled(true);
+                            self.render();
+                        }
+                    }
                     Act::Minimize => {
                         self.context_manager.minimize();
                     }
@@ -1108,59 +1187,115 @@ impl Screen<'_> {
                         self.context_manager.hide_other_apps();
                     }
                     Act::SelectNextSplit => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.context_manager.select_next_split();
                         self.render();
                     }
                     Act::SelectPrevSplit => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.context_manager.select_prev_split();
                         self.render();
                     }
                     Act::SelectNextSplitOrTab => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_next_split_or_tab();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectPrevSplitOrTab => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_prev_split_or_tab();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectTab(tab_index) => {
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.select_tab(*tab_index);
-                        self.cancel_search();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
+                        self.cancel_search(clipboard);
                         self.render();
                     }
                     Act::SelectLastTab => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.select_last_tab();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectNextTab => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_next();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::MoveCurrentTabToPrev => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.move_current_to_prev();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::MoveCurrentTabToNext => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.move_current_to_next();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectPrevTab => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_prev();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
@@ -1173,86 +1308,161 @@ impl Screen<'_> {
     }
 
     pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager
-            .split_from_config(rich_text_id, false, config);
+        // Create rich text with initial position accounting for island
+        let padding_y_top = self.renderer.margin.top
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(Some(rich_text_id));
+        self.sugarloaf
+            .set_position(rich_text_id, config.margin.left, padding_y_top);
+        self.context_manager.split_from_config(
+            rich_text_id,
+            false,
+            config,
+            &mut self.sugarloaf,
+        );
 
         self.render();
     }
 
     pub fn split_right(&mut self) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.split(rich_text_id, false);
+        // Create rich text with initial position accounting for island
+        let current_grid = self.context_manager.current_grid();
+        let (_context, margin) = current_grid.current_context_with_computed_dimension();
+        let padding_x = margin.left;
+        let padding_y_top = self.renderer.margin.top
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(Some(rich_text_id));
+        self.sugarloaf
+            .set_position(rich_text_id, padding_x, padding_y_top);
+        self.context_manager
+            .split(rich_text_id, false, &mut self.sugarloaf);
 
         self.render();
     }
 
     pub fn split_down(&mut self) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.split(rich_text_id, true);
+        // Create rich text with initial position accounting for island
+        let current_grid = self.context_manager.current_grid();
+        let (_context, margin) = current_grid.current_context_with_computed_dimension();
+        let padding_x = margin.left;
+        let padding_y_top = self.renderer.margin.top
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(Some(rich_text_id));
+        self.sugarloaf
+            .set_position(rich_text_id, padding_x, padding_y_top);
+        self.context_manager
+            .split(rich_text_id, true, &mut self.sugarloaf);
 
         self.render();
     }
 
     pub fn move_divider_up(&mut self) {
         let amount = 20.0; // Default movement amount
-        if self.context_manager.move_divider_up(amount) {
+        if self
+            .context_manager
+            .move_divider_up(amount, &mut self.sugarloaf)
+        {
             self.render();
         }
     }
 
     pub fn move_divider_down(&mut self) {
         let amount = 20.0; // Default movement amount
-        if self.context_manager.move_divider_down(amount) {
+        if self
+            .context_manager
+            .move_divider_down(amount, &mut self.sugarloaf)
+        {
             self.render();
         }
     }
 
     pub fn move_divider_left(&mut self) {
         let amount = 40.0; // Default movement amount
-        if self.context_manager.move_divider_left(amount) {
+        if self
+            .context_manager
+            .move_divider_left(amount, &mut self.sugarloaf)
+        {
             self.render();
         }
     }
 
     pub fn move_divider_right(&mut self) {
         let amount = 40.0; // Default movement amount
-        if self.context_manager.move_divider_right(amount) {
+        if self
+            .context_manager
+            .move_divider_right(amount, &mut self.sugarloaf)
+        {
             self.render();
         }
     }
 
-    pub fn create_tab(&mut self) {
+    pub fn create_tab(&mut self, clipboard: &mut Clipboard) {
         let redirect = true;
 
         // We resize the current tab ahead to prepare the
         // dimensions to be copied to next tab.
         let num_tabs = self.ctx().len();
+        let old_index = self.context_manager.current_index();
         self.resize_top_or_bottom_line(num_tabs + 1);
 
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.add_context(redirect, rich_text_id);
+        // Update the old tab's rich text positions to reflect the new margin
+        // (on Linux/Windows when hide_if_single transitions from hidden to visible)
+        #[cfg(not(target_os = "macos"))]
+        self.context_manager.contexts_mut()[old_index]
+            .update_dimensions(&mut self.sugarloaf);
 
-        self.cancel_search();
+        // Use the base scaled_margin for the new tab position, not the
+        // split-panel-aware margin, because the new tab is full-window.
+        let padding_x = self.context_manager.current_grid().scaled_margin.left;
+        let padding_y_top = self.renderer.margin.top
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(Some(rich_text_id));
+        self.sugarloaf
+            .set_position(rich_text_id, padding_x, padding_y_top);
+        self.context_manager.add_context(redirect, rich_text_id);
+        let new_index = self.context_manager.current_index();
+        self.context_manager.switch_context_visibility(
+            &mut self.sugarloaf,
+            old_index,
+            new_index,
+        );
+
+        self.cancel_search(clipboard);
         self.render();
     }
 
-    pub fn close_split_or_tab(&mut self) {
+    pub fn close_split_or_tab(&mut self, clipboard: &mut Clipboard) {
         if self.context_manager.current_grid_len() > 1 {
             self.clear_selection();
-            self.context_manager.remove_current_grid();
+            self.context_manager
+                .remove_current_grid(&mut self.sugarloaf);
             self.render();
         } else {
-            self.close_tab();
+            self.close_tab(clipboard);
         }
     }
 
-    pub fn close_tab(&mut self) {
+    pub fn close_tab(&mut self, clipboard: &mut Clipboard) {
         self.clear_selection();
-        self.context_manager.close_current_context();
+        self.context_manager
+            .close_current_context(&mut self.sugarloaf);
 
-        self.cancel_search();
+        self.cancel_search(clipboard);
         if self.ctx().len() <= 1 {
+            // Update the remaining tab's margin and position
+            // (on Linux/Windows when hide_if_single transitions to hidden)
+            #[cfg(not(target_os = "macos"))]
+            {
+                self.resize_top_or_bottom_line(1);
+                self.context_manager
+                    .current_grid_mut()
+                    .update_dimensions(&mut self.sugarloaf);
+                self.render();
+            }
             return;
         }
 
@@ -1265,31 +1475,34 @@ impl Screen<'_> {
         let layout = self.context_manager.current().dimension;
         let previous_margin = layout.margin;
         let padding_y_top = padding_top_from_config(
-            &self.renderer.navigation.navigation,
-            self.renderer.navigation.padding_y[0],
+            &self.renderer.navigation,
+            self.renderer.margin.top,
             num_tabs,
             self.renderer.macos_use_unified_titlebar,
         );
-        let padding_y_bottom = padding_bottom_from_config(
-            &self.renderer.navigation.navigation,
-            self.renderer.navigation.padding_y[1],
-            num_tabs,
-            self.search_active(),
-        );
+        let padding_y_bottom = self.renderer.margin.bottom;
 
-        if previous_margin.top_y != padding_y_top
-            || previous_margin.bottom_y != padding_y_bottom
+        if previous_margin.top != padding_y_top
+            || previous_margin.bottom != padding_y_bottom
         {
-            let layout = self
+            if let Some(layout) = self
                 .sugarloaf
-                .rich_text_layout(&self.context_manager.current().rich_text_id);
-            let s = self.sugarloaf.style_mut();
-            s.font_size = layout.font_size;
-            s.line_height = layout.line_height;
+                .get_text_layout(&self.context_manager.current().rich_text_id)
+            {
+                let s = self.sugarloaf.style_mut();
+                s.font_size = layout.font_size;
+                s.line_height = layout.line_height;
 
-            let d = self.context_manager.current_grid_mut();
-            d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
-            self.resize_all_contexts();
+                let scale = self.sugarloaf.scale_factor();
+                let d = self.context_manager.current_grid_mut();
+                d.update_scaled_margin(Margin::new(
+                    padding_y_top * scale,
+                    d.scaled_margin.right,
+                    padding_y_bottom * scale,
+                    d.scaled_margin.left,
+                ));
+                self.resize_all_contexts();
+            }
         }
     }
 
@@ -1411,7 +1624,7 @@ impl Screen<'_> {
         }
     }
 
-    pub fn copy_selection(&mut self, ty: ClipboardType) {
+    pub fn copy_selection(&mut self, ty: ClipboardType, clipboard: &mut Clipboard) {
         let terminal = self.context_manager.current_mut().terminal.lock();
         let text = match terminal.selection_to_string().filter(|s| !s.is_empty()) {
             Some(text) => text,
@@ -1419,12 +1632,7 @@ impl Screen<'_> {
         };
         drop(terminal);
 
-        if ty == ClipboardType::Selection {
-            self.clipboard
-                .borrow_mut()
-                .set(ClipboardType::Clipboard, text.clone());
-        }
-        self.clipboard.borrow_mut().set(ty, text);
+        clipboard.set(ty, text);
     }
 
     #[inline]
@@ -1437,8 +1645,14 @@ impl Screen<'_> {
     }
 
     #[inline]
-    fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
-        self.copy_selection(ClipboardType::Selection);
+    fn start_selection(
+        &mut self,
+        ty: SelectionType,
+        point: Pos,
+        side: Side,
+        clipboard: &mut Clipboard,
+    ) {
+        self.copy_selection(ClipboardType::Selection, clipboard);
         let current = self.context_manager.current_mut();
         let mut terminal = current.terminal.lock();
         let selection = Selection::new(ty, point, side);
@@ -1454,7 +1668,12 @@ impl Screen<'_> {
     }
 
     #[inline]
-    fn toggle_selection(&mut self, ty: SelectionType, side: Side) {
+    fn toggle_selection(
+        &mut self,
+        ty: SelectionType,
+        side: Side,
+        clipboard: &mut Clipboard,
+    ) {
         let mut terminal = self.context_manager.current().terminal.lock();
         match &mut terminal.selection {
             Some(selection) if selection.ty == ty && !selection.is_empty() => {
@@ -1464,12 +1683,12 @@ impl Screen<'_> {
             Some(selection) if !selection.is_empty() => {
                 selection.ty = ty;
                 drop(terminal);
-                self.copy_selection(ClipboardType::Selection);
+                self.copy_selection(ClipboardType::Selection, clipboard);
             }
             _ => {
                 let pos = terminal.vi_mode_cursor.pos;
                 drop(terminal);
-                self.start_selection(ty, pos, side)
+                self.start_selection(ty, pos, side, clipboard)
             }
         }
 
@@ -1563,12 +1782,18 @@ impl Screen<'_> {
         let current = self.context_manager.current_mut();
 
         if let Some(hint_match) = highlighted_hint {
-            // Mark the hint range as damaged so it gets re-rendered
+            // Mark the hint range as damaged so it gets re-rendered.
+            //
+            // Two damage signals are required:
+            //   * Terminal-side: `update_selection_damage` marks the affected
+            //     lines so the partial render path knows what to redraw.
+            //   * Renderer-side: `pending_update.set_terminal_damage(Full)`
+            //     ensures the render loop doesn't early-exit on
+            //     `!pending_update.is_dirty()`
             {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
 
-                // Create a temporary selection range for damage tracking
                 let hint_range = rio_backend::selection::SelectionRange::new(
                     hint_match.start,
                     hint_match.end,
@@ -1577,16 +1802,26 @@ impl Screen<'_> {
                 terminal.update_selection_damage(Some(hint_range), display_offset);
             }
 
+            current
+                .renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             current.renderable_content.highlighted_hint = Some(hint_match);
             true
         } else {
-            // Clear any previous hint damage
             if current.renderable_content.highlighted_hint.is_some() {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
                 terminal.update_selection_damage(None, display_offset);
             }
 
+            // Force a render so the previously-highlighted line clears.
+            if had_highlight {
+                current
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+            }
             current.renderable_content.highlighted_hint = None;
             had_highlight
         }
@@ -1647,7 +1882,7 @@ impl Screen<'_> {
 
             // Check regex patterns if specified
             if let Some(regex_pattern) = &hint_config.regex {
-                if let Ok(regex) = regex::Regex::new(regex_pattern) {
+                if let Ok(regex) = onig::Regex::new(regex_pattern) {
                     if let Some(regex_match) = self.find_regex_match_at_point(
                         terminal,
                         point,
@@ -1676,63 +1911,62 @@ impl Screen<'_> {
             return None;
         }
 
-        let cell = &grid[point.row][point.col];
-        if let Some(hyperlink) = cell.hyperlink() {
-            // Find the extent of this hyperlink
-            let mut start_col = point.col;
-            let mut end_col = point.col;
+        // Look up the cell's hyperlink via the per-grid extras table.
+        // Cells in the same OSC 8 span share an `extras_id`, so we
+        // walk left/right comparing ids (cheap u16 compare) to find
+        // the span boundaries, then look up the URI once.
+        let id = terminal.cell_hyperlink_id(point.row, point.col)?;
 
-            // Scan backward to find start
-            while start_col > rio_backend::crosswords::pos::Column(0) {
-                let prev_col = start_col - 1;
-                let prev_cell = &grid[point.row][prev_col];
-                if prev_cell.hyperlink().as_ref() == Some(&hyperlink) {
-                    start_col = prev_col;
-                } else {
-                    break;
-                }
+        let mut start_col = point.col;
+        let mut end_col = point.col;
+
+        while start_col > rio_backend::crosswords::pos::Column(0) {
+            let prev_col = start_col - 1;
+            if terminal.cell_hyperlink_id(point.row, prev_col) == Some(id) {
+                start_col = prev_col;
+            } else {
+                break;
             }
-
-            // Scan forward to find end
-            while end_col < grid.columns() - 1 {
-                let next_col = end_col + 1;
-                let next_cell = &grid[point.row][next_col];
-                if next_cell.hyperlink().as_ref() == Some(&hyperlink) {
-                    end_col = next_col;
-                } else {
-                    break;
-                }
+        }
+        while end_col < grid.columns() - 1 {
+            let next_col = end_col + 1;
+            if terminal.cell_hyperlink_id(point.row, next_col) == Some(id) {
+                end_col = next_col;
+            } else {
+                break;
             }
-
-            // Create a dummy hint config for hyperlinks
-            let hint_config = std::rc::Rc::new(rio_backend::config::hints::Hint {
-                regex: None,
-                hyperlinks: true,
-                post_processing: true,
-                persist: false,
-                action: rio_backend::config::hints::HintAction::Command {
-                    command: rio_backend::config::hints::HintCommand::Simple(
-                        "xdg-open".to_string(),
-                    ),
-                },
-                mouse: rio_backend::config::hints::HintMouse::default(),
-                binding: None,
-            });
-
-            let mut uri = hyperlink.uri().to_string();
-            if hint_config.post_processing {
-                uri = post_process_hyperlink_uri(&uri);
-            }
-
-            return Some(crate::hints::HintMatch {
-                text: uri,
-                start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
-                end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
-                hint: hint_config,
-            });
         }
 
-        None
+        let hyperlink = terminal.cell_hyperlink(point.row, point.col)?;
+
+        // Build a synthetic hint config so the rest of the hint
+        // pipeline (highlighting, click action) treats this just like
+        // a regex/url match.
+        let hint_config = std::rc::Rc::new(rio_backend::config::hints::Hint {
+            regex: None,
+            hyperlinks: true,
+            post_processing: true,
+            persist: false,
+            action: rio_backend::config::hints::HintAction::Command {
+                command: rio_backend::config::hints::HintCommand::Simple(
+                    "xdg-open".to_string(),
+                ),
+            },
+            mouse: rio_backend::config::hints::HintMouse::default(),
+            binding: None,
+        });
+
+        let mut uri = hyperlink.uri().to_string();
+        if hint_config.post_processing {
+            uri = post_process_hyperlink_uri(&uri);
+        }
+
+        Some(crate::hints::HintMatch {
+            text: uri,
+            start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
+            end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
+            hint: hint_config,
+        })
     }
 
     /// Find regex match at the specified point
@@ -1740,7 +1974,7 @@ impl Screen<'_> {
         &self,
         terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
         point: rio_backend::crosswords::pos::Pos,
-        regex: &regex::Regex,
+        regex: &onig::Regex,
         hint_config: std::rc::Rc<rio_backend::config::hints::Hint>,
     ) -> Option<crate::hints::HintMatch> {
         let grid = &terminal.grid;
@@ -1754,19 +1988,19 @@ impl Screen<'_> {
         let mut line_text = String::new();
         for col in 0..grid.columns() {
             let cell = &grid[point.row][rio_backend::crosswords::pos::Column(col)];
-            line_text.push(cell.c);
+            line_text.push(cell.c());
         }
         let line_text = line_text.trim_end();
 
-        // Find all matches in this line and check if point is within any of them
-        for mat in regex.find_iter(line_text) {
-            let start_col = rio_backend::crosswords::pos::Column(mat.start());
-            let end_col =
-                rio_backend::crosswords::pos::Column(mat.end().saturating_sub(1));
+        // Find all matches in this line and check if point is within any of them.
+        // Onig yields (byte_start, byte_end); we slice the source ourselves.
+        for (start, end) in regex.find_iter(line_text) {
+            let start_col = rio_backend::crosswords::pos::Column(start);
+            let end_col = rio_backend::crosswords::pos::Column(end.saturating_sub(1));
 
             // Check if the point is within this match
             if point.col >= start_col && point.col <= end_col {
-                let original_match_text = mat.as_str().to_string();
+                let original_match_text = line_text[start..end].to_string();
                 let mut match_text = original_match_text.clone();
 
                 // Apply grid-based post-processing
@@ -1788,7 +2022,7 @@ impl Screen<'_> {
                     for col in processed_start.0..=processed_end.0 {
                         let cell =
                             &grid[point.row][rio_backend::crosswords::pos::Column(col)];
-                        processed_text.push(cell.c);
+                        processed_text.push(cell.c());
                     }
                     match_text = processed_text.trim_end().to_string();
                 }
@@ -1825,15 +2059,16 @@ impl Screen<'_> {
             return false;
         }
 
+        // Look up the cell under the mouse and dispatch open_hyperlink
+        // if it carries an OSC 8 link.
         let terminal = self.context_manager.current().terminal.lock();
         let display_offset = terminal.display_offset();
         let pos = self.mouse_position(display_offset);
-        let pos_hyperlink = terminal.grid[pos].hyperlink();
+        let pos_hyperlink = terminal.cell_hyperlink(pos.row, pos.col);
         drop(terminal);
 
         if let Some(hyperlink) = pos_hyperlink {
             self.open_hyperlink(hyperlink);
-
             return true;
         }
 
@@ -1842,7 +2077,7 @@ impl Screen<'_> {
 
     /// Trigger hint action at mouse position
     #[inline]
-    pub fn trigger_hint(&mut self) -> bool {
+    pub fn trigger_hint(&mut self, clipboard: &mut Clipboard) -> bool {
         // Take the highlighted hint
         let hint_match = self
             .context_manager
@@ -1852,7 +2087,7 @@ impl Screen<'_> {
             .take();
 
         if let Some(hint_match) = hint_match {
-            self.execute_hint_action(&hint_match);
+            self.execute_hint_action(&hint_match, clipboard);
             true
         } else {
             false
@@ -1902,71 +2137,81 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
-        let current_context = self.context_manager.current();
-        let layout = current_context.dimension;
-        let sugarloaf_layout = self
-            .sugarloaf
-            .rich_text_layout(&current_context.rich_text_id);
-        let scale_factor = layout.dimension.scale;
-        let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
-        let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
+    /// Compute the selection scroll delta for the given mouse Y position.
+    /// Returns 0 if the mouse is within the viewport, ±1 at the edges.
+    /// `mouse_y` is in physical pixels (from CursorMoved position.y).
+    pub fn selection_scroll_delta(&self, mouse_y: f64) -> i32 {
+        let current_grid = self.context_manager.current_grid();
+        let (context, margin) = current_grid.current_context_with_computed_dimension();
+        let layout = context.dimension;
+        // All values in physical pixels — margin is pre-scaled, cell
+        // dimensions are in physical pixels, position.y is physical.
+        let cell_height =
+            (layout.dimension.height * self.sugarloaf.style().line_height) as f64;
+        let text_area_top = margin.top as f64;
+        let text_area_bottom = text_area_top + layout.lines as f64 * cell_height;
+        let window_height = self.sugarloaf.window_size().height as f64;
 
-        // Compute the height of the scrolling areas.
-        let end_top = max(min_height, crate::constants::PADDING_Y as i32) as f64;
-        let text_area_bottom = (crate::constants::PADDING_Y + layout.lines as f32)
-            * sugarloaf_layout.font_size;
-        let start_bottom =
-            min(layout.height as i32 - min_height, text_area_bottom as i32) as f64;
-
-        // Get distance from closest window boundary.
-        let delta = if mouse_y < end_top {
-            end_top - mouse_y + step
-        } else if mouse_y >= start_bottom {
-            start_bottom - mouse_y - step
+        if mouse_y < text_area_top {
+            1 // scroll up (into history)
+        } else if mouse_y >= window_height - cell_height && mouse_y >= text_area_bottom {
+            -1 // scroll down (toward present)
         } else {
+            0
+        }
+    }
+
+    /// Perform one tick of selection auto-scroll.
+    /// Reads mouse.raw_y to compute scroll direction.
+    /// Scrolls 1 line per tick.
+    pub fn selection_scroll_tick(&mut self) {
+        if self.mouse.left_button_state != rio_window::event::ElementState::Pressed {
             return;
-        };
+        }
+
+        let delta = self.selection_scroll_delta(self.mouse.raw_y);
+        if delta == 0 {
+            return;
+        }
 
         let mut terminal = self.context_manager.current_mut().terminal.lock();
-        terminal.scroll_display(Scroll::Delta((delta / step) as i32));
+        terminal.scroll_display(Scroll::Delta(delta));
         drop(terminal);
+
+        // Update selection to match the new scroll position.
+        let display_offset = self.display_offset();
+        let point = self.mouse_position(display_offset);
+        let side = self.mouse.square_side;
+        self.update_selection(point, side);
     }
 
     #[inline]
     pub fn contains_point(&self, x: usize, y: usize) -> bool {
-        let current_context = self.context_manager.current();
-        let layout = current_context.dimension;
-        let width = layout.dimension.width;
-        x <= (layout.margin.x + layout.columns as f32 * width) as usize
-            && x > (layout.margin.x * layout.dimension.scale) as usize
-            && y <= (layout.margin.top_y * layout.dimension.scale
-                + layout.lines as f32 * layout.dimension.height)
-                as usize
-            && y > layout.margin.top_y as usize
+        let current_grid = self.context_manager.current_grid();
+        let (context, margin) = current_grid.current_context_with_computed_dimension();
+        let layout = context.dimension;
+        // Margin is already pre-scaled (physical pixels), same as x/y.
+        let cell_width = layout.dimension.width;
+        let cell_height = layout.dimension.height * self.sugarloaf.style().line_height;
+        x > margin.left as usize
+            && x <= (margin.left + layout.columns as f32 * cell_width) as usize
+            && y > margin.top as usize
+            && y <= (margin.top + layout.lines as f32 * cell_height) as usize
     }
 
     #[inline]
     pub fn side_by_pos(&self, x: usize) -> Side {
+        let current_grid = self.context_manager.current_grid();
+        let (_, margin) = current_grid.current_context_with_computed_dimension();
         let current_context = self.context_manager.current();
         let layout = current_context.dimension;
-        let width = (layout.dimension.width) as usize;
-        let margin_x = layout.margin.x * layout.dimension.scale;
 
-        let cell_x = x.saturating_sub(margin_x as usize) % width;
-        let half_cell_width = width / 2;
-
-        let additional_padding = (layout.width - margin_x) % width as f32;
-        let end_of_grid = layout.width - margin_x - additional_padding;
-
-        if cell_x > half_cell_width
-            // Edge case when mouse leaves the window.
-            || x as f32 >= end_of_grid
-        {
-            Side::Right
-        } else {
-            Side::Left
-        }
+        crate::mouse::calculate_side_by_pos(
+            x,
+            margin.left,
+            layout.dimension.width,
+            layout.width,
+        )
     }
 
     #[inline]
@@ -1978,8 +2223,409 @@ impl Screen<'_> {
             .is_none()
     }
 
+    // return true if the click was handled by the island
     #[inline]
-    pub fn on_left_click(&mut self, point: Pos) {
+    pub fn handle_palette_click(&mut self, clipboard: &mut Clipboard) -> bool {
+        if !self.renderer.command_palette.is_enabled() {
+            return false;
+        }
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let window_width = self.sugarloaf.window_size().width;
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        match self.renderer.command_palette.hit_test(
+            mouse_x,
+            mouse_y,
+            window_width,
+            scale_factor,
+        ) {
+            Ok(Some(index)) => {
+                // Clicked a result row — select and execute
+                if let Some(action) = {
+                    // Temporarily set selected index to the clicked row
+                    self.renderer.command_palette.selected_index = index;
+                    self.renderer.command_palette.get_selected_action()
+                } {
+                    self.renderer.command_palette.set_enabled(false);
+                    self.execute_palette_action(action, clipboard);
+                }
+                self.render();
+                true
+            }
+            Ok(None) => {
+                // Clicked inside palette but not on a result (e.g. input area)
+                true
+            }
+            Err(()) => {
+                // Clicked outside — close palette
+                self.renderer.command_palette.set_enabled(false);
+                self.render();
+                true
+            }
+        }
+    }
+
+    #[inline]
+    pub fn handle_search_click(&mut self, clipboard: &mut Clipboard) -> bool {
+        if !self.renderer.search.is_active() {
+            return false;
+        }
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let window_width = self.sugarloaf.window_size().width;
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        match self
+            .renderer
+            .search
+            .hit_test(mouse_x, mouse_y, window_width, scale_factor)
+        {
+            Ok(Some(action)) => {
+                use crate::renderer::search::SearchOverlayAction;
+                match action {
+                    SearchOverlayAction::Next => {
+                        self.advance_search_origin(self.search_state.direction);
+                    }
+                    SearchOverlayAction::Previous => {
+                        let direction = self.search_state.direction.opposite();
+                        self.advance_search_origin(direction);
+                    }
+                    SearchOverlayAction::Close => {
+                        self.cancel_search(clipboard);
+                        self.resize_top_or_bottom_line(self.ctx().len());
+                    }
+                }
+                self.render();
+                true
+            }
+            Ok(None) => {
+                // Clicked inside overlay but not on a button (input area)
+                true
+            }
+            Err(()) => {
+                // Clicked outside — don't close search, just pass through
+                false
+            }
+        }
+    }
+
+    #[inline]
+    pub fn handle_assistant_click(&mut self) -> bool {
+        if !self.renderer.assistant.is_active() {
+            return false;
+        }
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let window_width = self.sugarloaf.window_size().width;
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        match self.renderer.assistant.hit_test(
+            mouse_x,
+            mouse_y,
+            window_width,
+            scale_factor,
+        ) {
+            Ok(Some(action)) => {
+                use crate::renderer::assistant::AssistantOverlayAction;
+                match action {
+                    AssistantOverlayAction::Close => {
+                        self.renderer.assistant.clear();
+                    }
+                    AssistantOverlayAction::OpenDocs => {
+                        Self::open_docs_url();
+                    }
+                }
+                self.render();
+                true
+            }
+            Ok(None) => {
+                // Clicked inside overlay but not on a button
+                true
+            }
+            Err(()) => {
+                // Clicked outside — close the assistant overlay
+                self.renderer.assistant.clear();
+                self.render();
+                true
+            }
+        }
+    }
+
+    fn open_docs_url() {
+        let url = "https://rioterm.com/docs/config";
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("open").arg(url).spawn();
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+        }
+        #[cfg(windows)]
+        {
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", "start", "", url])
+                .spawn();
+        }
+    }
+
+    pub fn handle_scrollbar_click(&mut self) -> bool {
+        let scale_factor = self.sugarloaf.scale_factor();
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        let grid = self.context_manager.current_grid_mut();
+        let grid_margin = (grid.scaled_margin.left, grid.scaled_margin.top);
+
+        let item = match grid.current_item() {
+            Some(item) => item,
+            None => return false,
+        };
+
+        let panel_rect = item.layout_rect;
+        let rich_text_id = item.context().rich_text_id;
+
+        let terminal = item.context().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let history_size = terminal.history_size();
+        let screen_lines = terminal.screen_lines();
+        drop(terminal);
+
+        if let Some((grab_offset, geom)) = self.renderer.scrollbar.hit_test(
+            mouse_x,
+            mouse_y,
+            panel_rect,
+            scale_factor,
+            display_offset,
+            history_size,
+            screen_lines,
+            grid_margin,
+        ) {
+            self.renderer.scrollbar.start_drag(
+                rich_text_id,
+                grab_offset,
+                &geom,
+                history_size,
+            );
+
+            // If clicked on track (not on thumb), jump-scroll to that position
+            if grab_offset.is_none() {
+                if let Some(new_offset) = self.renderer.scrollbar.drag_update(mouse_y) {
+                    let mut terminal = self.context_manager.current_mut().terminal.lock();
+                    let current = terminal.display_offset();
+                    let delta = new_offset as i32 - current as i32;
+                    terminal.scroll_display(Scroll::Delta(delta));
+                    drop(terminal);
+                }
+            }
+            self.render();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn handle_scrollbar_drag(&mut self, mouse_y: f32) -> bool {
+        if !self.renderer.scrollbar.is_dragging() {
+            return false;
+        }
+
+        if let Some(new_offset) = self.renderer.scrollbar.drag_update(mouse_y) {
+            let mut terminal = self.context_manager.current_mut().terminal.lock();
+            let current = terminal.display_offset();
+            let delta = new_offset as i32 - current as i32;
+            if delta != 0 {
+                terminal.scroll_display(Scroll::Delta(delta));
+            }
+            drop(terminal);
+            self.render();
+        }
+        true
+    }
+
+    pub fn handle_scrollbar_release(&mut self) {
+        self.renderer.scrollbar.end_drag();
+    }
+
+    pub fn is_hovering_scrollbar(&self) -> bool {
+        if !self.renderer.scrollbar.is_enabled() {
+            return false;
+        }
+        let scale_factor = self.sugarloaf.scale_factor();
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        let grid = self.context_manager.current_grid();
+        let grid_margin = (grid.scaled_margin.left, grid.scaled_margin.top);
+
+        let item = match grid.current_item() {
+            Some(item) => item,
+            None => return false,
+        };
+
+        let panel_rect = item.layout_rect;
+
+        let terminal = item.context().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let history_size = terminal.history_size();
+        let screen_lines = terminal.screen_lines();
+        drop(terminal);
+
+        self.renderer
+            .scrollbar
+            .hit_test(
+                mouse_x,
+                mouse_y,
+                panel_rect,
+                scale_factor,
+                display_offset,
+                history_size,
+                screen_lines,
+                grid_margin,
+            )
+            .is_some()
+    }
+
+    pub fn handle_island_click(
+        &mut self,
+        window: &rio_window::window::Window,
+        clipboard: &mut Clipboard,
+    ) -> bool {
+        // Only handle if navigation is enabled
+        if !self.renderer.navigation.is_enabled() {
+            return false;
+        }
+
+        let mouse_x = self.mouse.x;
+        let mouse_y = self.mouse.y;
+
+        use crate::renderer::island::ISLAND_HEIGHT;
+        let scale_factor = self.sugarloaf.scale_factor();
+        let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
+
+        let window_width = self.sugarloaf.window_size().width;
+        let num_tabs = self.context_manager.len();
+
+        // Check if the color picker is open and the click hits a swatch
+        if let Some(ref mut island) = self.renderer.island {
+            if island.is_color_picker_open() {
+                let consumed = island.handle_color_picker_click(
+                    mouse_x as f32,
+                    mouse_y as f32,
+                    scale_factor,
+                    window_width,
+                    num_tabs,
+                );
+                if consumed {
+                    self.render();
+                    return true;
+                }
+            }
+        }
+
+        // Check if click is within island height
+        if mouse_y > island_height_px {
+            // Close picker if clicking outside
+            if let Some(ref mut island) = self.renderer.island {
+                if island.is_color_picker_open() {
+                    island.close_color_picker();
+                    self.render();
+                }
+            }
+            return false;
+        }
+
+        // Handle double-click: toggle window maximization
+        if let ClickState::DoubleClick = self.mouse.click_state {
+            let is_maximized = window.is_maximized();
+            window.set_maximized(!is_maximized);
+            return true;
+        }
+
+        #[cfg(target_os = "macos")]
+        let left_margin = 76.0;
+        #[cfg(not(target_os = "macos"))]
+        let left_margin = 0.0;
+
+        let margin_right = 8.0;
+        let available_width = (window_width / scale_factor) - margin_right - left_margin;
+        let tab_width = available_width / num_tabs as f32;
+
+        let mouse_x_unscaled = mouse_x as f32 / scale_factor;
+
+        if mouse_x_unscaled < left_margin {
+            return true;
+        }
+
+        let x_in_tabs = mouse_x_unscaled - left_margin;
+        let clicked_tab = (x_in_tabs / tab_width) as usize;
+
+        if clicked_tab >= num_tabs {
+            return true;
+        }
+
+        // Control + click → toggle color picker for that tab
+        if self.modifiers.state().control_key() {
+            // Get current displayed title for the rename input
+            let current_title = self
+                .context_manager
+                .titles
+                .titles
+                .get(&clicked_tab)
+                .and_then(|t| {
+                    if !t.content.is_empty() {
+                        Some(t.content.clone())
+                    } else {
+                        t.extra.as_ref().and_then(|e| {
+                            if !e.program.is_empty() {
+                                Some(e.program.clone())
+                            } else {
+                                None
+                            }
+                        })
+                    }
+                })
+                .unwrap_or_else(|| String::from("~"));
+            if let Some(ref mut island) = self.renderer.island {
+                island.toggle_color_picker(clicked_tab, &current_title);
+                self.render();
+            }
+            return true;
+        }
+
+        // Normal click → switch tab
+        if clicked_tab != self.context_manager.current_index() {
+            self.cancel_search(clipboard);
+            self.clear_selection();
+            let old_index = self.context_manager.current_index();
+            self.context_manager.set_current(clicked_tab);
+            let new_index = self.context_manager.current_index();
+            self.context_manager.switch_context_visibility(
+                &mut self.sugarloaf,
+                old_index,
+                new_index,
+            );
+
+            self.render();
+        }
+
+        // Close picker on normal click
+        if let Some(ref mut island) = self.renderer.island {
+            if island.is_color_picker_open() {
+                island.close_color_picker();
+                self.render();
+            }
+        }
+
+        true
+    }
+
+    #[inline]
+    pub fn on_left_click(&mut self, point: Pos, clipboard: &mut Clipboard) {
         let side = self.mouse.square_side;
 
         match self.mouse.click_state {
@@ -1992,17 +2638,27 @@ impl Screen<'_> {
 
                     // Start new empty selection.
                     if self.modifiers.state().control_key() {
-                        self.start_selection(SelectionType::Block, point, side);
+                        self.start_selection(
+                            SelectionType::Block,
+                            point,
+                            side,
+                            clipboard,
+                        );
                     } else {
-                        self.start_selection(SelectionType::Simple, point, side);
+                        self.start_selection(
+                            SelectionType::Simple,
+                            point,
+                            side,
+                            clipboard,
+                        );
                     }
                 }
             }
             ClickState::DoubleClick => {
-                self.start_selection(SelectionType::Semantic, point, side);
+                self.start_selection(SelectionType::Semantic, point, side, clipboard);
             }
             ClickState::TripleClick => {
-                self.start_selection(SelectionType::Lines, point, side);
+                self.start_selection(SelectionType::Lines, point, side, clipboard);
             }
             ClickState::None => (),
         };
@@ -2062,10 +2718,10 @@ impl Screen<'_> {
     }
 
     #[inline]
-    fn confirm_search(&mut self) {
+    fn confirm_search(&mut self, clipboard: &mut Clipboard) {
         // Just cancel search when not in vi mode.
         if !self.get_mode().contains(Mode::VI) {
-            self.cancel_search();
+            self.cancel_search(clipboard);
             return;
         }
 
@@ -2079,7 +2735,7 @@ impl Screen<'_> {
     }
 
     #[inline]
-    fn cancel_search(&mut self) {
+    fn cancel_search(&mut self, clipboard: &mut Clipboard) {
         if self.get_mode().contains(Mode::VI) {
             // Recover pre-search state in vi mode.
             self.search_reset_state();
@@ -2087,9 +2743,9 @@ impl Screen<'_> {
             // Create a selection for the focused match.
             let start = *focused_match.start();
             let end = *focused_match.end();
-            self.start_selection(SelectionType::Simple, start, Side::Left);
+            self.start_selection(SelectionType::Simple, start, Side::Left, clipboard);
             self.update_selection(end, Side::Right);
-            self.copy_selection(ClipboardType::Selection);
+            self.copy_selection(ClipboardType::Selection, clipboard);
         }
 
         self.search_state.dfas = None;
@@ -2370,9 +3026,13 @@ impl Screen<'_> {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        let layout = self
+        let layout = match self
             .sugarloaf
-            .rich_text_layout(&self.context_manager.current().rich_text_id);
+            .get_text_layout(&self.context_manager.current().rich_text_id)
+        {
+            Some(l) => l,
+            None => return,
+        };
         let width = layout.dimensions.width as f64;
         let height = layout.dimensions.height as f64;
         let mode = self.get_mode();
@@ -2449,9 +3109,12 @@ impl Screen<'_> {
                 / layout.dimensions.height as f64) as i32;
 
             if lines != 0 {
-                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                let current = self.context_manager.current_mut();
+                let rich_text_id = current.rich_text_id;
+                let mut terminal = current.terminal.lock();
                 terminal.scroll_display(Scroll::Delta(lines));
                 drop(terminal);
+                self.renderer.scrollbar.notify_scroll(rich_text_id);
             }
         }
 
@@ -2510,21 +3173,7 @@ impl Screen<'_> {
         }
     }
 
-    pub fn render_assistant(
-        &mut self,
-        assistant: &crate::router::routes::assistant::Assistant,
-    ) {
-        self.sugarloaf.clear();
-        crate::router::routes::assistant::screen(
-            &mut self.sugarloaf,
-            &self.context_manager.current().dimension,
-            assistant,
-        );
-        self.sugarloaf.render();
-    }
-
     pub fn render_welcome(&mut self) {
-        self.sugarloaf.clear();
         crate::router::routes::welcome::screen(
             &mut self.sugarloaf,
             &self.context_manager.current().dimension,
@@ -2532,20 +3181,114 @@ impl Screen<'_> {
         self.sugarloaf.render();
     }
 
-    pub fn render_dialog(&mut self, content: &str, confirm: &str, close: &str) {
-        self.sugarloaf.clear();
-        crate::router::routes::dialog::screen(
-            &mut self.sugarloaf,
-            &self.context_manager.current().dimension,
-            content,
-            confirm,
-            close,
-        );
-        self.sugarloaf.render();
+    pub fn execute_palette_action(
+        &mut self,
+        action: crate::renderer::command_palette::PaletteAction,
+        clipboard: &mut Clipboard,
+    ) {
+        use crate::renderer::command_palette::PaletteAction;
+        match action {
+            PaletteAction::TabCreate => self.create_tab(clipboard),
+            PaletteAction::TabClose => self.close_tab(clipboard),
+            PaletteAction::TabCloseUnfocused => {
+                if self.ctx().len() > 1 {
+                    self.context_manager.close_unfocused_tabs();
+                    self.resize_top_or_bottom_line(1);
+                }
+            }
+            PaletteAction::SelectNextTab => {
+                self.clear_selection();
+                let old = self.context_manager.current_index();
+                self.context_manager.switch_to_next();
+                let new = self.context_manager.current_index();
+                self.context_manager.switch_context_visibility(
+                    &mut self.sugarloaf,
+                    old,
+                    new,
+                );
+            }
+            PaletteAction::SelectPrevTab => {
+                self.clear_selection();
+                let old = self.context_manager.current_index();
+                self.context_manager.switch_to_prev();
+                let new = self.context_manager.current_index();
+                self.context_manager.switch_context_visibility(
+                    &mut self.sugarloaf,
+                    old,
+                    new,
+                );
+            }
+            PaletteAction::SplitRight => self.split_right(),
+            PaletteAction::SplitDown => self.split_down(),
+            PaletteAction::SelectNextSplit => {
+                self.context_manager.select_next_split();
+            }
+            PaletteAction::SelectPrevSplit => {
+                self.context_manager.select_prev_split();
+            }
+            PaletteAction::CloseCurrentSplitOrTab => self.close_split_or_tab(clipboard),
+            PaletteAction::ConfigEditor => {
+                self.context_manager.switch_to_settings();
+            }
+            PaletteAction::WindowCreateNew => {
+                self.context_manager.create_new_window();
+            }
+            PaletteAction::IncreaseFontSize => {
+                self.change_font_size(FontSizeAction::Increase);
+            }
+            PaletteAction::DecreaseFontSize => {
+                self.change_font_size(FontSizeAction::Decrease);
+            }
+            PaletteAction::ResetFontSize => {
+                self.change_font_size(FontSizeAction::Reset);
+            }
+            PaletteAction::ToggleViMode => {
+                let context = self.context_manager.current_mut();
+                let mut terminal = context.terminal.lock();
+                terminal.toggle_vi_mode();
+                drop(terminal);
+                context
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+            }
+            PaletteAction::ToggleFullscreen => {
+                self.context_manager.toggle_full_screen();
+            }
+            PaletteAction::ToggleAppearanceTheme => {
+                self.context_manager.toggle_appearance_theme();
+            }
+            PaletteAction::Copy => {
+                self.copy_selection(ClipboardType::Clipboard, clipboard);
+            }
+            PaletteAction::Paste => {
+                let content = clipboard.get(ClipboardType::Clipboard);
+                self.paste(&content, true);
+            }
+            PaletteAction::SearchForward => {
+                self.start_search(Direction::Right);
+            }
+            PaletteAction::SearchBackward => {
+                self.start_search(Direction::Left);
+            }
+            PaletteAction::ClearHistory => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                terminal.clear_saved_history();
+            }
+            PaletteAction::ListFonts => {
+                // Handled in the router: switches the palette into fonts
+                // mode and keeps it open. If we land here it's either a
+                // bug (router should have intercepted) or an external
+                // caller firing the action directly — do nothing so the
+                // palette just closes without side effects.
+            }
+            PaletteAction::Quit => {
+                self.context_manager.quit();
+            }
+        }
     }
 
     pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
-        // let screen_render_start = std::time::Instant::now();
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -2553,7 +3296,11 @@ impl Screen<'_> {
                     self.search_state.history.get(history_index).cloned(),
                 );
             }
+        } else {
+            self.renderer.set_active_search(None);
+        }
 
+        if is_search_active {
             // Update search hints in renderable content
             let terminal = self.context_manager.current().terminal.lock();
             let hints = self
@@ -2573,7 +3320,7 @@ impl Screen<'_> {
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             }
         }
 
@@ -2583,6 +3330,71 @@ impl Screen<'_> {
             &mut self.context_manager,
             &self.search_state.focused_match,
         );
+
+        if self.renderer.custom_mouse_cursor {
+            let scale = self.sugarloaf.scale_factor();
+            crate::renderer::custom_cursor::draw(
+                &mut self.sugarloaf,
+                self.mouse.x as f32,
+                self.mouse.y as f32,
+                scale,
+            );
+        }
+
+        if self.renderer.trail_cursor_enabled {
+            let current_grid = self.context_manager.current_grid();
+            let scaled_margin = current_grid.get_scaled_margin();
+
+            if let Some(current_item) = current_grid.current_item() {
+                let layout = current_item.val.dimension;
+                let cell_width = layout.dimension.width;
+                let line_height = self.sugarloaf.style().line_height;
+                let cell_height = layout.dimension.height * line_height;
+                let scale_factor = self.sugarloaf.scale_factor();
+
+                let panel_rect = current_item.layout_rect;
+                let origin_x = panel_rect[0] + scaled_margin.left;
+                let origin_y = panel_rect[1] + scaled_margin.top;
+
+                let cursor = &self.context_manager.current().renderable_content.cursor;
+                let cursor_row = cursor.state.pos.row.0 as usize;
+                let cursor_col = cursor.state.pos.col.0;
+
+                // Cursor position in physical pixels.
+                let cursor_px_x = origin_x + cursor_col as f32 * cell_width;
+                let cursor_px_y = origin_y + cursor_row as f32 * cell_height;
+
+                self.renderer.trail_cursor.set_destination(
+                    cursor_px_x,
+                    cursor_px_y,
+                    cell_width,
+                    cell_height,
+                );
+                self.renderer.trail_cursor.animate(cell_width, cell_height);
+
+                let cursor_color = self.renderer.named_colors.cursor;
+                self.renderer.trail_cursor.draw(
+                    &mut self.sugarloaf,
+                    scale_factor,
+                    cursor_color,
+                );
+            }
+        }
+
+        self.sugarloaf.render();
+
+        // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
+        if self.renderer.needs_redraw() {
+            self.context_manager
+                .current_mut()
+                .renderable_content
+                .pending_update
+                .set_ui_damage(crate::context::renderable::UIDamage {
+                    island: true,
+                    search: false,
+                });
+        }
+
         // In case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
@@ -2598,13 +3410,6 @@ impl Screen<'_> {
                 .blink_cursor(self.renderer.config_blinking_interval);
         }
 
-        // let _screen_render_duration = screen_render_start.elapsed();
-        // if self.renderer.enable_performance_logging {
-        // println!(
-        //     "[PERF] Screen render() total: {:?}\n",
-        //     screen_render_duration
-        // );
-        // }
         window_update
     }
 
@@ -2619,17 +3424,22 @@ impl Screen<'_> {
             return;
         }
 
-        let current_context = self.context_manager.current();
-        let terminal = current_context.terminal.lock();
+        let current_grid = self.context_manager.current_grid();
+        let scaled_margin = current_grid.get_scaled_margin();
+
+        let Some(current_item) = current_grid.current_item() else {
+            return;
+        };
+
+        let layout = current_item.val.dimension;
+        let terminal = current_item.val.terminal.lock();
         let cursor_pos = terminal.grid.cursor.pos;
-        let layout = current_context.dimension;
         drop(terminal);
 
         // Calculate pixel position of cursor
         let cell_width = layout.dimension.width;
-        let cell_height = layout.dimension.height;
-        let margin_x = layout.margin.x * layout.dimension.scale;
-        let margin_y = layout.margin.top_y * layout.dimension.scale;
+        let line_height = self.sugarloaf.style().line_height;
+        let cell_height = layout.dimension.height * line_height;
 
         // Validate dimensions before calculation
         if cell_width <= 0.0 || cell_height <= 0.0 {
@@ -2641,11 +3451,16 @@ impl Screen<'_> {
             return;
         }
 
-        // Convert grid position to pixel position, centering horizontally in the cell
+        // Panel origin: layout_rect is relative to root container,
+        // add scaled_margin to get absolute screen position
+        let panel_rect = current_item.layout_rect;
+        let origin_x = panel_rect[0] + scaled_margin.left;
+        let origin_y = panel_rect[1] + scaled_margin.top;
+
+        // Convert grid position to pixel position
         let pixel_x =
-            margin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
-        let pixel_y =
-            margin_y + (cursor_pos.row.0 as f32 * cell_height * layout.line_height);
+            origin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
+        let pixel_y = origin_y + (cursor_pos.row.0 as f32 * cell_height);
 
         // Validate final coordinates
         if pixel_x.is_nan() || pixel_y.is_nan() || pixel_x < 0.0 || pixel_y < 0.0 {
@@ -2672,11 +3487,11 @@ impl Screen<'_> {
 
     /// Process a new character for keyboard hints
     #[allow(dead_code)]
-    pub fn hint_input(&mut self, c: char) {
+    pub fn hint_input(&mut self, c: char, clipboard: &mut Clipboard) {
         let terminal = self.context_manager.current().terminal.lock();
         if let Some(hint_match) = self.hint_state.keyboard_input(&*terminal, c) {
             drop(terminal);
-            self.execute_hint_action(&hint_match);
+            self.execute_hint_action(&hint_match, clipboard);
             // Stop hint mode and update state with proper damage tracking
             self.hint_state.stop();
             self.update_hint_state();
@@ -2704,15 +3519,17 @@ impl Screen<'_> {
     }
 
     /// Execute the action for a selected hint
-    fn execute_hint_action(&mut self, hint_match: &crate::hints::HintMatch) {
+    fn execute_hint_action(
+        &mut self,
+        hint_match: &crate::hints::HintMatch,
+        clipboard: &mut Clipboard,
+    ) {
         use rio_backend::config::hints::{HintAction, HintCommand, HintInternalAction};
 
         match &hint_match.hint.action {
             HintAction::Action { action } => match action {
                 HintInternalAction::Copy => {
-                    self.clipboard
-                        .borrow_mut()
-                        .set(ClipboardType::Clipboard, hint_match.text.clone());
+                    clipboard.set(ClipboardType::Clipboard, hint_match.text.clone());
                 }
                 HintInternalAction::Paste => {
                     self.paste(&hint_match.text, true);
@@ -2737,16 +3554,37 @@ impl Screen<'_> {
                     self.render();
                 }
             },
-            HintAction::Command { command } => match command {
-                HintCommand::Simple(program) => {
-                    self.exec(program, [&hint_match.text]);
+            HintAction::Command { command } => {
+                // If the match looks like a local path, resolve it against
+                // the terminal's OSC 7 CWD and fall back to the raw text if
+                // the path doesn't exist (or the text is a URL).
+                let arg_text = {
+                    let cwd = &self
+                        .context_manager
+                        .current()
+                        .terminal
+                        .lock()
+                        .current_directory;
+                    match crate::hints::resolve_path_for_opening(
+                        &hint_match.text,
+                        cwd.as_deref(),
+                    ) {
+                        Some(resolved) => resolved.to_string_lossy().into_owned(),
+                        None => hint_match.text.clone(),
+                    }
+                };
+
+                match command {
+                    HintCommand::Simple(program) => {
+                        self.exec(program, [&arg_text]);
+                    }
+                    HintCommand::WithArgs { program, args } => {
+                        let mut all_args = args.clone();
+                        all_args.push(arg_text);
+                        self.exec(program, &all_args);
+                    }
                 }
-                HintCommand::WithArgs { program, args } => {
-                    let mut all_args = args.clone();
-                    all_args.push(hint_match.text.clone());
-                    self.exec(program, &all_args);
-                }
-            },
+            }
         }
     }
 
@@ -2820,16 +3658,17 @@ impl Screen<'_> {
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(TerminalDamage::Partial(damaged_lines));
+                    .set_terminal_damage(TerminalDamage::Partial(damaged_lines));
             } else {
                 // Force full damage if no specific lines (for hint highlights)
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(TerminalDamage::Full);
+                    .set_terminal_damage(TerminalDamage::Full);
             }
-        } else {
-            // Clear hint state
+        } else if !self.search_active() {
+            // Clear hint state only if search is not active,
+            // since search also uses hint_matches for highlighting
             self.context_manager
                 .current_mut()
                 .renderable_content
@@ -2844,7 +3683,7 @@ impl Screen<'_> {
             current
                 .renderable_content
                 .pending_update
-                .set_ui_damage(TerminalDamage::Full);
+                .set_terminal_damage(TerminalDamage::Full);
         }
     }
 
@@ -2910,7 +3749,7 @@ impl Screen<'_> {
         // First pass: handle uneven brackets/parentheses
         while current_pos <= end_pos {
             if let Some(indexed) = iter.next() {
-                let c = indexed.square.c;
+                let c = indexed.square.c();
                 current_pos = indexed.pos;
 
                 match c {
@@ -2955,7 +3794,7 @@ impl Screen<'_> {
 
         while final_end > start_pos {
             if let Some(indexed) = iter.next() {
-                let c = indexed.square.c;
+                let c = indexed.square.c();
                 if !matches!(c, '.' | ',' | ':' | ';' | '?' | '!' | '(' | '[' | '\'') {
                     break;
                 }

@@ -2,18 +2,18 @@ pub mod graphics;
 pub mod primitives;
 pub mod state;
 
-use crate::components::core::{image::Handle, shapes::Rectangle};
+use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
-use crate::components::layer::{self, LayerBrush};
-use crate::components::quad::QuadBrush;
-use crate::components::rich_text::RichTextBrush;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::layout::{RichTextLayout, RootStyle};
-use crate::sugarloaf::graphics::{BottomLayer, Graphics};
-use crate::sugarloaf::layer::types;
+use crate::font_cache::{compute_advance, resolve_with, FontCache, ResolvedGlyph};
+use crate::font_introspector::Attributes;
+use crate::layout::{RootStyle, TextLayout};
+use crate::renderer::Renderer;
+use crate::sugarloaf::graphics::{GraphicDataEntry, Graphics};
+
+use crate::context::Context;
 use crate::Content;
-use crate::SugarDimensions;
-use crate::{context::Context, Object, Quad};
+use crate::TextDimensions;
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
@@ -23,14 +23,27 @@ use state::SugarState;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
-    quad_brush: QuadBrush,
-    rich_text_brush: RichTextBrush,
-    layer_brush: LayerBrush,
+    renderer: Renderer,
     state: state::SugarState,
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
     filters_brush: Option<FiltersBrush>,
+    /// Pixel data for standalone image textures, keyed by ImageId.
+    pub image_data: rustc_hash::FxHashMap<u32, GraphicDataEntry>,
+    /// Persistent state for the CPU rasterizer (glyph cache + frame hash).
+    /// Unused on GPU backends.
+    cpu_cache: crate::renderer::cpu::CpuCache,
+    /// Memo of `(char, attrs) -> ResolvedGlyph`. Owned here (next to
+    /// the FontLibrary it caches) so frontends never have to track
+    /// their own font cache. Each entry carries both terminal-cell
+    /// width (for the grid) and unscaled glyph advance (for
+    /// proportional UI via `char_advance`).
+    font_cache: FontCache,
+    /// Cached input colorspace from the renderer config — used by the
+    /// Metal clear-color path to keep the first HW-cleared pixel in the
+    /// same colorspace the shader will emit subsequent pixels in.
+    colorspace: Colorspace,
 }
 
 #[derive(Debug)]
@@ -62,9 +75,17 @@ pub struct SugarloafWindow {
     pub scale: f32,
 }
 
+pub enum SugarloafBackend {
+    Wgpu(wgpu::Backends),
+    #[cfg(target_os = "macos")]
+    Metal,
+    /// CPU rendering via tiny-skia + softbuffer.
+    Cpu,
+}
+
 pub struct SugarloafRenderer {
     pub power_preference: wgpu::PowerPreference,
-    pub backend: wgpu::Backends,
+    pub backend: SugarloafBackend,
     pub font_features: Option<Vec<String>>,
     pub colorspace: Colorspace,
 }
@@ -76,18 +97,76 @@ pub enum Colorspace {
     Rec2020,
 }
 
+/// Linearize a single sRGB channel (IEC 61966-2-1). Mirrors the
+/// `srgb_to_linear` helper in `renderer.metal` / `image.metal` — used at the
+/// Rust boundary when handing colors to `_sRGB` render targets (clear colors,
+/// etc.) so we don't double-encode a value that the HW will gamma-encode on
+/// write. Alpha is linear by convention; never pass it through this.
 #[cfg(target_os = "macos")]
-#[allow(clippy::derivable_impls)]
-impl Default for Colorspace {
-    fn default() -> Colorspace {
-        Colorspace::DisplayP3
+#[inline]
+fn srgb_channel_to_linear(c: f64) -> f64 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Bradford-adapted sRGB D65 → DisplayP3 D65 matrix applied in linear light.
+/// Must stay in sync with the `srgb_to_p3` helper in `renderer.metal` so the
+/// clear color lands in the same colorspace as shader-emitted pixels.
+#[cfg(target_os = "macos")]
+#[inline]
+fn linear_srgb_to_linear_p3(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    (
+        0.82246197 * r + 0.17753803 * g,
+        0.03319420 * r + 0.96680580 * g,
+        0.01708263 * r + 0.07239744 * g + 0.91051993 * b,
+    )
+}
+
+/// Bradford-adapted Rec.2020 D65 → DisplayP3 D65 matrix, linear light. Mirrors
+/// `rec2020_to_p3` in `renderer.metal`. Can produce components outside [0, 1]
+/// because Rec.2020 is wider than P3 — clip at framebuffer write time.
+#[cfg(target_os = "macos")]
+#[inline]
+fn linear_rec2020_to_linear_p3(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    (
+        1.34357825 * r + -0.28217967 * g + -0.06139858 * b,
+        -0.06529745 * r + 1.08782226 * g + -0.02252481 * b,
+        0.00282179 * r + -0.02598807 * g + 1.02316628 * b,
+    )
+}
+
+/// Prepare a CPU-side theme color for an `_sRGB` + DisplayP3-tagged render
+/// target. Linearizes (mandatory for the HW encode to work) and, depending
+/// on `colorspace`, runs the matching primaries matrix so the clear color
+/// matches what the shader emits for the same input bytes.
+#[cfg(target_os = "macos")]
+#[inline]
+fn prepare_output_rgb_f64(
+    r: f64,
+    g: f64,
+    b: f64,
+    colorspace: Colorspace,
+) -> (f64, f64, f64) {
+    let r = srgb_channel_to_linear(r);
+    let g = srgb_channel_to_linear(g);
+    let b = srgb_channel_to_linear(b);
+    match colorspace {
+        Colorspace::Srgb => linear_srgb_to_linear_p3(r, g, b),
+        Colorspace::DisplayP3 => (r, g, b),
+        Colorspace::Rec2020 => linear_rec2020_to_linear_p3(r, g, b),
+    }
+}
+
 #[allow(clippy::derivable_impls)]
 impl Default for Colorspace {
     fn default() -> Colorspace {
+        // See `rio-backend::config::window::Colorspace::default` — the
+        // config field drives how input colors are interpreted, and the
+        // shader/surface always target a wide-gamut output. Default sRGB
+        // keeps theme bytes visually consistent with the rest of the OS.
         Colorspace::Srgb
     }
 }
@@ -95,9 +174,14 @@ impl Default for Colorspace {
 impl Default for SugarloafRenderer {
     fn default() -> SugarloafRenderer {
         #[cfg(target_arch = "wasm32")]
-        let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-        #[cfg(not(target_arch = "wasm32"))]
-        let default_backend = wgpu::Backends::all();
+        let default_backend =
+            SugarloafBackend::Wgpu(wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL);
+
+        #[cfg(not(any(target_arch = "wasm32", target_os = "macos")))]
+        let default_backend = SugarloafBackend::Wgpu(wgpu::Backends::all());
+
+        #[cfg(all(target_os = "macos", not(target_arch = "wasm32")))]
+        let default_backend = SugarloafBackend::Metal;
 
         SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -143,23 +227,26 @@ impl Sugarloaf<'_> {
         layout: RootStyle,
     ) -> Result<Sugarloaf<'a>, Box<SugarloafWithErrors<'a>>> {
         let font_features = renderer.font_features.to_owned();
+        let colorspace = renderer.colorspace;
         let ctx = Context::new(window, renderer);
 
-        let layer_brush = LayerBrush::new(&ctx);
-        let quad_brush = QuadBrush::new(&ctx);
-        let rich_text_brush = RichTextBrush::new(&ctx);
+        let renderer = Renderer::new(&ctx, colorspace);
         let state = SugarState::new(layout, font_library, &font_features);
+
+        let font_cache = FontCache::new();
 
         let instance = Sugarloaf {
             state,
-            layer_brush,
-            quad_brush,
             ctx,
             background_color: Some(wgpu::Color::BLACK),
             background_image: None,
-            rich_text_brush,
+            renderer,
             graphics: Graphics::default(),
             filters_brush: None,
+            image_data: rustc_hash::FxHashMap::default(),
+            cpu_cache: crate::renderer::cpu::CpuCache::new(),
+            font_cache,
+            colorspace,
         };
 
         Ok(instance)
@@ -173,18 +260,110 @@ impl Sugarloaf<'_> {
         crate::font::clear_font_data_cache();
 
         // Clear the atlas to remove old font glyphs
-        self.rich_text_brush.clear_atlas();
-
-        // Clear the layer atlas to remove old cached images
-        self.layer_brush.clear_atlas(
-            &self.ctx.device,
-            self.ctx.adapter_info.backend,
-            &self.ctx,
-        );
+        self.renderer.clear_atlas();
+        // Cached tinted glyphs alias the old atlas coordinates — drop them.
+        self.cpu_cache.clear();
+        // Glyph resolutions point at the old font ids — drop them.
+        self.font_cache.clear();
 
         self.state.reset();
-        self.state
-            .set_fonts(font_library, &mut self.rich_text_brush);
+        self.state.set_fonts(font_library, &mut self.renderer);
+    }
+
+    /// Look up a single glyph in the font cache without performing
+    /// a fallback walk. Returns `None` if the entry is missing.
+    /// Use this in the first pass of a multi-cell layout to identify
+    /// cells that still need resolution.
+    #[inline]
+    pub fn try_glyph_cached(&self, ch: char, attrs: Attributes) -> Option<ResolvedGlyph> {
+        self.font_cache.get(&(ch, attrs)).copied()
+    }
+
+    /// Resolve a single glyph, filling the cache on miss. Acquires
+    /// the FontLibrary read lock once if needed.
+    #[inline]
+    pub fn resolve_glyph(&mut self, ch: char, attrs: Attributes) -> ResolvedGlyph {
+        if let Some(cached) = self.font_cache.get(&(ch, attrs)) {
+            return *cached;
+        }
+        let font_ctx = self.state.content.font_library().inner.read();
+        resolve_with(&mut self.font_cache, &font_ctx, ch, attrs)
+    }
+
+    /// Horizontal advance in pixels for a single char rendered with
+    /// `attrs` at `font_size`, using the same font fallback as
+    /// `resolve_glyph`. Answered from the `FontCache` entry — no
+    /// `content().build()` round trip.
+    ///
+    /// Returns `0.0` when the font library can't produce an advance
+    /// (font id unregistered or SFNT parse failure) — the same shape
+    /// an OS text engine returns for an unmapped glyph, so callers
+    /// can sum widths without branching. The failure is cached as an
+    /// `AdvanceInfo` with `units_per_em = 0` (which `scaled` already
+    /// treats as 0), so repeated queries for the same char don't
+    /// re-walk the font data on every frame.
+    ///
+    /// Lazy: the glyph cache keeps the advance `None` until the first
+    /// `char_advance` call for this `(char, attrs)`, then fills it for
+    /// the rest of the session (or until `update_font` swaps the font
+    /// library and clears the cache). The terminal grid path only
+    /// writes/reads `ResolvedGlyph::width` (cell count), so it never
+    /// pays for the hmtx / upem lookup that `char_advance` performs
+    /// on first sighting.
+    ///
+    /// Intended for proportional UI labels (tab titles, palette,
+    /// hints). Per-char isolated advance: does NOT account for
+    /// kerning, ligatures, or emoji cluster formation. Callers that
+    /// need those must build the full text span and measure via
+    /// `get_text_rendered_width`.
+    pub fn char_advance(&mut self, ch: char, attrs: Attributes, font_size: f32) -> f32 {
+        let resolved = self.resolve_glyph(ch, attrs);
+        if let Some(advance) = resolved.advance {
+            return advance.scaled(font_size);
+        }
+
+        let computed = {
+            let font_ctx = self.state.content.font_library().inner.read();
+            compute_advance(&font_ctx, resolved.font_id, ch)
+        };
+        // Cache both hits AND misses — misses become a zero-advance
+        // sentinel (`units_per_em = 0`) so `scaled()` returns 0 and
+        // next frame short-circuits instead of re-walking font data.
+        let info = computed.unwrap_or(crate::font_cache::AdvanceInfo {
+            advance_units: 0.0,
+            units_per_em: 0,
+        });
+        self.font_cache.set_advance((ch, attrs), info);
+        info.scaled(font_size)
+    }
+
+    /// Sorted, deduplicated family names of every font the host system
+    /// exposes via `font-kit`'s `SystemSource`. Intended for UI listings
+    /// (the command palette's "List Fonts" browser). Not cached — the
+    /// set changes rarely, and the one-off cost of walking the library
+    /// is fine for a human-triggered lookup.
+    pub fn font_family_names(&self) -> Vec<String> {
+        self.state.content.font_library().family_names()
+    }
+
+    /// Resolve a batch of glyph queries with a single FontLibrary
+    /// read lock acquisition. Cache hits short-circuit; misses are
+    /// walked under the lock and stored back in the cache. Returned
+    /// vector is parallel to `queries`.
+    #[inline]
+    pub fn resolve_glyphs_batch(
+        &mut self,
+        queries: &[(char, Attributes)],
+    ) -> Vec<ResolvedGlyph> {
+        if queries.is_empty() {
+            return Vec::new();
+        }
+        let font_ctx = self.state.content.font_library().inner.read();
+        let mut out = Vec::with_capacity(queries.len());
+        for &(ch, attrs) in queries {
+            out.push(resolve_with(&mut self.font_cache, &font_ctx, ch, attrs));
+        }
+        out
     }
 
     #[inline]
@@ -194,7 +373,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn get_scale(&self) -> f32 {
-        self.ctx.scale
+        self.ctx.scale()
     }
 
     #[inline]
@@ -207,28 +386,38 @@ impl Sugarloaf<'_> {
         &mut self.state.style
     }
 
+    /// Update text font size based on action (0=reset, 1=decrease, 2=increase)
+    /// Returns true if the operation was applied, false if id is not text
     #[inline]
-    pub fn set_rich_text_font_size_based_on_action(
-        &mut self,
-        rt_id: &usize,
-        operation: u8,
-    ) {
-        self.state.set_rich_text_font_size_based_on_action(
-            rt_id,
-            operation,
-            &mut self.rich_text_brush,
-        );
+    pub fn set_text_font_size_action(&mut self, id: &usize, operation: u8) -> bool {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            self.state.update_text_style(id, operation);
+            true
+        } else {
+            false
+        }
     }
 
+    /// Set font size for text content. Returns true if applied, false if id is not text
     #[inline]
-    pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
-        self.state
-            .set_rich_text_font_size(rt_id, font_size, &mut self.rich_text_brush);
+    pub fn set_text_font_size(&mut self, id: &usize, font_size: f32) -> bool {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            self.state.set_text_font_size(id, font_size);
+            true
+        } else {
+            false
+        }
     }
 
+    /// Set line height for text content. Returns true if applied, false if id is not text
     #[inline]
-    pub fn set_rich_text_line_height(&mut self, rt_id: &usize, line_height: f32) {
-        self.state.set_rich_text_line_height(rt_id, line_height);
+    pub fn set_text_line_height(&mut self, id: &usize, line_height: f32) -> bool {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            self.state.set_text_line_height(id, line_height);
+            true
+        } else {
+            false
+        }
     }
 
     #[inline]
@@ -240,7 +429,9 @@ impl Sugarloaf<'_> {
                 self.filters_brush = Some(FiltersBrush::default());
             }
             if let Some(ref mut brush) = self.filters_brush {
-                brush.update_filters(&self.ctx, filters);
+                if let crate::context::ContextType::Wgpu(ctx) = &self.ctx.inner {
+                    brush.update_filters(ctx, filters);
+                }
             }
         }
     }
@@ -251,45 +442,90 @@ impl Sugarloaf<'_> {
         self
     }
 
+    /// Try to load and install a window background image. Returns `Err`
+    /// with a human-readable message on failure (file missing, decode
+    /// failed, decoded image is empty, etc.) so callers can surface the
+    /// message in a UI overlay. The decoded pixels are uploaded to a
+    /// dedicated GPU texture sized to the image — the glyph atlas is not
+    /// touched, so a 4K wallpaper does not push glyphs out of cache.
     #[inline]
-    pub fn set_background_image(&mut self, image: &ImageProperties) -> &mut Self {
-        let handle = Handle::from_path(image.path.to_owned());
-        self.graphics.bottom_layer = Some(BottomLayer {
-            should_fit: image.width.is_none() && image.height.is_none(),
-            data: types::Raster {
-                handle,
-                bounds: Rectangle {
-                    width: image.width.unwrap_or(self.ctx.size.width),
-                    height: image.height.unwrap_or(self.ctx.size.height),
-                    x: image.x,
-                    y: image.y,
-                },
+    pub fn set_background_image(
+        &mut self,
+        image: &ImageProperties,
+    ) -> Result<(), String> {
+        // Skip if the same image is already configured. Both the path and
+        // the opacity must match — opacity is baked into the alpha channel
+        // at upload time, so an opacity change requires a reload.
+        if let Some(current) = &self.background_image {
+            if current.path == image.path && current.opacity == image.opacity {
+                return Ok(());
+            }
+        }
+
+        // Decode the file synchronously.
+        let mut decoded = match image_rs::open(&image.path) {
+            Ok(img) => img.to_rgba8(),
+            Err(e) => {
+                let msg = format!("'{}': {}", image.path, e);
+                tracing::warn!("failed to load background image {}", msg);
+                return Err(msg);
+            }
+        };
+        let (img_w, img_h) = decoded.dimensions();
+        if img_w == 0 || img_h == 0 {
+            let msg = format!("'{}' decoded to a {}x{} image", image.path, img_w, img_h);
+            tracing::warn!("background image {}", msg);
+            return Err(msg);
+        }
+
+        // Apply per-image opacity by scaling the alpha channel before
+        // upload. The image fragment shader premultiplies alpha at sample
+        // time, so the GPU does the right thing for both fully-opaque and
+        // partially-translucent source images.
+        let opacity = image.opacity.clamp(0.0, 1.0);
+        if opacity < 1.0 {
+            let opacity_byte = (opacity * 255.0).round() as u16;
+            for pixel in decoded.pixels_mut() {
+                pixel[3] = ((pixel[3] as u16 * opacity_byte) / 255) as u8;
+            }
+        }
+
+        self.renderer.set_background_image_pixels(Some(
+            crate::renderer::BackgroundImagePixels {
+                width: img_w,
+                height: img_h,
+                pixels: decoded.into_raw(),
             },
-        });
-        self
+        ));
+        self.background_image = Some(image.clone());
+        Ok(())
     }
 
+    /// Drop the current background image, if any.
     #[inline]
-    pub fn create_rich_text(&mut self) -> usize {
-        self.state.create_rich_text()
+    pub fn clear_background_image(&mut self) {
+        if self.background_image.is_none() {
+            return;
+        }
+        self.renderer.set_background_image_pixels(None);
+        self.background_image = None;
     }
 
+    /// Remove content by ID (any type)
     #[inline]
-    pub fn remove_rich_text(&mut self, rich_text_id: usize) {
-        self.state.content.remove_state(&rich_text_id);
+    pub fn remove_content(&mut self, id: usize) {
+        self.state.content.remove_state(&id);
     }
 
-    // This RichText is different than regular rich text
-    // it will be removed after the render and doesn't
-    // offer any type of optimization (e.g: cache) per render.
+    /// Clear text content (resets to empty). Returns true if applied, false if id is not text
     #[inline]
-    pub fn create_temp_rich_text(&mut self) -> usize {
-        self.state.create_temp_rich_text()
-    }
-
-    #[inline]
-    pub fn clear_rich_text(&mut self, id: &usize) {
-        self.state.clear_rich_text(id);
+    pub fn clear_text(&mut self, id: &usize) -> bool {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            self.state.clear_text(id);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn content(&mut self) -> &mut Content {
@@ -297,19 +533,481 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn set_objects(&mut self, objects: Vec<Object>) {
-        self.state.compute_objects(objects);
+    pub fn get_text_by_id_mut(
+        &mut self,
+        id: usize,
+    ) -> Option<&mut crate::layout::BuilderState> {
+        self.state.content.get_text_by_id_mut(id)
     }
 
     #[inline]
-    pub fn rich_text_layout(&self, id: &usize) -> RichTextLayout {
-        self.state.get_state_layout(id)
+    pub fn get_text_by_id(&mut self, id: usize) -> Option<&crate::layout::BuilderState> {
+        self.state.content.get_text_by_id(id)
     }
 
     #[inline]
-    pub fn get_rich_text_dimensions(&mut self, id: &usize) -> SugarDimensions {
+    pub fn build_text_by_id(&mut self, id: usize) {
+        self.state.content().sel(id).build();
+    }
+
+    #[inline]
+    pub fn build_text_by_id_line_number(&mut self, text_id: usize, line_number: usize) {
+        self.state.content().sel(text_id).build_line(line_number);
+    }
+
+    /// Create or get text content.
+    /// - `id: Some(n)` - cached with id n, persistent across renders
+    /// - `id: None` - transient text, cleared after rendering. Returns index into transient vec.
+    #[inline]
+    pub fn text(&mut self, id: Option<usize>) -> usize {
+        match id {
+            Some(text_id) => {
+                // Check if text already exists
+                if self.state.content.get_text_by_id(text_id).is_none() {
+                    // Create new text with default layout
+                    let default_layout =
+                        TextLayout::from_default_layout(&self.state.style);
+                    self.state.content.set_text(text_id, &default_layout);
+                }
+                text_id
+            }
+            None => {
+                // Create transient text
+                let default_layout = TextLayout::from_default_layout(&self.state.style);
+                self.state.content.add_transient_text(&default_layout)
+            }
+        }
+    }
+
+    /// Get mutable reference to text content by id (for cached text)
+    #[inline]
+    pub fn get_text_mut(
+        &mut self,
+        id: usize,
+    ) -> Option<&mut crate::layout::BuilderState> {
+        self.state.content.get_text_by_id_mut(id)
+    }
+
+    /// Get mutable reference to transient text by index
+    #[inline]
+    pub fn get_transient_text_mut(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut crate::layout::BuilderState> {
+        self.state.content.get_transient_text_mut(index)
+    }
+
+    /// Set font size for transient text
+    #[inline]
+    pub fn set_transient_text_font_size(&mut self, index: usize, font_size: f32) {
+        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
+            if let Some(text_state) = content_state.as_text_mut() {
+                text_state.layout.font_size = font_size;
+                text_state.scaled_font_size = font_size * self.state.style.scale_factor;
+            }
+            content_state.render_data.needs_repaint = true;
+        }
+    }
+
+    /// Set position for transient text
+    #[inline]
+    pub fn set_transient_position(&mut self, index: usize, x: f32, y: f32) {
+        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
+            content_state.render_data.set_position(
+                x * self.state.style.scale_factor,
+                y * self.state.style.scale_factor,
+            );
+        }
+    }
+
+    /// Set visibility for transient text
+    #[inline]
+    pub fn set_transient_visibility(&mut self, index: usize, visible: bool) {
+        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
+            content_state.render_data.set_hidden(!visible);
+        }
+    }
+
+    /// Set whether to use grid cell size for glyph positioning (cached text)
+    /// - true: monospace grid alignment (default, for terminal)
+    /// - false: proportional text using actual glyph advances (for rich text)
+    #[inline]
+    pub fn set_use_grid_cell_size(&mut self, id: usize, use_grid: bool) {
+        if let Some(content_state) = self.state.content.states.get_mut(&id) {
+            content_state.render_data.use_grid_cell_size = use_grid;
+        }
+    }
+
+    /// Set the render order for a transient text element.
+    #[inline]
+    pub fn set_transient_order(&mut self, index: usize, order: u8) {
+        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
+            content_state.render_data.order = order;
+        }
+    }
+
+    /// Set whether to use grid cell size for glyph positioning (transient text)
+    /// - true: monospace grid alignment (default, for terminal)
+    /// - false: proportional text using actual glyph advances (for rich text)
+    #[inline]
+    pub fn set_transient_use_grid_cell_size(&mut self, index: usize, use_grid: bool) {
+        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
+            content_state.render_data.use_grid_cell_size = use_grid;
+        }
+    }
+
+    /// Get the next available ID for cached content.
+    /// Returns the highest key + 1 (wrapping on overflow).
+    /// Useful for dynamically allocating IDs without hardcoded constants.
+    #[inline]
+    pub fn get_next_id(&self) -> usize {
         self.state
-            .get_rich_text_dimensions(id, &mut self.rich_text_brush)
+            .content
+            .states
+            .keys()
+            .max()
+            .map(|max_id| max_id.wrapping_add(1))
+            .unwrap_or(0)
+    }
+
+    /// Add a rectangle to content system
+    /// - `id: None` - not cached, rendered immediately
+    /// - `id: Some(n)` - cached with id n, overwrites existing content
+    /// - `order` - draw order (higher values render on top)
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn rect(
+        &mut self,
+        id: Option<usize>,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+        order: u8,
+    ) {
+        let scaled_x = x * self.state.style.scale_factor;
+        let scaled_y = y * self.state.style.scale_factor;
+        let scaled_width = width * self.state.style.scale_factor;
+        let scaled_height = height * self.state.style.scale_factor;
+
+        if let Some(content_id) = id {
+            self.state.content.set_rect(
+                content_id,
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                depth,
+            );
+        } else {
+            self.renderer.rect(
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                depth,
+                order,
+            );
+        }
+    }
+
+    /// Add a rounded rectangle to content system
+    /// - `id: None` - not cached, rendered immediately
+    /// - `id: Some(n)` - cached with id n, overwrites existing content
+    /// - `order` - draw order (higher values render on top)
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn rounded_rect(
+        &mut self,
+        id: Option<usize>,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+        border_radius: f32,
+        order: u8,
+    ) {
+        let scaled_x = x * self.state.style.scale_factor;
+        let scaled_y = y * self.state.style.scale_factor;
+        let scaled_width = width * self.state.style.scale_factor;
+        let scaled_height = height * self.state.style.scale_factor;
+        let scaled_border_radius = border_radius * self.state.style.scale_factor;
+
+        if let Some(content_id) = id {
+            self.state.content.set_rounded_rect(
+                content_id,
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                depth,
+                scaled_border_radius,
+            );
+        } else {
+            self.renderer.rounded_rect(
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                depth,
+                scaled_border_radius,
+                order,
+            );
+        }
+    }
+
+    /// Add a quad with per-corner radii and per-edge border widths
+    /// - `id: None` - not cached, rendered immediately
+    /// - `id: Some(n)` - cached with id n, overwrites existing content
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn quad(
+        &mut self,
+        _id: Option<usize>,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        background_color: [f32; 4],
+        corner_radii: [f32; 4],
+        depth: f32,
+        order: u8,
+    ) {
+        let scale = self.state.style.scale_factor;
+        let scaled_x = x * scale;
+        let scaled_y = y * scale;
+        let scaled_width = width * scale;
+        let scaled_height = height * scale;
+        let scaled_corner_radii = [
+            corner_radii[0] * scale,
+            corner_radii[1] * scale,
+            corner_radii[2] * scale,
+            corner_radii[3] * scale,
+        ];
+
+        // For now, quad is always rendered immediately (no caching support yet)
+        self.renderer.quad(
+            scaled_x,
+            scaled_y,
+            scaled_width,
+            scaled_height,
+            background_color,
+            scaled_corner_radii,
+            depth,
+            order,
+        );
+    }
+
+    /// Add an image rectangle to content system
+    /// - `id: None` - not cached, rendered immediately
+    /// - `id: Some(n)` - cached with id n, overwrites existing content
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn image_rect(
+        &mut self,
+        id: Option<usize>,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        coords: [f32; 4],
+        depth: f32,
+        atlas_layer: i32,
+    ) {
+        let scaled_x = x * self.state.style.scale_factor;
+        let scaled_y = y * self.state.style.scale_factor;
+        let scaled_width = width * self.state.style.scale_factor;
+        let scaled_height = height * self.state.style.scale_factor;
+
+        if let Some(content_id) = id {
+            self.state.content.set_image(
+                content_id,
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                coords,
+                depth,
+                atlas_layer,
+            );
+        } else {
+            self.renderer.add_image_rect(
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                coords,
+                depth,
+                atlas_layer,
+            );
+        }
+    }
+
+    /// Draw an anti-aliased polygon from a list of points.
+    /// Coordinates are in logical pixels (scaled internally).
+    #[inline]
+    pub fn polygon(&mut self, points: &[(f32, f32)], depth: f32, color: [f32; 4]) {
+        let scale = self.state.style.scale_factor;
+        let scaled: Vec<(f32, f32)> =
+            points.iter().map(|(x, y)| (x * scale, y * scale)).collect();
+        self.renderer.polygon(&scaled, depth, color);
+    }
+
+    /// Draw a triangle.
+    /// Coordinates are in logical pixels (scaled internally).
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn triangle(
+        &mut self,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        x3: f32,
+        y3: f32,
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        let s = self.state.style.scale_factor;
+        self.renderer.triangle(
+            x1 * s,
+            y1 * s,
+            x2 * s,
+            y2 * s,
+            x3 * s,
+            y3 * s,
+            depth,
+            color,
+        );
+    }
+
+    /// Draw a line between two points.
+    /// Coordinates and width are in logical pixels (scaled internally).
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn line(
+        &mut self,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        let s = self.state.style.scale_factor;
+        self.renderer
+            .line(x1 * s, y1 * s, x2 * s, y2 * s, width * s, depth, color);
+    }
+
+    /// Draw an arc (stroke only).
+    /// Coordinates, radius, and stroke width are in logical pixels (scaled internally).
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn arc(
+        &mut self,
+        center_x: f32,
+        center_y: f32,
+        radius: f32,
+        start_angle_deg: f32,
+        end_angle_deg: f32,
+        stroke_width: f32,
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        let s = self.state.style.scale_factor;
+        self.renderer.arc(
+            center_x * s,
+            center_y * s,
+            radius * s,
+            start_angle_deg,
+            end_angle_deg,
+            stroke_width * s,
+            depth,
+            color,
+        );
+    }
+
+    /// Show content at a specific position (any type)
+    #[inline]
+    pub fn set_position(&mut self, id: usize, x: f32, y: f32) {
+        self.state.set_content_position(id, x, y);
+    }
+
+    /// Set clipping bounds for content (physical pixels: [x, y, width, height])
+    #[inline]
+    pub fn set_bounds(&mut self, id: usize, bounds: Option<[f32; 4]>) {
+        self.state.set_content_bounds(id, bounds);
+    }
+
+    /// Set content visibility (any type)
+    #[inline]
+    pub fn set_visibility(&mut self, id: usize, visible: bool) {
+        self.state.set_content_hidden(id, !visible);
+    }
+
+    /// Set content depth for z-ordering
+    #[inline]
+    pub fn set_depth(&mut self, id: usize, depth: f32) {
+        self.state.set_content_depth(id, depth);
+    }
+
+    /// Set content draw order (higher = drawn later = on top)
+    #[inline]
+    pub fn set_order(&mut self, id: usize, order: u8) {
+        self.state.set_content_order(id, order);
+    }
+
+    /// Get text layout. Returns None if id is not text
+    #[inline]
+    pub fn get_text_layout(&self, id: &usize) -> Option<TextLayout> {
+        self.state.content.get_text_by_id(*id)?;
+        Some(self.state.get_state_layout(id))
+    }
+
+    /// Force update dimensions for text content
+    #[inline]
+    pub fn force_update_dimensions(&mut self, id: &usize) {
+        self.state.content.update_dimensions(id);
+    }
+
+    /// Get text dimensions. Returns None if id is not text
+    /// Get the total rendered width of text content by summing glyph advances.
+    /// Returns the width in logical (unscaled) pixels.
+    #[inline]
+    pub fn get_text_rendered_width(&self, id: &usize) -> f32 {
+        if let Some(builder_state) = self.state.content.get_text_by_id(*id) {
+            let scale = self.state.style.scale_factor;
+            let mut total: f32 = 0.0;
+            for line in &builder_state.lines {
+                for run in &line.render_data.runs {
+                    total += run.advance;
+                }
+            }
+            total / scale
+        } else {
+            0.0
+        }
+    }
+
+    #[inline]
+    pub fn get_text_dimensions(&mut self, id: &usize) -> Option<TextDimensions> {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            Some(self.state.get_text_dimensions(id))
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -319,7 +1017,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn window_size(&self) -> SugarloafWindowSize {
-        self.ctx.size
+        self.ctx.size()
     }
 
     #[inline]
@@ -330,25 +1028,15 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
-        if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
-            if bottom_layer.should_fit {
-                bottom_layer.data.bounds.width = self.ctx.size.width;
-                bottom_layer.data.bounds.height = self.ctx.size.height;
-            }
-        }
+        self.renderer.resize(&mut self.ctx);
+        // No content-state refresh needed for the background image — the
+        // dedicated draw call reads `ctx.size` directly each frame.
     }
 
     #[inline]
     pub fn rescale(&mut self, scale: f32) {
-        self.ctx.scale = scale;
-        self.state
-            .compute_layout_rescale(scale, &mut self.rich_text_brush);
-        if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
-            if bottom_layer.should_fit {
-                bottom_layer.data.bounds.width = self.ctx.size.width;
-                bottom_layer.data.bounds.height = self.ctx.size.height;
-            }
-        }
+        self.ctx.set_scale(scale);
+        self.state.compute_layout_rescale(scale);
     }
 
     #[inline]
@@ -361,45 +1049,137 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render(&mut self) {
-        self.state.compute_dimensions(&mut self.rich_text_brush);
+        self.state.compute_dimensions();
         self.state.compute_updates(
-            &mut self.rich_text_brush,
-            &mut self.quad_brush,
+            &mut self.renderer,
             &mut self.ctx,
             &mut self.graphics,
+            &mut self.image_data,
         );
 
-        match self.ctx.surface.get_current_texture() {
+        match self.ctx.inner {
+            crate::context::ContextType::Wgpu(_) => {
+                self.render_wgpu();
+            }
+            #[cfg(target_os = "macos")]
+            crate::context::ContextType::Metal(_) => {
+                self.render_metal();
+            }
+            crate::context::ContextType::Cpu(_) => {
+                self.render_cpu();
+            }
+        }
+    }
+
+    #[inline]
+    pub fn render_cpu(&mut self) {
+        let bg = self.background_color;
+        let cpu_ctx = match &mut self.ctx.inner {
+            crate::context::ContextType::Cpu(c) => c,
+            _ => return,
+        };
+
+        crate::renderer::cpu::render_cpu(
+            cpu_ctx,
+            &self.renderer,
+            &mut self.cpu_cache,
+            bg,
+        );
+
+        self.reset();
+    }
+
+    #[inline]
+    #[cfg(target_os = "macos")]
+    pub fn render_metal(&mut self) {
+        use metal::*;
+
+        let ctx = match &mut self.ctx.inner {
+            crate::context::ContextType::Metal(metal) => metal,
+            _ => return,
+        };
+
+        match ctx.get_current_texture() {
+            Ok(surface_texture) => {
+                // Create command buffer
+                let command_buffer = ctx.command_queue.new_command_buffer();
+                command_buffer.set_label("Sugarloaf Metal Render");
+
+                // Create render pass descriptor
+                let render_pass_descriptor = RenderPassDescriptor::new();
+                let color_attachment = render_pass_descriptor
+                    .color_attachments()
+                    .object_at(0)
+                    .unwrap();
+
+                color_attachment.set_texture(Some(&surface_texture.texture));
+                color_attachment.set_store_action(MTLStoreAction::Store);
+                color_attachment.set_load_action(MTLLoadAction::Clear);
+
+                // Set background color.
+                //
+                // The drawable is `BGRA8Unorm_sRGB` + DisplayP3-tagged (see
+                // `context/metal.rs`). That means Metal reads `MTLClearColor`
+                // components as *linear* RGB in the drawable's color space
+                // and applies the sRGB transfer curve on write. Rio's theme
+                // colors arrive here sRGB-encoded with their primaries
+                // declared by `[window] colorspace`, so we need to:
+                // 1. Linearize (mandatory — HW-encode expects linear input),
+                // 2. Convert sRGB → P3 primaries if the config says the
+                //    inputs are sRGB, so the clear pixel matches what the
+                //    shader emits for the same theme bytes (see
+                //    `renderer.metal`'s `prepare_output_rgb`).
+                let clear_color = if let Some(background_color) = self.background_color {
+                    let (r, g, b) = prepare_output_rgb_f64(
+                        background_color.r,
+                        background_color.g,
+                        background_color.b,
+                        self.colorspace,
+                    );
+                    MTLClearColor::new(r, g, b, background_color.a)
+                } else {
+                    // Default to transparent black if no background color set
+                    MTLClearColor::new(0.0, 0.0, 0.0, 0.0)
+                };
+                color_attachment.set_clear_color(clear_color);
+
+                // Create render command encoder
+                let render_encoder =
+                    command_buffer.new_render_command_encoder(render_pass_descriptor);
+                render_encoder.set_label("Sugarloaf Metal Render Pass");
+
+                self.renderer.render_metal(ctx, render_encoder);
+
+                render_encoder.end_encoding();
+                command_buffer.present_drawable(&surface_texture.drawable);
+                command_buffer.commit();
+            }
+            Err(error) => {
+                tracing::error!("Metal surface error: {}", error);
+            }
+        }
+
+        self.reset();
+    }
+
+    #[inline]
+    pub fn render_wgpu(&mut self) {
+        let ctx = match &mut self.ctx.inner {
+            crate::context::ContextType::Wgpu(wgpu) => wgpu,
+            _ => return,
+        };
+
+        match ctx.surface.get_current_texture() {
             Ok(frame) => {
-                let mut encoder = self.ctx.device.create_command_encoder(
-                    &wgpu::CommandEncoderDescriptor { label: None },
-                );
+                let mut encoder =
+                    ctx.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: None,
+                        });
 
                 let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
-                if let Some(layer) = &self.graphics.bottom_layer {
-                    self.layer_brush
-                        .prepare(&mut encoder, &mut self.ctx, &[&layer.data]);
-                }
-
-                if self.graphics.has_graphics_on_top_layer() {
-                    for request in &self.graphics.top_layer {
-                        if let Some(entry) = self.graphics.get(&request.id) {
-                            self.layer_brush.prepare_with_handle(
-                                &mut encoder,
-                                &mut self.ctx,
-                                &entry.handle,
-                                &Rectangle {
-                                    width: request.width.unwrap_or(entry.width),
-                                    height: request.height.unwrap_or(entry.height),
-                                    x: request.pos_x,
-                                    y: request.pos_y,
-                                },
-                            );
-                        }
-                    }
-                }
 
                 {
                     let load = if let Some(background_color) = self.background_color {
@@ -426,69 +1206,18 @@ impl Sugarloaf<'_> {
                             multiview_mask: None,
                         });
 
-                    if self.graphics.bottom_layer.is_some() {
-                        self.layer_brush.render(0, &mut rpass, None);
-                    }
-
-                    if self.graphics.has_graphics_on_top_layer() {
-                        let range_request = if self.graphics.bottom_layer.is_some() {
-                            1..(self.graphics.top_layer.len() + 1)
-                        } else {
-                            0..self.graphics.top_layer.len()
-                        };
-                        for request in range_request {
-                            self.layer_brush.render(request, &mut rpass, None);
-                        }
-                    }
-                    self.quad_brush
-                        .render(&mut self.ctx, &self.state, &mut rpass);
-                    self.rich_text_brush.render(&mut self.ctx, &mut rpass);
-                }
-
-                // Visual bell overlay requires separate render pass to appear on top of rich text
-                if let Some(bell_overlay) = self.state.visual_bell_overlay {
-                    let mut overlay_pass =
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                            label: Some("visual_bell"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                depth_slice: None,
-                                view: &view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load, // Load existing content
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            multiview_mask: None,
-                        });
-
-                    // Render just the overlay quad directly
-                    self.quad_brush.render_single(
-                        &mut self.ctx,
-                        &bell_overlay,
-                        &mut overlay_pass,
-                    );
-                }
-
-                if self.graphics.bottom_layer.is_some()
-                    || self.graphics.has_graphics_on_top_layer()
-                {
-                    self.layer_brush.end_frame();
-                    self.graphics.clear_top_layer();
+                    self.renderer.render(ctx, &mut rpass);
                 }
 
                 if let Some(ref mut filters_brush) = self.filters_brush {
                     filters_brush.render(
-                        &self.ctx,
+                        ctx,
                         &mut encoder,
                         &frame.texture,
                         &frame.texture,
                     );
                 }
-                self.ctx.queue.submit(Some(encoder.finish()));
+                ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
             }
             Err(error) => {
@@ -498,10 +1227,5 @@ impl Sugarloaf<'_> {
             }
         }
         self.reset();
-    }
-
-    #[inline]
-    pub fn set_visual_bell_overlay(&mut self, overlay: Option<Quad>) {
-        self.state.set_visual_bell_overlay(overlay);
     }
 }

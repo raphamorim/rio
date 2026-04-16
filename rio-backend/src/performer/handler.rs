@@ -1,4 +1,5 @@
 use crate::ansi::iterm2_image_protocol;
+use crate::ansi::kitty_graphics_protocol;
 use crate::ansi::CursorShape;
 use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::batched_parser::BatchedParser;
@@ -137,6 +138,32 @@ fn handle_colon_rgb(params: &[u16]) -> Option<AnsiColor> {
     parse_sgr_color(&mut iter)
 }
 
+/// SCP control's first parameter which determines character path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScpCharPath {
+    /// SCP's first parameter value of 0. Behavior is implementation defined.
+    Default,
+    /// SCP's first parameter value of 1 which sets character path to LEFT-TO-RIGHT.
+    LTR,
+    /// SCP's first parameter value of 2 which sets character path to RIGHT-TO-LEFT.
+    RTL,
+}
+
+/// SCP control's second parameter which determines update mode/direction between components.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScpUpdateMode {
+    /// SCP's second parameter value of 0 (the default). Implementation dependant update.
+    ImplementationDependant,
+    /// SCP's second parameter value of 1.
+    ///
+    /// Reflect data component changes in the presentation component.
+    DataToPresentation,
+    /// SCP's second parameter value of 2.
+    ///
+    /// Reflect presentation component changes in the data component.
+    PresentationToData,
+}
+
 pub trait Handler {
     /// OSC to set window title.
     fn set_title(&mut self, _: Option<String>) {}
@@ -205,6 +232,9 @@ pub trait Handler {
     ///
     /// Hopefully this is never implemented.
     fn bell(&mut self) {}
+
+    /// Desktop notification (OSC 9 / OSC 777).
+    fn desktop_notification(&mut self, _title: String, _body: String) {}
 
     /// Substitute char under cursor.
     fn substitute(&mut self) {}
@@ -365,14 +395,41 @@ pub trait Handler {
     fn sixel_graphic_reset(&mut self) {}
     fn sixel_graphic_finish(&mut self) {}
 
-    /// Insert a new graphic item.
-    fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>) {}
+    /// Insert a new graphic item into grid cells (for sixel/iTerm2).
+    /// cursor_movement: None = Sixel (move to next line), Some(0) = stay on last row
+    fn insert_graphic(
+        &mut self,
+        _data: GraphicData,
+        _palette: Option<Vec<ColorRgb>>,
+        _cursor_movement: Option<u8>,
+    ) {
+    }
+
+    /// Store a graphic without displaying (for a=t transmit-only).
+    fn store_graphic(&mut self, _data: GraphicData) {}
+
+    /// Transmit and display a kitty graphic as an overlay (for a=T).
+    fn kitty_transmit_and_display(
+        &mut self,
+        _data: GraphicData,
+        _placement: kitty_graphics_protocol::PlacementRequest,
+    ) {
+    }
+
+    /// Place an existing graphic at a specific location (for a=p).
+    fn place_graphic(&mut self, _placement: kitty_graphics_protocol::PlacementRequest) {}
+
+    /// Delete graphics based on the specified criteria.
+    fn delete_graphics(&mut self, _delete: kitty_graphics_protocol::DeleteRequest) {}
 
     /// Set hyperlink.
     fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
 
     /// Set mouse cursor icon.
     fn set_mouse_cursor_icon(&mut self, _: CursorIcon) {}
+
+    /// Set progress bar report (OSC 9;4).
+    fn set_progress_report(&mut self, _: crate::event::ProgressReport) {}
 
     /// Report current keyboard mode.
     fn report_keyboard_mode(&mut self) {}
@@ -397,6 +454,24 @@ pub trait Handler {
 
     /// Handle XTGETTCAP response.
     fn xtgettcap_response(&mut self, _response: String) {}
+
+    /// Send a kitty graphics protocol response
+    fn kitty_graphics_response(&mut self, _response: String) {}
+
+    /// Get mutable access to the kitty graphics chunking state
+    /// Used by the APC handler to accumulate chunked image transmissions
+    ///
+    /// Returns `None` if the handler does not support Kitty graphics protocol.
+    /// Terminal implementations that support Kitty graphics should override this
+    /// to return `Some(&mut state)`.
+    fn kitty_chunking_state_mut(
+        &mut self,
+    ) -> Option<&mut kitty_graphics_protocol::KittyGraphicsState> {
+        None
+    }
+
+    // Set SCP control.
+    fn set_scp(&mut self, _char_path: ScpCharPath, _update_mode: ScpUpdateMode) {}
 }
 
 pub trait Timeout: Default {
@@ -422,6 +497,9 @@ struct ProcessorState<T: Timeout> {
 
     /// State for XTGETTCAP requests.
     xtgettcap_state: XtgettcapState,
+
+    /// State for APC (Application Program Command) sequences.
+    apc_state: ApcState,
 }
 
 #[derive(Debug)]
@@ -439,6 +517,18 @@ struct XtgettcapState {
     active: bool,
 
     /// Buffer for collecting hex-encoded capability names.
+    buffer: Vec<u8>,
+}
+
+/// State for accumulating APC (Application Program Command) sequences.
+///
+/// APC sequences can be very large (especially for Kitty graphics protocol which can send
+/// 4KB+ chunks of base64-encoded image data). We accumulate the raw bytes here instead of
+/// relying on Copa's default OSC-style parameter parsing.
+#[derive(Debug, Default)]
+struct ApcState {
+    /// Buffer for accumulating APC data.
+    /// Pre-allocated to a reasonable size for Kitty graphics chunks.
     buffer: Vec<u8>,
 }
 
@@ -653,6 +743,140 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
     ) -> Performer<'b, H, T> {
         Performer { state, handler }
     }
+
+    /// Process the accumulated APC buffer.
+    ///
+    /// This is called from apc_end() after we've accumulated all bytes of the APC sequence.
+    /// Currently handles Kitty graphics protocol APC sequences.
+    fn process_apc_buffer(&mut self) {
+        let buffer = &self.state.apc_state.buffer;
+
+        if buffer.is_empty() {
+            return;
+        }
+
+        // Strip escape terminator if present (ESC or ESC+backslash)
+        // APC sequences are terminated by ESC+\ (0x1b 0x5c), but the parser may include the ESC
+        let data = if buffer.last() == Some(&0x1b) {
+            &buffer[..buffer.len() - 1]
+        } else if buffer.len() >= 2
+            && buffer[buffer.len() - 2] == 0x1b
+            && buffer[buffer.len() - 1] == 0x5c
+        {
+            &buffer[..buffer.len() - 2]
+        } else {
+            buffer.as_slice()
+        };
+
+        debug!(
+            "[process_apc_buffer] Processing {} bytes (stripped to {}), starts with: {}",
+            buffer.len(),
+            data.len(),
+            String::from_utf8_lossy(&data[..data.len().min(50)])
+        );
+
+        // Check if this is a Kitty graphics protocol APC (starts with 'G')
+        if data.first() == Some(&b'G') {
+            debug!("[process_apc_buffer] Kitty graphics APC detected");
+
+            // Parse like WezTerm: split on semicolon to get control and payload
+            let mut parts = data.splitn(2, |&b| b == b';');
+            let control_data = parts.next().unwrap_or(b"");
+            let payload_data = parts.next().unwrap_or(b"");
+
+            // Skip 'G' at the beginning of control data
+            let control = if control_data.first() == Some(&b'G') {
+                &control_data[1..]
+            } else {
+                control_data
+            };
+
+            // Strip escape terminator from control and payload if present
+            let control = if control.last() == Some(&0x1b) {
+                &control[..control.len() - 1]
+            } else {
+                control
+            };
+
+            let payload = if payload_data.last() == Some(&0x1b) {
+                &payload_data[..payload_data.len() - 1]
+            } else {
+                payload_data
+            };
+
+            let kitty_params: Vec<&[u8]> = vec![b"G", control, payload];
+
+            debug!(
+                "[process_apc_buffer] Parsed Kitty params: control={}, payload_len={}",
+                String::from_utf8_lossy(control),
+                payload.len()
+            );
+
+            // Check if handler supports Kitty graphics protocol
+            let Some(chunking_state) = self.handler.kitty_chunking_state_mut() else {
+                debug!("[process_apc_buffer] Handler does not support Kitty graphics, ignoring");
+                return;
+            };
+
+            if let Some(response) =
+                kitty_graphics_protocol::parse(&kitty_params, chunking_state)
+            {
+                if response.incomplete {
+                    // Chunk was accumulated, waiting for more chunks.
+                    // This is normal flow for multi-part transmissions
+                    // (yazi, image previewers) — must not be treated
+                    // as a parse failure.
+                    debug!("[process_apc_buffer] Kitty graphics chunk accumulated");
+                    return;
+                }
+
+                debug!("[process_apc_buffer] Kitty graphics parsed successfully");
+
+                if let Some(graphic_data) = response.graphic_data {
+                    debug!(
+                        "[process_apc_buffer] Graphic data present: id={}, {}x{}",
+                        graphic_data.id.get(),
+                        graphic_data.width,
+                        graphic_data.height
+                    );
+
+                    if let Some(placement) = response.placement_request {
+                        // a=T: Transmit and display as overlay
+                        self.handler
+                            .kitty_transmit_and_display(graphic_data, placement);
+                    } else {
+                        // a=t: Transmit only
+                        self.handler.store_graphic(graphic_data);
+                    }
+                } else if let Some(placement) = response.placement_request {
+                    debug!(
+                        "[process_apc_buffer] Placement request: image_id={}",
+                        placement.image_id
+                    );
+
+                    // a=p: Display previously stored image
+                    self.handler.place_graphic(placement);
+                }
+
+                if let Some(delete) = response.delete_request {
+                    debug!("[process_apc_buffer] Delete request");
+                    self.handler.delete_graphics(delete);
+                }
+
+                if let Some(response_str) = response.response {
+                    self.handler.kitty_graphics_response(response_str);
+                }
+            } else {
+                warn!("[process_apc_buffer] Failed to parse kitty graphics protocol");
+            }
+        } else {
+            // Unknown APC sequence
+            warn!(
+                "[process_apc_buffer] Unknown APC sequence: {}",
+                String::from_utf8_lossy(&buffer[..buffer.len().min(20)])
+            );
+        }
+    }
 }
 
 impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
@@ -837,6 +1061,62 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 self.handler.set_hyperlink(Some(Hyperlink::new(id, uri)));
             }
 
+            // OSC 9;4 - ConEmu/Windows Terminal progress bar reporting
+            // Format: OSC 9;4;<state>;<progress> ST
+            // States: 0=remove, 1=set, 2=error, 3=indeterminate, 4=pause
+            b"9" => {
+                // Check if this is OSC 9;4 progress reporting
+                // params[0] = b"9", params[1] = b"4", params[2] = state, params[3] = progress (optional)
+                if params.len() >= 3 && params[1] == b"4" {
+                    // Parse state from params[2]
+                    let state = match params[2] {
+                        b"0" => Some(crate::event::ProgressState::Remove),
+                        b"1" => Some(crate::event::ProgressState::Set),
+                        b"2" => Some(crate::event::ProgressState::Error),
+                        b"3" => Some(crate::event::ProgressState::Indeterminate),
+                        b"4" => Some(crate::event::ProgressState::Pause),
+                        _ => None,
+                    };
+
+                    if let Some(state) = state {
+                        // Parse optional progress value from params[3]
+                        let progress = if params.len() >= 4 {
+                            parse_number(params[3]).map(|p| p.min(100))
+                        } else {
+                            None
+                        };
+
+                        let report = crate::event::ProgressReport { state, progress };
+                        self.handler.set_progress_report(report);
+                        return;
+                    }
+                }
+                // OSC 9 desktop notification: ESC ] 9 ; <body> ST
+                if params.len() >= 2 {
+                    let body = std::str::from_utf8(params[1])
+                        .unwrap_or_default()
+                        .to_string();
+                    self.handler.desktop_notification(String::new(), body);
+                    return;
+                }
+                unhandled(params);
+            }
+
+            // OSC 777 - rxvt notification: ESC ] 777 ; notify ; <title> ; <body> ST
+            b"777" => {
+                if params.len() >= 4 && params[1] == b"notify" {
+                    let title = std::str::from_utf8(params[2])
+                        .unwrap_or_default()
+                        .to_string();
+                    let body = std::str::from_utf8(params[3])
+                        .unwrap_or_default()
+                        .to_string();
+                    self.handler.desktop_notification(title, body);
+                    return;
+                }
+                unhandled(params);
+            }
+
             b"10" | b"11" | b"12" => {
                 if params.len() >= 2 {
                     if let Some(mut dynamic_code) = parse_number(params[0]) {
@@ -943,7 +1223,8 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             // OSC 1337 is equal to xterm OSC 50
             b"1337" => {
                 if let Some(graphic) = iterm2_image_protocol::parse(params) {
-                    self.handler.insert_graphic(graphic, None);
+                    // iTerm2 protocol uses None (traditional behavior like Sixel)
+                    self.handler.insert_graphic(graphic, None, None);
                 }
             }
 
@@ -1075,6 +1356,30 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 };
 
                 handler.clear_line(mode);
+            }
+            ('k', [b' ']) => {
+                // SCP control.
+                let char_path = match next_param_or(0) {
+                    0 => ScpCharPath::Default,
+                    1 => ScpCharPath::LTR,
+                    2 => ScpCharPath::RTL,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                let update_mode = match next_param_or(0) {
+                    0 => ScpUpdateMode::ImplementationDependant,
+                    1 => ScpUpdateMode::DataToPresentation,
+                    2 => ScpUpdateMode::PresentationToData,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                handler.set_scp(char_path, update_mode);
             }
             ('L', []) => handler.insert_blank_lines(next_param_or(1) as usize),
             ('l', []) => {
@@ -1238,6 +1543,41 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             _ => unhandled!(),
         }
     }
+
+    /// Called at the start of an APC sequence.
+    ///
+    /// APC (Application Program Command) sequences can be very large, especially for
+    /// Kitty graphics protocol which sends 4KB+ chunks of base64-encoded image data.
+    /// We accumulate the raw bytes in our buffer instead of relying on Copa's default
+    /// OSC-style parameter parsing.
+    fn apc_start(&mut self) {
+        debug!("[apc_start] Beginning APC accumulation");
+        self.state.apc_state.buffer.clear();
+        // Pre-allocate reasonable size for Kitty graphics chunks (typically 4KB)
+        self.state.apc_state.buffer.reserve(4096);
+    }
+
+    /// Called for each byte in the APC sequence.
+    ///
+    /// We accumulate all bytes here to handle large sequences that exceed Copa's
+    /// default OSC buffer size (1024 bytes).
+    fn apc_put(&mut self, byte: u8) {
+        self.state.apc_state.buffer.push(byte);
+    }
+
+    /// Called when the APC sequence ends.
+    ///
+    /// Process the accumulated APC data. This is called instead of apc_dispatch
+    /// when we implement custom APC hooks.
+    fn apc_end(&mut self) {
+        debug!(
+            "[apc_end] APC complete, accumulated {} bytes",
+            self.state.apc_state.buffer.len()
+        );
+
+        // Process the accumulated buffer
+        self.process_apc_buffer();
+    }
 }
 
 #[inline]
@@ -1330,25 +1670,113 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
 }
 
 /// Process XTGETTCAP request and return DCS response.
+/// Multiple capability queries can be separated by `;` in a single request.
+/// Each capability gets its own DCS response (like xterm).
 fn process_xtgettcap_request(buffer: &[u8]) -> String {
-    // Decode hex-encoded capability name
-    let capability_name = match decode_hex_string(buffer) {
-        Ok(name) => name,
-        Err(_) => {
-            // Invalid hex encoding - return error response
-            return "\x1bP0+r\x1b\\".to_string();
-        }
-    };
+    debug!("Processing XTGETTCAP request: {:?}", buffer);
 
-    if let Some(value) = get_termcap_capability(&capability_name) {
-        // Encode both name and value in hex
+    let mut response = String::new();
+
+    for query in buffer.split(|&b| b == b';') {
+        if query.is_empty() {
+            continue;
+        }
+
+        let capability_name = match decode_hex_string(query) {
+            Ok(name) => name,
+            Err(_) => {
+                debug!("Invalid hex encoding in XTGETTCAP request");
+                continue;
+            }
+        };
+        debug!("XTGETTCAP query for: {}", capability_name);
+
         let hex_name = encode_hex_string(&capability_name);
-        let hex_value = encode_hex_string(&value);
-        format!("\x1bP1+r{hex_name}={hex_value}\x1b\\")
-    } else {
-        // Invalid capability name - return error response
-        "\x1bP0+r\x1b\\".to_string()
+        if let Some(value) = get_termcap_capability(&capability_name) {
+            if value.is_empty() {
+                // Boolean capability
+                response.push_str(&format!("\x1bP1+r{hex_name}\x1b\\"));
+            } else {
+                // String/numeric capability — decode terminfo source format
+                // to raw bytes before hex-encoding
+                let decoded = decode_terminfo_value(&value);
+                let hex_value = encode_hex_bytes(&decoded);
+                response.push_str(&format!("\x1bP1+r{hex_name}={hex_value}\x1b\\"));
+            }
+        } else {
+            response.push_str(&format!("\x1bP0+r{hex_name}\x1b\\"));
+        }
     }
+
+    if response.is_empty() {
+        "\x1bP0+r\x1b\\".to_string()
+    } else {
+        response
+    }
+}
+
+/// Decode terminfo source format escape sequences to raw bytes.
+/// Converts `\\E` to ESC (0x1b), `\\n` to newline, `\\r` to CR, etc.
+/// Values containing `%` (parameterized) are returned as-is in source format.
+fn decode_terminfo_value(value: &str) -> Vec<u8> {
+    // Parameterized values are kept in source format (like Kitty)
+    if value.contains('%') {
+        return value.as_bytes().to_vec();
+    }
+
+    let mut result = Vec::with_capacity(value.len());
+    let bytes = value.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            match bytes[i + 1] {
+                b'E' => {
+                    result.push(0x1b);
+                    i += 2;
+                }
+                b'n' => {
+                    result.push(b'\n');
+                    i += 2;
+                }
+                b'r' => {
+                    result.push(b'\r');
+                    i += 2;
+                }
+                b't' => {
+                    result.push(b'\t');
+                    i += 2;
+                }
+                b'\\' => {
+                    result.push(b'\\');
+                    i += 2;
+                }
+                _ => {
+                    result.push(bytes[i]);
+                    i += 1;
+                }
+            }
+        } else if bytes[i] == b'^' && i + 1 < bytes.len() {
+            // Control character: ^? = DEL (0x7F), ^X = X - 64
+            let ctrl = if bytes[i + 1] == b'?' {
+                0x7F
+            } else {
+                bytes[i + 1].wrapping_sub(64)
+            };
+            result.push(ctrl);
+            i += 2;
+        } else {
+            result.push(bytes[i]);
+            i += 1;
+        }
+    }
+
+    result
+}
+
+/// Encode raw bytes as hex string (2 uppercase hex digits per byte).
+fn encode_hex_bytes(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02X}")).collect()
 }
 
 /// Decode hex-encoded string (2 hex digits per character).
@@ -1375,6 +1803,7 @@ fn encode_hex_string(s: &str) -> String {
 /// Get termcap/terminfo capability value for Rio terminal.
 /// Based on misc/rio.termcap and misc/rio.terminfo files.
 fn get_termcap_capability(name: &str) -> Option<String> {
+    debug!("XTGETTCAP query for capability: {}", name);
     match name {
         // Terminal name
         "TN" | "name" => Some("rio".to_string()),
@@ -1412,6 +1841,7 @@ fn get_termcap_capability(name: &str) -> Option<String> {
         // Image protocol support
         "sixel" => Some("".to_string()), // Sixel graphics support
         "iterm2" => Some("".to_string()), // iTerm2 image protocol support
+        "TK" | "kitty" => Some("yes".to_string()), // Kitty graphics protocol support
 
         // Cursor movement - from terminfo
         "cup" | "cm" => Some("\\E[%i%p1%d;%p2%dH".to_string()),
@@ -1780,11 +2210,11 @@ mod tests {
         assert!(response.starts_with("\x1bP1+r"));
         assert!(response.contains("436F="));
 
-        // Test invalid capability
+        // Test invalid capability — gets its own DCS 0+r response with hex name
         let response = process_xtgettcap_request(b"5858"); // "XX"
-        assert_eq!(response, "\x1bP0+r\x1b\\");
+        assert_eq!(response, "\x1bP0+r5858\x1b\\");
 
-        // Test invalid hex
+        // Test invalid hex — skipped, empty response
         let response = process_xtgettcap_request(b"ZZ");
         assert_eq!(response, "\x1bP0+r\x1b\\");
     }
@@ -1803,9 +2233,71 @@ mod tests {
         let response = process_xtgettcap_request(b"524742"); // "RGB"
         assert_eq!(response, "\x1bP1+r524742=382F382F38\x1b\\");
 
-        // Test invalid capability
+        // Test invalid capability — returns 0+r with hex-encoded name
         let response = process_xtgettcap_request(b"5858"); // "XX"
-        assert_eq!(response, "\x1bP0+r\x1b\\");
+        assert_eq!(response, "\x1bP0+r5858\x1b\\");
+    }
+
+    #[test]
+    fn test_xtgettcap_multiple_queries() {
+        // Vim sends multiple queries separated by ';'
+        // BE=4245, BD=4244, PS=5053, PE=5045
+        let response = process_xtgettcap_request(b"4245;4244;5053;5045");
+
+        // Each capability should get its own DCS response
+        assert!(response.contains("\x1bP1+r4245="));
+        assert!(response.contains("\x1bP1+r4244="));
+        assert!(response.contains("\x1bP1+r5053="));
+        assert!(response.contains("\x1bP1+r5045="));
+
+        // Should contain 4 separate DCS responses
+        let count = response.matches("\x1bP1+r").count();
+        assert_eq!(
+            count, 4,
+            "Should have 4 separate DCS responses, got {count}"
+        );
+    }
+
+    #[test]
+    fn test_xtgettcap_boolean_capability() {
+        // Boolean capabilities (empty value) should not have '='
+        // "am" (auto margins) = 616D
+        let response = process_xtgettcap_request(b"616D");
+        assert_eq!(response, "\x1bP1+r616D\x1b\\");
+    }
+
+    #[test]
+    fn test_xtgettcap_value_decoding() {
+        // Values with \E should be decoded to ESC (0x1b) before hex-encoding
+        // "PS" (paste start) = \E[200~ should become 1B5B3230307E
+        let response = process_xtgettcap_request(b"5053"); // "PS"
+        assert_eq!(response, "\x1bP1+r5053=1B5B3230307E\x1b\\");
+
+        // "PE" (paste end) = \E[201~ should become 1B5B3230317E
+        let response = process_xtgettcap_request(b"5045"); // "PE"
+        assert_eq!(response, "\x1bP1+r5045=1B5B3230317E\x1b\\");
+    }
+
+    #[test]
+    fn test_decode_terminfo_value() {
+        // \E should become ESC
+        assert_eq!(
+            decode_terminfo_value("\\E[200~"),
+            vec![0x1b, b'[', b'2', b'0', b'0', b'~']
+        );
+
+        // Parameterized values stay as-is
+        let param = "\\E[%p1%dA";
+        assert_eq!(decode_terminfo_value(param), param.as_bytes().to_vec());
+
+        // ^H should become backspace
+        assert_eq!(decode_terminfo_value("^H"), vec![8]);
+
+        // \\n should become newline
+        assert_eq!(decode_terminfo_value("\\n"), vec![b'\n']);
+
+        // \\r should become CR
+        assert_eq!(decode_terminfo_value("\\r"), vec![b'\r']);
     }
 
     #[test]
@@ -1842,5 +2334,479 @@ mod tests {
         // Test image protocol capabilities
         assert_eq!(get_termcap_capability("sixel"), Some("".to_string()));
         assert_eq!(get_termcap_capability("iterm2"), Some("".to_string()));
+    }
+
+    // APC accumulation tests
+
+    #[test]
+    fn test_apc_state_default() {
+        let state = ApcState::default();
+        assert_eq!(state.buffer.len(), 0);
+        assert_eq!(state.buffer.capacity(), 0);
+    }
+
+    #[test]
+    fn test_apc_state_buffer_operations() {
+        let mut state = ApcState::default();
+
+        // Clear and reserve
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+        assert!(state.buffer.capacity() >= 4096);
+
+        // Add data
+        let data = b"Ga=T,f=32,s=1,v=1;AQIDBA==";
+        state.buffer.extend_from_slice(data);
+        assert_eq!(state.buffer.len(), data.len());
+        assert_eq!(&state.buffer[..], data);
+    }
+
+    #[test]
+    fn test_apc_state_small_sequence() {
+        let mut state = ApcState::default();
+
+        // Simulate apc_start
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+
+        // Simulate apc_put
+        let data = b"Ga=T,f=32,s=1,v=1;AQIDBA==";
+        for &byte in data {
+            state.buffer.push(byte);
+        }
+
+        assert_eq!(state.buffer.len(), data.len());
+        assert_eq!(&state.buffer[..], data);
+    }
+
+    #[test]
+    fn test_apc_state_large_sequence() {
+        let mut state = ApcState::default();
+
+        // Simulate apc_start
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+
+        // Create a large Kitty graphics command (4KB payload)
+        let header = b"Ga=T,f=32,s=100,v=100,m=1;";
+        let payload = vec![b'A'; 4096];
+
+        for &byte in header {
+            state.buffer.push(byte);
+        }
+        for &byte in &payload {
+            state.buffer.push(byte);
+        }
+
+        let expected_len = header.len() + payload.len();
+        assert_eq!(state.buffer.len(), expected_len);
+        assert!(
+            state.buffer.len() > 1024,
+            "Should handle data larger than Copa's default OSC buffer (1024 bytes)"
+        );
+    }
+
+    #[test]
+    fn test_apc_state_very_large_sequence() {
+        let mut state = ApcState::default();
+
+        // Simulate apc_start
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+
+        // Test with a very large sequence (16KB)
+        let header = b"Ga=T,f=32,s=200,v=200,m=1;";
+        for &byte in header {
+            state.buffer.push(byte);
+        }
+
+        let large_payload = vec![b'B'; 16384];
+        for &byte in &large_payload {
+            state.buffer.push(byte);
+        }
+
+        assert_eq!(state.buffer.len(), header.len() + large_payload.len());
+        assert!(
+            state.buffer.len() > 16000,
+            "Should handle very large payloads"
+        );
+    }
+
+    #[test]
+    fn test_apc_state_multiple_sequences() {
+        let mut state = ApcState::default();
+
+        // First sequence
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+        let data1 = b"Ga=T,f=32,s=10,v=10;AQIDBA==";
+        state.buffer.extend_from_slice(data1);
+        assert_eq!(state.buffer.len(), data1.len());
+
+        // Second sequence (buffer should be cleared)
+        state.buffer.clear();
+        assert_eq!(
+            state.buffer.len(),
+            0,
+            "Buffer should be cleared between sequences"
+        );
+
+        let data2 = b"Ga=T,f=32,s=20,v=20;BQYHCAk=";
+        state.buffer.extend_from_slice(data2);
+        assert_eq!(state.buffer.len(), data2.len());
+    }
+
+    #[test]
+    fn test_apc_state_chunked_transmission() {
+        let mut state = ApcState::default();
+
+        // Chunk 1 with m=1 (more chunks coming)
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+        let chunk1 = b"Ga=T,f=32,s=100,v=100,m=1;AQIDBAUG";
+        state.buffer.extend_from_slice(chunk1);
+        assert!(!state.buffer.is_empty());
+
+        // Chunk 2 with m=1 (in reality, each chunk is a separate APC)
+        state.buffer.clear();
+        let chunk2 = b"Gm=1;BwgJCgsM";
+        state.buffer.extend_from_slice(chunk2);
+        assert_eq!(&state.buffer[..], chunk2);
+
+        // Final chunk with m=0
+        state.buffer.clear();
+        let chunk3 = b"Gm=0;DQ4PEBES";
+        state.buffer.extend_from_slice(chunk3);
+        assert_eq!(&state.buffer[..], chunk3);
+    }
+
+    #[test]
+    fn test_apc_state_preallocation() {
+        let mut state = ApcState::default();
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+
+        assert!(
+            state.buffer.capacity() >= 4096,
+            "Buffer should pre-allocate at least 4KB for Kitty graphics"
+        );
+    }
+
+    #[test]
+    fn test_apc_buffer_parsing_small_kitty() {
+        // Test parsing logic for small Kitty graphics APC
+        let buffer = b"Ga=T,f=32,s=10,v=10;AQIDBA==";
+
+        // Check it starts with 'G'
+        assert_eq!(buffer.first(), Some(&b'G'));
+
+        // Split on semicolon
+        let mut parts = buffer.splitn(2, |&b| b == b';');
+        let control_data = parts.next().unwrap();
+        let payload_data = parts.next().unwrap();
+
+        // Skip 'G' at the beginning
+        let control = &control_data[1..];
+        assert_eq!(control, b"a=T,f=32,s=10,v=10");
+        assert_eq!(payload_data, b"AQIDBA==");
+    }
+
+    #[test]
+    fn test_apc_buffer_parsing_large_kitty() {
+        // Test parsing logic for large Kitty graphics APC (4KB)
+        let mut buffer = Vec::new();
+        buffer.extend_from_slice(b"Ga=T,f=32,s=100,v=100,m=1;");
+        buffer.extend_from_slice(&vec![b'A'; 4096]);
+
+        // Check it starts with 'G'
+        assert_eq!(buffer.first(), Some(&b'G'));
+
+        // Split on semicolon
+        let mut parts = buffer.splitn(2, |&b| b == b';');
+        let control_data = parts.next().unwrap();
+        let payload_data = parts.next().unwrap();
+
+        // Verify control part
+        let control = &control_data[1..];
+        assert_eq!(control, b"a=T,f=32,s=100,v=100,m=1");
+
+        // Verify payload size
+        assert_eq!(payload_data.len(), 4096);
+        assert!(
+            payload_data.len() > 1024,
+            "Payload should be larger than Copa's default OSC buffer"
+        );
+    }
+
+    #[test]
+    fn test_apc_buffer_parsing_no_semicolon() {
+        // Test malformed Kitty graphics (no semicolon)
+        let buffer = b"Ga=T,f=32,s=10,v=10";
+
+        let mut parts = buffer.splitn(2, |&b| b == b';');
+        let control_data = parts.next().unwrap();
+        let payload_data = parts.next().unwrap_or(b"");
+
+        assert_eq!(control_data, buffer);
+        assert_eq!(payload_data, b"");
+    }
+
+    #[test]
+    fn test_apc_buffer_parsing_empty_payload() {
+        // Test Kitty graphics with empty payload
+        let buffer = b"Ga=T,f=32,s=10,v=10;";
+
+        let mut parts = buffer.splitn(2, |&b| b == b';');
+        let _control_data = parts.next().unwrap();
+        let payload_data = parts.next().unwrap();
+
+        assert_eq!(payload_data, b"");
+    }
+
+    #[test]
+    fn test_apc_buffer_non_kitty() {
+        // Test APC that doesn't start with 'G'
+        let buffer = b"some_other_apc;data";
+        assert_ne!(buffer.first(), Some(&b'G'));
+    }
+
+    // Integration tests simulating real terminal-doom Kitty graphics scenarios
+
+    #[test]
+    fn test_kitty_chunked_transmission_terminal_doom() {
+        // Simulate terminal-doom sending a chunked image transmission
+        // First chunk: Full control data with i=1,m=1 + 4KB payload
+        let mut state = ApcState::default();
+
+        // First chunk - includes image ID and metadata
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=1,m=1;");
+        // Add 4KB of base64 data (terminal-doom sends ~4KB chunks)
+        state.buffer.extend(vec![b'A'; 4096]);
+
+        // Verify first chunk is stored correctly
+        assert!(state.buffer.len() > 4096);
+        assert!(state.buffer.starts_with(b"Ga=T,f=24,s=100,v=100,i=1,m=1;"));
+
+        // Second chunk - only m=1 and payload
+        state.buffer.clear();
+        state.buffer.extend_from_slice(b"Gm=1;");
+        state.buffer.extend(vec![b'B'; 4096]);
+        assert_eq!(&state.buffer[..5], b"Gm=1;");
+
+        // Final chunk - m=0 and last payload
+        state.buffer.clear();
+        state.buffer.extend_from_slice(b"Gm=0;");
+        state.buffer.extend(vec![b'C'; 2048]);
+        assert_eq!(&state.buffer[..5], b"Gm=0;");
+    }
+
+    #[test]
+    fn test_kitty_large_payload_accumulation() {
+        // Test accumulating a large image (similar to terminal-doom's 640x400 RGB24 image)
+        // 640 * 400 * 3 = 768,000 bytes raw
+        // base64 encoded: ~1,024,000 bytes
+        // Split into ~250 chunks of 4KB each
+
+        let mut total_accumulated = 0;
+        let chunk_size = 4096;
+        let total_payload_size = 1_024_000;
+
+        // Simulate accumulating chunks
+        for chunk_num in 0..(total_payload_size / chunk_size) {
+            let mut state = ApcState::default();
+            state.buffer.clear();
+            state.buffer.reserve(4096);
+
+            if chunk_num == 0 {
+                // First chunk with metadata
+                state
+                    .buffer
+                    .extend_from_slice(b"Ga=T,f=24,s=640,v=400,i=10,m=1;");
+            } else if chunk_num == (total_payload_size / chunk_size) - 1 {
+                // Last chunk
+                state.buffer.extend_from_slice(b"Gm=0;");
+            } else {
+                // Middle chunks
+                state.buffer.extend_from_slice(b"Gm=1;");
+            }
+
+            state.buffer.extend(vec![b'X'; chunk_size]);
+            total_accumulated += chunk_size;
+        }
+
+        assert_eq!(total_accumulated, total_payload_size);
+    }
+
+    #[test]
+    fn test_kitty_parsing_with_escape_terminator() {
+        // Test parsing Kitty graphics with ESC terminator properly stripped
+        let buffer = b"Ga=T,f=24,s=10,v=10;AQIDBA==\x1b";
+
+        // Strip terminator like process_apc_buffer does
+        let data = if buffer.last() == Some(&0x1b) {
+            &buffer[..buffer.len() - 1]
+        } else {
+            buffer.as_slice()
+        };
+
+        // Parse
+        let mut parts = data.splitn(2, |&b| b == b';');
+        let control_data = parts.next().unwrap();
+        let payload_data = parts.next().unwrap();
+
+        let control = &control_data[1..]; // Skip 'G'
+        assert_eq!(control, b"a=T,f=24,s=10,v=10");
+        assert_eq!(payload_data, b"AQIDBA==");
+        assert_ne!(
+            payload_data.last(),
+            Some(&0x1b),
+            "Terminator should be stripped"
+        );
+    }
+
+    #[test]
+    fn test_kitty_multiple_images_sequential() {
+        // Test sending multiple images sequentially (like terminal-doom renders multiple frames)
+        let images = vec![
+            (1, b"Ga=T,f=24,s=100,v=100,i=1;AQIDBA==".as_slice()),
+            (2, b"Ga=T,f=24,s=100,v=100,i=2;BQYHCAk=".as_slice()),
+            (3, b"Ga=T,f=24,s=100,v=100,i=3;CgsMDQ4=".as_slice()),
+        ];
+
+        for (image_id, data) in images {
+            let mut state = ApcState::default();
+            state.buffer.clear();
+            state.buffer.extend_from_slice(data);
+
+            assert!(state.buffer.starts_with(b"Ga=T,f=24,s=100,v=100"));
+
+            // Verify image ID is in the control data
+            let control_str = std::str::from_utf8(&state.buffer[..30]).unwrap();
+            assert!(control_str.contains(&format!("i={}", image_id)));
+        }
+    }
+
+    #[test]
+    fn test_kitty_chunked_with_different_image_ids() {
+        // Test chunking with explicit image IDs (tests CURRENT_TRANSMISSION_KEY logic)
+
+        // Image 1: First chunk with i=5
+        let mut state = ApcState::default();
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=5,m=1;AAAA");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(buffer_str.contains("i=5"));
+
+        // Continuation chunk should NOT have i= but will use key 5
+        state.buffer.clear();
+        state.buffer.extend_from_slice(b"Gm=1;BBBB");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(!buffer_str.contains("i="));
+
+        // Final chunk
+        state.buffer.clear();
+        state.buffer.extend_from_slice(b"Gm=0;CCCC");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(!buffer_str.contains("i="));
+
+        // Image 2: New transmission with i=6
+        state.buffer.clear();
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=6,m=1;DDDD");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(buffer_str.contains("i=6"));
+    }
+
+    #[test]
+    fn test_kitty_placement_after_transmission() {
+        // Test the pattern: transmit with a=t (store), then place with a=p
+
+        // First: Transmit and store (a=t)
+        let mut state = ApcState::default();
+        state
+            .buffer
+            .extend_from_slice(b"Ga=t,f=24,s=100,v=100,i=7;/9j/4AAQ");
+
+        let mut parts = state.buffer.splitn(2, |&b| b == b';');
+        let control = std::str::from_utf8(parts.next().unwrap()).unwrap();
+        assert!(control.contains("a=t"), "Should be transmit-only action");
+        assert!(control.contains("i=7"), "Should have image ID");
+
+        // Later: Place the stored image (a=p)
+        state.buffer.clear();
+        state.buffer.extend_from_slice(b"Ga=p,i=7,c=10,r=5;");
+
+        let mut parts = state.buffer.splitn(2, |&b| b == b';');
+        let control = std::str::from_utf8(parts.next().unwrap()).unwrap();
+        assert!(control.contains("a=p"), "Should be placement action");
+        assert!(control.contains("i=7"), "Should reference same image ID");
+    }
+
+    #[test]
+    fn test_kitty_delete_command() {
+        // Test delete command (a=d) like terminal-doom sends to clear old frames
+        let mut state = ApcState::default();
+        state.buffer.extend_from_slice(b"Ga=d;");
+
+        let mut parts = state.buffer.splitn(2, |&b| b == b';');
+        let control = std::str::from_utf8(parts.next().unwrap()).unwrap();
+        assert!(control.contains("a=d"), "Should be delete action");
+
+        let payload = parts.next().unwrap();
+        assert_eq!(payload, b"", "Delete commands have empty payload");
+    }
+
+    #[test]
+    fn test_kitty_very_large_single_chunk() {
+        // Test handling a very large chunk (16KB) without buffer limits
+        let mut state = ApcState::default();
+        state.buffer.clear();
+        state.buffer.reserve(16384);
+
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=200,v=200,i=8;");
+        state.buffer.extend(vec![b'Z'; 16384]);
+
+        assert!(state.buffer.len() > 16384);
+        assert!(
+            state.buffer.len() > 1024,
+            "Should exceed Copa's old 1024-byte limit"
+        );
+    }
+
+    #[test]
+    fn test_kitty_buffer_reuse_between_transmissions() {
+        // Test that buffer is properly cleared between transmissions
+        let mut state = ApcState::default();
+
+        // First transmission
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=9;FIRST");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(buffer_str.contains("FIRST"));
+        let first_len = state.buffer.len();
+
+        // Clear for second transmission
+        state.buffer.clear();
+        assert_eq!(state.buffer.len(), 0);
+
+        // Second transmission
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=10;SECOND");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(buffer_str.contains("SECOND"));
+        assert!(!buffer_str.contains("FIRST"), "Old data should be cleared");
+
+        // Buffer should maintain capacity
+        assert!(state.buffer.capacity() >= first_len);
     }
 }

@@ -1,27 +1,33 @@
 pub mod components;
 pub mod context;
 pub mod font;
+mod font_cache;
 pub mod font_introspector;
 pub mod layout;
+pub mod renderer;
 mod sugarloaf;
 
 // Expose WGPU
 pub use wgpu;
 
-pub use font_introspector::{Stretch, Style, Weight};
+pub use font_introspector::{Attributes, Stretch, Style, Weight};
 
+pub use crate::font_cache::ResolvedGlyph;
 pub use crate::sugarloaf::{
     graphics::{
-        ColorType, Graphic, GraphicData, GraphicId, Graphics, ResizeCommand,
-        ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
+        ColorType, Graphic, GraphicData, GraphicDataEntry, GraphicId, GraphicOverlay,
+        Graphics, ResizeCommand, ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
     },
-    primitives::*,
-    Colorspace, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
-    SugarloafWindowSize, SugarloafWithErrors,
+    primitives::{
+        contains_braille_dot, drawable_character, is_private_user_area, Corners,
+        CursorKind, DrawableChar, ImageProperties, Object, Quad, Rect, RichText,
+        RichTextLinesRange, RichTextRenderData, SugarCursor,
+    },
+    Colorspace, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
+    SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,
 };
 pub use components::filters::Filter;
-pub use components::quad::Quad;
 pub use layout::{
-    Content, FragmentStyle, FragmentStyleDecoration, SugarDimensions, UnderlineInfo,
-    UnderlineShape,
+    Content, RichTextConfig, SpanStyle, SpanStyleDecoration, TextDimensions,
+    UnderlineInfo, UnderlineShape,
 };

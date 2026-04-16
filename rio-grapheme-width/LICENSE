@@ -1,0 +1,33 @@
+MIT License
+
+This crate is a fork of `wezterm-char-props` from the WezTerm project,
+reduced to the emoji presentation and variation-sequence data tables
+that Rio needs for VS15/VS16 width handling. The data files
+(`emoji_presentation.rs`, `emoji_variation.rs`) and the `Presentation`
+API in `emoji.rs` are copied verbatim from WezTerm with only trivial
+edits (module paths, header comments).
+
+Upstream: https://github.com/wezterm/wezterm/tree/main/wezterm-char-props
+
+------------------------------------------------------------------------
+
+Copyright (c) 2018-Present Wez Furlong
+Copyright (c) 2023-Present Raphael Amorim
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

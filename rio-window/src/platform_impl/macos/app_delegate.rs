@@ -437,8 +437,6 @@ impl ApplicationDelegate {
         self.ivars().event_handler.set(handler, closure)
     }
 
-    /// Place the event handler in the application delegate for the duration
-    /// of the given closure.
     pub fn set_confirm_before_quit(&self, confirmation: bool) {
         self.ivars().set_confirm_before_quit.set(confirmation)
     }

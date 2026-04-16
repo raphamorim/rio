@@ -12,20 +12,15 @@ use crate::bindings::FontSizeAction;
 use crate::event::ClickState;
 use crate::router::Route;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum TouchPurpose {
+    #[default]
     None,
     Select(Touch),
     Scroll(Touch),
     Zoom(TouchZoom),
     Tap(Touch),
     Invalid(HashSet<u64, RandomState>),
-}
-
-impl Default for TouchPurpose {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 const FONT_SIZE_STEP: f32 = 1.00;
@@ -88,18 +83,28 @@ impl TouchZoom {
 }
 
 #[inline]
-pub fn on_touch(route: &mut Route, touch: Touch) {
+pub fn on_touch(
+    route: &mut Route,
+    touch: Touch,
+    clipboard: &mut rio_backend::clipboard::Clipboard,
+) {
     match touch.phase {
         TouchPhase::Started => {
-            on_touch_start(route, touch);
+            on_touch_start(route, touch, clipboard);
         }
-        TouchPhase::Moved => on_touch_motion(route, touch),
-        TouchPhase::Ended | TouchPhase::Cancelled => on_touch_end(route, touch),
+        TouchPhase::Moved => on_touch_motion(route, touch, clipboard),
+        TouchPhase::Ended | TouchPhase::Cancelled => {
+            on_touch_end(route, touch, clipboard)
+        }
     }
 }
 
 #[inline]
-fn on_touch_start(route: &mut Route, touch: Touch) {
+fn on_touch_start(
+    route: &mut Route,
+    touch: Touch,
+    _clipboard: &mut rio_backend::clipboard::Clipboard,
+) {
     let touch_purpose = route.window.screen.touch_purpose();
     *touch_purpose = match mem::take(touch_purpose) {
         TouchPurpose::None => TouchPurpose::Tap(touch),
@@ -118,7 +123,11 @@ fn on_touch_start(route: &mut Route, touch: Touch) {
 }
 
 #[inline]
-fn on_touch_motion(route: &mut Route, touch: Touch) {
+fn on_touch_motion(
+    route: &mut Route,
+    touch: Touch,
+    clipboard: &mut rio_backend::clipboard::Clipboard,
+) {
     let touch_purpose = route.window.screen.touch_purpose();
     match touch_purpose {
         TouchPurpose::None => (),
@@ -150,16 +159,16 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
                 route
                     .window
                     .screen
-                    .on_left_click(route.window.screen.mouse_position(0));
+                    .on_left_click(route.window.screen.mouse_position(0), clipboard);
 
                 // Apply motion since touch start.
-                on_touch_motion(route, touch);
+                on_touch_motion(route, touch, clipboard);
             } else if delta_y.abs() > MAX_TAP_DISTANCE {
                 tracing::info!("tap to scroll");
                 // Update gesture state.
                 *touch_purpose = TouchPurpose::Scroll(*start);
                 // Apply motion since touch start.
-                on_touch_motion(route, touch);
+                on_touch_motion(route, touch, clipboard);
             } else {
                 tracing::info!("tap normal");
             }
@@ -199,8 +208,12 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
 }
 
 #[inline]
-fn on_touch_end(route: &mut Route, touch: Touch) {
-    on_touch_motion(route, touch);
+fn on_touch_end(
+    route: &mut Route,
+    touch: Touch,
+    clipboard: &mut rio_backend::clipboard::Clipboard,
+) {
+    on_touch_motion(route, touch, clipboard);
 
     let touch_purpose = route.window.screen.touch_purpose();
     match touch_purpose {
@@ -226,7 +239,7 @@ fn on_touch_end(route: &mut Route, touch: Touch) {
             route
                 .window
                 .screen
-                .on_left_click(route.window.screen.mouse_position(0));
+                .on_left_click(route.window.screen.mouse_position(0), clipboard);
             route.window.screen.mouse.click_state = ClickState::None;
             route.window.screen.mouse.left_button_state = ElementState::Released;
             tracing::info!("tap end");

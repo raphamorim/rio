@@ -311,10 +311,6 @@ impl<T> EventLoop<T> {
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn set_confirm_before_quit(&self, confirmation: bool) {
-        let _span =
-            tracing::debug_span!("rio_window::EventLoop::set_confirm_before_quit")
-                .entered();
-
         self.event_loop.set_confirm_before_quit(confirmation)
     }
 

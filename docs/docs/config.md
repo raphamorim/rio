@@ -47,6 +47,18 @@ When configured, Rio will automatically switch between the specified light and d
 
 ![Adaptive theme](/assets/features/adaptive-theme.gif)
 
+## force-theme
+
+When using adaptive themes, you can override the system theme by forcing Rio to use a specific theme regardless of the system appearance.
+
+```toml
+force-theme = "dark"
+```
+
+Accepted values: `"dark"` or `"light"`. When not set, Rio follows the system theme.
+
+You can also toggle the appearance theme at runtime using the `ToggleAppearanceTheme` key binding action or through the command palette.
+
 ## colors
 
 Defining colors in the configuration file will not have any effect if you're using a theme.
@@ -74,11 +86,8 @@ cursor = '#F712FF'
 vi-cursor = '#12d0ff'
 
 # Navigation
-tabs = '#12B5E5'
-tabs-foreground = '#7d7d7d'
-tabs-active = '#303030'
-tabs-active-highlight = '#ffa133'
-tabs-active-foreground = '#FFFFFF'
+tabs = '#cccccc'  # Inactive tab text and border color
+tabs-active = '#ffffff'  # Active tab text color
 bar = '#1b1a1a'
 split = '#292527'
 
@@ -127,6 +136,16 @@ Require confirmation before quitting (Default: `true`).
 
 ```toml
 confirm-before-quit = true
+```
+
+## copy-on-select
+
+Automatically copy the selected text to the clipboard when a mouse selection ends. Disabled by default.
+
+This is a top-level option — it must appear before any `[section]` header in your config file.
+
+```toml
+copy-on-select = true
 ```
 
 ## cursor
@@ -246,6 +265,23 @@ args = []
 
 :::
 
+## effects
+
+Configure visual effects for the terminal.
+
+- `custom-mouse-cursor`: Enables a custom mouse cursor effect. Default: `false`
+- `trail-cursor`: Enables a smooth trail animation when the terminal cursor moves, using spring physics for natural motion. Default: `false`
+
+```toml
+[effects]
+custom-mouse-cursor = true
+trail-cursor = true
+```
+
+![Custom cursor](/assets/features/demo-custom-cursor.png)
+
+![Trail cursor](/assets/features/demo-trail-cursor.gif)
+
 ## env-vars
 
 Sets environment variables.
@@ -331,20 +367,22 @@ fonts.features = ["ss02", "ss03", "ss05", "ss19"]
 
 Note: Font features do not have support to live reload on configuration, so to reflect your changes, you will need to close and reopen Rio.
 
-## fonts.emojis
+## fonts.extras
 
-You can also specify which emoji font you would like to use, by default will be loaded a built-in Twemoji color by Mozilla.
-
-In case you would like to change:
+Extra font families searched after the configured regular/italic/bold slots. Use this to override the bundled Twemoji with a system color-emoji font, or to bring in a Nerd Font for icon glyphs. Rio auto-detects color-emoji fonts from their SFNT color tables (`COLR`, `CBDT`, `CBLC`, `sbix`), so an emoji family dropped here is treated as wide-cell / color-atlas without needing a flag, while a Nerd Font family stays single-cell.
 
 ```toml
-# Apple
-# [fonts.emoji]
-# family = "Apple Color Emoji"
+# Use Apple Color Emoji instead of the bundled Twemoji
+fonts.extras = [{ family = "Apple Color Emoji" }]
 
-# In case you have Noto Color Emoji installed
-# [fonts.emoji]
-# family = "Noto Color Emoji"
+# Or a Nerd Font for icon glyphs
+fonts.extras = [{ family = "JetBrainsMono Nerd Font Mono" }]
+
+# Both — order determines fallback priority
+fonts.extras = [
+  { family = "Apple Color Emoji" },
+  { family = "JetBrainsMono Nerd Font Mono" },
+]
 ```
 
 ## fonts.hinting
@@ -895,23 +933,21 @@ Default is `false`
 hide-mouse-cursor-when-typing = false
 ```
 
+## navigation
+
 ## navigation.mode
 
 Rio has multiple styles of showing navigation/tabs.
 
-#### Bookmark
+#### Tab
 
-Note: The example below is using the [Dracula](https://github.com/dracula/rio-terminal) color scheme instead of Rio default colors.
-
-`Bookmark` is the default navigation mode.
-
-<img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gMLWcZkniSHUT6Cb7L06Gg.png" width="60%" />
+`Tab` is the default navigation mode.
 
 Usage:
 
 ```toml
 [navigation]
-mode = "Bookmark"
+mode = "Tab"
 ```
 
 #### NativeTab (MacOS only)
@@ -923,38 +959,6 @@ Usage:
 ```toml
 [navigation]
 mode = "NativeTab"
-```
-
-#### BottomTab
-
-Note: `BottomTab` does not support click mode yet.
-
-<img alt="Demo BottomTab" src="/rio/assets/features/demo-bottom-tab.png" width="58%"/>
-
-Usage:
-
-```toml
-[colors]
-tabs = "#000000"
-
-[navigation]
-mode = "BottomTab"
-```
-
-#### TopTab
-
-Note: `TopTab` does not support click mode yet.
-
-<img alt="Demo TopTab" src="/rio/assets/features/demo-top-tab.png" width="70%"/>
-
-Usage:
-
-```toml
-[colors]
-tabs = "#000000"
-
-[navigation]
-mode = "TopTab"
 ```
 
 #### Plain
@@ -981,96 +985,31 @@ use-split = true
 
 ## navigation.unfocused-split-opacity
 
-Configure opacity on unfocused split.
+The opacity level (opposite of transparency) of an unfocused split. Unfocused splits are faded out by default to make it easier to see which split is focused. To disable this feature, set this value to `1`.
+
+A value of `1` is fully opaque and a value of `0` is fully transparent. Because `0` is not useful (it makes the split look very weird), the minimum value is `0.15`. A value outside of `0.15..=1` is clamped to the nearest valid value.
+
+Default is `0.7`.
 
 ```toml
-navigation.unfocused-split-opacity = 0.8
+[navigation]
+unfocused-split-opacity = 0.7
+```
+
+## navigation.unfocused-split-fill
+
+The color used to dim an unfocused split. Unfocused splits are dimmed by rendering a semi-transparent rectangle over the split; this option sets the color of that rectangle. The alpha of the overlay is derived from `navigation.unfocused-split-opacity` — this field is an RGB tint only.
+
+Defaults to the terminal's background color. Specified as a hex string (`#RRGGBB` or `RRGGBB`).
+
+```toml
+[navigation]
+unfocused-split-fill = "#000000"
 ```
 
 ## navigation.open-config-with-split
 
 Enable split for open configuration file.
-
-## navigation.color-automation
-
-Rio supports specifying the color of tabs using the `program` and `path` options.
-
-Note: `path` is only available for MacOS, BSD and Linux.
-
-```toml
-[navigation]
-color-automation = [
-  # Set tab to red (#FF0000) when NeoVim is open.
-  { program = "nvim", color = "#FF0000" },
-  # Set tab to green  (#00FF00) when in the projects folder
-  { path = "/home/YOUR_USERNAME/projects", color = "#00FF00" },
-    # Set tab to blue (#0000FF) when in the Rio folder AND vim is open
-  { program = "vim", path = "/home/YOUR_USERNAME/projects/rio", color = "#0000FF" },
-]
-```
-
-#### Program
-
-The example below sets `#FFFF00` as color background whenever `nvim` is running.
-
-<p>
-<img alt="example navigation with program color automation using BottomTab" src="/rio/assets/features/demo-colorized-navigation.png" width="48%"/>
-
-<img alt="example navigation with program color automation using Bookmark" src="/rio/assets/features/demo-colorized-navigation-2.png" width="48%"/>
-</p>
-
-The configuration would be like:
-
-```toml
-[navigation]
-color-automation = [
-  { program = "nvim", color = "#FFFF00" }
-]
-```
-
-#### Path
-
-The example below sets `#FFFF00` as color background when in the `/home/geg/.config/rio` path.
-
-Note: `path` is only available for MacOS, BSD and Linux.
-
-The configuration would be like:
-
-```toml
-[navigation]
-color-automation = [
-  { path = "/home/geg/.config/rio", color = "#FFFF00" }
-]
-```
-
-<p>
-<img alt="example navigation with path color automation using TopTab" src="/rio/assets/features/demo-colorized-navigation-path-1.png" width="48%"/>
-
-<img alt="example navigation with path color automation using Bookmark" src="/rio/assets/features/demo-colorized-navigation-path-2.png" width="48%"/>
-</p>
-
-#### Program and path
-
-It is possible to use both `path` and `program` at the same time.
-
-The example below sets `#FFFF00` as color background when in the `/home` path and `nvim` is open.
-
-Note: `path` is only available for MacOS, BSD and Linux.
-
-The configuration would be like:
-
-```toml
-[navigation]
-color-automation = [
-  { program = "nvim", path = "/home", color = "#FFFF00" }
-]
-```
-
-<p>
-<img alt="example navigation with program and path color automation using TopTab" src="/rio/assets/features/demo-colorized-navigation-program-and-path-1.png" width="48%"/>
-
-<img alt="example navigation with program and path color automation using Bookmark" src="/rio/assets/features/demo-colorized-navigation-program-and-path-2.png" width="48%"/>
-</p>
 
 ## navigation.hide-if-single
 
@@ -1097,22 +1036,83 @@ Possible choices: `both`, `left` and `right`.
 option-as-alt = 'left'
 ```
 
-## padding-x
+## padding
 
-Define x axis padding (default is 0)
+Define outer padding around the entire window/tab area using CSS-like syntax (default is `[10]`)
 
 ```toml
-padding-x = 10
+# Apply 10px to all sides
+padding = [10]
+
+# top and bottom: 10px, right and left: 5px
+padding = [10, 5]
+
+# top: 10px, right: 5px, bottom: 15px, left: 20px
+padding = [10, 5, 15, 20]
 ```
 
-## padding-y
+## panel
 
-Define y axis padding based on a format `[top, bottom]`
+Configure panel layout when using splits (vertical/horizontal terminal splits).
 
-- Default is `[0, 0]`
+### panel.padding
+
+Define inner padding inside each panel (around terminal content). Default is `[5]`
 
 ```toml
-padding-y = [15, 10]
+[panel]
+# Apply 5px padding inside all panels
+padding = [5]
+
+# Different padding: top/bottom: 10px, left/right: 5px
+padding = [10, 5]
+```
+
+### panel.row-gap
+
+Define vertical spacing between panels when split vertically (down). Default is `0`
+
+```toml
+[panel]
+row-gap = 10  # 10px vertical gap between panels
+```
+
+### panel.column-gap
+
+Define horizontal spacing between panels when split horizontally (right). Default is `0`
+
+```toml
+[panel]
+column-gap = 15  # 15px horizontal gap between panels
+```
+
+### panel.border-width
+
+Define the border width around each panel. Default is `2.0`
+
+```toml
+[panel]
+border-width = 2.0  # 2px border around panels
+```
+
+### panel.border-radius
+
+Define the corner radius for panel borders. Default is `0.0` (sharp corners).
+
+```toml
+[panel]
+border-radius = 8.0  # 8px rounded corners
+```
+
+### Full panel example
+
+```toml
+[panel]
+padding = [5]       # Inner padding inside each panel
+row-gap = 10        # Vertical gap when split down
+column-gap = 15     # Horizontal gap when split right
+border-width = 2.0  # Border width around panels
+border-radius = 0.0 # Corner radius (0 = sharp)
 ```
 
 ## platform
@@ -1309,6 +1309,22 @@ Strategy property defines how Rio will render, by default it follows Event drive
 strategy = "events"
 ```
 
+## renderer.use-cpu
+
+Use the CPU rasterizer ([tiny-skia](https://github.com/RazrFalcon/tiny-skia)) instead of the GPU pipeline. Useful on systems without working GPU drivers, in virtual machines, or for debugging rendering issues.
+
+This option is **experimental**. The first version supports solid quads and glyphs only — the following features are not yet implemented on the CPU path:
+
+- Image overlays (Kitty graphics protocol)
+- GPU filters (RetroArch / `renderer.filters`)
+- Advanced underline styles
+- Corner radii
+
+```toml
+[renderer]
+use-cpu = false
+```
+
 ## scroll
 
 You can change how many lines are scrolled each time by setting this option. Scroll calculation for canonical mode will be based on `lines = (accumulated scroll * multiplier / divider)`.
@@ -1326,6 +1342,30 @@ Example:
 [scroll]
 multiplier = 3.0
 divider = 1.0
+```
+
+## enable-scroll-bar
+
+Show an overlay scroll bar when scrolling. The scroll bar appears on scroll and fades out after 2 seconds. It does not change the width of the content and works independently in each panel. The scroll bar is also draggable.
+
+Default is `true`.
+
+```toml
+enable-scroll-bar = true
+```
+
+## scrollback-history-limit
+
+Maximum number of scrollback history lines retained per panel. Scrollback lets you scroll up to inspect command output that has moved off-screen.
+
+- Raising this keeps more history available at the cost of memory proportional to the total number of cells held in the buffer.
+- Setting it to `0` disables scrollback entirely.
+- The alt-screen grid (used by full-screen TUIs like `vim`, `less`, `htop`) never keeps scrollback regardless of this value.
+
+Default is `10000`.
+
+```toml
+scrollback-history-limit = 10000
 ```
 
 ## shell
@@ -1432,9 +1472,8 @@ selection-background = ""
 selection-foreground = ""
 
 # Navigation
+tabs = ""
 tabs-active = ""
-tabs-active-foreground = ""
-tabs-active-highlight = ""
 bar = ""
 split = ""
 cursor = ""
@@ -1491,7 +1530,10 @@ Proud of your new theme? Why not share it on the [Rio Discord](https://discord.g
 
 ## title.content
 
-Configure window title using template. Default: `{{ title || program }}`
+Configure window title using template.
+
+Default on macOS/Linux: `{{ title || relative_path }}`
+Default on Windows: `{{ title || program }}`
 
 Note: **Variables are not case sensitive.**
 
@@ -1500,7 +1542,7 @@ Possible options:
 - `TITLE`: terminal title via OSC sequences for setting terminal title
 - `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
 - `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
-<!-- - `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`) -->
+- `RELATIVE_PATH`: home-relative path, shortened when deep (e.g `~/Documents/a/rio` or `…/a/psone/starpsx`)
 - `COLUMNS`: current columns
 - `LINES`: current lines
 
@@ -1528,12 +1570,12 @@ You can use `||` operator, in case the value is empty or non-existent it will us
 
 ```toml
 [title]
-content = "{{ TITLE || PROGRAM }}"
+content = "{{ TITLE || RELATIVE_PATH }}"
 ```
 
-In this case, `TITLE` is non-existent so will use `PROGRAM`.
+In this case, `TITLE` is non-existent so will use `RELATIVE_PATH`.
 
-Result: `zsh`
+Result: `~/Documents/a/rio`
 
 ## title.placeholder
 
@@ -1579,6 +1621,36 @@ Example:
 ```toml
 [window]
 height = 400
+```
+
+## window.columns
+
+Define the initial number of columns. When set, this takes precedence over `window.width`.
+
+- Default: not set
+- Works independently from `window.rows` (you can set only columns).
+- Invalid value `0` is ignored and Rio falls back to `window.width`.
+
+Example:
+
+```toml
+[window]
+columns = 80
+```
+
+## window.rows
+
+Define the initial number of rows. When set, this takes precedence over `window.height`.
+
+- Default: not set
+- Works independently from `window.columns` (you can set only rows).
+- Invalid value `0` is ignored and Rio falls back to `window.height`.
+
+Example:
+
+```toml
+[window]
+rows = 24
 ```
 
 ## window.mode
@@ -1635,37 +1707,22 @@ blur = true
 
 ## window.background-image
 
-Set an image as background.
+Set an image as the window background. The image is uploaded once into a dedicated GPU texture sized to the source dimensions and stretched to cover the full window.
 
 - Default: `None`
 
-#### Using image as background:
+#### Fields
 
-If both properties `width` and `height` are occluded then background image will use the terminal width/height.
+- `path` — required, absolute path to a PNG/JPG/etc.
+- `opacity` — `0.0`–`1.0`, default `1.0`. Multiplied into the image's alpha channel before upload, so a lower value lets the terminal background bleed through.
 
 ```toml
 [window.background-image]
 path = "/Users/hugoamor/Desktop/musashi.png"
 opacity = 0.5
-x = 0.0
-y = -100.0
 ```
 
 ![Demo image as background](/assets/demos/demo-background-image.png)
-
-If any property `width` or `height` are used then background image will be respected.
-
-```toml
-[window.background-image]
-path = "/Users/hugoamor/Desktop/harvest-moon.png"
-width = 1200
-height = 800
-opacity = 0.5
-x = 0.0
-y = 0.0
-```
-
-![Demo image as background](/assets/demos/demo-background-image-partial.png)
 
 ## window.decorations
 
@@ -1701,6 +1758,28 @@ You can enable window shadow on MacOS by config, it's disabled by default.
 ```toml
 [window]
 macos-use-shadow = true
+```
+
+## window.macos-traffic-light-position-x
+
+Customize the horizontal position of macOS traffic light buttons (close, minimize, maximize). Position is specified in points from the left edge of the window.
+
+**Note:** This setting is ignored when navigation mode is set to "Tab" as the traffic lights are positioned automatically for that mode.
+
+```toml
+[window]
+macos-traffic-light-position-x = 9.0
+```
+
+## window.macos-traffic-light-position-y
+
+Customize the vertical position of macOS traffic light buttons (close, minimize, maximize). Position is specified in points from the top edge of the window.
+
+**Note:** This setting is ignored when navigation mode is set to "Tab" as the traffic lights are positioned automatically for that mode.
+
+```toml
+[window]
+macos-traffic-light-position-y = 9.0
 ```
 
 ## window.windows-corner-preference
