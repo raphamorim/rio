@@ -505,12 +505,18 @@ impl<T: 'static> EventLoop<T> {
                     return None;
                 }
 
+                // Reset the frame-callback state so the window can accept a new
+                // callback when the app commits (pre_present_notify).
+                //
+                // NOTE: don't call request_frame_callback here. It would call
+                // wl_suface::frame() before we know wether  a render will happen.
+                // If this iteration emits no RedraRequested, the app never commits,
+                // callback stay pending forever and the next itration sees
+                // state == Requested and short-cirtuits above.
+                // Freezing the loop until external events happen to work around it.
                 let was_received =
                     window.frame_callback_state() == FrameCallbackState::Received;
                 window.frame_callback_reset();
-                if was_received {
-                    window.request_frame_callback();
-                }
 
                 let mut redraw_requested = window_requests
                     .get(window_id)
