@@ -57,20 +57,26 @@ impl MetalContext {
 
         // Create Metal layer.
         //
-        // Surface is always `BGRA8Unorm_sRGB` with the DisplayP3 colorspace
-        // tag — same as ghostty's `src/renderer/metal/Target.zig`. The
-        // `_sRGB` pixel format only controls the *transfer curve* (HW
-        // sRGB-encodes on write / decodes on read, so alpha blending runs
-        // in linear light); the colorspace tag controls which *primaries*
-        // those values represent on the display. We pick DisplayP3 here
-        // unconditionally because it's the widest gamut we can safely
-        // present without drawable-level HDR handling; the `[window]
-        // colorspace` config controls how input values are *interpreted*
-        // (sRGB vs P3 vs Rec.2020) via an sRGB→P3 matrix applied in the
-        // fragment shader (see `renderer.metal`).
+        // Plain `BGRA8Unorm` + DisplayP3 colorspace tag — matches ghostty's
+        // default `alpha-blending = native` on macOS (see
+        // `ghostty/src/renderer/Metal.zig:208-211` and `Target.zig:44-60`).
+        // No `_sRGB` suffix: we don't want Metal to apply a transfer curve
+        // on read/write, so alpha blending stays in gamma-encoded space —
+        // which is what Apple's native widgets do and what keeps text
+        // weight identical to Terminal.app / ghostty. The fragment shaders
+        // compensate by emitting *already* sRGB-encoded DisplayP3 values
+        // (`prepare_output_rgb`), and the clear color goes through the
+        // same encode chain on the Rust side (see `sugarloaf.rs`).
+        //
+        // The DisplayP3 colorspace tag controls which *primaries* stored
+        // values represent on the display; we pick it unconditionally
+        // because it's the widest gamut we can present without HDR. The
+        // `[window] colorspace` config controls how input values are
+        // *interpreted* (sRGB vs P3 vs Rec.2020) via the gamut-conversion
+        // matrix in `renderer.metal`.
         let layer = MetalLayer::new();
         layer.set_device(&device);
-        layer.set_pixel_format(MTLPixelFormat::BGRA8Unorm_sRGB);
+        layer.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         // CAMetalLayer's `colorspace` setter isn't wrapped by the `metal`
         // crate yet, so we go through the Obj-C runtime directly. The CG
         // setter retains internally (standard CA property behaviour), but

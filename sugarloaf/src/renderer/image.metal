@@ -46,23 +46,24 @@ vertex ImageVertexOut image_vs_main(
     return out;
 }
 
-// Match `renderer.metal` — sampled image data is Rgba8Unorm (no HW sRGB
-// decode on read) and treated as sRGB-encoded content. Linearize, then
-// apply the sRGB → DisplayP3 primaries matrix when the layer is DisplayP3
-// with sRGB-interpreted inputs (`input_colorspace == 0`). The framebuffer's
-// `_sRGB` on-write encode re-applies the transfer curve after blending.
-static inline float3 srgb_to_linear(float3 c) {
-    float3 lo = c / 12.92;
-    float3 hi = pow((c + 0.055) / 1.055, 2.4);
-    return select(lo, hi, c > 0.04045);
-}
-
-static inline float3 srgb_to_p3(float3 linear_srgb) {
-    return float3(
-        dot(linear_srgb, float3(0.82246197, 0.17753803, 0.0)),
-        dot(linear_srgb, float3(0.03319420, 0.96680580, 0.0)),
-        dot(linear_srgb, float3(0.01708263, 0.07239744, 0.91051993))
-    );
+// Mirror ghostty's `image_fragment` (shaders.metal:832-852).
+//
+// The image atlas is `RGBA8Unorm_sRGB` (see `renderer/mod.rs`), so the
+// HW does the sRGB-decode on sample → bilinear filtering happens in
+// linear light (otherwise scaled midtones come out gamma-dark). We then
+// `unlinearize` back to gamma encoding because the framebuffer is plain
+// `BGRA8Unorm` (gamma-space blending). NO sRGB→P3 gamut conversion: the
+// drawable is DisplayP3-tagged, so leaving sRGB primaries as-is lets the
+// compositor reinterpret them as P3 — technically oversaturating, but
+// matching ghostty's punchier emoji / sixel / kitty-graphics look.
+//
+// Rec.2020 still gets a matrix because its primaries diverge enough from
+// P3 that "treat as P3 directly" would clip badly. Ghostty has no
+// Rec.2020 image path, so we own this decision.
+static inline float3 linear_to_srgb(float3 c) {
+    float3 lo = c * 12.92;
+    float3 hi = pow(c, 1.0 / 2.4) * 1.055 - 0.055;
+    return select(lo, hi, c > 0.0031308);
 }
 
 static inline float3 rec2020_to_p3(float3 linear_r2020) {
@@ -79,13 +80,14 @@ fragment float4 image_fs_main(
     texture2d<float> image_texture [[texture(0)]],
     sampler image_sampler [[sampler(0)]]
 ) {
+    // Sample returns linear RGBA (HW sRGB-decoded); alpha is linear by
+    // convention, untouched by the format's transfer curve.
     float4 rgba = image_texture.sample(image_sampler, input.tex_coord);
-    float3 lin = srgb_to_linear(rgba.rgb);
-    if (globals.input_colorspace == 0u) {
-        lin = srgb_to_p3(lin);
-    } else if (globals.input_colorspace == 2u) {
+    float3 lin = rgba.rgb;
+    if (globals.input_colorspace == 2u) {
         lin = rec2020_to_p3(lin);
     }
-    // Premultiply alpha
-    return float4(lin * rgba.a, rgba.a);
+    float3 enc = linear_to_srgb(lin);
+    // Premultiply alpha (pipeline blend factors are One / OneMinusSrcAlpha).
+    return float4(enc * rgba.a, rgba.a);
 }
