@@ -1021,62 +1021,22 @@ impl Sugarloaf<'_> {
         self.reset();
     }
 
+    /// Drive a Metal frame. All command-buffer / encoder / drawable
+    /// orchestration now lives inside `Renderer::render_metal` so the
+    /// triple-buffered pool's acquire / completion-handler / retry-on-
+    /// overflow loop can see them all (mirrors zed's `MetalRenderer::draw`).
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn render_metal(&mut self) {
-        use metal::*;
-
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Metal(metal) => metal,
             _ => return,
         };
 
-        match ctx.get_current_texture() {
-            Ok(surface_texture) => {
-                // Create command buffer
-                let command_buffer = ctx.command_queue.new_command_buffer();
-                command_buffer.set_label("Sugarloaf Metal Render");
-
-                // Create render pass descriptor
-                let render_pass_descriptor = RenderPassDescriptor::new();
-                let color_attachment = render_pass_descriptor
-                    .color_attachments()
-                    .object_at(0)
-                    .unwrap();
-
-                color_attachment.set_texture(Some(&surface_texture.texture));
-                color_attachment.set_store_action(MTLStoreAction::Store);
-                color_attachment.set_load_action(MTLLoadAction::Clear);
-
-                // Always clear to transparent black; the bg color is
-                // painted by a GPU full-screen quad in
-                // `Renderer::render_metal`, which routes through the
-                // shader's `prepare_output_rgb` so colorspace + transfer
-                // curve handling lives in one place (`renderer.metal`).
-                // For translucent windows this also writes correctly
-                // premultiplied bytes — the previous `MTLClearColor`
-                // path stored straight (non-premultiplied) components,
-                // which the compositor read as too bright.
-                color_attachment.set_clear_color(MTLClearColor::new(0.0, 0.0, 0.0, 0.0));
-
-                // Create render command encoder
-                let render_encoder =
-                    command_buffer.new_render_command_encoder(render_pass_descriptor);
-                render_encoder.set_label("Sugarloaf Metal Render Pass");
-
-                let bg_color = self
-                    .background_color
-                    .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32]);
-                self.renderer.render_metal(ctx, render_encoder, bg_color);
-
-                render_encoder.end_encoding();
-                command_buffer.present_drawable(&surface_texture.drawable);
-                command_buffer.commit();
-            }
-            Err(error) => {
-                tracing::error!("Metal surface error: {}", error);
-            }
-        }
+        let bg_color = self
+            .background_color
+            .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32]);
+        self.renderer.render_metal(ctx, bg_color);
 
         self.reset();
     }

@@ -77,6 +77,20 @@ impl MetalContext {
         let layer = MetalLayer::new();
         layer.set_device(&device);
         layer.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+        // Triple buffering: allow 3 drawables in flight so CPU/GPU/compositor
+        // can pipeline. `next_drawable` is the natural backpressure — it
+        // blocks the main thread once 3 drawables are out, capping how far
+        // ahead the CPU can run. Default is 2; ghostty/zed both bump this
+        // to 3 to match the standard Apple sample pattern.
+        layer.set_maximum_drawable_count(3);
+        // Disable the 1-second wait timeout on `next_drawable` — under load
+        // the default behaviour is to time out and return nil, which would
+        // turn into a dropped frame. Matches zed's
+        // `gpui_macos/src/metal_renderer.rs:162`.
+        unsafe {
+            let layer_obj = layer.as_ptr() as *mut Object;
+            let _: () = msg_send![layer_obj, setAllowsNextDrawableTimeout: false];
+        }
         // CAMetalLayer's `colorspace` setter isn't wrapped by the `metal`
         // crate yet, so we go through the Obj-C runtime directly. The CG
         // setter retains internally (standard CA property behaviour), but
