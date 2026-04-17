@@ -441,11 +441,14 @@ where
     damage: TermDamageState,
     pub graphics: Graphics,
     /// Per-session registry of glyphs registered over Glyph Protocol
-    /// (APC `1cc6D`). Shared via `Arc` so the renderer can read it
-    /// without serialising on the terminal's write path. Two tabs can
-    /// register conflicting glyphs for the same codepoint — each
-    /// `Crosswords` instance owns a distinct registry.
-    pub glyph_registry: sugarloaf::font::glyph_registry::GlyphRegistry,
+    /// (APC `1cc6D`). `None` until a program in this session actually
+    /// uses the protocol, so terminals that never see a Glyph
+    /// Protocol message pay zero cost — no Arc allocation, no
+    /// per-frame attach call. Lazily initialised by `glyph_register`.
+    /// Two tabs can register conflicting glyphs for the same
+    /// codepoint; each `Crosswords` owns its own registry once
+    /// initialised.
+    pub glyph_registry: Option<sugarloaf::font::glyph_registry::GlyphRegistry>,
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
@@ -504,7 +507,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(rows),
             graphics: Graphics::new(&dimensions),
-            glyph_registry: sugarloaf::font::glyph_registry::GlyphRegistry::new(),
+            glyph_registry: None,
             default_cursor_shape: cursor_shape,
             cursor_shape,
             blinking_cursor: false,
@@ -3847,46 +3850,59 @@ impl<U: EventListener> Handler for Crosswords<U> {
         glyf: Vec<u8>,
         upm: u16,
     ) -> Result<(), crate::ansi::glyph_protocol::RegisterError> {
-        use crate::ansi::glyph_protocol::RegisterError;
+        use crate::ansi::glyph_protocol::{is_pua, RegisterError};
         use sugarloaf::font::glyf_decode;
-        use sugarloaf::font::glyph_registry::RegisterRejection;
+        use sugarloaf::font::glyph_registry::{GlyphRegistry, RegisterRejection};
 
-        // Decode once, up-front: this enforces the simple-glyph +
-        // no-hinting constraints of spec §8.2 so a malformed payload
-        // is rejected synchronously with a defined `reason=`.
+        // PUA check first — callers that bypass the wire parser (direct
+        // API, tests) still get the rejection without accidentally
+        // allocating the registry on a doomed request.
+        if !is_pua(cp) {
+            return Err(RegisterError::OutOfNamespace);
+        }
+
+        // Decode next: enforces the simple-glyph + no-hinting
+        // constraints of spec §8.2 so a malformed payload is rejected
+        // synchronously with a defined `reason=`.
         if let Err(e) = glyf_decode::decode(&glyf) {
             return Err(match e {
                 glyf_decode::DecodeError::Composite => {
                     RegisterError::CompositeUnsupported
                 }
                 glyf_decode::DecodeError::Hinted => RegisterError::HintingUnsupported,
-                glyf_decode::DecodeError::Malformed => {
-                    RegisterError::MalformedPayload
-                }
+                glyf_decode::DecodeError::Malformed => RegisterError::MalformedPayload,
             });
         }
 
-        match self.glyph_registry.register(cp, glyf, upm) {
+        // Both checks passed. Lazily allocate the registry — idle
+        // terminals that never see Glyph Protocol traffic stay at
+        // `None` and pay nothing per frame.
+        let registry = self
+            .glyph_registry
+            .get_or_insert_with(GlyphRegistry::new);
+
+        match registry.register(cp, glyf, upm) {
             Ok(_evicted) => Ok(()),
             Err(RegisterRejection::OutOfNamespace) => {
-                // Defence in depth — the parser already rejected
-                // non-PUA, but the registry double-checks.
+                // Unreachable given the is_pua check above, but the
+                // registry double-checks so the defence exists.
                 Err(RegisterError::OutOfNamespace)
             }
         }
     }
 
     fn glyph_clear(&mut self, cp: Option<u32>) {
+        // Nothing to clear if nothing was ever registered.
+        let Some(registry) = self.glyph_registry.as_ref() else {
+            return;
+        };
         match cp {
-            None => self.glyph_registry.clear_all(),
-            Some(cp) => self.glyph_registry.clear_one(cp),
+            None => registry.clear_all(),
+            Some(cp) => registry.clear_one(cp),
         }
     }
 
-    fn glyph_query(
-        &mut self,
-        cp: u32,
-    ) -> crate::ansi::glyph_protocol::QueryStatus {
+    fn glyph_query(&mut self, cp: u32) -> crate::ansi::glyph_protocol::QueryStatus {
         use crate::ansi::glyph_protocol::QueryStatus;
         // The terminal layer only knows about the glossary; it cannot
         // consult the font fallback chain from here. Report the
@@ -3895,7 +3911,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
         //
         // TODO(glyph-protocol): add system-font probe so `Both` and
         // `System` can be reported accurately.
-        if self.glyph_registry.contains(cp) {
+        let registered = self
+            .glyph_registry
+            .as_ref()
+            .is_some_and(|r| r.contains(cp));
+        if registered {
             QueryStatus::Glossary
         } else {
             QueryStatus::Free
@@ -4239,29 +4259,39 @@ mod tests {
         v
     }
 
+    fn registry_contains(cw: &Crosswords<VoidListener>, cp: u32) -> bool {
+        cw.glyph_registry
+            .as_ref()
+            .is_some_and(|r| r.contains(cp))
+    }
+
+    fn registry_len(cw: &Crosswords<VoidListener>) -> usize {
+        cw.glyph_registry.as_ref().map_or(0, |r| r.len())
+    }
+
+    #[test]
+    fn glyph_registry_is_none_until_first_register() {
+        let cw = make_crosswords();
+        assert!(cw.glyph_registry.is_none());
+    }
+
     #[test]
     fn glyph_protocol_register_populates_registry_and_query_reports_glossary() {
         let mut cw = make_crosswords();
-        assert!(cw.glyph_registry.is_empty());
 
         let glyf = minimal_glyf_bytes();
         // E0A0 is the Powerline branch codepoint — in basic PUA.
         let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf, 1000);
         assert!(res.is_ok());
-        assert!(cw.glyph_registry.contains(0xE0A0));
+        assert!(cw.glyph_registry.is_some());
+        assert!(registry_contains(&cw, 0xE0A0));
 
         let status = Handler::glyph_query(&mut cw, 0xE0A0);
-        assert_eq!(
-            status,
-            crate::ansi::glyph_protocol::QueryStatus::Glossary
-        );
+        assert_eq!(status, crate::ansi::glyph_protocol::QueryStatus::Glossary);
 
         // An unregistered codepoint reports `Free` (no system probe yet).
         let status = Handler::glyph_query(&mut cw, 0xE0A1);
-        assert_eq!(
-            status,
-            crate::ansi::glyph_protocol::QueryStatus::Free
-        );
+        assert_eq!(status, crate::ansi::glyph_protocol::QueryStatus::Free);
     }
 
     #[test]
@@ -4272,7 +4302,7 @@ mod tests {
         // 0x61 is 'a' — not in PUA. Registry must refuse.
         let res = Handler::glyph_register(&mut cw, 0x61, minimal_glyf_bytes(), 1000);
         assert_eq!(res, Err(RegisterError::OutOfNamespace));
-        assert!(cw.glyph_registry.is_empty());
+        assert!(cw.glyph_registry.is_none());
     }
 
     #[test]
@@ -4292,33 +4322,42 @@ mod tests {
 
         let res = Handler::glyph_register(&mut cw, 0xE0A0, v, 1000);
         assert_eq!(res, Err(RegisterError::HintingUnsupported));
-        assert!(cw.glyph_registry.is_empty());
+        // Decode failed before the registry was touched, so it stays
+        // uninitialised.
+        assert!(cw.glyph_registry.is_none());
+    }
+
+    #[test]
+    fn glyph_protocol_clear_before_any_register_is_noop() {
+        let mut cw = make_crosswords();
+        Handler::glyph_clear(&mut cw, None);
+        // No panic, registry still absent.
+        assert!(cw.glyph_registry.is_none());
     }
 
     #[test]
     fn glyph_protocol_clear_all_wipes_registry() {
         let mut cw = make_crosswords();
-        Handler::glyph_register(&mut cw, 0xE0A0, minimal_glyf_bytes(), 1000)
-            .unwrap();
-        Handler::glyph_register(&mut cw, 0xE0A1, minimal_glyf_bytes(), 1000)
-            .unwrap();
-        assert_eq!(cw.glyph_registry.len(), 2);
+        Handler::glyph_register(&mut cw, 0xE0A0, minimal_glyf_bytes(), 1000).unwrap();
+        Handler::glyph_register(&mut cw, 0xE0A1, minimal_glyf_bytes(), 1000).unwrap();
+        assert_eq!(registry_len(&cw), 2);
 
         Handler::glyph_clear(&mut cw, None);
-        assert!(cw.glyph_registry.is_empty());
+        // Clear-all empties the registry but leaves the Arc in place,
+        // since a program that cleared once will likely register again.
+        assert_eq!(registry_len(&cw), 0);
+        assert!(cw.glyph_registry.is_some());
     }
 
     #[test]
     fn glyph_protocol_clear_one_leaves_others_intact() {
         let mut cw = make_crosswords();
-        Handler::glyph_register(&mut cw, 0xE0A0, minimal_glyf_bytes(), 1000)
-            .unwrap();
-        Handler::glyph_register(&mut cw, 0xE0A1, minimal_glyf_bytes(), 1000)
-            .unwrap();
+        Handler::glyph_register(&mut cw, 0xE0A0, minimal_glyf_bytes(), 1000).unwrap();
+        Handler::glyph_register(&mut cw, 0xE0A1, minimal_glyf_bytes(), 1000).unwrap();
 
         Handler::glyph_clear(&mut cw, Some(0xE0A0));
-        assert!(!cw.glyph_registry.contains(0xE0A0));
-        assert!(cw.glyph_registry.contains(0xE0A1));
+        assert!(!registry_contains(&cw, 0xE0A0));
+        assert!(registry_contains(&cw, 0xE0A1));
     }
 
     #[test]

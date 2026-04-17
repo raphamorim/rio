@@ -5,6 +5,14 @@
 **Year:** 2026
 **Last updated:** 2026-04-17
 
+**See also:**
+- Blog post introducing the protocol and its rationale:
+  <https://rapha.land/introducing-glyph-protocol-for-terminals/>
+- Reference implementation: [Rio terminal](https://raphamorim.io/rio)
+- Example apps (ratatui, bubbletea v2, ink) registering real Nerd Font
+  outlines at empty PUA-B slots:
+  [glyph-protocol-examples](https://github.com/raphamorim/glyph-protocol-examples)
+
 ---
 
 ## Abstract
@@ -442,7 +450,52 @@ q(0xE0A0)
 #   status=0 → nothing covers it; register and emit
 ```
 
-## Appendix C. Change log
+## Appendix C. Implementation notes
+
+These are not normative but reflect lessons from the first
+implementations.
+
+**Response draining.** `r` and `c` always produce an APC reply on the
+PTY. Client applications that register at startup and do not care
+about the reply should either (a) read and discard it, or (b) accept
+that the response will be delivered. In practice, TUI frameworks
+(ratatui, bubbletea, ink) consume stdin through their input reader;
+APC replies are parsed and silently dropped alongside non-keyboard
+bytes. The failure mode to watch for is sending `r` or `c` AFTER the
+framework has torn down its input reader — typically on exit — at
+which point the reply arrives in the PTY but nobody reads it, and
+the shell that takes over the PTY after the app exits emits the
+queued bytes as visible text (`.1cc6D;c;status=0`). Either skip
+cleanup on exit (registrations expire with the session anyway) or
+send the cleanup command while the framework is still running and
+let its input reader swallow the reply.
+
+**Practical source of `glyf` data.** Most apps will not hand-author
+`glyf` bytes. The typical pipeline is:
+
+1. Open a Nerd Font or similar icon TTF with `fontTools`.
+2. For each codepoint of interest, pull the glyph record.
+3. If composite, flatten via `fontTools.pens.ttGlyphPen.TTGlyphPen`.
+4. Strip hinting instructions (`instructionLength := 0`).
+5. Compile to bytes; base64-encode; register at a codepoint of the
+   app's choosing.
+
+Because the source codepoint in the font is irrelevant to the
+protocol, applications commonly pull outlines from a Nerd Font's
+basic-PUA codepoints (`U+E0A0`, `U+F07B`, …) and register them at
+Supplementary PUA-B slots (`U+100000`+) — that way the rendered glyph
+is unambiguously from the registration, not from a system font that
+happens to cover the same codepoint.
+
+**Atlas cache invalidation.** The cache-invalidation rule in §7.3
+applies to overwrite and eviction too, not only explicit clear.
+Implementations that key their glyph atlas on some stable slot id
+(rather than `cp`) must ensure the slot id is either released on
+clear/evict or paired with a per-registration invalidation tag, so
+that a subsequent register reusing the id rasterizes fresh bytes
+rather than serving a stale bitmap.
+
+## Appendix D. Change log
 
 | Date       | Version | Notes |
 |------------|---------|-------|

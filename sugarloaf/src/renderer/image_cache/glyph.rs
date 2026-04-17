@@ -142,9 +142,7 @@ impl GlyphCacheSession<'_> {
         // instead of the font's `glyf`/CFF/bitmap tables. The `id`
         // here is the `RegisteredGlyph::index` assigned at registration.
         if self.font == crate::font::glyph_registry::CUSTOM_GLYPH_FONT_ID {
-            if let Some(entry) =
-                self.rasterize_custom(id, size)
-            {
+            if let Some(entry) = self.rasterize_custom(id, size) {
                 self.entry.glyphs.insert(key, entry);
                 return Some(entry);
             }

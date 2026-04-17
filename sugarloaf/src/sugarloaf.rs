@@ -291,7 +291,10 @@ impl Sugarloaf<'_> {
         &self,
         registry: crate::font::glyph_registry::GlyphRegistry,
     ) {
-        self.state.content.font_library().attach_glyph_registry(registry);
+        self.state
+            .content
+            .font_library()
+            .attach_glyph_registry(registry);
     }
 
     /// Resolve a batch of glyph queries with a single FontLibrary

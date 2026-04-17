@@ -934,8 +934,7 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                         self.handler.glyph_protocol_response(resp);
                     }
                     Err(reason) => {
-                        let resp =
-                            glyph_protocol::format_register_error(cp, reason);
+                        let resp = glyph_protocol::format_register_error(cp, reason);
                         self.handler.glyph_protocol_response(resp);
                     }
                 }

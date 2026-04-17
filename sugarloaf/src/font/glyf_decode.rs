@@ -67,8 +67,8 @@ pub fn decode(data: &[u8]) -> Result<Outline, DecodeError> {
         return Err(DecodeError::Composite);
     }
 
-    let glyph = SimpleGlyph::read(FontData::new(data))
-        .map_err(|_| DecodeError::Malformed)?;
+    let glyph =
+        SimpleGlyph::read(FontData::new(data)).map_err(|_| DecodeError::Malformed)?;
 
     if glyph.instruction_length() != 0 {
         return Err(DecodeError::Hinted);

@@ -135,8 +135,7 @@ fn parse_query(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     if cp_raw.contains(&b',') {
         return Err(ParseError::Malformed("cp must be a single codepoint"));
     }
-    let cp = parse_hex_cp(cp_raw)
-        .ok_or(ParseError::Malformed("query cp invalid hex"))?;
+    let cp = parse_hex_cp(cp_raw).ok_or(ParseError::Malformed("query cp invalid hex"))?;
     Ok(GlyphCommand::Query { cp })
 }
 
@@ -152,8 +151,8 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     if cp_raw.contains(&b',') {
         return Err(ParseError::Malformed("cp must be a single codepoint"));
     }
-    let cp = parse_hex_cp(cp_raw)
-        .ok_or(ParseError::Malformed("register cp invalid hex"))?;
+    let cp =
+        parse_hex_cp(cp_raw).ok_or(ParseError::Malformed("register cp invalid hex"))?;
 
     // PUA check is the protocol's security contract — reject early so
     // we don't bother decoding the payload.
@@ -164,18 +163,14 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         });
     }
 
-    if params
-        .get("fmt")
-        .copied()
-        .unwrap_or(b"glyf")
-        != b"glyf"
-    {
+    if params.get("fmt").copied().unwrap_or(b"glyf") != b"glyf" {
         return Err(ParseError::Malformed("register fmt must be glyf"));
     }
 
     let upm = match params.get("upm") {
-        Some(raw) => parse_decimal_u16(raw)
-            .ok_or(ParseError::Malformed("register upm invalid"))?,
+        Some(raw) => {
+            parse_decimal_u16(raw).ok_or(ParseError::Malformed("register upm invalid"))?
+        }
         None => 1000,
     };
     if upm == 0 {
@@ -183,12 +178,12 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     }
 
     let payload_b64 = trim(payload_b64);
-    let glyf = BASE64.decode(payload_b64).map_err(|_| {
-        ParseError::RegisterFailed {
+    let glyf = BASE64
+        .decode(payload_b64)
+        .map_err(|_| ParseError::RegisterFailed {
             cp,
             reason: RegisterError::MalformedPayload,
-        }
-    })?;
+        })?;
     if glyf.len() > MAX_PAYLOAD_BYTES {
         return Err(ParseError::RegisterFailed {
             cp,
@@ -204,9 +199,7 @@ fn parse_clear(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     match params.get("cp") {
         Some(cp_raw) => {
             if cp_raw.contains(&b',') {
-                return Err(ParseError::Malformed(
-                    "cp must be a single codepoint",
-                ));
+                return Err(ParseError::Malformed("cp must be a single codepoint"));
             }
             let cp = parse_hex_cp(cp_raw)
                 .ok_or(ParseError::Malformed("clear cp invalid hex"))?;
@@ -267,7 +260,7 @@ fn parse_decimal_u16(raw: &[u8]) -> Option<u16> {
     }
     let mut out: u32 = 0;
     for &b in raw {
-        if !(b'0'..=b'9').contains(&b) {
+        if !b.is_ascii_digit() {
             return None;
         }
         out = out.checked_mul(10)?.checked_add((b - b'0') as u32)?;
@@ -336,11 +329,7 @@ impl<'a> Params<'a> {
 
 /// Format the reply to `q;cp=<hex>`.
 pub fn format_query_response(cp: u32, status: QueryStatus) -> String {
-    format!(
-        "\x1b_1cc6D;q;cp={:x};status={}\x1b\\",
-        cp,
-        status.as_u8()
-    )
+    format!("\x1b_1cc6D;q;cp={:x};status={}\x1b\\", cp, status.as_u8())
 }
 
 /// Format a successful register reply.
@@ -504,8 +493,7 @@ mod tests {
     fn register_accepts_each_pua_range() {
         for &cp_hex in &[0xE0A0u32, 0xF_0000, 0x10_0000] {
             let payload = b64(b"x");
-            let body =
-                format!("1cc6D;r;cp={:x};upm=1000;{}", cp_hex, payload);
+            let body = format!("1cc6D;r;cp={:x};upm=1000;{}", cp_hex, payload);
             assert!(matches!(
                 parse(body.as_bytes()).unwrap(),
                 GlyphCommand::Register { .. }

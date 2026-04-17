@@ -169,10 +169,7 @@ impl FontLibrary {
     /// under a write lock, but since each `Crosswords` holds its own
     /// `GlyphRegistry` (already `Arc`-shared internally) this is only
     /// called once at startup.
-    pub fn attach_glyph_registry(
-        &self,
-        registry: glyph_registry::GlyphRegistry,
-    ) {
+    pub fn attach_glyph_registry(&self, registry: glyph_registry::GlyphRegistry) {
         self.inner.write().glyph_registry = Some(registry);
     }
 }
