@@ -13,8 +13,6 @@
 // request is rejected with `reason=out_of_namespace`. `q` accepts any
 // valid Unicode scalar value so applications can probe system-font
 // coverage for codepoints they intend to register.
-//
-// Author: Hugo Raphael Vianna Amorim, Uppsala Sweden 2026.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
@@ -323,10 +321,6 @@ impl<'a> Params<'a> {
     }
 }
 
-// -------------------------------------------------------------------------
-// Response formatting
-// -------------------------------------------------------------------------
-
 /// Format the reply to `q;cp=<hex>`.
 pub fn format_query_response(cp: u32, status: QueryStatus) -> String {
     format!("\x1b_1cc6D;q;cp={:x};status={}\x1b\\", cp, status.as_u8())
@@ -359,10 +353,6 @@ pub fn format_clear_ok(cp: Option<u32>) -> String {
 pub fn format_clear_error_out_of_namespace() -> String {
     String::from("\x1b_1cc6D;c;status=1;reason=out_of_namespace\x1b\\")
 }
-
-// -------------------------------------------------------------------------
-// Tests
-// -------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
