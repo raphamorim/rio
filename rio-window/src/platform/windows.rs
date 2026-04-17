@@ -285,9 +285,10 @@ pub trait WindowExtWindows {
     /// Enabling the shadow causes a thin 1px line to appear on the top of the window.
     fn set_undecorated_shadow(&self, shadow: bool);
 
-    /// Sets system-drawn backdrop type.
+    /// Sets the window backdrop effect.
     ///
-    /// Requires Windows 11 build 22523+.
+    /// On the Win32 backend this currently maps to the legacy blur-behind
+    /// composition attribute.
     fn set_system_backdrop(&self, backdrop_type: BackdropType);
 
     /// Sets the color of the window border.

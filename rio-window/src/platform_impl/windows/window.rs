@@ -8,15 +8,16 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{io, panic, ptr};
 
+use crate::utils::Lazy;
 use windows_sys::Win32::Foundation::{
     BOOL, FALSE, HWND, LPARAM, OLE_E_WRONGCOMPOBJ, POINT, POINTS, RECT,
     RPC_E_CHANGED_MODE, S_OK, TRUE, WPARAM,
 };
 use windows_sys::Win32::Graphics::Dwm::{
     DwmEnableBlurBehindWindow, DwmSetWindowAttribute, DWMWA_BORDER_COLOR,
-    DWMWA_CAPTION_COLOR, DWMWA_CLOAK, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_TEXT_COLOR,
+    DWMWA_CAPTION_COLOR, DWMWA_CLOAK, DWMWA_TEXT_COLOR,
     DWMWA_WINDOW_CORNER_PREFERENCE, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
-    DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE,
+    DWM_WINDOW_CORNER_PREFERENCE,
 };
 use windows_sys::Win32::Graphics::Gdi::{
     ChangeDisplaySettingsExW, ClientToScreen, CreateRectRgn, DeleteObject, InvalidateRgn,
@@ -27,6 +28,7 @@ use windows_sys::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL,
     COINIT_APARTMENTTHREADED,
 };
+use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 use windows_sys::Win32::System::Ole::{OleInitialize, RegisterDragDrop};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetActiveWindow, MapVirtualKeyW, ReleaseCapture, SendInput, ToUnicode,
@@ -92,6 +94,48 @@ impl SyncWindowHandle {
     fn hwnd(&self) -> HWND {
         self.0
     }
+}
+
+type SetWindowCompositionAttribute =
+    unsafe extern "system" fn(HWND, *mut WINDOWCOMPOSITIONATTRIBDATA) -> BOOL;
+
+#[allow(clippy::upper_case_acronyms)]
+type WINDOWCOMPOSITIONATTRIB = u32;
+
+const WCA_ACCENT_POLICY: WINDOWCOMPOSITIONATTRIB = 19;
+const ACCENT_DISABLED: u32 = 0;
+const ACCENT_ENABLE_BLURBEHIND: u32 = 3;
+
+#[allow(non_snake_case)]
+#[allow(clippy::upper_case_acronyms)]
+#[repr(C)]
+struct WINDOWCOMPOSITIONATTRIBDATA {
+    Attrib: WINDOWCOMPOSITIONATTRIB,
+    pvData: *mut c_void,
+    cbData: usize,
+}
+
+#[allow(non_snake_case)]
+#[allow(clippy::upper_case_acronyms)]
+#[repr(C)]
+struct ACCENT_POLICY {
+    AccentState: u32,
+    AccentFlags: u32,
+    GradientColor: u32,
+    AnimationId: u32,
+}
+
+static SET_WINDOW_COMPOSITION_ATTRIBUTE: Lazy<Option<SetWindowCompositionAttribute>> =
+    Lazy::new(|| unsafe { get_window_composition_attribute() });
+
+unsafe fn get_window_composition_attribute() -> Option<SetWindowCompositionAttribute> {
+    let module = unsafe { LoadLibraryA("user32.dll\0".as_ptr()) };
+    if module.is_null() {
+        return None;
+    }
+
+    let handle = unsafe { GetProcAddress(module, "SetWindowCompositionAttribute\0".as_ptr()) };
+    handle.map(|handle| unsafe { std::mem::transmute(handle) })
 }
 
 /// The Win32 implementation of the main `Window` object.
@@ -164,11 +208,9 @@ impl Window {
     }
 
     pub fn set_blur(&self, blur: bool) {
-        // Maps the cross-platform `blur` flag to the Windows 11
-        // Acrylic backdrop (`DWMSBT_TRANSIENTWINDOW`). On Windows 10
-        // / pre-22H2 builds `DwmSetWindowAttribute` returns
-        // `E_INVALIDARG` and the backdrop silently does nothing —
-        // matches the no-op behaviour of the previous stub.
+        // Maps the cross-platform `blur` flag to the legacy Win32
+        // blur-behind effect. This is available on older Windows
+        // versions than the system backdrop attribute path.
         self.set_system_backdrop(if blur {
             BackdropType::TransientWindow
         } else {
@@ -1114,12 +1156,26 @@ impl Window {
     #[inline]
     pub fn set_system_backdrop(&self, backdrop_type: BackdropType) {
         unsafe {
-            DwmSetWindowAttribute(
-                self.hwnd(),
-                DWMWA_SYSTEMBACKDROP_TYPE as u32,
-                &(backdrop_type as i32) as *const _ as _,
-                mem::size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
-            );
+            if let Some(set_window_composition_attribute) = *SET_WINDOW_COMPOSITION_ATTRIBUTE {
+                let mut accent_policy = ACCENT_POLICY {
+                    AccentState: if backdrop_type == BackdropType::None {
+                        ACCENT_DISABLED
+                    } else {
+                        ACCENT_ENABLE_BLURBEHIND
+                    },
+                    AccentFlags: 0,
+                    GradientColor: 0,
+                    AnimationId: 0,
+                };
+
+                let mut data = WINDOWCOMPOSITIONATTRIBDATA {
+                    Attrib: WCA_ACCENT_POLICY,
+                    pvData: &mut accent_policy as *mut _ as _,
+                    cbData: mem::size_of::<ACCENT_POLICY>() as _,
+                };
+
+                set_window_composition_attribute(self.hwnd(), &mut data);
+            }
         }
     }
 
