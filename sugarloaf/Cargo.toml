@@ -49,6 +49,7 @@ approx = "0.5.1"
 lru = "0.16.1"
 smallvec = { workspace = true }
 skrifa = "0.37.0"
+read-fonts = "0.35.0"
 halfbrown = "0.3.0"
 half = "2.6.0"
 num-traits = "0.2.19"

@@ -137,6 +137,20 @@ impl GlyphCacheSession<'_> {
             }
         }
 
+        // Glyph Protocol override: when the session was built with the
+        // reserved custom font id, route to the outline rasterizer
+        // instead of the font's `glyf`/CFF/bitmap tables. The `id`
+        // here is the `RegisteredGlyph::index` assigned at registration.
+        if self.font == crate::font::glyph_registry::CUSTOM_GLYPH_FONT_ID {
+            if let Some(entry) =
+                self.rasterize_custom(id, size)
+            {
+                self.entry.glyphs.insert(key, entry);
+                return Some(entry);
+            }
+            return None;
+        }
+
         // Log cache miss for debugging
         debug!(
             "GlyphCache miss for glyph_id={} size={} font={}",
@@ -275,6 +289,82 @@ impl GlyphCacheSession<'_> {
         }
 
         None
+    }
+
+    /// Rasterize a Glyph Protocol registration at the given pixel size
+    /// and allocate it into the atlas. Returns `None` when the registry
+    /// has no entry for `id` (stale cache, registration cleared between
+    /// lookup and render) or when decoding fails.
+    fn rasterize_custom(&mut self, id: u16, size: u16) -> Option<GlyphEntry> {
+        use crate::font::glyf_decode;
+        use zeno::{Command, Mask, PathBuilder};
+
+        let registry = {
+            let lib = self.font_library.inner.read();
+            lib.glyph_registry.clone()?
+        };
+        // `id` is the u8 slot index packed into a u16 glyph-id field.
+        // Recover the codepoint so we can look up the outline.
+        let slot = u8::try_from(id).ok()?;
+        let cp = registry.cp_for_index(slot)?;
+        let glyph = registry.get(cp)?;
+
+        let outline = glyf_decode::decode(&glyph.glyf).ok()?;
+        let cmds = outline.walk(glyph.upm, size as f32);
+        if cmds.is_empty() {
+            return None;
+        }
+
+        // Convert our neutral PathCmd sequence into zeno::Command.
+        let mut z = Vec::<Command>::with_capacity(cmds.len());
+        for cmd in &cmds {
+            match *cmd {
+                glyf_decode::PathCmd::MoveTo { x, y } => {
+                    z.move_to([x, y]);
+                }
+                glyf_decode::PathCmd::LineTo { x, y } => {
+                    z.line_to([x, y]);
+                }
+                glyf_decode::PathCmd::QuadTo { cx, cy, x, y } => {
+                    z.quad_to([cx, cy], [x, y]);
+                }
+                glyf_decode::PathCmd::Close => {
+                    z.close();
+                }
+            }
+        }
+
+        let (data, placement) = Mask::new(z.as_slice()).render();
+        let w = placement.width as u16;
+        let h = placement.height as u16;
+        if w == 0 || h == 0 {
+            return Some(GlyphEntry {
+                left: placement.left,
+                top: placement.top,
+                width: w,
+                height: h,
+                image: super::ImageId::empty(),
+                is_bitmap: false,
+            });
+        }
+
+        let req = super::AddImage {
+            width: w,
+            height: h,
+            has_alpha: true,
+            data: super::ImageData::Borrowed(&data),
+            content_type: super::ContentType::Mask,
+        };
+        let image = self.images.allocate(req)?;
+
+        Some(GlyphEntry {
+            left: placement.left,
+            top: placement.top,
+            width: w,
+            height: h,
+            image,
+            is_bitmap: false,
+        })
     }
 }
 

@@ -1047,6 +1047,51 @@ impl Content {
                 }
             }
 
+            // Glyph Protocol override: when the fragment's font is the
+            // custom sentinel, bypass the shaper entirely and emit a
+            // run where each codepoint maps to its registered u16
+            // glyph index. Advance is cell-width-at-this-font-size
+            // (half-em approximation) — the renderer re-pins to the
+            // actual cell width via `use_grid_cell_size`.
+            if font_id == crate::font::glyph_registry::CUSTOM_GLYPH_FONT_ID {
+                let registry_opt = fonts.inner.read().glyph_registry.clone();
+                if let (Some(registry), Some((ascent, descent, leading))) = (
+                    registry_opt,
+                    if font_id == 0 {
+                        metrics_result
+                    } else {
+                        // Custom font has no metrics of its own — borrow
+                        // the primary font's so glyphs share the terminal
+                        // baseline.
+                        metrics_result
+                    },
+                ) {
+                    let per_cell = scaled_font_size * 0.5;
+                    let mut pairs = Vec::with_capacity(content.len());
+                    for ch in content.chars() {
+                        if let Some(g) = registry.get(ch as u32) {
+                            pairs.push((g.index as u16, per_cell));
+                        }
+                    }
+                    if !pairs.is_empty() {
+                        let metrics = crate::font_introspector::Metrics {
+                            ascent,
+                            descent,
+                            leading,
+                            ..Default::default()
+                        };
+                        line.render_data.push_custom_run(
+                            style,
+                            scaled_font_size,
+                            line_number as u32,
+                            &pairs,
+                            &metrics,
+                        );
+                    }
+                }
+                continue;
+            }
+
             // Cache miss: shape the full run and store result
             shaping_cache.set_content(font_id, content);
 

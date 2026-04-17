@@ -278,6 +278,22 @@ impl Sugarloaf<'_> {
         self.state.content.font_library().family_names()
     }
 
+    /// Attach a per-terminal [`GlyphRegistry`] to the font library so
+    /// codepoints registered over Glyph Protocol render from their
+    /// custom outlines. Call this when the active tab changes; the
+    /// registry is `Arc`-shared, so each call is O(1) and does not
+    /// clone the underlying map.
+    ///
+    /// Per-render swapping is what makes per-tab isolation work: two
+    /// tabs can register conflicting glyphs for the same codepoint and
+    /// each one sees only its own registrations.
+    pub fn attach_glyph_registry(
+        &self,
+        registry: crate::font::glyph_registry::GlyphRegistry,
+    ) {
+        self.state.content.font_library().attach_glyph_registry(registry);
+    }
+
     /// Resolve a batch of glyph queries with a single FontLibrary
     /// read lock acquisition. Cache hits short-circuit; misses are
     /// walked under the lock and stored back in the cache. Returned

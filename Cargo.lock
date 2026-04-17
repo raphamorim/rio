@@ -4781,6 +4781,7 @@ dependencies = [
  "png 0.17.16",
  "raw-window-handle",
  "rayon",
+ "read-fonts",
  "rio-window",
  "rustc-hash 2.1.2",
  "serde",

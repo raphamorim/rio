@@ -159,6 +159,51 @@ impl RenderData {
         self.runs.push(run_data);
     }
 
+    /// Push a run composed entirely of Glyph Protocol custom glyphs.
+    /// Skips shaping: each input is one (glyph_id, advance) pair that
+    /// the renderer will resolve through the custom-glyph rasterizer.
+    /// `metrics` should come from the primary font so custom glyphs
+    /// line up with surrounding text on the baseline.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn push_custom_run(
+        &mut self,
+        style: SpanStyle,
+        size: f32,
+        line: u32,
+        glyph_ids: &[(u16, f32)],
+        metrics: &Metrics,
+    ) {
+        let mut glyphs = Vec::with_capacity(glyph_ids.len());
+        let mut advance = 0.0f32;
+        for &(id, adv) in glyph_ids {
+            advance += adv;
+            glyphs.push(GlyphData::simple(id, adv, 0));
+        }
+
+        if let Some(graphic) = style.media {
+            self.graphics.insert(graphic.id);
+        }
+
+        let cache_key = compute_cache_key(&glyphs, style.font_id, size);
+        let run_data = RunData {
+            span: style,
+            line,
+            size,
+            detailed_glyphs: Vec::new(),
+            glyphs,
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+            leading: metrics.leading,
+            underline_offset: metrics.underline_offset,
+            strikeout_offset: metrics.strikeout_offset,
+            strikeout_size: metrics.stroke_size,
+            x_height: metrics.x_height,
+            advance,
+            cache_key,
+        };
+        self.runs.push(run_data);
+    }
+
     /// Push a pre-packed cached run — no repacking, no hashing.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn push_cached_run(

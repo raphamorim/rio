@@ -3324,6 +3324,23 @@ impl Screen<'_> {
             }
         }
 
+        // Attach the active terminal's glyph-protocol registry to the
+        // shared font library before the renderer walks the grid. The
+        // registry is Arc-shared, so this is cheap; doing it every
+        // frame keeps the per-tab isolation invariant trivially
+        // correct (tab A and tab B cannot accidentally see each
+        // other's registrations even if we later reorder tab switches).
+        {
+            let registry = self
+                .context_manager
+                .current()
+                .terminal
+                .lock()
+                .glyph_registry
+                .clone();
+            self.sugarloaf.attach_glyph_registry(registry);
+        }
+
         // let renderer_run_start = std::time::Instant::now();
         let window_update = self.renderer.run(
             &mut self.sugarloaf,

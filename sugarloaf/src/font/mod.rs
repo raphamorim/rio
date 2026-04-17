@@ -1,6 +1,8 @@
 pub mod constants;
 mod fallbacks;
 pub mod fonts;
+pub mod glyf_decode;
+pub mod glyph_registry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
 pub mod metrics;
@@ -162,6 +164,17 @@ impl FontLibrary {
     pub fn family_names(&self) -> Vec<String> {
         Vec::new()
     }
+
+    /// Attach a per-terminal glyph registry. The registry is stored
+    /// under a write lock, but since each `Crosswords` holds its own
+    /// `GlyphRegistry` (already `Arc`-shared internally) this is only
+    /// called once at startup.
+    pub fn attach_glyph_registry(
+        &self,
+        registry: glyph_registry::GlyphRegistry,
+    ) {
+        self.inner.write().glyph_registry = Some(registry);
+    }
 }
 
 impl Default for FontLibrary {
@@ -187,6 +200,11 @@ pub struct FontLibraryData {
     pub hinting: bool,
     // Cache primary font metrics for consistent cell dimensions (consistent metrics approach)
     primary_metrics_cache: FxHashMap<u32, Metrics>,
+    /// Per-terminal registry of glyphs registered over Glyph Protocol.
+    /// Cloned (Arc-shared) into the `FontLibrary` at terminal startup.
+    /// When present, a codepoint with a live registration short-circuits
+    /// the font fallback chain and renders from the registered outline.
+    pub glyph_registry: Option<glyph_registry::GlyphRegistry>,
 }
 
 impl Default for FontLibraryData {
@@ -196,6 +214,7 @@ impl Default for FontLibraryData {
             hinting: true,
             symbol_maps: None,
             primary_metrics_cache: FxHashMap::default(),
+            glyph_registry: None,
         }
     }
 }
@@ -207,6 +226,17 @@ impl FontLibraryData {
         ch: char,
         fragment_style: &SpanStyle,
     ) -> Option<(usize, bool)> {
+        // Glyph Protocol override takes precedence over everything
+        // else — if an application has registered this codepoint, the
+        // registration is what the user is asking to see. Checked
+        // before symbol maps and the font fallback chain because
+        // neither of those should "beat" an explicit registration.
+        if let Some(registry) = &self.glyph_registry {
+            if registry.contains(ch as u32) {
+                return Some((glyph_registry::CUSTOM_GLYPH_FONT_ID, false));
+            }
+        }
+
         let mut synth = Synthesis::default();
         let mut char_cluster = CharCluster::new();
         let mut parser = Parser::new(

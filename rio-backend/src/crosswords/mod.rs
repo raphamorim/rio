@@ -440,6 +440,12 @@ where
     pub title: String,
     damage: TermDamageState,
     pub graphics: Graphics,
+    /// Per-session registry of glyphs registered over Glyph Protocol
+    /// (APC `1cc6D`). Shared via `Arc` so the renderer can read it
+    /// without serialising on the terminal's write path. Two tabs can
+    /// register conflicting glyphs for the same codepoint — each
+    /// `Crosswords` instance owns a distinct registry.
+    pub glyph_registry: sugarloaf::font::glyph_registry::GlyphRegistry,
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
@@ -498,6 +504,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(rows),
             graphics: Graphics::new(&dimensions),
+            glyph_registry: sugarloaf::font::glyph_registry::GlyphRegistry::new(),
             default_cursor_shape: cursor_shape,
             cursor_shape,
             blinking_cursor: false,
@@ -3829,6 +3836,73 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn glyph_protocol_response(&mut self, response: String) {
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(response), self.window_id);
+    }
+
+    fn glyph_register(
+        &mut self,
+        cp: u32,
+        glyf: Vec<u8>,
+        upm: u16,
+    ) -> Result<(), crate::ansi::glyph_protocol::RegisterError> {
+        use crate::ansi::glyph_protocol::RegisterError;
+        use sugarloaf::font::glyf_decode;
+        use sugarloaf::font::glyph_registry::RegisterRejection;
+
+        // Decode once, up-front: this enforces the simple-glyph +
+        // no-hinting constraints of spec §8.2 so a malformed payload
+        // is rejected synchronously with a defined `reason=`.
+        if let Err(e) = glyf_decode::decode(&glyf) {
+            return Err(match e {
+                glyf_decode::DecodeError::Composite => {
+                    RegisterError::CompositeUnsupported
+                }
+                glyf_decode::DecodeError::Hinted => RegisterError::HintingUnsupported,
+                glyf_decode::DecodeError::Malformed => {
+                    RegisterError::MalformedPayload
+                }
+            });
+        }
+
+        match self.glyph_registry.register(cp, glyf, upm) {
+            Ok(_evicted) => Ok(()),
+            Err(RegisterRejection::OutOfNamespace) => {
+                // Defence in depth — the parser already rejected
+                // non-PUA, but the registry double-checks.
+                Err(RegisterError::OutOfNamespace)
+            }
+        }
+    }
+
+    fn glyph_clear(&mut self, cp: Option<u32>) {
+        match cp {
+            None => self.glyph_registry.clear_all(),
+            Some(cp) => self.glyph_registry.clear_one(cp),
+        }
+    }
+
+    fn glyph_query(
+        &mut self,
+        cp: u32,
+    ) -> crate::ansi::glyph_protocol::QueryStatus {
+        use crate::ansi::glyph_protocol::QueryStatus;
+        // The terminal layer only knows about the glossary; it cannot
+        // consult the font fallback chain from here. Report the
+        // glossary bit correctly; leave the system bit at zero until
+        // a font-probe callback is threaded through the renderer.
+        //
+        // TODO(glyph-protocol): add system-font probe so `Both` and
+        // `System` can be reported accurately.
+        if self.glyph_registry.contains(cp) {
+            QueryStatus::Glossary
+        } else {
+            QueryStatus::Free
+        }
+    }
+
+    #[inline]
     fn kitty_chunking_state_mut(
         &mut self,
     ) -> Option<&mut crate::ansi::kitty_graphics_protocol::KittyGraphicsState> {
@@ -4145,6 +4219,107 @@ mod tests {
     use crate::crosswords::pos::{Column, Line, Pos, Side};
     use crate::crosswords::CrosswordsSize;
     use crate::event::VoidListener;
+
+    fn make_crosswords() -> Crosswords<VoidListener> {
+        let size = CrosswordsSize::new(4, 4);
+        let window_id = crate::event::WindowId::from(0);
+        Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
+    }
+
+    // Minimum-valid simple glyph: one contour, one on-curve point.
+    fn minimal_glyf_bytes() -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(&1i16.to_be_bytes()); // numberOfContours
+        v.extend_from_slice(&[0u8; 8]); // bounding box
+        v.extend_from_slice(&0u16.to_be_bytes()); // endPtsOfContours[0]
+        v.extend_from_slice(&0u16.to_be_bytes()); // instructionLength
+        v.push(0x01); // flags: on-curve, no shorts
+        v.extend_from_slice(&0i16.to_be_bytes()); // x delta
+        v.extend_from_slice(&0i16.to_be_bytes()); // y delta
+        v
+    }
+
+    #[test]
+    fn glyph_protocol_register_populates_registry_and_query_reports_glossary() {
+        let mut cw = make_crosswords();
+        assert!(cw.glyph_registry.is_empty());
+
+        let glyf = minimal_glyf_bytes();
+        // E0A0 is the Powerline branch codepoint — in basic PUA.
+        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf, 1000);
+        assert!(res.is_ok());
+        assert!(cw.glyph_registry.contains(0xE0A0));
+
+        let status = Handler::glyph_query(&mut cw, 0xE0A0);
+        assert_eq!(
+            status,
+            crate::ansi::glyph_protocol::QueryStatus::Glossary
+        );
+
+        // An unregistered codepoint reports `Free` (no system probe yet).
+        let status = Handler::glyph_query(&mut cw, 0xE0A1);
+        assert_eq!(
+            status,
+            crate::ansi::glyph_protocol::QueryStatus::Free
+        );
+    }
+
+    #[test]
+    fn glyph_protocol_register_rejects_non_pua() {
+        use crate::ansi::glyph_protocol::RegisterError;
+        let mut cw = make_crosswords();
+
+        // 0x61 is 'a' — not in PUA. Registry must refuse.
+        let res = Handler::glyph_register(&mut cw, 0x61, minimal_glyf_bytes(), 1000);
+        assert_eq!(res, Err(RegisterError::OutOfNamespace));
+        assert!(cw.glyph_registry.is_empty());
+    }
+
+    #[test]
+    fn glyph_protocol_register_rejects_hinted_payload() {
+        use crate::ansi::glyph_protocol::RegisterError;
+        let mut cw = make_crosswords();
+
+        let mut v = Vec::new();
+        v.extend_from_slice(&1i16.to_be_bytes());
+        v.extend_from_slice(&[0u8; 8]);
+        v.extend_from_slice(&0u16.to_be_bytes()); // endPts[0]
+        v.extend_from_slice(&1u16.to_be_bytes()); // instructionLength = 1
+        v.push(0x00); // the instruction
+        v.push(0x01); // on-curve flag
+        v.extend_from_slice(&0i16.to_be_bytes());
+        v.extend_from_slice(&0i16.to_be_bytes());
+
+        let res = Handler::glyph_register(&mut cw, 0xE0A0, v, 1000);
+        assert_eq!(res, Err(RegisterError::HintingUnsupported));
+        assert!(cw.glyph_registry.is_empty());
+    }
+
+    #[test]
+    fn glyph_protocol_clear_all_wipes_registry() {
+        let mut cw = make_crosswords();
+        Handler::glyph_register(&mut cw, 0xE0A0, minimal_glyf_bytes(), 1000)
+            .unwrap();
+        Handler::glyph_register(&mut cw, 0xE0A1, minimal_glyf_bytes(), 1000)
+            .unwrap();
+        assert_eq!(cw.glyph_registry.len(), 2);
+
+        Handler::glyph_clear(&mut cw, None);
+        assert!(cw.glyph_registry.is_empty());
+    }
+
+    #[test]
+    fn glyph_protocol_clear_one_leaves_others_intact() {
+        let mut cw = make_crosswords();
+        Handler::glyph_register(&mut cw, 0xE0A0, minimal_glyf_bytes(), 1000)
+            .unwrap();
+        Handler::glyph_register(&mut cw, 0xE0A1, minimal_glyf_bytes(), 1000)
+            .unwrap();
+
+        Handler::glyph_clear(&mut cw, Some(0xE0A0));
+        assert!(!cw.glyph_registry.contains(0xE0A0));
+        assert!(cw.glyph_registry.contains(0xE0A1));
+    }
 
     #[test]
     fn scroll_up() {
