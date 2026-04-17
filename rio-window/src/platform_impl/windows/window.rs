@@ -15,9 +15,8 @@ use windows_sys::Win32::Foundation::{
 };
 use windows_sys::Win32::Graphics::Dwm::{
     DwmEnableBlurBehindWindow, DwmSetWindowAttribute, DWMWA_BORDER_COLOR,
-    DWMWA_CAPTION_COLOR, DWMWA_CLOAK, DWMWA_TEXT_COLOR,
-    DWMWA_WINDOW_CORNER_PREFERENCE, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
-    DWM_WINDOW_CORNER_PREFERENCE,
+    DWMWA_CAPTION_COLOR, DWMWA_CLOAK, DWMWA_TEXT_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE,
+    DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_WINDOW_CORNER_PREFERENCE,
 };
 use windows_sys::Win32::Graphics::Gdi::{
     ChangeDisplaySettingsExW, ClientToScreen, CreateRectRgn, DeleteObject, InvalidateRgn,
@@ -134,7 +133,8 @@ unsafe fn get_window_composition_attribute() -> Option<SetWindowCompositionAttri
         return None;
     }
 
-    let handle = unsafe { GetProcAddress(module, "SetWindowCompositionAttribute\0".as_ptr()) };
+    let handle =
+        unsafe { GetProcAddress(module, "SetWindowCompositionAttribute\0".as_ptr()) };
     handle.map(|handle| unsafe { std::mem::transmute(handle) })
 }
 
@@ -1156,7 +1156,9 @@ impl Window {
     #[inline]
     pub fn set_system_backdrop(&self, backdrop_type: BackdropType) {
         unsafe {
-            if let Some(set_window_composition_attribute) = *SET_WINDOW_COMPOSITION_ATTRIBUTE {
+            if let Some(set_window_composition_attribute) =
+                *SET_WINDOW_COMPOSITION_ATTRIBUTE
+            {
                 let mut accent_policy = ACCENT_POLICY {
                     AccentState: if backdrop_type == BackdropType::None {
                         ACCENT_DISABLED
