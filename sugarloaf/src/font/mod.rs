@@ -138,6 +138,12 @@ pub fn lookup_for_font_match(
 #[derive(Clone)]
 pub struct FontLibrary {
     pub inner: Arc<RwLock<FontLibraryData>>,
+    /// Shared cache of parsed CoreText fonts, keyed by `font_id`. Single
+    /// source of truth for both the shaping path (`layout::content`) and
+    /// the rasterization path (`renderer::image_cache::glyph`) — without
+    /// this, each would parse the bytes independently.
+    #[cfg(target_os = "macos")]
+    ct_fonts: Arc<DashMap<usize, crate::font::macos::FontHandle>>,
 }
 
 impl FontLibrary {
@@ -154,9 +160,31 @@ impl FontLibrary {
         (
             Self {
                 inner: Arc::new(RwLock::new(font_library)),
+                #[cfg(target_os = "macos")]
+                ct_fonts: Arc::new(DashMap::default()),
             },
             sugarloaf_errors,
         )
+    }
+
+    /// Look up a parsed CoreText font by `font_id`, parsing lazily on miss.
+    ///
+    /// Returns `None` when the font bytes aren't available (unknown id) or
+    /// CoreText can't parse them. parking_lot's `RwLock` supports recursive
+    /// reads, so this is safe to call from code that already holds a read
+    /// lock on `inner`.
+    #[cfg(target_os = "macos")]
+    pub fn ct_font(
+        &self,
+        font_id: usize,
+    ) -> Option<crate::font::macos::FontHandle> {
+        if let Some(cached) = self.ct_fonts.get(&font_id) {
+            return Some(cached.clone());
+        }
+        let bytes = self.inner.read().get_data(&font_id).map(|(d, _, _)| d)?;
+        let handle = crate::font::macos::FontHandle::from_bytes(bytes.as_ref())?;
+        self.ct_fonts.insert(font_id, handle.clone());
+        Some(handle)
     }
 
     /// Sorted, deduplicated list of every font family name the host
@@ -199,6 +227,8 @@ impl Default for FontLibrary {
 
         Self {
             inner: Arc::new(RwLock::new(font_library)),
+            #[cfg(target_os = "macos")]
+            ct_fonts: Arc::new(DashMap::default()),
         }
     }
 }
@@ -502,6 +532,9 @@ impl FontLibraryData {
             }
         }
 
+        // macOS finds Apple Color Emoji through `fallbacks::external_fallbacks`
+        // above, so skip embedding Twemoji there.
+        #[cfg(not(target_os = "macos"))]
         self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap());
 
         // TODO: Currently, it will naively just extend fonts from symbol_map
