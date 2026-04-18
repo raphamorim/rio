@@ -288,14 +288,6 @@ pub fn find_font_path(
         CTFontDescriptor::wrap_under_create_rule(raw)
     };
 
-    // CoreText is permissive: if the family doesn't exist it may hand us a
-    // fallback match with a completely different family name. Reject matches
-    // whose family doesn't match (case-insensitive) so callers see a clean
-    // "not found" instead of silently rendering the wrong font.
-    if !matched.family_name().eq_ignore_ascii_case(family) {
-        return None;
-    }
-
     matched.font_path()
 }
 
@@ -373,6 +365,19 @@ mod tests {
 
         let total: u64 = g.bytes.iter().map(|&b| b as u64).sum();
         assert!(total > 0, "A should have some inked pixels");
+    }
+
+    #[test]
+    fn find_font_path_resolves_system_family() {
+        // Menlo ships on every macOS install since 10.6.
+        let path = find_font_path("Menlo", 400, false, Stretch::Normal)
+            .expect("Menlo should resolve");
+        assert!(path.exists(), "resolved path should exist: {path:?}");
+        assert!(
+            path.extension()
+                .is_some_and(|e| e == "ttf" || e == "ttc" || e == "otf"),
+            "unexpected font extension: {path:?}"
+        );
     }
 
     #[test]
