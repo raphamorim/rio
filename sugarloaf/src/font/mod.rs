@@ -769,7 +769,69 @@ enum FindResult {
     NotFound(SugarloafFont),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_os = "macos")]
+#[inline]
+fn find_font(
+    _db: &crate::font::loader::Database,
+    font_spec: SugarloafFont,
+    evictable: bool,
+) -> FindResult {
+    if font_spec.is_default_family() {
+        return FindResult::NotFound(font_spec);
+    }
+
+    let family = font_spec.family.to_string();
+    let weight = font_spec.weight.unwrap_or(400);
+    let italic = font_spec.style == SugarloafFontStyle::Italic;
+    let stretch = map_stretch_macos(&font_spec.width);
+
+    info!(
+        "Font search (CoreText): family='{family}' weight={weight} italic={italic}"
+    );
+
+    let Some(path) =
+        crate::font::macos::find_font_path(&family, weight, italic, stretch)
+    else {
+        warn!("CoreText found no match for family='{family}'");
+        return FindResult::NotFound(font_spec);
+    };
+
+    let Some(bytes) = load_from_font_source(&path) else {
+        warn!("Couldn't read font file {}", path.display());
+        return FindResult::NotFound(font_spec);
+    };
+
+    match FontData::from_data(bytes, path.clone(), evictable, &font_spec) {
+        Ok(d) => {
+            info!("Font '{family}' matched via CoreText at {}", path.display());
+            FindResult::Found(d)
+        }
+        Err(e) => {
+            warn!("Failed to parse font '{family}': {e}");
+            FindResult::NotFound(font_spec)
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn map_stretch_macos(
+    width: &Option<SugarloafFontWidth>,
+) -> crate::font::macos::Stretch {
+    use crate::font::macos::Stretch;
+    match width {
+        Some(SugarloafFontWidth::UltraCondensed) => Stretch::UltraCondensed,
+        Some(SugarloafFontWidth::ExtraCondensed) => Stretch::ExtraCondensed,
+        Some(SugarloafFontWidth::Condensed) => Stretch::Condensed,
+        Some(SugarloafFontWidth::SemiCondensed) => Stretch::SemiCondensed,
+        Some(SugarloafFontWidth::Normal) | None => Stretch::Normal,
+        Some(SugarloafFontWidth::SemiExpanded) => Stretch::SemiExpanded,
+        Some(SugarloafFontWidth::Expanded) => Stretch::Expanded,
+        Some(SugarloafFontWidth::ExtraExpanded) => Stretch::ExtraExpanded,
+        Some(SugarloafFontWidth::UltraExpanded) => Stretch::UltraExpanded,
+    }
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_arch = "wasm32")))]
 #[inline]
 fn find_font(
     db: &crate::font::loader::Database,
