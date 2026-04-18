@@ -578,6 +578,14 @@ impl FontLibraryData {
         // from_data` via `has_color_tables` (COLR/CBDT/CBLC/sbix), so real
         // emoji families get the wide-cell / color-atlas treatment while
         // Nerd Font families stay single-cell.
+        //
+        // On macOS the CoreText cascade list inserted above already includes
+        // emoji, CJK, symbols, and every other system-suggested fallback —
+        // `font.extras` is redundant there and would only duplicate or
+        // compete with the cascade order. Skipped entirely.
+        #[cfg(target_os = "macos")]
+        let _ = spec.extras;
+        #[cfg(not(target_os = "macos"))]
         for extra_font in spec.extras {
             match try_find_font!(
                 &db,
