@@ -1003,11 +1003,10 @@ impl FontData {
     /// Load a bundled font whose bytes live in `.rodata` (anything from
     /// `include_bytes!` / `font!`).
     ///
-    /// Ghostty-style: the bytes stay where they already are — no `.to_vec()`
-    /// copy onto the heap, no second copy into a CoreFoundation buffer. On
-    /// macOS we also eagerly construct the CTFont via
-    /// `CFDataCreateWithBytesNoCopy` + `kCFAllocatorNull` and cache it on
-    /// `FontData.handle`, matching Ghostty's per-Face `*CTFont`.
+    /// The bytes stay where they already are — no `.to_vec()` copy onto
+    /// the heap, no second copy into a CoreFoundation buffer. On macOS we
+    /// also eagerly construct the CTFont via `CFDataCreateWithBytesNoCopy`
+    /// + `kCFAllocatorNull` and cache it on `FontData.handle`.
     #[inline]
     pub fn from_static_slice(
         data: &'static [u8],
@@ -1077,7 +1076,7 @@ impl FontData {
 }
 
 /// Auto-detect emoji-ness from SFNT color tables (COLR, CBDT, CBLC, SBIX).
-/// Matches ghostty's `FT_HAS_COLOR()` / CoreText SBIX checks. Used to guard
+/// Used to guard
 /// against Nerd Font families being mis-flagged as emoji when loaded via the
 /// `extras` config slot (`is_emoji` is wired per-load-site, but a real emoji
 /// font in that slot would still need the wide-cell/color-atlas treatment).
