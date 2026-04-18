@@ -1532,15 +1532,15 @@ impl Renderer {
                         } => {
                             // Use cached glyph data but need to render
                             glyphs.clear();
-                            // Ghostty-style cell centering for East-Asian-Wide
-                            // codepoints: when a glyph's shaped slot is wider
-                            // than one primary cell (char_width > 1), shift it
-                            // by half the extra space so 겔 / 水 / 한 sit
-                            // visually centered across their two cells instead
-                            // of hugging the left cell. Mirrors `face.zig`'s
-                            // `dx = (cell_width - face_width) / 2`. No-op for
-                            // char_width == 1 (Latin, box-drawing, etc.), so
-                            // box-drawing glyphs that rely on tiling at their
+                            // Cell centering for East-Asian-Wide codepoints:
+                            // when a glyph's shaped slot is wider than one
+                            // primary cell (char_width > 1), shift it by
+                            // half the extra space so 겔 / 水 / 한 sit
+                            // visually centered across their two cells
+                            // instead of hugging the left cell. Formula:
+                            // `dx = (cell_width - face_width) / 2`. No-op
+                            // for char_width == 1 (Latin, box-drawing),
+                            // so glyphs that rely on tiling at their
                             // natural pen advance stay aligned.
                             let cell_shift = if use_grid_cell_size && char_width > 1.0 {
                                 cell_width * (char_width - 1.0) / 2.0
@@ -1630,7 +1630,7 @@ impl Renderer {
                             glyphs.clear();
                             let mut shaped_glyphs = Vec::new();
 
-                            // Same Ghostty-style cell centering as above.
+                            // Same cell centering as above.
                             let cell_shift = if use_grid_cell_size && char_width > 1.0 {
                                 cell_width * (char_width - 1.0) / 2.0
                             } else {
