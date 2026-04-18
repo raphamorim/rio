@@ -8,15 +8,15 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{io, panic, ptr};
 
+use std::sync::LazyLock;
 use windows_sys::Win32::Foundation::{
     BOOL, FALSE, HWND, LPARAM, OLE_E_WRONGCOMPOBJ, POINT, POINTS, RECT,
     RPC_E_CHANGED_MODE, S_OK, TRUE, WPARAM,
 };
 use windows_sys::Win32::Graphics::Dwm::{
     DwmEnableBlurBehindWindow, DwmSetWindowAttribute, DWMWA_BORDER_COLOR,
-    DWMWA_CAPTION_COLOR, DWMWA_CLOAK, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_TEXT_COLOR,
-    DWMWA_WINDOW_CORNER_PREFERENCE, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
-    DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE,
+    DWMWA_CAPTION_COLOR, DWMWA_CLOAK, DWMWA_TEXT_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE,
+    DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_WINDOW_CORNER_PREFERENCE,
 };
 use windows_sys::Win32::Graphics::Gdi::{
     ChangeDisplaySettingsExW, ClientToScreen, CreateRectRgn, DeleteObject, InvalidateRgn,
@@ -26,6 +26,9 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL,
     COINIT_APARTMENTTHREADED,
+};
+use windows_sys::Win32::System::LibraryLoader::{
+    GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_SYSTEM32,
 };
 use windows_sys::Win32::System::Ole::{OleInitialize, RegisterDragDrop};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -93,6 +96,102 @@ impl SyncWindowHandle {
         self.0
     }
 }
+
+// Undocumented user32 API for window composition attributes.
+//
+// We go through this (vs. the documented `DwmSetWindowAttribute(DWMWA_
+// SYSTEMBACKDROP_TYPE, …)`) because the DWM backdrop path requires
+// Windows 11 build 22523+ and, where available, produces a visibly
+// different composition than the legacy blur-behind. Shipping the legacy
+// path across Windows 10 v1809+ and every Windows 11 build gives a
+// consistent look across versions. Taur i's `window-vibrancy` crate uses
+// the same fallback shape.
+//
+// Known caveats:
+// - Symbol is not in the public SDK. Chromium / Electron / VSCode use it,
+//   but Microsoft gives no compatibility guarantees.
+// - Windows 10 2004+ on multi-monitor setups: blur can disappear during
+//   window resize (`dotnet/wpf#3608`, unfixed at time of writing).
+// - `ACCENT_ENABLE_ACRYLICBLURBEHIND` (value 4) survives resize but
+//   introduces laggy window dragging.
+type SetWindowCompositionAttribute =
+    unsafe extern "system" fn(HWND, *mut WINDOWCOMPOSITIONATTRIBDATA) -> BOOL;
+
+#[allow(clippy::upper_case_acronyms)]
+type WINDOWCOMPOSITIONATTRIB = u32;
+
+const WCA_ACCENT_POLICY: WINDOWCOMPOSITIONATTRIB = 19;
+const ACCENT_DISABLED: u32 = 0;
+const ACCENT_ENABLE_BLURBEHIND: u32 = 3;
+// `AccentFlags = 2` is the undocumented "use the gradient color" flag.
+// Without it the backdrop ignores the tint and picks whatever DWM
+// defaults to, which tends to look washed out. Tauri's `window-vibrancy`
+// uses the same value for non-acrylic blur.
+const ACCENT_FLAG_USE_GRADIENT: u32 = 2;
+
+#[allow(non_snake_case)]
+#[allow(clippy::upper_case_acronyms)]
+#[repr(C)]
+struct WINDOWCOMPOSITIONATTRIBDATA {
+    Attrib: WINDOWCOMPOSITIONATTRIB,
+    pvData: *mut c_void,
+    cbData: usize,
+}
+
+#[allow(non_snake_case)]
+#[allow(clippy::upper_case_acronyms)]
+#[repr(C)]
+struct ACCENT_POLICY {
+    AccentState: u32,
+    AccentFlags: u32,
+    GradientColor: u32,
+    AnimationId: u32,
+}
+
+static SET_WINDOW_COMPOSITION_ATTRIBUTE: LazyLock<
+    Option<SetWindowCompositionAttribute>,
+> = LazyLock::new(|| unsafe { get_window_composition_attribute() });
+
+unsafe fn get_window_composition_attribute() -> Option<SetWindowCompositionAttribute> {
+    // user32 is a Known DLL so `LoadLibraryA` would also find it in
+    // `System32`, but passing `LOAD_LIBRARY_SEARCH_SYSTEM32` explicitly
+    // rules out any DLL-planting attack by policy rather than by luck.
+    // UTF-16 literal for `LoadLibraryExW`: "user32.dll\0".
+    const USER32_DLL_W: &[u16] = &[
+        b'u' as u16,
+        b's' as u16,
+        b'e' as u16,
+        b'r' as u16,
+        b'3' as u16,
+        b'2' as u16,
+        b'.' as u16,
+        b'd' as u16,
+        b'l' as u16,
+        b'l' as u16,
+        0,
+    ];
+    let module = unsafe {
+        LoadLibraryExW(
+            USER32_DLL_W.as_ptr(),
+            std::ptr::null_mut(),
+            LOAD_LIBRARY_SEARCH_SYSTEM32,
+        )
+    };
+    if module.is_null() {
+        return None;
+    }
+
+    let handle = unsafe {
+        GetProcAddress(module, c"SetWindowCompositionAttribute".as_ptr().cast())
+    };
+    handle.map(|handle| unsafe { std::mem::transmute(handle) })
+}
+
+// Compile-time layout check — catches accidental field drift on
+// `ACCENT_POLICY`. Microsoft can't change the shape without breaking
+// Chromium, but the layout is unchecked by the compiler otherwise.
+// Four `u32` fields => 16 bytes on every target.
+const _: () = assert!(std::mem::size_of::<ACCENT_POLICY>() == 16);
 
 /// The Win32 implementation of the main `Window` object.
 pub(crate) struct Window {
@@ -164,11 +263,9 @@ impl Window {
     }
 
     pub fn set_blur(&self, blur: bool) {
-        // Maps the cross-platform `blur` flag to the Windows 11
-        // Acrylic backdrop (`DWMSBT_TRANSIENTWINDOW`). On Windows 10
-        // / pre-22H2 builds `DwmSetWindowAttribute` returns
-        // `E_INVALIDARG` and the backdrop silently does nothing —
-        // matches the no-op behaviour of the previous stub.
+        // Maps the cross-platform `blur` flag to the legacy Win32
+        // blur-behind effect. This is available on older Windows
+        // versions than the system backdrop attribute path.
         self.set_system_backdrop(if blur {
             BackdropType::TransientWindow
         } else {
@@ -1114,12 +1211,37 @@ impl Window {
     #[inline]
     pub fn set_system_backdrop(&self, backdrop_type: BackdropType) {
         unsafe {
-            DwmSetWindowAttribute(
-                self.hwnd(),
-                DWMWA_SYSTEMBACKDROP_TYPE as u32,
-                &(backdrop_type as i32) as *const _ as _,
-                mem::size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
-            );
+            if let Some(set_window_composition_attribute) =
+                *SET_WINDOW_COMPOSITION_ATTRIBUTE
+            {
+                let is_enabled = backdrop_type != BackdropType::None;
+                let mut accent_policy = ACCENT_POLICY {
+                    AccentState: if is_enabled {
+                        ACCENT_ENABLE_BLURBEHIND
+                    } else {
+                        ACCENT_DISABLED
+                    },
+                    // See `ACCENT_FLAG_USE_GRADIENT` — required for the
+                    // tint to render. `GradientColor` stays 0 (fully
+                    // transparent), so the "gradient" here is "no tint",
+                    // matching the legacy blur-behind look.
+                    AccentFlags: if is_enabled {
+                        ACCENT_FLAG_USE_GRADIENT
+                    } else {
+                        0
+                    },
+                    GradientColor: 0,
+                    AnimationId: 0,
+                };
+
+                let mut data = WINDOWCOMPOSITIONATTRIBDATA {
+                    Attrib: WCA_ACCENT_POLICY,
+                    pvData: &mut accent_policy as *mut _ as _,
+                    cbData: mem::size_of_val(&accent_policy) as _,
+                };
+
+                set_window_composition_attribute(self.hwnd(), &mut data);
+            }
         }
     }
 
