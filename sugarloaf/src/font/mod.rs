@@ -112,9 +112,9 @@ pub fn lookup_for_font_match(
 
         #[cfg(target_os = "macos")]
         let matched = {
-            // Ghostty-style: ask the CTFont directly whether it carries a
-            // glyph for each codepoint. Avoids the `get_data` byte load —
-            // the fallback walk no longer touches the font file(s) at all.
+            // Ask the CTFont directly whether it carries a glyph for each
+            // codepoint. Avoids the `get_data` byte load — the fallback
+            // walk no longer touches the font file(s) at all.
             let handle_opt = library.inner.get(&font_id).and_then(|font| {
                 if let Some(path) = &font.path {
                     crate::font::macos::FontHandle::from_path(path)
