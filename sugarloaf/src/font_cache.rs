@@ -134,6 +134,7 @@ pub(crate) fn resolve_with(
 /// under `font_id`. Returns `None` when the font data isn't available
 /// (font id unregistered or the SFNT bytes failed to parse); the
 /// caller is responsible for picking a rendering fallback.
+#[cfg(not(target_os = "macos"))]
 pub(crate) fn compute_advance(
     font_ctx: &crate::font::FontLibraryData,
     font_id: usize,
@@ -146,5 +147,30 @@ pub(crate) fn compute_advance(
     Some(AdvanceInfo {
         advance_units: metrics.advance_width(glyph_id),
         units_per_em: font_ref.metrics(&[]).units_per_em,
+    })
+}
+
+/// macOS variant: derive the advance from CoreText without ever touching
+/// the font's raw bytes. Matches Ghostty's bytes-free font handling on
+/// mac.
+#[cfg(target_os = "macos")]
+pub(crate) fn compute_advance(
+    font_ctx: &crate::font::FontLibraryData,
+    font_id: usize,
+    ch: char,
+) -> Option<AdvanceInfo> {
+    let font = font_ctx.inner.get(&font_id)?;
+    let handle = if let Some(path) = font.path() {
+        crate::font::macos::FontHandle::from_path(path)
+    } else if let Some(bytes) = font.data() {
+        crate::font::macos::FontHandle::from_bytes(bytes.as_ref())
+    } else {
+        None
+    }?;
+    let (advance_units, units_per_em) =
+        crate::font::macos::advance_units_for_char(&handle, ch)?;
+    Some(AdvanceInfo {
+        advance_units,
+        units_per_em,
     })
 }
