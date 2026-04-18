@@ -449,7 +449,7 @@ pub fn rasterize_glyph(
     cx.set_allows_antialiasing(true);
     cx.set_should_smooth_fonts(true);
     cx.set_gray_fill_color(0.0, 1.0);
-    // Synthetic bold: Ghostty-style fill+stroke. Line width scales with size
+    // Synthetic bold via fill+stroke. Line width scales with size
     // (1/14 of points, floored at 1 device pixel) so bold weight looks
     // consistent across font sizes.
     if synthetic_bold {
@@ -475,9 +475,7 @@ pub fn rasterize_glyph(
         // CoreGraphics wrote BGRA premultiplied (due to
         // `byte_order_32_little | premul_first`). Rio's atlas is RGBA8Unorm
         // with premultiplied-alpha shader blending, so swap B and R to get
-        // RGBA premultiplied — matches what Ghostty's atlas holds for sbix
-        // / COLR glyphs, minus the P3→sRGB conversion Rio's shader
-        // performs at sample time.
+        // RGBA premultiplied. The shader converts P3 → sRGB at sample time.
         bgra_to_rgba_in_place(&mut bytes);
     }
 
@@ -543,12 +541,12 @@ fn css_weight_to_ct(weight: u16) -> f64 {
 
 /// Resolve a font spec to a file path via CoreText descriptor matching.
 ///
-/// Ghostty- and Zed-style: build a descriptor with family + weight + slant +
-/// width, let CoreText do the match, extract the URL. No CSS-spec matching
-/// code on our side — CoreText handles proximity scoring and "closest match"
-/// rules natively. Returns `None` if CoreText can't find anything, or the
-/// resolved descriptor has no URL (e.g. system-supplied font without a
-/// backing file, which shouldn't happen for user-installable fonts).
+/// Build a descriptor with family + weight + slant + width, let CoreText do
+/// the match, extract the URL. No CSS-spec matching code on our side —
+/// CoreText handles proximity scoring and "closest match" rules natively.
+/// Returns `None` if CoreText can't find anything, or the resolved
+/// descriptor has no URL (e.g. system-supplied font without a backing file,
+/// which shouldn't happen for user-installable fonts).
 pub fn find_font_path(
     family: &str,
     weight: u16,
@@ -600,7 +598,7 @@ pub fn find_font_path(
 /// the requested font. Typically includes: the primary font's designer-chosen
 /// fallbacks, system CJK fonts, Apple Color Emoji, and symbol fonts.
 ///
-/// Ghostty-style dynamic fallback: instead of hardcoding family names like
+/// Dynamic fallback: instead of hardcoding family names like
 /// `"Apple Color Emoji"`, rely on CoreText to pick the right fonts for this
 /// system. Paths that CoreText doesn't expose (some system fonts ship without
 /// a file URL) are silently skipped.
@@ -835,10 +833,10 @@ pub fn font_metrics(handle: &FontHandle, size_px: f32) -> FontMetrics {
     let underline_thickness = ct_font.underline_thickness() as f32;
     let x_height = ct_font.x_height() as f32;
 
-    // Prefer the designer's explicit strikeout values from the OS/2 table
-    // (what Ghostty does). If the font doesn't ship OS/2 or has it zeroed,
-    // fall back to the x-height heuristic — strike through the middle of
-    // the x-height band at underline thickness.
+    // Prefer the designer's explicit strikeout values from the OS/2 table.
+    // If the font doesn't ship OS/2 or has it zeroed, fall back to the
+    // x-height heuristic — strike through the middle of the x-height band
+    // at underline thickness.
     let (strikeout_offset, strikeout_thickness) = read_os2_strikeout(&ct_font, size_px)
         .unwrap_or((x_height * 0.5, underline_thickness));
 

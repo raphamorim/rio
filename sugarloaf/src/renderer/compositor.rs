@@ -241,13 +241,11 @@ impl Compositor {
             // Handle regular glyphs
             for glyph in glyphs {
                 // Rasterize Nerd Font / PUA glyphs once at the nominal font
-                // size — same as Ghostty. The previous "rasterize at
-                // cells × font_size" trick produced a 2× raster that the
-                // constraint math below (ported from Ghostty) then tried to
-                // re-scale *from*, compounding into a ~2× oversized glyph
-                // vs Ghostty's output. With nominal rasterization, the
-                // constraint's width/height factors land exactly where
-                // Ghostty puts them.
+                // size. An earlier "rasterize at cells × font_size" trick
+                // produced a 2× raster that the constraint math below then
+                // tried to re-scale *from*, compounding into a ~2× oversized
+                // glyph. With nominal rasterization, the constraint's
+                // width/height factors land where they should.
                 let entry = session.get(glyph.id);
                 if let Some(entry) = entry {
                     if let Some(img) = session.get_image(entry.image) {
@@ -279,12 +277,10 @@ impl Compositor {
                                     baseline: style.baseline,
                                 })
                             } else {
-                                // No per-codepoint attribute — match
-                                // Ghostty's `Constraint::none` exactly:
-                                // no scaling, no slot-centering, glyph
-                                // renders at its natural pen position and
-                                // natural raster size. Anything else drifts
-                                // away from Ghostty's output.
+                                // No per-codepoint attribute: no scaling, no
+                                // slot-centering. Glyph renders at its
+                                // natural pen position and natural raster
+                                // size.
                                 let _ = (cell_w, cells);
                                 Rect::new(gx, gy, entry.width as f32, entry.height as f32)
                             }
@@ -292,18 +288,17 @@ impl Compositor {
                             // Color bitmap (emoji) glyphs fall here when the
                             // shaper didn't attach an explicit constraint.
                             //
-                            // Match Ghostty's emoji rule (`SharedGrid.zig:
-                            // 293-307`): `size = .cover` with center alignment
-                            // and 2.5 % horizontal padding. Cover scales the
+                            // `.cover` sizing with center alignment and
+                            // 2.5 % horizontal padding. Cover scales the
                             // bitmap so it fills the advance × cell-height
-                            // slot, rather than fit which leaves gaps.
+                            // slot on at least one axis, rather than fit
+                            // which leaves gaps.
                             //
                             // Vertical centering uses the font's *natural*
-                            // cell (ascent + descent) rather than `line_height`
-                            // — the latter picks up user line-height modifiers
-                            // that shouldn't shift the emoji inside its cell,
-                            // matching how `grid_metrics.cell_height` works
-                            // in Ghostty.
+                            // cell (ascent + descent) rather than
+                            // `line_height` — the latter picks up user
+                            // line-height modifiers that shouldn't shift the
+                            // emoji inside its cell.
                             const PAD_EACH: f32 = 0.025;
                             let orig_w = entry.width as f32;
                             let orig_h = entry.height as f32;
@@ -319,14 +314,13 @@ impl Compositor {
                                 let cx = (glyph.x + subpx_bias.0).floor()
                                     + (glyph.advance - sw) / 2.0;
                                 let cy = cell_top + (cell_h - sh) / 2.0;
-                                // Ghostty-style sbix quantization (`face.zig:
-                                // 385-390`): snap both edges to the pixel
-                                // grid. Bitmap emoji (sbix — Apple Color
-                                // Emoji) sampled at fractional offsets
-                                // looks blurry; rounding cx/cy/sw/sh to
-                                // whole pixels lets the sampler hit the
-                                // source texels cleanly. No-op for COLR
-                                // glyphs where the scale already snapped.
+                                // Snap both edges to the pixel grid. Bitmap
+                                // emoji (sbix — Apple Color Emoji) sampled
+                                // at fractional offsets looks blurry;
+                                // rounding cx/cy/sw/sh to whole pixels lets
+                                // the sampler hit source texels cleanly.
+                                // No-op for COLR glyphs whose scale already
+                                // snapped.
                                 let x0 = cx.round();
                                 let x1 = (cx + sw).round();
                                 let y0 = cy.round();
