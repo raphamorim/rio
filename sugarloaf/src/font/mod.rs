@@ -34,6 +34,25 @@ use std::sync::{Arc, OnceLock};
 
 pub use crate::font_introspector::{Style, Weight};
 
+/// Cross-platform shim: non-macOS threads `&loader::Database` through to
+/// `find_font`; macOS drops it since CoreText handles matching directly and
+/// we never build a Database there. The macro lets call sites stay uniform
+/// (`try_find_font!(&db, spec, evict)`) even though `db` doesn't exist on
+/// macOS — macOS expansion simply discards that token.
+#[cfg(target_os = "macos")]
+macro_rules! try_find_font {
+    ($_db:expr, $spec:expr, $evictable:expr) => {{
+        find_font($spec, $evictable)
+    }};
+}
+
+#[cfg(not(target_os = "macos"))]
+macro_rules! try_find_font {
+    ($db:expr, $spec:expr, $evictable:expr) => {{
+        find_font($db, $spec, $evictable)
+    }};
+}
+
 // Type alias for the font data cache to improve readability
 type FontDataCache = Arc<DashMap<PathBuf, SharedData>>;
 
@@ -369,14 +388,22 @@ impl FontLibraryData {
             font_family_overwrite.clone_into(&mut spec.italic.family);
         }
 
+        // On macOS we resolve fonts through CoreText (see `find_font` below)
+        // and never touch `loader::Database`, so skip its construction entirely
+        // — `SystemSource::new` walks the full CoreText font list on init, which
+        // is wasted work when we're about to do the same thing ourselves.
+        #[cfg(not(target_os = "macos"))]
         let mut db = loader::Database::new();
-        spec.additional_dirs
-            .unwrap_or_default()
-            .into_iter()
-            .map(PathBuf::from)
-            .for_each(|p| db.load_fonts_dir(p));
 
-        match find_font(&db, spec.regular, false) {
+        let additional_dirs = spec.additional_dirs.unwrap_or_default();
+        for dir in additional_dirs.into_iter().map(PathBuf::from) {
+            #[cfg(target_os = "macos")]
+            crate::font::macos::register_fonts_in_dir(&dir);
+            #[cfg(not(target_os = "macos"))]
+            db.load_fonts_dir(dir);
+        }
+
+        match try_find_font!(&db, spec.regular, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -390,7 +417,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.italic, false) {
+        match try_find_font!(&db, spec.italic, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -403,7 +430,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.bold, false) {
+        match try_find_font!(&db, spec.bold, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -416,7 +443,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.bold_italic, true) {
+        match try_find_font!(&db, spec.bold_italic, true) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -430,13 +457,13 @@ impl FontLibraryData {
         }
 
         for fallback in fallbacks::external_fallbacks() {
-            match find_font(
+            match try_find_font!(
                 &db,
                 SugarloafFont {
                     family: fallback,
                     ..SugarloafFont::default()
                 },
-                true,
+                true
             ) {
                 FindResult::Found(data) => {
                     self.insert(data);
@@ -456,7 +483,7 @@ impl FontLibraryData {
         // emoji families get the wide-cell / color-atlas treatment while
         // Nerd Font families stay single-cell.
         for extra_font in spec.extras {
-            match find_font(
+            match try_find_font!(
                 &db,
                 SugarloafFont {
                     family: extra_font.family,
@@ -464,7 +491,7 @@ impl FontLibraryData {
                     weight: extra_font.weight,
                     width: extra_font.width,
                 },
-                true,
+                true
             ) {
                 FindResult::Found(data) => {
                     self.insert(data);
@@ -496,13 +523,13 @@ impl FontLibraryData {
         if let Some(symbol_map) = spec.symbol_map {
             let mut symbol_maps = Vec::default();
             for extra_font_from_symbol_map in symbol_map {
-                match find_font(
+                match try_find_font!(
                     &db,
                     SugarloafFont {
                         family: extra_font_from_symbol_map.font_family,
                         ..SugarloafFont::default()
                     },
-                    true,
+                    true
                 ) {
                     FindResult::Found(data) => {
                         if let Some(start) =
@@ -771,11 +798,7 @@ enum FindResult {
 
 #[cfg(target_os = "macos")]
 #[inline]
-fn find_font(
-    _db: &crate::font::loader::Database,
-    font_spec: SugarloafFont,
-    evictable: bool,
-) -> FindResult {
+fn find_font(font_spec: SugarloafFont, evictable: bool) -> FindResult {
     if font_spec.is_default_family() {
         return FindResult::NotFound(font_spec);
     }
