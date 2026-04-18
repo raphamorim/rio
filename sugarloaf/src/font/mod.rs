@@ -3,6 +3,8 @@ mod fallbacks;
 pub mod fonts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod metrics;
 pub mod nerd_font_attributes;
 pub mod text_run_cache;
@@ -139,8 +141,10 @@ impl FontLibrary {
     }
 
     /// Sorted, deduplicated list of every font family name the host
-    /// system exposes via `font-kit`'s `SystemSource` (CoreText on
-    /// macOS, DirectWrite on Windows, fontconfig on Linux).
+    /// system exposes. On macOS this goes straight through CoreText; on
+    /// Linux and Windows it uses `font-kit`'s `SystemSource` (fontconfig
+    /// on Linux, DirectWrite on Windows). `wasm32` has no system font
+    /// enumeration.
     ///
     /// Intended for the command-palette "List Fonts" browser, so users
     /// can see what's installed without leaving the terminal. Does NOT
@@ -149,7 +153,12 @@ impl FontLibrary {
     /// `FontLibrary` past load, and walking the dirs again would
     /// duplicate I/O. A follow-up can widen this once `FontLibrary`
     /// keeps a `Database` alive.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(target_os = "macos")]
+    pub fn family_names(&self) -> Vec<String> {
+        crate::font::macos::all_families()
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_arch = "wasm32")))]
     pub fn family_names(&self) -> Vec<String> {
         let source = font_kit::source::SystemSource::new();
         let mut families = source.all_families().unwrap_or_default();
