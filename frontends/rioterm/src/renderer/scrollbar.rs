@@ -6,24 +6,120 @@
 use rio_backend::sugarloaf::Sugarloaf;
 use std::time::Instant;
 
-// Layout
-const SCROLLBAR_WIDTH: f32 = 6.0;
-const SCROLLBAR_MARGIN: f32 = 2.0;
-const SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 20.0;
-// Wider hit area for easier grabbing
+// Layout. Kept `pub` so other UI elements (command palette, future
+// overlays) can render a scrollbar that matches the terminal's exactly
+// without duplicating the numbers.
+pub const SCROLLBAR_WIDTH: f32 = 6.0;
+pub const SCROLLBAR_MARGIN: f32 = 2.0;
+pub const SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 20.0;
+// Wider hit area for easier grabbing (terminal-only, no palette drag)
 const SCROLLBAR_HIT_WIDTH: f32 = 14.0;
 
 // Timing
-const FADE_OUT_DELAY_MS: u128 = 2000;
-const FADE_OUT_DURATION_MS: u128 = 300;
+pub const FADE_OUT_DELAY_MS: u128 = 2000;
+pub const FADE_OUT_DURATION_MS: u128 = 300;
 
 // Colors
-const SCROLLBAR_COLOR: [f32; 4] = [0.6, 0.6, 0.6, 0.5];
-const SCROLLBAR_DRAG_COLOR: [f32; 4] = [0.7, 0.7, 0.7, 0.7];
+pub const SCROLLBAR_COLOR: [f32; 4] = [0.6, 0.6, 0.6, 0.5];
+pub const SCROLLBAR_DRAG_COLOR: [f32; 4] = [0.7, 0.7, 0.7, 0.7];
 
-// Depth / order (render on top of content but below overlays)
-const DEPTH: f32 = 0.0;
-const ORDER: u8 = 5;
+// Depth / order for the terminal-surface scrollbar (render on top of
+// content but below overlays). Palette / other UIs pick their own
+// values via `draw_thumb`'s parameters.
+pub const TERMINAL_DEPTH: f32 = 0.0;
+pub const TERMINAL_ORDER: u8 = 5;
+
+/// Fade-in/out opacity for a scrollbar given the timestamp of the most
+/// recent scroll event (`None` = never scrolled). `dragging` pins it to
+/// fully opaque so a slow drag doesn't fade out under the user's cursor.
+///
+/// Matches the terminal scrollbar's envelope:
+/// - 0.0 before any scroll ever happened
+/// - 1.0 for the first `FADE_OUT_DELAY_MS` after a scroll
+/// - linear fade over `FADE_OUT_DURATION_MS` back to 0.0
+pub fn opacity_from_last_scroll(last_scroll: Option<Instant>, dragging: bool) -> f32 {
+    if dragging {
+        return 1.0;
+    }
+    let last_scroll = match last_scroll {
+        Some(t) => t,
+        None => return 0.0,
+    };
+    let elapsed = last_scroll.elapsed().as_millis();
+    if elapsed < FADE_OUT_DELAY_MS {
+        1.0
+    } else {
+        let fade_elapsed = elapsed - FADE_OUT_DELAY_MS;
+        if fade_elapsed >= FADE_OUT_DURATION_MS {
+            0.0
+        } else {
+            1.0 - (fade_elapsed as f32 / FADE_OUT_DURATION_MS as f32)
+        }
+    }
+}
+
+/// Thumb geometry (y offset, height) inside a vertical track of
+/// `track_height` anchored at `track_top`. Returns `None` when the
+/// list fits entirely (`visible >= total`) — caller skips drawing.
+///
+/// `normalized_offset` is the scroll position in `[0.0, 1.0]` where
+/// 0.0 = top (unscrolled) and 1.0 = maximum scroll. Callers that
+/// think in "scroll from the top" (command palette) and callers that
+/// think in "scroll back from live edge" (terminal history) both
+/// plug into the same geometry by normalizing on their side.
+///
+/// Thumb height is clamped at `SCROLLBAR_MIN_THUMB_HEIGHT` so very
+/// long lists don't shrink the thumb to a sub-pixel sliver.
+pub fn compute_thumb(
+    visible: usize,
+    total: usize,
+    track_top: f32,
+    track_height: f32,
+    normalized_offset: f32,
+) -> Option<(f32, f32)> {
+    if total <= visible || track_height <= 0.0 {
+        return None;
+    }
+    let ratio = visible as f32 / total as f32;
+    let thumb_height = (track_height * ratio)
+        .clamp(SCROLLBAR_MIN_THUMB_HEIGHT.min(track_height), track_height);
+    let scrollable = (track_height - thumb_height).max(0.0);
+    let progress = normalized_offset.clamp(0.0, 1.0);
+    Some((track_top + scrollable * progress, thumb_height))
+}
+
+/// Paint a single scrollbar thumb — the one and only way rio renders a
+/// scrollbar. Uses `SCROLLBAR_COLOR` (or `SCROLLBAR_DRAG_COLOR` if
+/// `dragging`) modulated by `opacity`. `opacity <= 0.0` is a no-op so
+/// callers can pipe the fade helper straight in.
+///
+/// `depth` + `order` let callers place the thumb above their own
+/// background layers: the terminal uses `TERMINAL_DEPTH` /
+/// `TERMINAL_ORDER` so the bar lives on top of the cell content, the
+/// command palette uses a higher order so the bar isn't swallowed by
+/// the palette's backdrop/bg rects.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_thumb(
+    sugarloaf: &mut Sugarloaf,
+    x: f32,
+    y: f32,
+    height: f32,
+    opacity: f32,
+    dragging: bool,
+    depth: f32,
+    order: u8,
+) {
+    if opacity <= 0.0 {
+        return;
+    }
+    let base = if dragging {
+        SCROLLBAR_DRAG_COLOR
+    } else {
+        SCROLLBAR_COLOR
+    };
+    let color = [base[0], base[1], base[2], base[3] * opacity];
+    sugarloaf.rect(None, x, y, SCROLLBAR_WIDTH, height, color, depth, order);
+}
 
 /// Computed geometry of a scrollbar track and thumb in logical pixels.
 pub struct ThumbGeometry {
@@ -120,35 +216,20 @@ impl Scrollbar {
         self.drag_state.is_some()
     }
 
-    /// Compute the current opacity for a panel's scrollbar.
+    /// Compute the current opacity for a panel's scrollbar. Thin
+    /// wrapper around the module-level `opacity_from_last_scroll`
+    /// helper so the terminal and command palette share the same
+    /// fade envelope.
     fn opacity_for(&self, rich_text_id: usize) -> f32 {
-        if self
+        let dragging = self
             .drag_state
-            .is_some_and(|d| d.rich_text_id == rich_text_id)
-        {
-            return 1.0;
-        }
-        let entry = self
+            .is_some_and(|d| d.rich_text_id == rich_text_id);
+        let last_scroll = self
             .last_scroll_times
             .iter()
-            .find(|(id, _)| *id == rich_text_id);
-
-        let last_scroll = match entry {
-            Some((_, t)) => t,
-            None => return 0.0,
-        };
-
-        let elapsed = last_scroll.elapsed().as_millis();
-        if elapsed < FADE_OUT_DELAY_MS {
-            1.0
-        } else {
-            let fade_elapsed = elapsed - FADE_OUT_DELAY_MS;
-            if fade_elapsed >= FADE_OUT_DURATION_MS {
-                0.0
-            } else {
-                1.0 - (fade_elapsed as f32 / FADE_OUT_DURATION_MS as f32)
-            }
-        }
+            .find(|(id, _)| *id == rich_text_id)
+            .map(|(_, t)| *t);
+        opacity_from_last_scroll(last_scroll, dragging)
     }
 
     /// Compute thumb geometry in logical pixels.
@@ -322,29 +403,28 @@ impl Scrollbar {
         let is_dragging = self
             .drag_state
             .is_some_and(|d| d.rich_text_id == rich_text_id);
-        let base_color = if is_dragging {
-            SCROLLBAR_DRAG_COLOR
-        } else {
-            SCROLLBAR_COLOR
-        };
 
-        let color = [
-            base_color[0],
-            base_color[1],
-            base_color[2],
-            base_color[3] * opacity,
-        ];
-
-        sugarloaf.rect(
-            None,
+        draw_thumb(
+            sugarloaf,
             geom.bar_x,
             geom.thumb_y,
-            SCROLLBAR_WIDTH,
             geom.thumb_height,
-            color,
-            DEPTH,
-            ORDER,
+            opacity,
+            is_dragging,
+            TERMINAL_DEPTH,
+            TERMINAL_ORDER,
         );
+    }
+
+    /// Test hook: direct access to the per-panel last-scroll timestamp
+    /// so tests can seed / read it without reaching through
+    /// `notify_scroll` + clock manipulation.
+    #[cfg(test)]
+    fn last_scroll_for(&self, rich_text_id: usize) -> Option<Instant> {
+        self.last_scroll_times
+            .iter()
+            .find(|(id, _)| *id == rich_text_id)
+            .map(|(_, t)| *t)
     }
 
     /// Returns true if any scrollbar is still animating (visible or fading).
@@ -360,5 +440,101 @@ impl Scrollbar {
         self.last_scroll_times
             .retain(|(_, t)| t.elapsed().as_millis() < deadline);
         !self.last_scroll_times.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opacity_zero_when_never_scrolled() {
+        assert_eq!(opacity_from_last_scroll(None, false), 0.0);
+    }
+
+    #[test]
+    fn opacity_one_while_dragging_regardless_of_last_scroll() {
+        // Dragging pins the thumb at full alpha so it doesn't fade
+        // out from under the cursor during a slow drag.
+        assert_eq!(opacity_from_last_scroll(None, true), 1.0);
+        let old = Instant::now() - std::time::Duration::from_secs(10);
+        assert_eq!(opacity_from_last_scroll(Some(old), true), 1.0);
+    }
+
+    #[test]
+    fn opacity_one_inside_visibility_window() {
+        // A scroll that just happened is fully visible.
+        let now = Instant::now();
+        assert_eq!(opacity_from_last_scroll(Some(now), false), 1.0);
+    }
+
+    #[test]
+    fn opacity_zero_after_full_fade() {
+        // Past FADE_OUT_DELAY + FADE_OUT_DURATION, the thumb is gone.
+        let deep_past = Instant::now()
+            - std::time::Duration::from_millis(
+                (FADE_OUT_DELAY_MS + FADE_OUT_DURATION_MS + 50) as u64,
+            );
+        assert_eq!(opacity_from_last_scroll(Some(deep_past), false), 0.0);
+    }
+
+    #[test]
+    fn compute_thumb_hidden_when_list_fits() {
+        assert!(compute_thumb(8, 8, 0.0, 256.0, 0.0).is_none());
+        assert!(compute_thumb(8, 7, 0.0, 256.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn compute_thumb_hidden_on_zero_track() {
+        assert!(compute_thumb(8, 100, 0.0, 0.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn compute_thumb_top_at_zero_offset() {
+        let track_top = 42.0;
+        let (thumb_y, thumb_h) = compute_thumb(8, 100, track_top, 200.0, 0.0).unwrap();
+        assert_eq!(thumb_y, track_top);
+        assert!(thumb_h >= SCROLLBAR_MIN_THUMB_HEIGHT);
+        assert!(thumb_h <= 200.0);
+    }
+
+    #[test]
+    fn compute_thumb_bottom_at_full_offset() {
+        let (thumb_y, thumb_h) = compute_thumb(8, 100, 0.0, 200.0, 1.0).unwrap();
+        assert!((thumb_y + thumb_h - 200.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn compute_thumb_clamps_excess_offset() {
+        // Normalized offsets outside [0, 1] are clamped (defensive
+        // against future resize / filter-shrink races).
+        let (thumb_y, thumb_h) = compute_thumb(8, 20, 0.0, 200.0, 3.5).unwrap();
+        assert!((thumb_y + thumb_h - 200.0).abs() < 0.001);
+        let (thumb_y, _) = compute_thumb(8, 20, 0.0, 200.0, -0.7).unwrap();
+        assert_eq!(thumb_y, 0.0);
+    }
+
+    #[test]
+    fn compute_thumb_respects_minimum_height() {
+        // Huge lists would give a sub-pixel thumb by proportion alone;
+        // the min-height clamp keeps it visible.
+        let (_, thumb_h) = compute_thumb(8, 10_000, 0.0, 200.0, 0.0).unwrap();
+        assert!(thumb_h >= SCROLLBAR_MIN_THUMB_HEIGHT);
+    }
+
+    #[test]
+    fn notify_scroll_stores_timestamp_per_panel() {
+        let mut bar = Scrollbar::new(true);
+        assert!(bar.last_scroll_for(7).is_none());
+        bar.notify_scroll(7);
+        assert!(bar.last_scroll_for(7).is_some());
+        assert!(bar.last_scroll_for(99).is_none());
+    }
+
+    #[test]
+    fn notify_scroll_noop_when_disabled() {
+        let mut bar = Scrollbar::new(false);
+        bar.notify_scroll(1);
+        assert!(bar.last_scroll_for(1).is_none());
     }
 }

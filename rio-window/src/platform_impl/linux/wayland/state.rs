@@ -115,6 +115,21 @@ pub struct WinitState {
     /// Whether we have dispatched events to the user thus we want to
     /// send `AboutToWait` and normally wakeup the user.
     pub dispatched_events: bool,
+
+    /// Timestamp of the most recent input event.
+    pub last_input_timestamp: std::cell::Cell<std::time::Instant>,
+}
+
+impl WinitState {
+    #[inline]
+    pub fn mark_input_received(&self) {
+        self.last_input_timestamp.set(std::time::Instant::now());
+    }
+
+    #[inline]
+    pub fn should_present_after_input(&self) -> bool {
+        self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
+    }
 }
 
 impl WinitState {
@@ -195,6 +210,7 @@ impl WinitState {
             loop_handle,
             // Make it true by default.
             dispatched_events: true,
+            last_input_timestamp: std::cell::Cell::new(std::time::Instant::now()),
         })
     }
 

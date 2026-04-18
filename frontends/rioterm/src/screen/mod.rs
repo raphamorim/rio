@@ -574,24 +574,6 @@ impl Screen<'_> {
         let mode = self.get_mode();
         let mods = self.modifiers.state();
 
-        // Handle command palette toggle (Cmd+Shift+P on macOS, Ctrl+Shift+P elsewhere)
-        if key.state == ElementState::Pressed {
-            let is_command_palette_key = matches!(
-                key.logical_key.as_ref(),
-                Key::Character("p") | Key::Character("P")
-            );
-            #[cfg(target_os = "macos")]
-            let has_correct_modifiers = mods.super_key() && mods.shift_key();
-            #[cfg(not(target_os = "macos"))]
-            let has_correct_modifiers = mods.control_key() && mods.shift_key();
-
-            if is_command_palette_key && has_correct_modifiers {
-                self.renderer.command_palette.toggle();
-                self.render();
-                return;
-            }
-        }
-
         if key.state == ElementState::Released {
             if !mode.contains(Mode::REPORT_EVENT_TYPES)
                 || mode.contains(Mode::VI)
@@ -1181,6 +1163,18 @@ impl Screen<'_> {
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
                     Act::ToggleAppearanceTheme => {
                         self.context_manager.toggle_appearance_theme();
+                    }
+                    Act::OpenCommandPalette => {
+                        // One-way "open": the action never closes an
+                        // already-visible palette. Users close it via
+                        // Esc (handled inside the palette's own key
+                        // dispatcher in `router::mod`). Idempotent —
+                        // re-firing while the palette is already open
+                        // must NOT wipe the user's in-progress query.
+                        if !self.renderer.command_palette.is_enabled() {
+                            self.renderer.command_palette.set_enabled(true);
+                            self.render();
+                        }
                     }
                     Act::Minimize => {
                         self.context_manager.minimize();
@@ -1788,12 +1782,18 @@ impl Screen<'_> {
         let current = self.context_manager.current_mut();
 
         if let Some(hint_match) = highlighted_hint {
-            // Mark the hint range as damaged so it gets re-rendered
+            // Mark the hint range as damaged so it gets re-rendered.
+            //
+            // Two damage signals are required:
+            //   * Terminal-side: `update_selection_damage` marks the affected
+            //     lines so the partial render path knows what to redraw.
+            //   * Renderer-side: `pending_update.set_terminal_damage(Full)`
+            //     ensures the render loop doesn't early-exit on
+            //     `!pending_update.is_dirty()`
             {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
 
-                // Create a temporary selection range for damage tracking
                 let hint_range = rio_backend::selection::SelectionRange::new(
                     hint_match.start,
                     hint_match.end,
@@ -1802,16 +1802,26 @@ impl Screen<'_> {
                 terminal.update_selection_damage(Some(hint_range), display_offset);
             }
 
+            current
+                .renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             current.renderable_content.highlighted_hint = Some(hint_match);
             true
         } else {
-            // Clear any previous hint damage
             if current.renderable_content.highlighted_hint.is_some() {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
                 terminal.update_selection_damage(None, display_offset);
             }
 
+            // Force a render so the previously-highlighted line clears.
+            if had_highlight {
+                current
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+            }
             current.renderable_content.highlighted_hint = None;
             had_highlight
         }
@@ -1872,7 +1882,7 @@ impl Screen<'_> {
 
             // Check regex patterns if specified
             if let Some(regex_pattern) = &hint_config.regex {
-                if let Ok(regex) = regex::Regex::new(regex_pattern) {
+                if let Ok(regex) = onig::Regex::new(regex_pattern) {
                     if let Some(regex_match) = self.find_regex_match_at_point(
                         terminal,
                         point,
@@ -1964,7 +1974,7 @@ impl Screen<'_> {
         &self,
         terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
         point: rio_backend::crosswords::pos::Pos,
-        regex: &regex::Regex,
+        regex: &onig::Regex,
         hint_config: std::rc::Rc<rio_backend::config::hints::Hint>,
     ) -> Option<crate::hints::HintMatch> {
         let grid = &terminal.grid;
@@ -1982,15 +1992,15 @@ impl Screen<'_> {
         }
         let line_text = line_text.trim_end();
 
-        // Find all matches in this line and check if point is within any of them
-        for mat in regex.find_iter(line_text) {
-            let start_col = rio_backend::crosswords::pos::Column(mat.start());
-            let end_col =
-                rio_backend::crosswords::pos::Column(mat.end().saturating_sub(1));
+        // Find all matches in this line and check if point is within any of them.
+        // Onig yields (byte_start, byte_end); we slice the source ourselves.
+        for (start, end) in regex.find_iter(line_text) {
+            let start_col = rio_backend::crosswords::pos::Column(start);
+            let end_col = rio_backend::crosswords::pos::Column(end.saturating_sub(1));
 
             // Check if the point is within this match
             if point.col >= start_col && point.col <= end_col {
-                let original_match_text = mat.as_str().to_string();
+                let original_match_text = line_text[start..end].to_string();
                 let mut match_text = original_match_text.clone();
 
                 // Apply grid-based post-processing
@@ -3265,6 +3275,13 @@ impl Screen<'_> {
                 let mut terminal = self.context_manager.current_mut().terminal.lock();
                 terminal.clear_saved_history();
             }
+            PaletteAction::ListFonts => {
+                // Handled in the router: switches the palette into fonts
+                // mode and keeps it open. If we land here it's either a
+                // bug (router should have intercepted) or an external
+                // caller firing the action directly — do nothing so the
+                // palette just closes without side effects.
+            }
             PaletteAction::Quit => {
                 self.context_manager.quit();
             }
@@ -3537,16 +3554,37 @@ impl Screen<'_> {
                     self.render();
                 }
             },
-            HintAction::Command { command } => match command {
-                HintCommand::Simple(program) => {
-                    self.exec(program, [&hint_match.text]);
+            HintAction::Command { command } => {
+                // If the match looks like a local path, resolve it against
+                // the terminal's OSC 7 CWD and fall back to the raw text if
+                // the path doesn't exist (or the text is a URL).
+                let arg_text = {
+                    let cwd = &self
+                        .context_manager
+                        .current()
+                        .terminal
+                        .lock()
+                        .current_directory;
+                    match crate::hints::resolve_path_for_opening(
+                        &hint_match.text,
+                        cwd.as_deref(),
+                    ) {
+                        Some(resolved) => resolved.to_string_lossy().into_owned(),
+                        None => hint_match.text.clone(),
+                    }
+                };
+
+                match command {
+                    HintCommand::Simple(program) => {
+                        self.exec(program, [&arg_text]);
+                    }
+                    HintCommand::WithArgs { program, args } => {
+                        let mut all_args = args.clone();
+                        all_args.push(arg_text);
+                        self.exec(program, &all_args);
+                    }
                 }
-                HintCommand::WithArgs { program, args } => {
-                    let mut all_args = args.clone();
-                    all_args.push(hint_match.text.clone());
-                    self.exec(program, &all_args);
-                }
-            },
+            }
         }
     }
 

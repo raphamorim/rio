@@ -117,10 +117,20 @@ impl GlyphCacheSession<'_> {
 
     #[inline]
     pub fn get(&mut self, id: u16) -> Option<GlyphEntry> {
-        let key = GlyphKey {
-            id,
-            size: self.quant_size,
-        };
+        self.get_at_size(id, self.quant_size)
+    }
+
+    /// Look up a glyph rasterized at a specific pixel size instead of the
+    /// session's nominal font size. Used to pre-rasterize PUA glyphs at
+    /// `cells × font_size` so the compositor's constraint-fit pass only
+    /// ever downscales — upscaling a bitmap atlas entry is blurry, so a
+    /// 1-cell-wide Nerd Font glyph stretched into a 2-cell slot needs a
+    /// fresh larger rasterization, not a stretched one.
+    /// Results are cached under `(id, size)`, so repeated lookups at the
+    /// same constraint size don't re-rasterize.
+    #[inline]
+    pub fn get_at_size(&mut self, id: u16, size: u16) -> Option<GlyphEntry> {
+        let key = GlyphKey { id, size };
         if let Some(entry) = self.entry.glyphs.get(&key) {
             if self.images.is_valid(entry.image) {
                 return Some(*entry);
@@ -130,7 +140,7 @@ impl GlyphCacheSession<'_> {
         // Log cache miss for debugging
         debug!(
             "GlyphCache miss for glyph_id={} size={} font={}",
-            id, self.quant_size, self.font
+            id, size, self.font
         );
 
         self.scaled_image.data.clear();
@@ -158,7 +168,7 @@ impl GlyphCacheSession<'_> {
                 // now ignores font hint information completely.
                 // .hint(!IS_MACOS)
                 .hint(enable_hint)
-                .size(self.quant_size.into())
+                .size(size.into())
                 // .normalized_coords(coords)
                 .build();
 

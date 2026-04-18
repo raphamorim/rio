@@ -44,6 +44,8 @@ impl PointerHandler for WinitState {
         pointer: &WlPointer,
         events: &[PointerEvent],
     ) {
+        self.mark_input_received();
+
         let seat = pointer.winit_data().seat();
         let seat_state = match self.seats.get(&seat.id()) {
             Some(seat_state) => seat_state,

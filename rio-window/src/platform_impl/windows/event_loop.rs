@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
 mod runner;
+pub(crate) mod vsync;
 
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -49,25 +50,26 @@ use windows_sys::Win32::UI::Input::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
-    GetCursorPos, GetMenu, LoadCursorW, MsgWaitForMultipleObjectsEx, PeekMessageW,
-    PostMessageW, RegisterClassExW, RegisterWindowMessageA, SetCursor, SetWindowPos,
-    TranslateMessage, CREATESTRUCTW, GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE, GWL_USERDATA,
-    HTCAPTION, HTCLIENT, MINMAXINFO, MNC_CLOSE, MSG, MWMO_INPUTAVAILABLE,
-    NCCALCSIZE_PARAMS, PM_REMOVE, PT_PEN, PT_TOUCH, QS_ALLINPUT, RI_MOUSE_HWHEEL,
-    RI_MOUSE_WHEEL, SC_MINIMIZE, SC_RESTORE, SIZE_MAXIMIZED, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, WHEEL_DELTA, WINDOWPOS, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT,
-    WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
-    WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_ENTERSIZEMOVE,
-    WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
-    WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUT, WM_INPUT_DEVICE_CHANGE,
-    WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-    WM_MBUTTONUP, WM_MENUCHAR, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCDESTROY, WM_NCLBUTTONDOWN, WM_PAINT,
-    WM_POINTERDOWN, WM_POINTERUP, WM_POINTERUPDATE, WM_RBUTTONDOWN, WM_RBUTTONUP,
-    WM_SETCURSOR, WM_SETFOCUS, WM_SETTINGCHANGE, WM_SIZE, WM_SIZING, WM_SYSCOMMAND,
-    WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TOUCH, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
-    WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
+    GetCursorPos, GetMenu, LoadCursorW, MessageBoxW, MsgWaitForMultipleObjectsEx,
+    PeekMessageW, PostMessageW, RegisterClassExW, RegisterWindowMessageA, SetCursor,
+    SetWindowPos, TranslateMessage, CREATESTRUCTW, GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE,
+    GWL_USERDATA, HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_TASKMODAL, MB_YESNO,
+    MINMAXINFO, MNC_CLOSE, MSG, MWMO_INPUTAVAILABLE, NCCALCSIZE_PARAMS, PM_REMOVE,
+    PT_PEN, PT_TOUCH, QS_ALLINPUT, RI_MOUSE_HWHEEL, RI_MOUSE_WHEEL, SC_MINIMIZE,
+    SC_RESTORE, SIZE_MAXIMIZED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    WHEEL_DELTA, WINDOWPOS, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT,
+    WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WM_CAPTURECHANGED, WM_CLOSE,
+    WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE,
+    WM_GETMINMAXINFO, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT,
+    WM_IME_STARTCOMPOSITION, WM_INPUT, WM_INPUT_DEVICE_CHANGE, WM_KEYDOWN, WM_KEYUP,
+    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+    WM_MENUCHAR, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE,
+    WM_NCCALCSIZE, WM_NCCREATE, WM_NCDESTROY, WM_NCLBUTTONDOWN, WM_PAINT, WM_POINTERDOWN,
+    WM_POINTERUP, WM_POINTERUPDATE, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR,
+    WM_SETFOCUS, WM_SETTINGCHANGE, WM_SIZE, WM_SIZING, WM_SYSCOMMAND, WM_SYSKEYDOWN,
+    WM_SYSKEYUP, WM_TOUCH, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WM_XBUTTONDOWN,
+    WM_XBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
 };
 
 use crate::dpi::{PhysicalPosition, PhysicalSize};
@@ -128,6 +130,7 @@ pub(crate) struct UserEventPlaceholder;
 pub(crate) struct WindowData {
     pub window_state: Arc<Mutex<WindowState>>,
     pub event_loop_runner: EventLoopRunnerShared<UserEventPlaceholder>,
+    pub vsync_state: Arc<vsync::VSyncSharedState>,
     pub key_event_builder: KeyEventBuilder,
     pub _file_drop_handler: Option<FileDropHandler>,
     pub userdata_removed: Cell<bool>,
@@ -170,6 +173,9 @@ pub struct EventLoop<T: 'static> {
     // It is created lazily in case if we have `ControlFlow::WaitUntil`.
     // Keep it as a field to avoid recreating it on every `ControlFlow::WaitUntil`.
     high_resolution_timer: Option<OwnedHandle>,
+    // DwmFlush-driven vsync source. Worker thread invalidates
+    // every visible thread window per composition cycle.
+    _vsync_thread: vsync::VSyncThread,
 }
 
 pub(crate) struct PlatformSpecificEventLoopAttributes {
@@ -192,6 +198,7 @@ pub struct ActiveEventLoop {
     thread_id: u32,
     thread_msg_target: HWND,
     pub(crate) runner_shared: EventLoopRunnerShared<UserEventPlaceholder>,
+    pub(crate) vsync_state: Arc<vsync::VSyncSharedState>,
 }
 
 impl<T: 'static> EventLoop<T> {
@@ -224,6 +231,9 @@ impl<T: 'static> EventLoop<T> {
             Default::default(),
         );
 
+        let vsync_state = vsync::VSyncSharedState::new();
+        let vsync_thread = vsync::VSyncThread::spawn(vsync_state.clone());
+
         Ok(EventLoop {
             user_event_sender,
             user_event_receiver,
@@ -232,16 +242,29 @@ impl<T: 'static> EventLoop<T> {
                     thread_id,
                     thread_msg_target,
                     runner_shared,
+                    vsync_state,
                 },
                 _marker: PhantomData,
             },
             msg_hook: attributes.msg_hook.take(),
             high_resolution_timer: None,
+            _vsync_thread: vsync_thread,
         })
     }
 
     pub fn window_target(&self) -> &RootAEL {
         &self.window_target
+    }
+
+    /// When enabled, a native `MessageBoxW` confirmation prompt
+    /// is shown before `WindowEvent::CloseRequested` fires for
+    /// any window. Mirrors the macOS implementation in
+    /// `app_delegate.rs`.
+    pub fn set_confirm_before_quit(&self, confirmation: bool) {
+        self.window_target
+            .p
+            .runner_shared
+            .set_confirm_before_quit(confirmation);
     }
 
     pub fn run<F>(mut self, event_handler: F) -> Result<(), EventLoopError>
@@ -1186,6 +1209,20 @@ unsafe fn public_window_callback_inner(
 ) -> LRESULT {
     let mut result = ProcResult::DefWindowProc(wparam);
 
+    // Mark any input message before further processing so the
+    // DwmFlush worker keeps fanning out redraws for the next 1 s.
+    // Mirrors macOS / Wayland / X11.
+    match msg {
+        WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP | WM_MOUSEMOVE
+        | WM_MOUSEWHEEL | WM_MOUSEHWHEEL | WM_LBUTTONDOWN | WM_LBUTTONUP
+        | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP
+        | WM_XBUTTONDOWN | WM_XBUTTONUP | WM_TOUCH | WM_POINTERDOWN
+        | WM_POINTERUPDATE | WM_POINTERUP => {
+            userdata.vsync_state.mark_input_received();
+        }
+        _ => (),
+    }
+
     // Send new modifiers before sending key events.
     let mods_changed_callback = || match msg {
         WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP => {
@@ -1297,6 +1334,19 @@ unsafe fn public_window_callback_inner(
 
         WM_CLOSE => {
             use crate::event::WindowEvent::CloseRequested;
+            // Mirrors macOS's `applicationShouldTerminate` NSAlert
+            // (rio-window/src/platform_impl/macos/app_delegate.rs).
+            // Only the *last* window triggers the dialog —
+            // intermediate window closes shouldn't quit-prompt
+            // (matches macOS, where the prompt is app-wide).
+            let is_last_window = userdata.vsync_state.window_count() <= 1;
+            if userdata.event_loop_runner.confirm_before_quit()
+                && is_last_window
+                && !unsafe { confirm_close_native(window) }
+            {
+                result = ProcResult::Value(0);
+                return;
+            }
             userdata.send_event(Event::WindowEvent {
                 window_id: RootWindowId(WindowId(window)),
                 event: CloseRequested,
@@ -2853,4 +2903,31 @@ fn get_pointer_move_kind(
     } else {
         PointerMoveKind::None
     }
+}
+
+/// Show a modal Yes/No `MessageBoxW` parented to `hwnd`. Returns
+/// `true` if the user confirmed the close. Mirrors macOS's NSAlert
+/// in `app_delegate.rs:applicationShouldTerminate`.
+unsafe fn confirm_close_native(hwnd: HWND) -> bool {
+    use std::ffi::OsStr;
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+
+    let title: Vec<u16> = OsStr::new("Close Rio terminal?")
+        .encode_wide()
+        .chain(once(0))
+        .collect();
+    let message: Vec<u16> = OsStr::new("All sessions in this window will be closed.")
+        .encode_wide()
+        .chain(once(0))
+        .collect();
+    let response = unsafe {
+        MessageBoxW(
+            hwnd,
+            message.as_ptr(),
+            title.as_ptr(),
+            MB_YESNO | MB_ICONQUESTION | MB_TASKMODAL,
+        )
+    };
+    response == IDYES as i32
 }

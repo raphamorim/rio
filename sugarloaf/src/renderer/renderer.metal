@@ -1,9 +1,15 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Uniform buffer structure (equivalent to @group(0) @binding(0))
+// Uniform buffer structure (equivalent to @group(0) @binding(0)).
+//
+// Matches the Rust `Globals` in `renderer/mod.rs` — `input_colorspace` is a
+// u8 followed by 15 bytes of padding so the struct is 16-byte aligned.
+// 0 = sRGB (apply sRGB → DisplayP3 matrix after linearize), 1 = DisplayP3
+// (no matrix), 2 = Rec.2020 (no matrix; real conversion TBD).
 struct Globals {
     float4x4 transform;
+    uchar input_colorspace;
 };
 
 // QuadInstance - matches Rust QuadInstance struct (96 bytes, per-instance)
@@ -97,6 +103,71 @@ vertex VertexOutput vs_instanced(
     out.underline_style = inst.underline_style;
     out.clip_rect = float4(inst.clip_rect);
     return out;
+}
+
+// sRGB transfer curve (IEC 61966-2-1). We need both directions because the
+// pipeline is: sRGB-encoded CPU input → linearize → gamut conversion matrix →
+// unlinearize → write to a plain `BGRA8Unorm` / DisplayP3-tagged drawable.
+// The drawable has no HW transfer-curve handling (we dropped `_sRGB` on
+// purpose — see `context/metal.rs`), so alpha blending runs on already-
+// gamma-encoded values, matching ghostty's default `alpha-blending = native`
+// look on macOS. Alpha is linear by convention — never route through these.
+float3 srgb_to_linear(float3 c) {
+    float3 lo = c / 12.92;
+    float3 hi = pow((c + 0.055) / 1.055, 2.4);
+    return select(lo, hi, c > 0.04045);
+}
+
+float3 linear_to_srgb(float3 c) {
+    float3 lo = c * 12.92;
+    float3 hi = pow(c, 1.0 / 2.4) * 1.055 - 0.055;
+    return select(lo, hi, c > 0.0031308);
+}
+
+// Bradford-adapted sRGB D65 primaries → DisplayP3 D65 primaries, in linear
+// light. Required because our CAMetalLayer is tagged DisplayP3: a stored
+// value is interpreted with P3's primaries, so we must convert input
+// colors to match. Applied only when `input_colorspace == 0` (sRGB) —
+// skipping it leaves `#ff0000` displaying as P3-pure red (oversaturated
+// vs. the sRGB standard red every other app draws).
+float3 srgb_to_p3(float3 linear_srgb) {
+    return float3(
+        dot(linear_srgb, float3(0.82246197, 0.17753803, 0.0)),
+        dot(linear_srgb, float3(0.03319420, 0.96680580, 0.0)),
+        dot(linear_srgb, float3(0.01708263, 0.07239744, 0.91051993))
+    );
+}
+
+// Bradford-adapted Rec.2020 D65 primaries → DisplayP3 D65 primaries, in
+// linear light. Rec.2020 is wider than P3, so this matrix can produce
+// components outside [0, 1] — those get clipped by the framebuffer write.
+// Good enough for terminal rendering (Rec.2020-native theme content is
+// rare); proper HDR handling would need a 16-bit or extended-range drawable.
+float3 rec2020_to_p3(float3 linear_r2020) {
+    return float3(
+        dot(linear_r2020, float3( 1.34357825, -0.28217967, -0.06139858)),
+        dot(linear_r2020, float3(-0.06529745,  1.08782226, -0.02252481)),
+        dot(linear_r2020, float3( 0.00282179, -0.02598807,  1.02316628))
+    );
+}
+
+// One-shot: sRGB-encoded → linear → primaries to DisplayP3 (by
+// `input_colorspace`) → sRGB-encode again. Every fragment return path
+// goes through this so the framebuffer — plain `BGRA8Unorm` tagged
+// DisplayP3 — stores gamma-encoded values that the compositor can
+// display directly, and our alpha blending stays in gamma space
+// (matches ghostty `alpha-blending = native`).
+//   0 = sRGB      → sRGB → P3 matrix
+//   1 = DisplayP3 → identity (already P3)
+//   2 = Rec.2020  → Rec.2020 → P3 matrix
+float3 prepare_output_rgb(float3 srgb, uchar input_colorspace) {
+    float3 lin = srgb_to_linear(srgb);
+    if (input_colorspace == 0u) {
+        lin = srgb_to_p3(lin);
+    } else if (input_colorspace == 2u) {
+        lin = rec2020_to_p3(lin);
+    }
+    return linear_to_srgb(lin);
 }
 
 // Pick the corner radius based on which quadrant the point is in
@@ -196,6 +267,7 @@ float underline_alpha(float x_pos, float y_pos, float rect_height, float thickne
 // Fragment shader
 fragment float4 fs_main(
     VertexOutput input [[stage_in]],
+    constant Globals& globals [[buffer(1)]],
     texture2d<float> color_texture [[texture(0)]],
     texture2d<float> mask_texture [[texture(1)]],
     sampler font_sampler [[sampler(0)]]
@@ -221,7 +293,10 @@ fragment float4 fs_main(
         float thickness = input.corner_radii.x;
 
         float alpha = underline_alpha(x_pos, y_pos, rect_height, thickness, input.underline_style);
-        return float4(input.f_color.rgb, input.f_color.a * alpha);
+        return float4(
+            prepare_output_rgb(input.f_color.rgb, globals.input_colorspace),
+            input.f_color.a * alpha
+        );
     }
 
     // Handle texture sampling for glyphs
@@ -240,7 +315,7 @@ fragment float4 fs_main(
 
     // Fast path: no rounding
     if (!has_corners) {
-        return out;
+        return float4(prepare_output_rgb(out.rgb, globals.input_colorspace), out.a);
     }
 
     float2 size = input.rect_size;
@@ -269,5 +344,6 @@ fragment float4 fs_main(
         discard_fragment();
     }
 
-    return out * float4(1.0, 1.0, 1.0, saturate(antialias_threshold - outer_sdf));
+    float edge = saturate(antialias_threshold - outer_sdf);
+    return float4(prepare_output_rgb(out.rgb, globals.input_colorspace), out.a * edge);
 }

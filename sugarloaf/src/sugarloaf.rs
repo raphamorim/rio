@@ -5,7 +5,7 @@ pub mod state;
 use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::font_cache::{resolve_with, FontCache, ResolvedGlyph};
+use crate::font_cache::{compute_advance, resolve_with, FontCache, ResolvedGlyph};
 use crate::font_introspector::Attributes;
 use crate::layout::{RootStyle, TextLayout};
 use crate::renderer::Renderer;
@@ -36,7 +36,9 @@ pub struct Sugarloaf<'a> {
     cpu_cache: crate::renderer::cpu::CpuCache,
     /// Memo of `(char, attrs) -> ResolvedGlyph`. Owned here (next to
     /// the FontLibrary it caches) so frontends never have to track
-    /// their own font cache.
+    /// their own font cache. Each entry carries both terminal-cell
+    /// width (for the grid) and unscaled glyph advance (for
+    /// proportional UI via `char_advance`).
     font_cache: FontCache,
 }
 
@@ -91,18 +93,13 @@ pub enum Colorspace {
     Rec2020,
 }
 
-#[cfg(target_os = "macos")]
 #[allow(clippy::derivable_impls)]
 impl Default for Colorspace {
     fn default() -> Colorspace {
-        Colorspace::DisplayP3
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-#[allow(clippy::derivable_impls)]
-impl Default for Colorspace {
-    fn default() -> Colorspace {
+        // See `rio-backend::config::window::Colorspace::default` — the
+        // config field drives how input colors are interpreted, and the
+        // shader/surface always target a wide-gamut output. Default sRGB
+        // keeps theme bytes visually consistent with the rest of the OS.
         Colorspace::Srgb
     }
 }
@@ -163,9 +160,10 @@ impl Sugarloaf<'_> {
         layout: RootStyle,
     ) -> Result<Sugarloaf<'a>, Box<SugarloafWithErrors<'a>>> {
         let font_features = renderer.font_features.to_owned();
+        let colorspace = renderer.colorspace;
         let ctx = Context::new(window, renderer);
 
-        let renderer = Renderer::new(&ctx);
+        let renderer = Renderer::new(&ctx, colorspace);
         let state = SugarState::new(layout, font_library, &font_features);
 
         let font_cache = FontCache::new();
@@ -222,6 +220,62 @@ impl Sugarloaf<'_> {
         }
         let font_ctx = self.state.content.font_library().inner.read();
         resolve_with(&mut self.font_cache, &font_ctx, ch, attrs)
+    }
+
+    /// Horizontal advance in pixels for a single char rendered with
+    /// `attrs` at `font_size`, using the same font fallback as
+    /// `resolve_glyph`. Answered from the `FontCache` entry — no
+    /// `content().build()` round trip.
+    ///
+    /// Returns `0.0` when the font library can't produce an advance
+    /// (font id unregistered or SFNT parse failure) — the same shape
+    /// an OS text engine returns for an unmapped glyph, so callers
+    /// can sum widths without branching. The failure is cached as an
+    /// `AdvanceInfo` with `units_per_em = 0` (which `scaled` already
+    /// treats as 0), so repeated queries for the same char don't
+    /// re-walk the font data on every frame.
+    ///
+    /// Lazy: the glyph cache keeps the advance `None` until the first
+    /// `char_advance` call for this `(char, attrs)`, then fills it for
+    /// the rest of the session (or until `update_font` swaps the font
+    /// library and clears the cache). The terminal grid path only
+    /// writes/reads `ResolvedGlyph::width` (cell count), so it never
+    /// pays for the hmtx / upem lookup that `char_advance` performs
+    /// on first sighting.
+    ///
+    /// Intended for proportional UI labels (tab titles, palette,
+    /// hints). Per-char isolated advance: does NOT account for
+    /// kerning, ligatures, or emoji cluster formation. Callers that
+    /// need those must build the full text span and measure via
+    /// `get_text_rendered_width`.
+    pub fn char_advance(&mut self, ch: char, attrs: Attributes, font_size: f32) -> f32 {
+        let resolved = self.resolve_glyph(ch, attrs);
+        if let Some(advance) = resolved.advance {
+            return advance.scaled(font_size);
+        }
+
+        let computed = {
+            let font_ctx = self.state.content.font_library().inner.read();
+            compute_advance(&font_ctx, resolved.font_id, ch)
+        };
+        // Cache both hits AND misses — misses become a zero-advance
+        // sentinel (`units_per_em = 0`) so `scaled()` returns 0 and
+        // next frame short-circuits instead of re-walking font data.
+        let info = computed.unwrap_or(crate::font_cache::AdvanceInfo {
+            advance_units: 0.0,
+            units_per_em: 0,
+        });
+        self.font_cache.set_advance((ch, attrs), info);
+        info.scaled(font_size)
+    }
+
+    /// Sorted, deduplicated family names of every font the host system
+    /// exposes via `font-kit`'s `SystemSource`. Intended for UI listings
+    /// (the command palette's "List Fonts" browser). Not cached — the
+    /// set changes rarely, and the one-off cost of walking the library
+    /// is fine for a human-triggered lookup.
+    pub fn font_family_names(&self) -> Vec<String> {
+        self.state.content.font_library().family_names()
     }
 
     /// Resolve a batch of glyph queries with a single FontLibrary
@@ -967,62 +1021,22 @@ impl Sugarloaf<'_> {
         self.reset();
     }
 
+    /// Drive a Metal frame. All command-buffer / encoder / drawable
+    /// orchestration now lives inside `Renderer::render_metal` so the
+    /// triple-buffered pool's acquire / completion-handler / retry-on-
+    /// overflow loop can see them all (mirrors zed's `MetalRenderer::draw`).
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn render_metal(&mut self) {
-        use metal::*;
-
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Metal(metal) => metal,
             _ => return,
         };
 
-        match ctx.get_current_texture() {
-            Ok(surface_texture) => {
-                // Create command buffer
-                let command_buffer = ctx.command_queue.new_command_buffer();
-                command_buffer.set_label("Sugarloaf Metal Render");
-
-                // Create render pass descriptor
-                let render_pass_descriptor = RenderPassDescriptor::new();
-                let color_attachment = render_pass_descriptor
-                    .color_attachments()
-                    .object_at(0)
-                    .unwrap();
-
-                color_attachment.set_texture(Some(&surface_texture.texture));
-                color_attachment.set_store_action(MTLStoreAction::Store);
-                color_attachment.set_load_action(MTLLoadAction::Clear);
-
-                // Set background color
-                let clear_color = if let Some(background_color) = self.background_color {
-                    MTLClearColor::new(
-                        background_color.r,
-                        background_color.g,
-                        background_color.b,
-                        background_color.a,
-                    )
-                } else {
-                    // Default to transparent black if no background color set
-                    MTLClearColor::new(0.0, 0.0, 0.0, 0.0)
-                };
-                color_attachment.set_clear_color(clear_color);
-
-                // Create render command encoder
-                let render_encoder =
-                    command_buffer.new_render_command_encoder(render_pass_descriptor);
-                render_encoder.set_label("Sugarloaf Metal Render Pass");
-
-                self.renderer.render_metal(ctx, render_encoder);
-
-                render_encoder.end_encoding();
-                command_buffer.present_drawable(&surface_texture.drawable);
-                command_buffer.commit();
-            }
-            Err(error) => {
-                tracing::error!("Metal surface error: {}", error);
-            }
-        }
+        let bg_color = self
+            .background_color
+            .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32]);
+        self.renderer.render_metal(ctx, bg_color);
 
         self.reset();
     }

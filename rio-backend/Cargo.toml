@@ -25,6 +25,7 @@ bytemuck = { workspace = true }
 corcovado = { workspace = true }
 rustc-hash = { workspace = true }
 regex = { workspace = true }
+onig = { workspace = true }
 raw-window-handle = { workspace = true }
 copypasta = { version = "0.10.2", default-features = false }
 dirs = "6.0.0"
@@ -33,6 +34,7 @@ libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
 sugarloaf = { workspace = true }
+rio-grapheme-width = { workspace = true }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }

@@ -4,6 +4,7 @@ pub mod fonts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
 pub mod metrics;
+pub mod nerd_font_attributes;
 pub mod text_run_cache;
 
 #[cfg(test)]
@@ -19,7 +20,7 @@ use crate::font_introspector::text::cluster::Token;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
 use crate::font_introspector::text::Codepoint;
 use crate::font_introspector::text::Script;
-use crate::font_introspector::{CacheKey, FontRef, Synthesis};
+use crate::font_introspector::{tag_from_bytes, CacheKey, FontRef, Synthesis};
 use crate::layout::SpanStyle;
 use crate::SugarloafErrors;
 use dashmap::DashMap;
@@ -135,6 +136,31 @@ impl FontLibrary {
             },
             sugarloaf_errors,
         )
+    }
+
+    /// Sorted, deduplicated list of every font family name the host
+    /// system exposes via `font-kit`'s `SystemSource` (CoreText on
+    /// macOS, DirectWrite on Windows, fontconfig on Linux).
+    ///
+    /// Intended for the command-palette "List Fonts" browser, so users
+    /// can see what's installed without leaving the terminal. Does NOT
+    /// currently include fonts registered through rio's
+    /// `fonts.additional_dirs` config — those aren't retained on the
+    /// `FontLibrary` past load, and walking the dirs again would
+    /// duplicate I/O. A follow-up can widen this once `FontLibrary`
+    /// keeps a `Database` alive.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn family_names(&self) -> Vec<String> {
+        let source = font_kit::source::SystemSource::new();
+        let mut families = source.all_families().unwrap_or_default();
+        families.sort_unstable();
+        families.dedup();
+        families
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn family_names(&self) -> Vec<String> {
+        Vec::new()
     }
 }
 
@@ -341,7 +367,7 @@ impl FontLibraryData {
             .map(PathBuf::from)
             .for_each(|p| db.load_fonts_dir(p));
 
-        match find_font(&db, spec.regular, false, false) {
+        match find_font(&db, spec.regular, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -355,7 +381,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.italic, false, false) {
+        match find_font(&db, spec.italic, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -368,7 +394,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.bold, false, false) {
+        match find_font(&db, spec.bold, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -381,7 +407,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.bold_italic, true, false) {
+        match find_font(&db, spec.bold_italic, true) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -402,7 +428,6 @@ impl FontLibraryData {
                     ..SugarloafFont::default()
                 },
                 true,
-                false,
             ) {
                 FindResult::Found(data) => {
                     self.insert(data);
@@ -414,22 +439,13 @@ impl FontLibraryData {
             }
         }
 
-        if let Some(emoji_font) = spec.emoji {
-            match find_font(&db, emoji_font, true, true) {
-                FindResult::Found(data) => {
-                    self.insert(data);
-                }
-                FindResult::NotFound(spec) => {
-                    self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
-                    if !spec.is_default_family() {
-                        fonts_not_fount.push(spec);
-                    }
-                }
-            }
-        } else {
-            self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
-        }
-
+        // User-configured fallbacks run before the bundled emoji / Nerd Font
+        // slices so a color emoji family dropped into `extras` (e.g.
+        // `extras = [{family = "Apple Color Emoji"}]`) takes priority over
+        // the bundled Twemoji. Emoji-ness is auto-detected inside `FontData::
+        // from_data` via `has_color_tables` (COLR/CBDT/CBLC/sbix), so real
+        // emoji families get the wide-cell / color-atlas treatment while
+        // Nerd Font families stay single-cell.
         for extra_font in spec.extras {
             match find_font(
                 &db,
@@ -439,7 +455,6 @@ impl FontLibraryData {
                     weight: extra_font.weight,
                     width: extra_font.width,
                 },
-                true,
                 true,
             ) {
                 FindResult::Found(data) => {
@@ -451,7 +466,8 @@ impl FontLibraryData {
             }
         }
 
-        self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO, false).unwrap());
+        self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap());
+        self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
 
         // TODO: Currently, it will naively just extend fonts from symbol_map
         // without even look if the font has been loaded before.
@@ -477,7 +493,6 @@ impl FontLibraryData {
                         family: extra_font_from_symbol_map.font_family,
                         ..SugarloafFont::default()
                     },
-                    true,
                     true,
                 ) {
                     FindResult::Found(data) => {
@@ -518,7 +533,7 @@ impl FontLibraryData {
 
     #[cfg(target_arch = "wasm32")]
     pub fn load(&mut self, _font_spec: SugarloafFonts) -> Vec<SugarloafFont> {
-        self.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR, false).unwrap());
+        self.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
 
         vec![]
     }
@@ -653,7 +668,6 @@ impl FontData {
         data: SharedData,
         path: PathBuf,
         evictable: bool,
-        is_emoji: bool,
         font_spec: &SugarloafFont,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let font = FontRef::from_index(&data, 0)
@@ -673,6 +687,7 @@ impl FontData {
 
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
+        let is_emoji = has_color_tables(&font);
 
         let data = (!evictable).then_some(data);
 
@@ -693,10 +708,7 @@ impl FontData {
     }
 
     #[inline]
-    pub fn from_slice(
-        data: &[u8],
-        is_emoji: bool,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_slice(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         let font = FontRef::from_index(data, 0).unwrap();
         let (offset, key) = (font.offset, font.key);
         // Return our struct with the original file data and copies of the
@@ -706,6 +718,7 @@ impl FontData {
         let weight = attributes.weight();
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
+        let is_emoji = has_color_tables(&font);
 
         Ok(Self {
             data: Some(SharedData::new(data.to_vec())),
@@ -722,6 +735,18 @@ impl FontData {
             metrics_cache: FxHashMap::default(),
         })
     }
+}
+
+/// Auto-detect emoji-ness from SFNT color tables (COLR, CBDT, CBLC, SBIX).
+/// Matches ghostty's `FT_HAS_COLOR()` / CoreText SBIX checks. Used to guard
+/// against Nerd Font families being mis-flagged as emoji when loaded via the
+/// `extras` config slot (`is_emoji` is wired per-load-site, but a real emoji
+/// font in that slot would still need the wide-cell/color-atlas treatment).
+fn has_color_tables(font: &FontRef<'_>) -> bool {
+    font.table(tag_from_bytes(b"COLR")).is_some()
+        || font.table(tag_from_bytes(b"CBDT")).is_some()
+        || font.table(tag_from_bytes(b"CBLC")).is_some()
+        || font.table(tag_from_bytes(b"sbix")).is_some()
 }
 
 pub type SugarloafFont = fonts::SugarloafFont;
@@ -741,7 +766,6 @@ fn find_font(
     db: &crate::font::loader::Database,
     font_spec: SugarloafFont,
     evictable: bool,
-    is_emoji: bool,
 ) -> FindResult {
     if !font_spec.is_default_family() {
         let family = font_spec.family.to_string();
@@ -799,7 +823,6 @@ fn find_font(
                                 font_data_arc,
                                 path.to_path_buf(),
                                 evictable,
-                                is_emoji,
                                 &font_spec,
                             ) {
                                 Ok(d) => {
@@ -830,7 +853,6 @@ fn find_font(
                             font_data,
                             std::path::PathBuf::from(&family),
                             evictable,
-                            is_emoji,
                             &font_spec,
                         ) {
                             Ok(d) => {
@@ -894,7 +916,7 @@ fn load_fallback_from_memory(font_spec: &SugarloafFont) -> FontData {
         (_, _) => constants::FONT_CASCADIAMONO_REGULAR,
     };
 
-    FontData::from_slice(font_to_load, false).unwrap()
+    FontData::from_slice(font_to_load).unwrap()
 }
 
 #[allow(dead_code)]

@@ -3,6 +3,7 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::mem::{self, MaybeUninit};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{io, panic, ptr};
@@ -19,8 +20,8 @@ use windows_sys::Win32::Graphics::Dwm::{
 };
 use windows_sys::Win32::Graphics::Gdi::{
     ChangeDisplaySettingsExW, ClientToScreen, CreateRectRgn, DeleteObject, InvalidateRgn,
-    RedrawWindow, CDS_FULLSCREEN, DISP_CHANGE_BADFLAGS, DISP_CHANGE_BADMODE,
-    DISP_CHANGE_BADPARAM, DISP_CHANGE_FAILED, DISP_CHANGE_SUCCESSFUL, RDW_INTERNALPAINT,
+    CDS_FULLSCREEN, DISP_CHANGE_BADFLAGS, DISP_CHANGE_BADMODE, DISP_CHANGE_BADPARAM,
+    DISP_CHANGE_FAILED, DISP_CHANGE_SUCCESSFUL,
 };
 use windows_sys::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL,
@@ -103,6 +104,14 @@ pub(crate) struct Window {
 
     // The events loop proxy.
     thread_executor: event_loop::EventLoopThreadExecutor,
+
+    /// Per-window dirty flag set by `request_redraw`. The
+    /// DwmFlush worker reads/clears this each tick to decide
+    /// whether to invalidate this window.
+    redraw_pending: Arc<AtomicBool>,
+
+    /// Shared registry; `Drop` removes our HWND.
+    vsync_state: Arc<event_loop::vsync::VSyncSharedState>,
 }
 
 impl Window {
@@ -154,7 +163,18 @@ impl Window {
         });
     }
 
-    pub fn set_blur(&self, _blur: bool) {}
+    pub fn set_blur(&self, blur: bool) {
+        // Maps the cross-platform `blur` flag to the Windows 11
+        // Acrylic backdrop (`DWMSBT_TRANSIENTWINDOW`). On Windows 10
+        // / pre-22H2 builds `DwmSetWindowAttribute` returns
+        // `E_INVALIDARG` and the backdrop silently does nothing —
+        // matches the no-op behaviour of the previous stub.
+        self.set_system_backdrop(if blur {
+            BackdropType::TransientWindow
+        } else {
+            BackdropType::None
+        });
+    }
 
     #[inline]
     pub fn set_visible(&self, visible: bool) {
@@ -177,11 +197,12 @@ impl Window {
 
     #[inline]
     pub fn request_redraw(&self) {
-        // NOTE: mark that we requested a redraw to handle requests during `WM_PAINT` handling.
+        // Defer the actual `RedrawWindow` to the DwmFlush worker;
+        // we just flag the window as dirty here. Mirrors macOS's
+        // `needs_redraw` flag consumed by the CVDisplayLink
+        // callback.
         self.window_state.lock().unwrap().redraw_requested = true;
-        unsafe {
-            RedrawWindow(self.hwnd(), ptr::null(), ptr::null_mut(), RDW_INTERNALPAINT);
-        }
+        self.redraw_pending.store(true, Ordering::Release);
     }
 
     #[inline]
@@ -1214,6 +1235,9 @@ impl Window {
 impl Drop for Window {
     #[inline]
     fn drop(&mut self) {
+        // Stop the vsync worker from invalidating this HWND once
+        // we've started its destruction.
+        self.vsync_state.unregister_window(self.hwnd());
         unsafe {
             // The window must be destroyed from the same thread that created it, so we send a
             // custom message to be handled by our callback to do the actual work.
@@ -1267,10 +1291,15 @@ impl InitData<'_> {
 
         unsafe { ImeContext::set_ime_allowed(window, false) };
 
+        let vsync_state = self.event_loop.vsync_state.clone();
+        let redraw_pending = vsync_state.register_window(window);
+
         Window {
             window: SyncWindowHandle(window),
             window_state,
             thread_executor: self.event_loop.create_thread_executor(),
+            redraw_pending,
+            vsync_state,
         }
     }
 
@@ -1315,6 +1344,7 @@ impl InitData<'_> {
         event_loop::WindowData {
             window_state: win.window_state.clone(),
             event_loop_runner: self.event_loop.runner_shared.clone(),
+            vsync_state: self.event_loop.vsync_state.clone(),
             key_event_builder: KeyEventBuilder::default(),
             _file_drop_handler: file_drop_handler,
             userdata_removed: Cell::new(false),
@@ -1409,6 +1439,9 @@ impl InitData<'_> {
         }
 
         win.set_system_backdrop(self.attributes.platform_specific.backdrop_type);
+        if self.attributes.blur {
+            win.set_blur(true);
+        }
 
         if let Some(color) = self.attributes.platform_specific.border_color {
             win.set_border_color(color);

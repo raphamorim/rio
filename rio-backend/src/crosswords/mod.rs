@@ -398,6 +398,23 @@ fn version_number(mut version: &str) -> usize {
     version_number
 }
 
+/// True when (`base`, `vs`) appears in Unicode's `emoji-variation-sequences.txt`,
+/// i.e. `vs` (U+FE0F or U+FE0E) is defined to have an effect on this base.
+/// Equivalent to kitty's `is_emoji_presentation_base` guard and ghostty's
+/// `emoji_vs_base` property — the actual widen/narrow decision is then
+/// gated on the current cell's `Wide` state by the callers.
+fn vs_is_valid_base(base: char, vs: char) -> bool {
+    use rio_grapheme_width::emoji::Presentation;
+    let mut buf = [0u8; 8];
+    let n1 = base.encode_utf8(&mut buf).len();
+    let n2 = vs.encode_utf8(&mut buf[n1..]).len();
+    // SAFETY: two valid chars written consecutively remain valid UTF-8.
+    let s = unsafe { core::str::from_utf8_unchecked(&buf[..n1 + n2]) };
+    // `for_grapheme` returns `Some(explicit)` iff the sequence is in
+    // VARIATION_MAP (forked from wezterm's emoji-variation-sequences.txt).
+    Presentation::for_grapheme(s).1.is_some()
+}
+
 // Max size of the window title stack.
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
 
@@ -1127,6 +1144,139 @@ impl<U: EventListener> Crosswords<U> {
         // whole flag set without filtering.
         cell.set_cell_flags(template_flags);
         *cursor_square = cell;
+    }
+
+    /// If the previous cell is a narrow, text-presentation emoji base whose
+    /// (base, U+FE0F) sequence is listed in emoji-variation-sequences.txt,
+    /// promote it to Wide and write a Spacer into the next column, advancing
+    /// the cursor past it. No-op otherwise.
+    ///
+    /// Mirrors kitty's `draw_combining_char` / ghostty's VS16 branch: font
+    /// shaping will return a wide emoji glyph for the (base, VS16) cluster
+    /// via cmap format 14, so the grid must budget two cells for it.
+    #[inline(never)]
+    fn apply_emoji_vs16(&mut self) {
+        let columns = self.grid.columns();
+        let row = self.grid.cursor.pos.row;
+        let cursor_col = self.grid.cursor.pos.col.0;
+        let should_wrap = self.grid.cursor.should_wrap;
+
+        let base_col = if should_wrap {
+            cursor_col
+        } else if cursor_col == 0 {
+            return;
+        } else {
+            cursor_col - 1
+        };
+
+        let base_cell = &self.grid[row][Column(base_col)];
+        if !matches!(base_cell.wide(), Wide::Narrow) {
+            return;
+        }
+        let base_char = base_cell.c();
+        if !vs_is_valid_base(base_char, '\u{FE0F}') {
+            return;
+        }
+
+        let spacer_col = base_col + 1;
+        if spacer_col >= columns {
+            // Base is at the final column → no room for a Spacer on this
+            // row. Mirror kitty's `move_widened_char_past_multiline_chars`
+            // (screen.c) and ghostty's wrap branch (Terminal.zig:414): turn
+            // the trailing cell into a `LeadingSpacer` (signals "wide char
+            // continues on next line"), wrap, and re-place the wide base
+            // on the new row, preserving the original cell's style and
+            // any extras (zerowidth combining chars attached before VS16).
+            if !self.mode.contains(Mode::LINE_WRAP) {
+                return;
+            }
+
+            // Snapshot the base cell — `write_at_cursor` below replaces
+            // it with a fresh `Square` and would otherwise lose the
+            // codepoint, style, and extras_id we want to move.
+            let base_snapshot = self.grid[row][Column(base_col)];
+
+            self.grid.cursor.pos.col = Column(base_col);
+            self.grid.cursor.should_wrap = false;
+            self.write_at_cursor(' ');
+            self.grid.cursor_cell().set_wide(Wide::LeadingSpacer);
+
+            self.wrapline();
+
+            let new_row = self.grid.cursor.pos.row;
+            let mut moved = base_snapshot;
+            moved.set_wide(Wide::Wide);
+            self.grid[new_row][Column(0)] = moved;
+
+            self.grid.cursor.pos.col = Column(1);
+            self.write_at_cursor(' ');
+            self.grid.cursor_cell().set_wide(Wide::Spacer);
+
+            if 2 < columns {
+                self.grid.cursor.pos.col = Column(2);
+            } else {
+                self.grid.cursor.should_wrap = true;
+            }
+
+            self.damage.damage_line(row.0 as usize);
+            self.damage.damage_line(new_row.0 as usize);
+            return;
+        }
+
+        self.grid[row][Column(base_col)].set_wide(Wide::Wide);
+
+        self.grid.cursor.pos.col = Column(spacer_col);
+        self.grid.cursor.should_wrap = false;
+        self.write_at_cursor(' ');
+        self.grid.cursor_cell().set_wide(Wide::Spacer);
+
+        if spacer_col + 1 < columns {
+            self.grid.cursor.pos.col = Column(spacer_col + 1);
+        } else {
+            self.grid.cursor.should_wrap = true;
+        }
+
+        self.damage.damage_line(row.0 as usize);
+    }
+
+    /// Inverse of `apply_emoji_vs16`: if the previous cell is a Wide emoji
+    /// base whose (base, U+FE0E) sequence is listed in the variation map,
+    /// narrow it back to a single cell, clear the trailing Spacer, and
+    /// retreat the cursor.
+    #[inline(never)]
+    fn apply_emoji_vs15(&mut self) {
+        let row = self.grid.cursor.pos.row;
+        let cursor_col = self.grid.cursor.pos.col.0;
+        let should_wrap = self.grid.cursor.should_wrap;
+
+        let (base_col, spacer_col) = if should_wrap {
+            if cursor_col == 0 {
+                return;
+            }
+            (cursor_col - 1, cursor_col)
+        } else {
+            if cursor_col < 2 {
+                return;
+            }
+            (cursor_col - 2, cursor_col - 1)
+        };
+
+        let base_cell = &self.grid[row][Column(base_col)];
+        if !matches!(base_cell.wide(), Wide::Wide) {
+            return;
+        }
+        let base_char = base_cell.c();
+        if !vs_is_valid_base(base_char, '\u{FE0E}') {
+            return;
+        }
+
+        self.grid[row][Column(base_col)].set_wide(Wide::Narrow);
+        self.grid[row][Column(spacer_col)] = Square::default();
+
+        self.grid.cursor.pos.col = Column(spacer_col);
+        self.grid.cursor.should_wrap = false;
+
+        self.damage.damage_line(row.0 as usize);
     }
 
     /// Read the hyperlink (if any) for the cell at `(line, col)`.
@@ -2347,6 +2497,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         // Handle zero-width characters.
         if width == 0 {
+            // Emoji presentation variation selectors flip the *width* of
+            // the preceding cell before being attached as combining data.
+            // Matches kitty/ghostty; see emoji-variation-sequences.txt.
+            // Without this, a text-presentation emoji like U+1F39F picks up
+            // a wide emoji glyph from the font shaper but stays in a single
+            // grid cell, overflowing into the neighbour on render.
+            match c {
+                '\u{FE0F}' => self.apply_emoji_vs16(),
+                '\u{FE0E}' => self.apply_emoji_vs15(),
+                _ => {}
+            }
+
             let mut column = self.grid.cursor.pos.col;
             if !self.grid.cursor.should_wrap {
                 column.0 = column.saturating_sub(1);
@@ -2388,6 +2550,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
             for col in (col.0..(columns - width)).rev() {
                 row.swap(col + width, col);
             }
+        }
+
+        // Set the per-row kitty placeholder flag so the renderer can
+        // skip the U+10EEEE scan on rows that don't have any. Mirrors
+        // ghostty's `page.zig:1953-1958` approach.
+        if c == crate::ansi::kitty_virtual::PLACEHOLDER {
+            let line = self.grid.cursor.pos.row;
+            self.grid[line].kitty_virtual_placeholder = true;
         }
 
         if width == 1 {
@@ -3369,6 +3539,25 @@ impl<U: EventListener> Handler for Crosswords<U> {
             image_id, graphic_data.width, graphic_data.height
         );
 
+        // `a=T` + `U=1` is what `kitten icat --unicode-placeholder`
+        // emits: combined transmit+place where the placement is virtual.
+        // Route to the virtual-placement path so only metadata is
+        // registered (the application emits U+10EEEE cells itself).
+        // Unlike `place_kitty_overlay`, this path doesn't push to
+        // `pending_images`, so we have to do that here — otherwise the
+        // GPU never sees the pixel data and the placeholder cells render
+        // as blank space.
+        if placement.virtual_placement {
+            let pixel_data = graphic_data.clone();
+            self.graphics
+                .store_kitty_image(image_id, None, graphic_data);
+            self.graphics.pending_images.push((image_id, pixel_data));
+            self.graphics.kitty_graphics_dirty = true;
+            self.send_graphics_updates();
+            self.place_virtual_graphic(placement);
+            return;
+        }
+
         // Store takes ownership and sets transmit_time.
         self.graphics
             .store_kitty_image(image_id, None, graphic_data);
@@ -3382,20 +3571,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
         &mut self,
         placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
     ) {
-        // Place a previously stored image (a=p)
         debug!(
-            "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}, unicode_placeholder={}",
+            "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}, virtual={}",
             placement.image_id,
             placement.x,
             placement.y,
             placement.columns,
             placement.rows,
-            placement.unicode_placeholder
+            placement.virtual_placement,
         );
 
-        // Check if this is a virtual placement (unicode_placeholder > 0 means U=1)
-        if placement.unicode_placeholder > 0 {
-            // Virtual placement: Write placeholder character(s) to grid
+        // `U=1` → virtual placement: store metadata, the application
+        // emits U+10EEEE placeholder cells itself. The renderer scans
+        // visible cells and composites the image at those positions.
+        if placement.virtual_placement {
             self.place_virtual_graphic(placement);
             return;
         }
@@ -3915,19 +4104,27 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Register a virtual placement (kitty graphics `a=p,U=1`).
+    ///
+    /// Per the spec, this command only declares metadata — it does NOT
+    /// write any cells. The application (e.g. `kitten icat
+    /// --unicode-placeholder`, see kitty's `kittens/icat/transmit.go:221`)
+    /// emits the U+10EEEE placeholder cells itself as ordinary text right
+    /// after this APC. The renderer scans visible cells for U+10EEEE,
+    /// decodes the image_id from the foreground color and the row/col
+    /// indices from the combining-mark diacritics (kitty_virtual::*), and
+    /// looks up the metadata stored here to know which image to composite.
     fn place_virtual_graphic(
         &mut self,
         placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
     ) {
         use crate::ansi::graphics::VirtualPlacement;
-        use crate::ansi::kitty_virtual;
 
         debug!(
             "Virtual placement: image_id={}, placement_id={}, columns={}, rows={}",
             placement.image_id, placement.placement_id, placement.columns, placement.rows
         );
 
-        // Store the virtual placement metadata
         let vp = VirtualPlacement {
             image_id: placement.image_id,
             placement_id: placement.placement_id,
@@ -3939,92 +4136,6 @@ impl<U: EventListener> Crosswords<U> {
         self.graphics
             .kitty_virtual_placements
             .insert((placement.image_id, placement.placement_id), vp);
-
-        // Calculate the grid dimensions needed
-        let columns = if placement.columns > 0 {
-            placement.columns as usize
-        } else {
-            // Default to a reasonable size if not specified
-            10
-        };
-        let rows = if placement.rows > 0 {
-            placement.rows as usize
-        } else {
-            10
-        };
-
-        // Extract image ID components
-        let image_id_low = placement.image_id & 0x00FFFFFF; // Lower 24 bits
-        let image_id_high = if placement.image_id > 0x00FFFFFF {
-            Some(((placement.image_id >> 24) & 0xFF) as u8)
-        } else {
-            None
-        };
-
-        // Convert IDs to colors
-        let fg_color = kitty_virtual::id_to_rgb(image_id_low);
-        let underline_color = if placement.placement_id > 0 {
-            Some(kitty_virtual::id_to_rgb(placement.placement_id))
-        } else {
-            None
-        };
-
-        // Save cursor position and template
-        let start_col = self.grid.cursor.pos.col;
-        let _start_row = self.grid.cursor.pos.row;
-        let saved_template = self.grid.cursor.template;
-
-        // Move to placement position if specified
-        if placement.x > 0 || placement.y > 0 {
-            self.grid.cursor.pos.col = Column(placement.x as usize);
-            self.grid.cursor.pos.row = Line(placement.y as i32);
-        }
-
-        // Write placeholder characters with proper encoding
-        for row_idx in 0..rows {
-            // Move to start of row
-            self.grid.cursor.pos.col = if placement.x > 0 {
-                Column(placement.x as usize)
-            } else {
-                start_col
-            };
-
-            for col_idx in 0..columns {
-                // Set colors to encode image_id and placement_id via the
-                // style table.
-                let fg = crate::config::colors::AnsiColor::Spec(fg_color);
-                let ul = underline_color.map(crate::config::colors::AnsiColor::Spec);
-                self.grid.update_template_style(|s| {
-                    s.fg = fg;
-                    s.underline_color = ul;
-                });
-
-                // Encode placeholder with diacritics for this cell's position
-                let placeholder_str = kitty_virtual::encode_placeholder(
-                    row_idx as u32,
-                    col_idx as u32,
-                    image_id_high,
-                );
-
-                // Write each character of the encoded placeholder
-                for ch in placeholder_str.chars() {
-                    self.write_at_cursor(ch);
-                }
-            }
-
-            // Move to next row
-            if row_idx < rows - 1 {
-                self.linefeed();
-            }
-        }
-
-        // Restore cursor template
-        self.grid.cursor.template = saved_template;
-
-        debug!(
-            "Wrote {}x{} placeholder cells for virtual placement (image_id={:#X})",
-            columns, rows, placement.image_id
-        );
     }
 }
 
@@ -5473,5 +5584,419 @@ mod tests {
 
         // The accessor should also return None.
         assert!(cw.cell_graphic(Line(0), Column(0)).is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // Emoji presentation variation selectors (VS15 / VS16).
+    // See `input()` + `apply_emoji_vs16` / `apply_emoji_vs15`.
+    // ------------------------------------------------------------------
+
+    fn new_term(cols: usize, rows: usize) -> Crosswords<VoidListener> {
+        let size = CrosswordsSize::new(cols, rows);
+        let window_id = crate::event::WindowId::from(0);
+        Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        )
+    }
+
+    #[test]
+    fn vs16_widens_text_presentation_emoji() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        // 🎟 (U+1F39F, EAW=N, default text presentation) then VS16.
+        cw.input('\u{1F39F}');
+        cw.input('\u{FE0F}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].c(), '\u{1F39F}');
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Spacer);
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+        assert!(!cw.grid.cursor.should_wrap);
+        // VS16 still attached as combining mark to the base cell.
+        let extras_id = cw.grid[row][Column(0)].extras_id();
+        assert!(extras_id.is_some());
+    }
+
+    #[test]
+    fn vs16_on_non_emoji_base_leaves_cell_narrow() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        cw.input('a');
+        cw.input('\u{FE0F}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].c(), 'a');
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid.cursor.pos.col, Column(1));
+    }
+
+    #[test]
+    fn vs16_on_already_wide_emoji_is_noop() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        // 🤝 (U+1F91D, EAW=W, already wide).
+        cw.input('\u{1F91D}');
+        cw.input('\u{FE0F}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Spacer);
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+    }
+
+    #[test]
+    fn vs15_narrows_default_emoji() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        // 👍 (U+1F44D THUMBS UP) defaults to emoji presentation. It is
+        // listed in emoji-variation-sequences.txt with a VS15 narrowing
+        // sequence (unlike e.g. 🤝 U+1F91D, which has no VS entry at all).
+        cw.input('\u{1F44D}');
+        cw.input('\u{FE0E}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].c(), '\u{1F44D}');
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid.cursor.pos.col, Column(1));
+        assert!(!cw.grid.cursor.should_wrap);
+    }
+
+    #[test]
+    fn vs15_on_non_listed_emoji_is_noop() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        // 🤝 (U+1F91D) is default-emoji but has no VS entry, so VS15
+        // cannot narrow it — the grid must keep the Wide+Spacer pair.
+        cw.input('\u{1F91D}');
+        cw.input('\u{FE0E}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Spacer);
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+    }
+
+    #[test]
+    fn vs16_at_column_zero_noop() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        // VS16 with no preceding base must be ignored.
+        cw.input('\u{FE0F}');
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid.cursor.pos.col, Column(0));
+    }
+
+    #[test]
+    fn vs16_at_last_column_wraps_base_to_next_row() {
+        use crate::performer::handler::Handler;
+        // Width 3 so that a 1-cell base at col 2 has no room for a spacer.
+        let mut cw = new_term(3, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{1F39F}');
+        // Cursor at col 2 with should_wrap=true after writing base in last col.
+        assert!(cw.grid.cursor.should_wrap);
+        cw.input('\u{FE0F}');
+
+        // Old row's last cell is now a LeadingSpacer signalling that a wide
+        // glyph continues on the wrapped line. The base char itself moves to
+        // (1, 0) marked Wide, with a Spacer at (1, 1).
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), 'a');
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), 'a');
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::LeadingSpacer);
+
+        assert_eq!(cw.grid[Line(1)][Column(0)].c(), '\u{1F39F}');
+        assert_eq!(cw.grid[Line(1)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[Line(1)][Column(1)].wide(), Wide::Spacer);
+
+        assert_eq!(cw.grid.cursor.pos.row, Line(1));
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+        assert!(!cw.grid.cursor.should_wrap);
+    }
+
+    #[test]
+    fn vs16_at_last_column_preserves_base_extras() {
+        use crate::performer::handler::Handler;
+        // Attach a combining mark to the base BEFORE VS16 arrives, then
+        // trigger the right-edge wrap and confirm the extras follow the
+        // base to the new row (matches ghostty's grapheme transfer block).
+        let mut cw = new_term(3, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{1F39F}');
+        // U+200D ZERO WIDTH JOINER attaches to the base as zerowidth.
+        cw.input('\u{200D}');
+        let original_extras = cw.grid[Line(0)][Column(2)].extras_id();
+        assert!(original_extras.is_some());
+
+        cw.input('\u{FE0F}');
+
+        // The wide base on the new row should still carry the same extras
+        // entry (the ZWJ we attached earlier).
+        let moved_extras = cw.grid[Line(1)][Column(0)].extras_id();
+        assert_eq!(moved_extras, original_extras);
+        assert_eq!(cw.grid[Line(1)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::LeadingSpacer);
+    }
+
+    #[test]
+    fn vs16_then_vs15_round_trip_narrows() {
+        use crate::performer::handler::Handler;
+        // Text-default 🎟 widened by VS16, then VS15 must narrow it back.
+        // The (🎟, VS15) entry in the variation map is (Text, Text) — our
+        // predicate matches any listed (base, vs) pair, not just the
+        // "changes presentation" ones, so round-tripping works.
+        let mut cw = new_term(10, 3);
+        cw.input('\u{1F39F}');
+        cw.input('\u{FE0F}');
+        cw.input('\u{FE0E}');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid.cursor.pos.col, Column(1));
+    }
+
+    #[test]
+    fn vs16_then_following_char_does_not_overlap() {
+        use crate::performer::handler::Handler;
+        // Reproduces the original vim-split-misalignment scenario: after
+        // widening the text-presentation emoji, the next character must
+        // land *past* the spacer, not on top of it.
+        let mut cw = new_term(10, 3);
+        cw.input('"');
+        cw.input('\u{1F39F}');
+        cw.input('\u{FE0F}');
+        cw.input('"');
+
+        let row = Line(0);
+        assert_eq!(cw.grid[row][Column(0)].c(), '"');
+        assert_eq!(cw.grid[row][Column(1)].c(), '\u{1F39F}');
+        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[row][Column(2)].wide(), Wide::Spacer);
+        assert_eq!(cw.grid[row][Column(3)].c(), '"');
+        assert_eq!(cw.grid.cursor.pos.col, Column(4));
+    }
+
+    /// End-to-end: feed rio the exact byte sequence `kitten icat
+    /// --unicode-placeholder` emits and verify the grid ends up with the
+    /// expected U+10EEEE cells, fg colors, and diacritics. Reproduces
+    /// the wire protocol from kitty's `kittens/icat/transmit.go:221`
+    /// (`write_unicode_placeholder`) — `\e[38:2:R:G:Bm` foreground +
+    /// per-cell `<U+10EEEE><row diac><col diac><high diac>` payload.
+    #[test]
+    fn icat_unicode_placeholder_wire_sequence_lands_in_grid() {
+        use crate::ansi::kitty_virtual::{DIACRITICS, PLACEHOLDER};
+
+        let size = CrosswordsSize::new(40, 20);
+        let columns = size.columns;
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor: crate::performer::handler::Processor<
+            crate::performer::handler::StdSyncHandler,
+        > = crate::performer::handler::Processor::new();
+
+        // 32-bit image_id with high byte non-zero (matches icat's
+        // rejection-sample loop in `transmit.go:280-288`).
+        let image_id: u32 = 0x0201_0203;
+        let high = (image_id >> 24) & 0xFF;
+        let r = (image_id >> 16) & 0xFF;
+        let g = (image_id >> 8) & 0xFF;
+        let b = image_id & 0xFF;
+
+        // 1) Transmit a 1×1 RGBA pixel under the chosen image_id (we
+        //    don't care about the pixel data — we just need an entry in
+        //    `kitty_images` so the renderer's existence check passes).
+        //    base64("\xFF\x00\x00\xFF") = "/wAA/w==".
+        let xmit = format!("\x1b_Gf=32,a=t,i={image_id},s=1,v=1;/wAA/w==\x1b\\");
+        processor.advance(&mut cw, xmit.as_bytes());
+
+        // 2) Register the virtual placement: 4 cols × 2 rows.
+        let cols = 4u32;
+        let rows = 2u32;
+        let place = format!("\x1b_Ga=p,U=1,i={image_id},c={cols},r={rows},q=2\x1b\\");
+        processor.advance(&mut cw, place.as_bytes());
+
+        // 3) Emit the placeholder cells themselves (what icat writes
+        //    after the placement APC). Set fg via colon-separated SGR,
+        //    write `<U+10EEEE><row><col><high>` per cell.
+        let id_high_diac = DIACRITICS[high as usize];
+        let mut cells = format!("\x1b[38:2:{r}:{g}:{b}m");
+        for (row, &row_diac) in DIACRITICS.iter().enumerate().take(rows as usize) {
+            for &col_diac in DIACRITICS.iter().take(cols as usize) {
+                cells.push(PLACEHOLDER);
+                cells.push(row_diac);
+                cells.push(col_diac);
+                cells.push(id_high_diac);
+            }
+            if row < rows as usize - 1 {
+                cells.push_str("\n\r");
+            }
+        }
+        cells.push_str("\x1b[39m");
+        processor.advance(&mut cw, cells.as_bytes());
+
+        // Metadata stored.
+        let vp = cw
+            .graphics
+            .kitty_virtual_placements
+            .get(&(image_id, 0))
+            .expect("virtual placement registered");
+        assert_eq!(vp.columns, cols);
+        assert_eq!(vp.rows, rows);
+
+        // Image transmitted.
+        assert!(
+            cw.graphics.get_kitty_image(image_id).is_some(),
+            "image was not stored under id {image_id:#X}"
+        );
+
+        // Each cell of the placement carries U+10EEEE + the right fg
+        // RGB + the right two diacritics (zerowidth). The third
+        // diacritic encodes image_id_high.
+        let style_set = cw.grid.style_set.clone();
+        let extras = cw.grid.extras_table.clone();
+        let _ = columns;
+        for (row, &row_diac) in DIACRITICS.iter().enumerate().take(rows as usize) {
+            for (col, &col_diac) in DIACRITICS.iter().enumerate().take(cols as usize) {
+                let sq = cw.grid[Line(row as i32)][Column(col)];
+                assert_eq!(
+                    sq.c(),
+                    PLACEHOLDER,
+                    "expected U+10EEEE at ({row},{col}), got {:#X}",
+                    sq.c() as u32
+                );
+                let style = style_set.get(sq.style_id());
+                match style.fg {
+                    crate::config::colors::AnsiColor::Spec(rgb) => {
+                        assert_eq!(rgb.r as u32, r);
+                        assert_eq!(rgb.g as u32, g);
+                        assert_eq!(rgb.b as u32, b);
+                    }
+                    other => panic!("expected RGB fg at ({row},{col}), got {other:?}"),
+                }
+                let zw = sq
+                    .extras_id()
+                    .and_then(|id| extras.get(id))
+                    .map(|e| e.zerowidth.as_slice())
+                    .unwrap_or(&[]);
+                assert_eq!(
+                    zw.len(),
+                    3,
+                    "expected 3 diacritics at ({row},{col}), got {}",
+                    zw.len()
+                );
+                assert_eq!(zw[0], row_diac, "row diacritic mismatch at ({row},{col})");
+                assert_eq!(zw[1], col_diac, "col diacritic mismatch at ({row},{col})");
+                assert_eq!(
+                    zw[2], id_high_diac,
+                    "high diacritic mismatch at ({row},{col})"
+                );
+            }
+        }
+
+        // Per-row dirty flag: rows that received placeholder cells must
+        // have it set; other rows must not. Mirrors ghostty's
+        // `page.zig:1953-1958` `kitty_virtual_placeholder`.
+        for row in 0..(rows as i32) {
+            assert!(
+                cw.grid[Line(row)].kitty_virtual_placeholder,
+                "row {row} should have kitty_virtual_placeholder = true",
+            );
+        }
+        // A row past the placement (no placeholder cells written there).
+        let past = rows as i32;
+        if past < cw.grid.screen_lines() as i32 {
+            assert!(
+                !cw.grid[Line(past)].kitty_virtual_placeholder,
+                "row {past} (no placeholders) must not have the flag set",
+            );
+        }
+    }
+
+    /// `place_virtual_graphic` is the handler for `_Ga=p,U=1,…\e\` — the
+    /// virtual-placement registration used by `kitten icat
+    /// --unicode-placeholder`. Per the kitty protocol spec the command
+    /// only stores metadata; the application emits the U+10EEEE
+    /// placeholder cells itself as ordinary text afterwards. This test
+    /// pins that contract: previously rio also auto-wrote the cells,
+    /// which raced kitty's own writes and broke the rendering.
+    #[test]
+    fn place_virtual_graphic_stores_metadata_without_writing_cells() {
+        use crate::ansi::kitty_graphics_protocol::PlacementRequest;
+
+        let size = CrosswordsSize::new(40, 20);
+        let columns = size.columns;
+        let screen_lines = size.screen_lines as i32;
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+
+        let cursor_before = cw.grid.cursor.pos;
+        let placement = PlacementRequest {
+            image_id: 1234,
+            placement_id: 0,
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            columns: 8,
+            rows: 4,
+            z_index: 0,
+            virtual_placement: true,
+            unicode_placeholder: 0,
+            cursor_movement: 0,
+        };
+
+        cw.place_graphic(placement);
+
+        // Metadata stored …
+        let vp = cw
+            .graphics
+            .kitty_virtual_placements
+            .get(&(1234, 0))
+            .expect("virtual placement registered");
+        assert_eq!(vp.image_id, 1234);
+        assert_eq!(vp.columns, 8);
+        assert_eq!(vp.rows, 4);
+
+        // … but no placeholder cells written. The application is
+        // responsible for emitting U+10EEEE itself; the terminal must not
+        // double-write.
+        for line in 0..screen_lines {
+            for col in 0..columns {
+                let cp = cw.grid[Line(line)][Column(col)].c();
+                assert_ne!(
+                    cp,
+                    crate::ansi::kitty_virtual::PLACEHOLDER,
+                    "unexpected U+10EEEE cell at ({line},{col})"
+                );
+            }
+        }
+
+        // Cursor must be untouched.
+        assert_eq!(cw.grid.cursor.pos, cursor_before);
     }
 }

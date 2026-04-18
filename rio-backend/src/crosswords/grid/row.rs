@@ -19,6 +19,14 @@ pub struct Row<T> {
     /// This is the upper bound on the number of elements in the row, which have been modified
     /// since the last reset. All cells after this point are guaranteed to be equal.
     pub(crate) occ: usize,
+
+    /// Set when at least one cell in the row contains a kitty Unicode
+    /// graphics-protocol placeholder (U+10EEEE). The renderer skips the
+    /// placeholder scan on rows where this is `false`. Mirrors ghostty's
+    /// `page.zig:1953-1958` `kitty_virtual_placeholder` row flag.
+    /// Cleared by `reset`; set by `Crosswords::input` whenever a
+    /// placeholder codepoint lands in the row.
+    pub kitty_virtual_placeholder: bool,
 }
 
 impl<T: PartialEq> PartialEq for Row<T> {
@@ -49,7 +57,11 @@ impl<T: Clone + Default> Row<T> {
             inner.set_len(columns);
         }
 
-        Row { inner, occ: 0 }
+        Row {
+            inner,
+            occ: 0,
+            kitty_virtual_placeholder: false,
+        }
     }
 
     /// Increase the number of columns in the row.
@@ -104,6 +116,7 @@ impl<T: Clone + Default> Row<T> {
             item.reset(template);
         }
         self.occ = 0;
+        self.kitty_virtual_placeholder = false;
     }
 }
 
@@ -111,7 +124,11 @@ impl<T: Clone + Default> Row<T> {
 impl<T> Row<T> {
     #[inline]
     pub fn from_vec(vec: Vec<T>, occ: usize) -> Row<T> {
-        Row { inner: vec, occ }
+        Row {
+            inner: vec,
+            occ,
+            kitty_virtual_placeholder: false,
+        }
     }
 
     #[inline]

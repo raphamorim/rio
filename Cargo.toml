@@ -6,6 +6,7 @@ members = [
     "copa",
     "rio-proc-macros",
     "rio-backend",
+    "rio-grapheme-width",
     "rio-window",
     "rio-notifier",
     "frontends/rioterm",
@@ -13,7 +14,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.3.9"
+version = "0.3.11"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -29,16 +30,17 @@ readme = "README.md"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-teletypewriter = { path = "teletypewriter", version = "0.3.9" }
-rio-backend = { path = "rio-backend", version = "0.3.9" }
-rio-window = { path = "rio-window", version = "0.3.9", default-features = false }
-rio-notifier = { path = "rio-notifier", version = "0.3.9" }
-sugarloaf = { path = "sugarloaf", version = "0.3.9" }
+teletypewriter = { path = "teletypewriter", version = "0.3.11" }
+rio-backend = { path = "rio-backend", version = "0.3.11" }
+rio-window = { path = "rio-window", version = "0.3.11", default-features = false }
+rio-notifier = { path = "rio-notifier", version = "0.3.11" }
+rio-grapheme-width = { path = "rio-grapheme-width", version = "0.3.11" }
+sugarloaf = { path = "sugarloaf", version = "0.3.11" }
 
 # Own dependencies
-copa = { path = "copa", default-features = true, version = "0.3.9" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.3.9" }
-corcovado = { path = "corcovado", version = "0.3.9" }
+copa = { path = "copa", default-features = true, version = "0.3.11" }
+rio-proc-macros = { path = "rio-proc-macros", version = "0.3.11" }
+corcovado = { path = "corcovado", version = "0.3.11" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.5", features = [
     "nightly",
@@ -60,6 +62,7 @@ image_rs = { package = "image", version = "0.25.10", default-features = false, f
     "bmp",
 ] }
 regex = "1.12.3"
+onig = { version = "6.5.1", default-features = false }
 bytemuck = { version = "1.25.0", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
 wgpu = "28.0.0"
