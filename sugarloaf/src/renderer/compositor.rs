@@ -286,12 +286,7 @@ impl Compositor {
                                 // natural raster size. Anything else drifts
                                 // away from Ghostty's output.
                                 let _ = (cell_w, cells);
-                                Rect::new(
-                                    gx,
-                                    gy,
-                                    entry.width as f32,
-                                    entry.height as f32,
-                                )
+                                Rect::new(gx, gy, entry.width as f32, entry.height as f32)
                             }
                         } else if entry.is_bitmap {
                             // Color bitmap (emoji) glyphs fall here when the
@@ -315,12 +310,10 @@ impl Compositor {
                             if orig_w > 0.0 && orig_h > 0.0 {
                                 let cell_top = style.baseline - style.ascent;
                                 let cell_h = style.ascent + style.descent;
-                                let available_w =
-                                    glyph.advance * (1.0 - 2.0 * PAD_EACH);
+                                let available_w = glyph.advance * (1.0 - 2.0 * PAD_EACH);
                                 // Cover: pick the larger scale factor so the
                                 // emoji fills the slot on at least one axis.
-                                let scale =
-                                    (available_w / orig_w).max(cell_h / orig_h);
+                                let scale = (available_w / orig_w).max(cell_h / orig_h);
                                 let sw = orig_w * scale;
                                 let sh = orig_h * scale;
                                 let cx = (glyph.x + subpx_bias.0).floor()

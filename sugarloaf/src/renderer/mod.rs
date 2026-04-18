@@ -1542,9 +1542,7 @@ impl Renderer {
                             // char_width == 1 (Latin, box-drawing, etc.), so
                             // box-drawing glyphs that rely on tiling at their
                             // natural pen advance stay aligned.
-                            let cell_shift = if use_grid_cell_size
-                                && char_width > 1.0
-                            {
+                            let cell_shift = if use_grid_cell_size && char_width > 1.0 {
                                 cell_width * (char_width - 1.0) / 2.0
                             } else {
                                 0.0
@@ -1633,9 +1631,7 @@ impl Renderer {
                             let mut shaped_glyphs = Vec::new();
 
                             // Same Ghostty-style cell centering as above.
-                            let cell_shift = if use_grid_cell_size
-                                && char_width > 1.0
-                            {
+                            let cell_shift = if use_grid_cell_size && char_width > 1.0 {
                                 cell_width * (char_width - 1.0) / 2.0
                             } else {
                                 0.0
