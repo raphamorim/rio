@@ -240,20 +240,15 @@ impl Compositor {
         } else {
             // Handle regular glyphs
             for glyph in glyphs {
-                // For PUA glyphs with a multi-cell constraint, rasterize at
-                // `cells × font_size` so the compositor only ever downscales
-                // in the fit pass below — upscaling an atlas bitmap would be
-                // blurry. For Cascadia-style fonts that already render ~2
-                // cells wide this is a no-op downscale; for JetBrainsMono NF
-                // Mono (~1 cell wide) this is what makes the 2-cell slot
-                // actually look 2-cell-sized instead of small-and-centered.
-                let entry = match style.scale_constraint {
-                    Some((_, cells)) if cells > 1 => {
-                        let larger = ((style.font_size * cells as f32) as u16).max(1);
-                        session.get_at_size(glyph.id, larger)
-                    }
-                    _ => session.get(glyph.id),
-                };
+                // Rasterize Nerd Font / PUA glyphs once at the nominal font
+                // size — same as Ghostty. The previous "rasterize at
+                // cells × font_size" trick produced a 2× raster that the
+                // constraint math below (ported from Ghostty) then tried to
+                // re-scale *from*, compounding into a ~2× oversized glyph
+                // vs Ghostty's output. With nominal rasterization, the
+                // constraint's width/height factors land exactly where
+                // Ghostty puts them.
+                let entry = session.get(glyph.id);
                 if let Some(entry) = entry {
                     if let Some(img) = session.get_image(entry.image) {
                         let gx = (glyph.x + subpx_bias.0).floor() + entry.left as f32;
@@ -284,28 +279,19 @@ impl Compositor {
                                     baseline: style.baseline,
                                 })
                             } else {
-                                let target_w = cell_w * cells as f32;
-                                let target_h = style.line_height;
-                                let orig_w = entry.width as f32;
-                                let orig_h = entry.height as f32;
-
-                                let scale = (target_w / orig_w).min(target_h / orig_h);
-                                let sw = orig_w * scale;
-                                let sh = orig_h * scale;
-
-                                // Center horizontally within the constraint
-                                // slot that starts at `glyph.x`.
-                                let cx = glyph.x + (target_w - sw) / 2.0;
-                                // Center vertically within the line. PUA /
-                                // Nerd Font symbols aren't baseline-anchored
-                                // the way text glyphs are — scaling `entry.top`
-                                // shifts the image up because the top-bearing
-                                // scales faster than the descent-bearing. Same
-                                // choice ghostty makes for `isSymbol(cp)` via
-                                // `.align_vertical = .center1`.
-                                let cy = style.topline + (style.line_height - sh) / 2.0;
-
-                                Rect::new(cx, cy, sw, sh)
+                                // No per-codepoint attribute — match
+                                // Ghostty's `Constraint::none` exactly:
+                                // no scaling, no slot-centering, glyph
+                                // renders at its natural pen position and
+                                // natural raster size. Anything else drifts
+                                // away from Ghostty's output.
+                                let _ = (cell_w, cells);
+                                Rect::new(
+                                    gx,
+                                    gy,
+                                    entry.width as f32,
+                                    entry.height as f32,
+                                )
                             }
                         } else if entry.is_bitmap {
                             // Color bitmap (emoji) glyphs fall here when the
@@ -340,7 +326,19 @@ impl Compositor {
                                 let cx = (glyph.x + subpx_bias.0).floor()
                                     + (glyph.advance - sw) / 2.0;
                                 let cy = cell_top + (cell_h - sh) / 2.0;
-                                Rect::new(cx, cy, sw, sh)
+                                // Ghostty-style sbix quantization (`face.zig:
+                                // 385-390`): snap both edges to the pixel
+                                // grid. Bitmap emoji (sbix — Apple Color
+                                // Emoji) sampled at fractional offsets
+                                // looks blurry; rounding cx/cy/sw/sh to
+                                // whole pixels lets the sampler hit the
+                                // source texels cleanly. No-op for COLR
+                                // glyphs where the scale already snapped.
+                                let x0 = cx.round();
+                                let x1 = (cx + sw).round();
+                                let y0 = cy.round();
+                                let y1 = (cy + sh).round();
+                                Rect::new(x0, y0, x1 - x0, y1 - y0)
                             } else {
                                 Rect::new(gx, gy, orig_w, orig_h)
                             }
