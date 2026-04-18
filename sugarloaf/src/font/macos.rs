@@ -21,9 +21,7 @@ use core_foundation::{
     url::{CFURLRef, CFURL},
 };
 use core_graphics::{
-    base::{
-        kCGBitmapByteOrder32Little, kCGImageAlphaPremultipliedFirst, CGFloat,
-    },
+    base::{kCGBitmapByteOrder32Little, kCGImageAlphaPremultipliedFirst, CGFloat},
     color_space::{kCGColorSpaceDisplayP3, CGColorSpace},
     context::{CGContext, CGTextDrawingMode},
     font::CGGlyph,
@@ -32,13 +30,13 @@ use core_graphics::{
 use core_text::{
     font as ct_font,
     font::{CTFont, CTFontRef},
-    font_collection, font_manager,
+    font_collection,
     font_descriptor::{
-        self, kCTFontFamilyNameAttribute, kCTFontOrientationDefault,
-        kCTFontSlantTrait, kCTFontTraitsAttribute, kCTFontWeightTrait,
-        kCTFontWidthTrait, CTFontDescriptor, CTFontDescriptorRef,
-        CTFontDescriptorCreateMatchingFontDescriptor,
+        self, kCTFontFamilyNameAttribute, kCTFontOrientationDefault, kCTFontSlantTrait,
+        kCTFontTraitsAttribute, kCTFontWeightTrait, kCTFontWidthTrait, CTFontDescriptor,
+        CTFontDescriptorCreateMatchingFontDescriptor, CTFontDescriptorRef,
     },
+    font_manager,
     line::CTLine,
     string_attributes::kCTFontAttributeName,
 };
@@ -135,7 +133,9 @@ fn ct_font_sheared(base: &CTFont, size: f64) -> CTFont {
 /// rejects (duplicate registration, malformed files) — the rest of the dir
 /// still loads.
 pub fn register_fonts_in_dir(dir: &std::path::Path) {
-    let walker = walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok());
+    let walker = walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok());
     for entry in walker {
         let path = entry.path();
         if !path.is_file() {
@@ -210,8 +210,9 @@ impl FontHandle {
         use core_foundation::data::CFData;
 
         let data = CFData::from_buffer(font_bytes);
-        let array_ref =
-            unsafe { CTFontManagerCreateFontDescriptorsFromData(data.as_concrete_TypeRef()) };
+        let array_ref = unsafe {
+            CTFontManagerCreateFontDescriptorsFromData(data.as_concrete_TypeRef())
+        };
         if array_ref.is_null() {
             return None;
         }
@@ -356,22 +357,36 @@ pub fn rasterize_glyph(
     // reports. Fall back to a cell sized from the font's line metrics and the
     // glyph's advance; CoreText paints the color layers into that box. sbix
     // (bitmap) emoji reports a real bbox so they skip this branch.
-    let bounds = if is_color
-        && (raw_bounds.size.width <= 0.0 || raw_bounds.size.height <= 0.0)
-    {
-        let ascent = ct_font.ascent();
-        let descent = ct_font.descent();
-        let mut advance = CGSize::new(0.0, 0.0);
-        unsafe {
-            ct_font.get_advances_for_glyphs(
-                kCTFontOrientationDefault,
-                glyphs.as_ptr(),
-                &mut advance,
-                1,
-            );
-        }
-        if advance.width <= 0.0 || ascent + descent <= 0.0 {
-            // No meaningful metrics — treat as truly empty.
+    let bounds =
+        if is_color && (raw_bounds.size.width <= 0.0 || raw_bounds.size.height <= 0.0) {
+            let ascent = ct_font.ascent();
+            let descent = ct_font.descent();
+            let mut advance = CGSize::new(0.0, 0.0);
+            unsafe {
+                ct_font.get_advances_for_glyphs(
+                    kCTFontOrientationDefault,
+                    glyphs.as_ptr(),
+                    &mut advance,
+                    1,
+                );
+            }
+            if advance.width <= 0.0 || ascent + descent <= 0.0 {
+                // No meaningful metrics — treat as truly empty.
+                return Some(RasterizedGlyph {
+                    width: 0,
+                    height: 0,
+                    left: 0,
+                    top: 0,
+                    is_color,
+                    bytes: Vec::new(),
+                });
+            }
+            CGRect::new(
+                &CGPoint::new(0.0, -descent),
+                &CGSize::new(advance.width, ascent + descent),
+            )
+        } else if raw_bounds.size.width <= 0.0 || raw_bounds.size.height <= 0.0 {
+            // Zero-area monochrome glyph (space, ZWJ, combining mark with no ink).
             return Some(RasterizedGlyph {
                 width: 0,
                 height: 0,
@@ -380,24 +395,9 @@ pub fn rasterize_glyph(
                 is_color,
                 bytes: Vec::new(),
             });
-        }
-        CGRect::new(
-            &CGPoint::new(0.0, -descent),
-            &CGSize::new(advance.width, ascent + descent),
-        )
-    } else if raw_bounds.size.width <= 0.0 || raw_bounds.size.height <= 0.0 {
-        // Zero-area monochrome glyph (space, ZWJ, combining mark with no ink).
-        return Some(RasterizedGlyph {
-            width: 0,
-            height: 0,
-            left: 0,
-            top: 0,
-            is_color,
-            bytes: Vec::new(),
-        });
-    } else {
-        raw_bounds
-    };
+        } else {
+            raw_bounds
+        };
 
     // 1px halo on each edge so anti-aliased outlines aren't clipped.
     const PAD: i32 = 1;
@@ -560,8 +560,7 @@ pub fn find_font_path(
     let ct_slant: f64 = if italic { 1.0 } else { 0.0 };
     let ct_width = stretch.as_ct_width();
 
-    let weight_key =
-        unsafe { CFString::wrap_under_get_rule(kCTFontWeightTrait) };
+    let weight_key = unsafe { CFString::wrap_under_get_rule(kCTFontWeightTrait) };
     let slant_key = unsafe { CFString::wrap_under_get_rule(kCTFontSlantTrait) };
     let width_key = unsafe { CFString::wrap_under_get_rule(kCTFontWidthTrait) };
     let traits: CFDictionary<CFString, CFType> = CFDictionary::from_CFType_pairs(&[
@@ -570,8 +569,7 @@ pub fn find_font_path(
         (width_key, CFNumber::from(ct_width).as_CFType()),
     ]);
 
-    let family_key =
-        unsafe { CFString::wrap_under_get_rule(kCTFontFamilyNameAttribute) };
+    let family_key = unsafe { CFString::wrap_under_get_rule(kCTFontFamilyNameAttribute) };
     let traits_attr_key =
         unsafe { CFString::wrap_under_get_rule(kCTFontTraitsAttribute) };
     let attrs: CFDictionary<CFString, CFType> = CFDictionary::from_CFType_pairs(&[
@@ -649,9 +647,7 @@ fn bgra_to_rgba_in_place(bytes: &mut [u8]) {
 /// underline, x-height, cap-height, units_per_em). Strikeout has no CT
 /// API — we derive it like `font::macos::font_metrics` does, from the
 /// OS/2 table if available or x-height/2 as a fallback.
-pub fn design_unit_metrics(
-    handle: &FontHandle,
-) -> crate::font_introspector::Metrics {
+pub fn design_unit_metrics(handle: &FontHandle) -> crate::font_introspector::Metrics {
     let ct = &handle.base_font;
     let upem = ct.units_per_em() as f32;
 
@@ -843,10 +839,8 @@ pub fn font_metrics(handle: &FontHandle, size_px: f32) -> FontMetrics {
     // (what Ghostty does). If the font doesn't ship OS/2 or has it zeroed,
     // fall back to the x-height heuristic — strike through the middle of
     // the x-height band at underline thickness.
-    let (strikeout_offset, strikeout_thickness) = read_os2_strikeout(
-        &ct_font, size_px,
-    )
-    .unwrap_or((x_height * 0.5, underline_thickness));
+    let (strikeout_offset, strikeout_thickness) = read_os2_strikeout(&ct_font, size_px)
+        .unwrap_or((x_height * 0.5, underline_thickness));
 
     FontMetrics {
         ascent,
@@ -922,11 +916,7 @@ pub struct ShapedGlyph {
 ///
 /// Currently not wired into `layout/content.rs` — it's a building block
 /// for later phase-3 integration.
-pub fn shape_text(
-    handle: &FontHandle,
-    text: &str,
-    size_px: f32,
-) -> Vec<ShapedGlyph> {
+pub fn shape_text(handle: &FontHandle, text: &str, size_px: f32) -> Vec<ShapedGlyph> {
     if text.is_empty() {
         return Vec::new();
     }
@@ -937,11 +927,7 @@ pub fn shape_text(
     attr.replace_str(&CFString::new(text), CFRange::init(0, 0));
     let utf16_len = attr.char_len();
     unsafe {
-        attr.set_attribute(
-            CFRange::init(0, utf16_len),
-            kCTFontAttributeName,
-            &ct_font,
-        );
+        attr.set_attribute(CFRange::init(0, utf16_len), kCTFontAttributeName, &ct_font);
     }
 
     let line = CTLine::new_with_attributed_string(attr.as_concrete_TypeRef());
@@ -1216,8 +1202,7 @@ mod tests {
         // For a plain TTF the single font is at index 0; both loaders
         // should land on equivalent CTFonts.
         let a = FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("a");
-        let b =
-            FontHandle::from_bytes_index(FONT_CASCADIAMONO_REGULAR, 0).expect("b");
+        let b = FontHandle::from_bytes_index(FONT_CASCADIAMONO_REGULAR, 0).expect("b");
         // Compare via a shape probe — identical glyph ids means same face.
         let gid_a = glyph_id_for_char(&a, 18.0, 'A');
         let gid_b = glyph_id_for_char(&b, 18.0, 'A');
@@ -1233,7 +1218,10 @@ mod tests {
     #[test]
     fn all_families_returns_sorted_nonempty_list() {
         let families = all_families();
-        assert!(!families.is_empty(), "system should expose some font families");
+        assert!(
+            !families.is_empty(),
+            "system should expose some font families"
+        );
         // Collection is deduped + sorted.
         let mut sorted = families.clone();
         sorted.sort_unstable();

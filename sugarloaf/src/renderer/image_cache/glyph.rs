@@ -1,12 +1,12 @@
 use super::cache::ImageCache;
 use super::{AddImage, ImageData, ImageId, ImageLocation};
 use crate::font::FontLibrary;
-#[cfg(not(target_os = "macos"))]
-use crate::font_introspector::zeno::Format;
 use crate::font_introspector::scale::{
     image::{Content, Image as GlyphImage},
     *,
 };
+#[cfg(not(target_os = "macos"))]
+use crate::font_introspector::zeno::Format;
 #[cfg(not(target_os = "macos"))]
 use crate::font_introspector::FontRef;
 use core::borrow::Borrow;
@@ -233,9 +233,7 @@ impl GlyphCacheSession<'_> {
         };
 
         #[cfg(not(target_os = "macos"))]
-        let did_render = if let Some((shared_data, offset, cache_key)) =
-            font_bytes_opt
-        {
+        let did_render = if let Some((shared_data, offset, cache_key)) = font_bytes_opt {
             let font_ref = FontRef {
                 data: shared_data.as_ref(),
                 offset,
@@ -272,90 +270,90 @@ impl GlyphCacheSession<'_> {
         };
 
         if did_render {
-                let p = self.scaled_image.placement;
-                let w = p.width as u16;
-                let h = p.height as u16;
+            let p = self.scaled_image.placement;
+            let w = p.width as u16;
+            let h = p.height as u16;
 
-                // Handle zero-sized glyphs (spaces, zero-width characters) efficiently
-                if w == 0 || h == 0 {
-                    let entry = GlyphEntry {
-                        left: p.left,
-                        top: p.top,
-                        width: w,
-                        height: h,
-                        image: ImageId::empty(), // Use a special empty image ID
-                        is_bitmap: false,
-                    };
-                    self.entry.glyphs.insert(key, entry);
-                    return Some(entry);
-                }
-
-                // Use the appropriate content type and data format
-                let (image_data, content_type) = match self.scaled_image.content {
-                    Content::Mask => {
-                        // Alpha format: use data directly for R8 texture
-                        (
-                            ImageData::Borrowed(&self.scaled_image.data),
-                            super::ContentType::Mask,
-                        )
-                    }
-                    Content::Color => {
-                        // Already RGBA format
-                        (
-                            ImageData::Borrowed(&self.scaled_image.data),
-                            super::ContentType::Color,
-                        )
-                    }
-                    Content::SubpixelMask => {
-                        // Subpixel format (should not happen with Format::Alpha)
-                        (
-                            ImageData::Borrowed(&self.scaled_image.data),
-                            super::ContentType::Color,
-                        )
-                    }
-                };
-
-                let req = AddImage {
-                    width: w,
-                    height: h,
-                    has_alpha: true,
-                    data: image_data,
-                    content_type,
-                };
-                let image = self.images.allocate(req)?;
-
-                // let mut top = p.top;
-                // let mut height = h;
-
-                // If dimension is None it means that we are running
-                // for the first time and in this case, we will obtain
-                // what the next glyph entries should respect in terms of
-                // top and height values
-                //
-                // e.g: Placement { left: 11, top: 42, width: 8, height: 50 }
-                //
-                // The calculation is made based on max_height
-                // If the rect max height is 50 and the glyph height is 68
-                // and 48 top, then (68 - 50 = 18) height as difference and
-                // apply it to the top (bigger the top == up ^).
-                // if self.max_height > &0 && &h > self.max_height {
-                //     let difference = h - self.max_height;
-
-                //     top -= difference as i32;
-                //     height = *self.max_height;
-                // }
-
+            // Handle zero-sized glyphs (spaces, zero-width characters) efficiently
+            if w == 0 || h == 0 {
                 let entry = GlyphEntry {
                     left: p.left,
                     top: p.top,
                     width: w,
                     height: h,
-                    image,
-                    is_bitmap: self.scaled_image.content == Content::Color,
+                    image: ImageId::empty(), // Use a special empty image ID
+                    is_bitmap: false,
                 };
-
                 self.entry.glyphs.insert(key, entry);
                 return Some(entry);
+            }
+
+            // Use the appropriate content type and data format
+            let (image_data, content_type) = match self.scaled_image.content {
+                Content::Mask => {
+                    // Alpha format: use data directly for R8 texture
+                    (
+                        ImageData::Borrowed(&self.scaled_image.data),
+                        super::ContentType::Mask,
+                    )
+                }
+                Content::Color => {
+                    // Already RGBA format
+                    (
+                        ImageData::Borrowed(&self.scaled_image.data),
+                        super::ContentType::Color,
+                    )
+                }
+                Content::SubpixelMask => {
+                    // Subpixel format (should not happen with Format::Alpha)
+                    (
+                        ImageData::Borrowed(&self.scaled_image.data),
+                        super::ContentType::Color,
+                    )
+                }
+            };
+
+            let req = AddImage {
+                width: w,
+                height: h,
+                has_alpha: true,
+                data: image_data,
+                content_type,
+            };
+            let image = self.images.allocate(req)?;
+
+            // let mut top = p.top;
+            // let mut height = h;
+
+            // If dimension is None it means that we are running
+            // for the first time and in this case, we will obtain
+            // what the next glyph entries should respect in terms of
+            // top and height values
+            //
+            // e.g: Placement { left: 11, top: 42, width: 8, height: 50 }
+            //
+            // The calculation is made based on max_height
+            // If the rect max height is 50 and the glyph height is 68
+            // and 48 top, then (68 - 50 = 18) height as difference and
+            // apply it to the top (bigger the top == up ^).
+            // if self.max_height > &0 && &h > self.max_height {
+            //     let difference = h - self.max_height;
+
+            //     top -= difference as i32;
+            //     height = *self.max_height;
+            // }
+
+            let entry = GlyphEntry {
+                left: p.left,
+                top: p.top,
+                width: w,
+                height: h,
+                image,
+                is_bitmap: self.scaled_image.content == Content::Color,
+            };
+
+            self.entry.glyphs.insert(key, entry);
+            return Some(entry);
         }
 
         None
