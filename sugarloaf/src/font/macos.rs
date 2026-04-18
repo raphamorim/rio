@@ -334,8 +334,21 @@ pub fn rasterize_glyph(
     };
 
     let glyphs = [glyph_id as CGGlyph];
-    let raw_bounds =
+    let mut raw_bounds =
         ct_font.get_bounding_rects_for_glyphs(kCTFontOrientationDefault, &glyphs);
+
+    // Ghostty-style synthetic-bold rect expansion (`face/coretext.zig:315-320`).
+    // The fill-stroke draw lays a stroke centered on the glyph outline, so it
+    // extends `line_width/2` outside the natural bounding rect. Without this
+    // expansion the stroke clips at the edges of the canvas. Not applied to
+    // color/sbix fonts — bitmap emoji aren't affected by synthetic bold.
+    if synthetic_bold && !is_color {
+        let line_width = (size_px as f64 / 14.0).max(1.0);
+        raw_bounds.size.width += line_width;
+        raw_bounds.size.height += line_width;
+        raw_bounds.origin.x -= line_width / 2.0;
+        raw_bounds.origin.y -= line_width / 2.0;
+    }
 
     // COLR color fonts routinely ship an empty outline for each glyph — the
     // real rendering is layered color painting on top of an invisible base.

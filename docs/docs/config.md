@@ -349,14 +349,6 @@ You can also set family on root to overwrite all fonts.
 fonts.family = "cascadiacode"
 ```
 
-## fonts.extras
-
-You can also specify extra fonts to load:
-
-```toml
-fonts.extras = [{ family = "Microsoft JhengHei" }]
-```
-
 ## fonts.features
 
 In case you want to specify any font feature:
@@ -369,21 +361,17 @@ Note: Font features do not have support to live reload on configuration, so to r
 
 ## fonts.extras
 
-Extra font families searched after the configured regular/italic/bold slots. Use this to override the bundled Twemoji with a system color-emoji font, or to bring in a Nerd Font for icon glyphs. Rio auto-detects color-emoji fonts from their SFNT color tables (`COLR`, `CBDT`, `CBLC`, `sbix`), so an emoji family dropped here is treated as wide-cell / color-atlas without needing a flag, while a Nerd Font family stays single-cell.
+Extra font families searched after the configured regular/italic/bold slots. Use this to bring in a Nerd Font for icon glyphs, or to add a custom CJK / symbol family. Rio auto-detects color-emoji fonts from their SFNT color tables (`COLR`, `CBDT`, `CBLC`, `sbix`), so an emoji family dropped here is treated as wide-cell / color-atlas without needing a flag, while a Nerd Font family stays single-cell.
 
 ```toml
-# Use Apple Color Emoji instead of the bundled Twemoji
-fonts.extras = [{ family = "Apple Color Emoji" }]
-
-# Or a Nerd Font for icon glyphs
+# A Nerd Font for icon glyphs
 fonts.extras = [{ family = "JetBrainsMono Nerd Font Mono" }]
 
-# Both — order determines fallback priority
-fonts.extras = [
-  { family = "Apple Color Emoji" },
-  { family = "JetBrainsMono Nerd Font Mono" },
-]
+# Or a specific CJK / symbol family
+fonts.extras = [{ family = "Microsoft JhengHei" }]
 ```
+
+**macOS note:** `fonts.extras` is ignored on macOS. Rio uses CoreText's `CTFontCopyDefaultCascadeListForLanguages` to pull the system-recommended fallback chain for the primary font — that already includes Apple Color Emoji, CJK fonts, symbols, and script-specific typefaces in the order the OS prefers. Adding `fonts.extras` entries on macOS would either duplicate what's already in the cascade or compete with CoreText's ordering, so it's skipped.
 
 ## fonts.hinting
 
