@@ -209,10 +209,7 @@ impl FontLibrary {
     /// parking_lot's `RwLock` supports recursive reads, so calling this
     /// from code that already holds a read lock on `inner` is safe.
     #[cfg(target_os = "macos")]
-    pub fn ct_font(
-        &self,
-        font_id: usize,
-    ) -> Option<crate::font::macos::FontHandle> {
+    pub fn ct_font(&self, font_id: usize) -> Option<crate::font::macos::FontHandle> {
         self.inner
             .read()
             .inner
@@ -547,22 +544,18 @@ impl FontLibraryData {
         // `FONT_DATA_CACHE`.
         #[cfg(target_os = "macos")]
         {
-            let primary_handle = self
-                .inner
-                .get(&FONT_ID_REGULAR)
-                .and_then(|f| {
-                    if let Some(path) = &f.path {
-                        crate::font::macos::FontHandle::from_path(path)
-                    } else if let Some(bytes) = &f.data {
-                        crate::font::macos::FontHandle::from_bytes(bytes.as_ref())
-                    } else {
-                        None
-                    }
-                });
+            let primary_handle = self.inner.get(&FONT_ID_REGULAR).and_then(|f| {
+                if let Some(path) = &f.path {
+                    crate::font::macos::FontHandle::from_path(path)
+                } else if let Some(bytes) = &f.data {
+                    crate::font::macos::FontHandle::from_bytes(bytes.as_ref())
+                } else {
+                    None
+                }
+            });
             if let Some(primary_handle) = primary_handle {
                 let default_spec = SugarloafFont::default();
-                for path in crate::font::macos::default_cascade_list(&primary_handle)
-                {
+                for path in crate::font::macos::default_cascade_list(&primary_handle) {
                     if let Ok(font_data) = FontData::from_path_macos(path, &default_spec)
                     {
                         self.insert(font_data);
@@ -844,8 +837,7 @@ impl FontData {
                 .path
                 .as_ref()
                 .and_then(|p| crate::font::macos::FontHandle::from_path(p))?;
-            let font_metrics =
-                crate::font::macos::design_unit_metrics(&handle);
+            let font_metrics = crate::font::macos::design_unit_metrics(&handle);
             let scaled_metrics = font_metrics.scale(font_size);
             let face_metrics = FaceMetrics {
                 cell_width: scaled_metrics.max_width as f64,
@@ -987,7 +979,8 @@ impl FontData {
         };
         let weight = crate::font_introspector::Weight(attrs.weight);
 
-        let should_italicize = font_spec.style == SugarloafFontStyle::Italic && !attrs.is_italic;
+        let should_italicize =
+            font_spec.style == SugarloafFontStyle::Italic && !attrs.is_italic;
         let should_embolden = font_spec.weight >= Some(700) && attrs.weight < 700;
 
         Ok(Self {
@@ -1118,12 +1111,9 @@ fn find_font(font_spec: SugarloafFont, evictable: bool) -> FindResult {
     let italic = font_spec.style == SugarloafFontStyle::Italic;
     let stretch = map_stretch_macos(&font_spec.width);
 
-    info!(
-        "Font search (CoreText): family='{family}' weight={weight} italic={italic}"
-    );
+    info!("Font search (CoreText): family='{family}' weight={weight} italic={italic}");
 
-    let Some(path) =
-        crate::font::macos::find_font_path(&family, weight, italic, stretch)
+    let Some(path) = crate::font::macos::find_font_path(&family, weight, italic, stretch)
     else {
         warn!("CoreText found no match for family='{family}'");
         return FindResult::NotFound(font_spec);
@@ -1146,9 +1136,7 @@ fn find_font(font_spec: SugarloafFont, evictable: bool) -> FindResult {
 }
 
 #[cfg(target_os = "macos")]
-fn map_stretch_macos(
-    width: &Option<SugarloafFontWidth>,
-) -> crate::font::macos::Stretch {
+fn map_stretch_macos(width: &Option<SugarloafFontWidth>) -> crate::font::macos::Stretch {
     use crate::font::macos::Stretch;
     match width {
         Some(SugarloafFontWidth::UltraCondensed) => Stretch::UltraCondensed,
