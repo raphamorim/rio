@@ -3,12 +3,9 @@
 //! Replaces the zeno path on macOS so text picks up the native anti-aliasing
 //! style and Apple Color Emoji renders without bundled fallback fonts.
 //!
-//! Output matches zeno's: left/top bearings, width/height in device pixels,
-//! and either R8 alpha-only bytes (mask) or straight-alpha RGBA (color). The
+//! Output: left/top bearings, width/height in device pixels, and either R8
+//! alpha-only bytes (mask) or premultiplied RGBA in Display-P3 (color). The
 //! caller stitches this into the existing atlas pipeline unchanged.
-//!
-//! Inspired by ghostty's `src/font/face/coretext.zig` and zed's
-//! `crates/gpui_macos/src/text_system.rs:382-469`.
 
 use std::path::PathBuf;
 
@@ -53,11 +50,11 @@ type CTFontManagerScope = u32;
 #[allow(non_upper_case_globals)]
 const kCTFontManagerScopeProcess: CTFontManagerScope = 1;
 
-// Raw FFI for `CFDataCreateWithBytesNoCopy` with `kCFAllocatorNull` — exactly
-// what Ghostty uses for its `@embedFile`'d fonts. core-foundation's
-// `CFData::from_buffer` goes through `CFDataCreate` which *copies* the buffer,
-// and `CFData::from_arc` requires an Arc; neither hits the zero-copy path we
-// want for bundled fonts whose bytes already live in `.rodata`.
+// Raw FFI for `CFDataCreateWithBytesNoCopy` with `kCFAllocatorNull`.
+// core-foundation's `CFData::from_buffer` goes through `CFDataCreate` which
+// *copies* the buffer, and `CFData::from_arc` requires an Arc; neither hits
+// the zero-copy path we want for bundled fonts whose bytes already live in
+// `.rodata`.
 #[link(name = "CoreFoundation", kind = "framework")]
 extern "C" {
     fn CFDataCreateWithBytesNoCopy(
@@ -98,8 +95,8 @@ extern "C" {
     ) -> core_foundation::array::CFArrayRef;
 }
 
-/// Shear matrix applied to `CTFont` for synthetic italic. Matches Ghostty's
-/// `italic_skew` — `c = tan(15°)` leans the glyphs 15° to the right.
+/// Shear matrix applied to `CTFont` for synthetic italic. `c = tan(15°)`
+/// leans the glyphs 15° to the right.
 const SYNTHETIC_ITALIC_SKEW: CGAffineTransform = CGAffineTransform {
     a: 1.0,
     b: 0.0,
@@ -169,16 +166,16 @@ pub fn register_fonts_in_dir(dir: &std::path::Path) {
 }
 
 /// A parsed CoreText font. Construction goes through
-/// `CTFontManagerCreateFontDescriptorFromData` + `CTFontCreateWithFontDescriptor`
-/// — the same path Ghostty uses — which preserves COLR, sbix, and other color
-/// font tables that the simpler `CGFontCreateWithDataProvider` → `CTFontCreate
-/// WithGraphicsFont` path silently drops.
+/// `CTFontManagerCreateFontDescriptorFromData` + `CTFontCreateWithFontDescriptor`,
+/// which preserves COLR, sbix, and other color font tables that the simpler
+/// `CGFontCreateWithDataProvider` → `CTFontCreateWithGraphicsFont` path
+/// silently drops.
 ///
 /// Stored at a reference 1.0pt size; per-call rasterization clones with the
 /// target size (cheap CF refcount, not a parse). Clone is a CF retain.
 ///
 /// TTC caveat: CoreText's data-based descriptor reads only the first font in
-/// a collection. Same limitation as Ghostty and Zed.
+/// a collection — use [`FontHandle::from_bytes_index`] for other indices.
 #[derive(Clone)]
 pub struct FontHandle {
     base_font: CTFont,
@@ -188,10 +185,10 @@ impl FontHandle {
     /// Parse a font file's bytes into a `CTFont`. Returns `None` if CoreText
     /// can't interpret the buffer (malformed, unsupported format).
     ///
-    /// For TTC/OTC collections this picks the first contained font (index 0).
-    /// Same behaviour as Rio's cross-platform loader (`FontRef::from_index`
-    /// with index 0), Ghostty, and Zed. Use [`FontHandle::from_bytes_index`]
-    /// if a specific index is needed.
+    /// For TTC/OTC collections this picks the first contained font (index
+    /// 0) — matches Rio's cross-platform loader (`FontRef::from_index` with
+    /// index 0). Use [`FontHandle::from_bytes_index`] if a specific index
+    /// is needed.
     pub fn from_bytes(font_bytes: &[u8]) -> Option<Self> {
         let desc = font_manager::create_font_descriptor(font_bytes).ok()?;
         let base_font = ct_font::new_from_descriptor(&desc, 1.0);
@@ -228,9 +225,8 @@ impl FontHandle {
     /// `CFDataCreateWithBytesNoCopy(_, ptr, len, kCFAllocatorNull)` tells
     /// CoreFoundation "I own these forever — never try to free them". The
     /// bytes stay in the binary image; CoreText just holds a pointer. This
-    /// matches Ghostty's path for its `@embedFile`'d fonts and saves the
-    /// ~10 MB of duplication `CFDataCreate` would incur across our bundled
-    /// CascadiaMono / Nerd Font slices.
+    /// Saves the ~10 MB of duplication `CFDataCreate` would incur across
+    /// our bundled CascadiaMono / Nerd Font slices.
     pub fn from_static_bytes(font_bytes: &'static [u8]) -> Option<Self> {
         use core_foundation::base::{CFIndex, TCFType};
         use core_foundation::data::CFData;
@@ -252,13 +248,13 @@ impl FontHandle {
         Some(Self { base_font })
     }
 
-    /// Load a font straight from a file path — Ghostty-style.
+    /// Load a font straight from a file path without reading the bytes
+    /// into Rio.
     ///
     /// Uses `CTFontManagerCreateFontDescriptorsFromURL` so CoreText reads the
-    /// file itself (backing it with an mmap or page cache as it sees fit);
-    /// Rio never holds the bytes in its own memory. This is the right path
-    /// for the cascade-list emoji font (hundreds of MB) and for any user
-    /// font where we know the on-disk location.
+    /// file itself (backing it with an mmap or page cache as it sees fit).
+    /// This is the right path for the cascade-list emoji font (hundreds of
+    /// MB) and for any user font where we know the on-disk location.
     ///
     /// Returns `None` if CoreText can't open or parse the file.
     pub fn from_path(path: &std::path::Path) -> Option<Self> {
@@ -296,8 +292,9 @@ pub struct RasterizedGlyph {
     /// Baseline-relative y of the bitmap's top edge, in pixels. Positive
     /// = above the baseline.
     pub top: i32,
-    /// `true` when `bytes` is 4bpp straight-alpha RGBA (color emoji);
-    /// `false` when `bytes` is 1bpp alpha-only (monochrome outline).
+    /// `true` when `bytes` is 4bpp premultiplied-alpha RGBA in Display-P3
+    /// (color emoji); `false` when `bytes` is 1bpp alpha-only (monochrome
+    /// outline).
     pub is_color: bool,
     /// Row-major pixel bytes, no row padding.
     pub bytes: Vec<u8>,
@@ -310,12 +307,11 @@ pub struct RasterizedGlyph {
 /// `is_color` picks the bitmap format — set it to the font's emoji-ness, not
 /// per-glyph, since the atlas tile format is fixed up front.
 ///
-/// `synthetic_italic` applies a 15° right-lean via a sheared CTFont transform
-/// (matches Ghostty's italic synthesis). `synthetic_bold` draws with
-/// `CGTextFillStroke` and a stroke width of `max(size/14, 1)` (also Ghostty's
-/// formula). Both are meant for when the font family lacks the requested
-/// variant — normal bold/italic fonts are found by `find_font_path` and should
-/// leave both flags `false`.
+/// `synthetic_italic` applies a 15° right-lean via a sheared CTFont
+/// transform. `synthetic_bold` draws with `CGTextFillStroke` and a stroke
+/// width of `max(size/14, 1)`. Both are meant for when the font family
+/// lacks the requested variant — normal bold/italic fonts are found by
+/// `find_font_path` and should leave both flags `false`.
 ///
 /// Returns `None` only for zero-area glyphs with no placement (rare). Callers
 /// should cache the `FontHandle` per font id so the font bytes are parsed
@@ -338,11 +334,11 @@ pub fn rasterize_glyph(
     let mut raw_bounds =
         ct_font.get_bounding_rects_for_glyphs(kCTFontOrientationDefault, &glyphs);
 
-    // Ghostty-style synthetic-bold rect expansion (`face/coretext.zig:315-320`).
-    // The fill-stroke draw lays a stroke centered on the glyph outline, so it
-    // extends `line_width/2` outside the natural bounding rect. Without this
-    // expansion the stroke clips at the edges of the canvas. Not applied to
-    // color/sbix fonts — bitmap emoji aren't affected by synthetic bold.
+    // Synthetic-bold rect expansion. The fill-stroke draw lays a stroke
+    // centered on the glyph outline, so it extends `line_width/2` outside
+    // the natural bounding rect — without expansion the stroke clips at the
+    // canvas edges. Not applied to color/sbix fonts; bitmap emoji aren't
+    // affected by synthetic bold.
     if synthetic_bold && !is_color {
         let line_width = (size_px as f64 / 14.0).max(1.0);
         raw_bounds.size.width += line_width;
@@ -412,12 +408,11 @@ pub fn rasterize_glyph(
 
     let (mut bytes, cx) = if is_color {
         let mut bytes = vec![0u8; width * height * 4];
-        // Match Ghostty's `face/coretext.zig` emoji context: Display-P3 color
-        // space (wider gamut than device RGB, which is what Apple Color Emoji
-        // assets are authored in) + premultiplied-first alpha + 32-bit little
-        // endian byte order. Combined, this writes BGRA premultiplied bytes
-        // into `bytes` — we swap to RGBA below for atlas compatibility but
-        // keep the alpha premultiplied, matching Ghostty's atlas semantics.
+        // Display-P3 color space (wider gamut than device RGB, which is
+        // what Apple Color Emoji assets are authored in) + premultiplied-
+        // first alpha + 32-bit little-endian byte order. Combined, this
+        // writes BGRA premultiplied bytes into `bytes` — we swap to RGBA
+        // below for atlas compatibility, but keep the alpha premultiplied.
         let colorspace =
             CGColorSpace::create_with_name(unsafe { kCGColorSpaceDisplayP3 })
                 .unwrap_or_else(CGColorSpace::create_device_rgb);

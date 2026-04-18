@@ -198,8 +198,8 @@ impl FontLibrary {
     }
 
     /// Parsed CoreText font for `font_id` — a direct read of the handle
-    /// stored on the corresponding `FontData`, matching Ghostty's per-Face
-    /// `*CTFont` pointer model.
+    /// stored on the corresponding `FontData` (per-font pointer rather
+    /// than a library-global cache).
     ///
     /// Clone is a cheap CF retain; callers clone out to escape the read
     /// lock scope. Returns `None` for unknown font ids or for fonts that
@@ -534,9 +534,9 @@ impl FontLibraryData {
         }
 
         // On macOS, append CoreText's default cascade list for the primary
-        // font. Ghostty-style dynamic fallback: we let CoreText name every
-        // font it would normally fall back to (emoji, CJK, symbols, script
-        // typefaces) so users get the same coverage as any other macOS app.
+        // font. Dynamic fallback: we let CoreText name every font it would
+        // normally fall back to (emoji, CJK, symbols, script typefaces) so
+        // users get the same coverage as any other macOS app.
         //
         // Critically, each cascade entry is constructed via `from_path_macos`
         // — CoreText opens the file on demand, Rio never reads the bytes.
@@ -769,11 +769,10 @@ pub struct FontData {
     // Cached metrics per font size (per-font caching)
     metrics_cache: FxHashMap<u32, Metrics>,
     /// Parsed CoreText handle, constructed once at `FontData` creation
-    /// and cloned out via CF refcount on every access. Matches Ghostty's
-    /// `font: *CTFont` field on `Face` — a per-font pointer rather than a
-    /// library-global cache. `Clone` of `FontHandle` is an atomic retain,
-    /// so handing it out to the shape/raster/charmap paths is effectively
-    /// free.
+    /// and cloned out via CF refcount on every access. Per-font pointer
+    /// rather than a library-global cache. `Clone` of `FontHandle` is an
+    /// atomic retain, so handing it out to the shape/raster/charmap paths
+    /// is effectively free.
     #[cfg(target_os = "macos")]
     handle: Option<crate::font::macos::FontHandle>,
 }
@@ -960,9 +959,9 @@ impl FontData {
     /// macOS-only: construct a `FontData` straight from a file path, with
     /// attributes read through CoreText. Never loads the font bytes.
     ///
-    /// Matches Ghostty's `Face.init` path: CoreText reads the file itself,
-    /// so Rio's `FONT_DATA_CACHE` never ends up holding hundreds of MB of
-    /// Apple Color Emoji / CJK font bytes.
+    /// CoreText reads the file itself, so Rio's `FONT_DATA_CACHE` never
+    /// ends up holding hundreds of MB of Apple Color Emoji / CJK font
+    /// bytes.
     #[cfg(target_os = "macos")]
     pub fn from_path_macos(
         path: PathBuf,
