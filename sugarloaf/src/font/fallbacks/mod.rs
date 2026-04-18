@@ -4,8 +4,12 @@ pub fn external_fallbacks() -> Vec<String> {
         String::from("Menlo"),
         String::from("Geneva"),
         String::from("Arial Unicode MS"),
-        // String::from("Noto Emoji"),
-        // String::from("Noto Color Emoji"),
+        // Apple Color Emoji ships on every macOS install. Adding it here
+        // replaces the bundled Twemoji (which is no longer embedded in
+        // macOS builds) — CoreText resolves the descriptor to the system
+        // file, `has_color_tables` detects `sbix`, and emoji glyphs render
+        // via the native color path in `font::macos`.
+        String::from("Apple Color Emoji"),
     ]
 }
 

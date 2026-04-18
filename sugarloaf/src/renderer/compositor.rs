@@ -307,6 +307,43 @@ impl Compositor {
 
                                 Rect::new(cx, cy, sw, sh)
                             }
+                        } else if entry.is_bitmap {
+                            // Color bitmap (emoji) glyphs fall here when the
+                            // shaper didn't attach an explicit constraint.
+                            //
+                            // Match Ghostty's emoji rule (`SharedGrid.zig:
+                            // 293-307`): `size = .cover` with center alignment
+                            // and 2.5 % horizontal padding. Cover scales the
+                            // bitmap so it fills the advance × cell-height
+                            // slot, rather than fit which leaves gaps.
+                            //
+                            // Vertical centering uses the font's *natural*
+                            // cell (ascent + descent) rather than `line_height`
+                            // — the latter picks up user line-height modifiers
+                            // that shouldn't shift the emoji inside its cell,
+                            // matching how `grid_metrics.cell_height` works
+                            // in Ghostty.
+                            const PAD_EACH: f32 = 0.025;
+                            let orig_w = entry.width as f32;
+                            let orig_h = entry.height as f32;
+                            if orig_w > 0.0 && orig_h > 0.0 {
+                                let cell_top = style.baseline - style.ascent;
+                                let cell_h = style.ascent + style.descent;
+                                let available_w =
+                                    glyph.advance * (1.0 - 2.0 * PAD_EACH);
+                                // Cover: pick the larger scale factor so the
+                                // emoji fills the slot on at least one axis.
+                                let scale =
+                                    (available_w / orig_w).max(cell_h / orig_h);
+                                let sw = orig_w * scale;
+                                let sh = orig_h * scale;
+                                let cx = (glyph.x + subpx_bias.0).floor()
+                                    + (glyph.advance - sw) / 2.0;
+                                let cy = cell_top + (cell_h - sh) / 2.0;
+                                Rect::new(cx, cy, sw, sh)
+                            } else {
+                                Rect::new(gx, gy, orig_w, orig_h)
+                            }
                         } else {
                             Rect::new(gx, gy, entry.width as f32, entry.height as f32)
                         };
