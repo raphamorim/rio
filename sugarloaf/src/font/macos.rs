@@ -21,8 +21,10 @@ use core_foundation::{
     url::{CFURLRef, CFURL},
 };
 use core_graphics::{
-    base::{kCGImageAlphaPremultipliedLast, CGFloat},
-    color_space::CGColorSpace,
+    base::{
+        kCGBitmapByteOrder32Little, kCGImageAlphaPremultipliedFirst, CGFloat,
+    },
+    color_space::{kCGColorSpaceDisplayP3, CGColorSpace},
     context::{CGContext, CGTextDrawingMode},
     font::CGGlyph,
     geometry::{CGAffineTransform, CGPoint, CGRect, CGSize},
@@ -52,6 +54,24 @@ const kCGImageAlphaOnly: u32 = 7;
 type CTFontManagerScope = u32;
 #[allow(non_upper_case_globals)]
 const kCTFontManagerScopeProcess: CTFontManagerScope = 1;
+
+// Raw FFI for `CFDataCreateWithBytesNoCopy` with `kCFAllocatorNull` — exactly
+// what Ghostty uses for its `@embedFile`'d fonts. core-foundation's
+// `CFData::from_buffer` goes through `CFDataCreate` which *copies* the buffer,
+// and `CFData::from_arc` requires an Arc; neither hits the zero-copy path we
+// want for bundled fonts whose bytes already live in `.rodata`.
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CFDataCreateWithBytesNoCopy(
+        allocator: core_foundation::base::CFAllocatorRef,
+        bytes: *const u8,
+        length: core_foundation::base::CFIndex,
+        bytes_deallocator: core_foundation::base::CFAllocatorRef,
+    ) -> core_foundation::data::CFDataRef;
+
+    #[allow(non_upper_case_globals)]
+    static kCFAllocatorNull: core_foundation::base::CFAllocatorRef;
+}
 
 #[allow(non_snake_case)]
 #[link(name = "CoreText", kind = "framework")]
@@ -201,6 +221,63 @@ impl FontHandle {
         let base_font = ct_font::new_from_descriptor(&desc_ref, 1.0);
         Some(Self { base_font })
     }
+
+    /// Zero-copy variant for bundled fonts whose bytes live in `.rodata`.
+    ///
+    /// `CFDataCreateWithBytesNoCopy(_, ptr, len, kCFAllocatorNull)` tells
+    /// CoreFoundation "I own these forever — never try to free them". The
+    /// bytes stay in the binary image; CoreText just holds a pointer. This
+    /// matches Ghostty's path for its `@embedFile`'d fonts and saves the
+    /// ~10 MB of duplication `CFDataCreate` would incur across our bundled
+    /// CascadiaMono / Nerd Font slices.
+    pub fn from_static_bytes(font_bytes: &'static [u8]) -> Option<Self> {
+        use core_foundation::base::{CFIndex, TCFType};
+        use core_foundation::data::CFData;
+
+        let data_ref = unsafe {
+            CFDataCreateWithBytesNoCopy(
+                std::ptr::null(), // default allocator for the CFData itself
+                font_bytes.as_ptr(),
+                font_bytes.len() as CFIndex,
+                kCFAllocatorNull, // never free the payload
+            )
+        };
+        if data_ref.is_null() {
+            return None;
+        }
+        let data = unsafe { CFData::wrap_under_create_rule(data_ref) };
+        let desc = font_manager::create_font_descriptor_with_data(data).ok()?;
+        let base_font = ct_font::new_from_descriptor(&desc, 1.0);
+        Some(Self { base_font })
+    }
+
+    /// Load a font straight from a file path — Ghostty-style.
+    ///
+    /// Uses `CTFontManagerCreateFontDescriptorsFromURL` so CoreText reads the
+    /// file itself (backing it with an mmap or page cache as it sees fit);
+    /// Rio never holds the bytes in its own memory. This is the right path
+    /// for the cascade-list emoji font (hundreds of MB) and for any user
+    /// font where we know the on-disk location.
+    ///
+    /// Returns `None` if CoreText can't open or parse the file.
+    pub fn from_path(path: &std::path::Path) -> Option<Self> {
+        use core_foundation::array::CFArray;
+
+        let url = CFURL::from_path(path, false)?;
+        let array_ref = unsafe {
+            core_text::font_manager::CTFontManagerCreateFontDescriptorsFromURL(
+                url.as_concrete_TypeRef(),
+            )
+        };
+        if array_ref.is_null() {
+            return None;
+        }
+        let descriptors: CFArray<CTFontDescriptor> =
+            unsafe { CFArray::wrap_under_create_rule(array_ref) };
+        let desc_ref = descriptors.get(0)?;
+        let base_font = ct_font::new_from_descriptor(&desc_ref, 1.0);
+        Some(Self { base_font })
+    }
 }
 
 /// Output of a single glyph rasterization. Mirrors the fields of
@@ -322,14 +399,23 @@ pub fn rasterize_glyph(
 
     let (mut bytes, cx) = if is_color {
         let mut bytes = vec![0u8; width * height * 4];
+        // Match Ghostty's `face/coretext.zig` emoji context: Display-P3 color
+        // space (wider gamut than device RGB, which is what Apple Color Emoji
+        // assets are authored in) + premultiplied-first alpha + 32-bit little
+        // endian byte order. Combined, this writes BGRA premultiplied bytes
+        // into `bytes` — we swap to RGBA below for atlas compatibility but
+        // keep the alpha premultiplied, matching Ghostty's atlas semantics.
+        let colorspace =
+            CGColorSpace::create_with_name(unsafe { kCGColorSpaceDisplayP3 })
+                .unwrap_or_else(CGColorSpace::create_device_rgb);
         let cx = CGContext::create_bitmap_context(
             Some(bytes.as_mut_ptr() as *mut _),
             width,
             height,
             8,
             width * 4,
-            &CGColorSpace::create_device_rgb(),
-            kCGImageAlphaPremultipliedLast,
+            &colorspace,
+            kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little,
         );
         (bytes, cx)
     } else {
@@ -373,7 +459,13 @@ pub fn rasterize_glyph(
     ct_font.draw_glyphs(&glyphs, &[origin], cx);
 
     if is_color {
-        unpremultiply_rgba_in_place(&mut bytes);
+        // CoreGraphics wrote BGRA premultiplied (due to
+        // `byte_order_32_little | premul_first`). Rio's atlas is RGBA8Unorm
+        // with premultiplied-alpha shader blending, so swap B and R to get
+        // RGBA premultiplied — matches what Ghostty's atlas holds for sbix
+        // / COLR glyphs, minus the P3→sRGB conversion Rio's shader
+        // performs at sample time.
+        bgra_to_rgba_in_place(&mut bytes);
     }
 
     Some(RasterizedGlyph {
@@ -490,6 +582,25 @@ pub fn find_font_path(
     matched.font_path()
 }
 
+/// System default cascade (fallback) font file paths for `handle`'s font.
+///
+/// This is CoreText's own recommended fallback order — the same chain it uses
+/// for automatic font substitution when a string contains glyphs missing from
+/// the requested font. Typically includes: the primary font's designer-chosen
+/// fallbacks, system CJK fonts, Apple Color Emoji, and symbol fonts.
+///
+/// Ghostty-style dynamic fallback: instead of hardcoding family names like
+/// `"Apple Color Emoji"`, rely on CoreText to pick the right fonts for this
+/// system. Paths that CoreText doesn't expose (some system fonts ship without
+/// a file URL) are silently skipped.
+pub fn default_cascade_list(handle: &FontHandle) -> Vec<PathBuf> {
+    use core_foundation::array::CFArray;
+    let languages: CFArray<CFString> = CFArray::from_CFTypes(&[]);
+    let cascade =
+        core_text::font::cascade_list_for_languages(&handle.base_font, &languages);
+    cascade.iter().filter_map(|desc| desc.font_path()).collect()
+}
+
 /// Sorted, deduplicated list of every installed font family, straight from
 /// CoreText. Used by the command-palette font browser.
 ///
@@ -509,22 +620,180 @@ pub fn all_families() -> Vec<String> {
     families
 }
 
-/// Atlas wants straight-alpha RGBA; CoreGraphics hands back premultiplied.
-/// Divide the color channels by alpha, saturating at 255.
-fn unpremultiply_rgba_in_place(bytes: &mut [u8]) {
+/// Swap B and R in each 4-byte pixel. CoreGraphics' `premul_first +
+/// byte_order_32_little` writes BGRA; Rio's atlas is RGBA. Alpha stays put.
+fn bgra_to_rgba_in_place(bytes: &mut [u8]) {
     for px in bytes.chunks_exact_mut(4) {
-        let a = px[3];
-        if a == 0 {
-            px[0] = 0;
-            px[1] = 0;
-            px[2] = 0;
-        } else if a < 255 {
-            let inv = 255.0 / a as f32;
-            px[0] = ((px[0] as f32 * inv).min(255.0)) as u8;
-            px[1] = ((px[1] as f32 * inv).min(255.0)) as u8;
-            px[2] = ((px[2] as f32 * inv).min(255.0)) as u8;
-        }
+        px.swap(0, 2);
     }
+}
+
+/// Build a `font_introspector::Metrics` populated from CoreText, in font
+/// design units. Used by `FontData::get_metrics` on macOS so the metrics
+/// path works without raw font bytes.
+///
+/// CTFont exposes everything we need directly (ascent, descent, leading,
+/// underline, x-height, cap-height, units_per_em). Strikeout has no CT
+/// API — we derive it like `font::macos::font_metrics` does, from the
+/// OS/2 table if available or x-height/2 as a fallback.
+pub fn design_unit_metrics(
+    handle: &FontHandle,
+) -> crate::font_introspector::Metrics {
+    let ct = &handle.base_font;
+    let upem = ct.units_per_em() as f32;
+
+    // Base CTFont is at 1pt, so these are in points-per-unit; multiply by
+    // units_per_em for design units.
+    let ascent = ct.ascent() as f32 * upem;
+    let descent = ct.descent() as f32 * upem;
+    let leading = ct.leading() as f32 * upem;
+    let underline_offset = ct.underline_position() as f32 * upem;
+    let stroke_size = ct.underline_thickness() as f32 * upem;
+    let x_height = ct.x_height() as f32 * upem;
+    let cap_height = ct.cap_height() as f32 * upem;
+
+    let (strikeout_offset, strikeout_stroke) = read_os2_strikeout(ct, 1.0)
+        .map(|(off, thick)| (off * upem, thick * upem))
+        .unwrap_or((x_height * 0.5, stroke_size));
+
+    // `SymbolicTraitAccessors` is private in core-text; bit-mask the raw
+    // u32 traits instead. 1 << 10 is `kCTFontTraitMonoSpace`.
+    let is_monospace = (ct.symbolic_traits() & (1 << 10)) != 0;
+
+    crate::font_introspector::Metrics {
+        units_per_em: upem as u16,
+        glyph_count: ct.glyph_count() as u16,
+        is_monospace,
+        has_vertical_metrics: false,
+        ascent,
+        descent,
+        leading,
+        vertical_ascent: 0.0,
+        vertical_descent: 0.0,
+        vertical_leading: 0.0,
+        cap_height,
+        x_height,
+        average_width: 0.0,
+        max_width: 0.0,
+        underline_offset,
+        strikeout_offset,
+        stroke_size: strikeout_stroke.max(stroke_size),
+    }
+}
+
+/// Measure the CJK water ideograph "水" at design-unit width. Mirrors
+/// `FaceMetrics::measure_cjk_character_width` for non-macOS. Used so the
+/// macOS `get_metrics` path can still feed a correct `ic_width` into
+/// FaceMetrics without needing the font's bytes.
+pub fn cjk_ic_width(handle: &FontHandle) -> Option<f64> {
+    const WATER: char = '\u{6C34}';
+    advance_units_for_char(handle, WATER).and_then(|(units, _upem)| {
+        if units > 0.0 {
+            Some(units as f64)
+        } else {
+            None
+        }
+    })
+}
+
+/// Return `(advance_in_design_units, units_per_em)` for `ch`, or `None`
+/// if the font doesn't carry a glyph for it.
+///
+/// Matches the old swash-based `compute_advance` return shape so the
+/// caller (`font_cache.rs`) can scale to pixels the same way on both
+/// platforms. All data comes from the CTFont — no raw bytes needed.
+pub fn advance_units_for_char(handle: &FontHandle, ch: char) -> Option<(f32, u16)> {
+    use core_foundation::base::CFIndex;
+    use core_graphics::geometry::CGSize;
+
+    let mut utf16 = [0u16; 2];
+    let encoded = ch.encode_utf16(&mut utf16);
+    let count = encoded.len();
+    let mut glyphs = [0 as CGGlyph; 2];
+    let ok = unsafe {
+        handle.base_font.get_glyphs_for_characters(
+            utf16.as_ptr(),
+            glyphs.as_mut_ptr(),
+            count as CFIndex,
+        )
+    };
+    if !ok || glyphs[0] == 0 {
+        return None;
+    }
+
+    // Base CTFont is at 1pt, so advance.width is in points-per-unit. Scale
+    // by units_per_em to get design-unit advance.
+    let mut advance = CGSize::new(0.0, 0.0);
+    unsafe {
+        handle.base_font.get_advances_for_glyphs(
+            kCTFontOrientationDefault,
+            glyphs.as_ptr(),
+            &mut advance,
+            1,
+        );
+    }
+    let units_per_em = handle.base_font.units_per_em() as u16;
+    Some((advance.width as f32 * units_per_em as f32, units_per_em))
+}
+
+/// Font-level attributes read straight from a `CTFont`. Mirrors the subset
+/// of `font_introspector::Attributes` that Rio stores on `FontData` — used
+/// to build a `FontData` from a path (or static bytes) without parsing the
+/// font file ourselves.
+#[derive(Debug, Clone, Copy)]
+pub struct FontAttributes {
+    pub weight: u16,
+    pub is_italic: bool,
+    pub is_monospace: bool,
+    pub is_color: bool,
+}
+
+/// Read `(weight, italic, monospace, color)` traits from a CTFont.
+///
+/// `core-text`'s `TraitAccessors` / `SymbolicTraitAccessors` traits are
+/// private to the crate, so rather than fight the SDK we read symbolic
+/// traits as a raw `u32` bitfield (constants from Apple's CoreText.h).
+/// Weight is left at the CSS default (`400`) — Rio only uses the weight
+/// on fallback fonts to decide whether to synthesize bold, and cascade /
+/// discovered fonts are overwhelmingly weight-neutral regulars anyway.
+pub fn font_attributes(handle: &FontHandle) -> FontAttributes {
+    const K_CTFONT_TRAIT_ITALIC: u32 = 1 << 0;
+    const K_CTFONT_TRAIT_MONOSPACE: u32 = 1 << 10;
+    const K_CTFONT_TRAIT_COLOR_GLYPHS: u32 = 1 << 13;
+
+    let traits: u32 = handle.base_font.symbolic_traits();
+    FontAttributes {
+        weight: 400,
+        is_italic: (traits & K_CTFONT_TRAIT_ITALIC) != 0,
+        is_monospace: (traits & K_CTFONT_TRAIT_MONOSPACE) != 0,
+        is_color: (traits & K_CTFONT_TRAIT_COLOR_GLYPHS) != 0,
+    }
+}
+
+/// Check whether `handle`'s font has a real glyph for `ch`.
+///
+/// Replaces the `font_introspector::FontRef::charmap().map(ch)` path on
+/// macOS so the fallback walk in `lookup_for_font_match` doesn't need the
+/// font's raw bytes — only the CTFont. Combined with path-based FontHandle
+/// construction, this lets us drop `FONT_DATA_CACHE` entirely.
+///
+/// Astral codepoints (`ch as u32 > 0xFFFF`) encode as a UTF-16 surrogate
+/// pair; CoreText maps both units to one glyph (first index holds it,
+/// second is `0xFFFF`). We want the first index.
+pub fn font_has_char(handle: &FontHandle, ch: char) -> bool {
+    use core_foundation::base::CFIndex;
+    let mut utf16 = [0u16; 2];
+    let encoded = ch.encode_utf16(&mut utf16);
+    let count = encoded.len();
+    let mut glyphs = [0 as CGGlyph; 2];
+    let ok = unsafe {
+        handle.base_font.get_glyphs_for_characters(
+            utf16.as_ptr(),
+            glyphs.as_mut_ptr(),
+            count as CFIndex,
+        )
+    };
+    ok && glyphs[0] != 0
 }
 
 /// Scaled line-level metrics for a font at a specific pixel size. Mirrors
@@ -863,6 +1132,23 @@ mod tests {
     }
 
     #[test]
+    fn static_bytes_path_rasterizes() {
+        // Full no-copy path: .rodata bytes → CFDataCreateWithBytesNoCopy →
+        // CTFontDescriptor → CTFont → rasterize. Verifies the FFI is wired
+        // correctly and the ref-don't-copy CFData is accepted by
+        // CTFontManagerCreateFontDescriptorFromData.
+        let handle = FontHandle::from_static_bytes(FONT_CASCADIAMONO_REGULAR)
+            .expect("static bytes should parse");
+        let size = 18.0;
+        let gid = glyph_id_for_char(&handle, size as f64, 'M');
+        let g = rasterize_glyph(&handle, gid, size, false, false, false)
+            .expect("rasterize returned None");
+        assert!(g.width > 0 && g.height > 0);
+        // Inked: at least one non-zero alpha pixel.
+        assert!(g.bytes.iter().any(|&b| b > 0));
+    }
+
+    #[test]
     fn rasterizes_an_inked_glyph() {
         let handle =
             FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");
@@ -891,6 +1177,25 @@ mod tests {
                 .is_some_and(|e| e == "ttf" || e == "ttc" || e == "otf"),
             "unexpected font extension: {path:?}"
         );
+    }
+
+    #[test]
+    fn default_cascade_list_is_nonempty() {
+        // Every macOS install has a system cascade list for any loaded font.
+        // This test is a regression guard — if `cascade_list_for_languages`
+        // ever returns empty for a legit font, dynamic fallback stops working.
+        let handle =
+            FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");
+        let paths = default_cascade_list(&handle);
+        assert!(
+            !paths.is_empty(),
+            "CoreText should surface a non-empty cascade"
+        );
+        // Every returned path should be a real file on disk. System fonts
+        // that don't ship a file URL are filtered out by `font_path()`.
+        for p in &paths {
+            assert!(p.exists(), "cascade path should exist: {p:?}");
+        }
     }
 
     #[test]

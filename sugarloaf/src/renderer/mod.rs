@@ -1532,8 +1532,25 @@ impl Renderer {
                         } => {
                             // Use cached glyph data but need to render
                             glyphs.clear();
+                            // Ghostty-style cell centering for East-Asian-Wide
+                            // codepoints: when a glyph's shaped slot is wider
+                            // than one primary cell (char_width > 1), shift it
+                            // by half the extra space so 겔 / 水 / 한 sit
+                            // visually centered across their two cells instead
+                            // of hugging the left cell. Mirrors `face.zig`'s
+                            // `dx = (cell_width - face_width) / 2`. No-op for
+                            // char_width == 1 (Latin, box-drawing, etc.), so
+                            // box-drawing glyphs that rely on tiling at their
+                            // natural pen advance stay aligned.
+                            let cell_shift = if use_grid_cell_size
+                                && char_width > 1.0
+                            {
+                                cell_width * (char_width - 1.0) / 2.0
+                            } else {
+                                0.0
+                            };
                             for shaped_glyph in cached_glyphs.iter() {
-                                let x = px;
+                                let x = px + cell_shift;
                                 let y = baseline;
                                 // Effective per-glyph pen advance — on the
                                 // grid-cell-size path this is `cell_width *
@@ -1615,8 +1632,17 @@ impl Renderer {
                             glyphs.clear();
                             let mut shaped_glyphs = Vec::new();
 
+                            // Same Ghostty-style cell centering as above.
+                            let cell_shift = if use_grid_cell_size
+                                && char_width > 1.0
+                            {
+                                cell_width * (char_width - 1.0) / 2.0
+                            } else {
+                                0.0
+                            };
+
                             for glyph in &run.glyphs {
-                                let x = px;
+                                let x = px + cell_shift;
                                 let y = baseline;
                                 let shaper_advance = glyph.simple_data().1;
                                 // See the cached-path comment above — on the
