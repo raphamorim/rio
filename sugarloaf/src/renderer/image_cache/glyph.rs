@@ -31,15 +31,24 @@ const SOURCES: &[Source] = &[
 /// it's taken from `FontData::is_emoji` so the caller doesn't have to probe the
 /// font per glyph.
 #[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)]
 fn rasterize_macos(
     scaled: &mut GlyphImage,
     handle: &crate::font::macos::FontHandle,
     glyph_id: u16,
     size: u16,
     is_emoji: bool,
+    synthetic_italic: bool,
+    synthetic_bold: bool,
 ) -> bool {
-    match crate::font::macos::rasterize_glyph(handle, glyph_id, size as f32, is_emoji)
-    {
+    match crate::font::macos::rasterize_glyph(
+        handle,
+        glyph_id,
+        size as f32,
+        is_emoji,
+        synthetic_italic,
+        synthetic_bold,
+    ) {
         Some(g) => {
             scaled.placement = zeno::Placement {
                 left: g.left,
@@ -63,8 +72,6 @@ fn rasterize_macos(
 pub struct GlyphCache {
     scx: ScaleContext,
     fonts: FxHashMap<FontKey, FontEntry>,
-    #[cfg(target_os = "macos")]
-    ct_fonts: FxHashMap<usize, crate::font::macos::FontHandle>,
     img: GlyphImage,
     max_height: u16,
 }
@@ -74,8 +81,6 @@ impl GlyphCache {
         GlyphCache {
             scx: ScaleContext::new(),
             fonts: FxHashMap::default(),
-            #[cfg(target_os = "macos")]
-            ct_fonts: FxHashMap::default(),
             img: GlyphImage::new(),
             max_height: 0,
         }
@@ -102,8 +107,6 @@ impl GlyphCache {
             scaled_image: &mut self.img,
             quant_size,
             scale_context: &mut self.scx,
-            #[cfg(target_os = "macos")]
-            ct_fonts: &mut self.ct_fonts,
         }
     }
 
@@ -147,8 +150,6 @@ pub struct GlyphCacheSession<'a> {
     quant_size: u16,
     #[allow(unused)]
     max_height: &'a u16,
-    #[cfg(target_os = "macos")]
-    ct_fonts: &'a mut FxHashMap<usize, crate::font::macos::FontHandle>,
 }
 
 impl GlyphCacheSession<'_> {
@@ -189,82 +190,88 @@ impl GlyphCacheSession<'_> {
         );
 
         self.scaled_image.data.clear();
-        let font_library_data = self.font_library.inner.read();
-        let font_data = font_library_data.get(&self.font);
-        #[cfg(not(target_os = "macos"))]
-        let enable_hint = font_library_data.hinting;
-        #[cfg(not(target_os = "macos"))]
-        let should_embolden = font_data.should_embolden;
-        #[cfg(not(target_os = "macos"))]
-        let should_italicize = font_data.should_italicize;
-        #[cfg(target_os = "macos")]
-        let is_emoji = font_data.is_emoji;
 
-        if let Some((shared_data, offset, cache_key)) =
-            font_library_data.get_data(&self.font)
+        // Pull per-font metadata under a brief read lock, then release it so
+        // the macOS `ct_font` call (which may take its own read lock on cache
+        // miss) doesn't nest acquisitions.
+        let should_embolden;
+        let should_italicize;
+        #[cfg(target_os = "macos")]
+        let is_emoji;
+        #[cfg(not(target_os = "macos"))]
+        let enable_hint;
+        #[cfg(not(target_os = "macos"))]
+        let font_bytes_opt;
         {
+            let font_library_data = self.font_library.inner.read();
+            let font_data = font_library_data.get(&self.font);
+            should_embolden = font_data.should_embolden;
+            should_italicize = font_data.should_italicize;
+            #[cfg(target_os = "macos")]
+            {
+                is_emoji = font_data.is_emoji;
+            }
             #[cfg(not(target_os = "macos"))]
+            {
+                enable_hint = font_library_data.hinting;
+                font_bytes_opt = font_library_data.get_data(&self.font);
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        let did_render = match self.font_library.ct_font(self.font) {
+            Some(handle) => rasterize_macos(
+                self.scaled_image,
+                &handle,
+                id,
+                size,
+                is_emoji,
+                should_italicize,
+                should_embolden,
+            ),
+            None => false,
+        };
+
+        #[cfg(not(target_os = "macos"))]
+        let did_render = if let Some((shared_data, offset, cache_key)) =
+            font_bytes_opt
+        {
             let font_ref = FontRef {
                 data: shared_data.as_ref(),
                 offset,
                 key: cache_key,
             };
-            #[cfg(target_os = "macos")]
-            let _ = (offset, cache_key); // used by non-macOS path only
+            let mut scaler = self
+                .scale_context
+                .builder(font_ref)
+                // With the advent of high-DPI displays (displays with >300 pixels per inch),
+                // font hinting has become less relevant, as aliasing effects become
+                // un-noticeable to the human eye.
+                // As a result Apple's Quartz text renderer, which is targeted for Retina displays,
+                // now ignores font hint information completely.
+                .hint(enable_hint)
+                .size(size.into())
+                // .normalized_coords(coords)
+                .build();
 
-            #[cfg(target_os = "macos")]
-            let did_render = {
-                let font_id = self.font;
-                if !self.ct_fonts.contains_key(&font_id) {
-                    if let Some(h) = crate::font::macos::FontHandle::from_bytes(
-                        shared_data.as_ref(),
-                    ) {
-                        self.ct_fonts.insert(font_id, h);
-                    }
-                }
-                match self.ct_fonts.get(&font_id) {
-                    Some(handle) => rasterize_macos(
-                        self.scaled_image,
-                        handle,
-                        id,
-                        size,
-                        is_emoji,
-                    ),
-                    None => false,
-                }
-            };
+            Render::new(SOURCES)
+                .format(Format::Alpha)
+                // .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
+                .embolden(if should_embolden { 0.5 } else { 0.0 })
+                .transform(if should_italicize {
+                    Some(Transform::skew(
+                        Angle::from_degrees(14.0),
+                        Angle::from_degrees(0.0),
+                    ))
+                } else {
+                    None
+                })
+                .render_into(&mut scaler, id, self.scaled_image)
+        } else {
+            false
+        };
 
-            #[cfg(not(target_os = "macos"))]
-            let did_render = {
-                let mut scaler = self
-                    .scale_context
-                    .builder(font_ref)
-                    // With the advent of high-DPI displays (displays with >300 pixels per inch),
-                    // font hinting has become less relevant, as aliasing effects become
-                    // un-noticeable to the human eye.
-                    // As a result Apple's Quartz text renderer, which is targeted for Retina displays,
-                    // now ignores font hint information completely.
-                    .hint(enable_hint)
-                    .size(size.into())
-                    // .normalized_coords(coords)
-                    .build();
-
-                Render::new(SOURCES)
-                    .format(Format::Alpha)
-                    // .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
-                    .embolden(if should_embolden { 0.5 } else { 0.0 })
-                    .transform(if should_italicize {
-                        Some(Transform::skew(
-                            Angle::from_degrees(14.0),
-                            Angle::from_degrees(0.0),
-                        ))
-                    } else {
-                        None
-                    })
-                    .render_into(&mut scaler, id, self.scaled_image)
-            };
-
-            if did_render {
+        if did_render {
                 let p = self.scaled_image.placement;
                 let w = p.width as u16;
                 let h = p.height as u16;
@@ -349,7 +356,6 @@ impl GlyphCacheSession<'_> {
 
                 self.entry.glyphs.insert(key, entry);
                 return Some(entry);
-            }
         }
 
         None
