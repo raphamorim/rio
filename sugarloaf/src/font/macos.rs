@@ -18,6 +18,7 @@ use core_foundation::{
     dictionary::CFDictionary,
     number::CFNumber,
     string::CFString,
+    url::{CFURLRef, CFURL},
 };
 use core_graphics::{
     base::{kCGImageAlphaPremultipliedLast, CGFloat},
@@ -41,6 +42,64 @@ use core_text::{
 // CGImage.h. Used for 1-channel alpha-only bitmaps (monochrome glyph masks).
 #[allow(non_upper_case_globals)]
 const kCGImageAlphaOnly: u32 = 7;
+
+// core-text 21 leaves CTFontManagerRegisterFontsForURL commented out, so declare
+// the FFI ourselves. Used to publish `additional_dirs` fonts to CoreText so
+// descriptor matching (and the command-palette browser) finds them.
+type CTFontManagerScope = u32;
+#[allow(non_upper_case_globals)]
+const kCTFontManagerScopeProcess: CTFontManagerScope = 1;
+
+#[allow(non_snake_case)]
+#[link(name = "CoreText", kind = "framework")]
+extern "C" {
+    fn CTFontManagerRegisterFontsForURL(
+        fontURL: CFURLRef,
+        scope: CTFontManagerScope,
+        error: *mut core_foundation::base::CFTypeRef,
+    ) -> bool;
+}
+
+/// Register every `.ttf`/`.otf`/`.ttc`/`.otc` under `dir` with CoreText so
+/// `additional_dirs` fonts become discoverable by descriptor matching.
+///
+/// Process-scoped: registrations only affect rio, not other apps on the
+/// system, and they disappear when rio exits. Silently skips paths CoreText
+/// rejects (duplicate registration, malformed files) — the rest of the dir
+/// still loads.
+pub fn register_fonts_in_dir(dir: &std::path::Path) {
+    let walker = walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok());
+    for entry in walker {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+            continue;
+        };
+        let ext = ext.to_ascii_lowercase();
+        if !matches!(ext.as_str(), "ttf" | "otf" | "ttc" | "otc") {
+            continue;
+        }
+        let Some(url) = CFURL::from_path(path, false) else {
+            continue;
+        };
+        let mut err: core_foundation::base::CFTypeRef = std::ptr::null();
+        let ok = unsafe {
+            CTFontManagerRegisterFontsForURL(
+                url.as_concrete_TypeRef(),
+                kCTFontManagerScopeProcess,
+                &mut err,
+            )
+        };
+        if !ok {
+            tracing::debug!(
+                "CTFontManagerRegisterFontsForURL skipped {}",
+                path.display()
+            );
+        }
+    }
+}
 
 /// A parsed CoreGraphics font. The wrapped `CGFont` retains the provider that
 /// retains the underlying bytes, so callers can drop the source buffer after
