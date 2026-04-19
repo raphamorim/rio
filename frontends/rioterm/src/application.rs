@@ -1707,6 +1707,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                                     #[cfg(target_os = "macos")]
                                     {
+                                        let mut bg_color = bg_color;
+                                        if self.config.window.opacity < 1.0 {
+                                            bg_color.a =
+                                                self.config.window.opacity as f64;
+                                        }
                                         route.window.winit_window.set_background_color(
                                             bg_color.r, bg_color.g, bg_color.b,
                                             bg_color.a,
@@ -1716,6 +1721,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                     #[cfg(target_os = "windows")]
                                     {
                                         use rio_window::platform::windows::WindowExtWindows;
+                                        let mut bg_color = bg_color;
+                                        if self.config.window.opacity < 1.0 {
+                                            bg_color.a =
+                                                self.config.window.opacity as f64;
+                                        }
                                         route
                                             .window
                                             .winit_window

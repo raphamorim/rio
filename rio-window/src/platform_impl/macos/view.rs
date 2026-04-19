@@ -169,6 +169,11 @@ declare_class!(
             true
         }
 
+        #[method(isOpaque)]
+        fn is_opaque(&self) -> bool {
+            false
+        }
+
         #[method(viewDidMoveToWindow)]
         fn view_did_move_to_window(&self) {
             trace_scope!("viewDidMoveToWindow");
