@@ -661,6 +661,8 @@ impl<T: 'static> EventLoop<T> {
                     }
                 }
             }
+            // Clear redraw_flag after processing vsync to prevent event loop spinning
+            wt.redraw_flag.store(false, std::sync::atomic::Ordering::Release);
         }
 
         // Empty the redraw requests
