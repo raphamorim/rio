@@ -295,6 +295,10 @@ pub fn default_config_file_content() -> String {
 #
 # • decorations - Set window decorations, options: "Enabled", "Disabled", "Transparent", "Buttonless"
 #
+# • decorations-theme-variant - Set window decorations theme variant, options: "Dark", "Light", "None"
+#     - "Dark" - Force dark mode for window decorations
+#     - "Light" - Force light mode for window decorations
+#     - "None" - Follow system theme (default)
 # • colorspace - Set the color space for the window
 #     - "srgb" (default on non-macOS)
 #     - "display-p3" (default on macOS)
@@ -318,6 +322,7 @@ pub fn default_config_file_content() -> String {
 # opacity = 1.0
 # blur = false
 # decorations = "enabled"
+# decorations-theme-variant = "none"
 # colorspace = "display-p3"
 # macos-traffic-light-position-x = 9.0
 # macos-traffic-light-position-y = 9.0
