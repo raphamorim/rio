@@ -922,6 +922,12 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
     /// `1cc6D` identifier and excludes the APC introducer / terminator.
     fn dispatch_glyph_protocol(&mut self, data: &[u8]) {
         match glyph_protocol::parse(data) {
+            Ok(glyph_protocol::GlyphCommand::Support) => {
+                let resp = glyph_protocol::format_support_response(
+                    glyph_protocol::SUPPORTED_FORMATS,
+                );
+                self.handler.glyph_protocol_response(resp);
+            }
             Ok(glyph_protocol::GlyphCommand::Query { cp }) => {
                 let status = self.handler.glyph_query(cp);
                 let resp = glyph_protocol::format_query_response(cp, status);

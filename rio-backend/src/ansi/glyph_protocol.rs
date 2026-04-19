@@ -4,6 +4,8 @@
 //   ESC _ 1cc6D ; <verb> [ ; key=value ]* [ ; <payload> ] ESC \
 //
 // Verbs:
+//   s — advertise supported payload formats; also serves as protocol
+//       detection (any reply = protocol implemented)
 //   q — query the state of a codepoint (status=0..3 bit field)
 //   r — register a PUA codepoint with a glyph
 //   c — clear one PUA codepoint or every registration in this session
@@ -26,6 +28,11 @@ pub const GLYPH_PROTOCOL_PREFIX: &[u8] = b"1cc6D";
 /// with `payload_too_large`.
 pub const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 
+/// Bitfield of payload formats this build supports, returned in the
+/// reply to the `s` verb. Bit 0 = `glyf` (OpenType simple glyphs).
+/// Future formats (e.g. `colr`) will claim further bits.
+pub const SUPPORTED_FORMATS: u8 = 0b0000_0001;
+
 /// Check whether a codepoint is in any of the three Unicode Private
 /// Use Areas.
 #[inline]
@@ -38,6 +45,9 @@ pub fn is_pua(cp: u32) -> bool {
 /// Parsed Glyph Protocol command, ready for dispatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlyphCommand {
+    /// Advertise supported payload formats. Parameter-free; doubles as
+    /// the protocol-detection ping.
+    Support,
     /// Query state of a single codepoint.
     Query { cp: u32 },
     /// Register a glyph at a PUA codepoint chosen by the client.
@@ -118,11 +128,20 @@ pub fn parse(body: &[u8]) -> Result<GlyphCommand, ParseError> {
         return Err(ParseError::Malformed("verb must be a single byte"));
     }
     match verb[0] {
+        b's' => parse_support(rest),
         b'q' => parse_query(rest),
         b'r' => parse_register(rest),
         b'c' => parse_clear(rest),
         _ => Err(ParseError::Malformed("unknown verb")),
     }
+}
+
+fn parse_support(_rest: &[u8]) -> Result<GlyphCommand, ParseError> {
+    // `s` takes no parameters. Per spec §11 conformance rule, unknown
+    // params are silently ignored rather than erroring out, so future
+    // clients that send extra hints (e.g. a client-advertised format
+    // preference) still get a valid reply from this implementation.
+    Ok(GlyphCommand::Support)
 }
 
 fn parse_query(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
@@ -319,6 +338,15 @@ impl<'a> Params<'a> {
             .find(|e| e.0 == k.as_bytes())
             .map(|e| &e.1)
     }
+}
+
+/// Format the reply to `s` (support). `fmt_bits` is the bitfield of
+/// supported payload formats; bit 0 = `glyf`. A reply of `fmt=0` means
+/// the protocol is implemented but no payload format is accepted — a
+/// degenerate state reserved for future negotiation, never produced by
+/// this build.
+pub fn format_support_response(fmt_bits: u8) -> String {
+    format!("\x1b_1cc6D;s;fmt={}\x1b\\", fmt_bits)
 }
 
 /// Format the reply to `q;cp=<hex>`.
@@ -566,6 +594,40 @@ mod tests {
     fn clear_all() {
         let got = parse(b"1cc6D;c").unwrap();
         assert_eq!(got, GlyphCommand::Clear { cp: None });
+    }
+
+    #[test]
+    fn parses_support_with_no_params() {
+        assert_eq!(parse(b"1cc6D;s").unwrap(), GlyphCommand::Support);
+    }
+
+    #[test]
+    fn support_ignores_unknown_params() {
+        // §11: unknown params are silently ignored. The verb is
+        // parameter-free, but a forward-compatible client may send
+        // hints; we still produce a valid reply.
+        assert_eq!(
+            parse(b"1cc6D;s;future=1;anything=else").unwrap(),
+            GlyphCommand::Support
+        );
+    }
+
+    #[test]
+    fn support_response_advertises_glyf_bit() {
+        assert_eq!(
+            format_support_response(SUPPORTED_FORMATS),
+            "\x1b_1cc6D;s;fmt=1\x1b\\"
+        );
+    }
+
+    #[test]
+    fn support_response_encodes_arbitrary_bitfield() {
+        // Forward-compat: adding `colr` later would set bit 1.
+        assert_eq!(
+            format_support_response(0b0000_0011),
+            "\x1b_1cc6D;s;fmt=3\x1b\\"
+        );
+        assert_eq!(format_support_response(0), "\x1b_1cc6D;s;fmt=0\x1b\\");
     }
 
     #[test]
