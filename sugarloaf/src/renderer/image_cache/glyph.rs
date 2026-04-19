@@ -272,10 +272,9 @@ impl GlyphCacheSession<'_> {
             let lib = self.font_library.inner.read();
             lib.glyph_registry.clone()?
         };
-        // `id` is the u8 slot index packed into a u16 glyph-id field.
+        // `id` is the slot index straight out of the u16 glyph-id field.
         // Recover the codepoint so we can look up the outline.
-        let slot = u8::try_from(id).ok()?;
-        let cp = registry.cp_for_index(slot)?;
+        let cp = registry.cp_for_index(id)?;
         let glyph = registry.get(cp)?;
 
         // Colour payloads route to the COLR rasteriser. Rasterisation

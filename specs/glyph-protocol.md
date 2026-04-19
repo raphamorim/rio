@@ -146,11 +146,14 @@ to the three Unicode Private Use Areas:
 Any other codepoint — ASCII, Latin-1, CJK, emoji, control chars —
 is rejected by `r` and `c` with `reason=out_of_namespace`.
 
-Each terminal session holds at most **256 simultaneous
-registrations**. When the glossary is full and a new `r` arrives,
-the terminal evicts the oldest registration in FIFO order; the new
-registration succeeds. Applications that cannot tolerate silent
-eviction SHOULD query their codepoint with `q` before emitting.
+Each terminal session holds at most **1024 simultaneous
+registrations**. One codepoint = one slot regardless of payload
+format: a `fmt=colrv1` registration with 500 inner outlines still
+consumes exactly one glossary slot. When the glossary is full and
+a new `r` arrives, the terminal evicts the oldest registration in
+FIFO order; the new registration succeeds. Applications that
+cannot tolerate silent eviction SHOULD query their codepoint with
+`q` before emitting.
 
 Each terminal session (tab, pane, PTY) owns its own glossary. Two
 sessions can independently register `U+E0A0`, each pointing at a
@@ -255,7 +258,7 @@ Defined error codes:
 A second `r` on the same `cp` overwrites the first. This is how
 applications update a glyph or react to theme changes.
 
-When the glossary already holds 256 registrations and the new `r`
+When the glossary already holds 1024 registrations and the new `r`
 is for a `cp` that is NOT already registered, the terminal evicts
 the oldest registration (FIFO) to make room. Eviction silently
 invalidates the evicted codepoint: subsequent emissions fall
@@ -366,7 +369,7 @@ contained: no external font needed.
 **Container layout** (all integers big-endian, post-base64-decode):
 
 ```
-u16     n_glyphs              # 1..=256
+u16     n_glyphs              # 1..=1024
 repeat n_glyphs:
   u16   glyf_len
   glyf_len bytes              # simple-glyph record, §8.2 subset
@@ -479,8 +482,8 @@ and the cell buffer honestly reports.
 
 Other considerations:
 
-- **Resource bounds.** The 256-slot cap and 64 KiB per-payload cap
-  give a hard upper bound of 16 MiB on the glossary's memory
+- **Resource bounds.** The 1024-slot cap and 64 KiB per-payload cap
+  give a hard upper bound of 64 MiB on the glossary's memory
   footprint per session.
 - **No code execution.** The `glyf` subset defined in §8.2
   excludes hinting instructions, which is the only part of
@@ -521,7 +524,7 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
    payload format via the `fmt=` bitfield in the `s` reply.
 3. Restricts register/clear `cp` to the three PUA ranges; rejects
    anything else with `reason=out_of_namespace`.
-4. Holds at most 256 simultaneous registrations per session and
+4. Holds at most 1024 simultaneous registrations per session and
    evicts in FIFO order when full.
 5. Accepts the `glyf` simple-glyph subset defined in §8.2. The
    `colrv0` and `colrv1` formats are OPTIONAL; terminals that
@@ -650,3 +653,4 @@ rather than serving a stale bitmap.
 | 2026-04-19 | v1.1    | Added `s` verb (support advertisement / protocol ping). |
 | 2026-04-19 | v1.2    | Added `fmt=colrv0` and `fmt=colrv1` payload formats wrapping OpenType `COLR` / `CPAL` tables with sidecar `glyf` outlines. Both advertised via bits 1 and 2 of the `s` reply's `fmt=` bitfield. |
 | 2026-04-19 | v1.3    | Added `reply=0|1|2` parameter to the `r` verb so bulk registrations can suppress success ACKs (`reply=2`) or go fully fire-and-forget (`reply=0`). Default `reply=1` preserves v1.0 behaviour. |
+| 2026-04-19 | v1.4    | Raised the glossary capacity from 256 to 1024 simultaneous registrations per session, and raised the `n_glyphs` cap in `fmt=colrv0`/`colrv1` containers from 256 to 1024 outlines. Both bumps quadruple the worst-case memory footprint; the 64 KiB per-payload cap is unchanged. |

@@ -76,9 +76,9 @@ pub enum GlyphCommand {
 }
 
 /// Upper bound on the number of glyph outlines carried in a single
-/// colour payload. Keeps the glossary's decode cost bounded and
-/// matches the 16-bit GlyphId namespace used by COLR.
-pub const MAX_COLR_GLYPHS: u16 = 256;
+/// colour payload. Keeps the glossary's decode cost bounded and sits
+/// well within the 16-bit GlyphId namespace used by COLR.
+pub const MAX_COLR_GLYPHS: u16 = 1024;
 
 /// Payload shipped with an `r` (register) request.
 ///

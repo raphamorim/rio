@@ -9,11 +9,15 @@
 // each tab sees only its own registry. Registrations live for the
 // lifetime of the terminal session and are dropped on close.
 //
-// The registry holds at most 256 simultaneous entries. On the 257th
+// The registry holds at most 1024 simultaneous entries. On the 1025th
 // register, the oldest entry is evicted (FIFO) to make room. Cleared
 // codepoints are removed immediately; re-registering a codepoint
 // overwrites the previous entry without affecting FIFO order of
-// other entries.
+// other entries. Each registration costs one slot regardless of
+// payload type — a `ColrV0`/`ColrV1` container with 200 inner
+// outlines still occupies a single glossary slot. The `n_glyphs`
+// cap inside a COLR payload (see `rio_backend::ansi::glyph_protocol::
+// MAX_COLR_GLYPHS`) is a separate per-payload limit.
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
@@ -25,8 +29,9 @@ use std::sync::Arc;
 /// registry instead.
 pub const CUSTOM_GLYPH_FONT_ID: usize = usize::MAX;
 
-/// Maximum simultaneous registrations per session (spec §4).
-pub const GLOSSARY_CAPACITY: usize = 256;
+/// Maximum simultaneous registrations per session (spec §4). Each
+/// registration is one slot regardless of payload type.
+pub const GLOSSARY_CAPACITY: usize = 1024;
 
 /// Is `cp` in any of the three Unicode Private Use Areas? This is the
 /// check enforced by the `r` verb's parser; mirrored here so the
@@ -77,12 +82,12 @@ impl StoredPayload {
 pub struct RegisteredGlyph {
     pub payload: StoredPayload,
     pub upm: u16,
-    /// Stable render-side index in `0..=255`. Because codepoints are
-    /// 21-bit and the renderer's glyph-id field is u16, we hand every
-    /// registration a u8 slot id that fits. Indices are reused after
-    /// eviction or explicit clear, so the atlas cache must be
-    /// invalidated for a (slot_id, *) pair whenever that happens.
-    pub index: u8,
+    /// Stable render-side index in `0..GLOSSARY_CAPACITY`. The
+    /// renderer's glyph-id field is u16, so the slot id fits directly.
+    /// Indices are reused after eviction or explicit clear, so the
+    /// atlas cache must be invalidated for a (slot_id, *) pair
+    /// whenever that happens.
+    pub index: u16,
     /// Per-registration insertion id used to order entries for FIFO
     /// eviction. A larger id means "registered later."
     pub insertion_id: u64,
@@ -95,7 +100,7 @@ struct Inner {
     /// slot index `i`, or `None` if the slot is free.
     indexed: [Option<u32>; GLOSSARY_CAPACITY],
     /// Monotonic counter that stamps each registration so we can
-    /// evict the oldest in O(n) over 256 entries.
+    /// evict the oldest in O(n) over `GLOSSARY_CAPACITY` entries.
     next_insertion: u64,
 }
 
@@ -134,7 +139,7 @@ impl GlyphRegistry {
     /// If the codepoint is already registered, the outline is replaced
     /// and the existing insertion order and slot index are preserved.
     ///
-    /// If the glossary is full (256 entries) and `cp` is NOT already
+    /// If the glossary is full (`GLOSSARY_CAPACITY` entries) and `cp` is NOT already
     /// registered, the oldest entry is evicted to make room. Returns
     /// `Some(evicted_cp)` in that case so the caller can invalidate
     /// its render cache for that codepoint.
@@ -160,7 +165,7 @@ impl GlyphRegistry {
         // Fresh insertion. Find a free slot; if none, evict the
         // oldest entry and take its slot.
         let (slot_index, evicted) = match inner.indexed.iter().position(|s| s.is_none()) {
-            Some(i) => (i as u8, None),
+            Some(i) => (i as u16, None),
             None => {
                 let (evict_cp, evict_entry) = inner
                     .by_cp
@@ -207,8 +212,13 @@ impl GlyphRegistry {
 
     /// Recover the codepoint that a render-side slot index points at.
     /// Used by the rasterizer to look up the outline from an atlas key.
-    pub fn cp_for_index(&self, index: u8) -> Option<u32> {
-        self.inner.read().indexed[index as usize]
+    pub fn cp_for_index(&self, index: u16) -> Option<u32> {
+        self.inner
+            .read()
+            .indexed
+            .get(index as usize)
+            .copied()
+            .flatten()
     }
 
     /// Look up a registration.
@@ -356,7 +366,7 @@ mod tests {
         }
         assert_eq!(r.len(), GLOSSARY_CAPACITY);
 
-        // 257th register evicts the oldest (U+E000) to make room.
+        // The next register evicts the oldest (U+E000) to make room.
         let evicted = r.register(0xE500, glyf(vec![0xFF]), 1000).unwrap();
         assert_eq!(evicted, Some(0xE000));
         assert!(!r.contains(0xE000));
