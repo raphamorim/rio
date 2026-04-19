@@ -1,5 +1,6 @@
 mod atlas;
 mod cache;
+mod colr_raster;
 pub mod glyph;
 
 use std::sync::Arc;

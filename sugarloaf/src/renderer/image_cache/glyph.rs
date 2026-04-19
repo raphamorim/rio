@@ -294,12 +294,11 @@ impl GlyphCacheSession<'_> {
     /// has no entry for `id` (stale cache, registration cleared between
     /// lookup and render) or when decoding fails.
     ///
-    /// Only `fmt=glyf` renders today. `fmt=colrv0` / `fmt=colrv1`
-    /// registrations are accepted by the protocol layer but have no
-    /// rasterisation path yet — they return `None`, which shows as
-    /// tofu. A colour-rendering PR will land a proper RGBA path and
-    /// route it through the color atlas; until then we deliberately
-    /// decline the monochrome-fallback tempting-but-wrong behaviour.
+    /// `fmt=glyf` takes the zeno alpha-mask path → mask atlas. The
+    /// colour formats take the ttf-parser COLR walker + tiny-skia
+    /// RGBA path → color atlas. No monochrome fallback — if the
+    /// colour renderer refuses a payload, the cell shows tofu so the
+    /// application sees something's wrong and can fix the payload.
     fn rasterize_custom(&mut self, id: u16, size: u16) -> Option<GlyphEntry> {
         use crate::font::glyf_decode;
         use crate::font::glyph_registry::StoredPayload;
@@ -315,9 +314,47 @@ impl GlyphCacheSession<'_> {
         let cp = registry.cp_for_index(slot)?;
         let glyph = registry.get(cp)?;
 
+        // Colour payloads route to the COLR rasteriser. Rasterisation
+        // is cached upstream by `(glyph_id, size)` so a 1-2 ms CPU
+        // pass per unique glyph-size pair is invisible to the user;
+        // the result is uploaded to the colour atlas the same way a
+        // system-font emoji would be.
+        if let StoredPayload::ColrV0 { glyphs, colr, cpal }
+        | StoredPayload::ColrV1 { glyphs, colr, cpal } = &glyph.payload
+        {
+            // Foreground for palette-index-0xFFFF / CurrentColor. The
+            // compositor renders colour glyphs untinted, so rendering
+            // "foreground" at white is the best we can do until the
+            // actual fg colour is threaded through this call site.
+            let fg = [0xFF, 0xFF, 0xFF, 0xFF];
+            let raster = super::colr_raster::rasterize(
+                glyphs, colr, cpal, glyph.upm, size, fg,
+            )?;
+            if raster.width == 0 || raster.height == 0 {
+                return None;
+            }
+            let req = super::AddImage {
+                width: raster.width,
+                height: raster.height,
+                has_alpha: true,
+                data: super::ImageData::Borrowed(&raster.data),
+                content_type: super::ContentType::Color,
+            };
+            let image = self.images.allocate(req)?;
+            return Some(GlyphEntry {
+                left: raster.left,
+                top: raster.top,
+                width: raster.width,
+                height: raster.height,
+                image,
+                is_bitmap: true,
+            });
+        }
+
         let mono_bytes: &[u8] = match &glyph.payload {
             StoredPayload::Glyf { glyf } => glyf,
             StoredPayload::ColrV0 { .. } | StoredPayload::ColrV1 { .. } => {
+                // Unreachable: the early return above handles both.
                 return None;
             }
         };
