@@ -3883,6 +3883,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // tofu fallback at render time rather than a register error —
         // accepted trade-off: we don't want to pull an OpenType parser
         // into the backend crate.
+        //
+        // Zero-length outlines are legal per OpenType — they represent
+        // `.notdef` / advance-width-only slots that a subsetter left
+        // in GID order. Skip them during validation so a well-formed
+        // COLR payload that happens to carry a placeholder GID 0
+        // isn't rejected outright.
         let (stored, upm) = match payload {
             GlyphPayload::Glyf { glyf, upm } => {
                 glyf_decode::decode(&glyf).map_err(translate)?;
@@ -3890,6 +3896,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             GlyphPayload::ColrV0 { container, upm } => {
                 for g in &container.glyphs {
+                    if g.is_empty() {
+                        continue;
+                    }
                     glyf_decode::decode(g).map_err(translate)?;
                 }
                 (
@@ -3903,6 +3912,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             GlyphPayload::ColrV1 { container, upm } => {
                 for g in &container.glyphs {
+                    if g.is_empty() {
+                        continue;
+                    }
                     glyf_decode::decode(g).map_err(translate)?;
                 }
                 (

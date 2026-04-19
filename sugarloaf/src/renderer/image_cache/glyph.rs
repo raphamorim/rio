@@ -24,53 +24,6 @@ const SOURCES: &[Source] = &[
     Source::Outline,
 ];
 
-/// Peek at an OpenType `COLR` table's header and return the first
-/// base-glyph `GlyphId` that the paint graph touches. Used as the
-/// monochrome fallback target for `fmt=colrv0` / `fmt=colrv1`
-/// registrations: the real renderer walks the full paint tree, this
-/// path just draws the root outline as a silhouette.
-///
-/// For `COLR` v0 the base list lives at a u32 offset in the header;
-/// for v1 there's an additional `BaseGlyphList` at offset 14 of the
-/// header whose first record is the preferred root in subsetted
-/// fonts (the v0 array may be empty in v1-only subsets). `is_v1`
-/// tells us whether to bother looking for that second list.
-fn colr_first_base_glyph_id(colr: &[u8], is_v1: bool) -> Option<u16> {
-    // v0 header: version(u16) num_v0(u16) v0_off(u32) layer_off(u32) num_layers(u16)
-    if colr.len() < 8 {
-        return None;
-    }
-    let num_v0 = u16::from_be_bytes([colr[2], colr[3]]);
-    let v0_off = u32::from_be_bytes([colr[4], colr[5], colr[6], colr[7]]) as usize;
-
-    // Try v1's BaseGlyphList first — in a fontTools subset targeting
-    // one codepoint the v0 array is often dropped entirely and the
-    // only base record lives here.
-    if is_v1 && colr.len() >= 18 {
-        let v1_off = u32::from_be_bytes([colr[14], colr[15], colr[16], colr[17]]) as usize;
-        if v1_off != 0 && v1_off.checked_add(6).is_some_and(|e| e <= colr.len()) {
-            // BaseGlyphList: numRecords(u32) then record[] of
-            // (glyphID(u16), paintOffset(u32)).
-            let num_records = u32::from_be_bytes([
-                colr[v1_off],
-                colr[v1_off + 1],
-                colr[v1_off + 2],
-                colr[v1_off + 3],
-            ]);
-            if num_records > 0 && v1_off + 6 <= colr.len() {
-                return Some(u16::from_be_bytes([colr[v1_off + 4], colr[v1_off + 5]]));
-            }
-        }
-    }
-
-    // Fall back to v0's BaseGlyphRecord array: (glyphID, firstLayer, numLayers).
-    if num_v0 > 0 && v0_off.checked_add(2).is_some_and(|e| e <= colr.len()) {
-        return Some(u16::from_be_bytes([colr[v0_off], colr[v0_off + 1]]));
-    }
-
-    None
-}
-
 pub struct GlyphCache {
     scx: ScaleContext,
     fonts: FxHashMap<FontKey, FontEntry>,
@@ -340,6 +293,13 @@ impl GlyphCacheSession<'_> {
     /// and allocate it into the atlas. Returns `None` when the registry
     /// has no entry for `id` (stale cache, registration cleared between
     /// lookup and render) or when decoding fails.
+    ///
+    /// Only `fmt=glyf` renders today. `fmt=colrv0` / `fmt=colrv1`
+    /// registrations are accepted by the protocol layer but have no
+    /// rasterisation path yet — they return `None`, which shows as
+    /// tofu. A colour-rendering PR will land a proper RGBA path and
+    /// route it through the color atlas; until then we deliberately
+    /// decline the monochrome-fallback tempting-but-wrong behaviour.
     fn rasterize_custom(&mut self, id: u16, size: u16) -> Option<GlyphEntry> {
         use crate::font::glyf_decode;
         use crate::font::glyph_registry::StoredPayload;
@@ -355,28 +315,10 @@ impl GlyphCacheSession<'_> {
         let cp = registry.cp_for_index(slot)?;
         let glyph = registry.get(cp)?;
 
-        // Pick one `glyf` outline to rasterise into the monochrome
-        // mask atlas. For `fmt=glyf` that's the single stored outline;
-        // for `colrv0`/`colrv1` the wire contract — accepted by the
-        // parser, round-tripped through the registry — is fully live,
-        // but the RGBA compositing path (ttf-parser COLR walk → per-
-        // layer mask → sRGBA src-over → color atlas) has not landed
-        // yet. Until it does we degrade to painting the COLR table's
-        // first base glyph as a monochrome outline in the current
-        // foreground colour. That's `GID 0 = .notdef` in nearly no
-        // subsetted font — the base glyph is typically at `GID 1`+
-        // — so we peek at the COLR header to find the right outline
-        // rather than hard-coding index 0 (which would render as
-        // tofu against most real payloads).
         let mono_bytes: &[u8] = match &glyph.payload {
             StoredPayload::Glyf { glyf } => glyf,
-            StoredPayload::ColrV0 { glyphs, colr, .. } => {
-                let gid = colr_first_base_glyph_id(colr, false).unwrap_or(0);
-                glyphs.get(gid as usize)?.as_slice()
-            }
-            StoredPayload::ColrV1 { glyphs, colr, .. } => {
-                let gid = colr_first_base_glyph_id(colr, true).unwrap_or(0);
-                glyphs.get(gid as usize)?.as_slice()
+            StoredPayload::ColrV0 { .. } | StoredPayload::ColrV1 { .. } => {
+                return None;
             }
         };
 
