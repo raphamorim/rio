@@ -193,7 +193,7 @@ For non-PUA codepoints only `0` and `1` are possible.
 ### 6.1 Request
 
 ```
-ESC _ 25a1 ; r ; cp=<hex> ; fmt=glyf ; upm=<int> ; <base64-payload> ESC \
+ESC _ 25a1 ; r ; cp=<hex> ; fmt=glyf ; reply=<0|1|2> ; upm=<int> ; <base64-payload> ESC \
 ```
 
 Parameters:
@@ -201,16 +201,28 @@ Parameters:
 - `cp` — target codepoint in hex. MUST be in one of the PUA ranges
   defined in §4. Otherwise the request is rejected with
   `reason=out_of_namespace`.
-- `fmt` — payload format. Optional; `glyf` is the only value
-  defined in v1 and is the implicit default. Applications MAY omit
-  the parameter entirely.
+- `fmt` — payload format. One of `glyf`, `colrv0`, `colrv1`.
+  Optional; `glyf` is the default. See §8 for each format's wire
+  layout.
+- `reply` — reply-level control. Optional; default `1`.
+  - `reply=0` — the terminal MUST NOT emit any reply for this
+    registration (neither success nor failure). Intended for bulk
+    fire-and-forget startup registrations that won't be read back.
+  - `reply=1` — the terminal emits both success and failure replies
+    (the default; equivalent to omitting the parameter).
+  - `reply=2` — the terminal emits failure replies only; success
+    registrations are silent. Useful for bulk registrations that
+    still want to learn about the broken ones without a success
+    ACK for every glyph.
+  Unknown values fall back to `reply=1`.
 - `upm` — units per em, the coordinate space the outline is
   authored in. Optional; default `1000`.
-- payload — base64-encoded `glyf` simple-glyph record.
+- payload — base64-encoded payload for the declared `fmt`.
 
 ### 6.2 Response
 
-Success:
+Replies are gated by the request's `reply` parameter (§6.1).
+For `reply=1` (the default), successful registrations emit:
 
 ```
 ESC _ 25a1 ; r ; cp=<hex> ; status=0 ESC \
@@ -218,11 +230,15 @@ ESC _ 25a1 ; r ; cp=<hex> ; status=0 ESC \
 
 `cp` is echoed from the request.
 
-Failure:
+Failures, when not suppressed by `reply=0`, emit:
 
 ```
 ESC _ 25a1 ; r ; cp=<hex> ; status=<nonzero u8> ; reason=<code> ESC \
 ```
+
+At `reply=2`, successful registrations are silent; failures still
+emit the error reply above. At `reply=0`, neither success nor
+failure produces any output — the registration is fire-and-forget.
 
 Defined error codes:
 
@@ -627,3 +643,4 @@ rather than serving a stale bitmap.
 | 2026-04-17 | v1      | Initial release. Register accepts a client-picked `cp` restricted to PUA; 256-slot glossary with FIFO eviction; numeric `status` field; ligatures out of scope. |
 | 2026-04-19 | v1.1    | Added `s` verb (support advertisement / protocol ping). |
 | 2026-04-19 | v1.2    | Added `fmt=colrv0` and `fmt=colrv1` payload formats wrapping OpenType `COLR` / `CPAL` tables with sidecar `glyf` outlines. Both advertised via bits 1 and 2 of the `s` reply's `fmt=` bitfield. |
+| 2026-04-19 | v1.3    | Added `reply=0|1|2` parameter to the `r` verb so bulk registrations can suppress success ACKs (`reply=2`) or go fully fire-and-forget (`reply=0`). Default `reply=1` preserves v1.0 behaviour. |

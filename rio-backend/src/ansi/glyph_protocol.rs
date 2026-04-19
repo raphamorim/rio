@@ -1065,60 +1065,88 @@ mod tests {
     }
 
     #[test]
-    fn register_defaults_silent_to_false() {
+    fn register_defaults_reply_to_all() {
         let payload = b64(&[0x01]);
         let body = format!("25a1;r;cp=E0A0;upm=1000;{}", payload);
         match parse(body.as_bytes()).unwrap() {
-            GlyphCommand::Register { silent, .. } => assert!(!silent),
+            GlyphCommand::Register { reply, .. } => {
+                assert_eq!(reply, ReplyMode::All);
+            }
             other => panic!("expected register, got {:?}", other),
         }
     }
 
     #[test]
-    fn register_honours_silent_flag_on_success() {
+    fn register_accepts_every_reply_level() {
+        // reply=0 → None, reply=1 → All, reply=2 → ErrorsOnly.
         let payload = b64(&[0x01]);
-        let body = format!("25a1;r;cp=E0A0;silent=1;upm=1000;{}", payload);
-        match parse(body.as_bytes()).unwrap() {
-            GlyphCommand::Register { silent, .. } => assert!(silent),
-            other => panic!("expected register, got {:?}", other),
+        for (raw, expected) in [
+            ("0", ReplyMode::None),
+            ("1", ReplyMode::All),
+            ("2", ReplyMode::ErrorsOnly),
+        ] {
+            let body = format!(
+                "25a1;r;cp=E0A0;reply={};upm=1000;{}",
+                raw, payload
+            );
+            match parse(body.as_bytes()).unwrap() {
+                GlyphCommand::Register { reply, .. } => {
+                    assert_eq!(reply, expected, "reply={} should map to {:?}", raw, expected);
+                }
+                other => panic!("expected register, got {:?}", other),
+            }
         }
     }
 
     #[test]
-    fn register_honours_silent_flag_on_parse_failure() {
-        // Non-PUA cp fails validation; the silent flag must propagate
-        // into the error so the dispatcher drops the reply too.
+    fn register_reply_propagates_on_parse_failure() {
+        // Non-PUA cp fails validation; the reply level must propagate
+        // into the error so the dispatcher can honour it consistently.
         let payload = b64(&[0x01]);
-        let body = format!("25a1;r;cp=61;silent=1;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=61;reply=0;upm=1000;{}", payload);
         assert_eq!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
                 cp: 0x61,
                 reason: RegisterError::OutOfNamespace,
-                silent: true,
+                reply: ReplyMode::None,
             })
         );
     }
 
     #[test]
-    fn register_silent_only_matches_exact_one() {
-        // Any value other than `1` leaves silent at its default. The
-        // protocol picks `silent=1` as the opt-in convention and the
-        // parser mirrors it; `silent=true`, `silent=yes`, `silent=01`
-        // do NOT trigger silent mode.
+    fn register_reply_unknown_values_fall_back_to_all() {
+        // Per §11 unknown-params rule, garbage values don't break the
+        // register — they just revert to the default reply behaviour.
         let payload = b64(&[0x01]);
-        for bad in ["0", "true", "yes", "01", ""].iter() {
+        for bad in ["3", "true", "yes", "01", ""].iter() {
             let body = format!(
-                "25a1;r;cp=E0A0;silent={};upm=1000;{}",
+                "25a1;r;cp=E0A0;reply={};upm=1000;{}",
                 bad, payload
             );
             match parse(body.as_bytes()).unwrap() {
-                GlyphCommand::Register { silent, .. } => {
-                    assert!(!silent, "silent={:?} should not opt in", bad);
+                GlyphCommand::Register { reply, .. } => {
+                    assert_eq!(
+                        reply,
+                        ReplyMode::All,
+                        "reply={:?} should fall back to All",
+                        bad
+                    );
                 }
                 other => panic!("expected register, got {:?}", other),
             }
         }
+    }
+
+    #[test]
+    fn reply_mode_emit_matrix() {
+        // Sanity-check the two helpers the dispatcher relies on.
+        assert!(ReplyMode::All.emit_success());
+        assert!(ReplyMode::All.emit_error());
+        assert!(!ReplyMode::ErrorsOnly.emit_success());
+        assert!(ReplyMode::ErrorsOnly.emit_error());
+        assert!(!ReplyMode::None.emit_success());
+        assert!(!ReplyMode::None.emit_error());
     }
 
     #[test]
