@@ -441,7 +441,7 @@ where
     damage: TermDamageState,
     pub graphics: Graphics,
     /// Per-session registry of glyphs registered over Glyph Protocol
-    /// (APC `1cc6D`). `None` until a program in this session actually
+    /// (APC `25a1`). `None` until a program in this session actually
     /// uses the protocol, so terminals that never see a Glyph
     /// Protocol message pay zero cost — no Arc allocation, no
     /// per-frame attach call. Lazily initialised by `glyph_register`.

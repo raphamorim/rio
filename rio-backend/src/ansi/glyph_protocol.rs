@@ -1,7 +1,7 @@
 // Glyph Protocol wire parser.
 //
 // Protocol framing:
-//   ESC _ 1cc6D ; <verb> [ ; key=value ]* [ ; <payload> ] ESC \
+//   ESC _ 25a1 ; <verb> [ ; key=value ]* [ ; <payload> ] ESC \
 //
 // Verbs:
 //   s — advertise supported payload formats; also serves as protocol
@@ -18,10 +18,10 @@
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
-/// Protocol identifier — the literal ASCII string `"1cc6D"` that
+/// Protocol identifier — the literal ASCII string `"25a1"` that
 /// prefixes every Glyph Protocol APC body. Terminals MUST drop APC
 /// messages whose body does not begin with this identifier.
-pub const GLYPH_PROTOCOL_PREFIX: &[u8] = b"1cc6D";
+pub const GLYPH_PROTOCOL_PREFIX: &[u8] = b"25a1";
 
 /// Upper bound on a single registered payload, post-base64-decode.
 /// Matches the 64 KiB limit in the spec; anything larger is rejected
@@ -99,7 +99,7 @@ impl RegisterError {
 /// it reaches the handler.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Body does not start with `1cc6D` — not our protocol; caller
+    /// Body does not start with `25a1` — not our protocol; caller
     /// should fall through to other APC dispatchers.
     NotGlyphProtocol,
     /// Framing was recognised but malformed.
@@ -346,23 +346,23 @@ impl<'a> Params<'a> {
 /// degenerate state reserved for future negotiation, never produced by
 /// this build.
 pub fn format_support_response(fmt_bits: u8) -> String {
-    format!("\x1b_1cc6D;s;fmt={}\x1b\\", fmt_bits)
+    format!("\x1b_25a1;s;fmt={}\x1b\\", fmt_bits)
 }
 
 /// Format the reply to `q;cp=<hex>`.
 pub fn format_query_response(cp: u32, status: QueryStatus) -> String {
-    format!("\x1b_1cc6D;q;cp={:x};status={}\x1b\\", cp, status.as_u8())
+    format!("\x1b_25a1;q;cp={:x};status={}\x1b\\", cp, status.as_u8())
 }
 
 /// Format a successful register reply.
 pub fn format_register_ok(cp: u32) -> String {
-    format!("\x1b_1cc6D;r;cp={:x};status=0\x1b\\", cp)
+    format!("\x1b_25a1;r;cp={:x};status=0\x1b\\", cp)
 }
 
 /// Format a register error reply.
 pub fn format_register_error(cp: u32, reason: RegisterError) -> String {
     format!(
-        "\x1b_1cc6D;r;cp={:x};status=1;reason={}\x1b\\",
+        "\x1b_25a1;r;cp={:x};status=1;reason={}\x1b\\",
         cp,
         reason.as_str()
     )
@@ -372,14 +372,14 @@ pub fn format_register_error(cp: u32, reason: RegisterError) -> String {
 /// request scoped to a single slot, omitted for "clear all".
 pub fn format_clear_ok(cp: Option<u32>) -> String {
     match cp {
-        Some(cp) => format!("\x1b_1cc6D;c;cp={:x};status=0\x1b\\", cp),
-        None => String::from("\x1b_1cc6D;c;status=0\x1b\\"),
+        Some(cp) => format!("\x1b_25a1;c;cp={:x};status=0\x1b\\", cp),
+        None => String::from("\x1b_25a1;c;status=0\x1b\\"),
     }
 }
 
 /// Format a clear error reply (currently only `out_of_namespace`).
 pub fn format_clear_error_out_of_namespace() -> String {
-    String::from("\x1b_1cc6D;c;status=1;reason=out_of_namespace\x1b\\")
+    String::from("\x1b_25a1;c;status=1;reason=out_of_namespace\x1b\\")
 }
 
 #[cfg(test)]
@@ -420,21 +420,21 @@ mod tests {
 
     #[test]
     fn parses_query_single_codepoint() {
-        let got = parse(b"1cc6D;q;cp=E0A0").unwrap();
+        let got = parse(b"25a1;q;cp=E0A0").unwrap();
         assert_eq!(got, GlyphCommand::Query { cp: 0xE0A0 });
     }
 
     #[test]
     fn query_accepts_non_pua_codepoints() {
         // Query probes the world; it does not care about PUA.
-        let got = parse(b"1cc6D;q;cp=61").unwrap();
+        let got = parse(b"25a1;q;cp=61").unwrap();
         assert_eq!(got, GlyphCommand::Query { cp: 0x61 });
     }
 
     #[test]
     fn query_rejects_sequence() {
         assert!(matches!(
-            parse(b"1cc6D;q;cp=2D,3E"),
+            parse(b"25a1;q;cp=2D,3E"),
             Err(ParseError::Malformed(_))
         ));
     }
@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn query_rejects_surrogate() {
         assert!(matches!(
-            parse(b"1cc6D;q;cp=D800"),
+            parse(b"25a1;q;cp=D800"),
             Err(ParseError::Malformed(_))
         ));
     }
@@ -450,7 +450,7 @@ mod tests {
     #[test]
     fn parses_register_at_pua_codepoint() {
         let payload = b64(&[0x01, 0x02, 0x03]);
-        let body = format!("1cc6D;r;cp=E0A0;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=E0A0;upm=1000;{}", payload);
         let got = parse(body.as_bytes()).unwrap();
         assert_eq!(
             got,
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn parses_register_with_explicit_fmt() {
         let payload = b64(&[0xAA]);
-        let body = format!("1cc6D;r;cp=E0A0;fmt=glyf;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=E0A0;fmt=glyf;upm=1000;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()).unwrap(),
             GlyphCommand::Register { .. }
@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn register_defaults_upm_to_1000() {
         let payload = b64(&[0x01]);
-        let body = format!("1cc6D;r;cp=E0A0;{}", payload);
+        let body = format!("25a1;r;cp=E0A0;{}", payload);
         let got = parse(body.as_bytes()).unwrap();
         if let GlyphCommand::Register { upm, .. } = got {
             assert_eq!(upm, 1000);
@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn register_rejects_non_pua_codepoint() {
         let payload = b64(&[0x01]);
-        let body = format!("1cc6D;r;cp=61;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=61;upm=1000;{}", payload);
         assert_eq!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
@@ -500,7 +500,7 @@ mod tests {
     #[test]
     fn register_requires_cp() {
         let payload = b64(&[0x01]);
-        let body = format!("1cc6D;r;upm=1000;{}", payload);
+        let body = format!("25a1;r;upm=1000;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::Malformed(_))
@@ -511,7 +511,7 @@ mod tests {
     fn register_accepts_each_pua_range() {
         for &cp_hex in &[0xE0A0u32, 0xF_0000, 0x10_0000] {
             let payload = b64(b"x");
-            let body = format!("1cc6D;r;cp={:x};upm=1000;{}", cp_hex, payload);
+            let body = format!("25a1;r;cp={:x};upm=1000;{}", cp_hex, payload);
             assert!(matches!(
                 parse(body.as_bytes()).unwrap(),
                 GlyphCommand::Register { .. }
@@ -522,7 +522,7 @@ mod tests {
     #[test]
     fn register_rejects_unknown_fmt() {
         let payload = b64(b"x");
-        let body = format!("1cc6D;r;cp=E0A0;fmt=svg;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=E0A0;fmt=svg;upm=1000;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::Malformed(_))
@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn register_rejects_bad_base64() {
-        let body = b"1cc6D;r;cp=E0A0;upm=1000;$$$$not_base64";
+        let body = b"25a1;r;cp=E0A0;upm=1000;$$$$not_base64";
         assert!(matches!(
             parse(body),
             Err(ParseError::RegisterFailed {
@@ -544,7 +544,7 @@ mod tests {
     #[test]
     fn register_rejects_oversized_payload() {
         let payload = b64(&vec![0u8; MAX_PAYLOAD_BYTES + 1]);
-        let body = format!("1cc6D;r;cp=E0A0;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=E0A0;upm=1000;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
@@ -557,7 +557,7 @@ mod tests {
     #[test]
     fn register_rejects_zero_upm() {
         let payload = b64(b"x");
-        let body = format!("1cc6D;r;cp=E0A0;upm=0;{}", payload);
+        let body = format!("25a1;r;cp=E0A0;upm=0;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::Malformed(_))
@@ -566,18 +566,18 @@ mod tests {
 
     #[test]
     fn clear_single_pua_slot() {
-        let got = parse(b"1cc6D;c;cp=E0A0").unwrap();
+        let got = parse(b"25a1;c;cp=E0A0").unwrap();
         assert_eq!(got, GlyphCommand::Clear { cp: Some(0xE0A0) });
     }
 
     #[test]
     fn clear_rejects_non_pua_cp() {
         assert_eq!(
-            parse(b"1cc6D;c;cp=61"),
+            parse(b"25a1;c;cp=61"),
             Err(ParseError::ClearOutOfNamespace)
         );
         assert_eq!(
-            parse(b"1cc6D;c;cp=1F600"),
+            parse(b"25a1;c;cp=1F600"),
             Err(ParseError::ClearOutOfNamespace)
         );
     }
@@ -585,20 +585,20 @@ mod tests {
     #[test]
     fn clear_rejects_sequence_cp() {
         assert!(matches!(
-            parse(b"1cc6D;c;cp=E0A0,E0A1"),
+            parse(b"25a1;c;cp=E0A0,E0A1"),
             Err(ParseError::Malformed(_))
         ));
     }
 
     #[test]
     fn clear_all() {
-        let got = parse(b"1cc6D;c").unwrap();
+        let got = parse(b"25a1;c").unwrap();
         assert_eq!(got, GlyphCommand::Clear { cp: None });
     }
 
     #[test]
     fn parses_support_with_no_params() {
-        assert_eq!(parse(b"1cc6D;s").unwrap(), GlyphCommand::Support);
+        assert_eq!(parse(b"25a1;s").unwrap(), GlyphCommand::Support);
     }
 
     #[test]
@@ -607,7 +607,7 @@ mod tests {
         // parameter-free, but a forward-compatible client may send
         // hints; we still produce a valid reply.
         assert_eq!(
-            parse(b"1cc6D;s;future=1;anything=else").unwrap(),
+            parse(b"25a1;s;future=1;anything=else").unwrap(),
             GlyphCommand::Support
         );
     }
@@ -616,7 +616,7 @@ mod tests {
     fn support_response_advertises_glyf_bit() {
         assert_eq!(
             format_support_response(SUPPORTED_FORMATS),
-            "\x1b_1cc6D;s;fmt=1\x1b\\"
+            "\x1b_25a1;s;fmt=1\x1b\\"
         );
     }
 
@@ -625,15 +625,15 @@ mod tests {
         // Forward-compat: adding `colr` later would set bit 1.
         assert_eq!(
             format_support_response(0b0000_0011),
-            "\x1b_1cc6D;s;fmt=3\x1b\\"
+            "\x1b_25a1;s;fmt=3\x1b\\"
         );
-        assert_eq!(format_support_response(0), "\x1b_1cc6D;s;fmt=0\x1b\\");
+        assert_eq!(format_support_response(0), "\x1b_25a1;s;fmt=0\x1b\\");
     }
 
     #[test]
     fn unknown_verb_is_malformed() {
         assert!(matches!(
-            parse(b"1cc6D;z;cp=0061"),
+            parse(b"25a1;z;cp=0061"),
             Err(ParseError::Malformed(_))
         ));
     }
@@ -642,19 +642,19 @@ mod tests {
     fn query_response_encodes_numeric_status() {
         assert_eq!(
             format_query_response(0xE0A0, QueryStatus::Free),
-            "\x1b_1cc6D;q;cp=e0a0;status=0\x1b\\"
+            "\x1b_25a1;q;cp=e0a0;status=0\x1b\\"
         );
         assert_eq!(
             format_query_response(0xE0A0, QueryStatus::System),
-            "\x1b_1cc6D;q;cp=e0a0;status=1\x1b\\"
+            "\x1b_25a1;q;cp=e0a0;status=1\x1b\\"
         );
         assert_eq!(
             format_query_response(0xE0A0, QueryStatus::Glossary),
-            "\x1b_1cc6D;q;cp=e0a0;status=2\x1b\\"
+            "\x1b_25a1;q;cp=e0a0;status=2\x1b\\"
         );
         assert_eq!(
             format_query_response(0xE0A0, QueryStatus::Both),
-            "\x1b_1cc6D;q;cp=e0a0;status=3\x1b\\"
+            "\x1b_25a1;q;cp=e0a0;status=3\x1b\\"
         );
     }
 
@@ -662,15 +662,15 @@ mod tests {
     fn register_responses() {
         assert_eq!(
             format_register_ok(0xE0A0),
-            "\x1b_1cc6D;r;cp=e0a0;status=0\x1b\\"
+            "\x1b_25a1;r;cp=e0a0;status=0\x1b\\"
         );
         assert_eq!(
             format_register_error(0x61, RegisterError::OutOfNamespace),
-            "\x1b_1cc6D;r;cp=61;status=1;reason=out_of_namespace\x1b\\"
+            "\x1b_25a1;r;cp=61;status=1;reason=out_of_namespace\x1b\\"
         );
         assert_eq!(
             format_register_error(0xE0A0, RegisterError::CompositeUnsupported),
-            "\x1b_1cc6D;r;cp=e0a0;status=1;reason=composite_unsupported\x1b\\"
+            "\x1b_25a1;r;cp=e0a0;status=1;reason=composite_unsupported\x1b\\"
         );
     }
 
@@ -678,18 +678,18 @@ mod tests {
     fn clear_responses() {
         assert_eq!(
             format_clear_ok(Some(0xE0A0)),
-            "\x1b_1cc6D;c;cp=e0a0;status=0\x1b\\"
+            "\x1b_25a1;c;cp=e0a0;status=0\x1b\\"
         );
-        assert_eq!(format_clear_ok(None), "\x1b_1cc6D;c;status=0\x1b\\");
+        assert_eq!(format_clear_ok(None), "\x1b_25a1;c;status=0\x1b\\");
         assert_eq!(
             format_clear_error_out_of_namespace(),
-            "\x1b_1cc6D;c;status=1;reason=out_of_namespace\x1b\\"
+            "\x1b_25a1;c;status=1;reason=out_of_namespace\x1b\\"
         );
     }
 
     #[test]
     fn unknown_params_are_ignored() {
-        let got = parse(b"1cc6D;q;cp=E0A0;future=1").unwrap();
+        let got = parse(b"25a1;q;cp=E0A0;future=1").unwrap();
         assert_eq!(got, GlyphCommand::Query { cp: 0xE0A0 });
     }
 }

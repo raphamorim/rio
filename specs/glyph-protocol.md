@@ -86,17 +86,16 @@ introducing new protocols.
 ### 3.1 Identifier
 
 Every Glyph Protocol message begins with the Unicode codepoint
-**U+1CC6D** (BLACK LARGE CIRCLE MINUS RIGHT QUARTER SECTION),
-written in the message as the lowercase hex string `1cc6D`.
-Terminals MUST ignore any APC message whose body does not begin
-with this identifier.
+**U+25A1** (WHITE SQUARE), written in the message as the
+lowercase hex string `25a1`. Terminals MUST ignore any APC
+message whose body does not begin with this identifier.
 
 ### 3.2 Framing
 
 The general form of a Glyph Protocol message is:
 
 ```
-ESC _ 1cc6D ; <verb> [ ; key=value ]* [ ; <payload> ] ESC \
+ESC _ 25a1 ; <verb> [ ; key=value ]* [ ; <payload> ] ESC \
 ```
 
 Parameter keys use lowercase ASCII. Values are lowercase hex for
@@ -140,7 +139,7 @@ different glyph. Registrations MUST NOT leak between sessions.
 ### 5.1 Request
 
 ```
-ESC _ 1cc6D ; q ; cp=<hex> ESC \
+ESC _ 25a1 ; q ; cp=<hex> ESC \
 ```
 
 Parameters:
@@ -151,7 +150,7 @@ Parameters:
 ### 5.2 Response
 
 ```
-ESC _ 1cc6D ; q ; cp=<hex> ; status=<u8> ESC \
+ESC _ 25a1 ; q ; cp=<hex> ; status=<u8> ESC \
 ```
 
 `status` is a decimal u8 encoding a two-bit field:
@@ -172,7 +171,7 @@ For non-PUA codepoints only `0` and `1` are possible.
 ### 6.1 Request
 
 ```
-ESC _ 1cc6D ; r ; cp=<hex> ; fmt=glyf ; upm=<int> ; <base64-payload> ESC \
+ESC _ 25a1 ; r ; cp=<hex> ; fmt=glyf ; upm=<int> ; <base64-payload> ESC \
 ```
 
 Parameters:
@@ -192,7 +191,7 @@ Parameters:
 Success:
 
 ```
-ESC _ 1cc6D ; r ; cp=<hex> ; status=0 ESC \
+ESC _ 25a1 ; r ; cp=<hex> ; status=0 ESC \
 ```
 
 `cp` is echoed from the request.
@@ -200,7 +199,7 @@ ESC _ 1cc6D ; r ; cp=<hex> ; status=0 ESC \
 Failure:
 
 ```
-ESC _ 1cc6D ; r ; cp=<hex> ; status=<nonzero u8> ; reason=<code> ESC \
+ESC _ 25a1 ; r ; cp=<hex> ; status=<nonzero u8> ; reason=<code> ESC \
 ```
 
 Defined error codes:
@@ -236,7 +235,7 @@ Registrations MUST NOT persist across terminal restarts.
 ### 7.1 Request
 
 ```
-ESC _ 1cc6D ; c [ ; cp=<hex> ] ESC \
+ESC _ 25a1 ; c [ ; cp=<hex> ] ESC \
 ```
 
 If `cp` is omitted, every slot in the session's glossary is
@@ -249,7 +248,7 @@ MUST be in a PUA range; otherwise the request is rejected with
 Success:
 
 ```
-ESC _ 1cc6D ; c ; status=0 ESC \
+ESC _ 25a1 ; c ; status=0 ESC \
 ```
 
 Clearing an empty slot is a no-op and MUST return `status=0`.
@@ -257,7 +256,7 @@ Clearing an empty slot is a no-op and MUST return `status=0`.
 Failure:
 
 ```
-ESC _ 1cc6D ; c ; status=1 ; reason=out_of_namespace ESC \
+ESC _ 25a1 ; c ; status=1 ; reason=out_of_namespace ESC \
 ```
 
 ### 7.3 Cache invalidation
@@ -380,7 +379,7 @@ Other considerations:
 
 A terminal emulator is Glyph Protocol v1 conformant if it:
 
-1. Recognizes the `1cc6D` identifier in APC sequences.
+1. Recognizes the `25a1` identifier in APC sequences.
 2. Implements all three verbs (`q`, `r`, `c`) with the semantics
    defined in this specification.
 3. Restricts register/clear `cp` to the three PUA ranges; rejects
@@ -426,7 +425,7 @@ payload = base64.b64encode(pen.glyph().compile(None)).decode("ascii")
 # No known font covers this range, so the registration is the sole
 # source of the rendered glyph and the demo is unambiguous.
 sys.stdout.write(
-    f"\x1b_1cc6D;r;cp=100000;upm=1000;{payload}\x1b\\"
+    f"\x1b_25a1;r;cp=100000;upm=1000;{payload}\x1b\\"
 )
 sys.stdout.flush()
 
@@ -440,7 +439,7 @@ sys.stdout.write(f"icon: {chr(0x100000)}\n")
 import sys
 
 def q(cp: int) -> None:
-    sys.stdout.write(f"\x1b_1cc6D;q;cp={cp:x}\x1b\\")
+    sys.stdout.write(f"\x1b_25a1;q;cp={cp:x}\x1b\\")
     sys.stdout.flush()
 
 # Does the user already have Nerd Fonts installed?
@@ -465,7 +464,7 @@ bytes. The failure mode to watch for is sending `r` or `c` AFTER the
 framework has torn down its input reader — typically on exit — at
 which point the reply arrives in the PTY but nobody reads it, and
 the shell that takes over the PTY after the app exits emits the
-queued bytes as visible text (`.1cc6D;c;status=0`). Either skip
+queued bytes as visible text (`.25a1;c;status=0`). Either skip
 cleanup on exit (registrations expire with the session anyway) or
 send the cleanup command while the framework is still running and
 let its input reader swallow the reply.
