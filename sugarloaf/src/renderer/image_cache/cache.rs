@@ -54,7 +54,15 @@ impl Atlas {
     }
 }
 
-pub const SIZE: u16 = 4096;
+/// Hard cap on atlas dimension. Actual cap per cache is
+/// `min(MAX_SIZE, device.max_texture_dimension_2d())` — stored on
+/// `ImageCache::max_allowed_size` at construction time.
+pub const MAX_SIZE: u16 = 16384;
+
+/// Initial atlas side length. Doubles on fill (see
+/// [`ImageCache::try_grow_texture_size`]) so a fresh window / panel
+/// costs ~256 KB (mask) + ~1 MB (color) rather than ~16 MB + ~64 MB.
+pub const INITIAL_SIZE: u16 = 512;
 
 pub struct ImageCache {
     pub entries: Vec<Entry>,
@@ -63,7 +71,10 @@ pub struct ImageCache {
     /// Multiple color atlases, each with own GPU texture (for glyphs + protocol graphics)
     /// When one fills, we create another
     color_atlases: Vec<ColorAtlasWithTexture>,
+    /// Current atlas side length. Grows on demand — see [`try_grow_texture_size`].
     max_texture_size: u16,
+    /// Hard cap for `max_texture_size`. `min(MAX_SIZE, device_max_texture_dimension_2d)`.
+    max_allowed_size: u16,
     device_queue: DeviceQueue,
 }
 
@@ -109,8 +120,10 @@ impl ImageCache {
     pub fn new(context: &Context) -> Self {
         match &context.inner {
             ContextType::Wgpu(wgpu_context) => {
-                let max_size = wgpu_context.max_texture_dimension_2d();
-                let max_texture_size = std::cmp::min(4096, max_size) as u16;
+                let device_max = wgpu_context.max_texture_dimension_2d();
+                let max_allowed_size =
+                    std::cmp::min(MAX_SIZE as u32, device_max) as u16;
+                let max_texture_size = INITIAL_SIZE.min(max_allowed_size);
 
                 let device = std::sync::Arc::new(wgpu_context.device.clone());
                 let queue = std::sync::Arc::new(wgpu_context.queue.clone());
@@ -119,8 +132,8 @@ impl ImageCache {
                 let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("rich_text mask atlas"),
                     size: wgpu::Extent3d {
-                        width: SIZE as u32,
-                        height: SIZE as u32,
+                        width: max_texture_size as u32,
+                        height: max_texture_size as u32,
                         depth_or_array_layers: 1,
                     },
                     view_formats: &[],
@@ -138,8 +151,8 @@ impl ImageCache {
                 let color_texture = device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("rich_text color atlas 0"),
                     size: wgpu::Extent3d {
-                        width: SIZE as u32,
-                        height: SIZE as u32,
+                        width: max_texture_size as u32,
+                        height: max_texture_size as u32,
                         depth_or_array_layers: 1,
                     },
                     view_formats: &[],
@@ -163,6 +176,7 @@ impl ImageCache {
                     mask_atlas: Atlas::new(AtlasKind::Mask, max_texture_size),
                     color_atlases,
                     max_texture_size,
+                    max_allowed_size,
                     device_queue: DeviceQueue::Wgpu {
                         device,
                         queue,
@@ -174,7 +188,8 @@ impl ImageCache {
             #[cfg(target_os = "macos")]
             ContextType::Metal(metal_context) => {
                 let device = metal_context.device.clone();
-                let max_texture_size = 1024;
+                let max_allowed_size = MAX_SIZE;
+                let max_texture_size = INITIAL_SIZE;
 
                 // Create mask texture (R8 format for alpha masks)
                 let mask_descriptor = metal::TextureDescriptor::new();
@@ -210,6 +225,7 @@ impl ImageCache {
                     mask_atlas: Atlas::new(AtlasKind::Mask, max_texture_size),
                     color_atlases,
                     max_texture_size,
+                    max_allowed_size,
                     device_queue: DeviceQueue::Metal {
                         device,
                         mask_texture,
@@ -219,7 +235,8 @@ impl ImageCache {
             ContextType::Cpu(_) => {
                 // CPU backend: no GPU resources. Atlas buffers live in RAM and are sampled
                 // directly by the CPU rasterizer at present time.
-                let max_texture_size: u16 = 2048;
+                let max_allowed_size = MAX_SIZE;
+                let max_texture_size = INITIAL_SIZE;
                 let color_atlases = vec![ColorAtlasWithTexture {
                     atlas: Atlas::new(AtlasKind::Color, max_texture_size),
                     texture: ColorAtlasTexture::Cpu,
@@ -229,6 +246,7 @@ impl ImageCache {
                     mask_atlas: Atlas::new(AtlasKind::Mask, max_texture_size),
                     color_atlases,
                     max_texture_size,
+                    max_allowed_size,
                     device_queue: DeviceQueue::Cpu,
                 }
             }
@@ -260,19 +278,12 @@ impl ImageCache {
         // Check buffer size
         buffer_size(width as u32, height as u32)?;
 
-        // Too big to allocate - try to grow texture size for Metal
-        if !(width <= self.max_texture_size && height <= self.max_texture_size) {
-            #[cfg(target_os = "macos")]
-            if self.try_grow_texture_size(width, height) {
-                debug!(
-                    "Grew Metal texture size to {} to accommodate {}x{}",
-                    self.max_texture_size, width, height
-                );
-            } else {
-                return None;
-            }
-
-            #[cfg(not(target_os = "macos"))]
+        // Image too big for the current atlas — try to grow. All three
+        // backends support grow now (wgpu / Metal / CPU), so the retry
+        // path is no longer cfg-gated.
+        if !(width <= self.max_texture_size && height <= self.max_texture_size)
+            && !self.try_grow_texture_size(width.max(height))
+        {
             return None;
         }
 
@@ -284,13 +295,19 @@ impl ImageCache {
 
         // Handle mask atlas (single atlas)
         if atlas_kind == AtlasKind::Mask {
-            let atlas_data = self.mask_atlas.alloc.allocate(width, height);
-            if atlas_data.is_none() {
-                debug!("Mask atlas full for {}x{}", width, height);
-                return None;
-            }
-
-            let (x, y) = atlas_data?;
+            let (x, y) = match self.mask_atlas.alloc.allocate(width, height) {
+                Some(p) => p,
+                None => {
+                    // Atlas full. Grow and retry. Passing
+                    // `max_texture_size + 1` forces exactly one doubling.
+                    if !self
+                        .try_grow_texture_size(self.max_texture_size.saturating_add(1))
+                    {
+                        return None;
+                    }
+                    self.mask_atlas.alloc.allocate(width, height)?
+                }
+            };
             self.entries.push(Entry {
                 allocated: true,
                 x,
@@ -320,55 +337,32 @@ impl ImageCache {
             return ImageId::new(entry_index as u32, request.has_alpha);
         }
 
-        // Handle color atlases (multiple atlases)
-        // Try all existing color atlases first
-        for (atlas_index, atlas_with_texture) in self.color_atlases.iter_mut().enumerate()
+        // Handle color atlases (multiple atlases). Try existing atlases,
+        // then try growing them, and only as a last resort allocate a new
+        // one. Growth is preferred over proliferation because every new
+        // color atlas is its own GPU texture — going from one 1024² to
+        // two 1024²s and going from one 1024² to one 2048² cost the same
+        // RAM but the latter keeps the texture-count bounded.
+        if let Some(id) =
+            self.try_allocate_in_color_atlases(entry_index, &request, width, height)
         {
-            if let Some((x, y)) = atlas_with_texture.atlas.alloc.allocate(width, height) {
-                // Found space in existing atlas
-                self.entries.push(Entry {
-                    allocated: true,
-                    x,
-                    y,
-                    width,
-                    height,
-                    atlas_kind,
-                    color_atlas_index: atlas_index,
-                });
+            return Some(id);
+        }
 
-                if let Some(data) = request.data() {
-                    fill(
-                        FillParams {
-                            x,
-                            y,
-                            width,
-                            _height: height,
-                            target_width: self.max_texture_size,
-                            channels: atlas_with_texture.atlas.channels,
-                        },
-                        data,
-                        &mut atlas_with_texture.atlas.buffer,
-                    );
-                    atlas_with_texture.atlas.dirty = true;
-                }
-
-                debug!(
-                    "Allocated {}x{} in existing color atlas {}",
-                    width, height, atlas_index
-                );
-                return ImageId::new(entry_index as u32, request.has_alpha);
+        // No existing atlas has room. Try growing them all, then retry.
+        if self.try_grow_texture_size(self.max_texture_size.saturating_add(1)) {
+            if let Some(id) = self
+                .try_allocate_in_color_atlases(entry_index, &request, width, height)
+            {
+                return Some(id);
             }
         }
 
-        // All existing atlases full - create a new one
-        debug!(
-            "All color atlases full, creating new atlas for {}x{}",
-            width, height
-        );
+        // Still no room after growing (e.g. we were already at cap). Fall
+        // through to allocating a brand-new color atlas at the current
+        // `max_texture_size`.
         let new_atlas_index = self.color_atlases.len();
-
         if !self.create_new_color_atlas() {
-            debug!("Failed to create new color atlas");
             return None;
         }
 
@@ -407,6 +401,60 @@ impl ImageCache {
             width, height, new_atlas_index
         );
         ImageId::new(entry_index as u32, request.has_alpha)
+    }
+
+    /// Try to place `width × height` in any existing color atlas.
+    /// On success, pushes an `Entry` at `entry_index`, fills the atlas
+    /// buffer, and returns the resulting `ImageId`. Returns `None` when
+    /// none of the existing atlases have room.
+    fn try_allocate_in_color_atlases(
+        &mut self,
+        entry_index: usize,
+        request: &AddImage,
+        width: u16,
+        height: u16,
+    ) -> Option<ImageId> {
+        let target_width = self.max_texture_size;
+        for (atlas_index, atlas_with_texture) in
+            self.color_atlases.iter_mut().enumerate()
+        {
+            if let Some((x, y)) =
+                atlas_with_texture.atlas.alloc.allocate(width, height)
+            {
+                self.entries.push(Entry {
+                    allocated: true,
+                    x,
+                    y,
+                    width,
+                    height,
+                    atlas_kind: AtlasKind::Color,
+                    color_atlas_index: atlas_index,
+                });
+
+                if let Some(data) = request.data() {
+                    fill(
+                        FillParams {
+                            x,
+                            y,
+                            width,
+                            _height: height,
+                            target_width,
+                            channels: atlas_with_texture.atlas.channels,
+                        },
+                        data,
+                        &mut atlas_with_texture.atlas.buffer,
+                    );
+                    atlas_with_texture.atlas.dirty = true;
+                }
+
+                debug!(
+                    "Allocated {}x{} in existing color atlas {}",
+                    width, height, atlas_index
+                );
+                return ImageId::new(entry_index as u32, request.has_alpha);
+            }
+        }
+        None
     }
 
     /// Create a new color atlas with its own GPU texture
@@ -474,146 +522,174 @@ impl ImageCache {
         }
     }
 
-    /// Try to grow the texture size for Metal backend to accommodate larger images
-    /// Only grows up to 4096, doubling each time (1024 -> 2048 -> 4096)
-    /// Preserves existing atlas content by copying to new larger textures
-    #[cfg(target_os = "macos")]
-    fn try_grow_texture_size(&mut self, width: u16, height: u16) -> bool {
-        // for now only Metal backend can grow dynamically
-        if !matches!(&self.device_queue, DeviceQueue::Metal { .. }) {
-            return false;
-        }
-
-        let max_dimension = width.max(height);
+    /// Grow every atlas texture so the next allocation at `min_dimension`
+    /// can succeed. Doubles the current side length until it is at least
+    /// `min_dimension` or reaches the device's per-texture cap
+    /// (`max_allowed_size`, which is `min(MAX_SIZE, max_texture_dimension_2d)`).
+    ///
+    /// Existing glyph content is preserved by re-creating each texture at
+    /// the new size and replaying the CPU-side buffer into it. The atlas
+    /// allocator state is cloned into the new `Atlas` so every outstanding
+    /// `Entry` still points at a valid pixel region — this works because
+    /// `ImageCache::get` re-derives UVs at lookup time via
+    /// `1.0 / self.max_texture_size` (line above in `get`).
+    ///
+    /// Returns `false` if nothing changed (already at cap, or the
+    /// requested dimension still doesn't fit after capping).
+    fn try_grow_texture_size(&mut self, min_dimension: u16) -> bool {
         let mut new_size = self.max_texture_size;
-
-        // Double the size until it can fit the image or hit the max
-        while new_size < max_dimension && new_size < SIZE {
-            new_size *= 2;
+        while new_size < min_dimension && new_size < self.max_allowed_size {
+            new_size = new_size.saturating_mul(2);
         }
+        new_size = new_size.min(self.max_allowed_size);
 
-        new_size = new_size.min(SIZE);
-
-        // If we still can't fit it, fail
-        if new_size < max_dimension {
+        if new_size < min_dimension || new_size <= self.max_texture_size {
             return false;
         }
-
-        // If no change needed, nothing to do
-        if new_size == self.max_texture_size {
-            return false;
-        }
-
-        debug!(
-            "Growing Metal texture size from {} to {} for {}x{} image",
-            self.max_texture_size, new_size, width, height
-        );
 
         let old_size = self.max_texture_size;
 
-        // Recreate all atlases with new size while preserving content
-        if let DeviceQueue::Metal { device, .. } = &self.device_queue {
-            let device = device.clone();
+        // Build a grown CPU-side copy of every atlas. We clone the
+        // allocator and then resize it so its internal `width`/`height`
+        // reflect the new bounds — without `resize`, the allocator would
+        // keep rejecting allocations past the old footprint even though
+        // the underlying texture is now larger.
+        let mut new_mask = Atlas::new(AtlasKind::Mask, new_size);
+        new_mask.alloc = self.mask_atlas.alloc.clone();
+        new_mask.alloc.resize(new_size, new_size);
+        new_mask.buffer =
+            grow_buffer(&self.mask_atlas.buffer, old_size, new_size, 1);
+        new_mask.dirty = true;
 
-            // Create new mask atlas and copy old allocator state
-            let mut new_mask_atlas = Atlas::new(AtlasKind::Mask, new_size);
-            // Copy the allocator state to preserve allocated regions
-            new_mask_atlas.alloc = self.mask_atlas.alloc.clone();
+        let old_color_atlases = std::mem::take(&mut self.color_atlases);
+        let mut pending_color: Vec<(Atlas, ColorAtlasTexture)> =
+            Vec::with_capacity(old_color_atlases.len());
+        for old in old_color_atlases {
+            let mut new_atlas = Atlas::new(AtlasKind::Color, new_size);
+            new_atlas.alloc = old.atlas.alloc.clone();
+            new_atlas.alloc.resize(new_size, new_size);
+            new_atlas.buffer =
+                grow_buffer(&old.atlas.buffer, old_size, new_size, 4);
+            new_atlas.dirty = true;
+            pending_color.push((new_atlas, old.texture));
+        }
 
-            // Copy old mask buffer data to new buffer
-            let new_mask_buffer_len = new_size as usize * new_size as usize;
-            let mut new_mask_buffer = vec![0u8; new_mask_buffer_len];
-
-            // Copy row by row from old to new buffer
-            for y in 0..old_size as usize {
-                let old_offset = y * old_size as usize;
-                let new_offset = y * new_size as usize;
-                let row_len = old_size as usize;
-                new_mask_buffer[new_offset..new_offset + row_len].copy_from_slice(
-                    &self.mask_atlas.buffer[old_offset..old_offset + row_len],
-                );
-            }
-            new_mask_atlas.buffer = new_mask_buffer;
-            new_mask_atlas.dirty = true;
-
-            // Create new mask texture
-            let mask_descriptor = metal::TextureDescriptor::new();
-            mask_descriptor.set_pixel_format(metal::MTLPixelFormat::R8Unorm);
-            mask_descriptor.set_width(new_size as u64);
-            mask_descriptor.set_height(new_size as u64);
-            mask_descriptor.set_usage(
-                metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite,
-            );
-            let new_mask_texture = device.new_texture(&mask_descriptor);
-            new_mask_texture.set_label("Sugarloaf Rich Text Mask Atlas");
-
-            // Copy old mask texture content to new texture
-            let region = metal::MTLRegion {
-                origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                size: metal::MTLSize {
-                    width: new_size as u64,
-                    height: new_size as u64,
-                    depth: 1,
-                },
-            };
-            new_mask_texture.replace_region(
-                region,
-                0,
-                new_mask_atlas.buffer.as_ptr() as *const std::ffi::c_void,
-                new_size as u64,
-            );
-
-            // Replace old mask atlas
-            self.mask_atlas = new_mask_atlas;
-
-            // Update the mask texture in device_queue
-            if let DeviceQueue::Metal {
+        match &mut self.device_queue {
+            DeviceQueue::Wgpu {
+                device,
+                queue,
                 mask_texture,
-                device: _,
-            } = &mut self.device_queue
-            {
+                mask_texture_view,
+            } => {
+                let new_mask_texture =
+                    device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("rich_text mask atlas"),
+                        size: wgpu::Extent3d {
+                            width: new_size as u32,
+                            height: new_size as u32,
+                            depth_or_array_layers: 1,
+                        },
+                        view_formats: &[],
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::R8Unorm,
+                        usage: wgpu::TextureUsages::COPY_DST
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
+                        mip_level_count: 1,
+                        sample_count: 1,
+                    });
+                let new_mask_view = new_mask_texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &new_mask_texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &new_mask.buffer,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(new_size as u32),
+                        rows_per_image: Some(new_size as u32),
+                    },
+                    wgpu::Extent3d {
+                        width: new_size as u32,
+                        height: new_size as u32,
+                        depth_or_array_layers: 1,
+                    },
+                );
                 *mask_texture = new_mask_texture;
-            }
+                *mask_texture_view = new_mask_view;
 
-            // Recreate all color atlases with new size, preserving content
-            let old_color_atlases = std::mem::take(&mut self.color_atlases);
-
-            for (idx, old_atlas_with_texture) in old_color_atlases.into_iter().enumerate()
-            {
-                // Create new atlas and copy allocator state
-                let mut new_atlas = Atlas::new(AtlasKind::Color, new_size);
-                new_atlas.alloc = old_atlas_with_texture.atlas.alloc.clone();
-
-                // Copy old color buffer data to new buffer
-                let new_buffer_len = new_size as usize * new_size as usize * 4;
-                let mut new_buffer = vec![0u8; new_buffer_len];
-
-                // Copy row by row from old to new buffer
-                for y in 0..old_size as usize {
-                    let old_offset = y * old_size as usize * 4;
-                    let new_offset = y * new_size as usize * 4;
-                    let row_len = old_size as usize * 4;
-                    new_buffer[new_offset..new_offset + row_len].copy_from_slice(
-                        &old_atlas_with_texture.atlas.buffer
-                            [old_offset..old_offset + row_len],
+                for (idx, (atlas, _old)) in
+                    pending_color.drain(..).enumerate()
+                {
+                    let color_texture =
+                        device.create_texture(&wgpu::TextureDescriptor {
+                            label: Some(&format!(
+                                "rich_text color atlas {}",
+                                idx
+                            )),
+                            size: wgpu::Extent3d {
+                                width: new_size as u32,
+                                height: new_size as u32,
+                                depth_or_array_layers: 1,
+                            },
+                            view_formats: &[],
+                            dimension: wgpu::TextureDimension::D2,
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            usage: wgpu::TextureUsages::COPY_DST
+                                | wgpu::TextureUsages::TEXTURE_BINDING,
+                            mip_level_count: 1,
+                            sample_count: 1,
+                        });
+                    let color_view = color_texture
+                        .create_view(&wgpu::TextureViewDescriptor::default());
+                    queue.write_texture(
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &color_texture,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &atlas.buffer,
+                        wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(new_size as u32 * 4),
+                            rows_per_image: Some(new_size as u32),
+                        },
+                        wgpu::Extent3d {
+                            width: new_size as u32,
+                            height: new_size as u32,
+                            depth_or_array_layers: 1,
+                        },
                     );
+                    self.color_atlases.push(ColorAtlasWithTexture {
+                        atlas,
+                        texture: ColorAtlasTexture::Wgpu(
+                            color_texture,
+                            color_view,
+                        ),
+                    });
                 }
-                new_atlas.buffer = new_buffer;
-                new_atlas.dirty = true;
-
-                // Create new color texture
-                let descriptor = metal::TextureDescriptor::new();
-                descriptor.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
-                descriptor.set_width(new_size as u64);
-                descriptor.set_height(new_size as u64);
-                descriptor.set_usage(
+            }
+            #[cfg(target_os = "macos")]
+            DeviceQueue::Metal {
+                device,
+                mask_texture,
+            } => {
+                let device = device.clone();
+                let mask_descriptor = metal::TextureDescriptor::new();
+                mask_descriptor
+                    .set_pixel_format(metal::MTLPixelFormat::R8Unorm);
+                mask_descriptor.set_width(new_size as u64);
+                mask_descriptor.set_height(new_size as u64);
+                mask_descriptor.set_usage(
                     metal::MTLTextureUsage::ShaderRead
                         | metal::MTLTextureUsage::ShaderWrite,
                 );
-                let texture = device.new_texture(&descriptor);
-                texture.set_label(&format!("Sugarloaf Rich Text Color Atlas {}", idx));
-
-                // Copy old texture content to new texture
+                let new_mask_texture = device.new_texture(&mask_descriptor);
+                new_mask_texture.set_label("Sugarloaf Rich Text Mask Atlas");
                 let region = metal::MTLRegion {
                     origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
                     size: metal::MTLSize {
@@ -622,47 +698,86 @@ impl ImageCache {
                         depth: 1,
                     },
                 };
-                texture.replace_region(
+                new_mask_texture.replace_region(
                     region,
                     0,
-                    new_atlas.buffer.as_ptr() as *const std::ffi::c_void,
-                    new_size as u64 * 4, // 4 bytes per pixel for RGBA8
+                    new_mask.buffer.as_ptr() as *const std::ffi::c_void,
+                    new_size as u64,
                 );
+                *mask_texture = new_mask_texture;
 
-                self.color_atlases.push(ColorAtlasWithTexture {
-                    atlas: new_atlas,
-                    texture: ColorAtlasTexture::Metal(texture),
-                });
+                for (idx, (atlas, _old)) in
+                    pending_color.drain(..).enumerate()
+                {
+                    let descriptor = metal::TextureDescriptor::new();
+                    descriptor
+                        .set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
+                    descriptor.set_width(new_size as u64);
+                    descriptor.set_height(new_size as u64);
+                    descriptor.set_usage(
+                        metal::MTLTextureUsage::ShaderRead
+                            | metal::MTLTextureUsage::ShaderWrite,
+                    );
+                    let color_texture = device.new_texture(&descriptor);
+                    color_texture.set_label(&format!(
+                        "Sugarloaf Rich Text Color Atlas {}",
+                        idx
+                    ));
+                    let region = metal::MTLRegion {
+                        origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                        size: metal::MTLSize {
+                            width: new_size as u64,
+                            height: new_size as u64,
+                            depth: 1,
+                        },
+                    };
+                    color_texture.replace_region(
+                        region,
+                        0,
+                        atlas.buffer.as_ptr() as *const std::ffi::c_void,
+                        new_size as u64 * 4,
+                    );
+                    self.color_atlases.push(ColorAtlasWithTexture {
+                        atlas,
+                        texture: ColorAtlasTexture::Metal(color_texture),
+                    });
+                }
             }
-
-            // Update max_texture_size
-            self.max_texture_size = new_size;
-
-            debug!(
-                "Successfully grew Metal texture size from {} to {}, preserved {} entries across {} color atlases",
-                old_size,
-                new_size,
-                self.entries.len(),
-                self.color_atlases.len()
-            );
-
-            return true;
+            DeviceQueue::Cpu => {
+                // No GPU texture — the CPU rasteriser samples `atlas.buffer`
+                // directly. Swap the atlases in and we're done.
+                for (atlas, _old) in pending_color.drain(..) {
+                    self.color_atlases.push(ColorAtlasWithTexture {
+                        atlas,
+                        texture: ColorAtlasTexture::Cpu,
+                    });
+                }
+            }
         }
 
-        false
+        self.mask_atlas = new_mask;
+        self.max_texture_size = new_size;
+
+        debug!(
+            "Grew atlas from {} to {}, preserved {} entries across {} color atlases",
+            old_size,
+            new_size,
+            self.entries.len(),
+            self.color_atlases.len()
+        );
+        true
     }
 
-    // Evaluate if does make sense to deallocate from atlas and if yes, which case?
-    // considering that a terminal uses a short/limited of glyphs compared to a wide text editor
-    // if deallocate an image then is necessary to cleanup cache of draw_layout fn
-    /// Deallocates the specified image.
-    #[allow(unused)]
+    /// Mark an image as no longer in use. The shelf packer doesn't
+    /// track freed rectangles so this only flips the `allocated`
+    /// flag on the entry — the atlas texel is reclaimed on the next
+    /// full-clear, not now. Used by the graphic cache to evict
+    /// kitty-protocol images that haven't been referenced recently.
     pub fn deallocate(&mut self, image: ImageId) -> Option<()> {
         let entry = self.entries.get_mut(image.index())?;
         if !entry.allocated {
             return None;
         }
-
         match entry.atlas_kind {
             AtlasKind::Mask => {
                 self.mask_atlas
@@ -681,7 +796,6 @@ impl ImageCache {
                 }
             }
         }
-
         entry.allocated = false;
         Some(())
     }
@@ -742,26 +856,6 @@ impl ImageCache {
         }
     }
 
-    /// Updates an image with the specified data.
-    // pub fn update(&mut self, handle: ImageId, data: &[u8]) -> Option<()> {
-    //     let entry = self.entries.get_mut(handle.index())?;
-    //     if entry.flags & ENTRY_ALLOCATED == 0 {
-    //         return None;
-    //     }
-    //         let atlas = self.atlases.get_mut(entry.owner as usize)?;
-    //         fill(
-    //             entry.x,
-    //             entry.y,
-    //             entry.width,
-    //             entry.height,
-    //             data,
-    //             ATLAS_DIM,
-    //             &mut atlas.buffer,
-    //             4,
-    //         );
-    //         atlas.dirty = true;
-    //     Some(())
-    // }
     #[inline]
     pub fn process_atlases(&mut self, context: &mut Context) {
         match &context.inner {
@@ -980,6 +1074,30 @@ struct FillParams {
     _height: u16,
     target_width: u16,
     channels: usize,
+}
+
+/// Copy a packed 2D buffer from `old_size × old_size` stride into a
+/// freshly-allocated `new_size × new_size` buffer, preserving the
+/// upper-left quadrant. `channels` is bytes per pixel (1 for R8,
+/// 4 for RGBA). The new buffer is zero-initialised; untouched rows
+/// and columns remain zeroed.
+fn grow_buffer(
+    old: &[u8],
+    old_size: u16,
+    new_size: u16,
+    channels: usize,
+) -> Vec<u8> {
+    let old_size = old_size as usize;
+    let new_size = new_size as usize;
+    let mut out = vec![0u8; new_size * new_size * channels];
+    for y in 0..old_size {
+        let old_offset = y * old_size * channels;
+        let new_offset = y * new_size * channels;
+        let row_len = old_size * channels;
+        out[new_offset..new_offset + row_len]
+            .copy_from_slice(&old[old_offset..old_offset + row_len]);
+    }
+    out
 }
 
 fn fill(params: FillParams, image: &[u8], target: &mut [u8]) -> Option<()> {

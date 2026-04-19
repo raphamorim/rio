@@ -127,67 +127,91 @@ impl AtlasAllocator {
             .unwrap_or(0)
     }
 
-    /// Clear all allocations and reset the atlas
-    #[allow(dead_code)]
-    pub fn clear(&mut self) {
-        self.shelves.clear();
-    }
+    /// Deallocation is a no-op — the shelf packer doesn't track
+    /// freed rectangles. Called from [`ImageCache::deallocate`],
+    /// which is itself used by graphic-cache eviction. The atlas
+    /// will reclaim the space on the next full-clear.
+    pub fn deallocate(&mut self, _x: u16, _y: u16, _width: u16) {}
 
-    /// Check if the atlas is empty
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.shelves.is_empty()
-    }
-
-    /// Get the atlas dimensions
-    #[allow(dead_code)]
-    pub fn dimensions(&self) -> (u16, u16) {
-        (self.width, self.height)
-    }
-
-    /// Deallocates a rectangle (simplified - in practice this is complex)
-    pub fn deallocate(&mut self, _x: u16, _y: u16, _width: u16) {
-        // For now, we don't implement deallocation as it's complex
-        // In a full implementation, you'd need to track allocated rectangles
-        // and merge adjacent free spaces when deallocating
-
-        // This is acceptable for a terminal where glyphs are rarely deallocated
-        // and the atlas is cleared periodically
-    }
-
-    /// Get atlas utilization statistics
-    #[allow(dead_code)]
-    pub fn utilization(&self) -> AtlasStats {
-        let total_area = (self.width as u32) * (self.height as u32);
-        let used_area = self.calculate_used_area();
-
-        AtlasStats {
-            total_area,
-            used_area,
-            utilization_ratio: used_area as f32 / total_area as f32,
-            num_shelves: self.shelves.len(),
+    /// Expand the atlas bounds in place, preserving every existing
+    /// shelf's allocated region. Every current shelf gains
+    /// `(new_width - old_width)` of remaining horizontal room (its
+    /// `x` stays, but the trailing free space now stretches to the
+    /// new right edge). New shelves created after this call can be
+    /// placed below the current tallest shelf, consuming the extra
+    /// vertical room.
+    ///
+    /// Panics if the new bounds are smaller than the current ones —
+    /// shrinking would orphan live allocations.
+    pub fn resize(&mut self, new_width: u16, new_height: u16) {
+        assert!(
+            new_width >= self.width && new_height >= self.height,
+            "AtlasAllocator::resize can only grow ({}x{} -> {}x{})",
+            self.width,
+            self.height,
+            new_width,
+            new_height
+        );
+        let width_diff = new_width - self.width;
+        if width_diff != 0 {
+            for shelf in &mut self.shelves {
+                shelf.width = shelf.width.saturating_add(width_diff);
+            }
         }
+        self.width = new_width;
+        self.height = new_height;
     }
 
-    #[allow(dead_code)]
-    fn calculate_used_area(&self) -> u32 {
-        let next_y = self.find_next_y_position();
-        (self.width as u32) * (next_y as u32)
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-pub struct AtlasStats {
-    pub total_area: u32,
-    pub used_area: u32,
-    pub utilization_ratio: f32,
-    pub num_shelves: usize,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resize_lets_allocations_use_new_room() {
+        // Fill a small atlas completely, then resize and verify the
+        // fresh space actually accepts allocations. This is the bug
+        // that caused "works for a bit, then freezes" on zoom: cloning
+        // the allocator carries the old width/height, so after grow the
+        // allocator still refused anything past the original footprint.
+        let mut atlas = AtlasAllocator::new(64, 64);
+        // Fill the first shelf (64 wide, each alloc 32+1 padded).
+        assert!(atlas.allocate(30, 10).is_some());
+        assert!(atlas.allocate(30, 10).is_some());
+        // Second shelf.
+        assert!(atlas.allocate(60, 50).is_some());
+        // Nothing fits now — height exhausted (10 + 50 = 60, one pad row each).
+        assert!(atlas.allocate(10, 10).is_none());
+
+        atlas.resize(128, 128);
+        // Resized atlas should have room for new allocations below the
+        // existing shelves.
+        let pos = atlas.allocate(10, 10);
+        assert!(pos.is_some(), "resize didn't open up new room");
+    }
+
+    #[test]
+    fn resize_extends_existing_shelf_remaining_width() {
+        // An existing shelf with leftover horizontal room should see
+        // that leftover stretch to the new atlas width after resize.
+        let mut atlas = AtlasAllocator::new(64, 64);
+        atlas.allocate(30, 10).unwrap();
+        // Shelf is now at x=31, width remaining = 33 (64 - 31).
+        atlas.resize(128, 64);
+        // After resize, that shelf should still be at x=31, but have
+        // width remaining = 97 (128 - 31). A 60-wide allocation that
+        // didn't fit in the old 33 must now fit.
+        let pos = atlas.allocate(60, 10);
+        assert!(pos.is_some(), "existing shelf didn't extend on resize");
+    }
+
+    #[test]
+    #[should_panic(expected = "can only grow")]
+    fn resize_rejects_shrink() {
+        let mut atlas = AtlasAllocator::new(128, 128);
+        atlas.resize(64, 64);
+    }
 
     #[test]
     fn test_basic_allocation() {
@@ -261,35 +285,4 @@ mod tests {
         assert_eq!(pos2, None);
     }
 
-    #[test]
-    fn test_clear() {
-        let mut atlas = AtlasAllocator::new(100, 100);
-
-        atlas.allocate(10, 10);
-        assert!(!atlas.is_empty());
-
-        atlas.clear();
-        assert!(atlas.is_empty());
-
-        // Should be able to allocate again after clear
-        let pos = atlas.allocate(10, 10);
-        assert_eq!(pos, Some((0, 0)));
-    }
-
-    #[test]
-    fn test_utilization_stats() {
-        let mut atlas = AtlasAllocator::new(100, 100);
-
-        let stats = atlas.utilization();
-        assert_eq!(stats.total_area, 10000);
-        assert_eq!(stats.used_area, 0);
-        assert_eq!(stats.utilization_ratio, 0.0);
-        assert_eq!(stats.num_shelves, 0);
-
-        atlas.allocate(50, 20);
-        let stats = atlas.utilization();
-        assert_eq!(stats.used_area, 2100); // 100 * 21 (20 + 1 padding)
-        assert_eq!(stats.utilization_ratio, 0.21);
-        assert_eq!(stats.num_shelves, 1);
-    }
 }

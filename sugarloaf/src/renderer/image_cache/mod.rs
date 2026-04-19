@@ -3,7 +3,6 @@ mod cache;
 mod colr_raster;
 pub mod glyph;
 
-use std::sync::Arc;
 
 pub use cache::ImageCache;
 pub use glyph::GlyphCache;
@@ -78,23 +77,14 @@ impl<'a> AddImage<'a> {
 /// Representations of image data for submission to a cache.
 #[derive(Clone)]
 pub enum ImageData<'a> {
-    // None,
     Borrowed(&'a [u8]),
-    #[allow(unused)]
-    Owned(Vec<u8>),
-    #[allow(unused)]
-    Shared(Arc<Vec<u8>>),
 }
 
 impl<'a> ImageData<'a> {
     fn data(&'a self) -> Option<&'a [u8]> {
-        Some(match self {
-            // Self::None => return None,
-            // Self::Borrowed(data) => *data,
-            Self::Borrowed(data) => data,
-            Self::Owned(data) => data,
-            Self::Shared(data) => data,
-        })
+        match self {
+            Self::Borrowed(data) => Some(data),
+        }
     }
 }
 
