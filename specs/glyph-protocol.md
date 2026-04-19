@@ -596,20 +596,26 @@ q(0xE0A0)
 These are not normative but reflect lessons from the first
 implementations.
 
-**Response draining.** `r` and `c` always produce an APC reply on the
-PTY. Client applications that register at startup and do not care
-about the reply should either (a) read and discard it, or (b) accept
-that the response will be delivered. In practice, TUI frameworks
-(ratatui, bubbletea, ink) consume stdin through their input reader;
-APC replies are parsed and silently dropped alongside non-keyboard
-bytes. The failure mode to watch for is sending `r` or `c` AFTER the
-framework has torn down its input reader — typically on exit — at
-which point the reply arrives in the PTY but nobody reads it, and
-the shell that takes over the PTY after the app exits emits the
-queued bytes as visible text (`.25a1;c;status=0`). Either skip
-cleanup on exit (registrations expire with the session anyway) or
-send the cleanup command while the framework is still running and
-let its input reader swallow the reply.
+**Response draining.** By default `r` and `c` produce an APC reply
+on the PTY. Client applications that register at startup and do not
+care about the reply have three options, in order of preference:
+
+1. Use `reply=0` on the register request (§6.1). The terminal emits
+   nothing, so there's nothing to drain and nothing to leak. Best
+   for bulk startup registrations.
+2. Use `reply=2` to keep failure replies but drop success ACKs.
+   Retains debuggability (you still learn about malformed payloads)
+   without the success-reply noise of a 100-glyph registration.
+3. Let the framework's input reader swallow the reply — safe only
+   while that reader is alive.
+
+The failure mode to watch for is sending `r` or `c` with `reply=1`
+AFTER the framework has torn down its input reader — typically on
+exit — at which point the reply arrives in the PTY but nobody reads
+it, and the shell that takes over the PTY after the app exits emits
+the queued bytes as visible text (`.25a1;c;status=0` or
+`.25a1;r;cp=…;status=0`). For exit-time cleanup, prefer skipping
+the `c` altogether (registrations expire with the session anyway).
 
 **Practical source of `glyf` data.** Most apps will not hand-author
 `glyf` bytes. The typical pipeline is:
