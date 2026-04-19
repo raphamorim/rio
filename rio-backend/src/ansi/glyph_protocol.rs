@@ -10,6 +10,15 @@
 //   r — register a PUA codepoint with a glyph
 //   c — clear one PUA codepoint or every registration in this session
 //
+// Payload formats (selected via `fmt=<name>` on the `r` verb):
+//   glyf   — single monochrome OpenType simple-glyph outline.
+//   colrv0 — up to 16 flat-color layers; each layer is an sRGBA colour
+//            (or a "foreground" sentinel) plus a `glyf` outline; layers
+//            composite in painter-order.
+//   colrv1 — same layer model as colrv0 but each layer carries a paint:
+//            solid, linear gradient, radial gradient, or foreground. No
+//            affine transforms and no sweep gradients in v1.
+//
 // `cp` is always a single codepoint. For `r` and `c`, `cp` MUST be in
 // one of the three Unicode Private Use Area ranges; otherwise the
 // request is rejected with `reason=out_of_namespace`. `q` accepts any
@@ -29,9 +38,11 @@ pub const GLYPH_PROTOCOL_PREFIX: &[u8] = b"25a1";
 pub const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 
 /// Bitfield of payload formats this build supports, returned in the
-/// reply to the `s` verb. Bit 0 = `glyf` (OpenType simple glyphs).
-/// Future formats (e.g. `colr`) will claim further bits.
-pub const SUPPORTED_FORMATS: u8 = 0b0000_0001;
+/// reply to the `s` verb.
+///   bit 0 = `glyf`   (OpenType simple glyphs)
+///   bit 1 = `colrv0` (flat-color layered outlines)
+///   bit 2 = `colrv1` (layered outlines with solid/linear/radial paints)
+pub const SUPPORTED_FORMATS: u8 = 0b0000_0111;
 
 /// Check whether a codepoint is in any of the three Unicode Private
 /// Use Areas.
@@ -50,10 +61,117 @@ pub enum GlyphCommand {
     Support,
     /// Query state of a single codepoint.
     Query { cp: u32 },
-    /// Register a glyph at a PUA codepoint chosen by the client.
-    Register { cp: u32, upm: u16, glyf: Vec<u8> },
+    /// Register a glyph at a PUA codepoint chosen by the client. The
+    /// `payload` carries format-specific data (monochrome `glyf`, or a
+    /// `colrv0`/`colrv1` colour container wrapping OpenType tables).
+    /// The `reply` level controls which replies (if any) the
+    /// dispatcher emits — see [`ReplyMode`] for the three tiers.
+    Register {
+        cp: u32,
+        payload: GlyphPayload,
+        reply: ReplyMode,
+    },
     /// Clear a single PUA codepoint (`Some`) or every slot (`None`).
     Clear { cp: Option<u32> },
+}
+
+/// Upper bound on the number of glyph outlines carried in a single
+/// colour payload. Keeps the glossary's decode cost bounded and
+/// matches the 16-bit GlyphId namespace used by COLR.
+pub const MAX_COLR_GLYPHS: u16 = 256;
+
+/// Payload shipped with an `r` (register) request.
+///
+/// `Glyf` is a single OpenType simple-glyph record, rendered in the
+/// current foreground colour.
+///
+/// `ColrV0` and `ColrV1` share a wire container ([`ColrContainer`]) —
+/// a length-prefixed array of simple-glyph outlines plus raw OpenType
+/// `COLR` and `CPAL` tables. The outer variant distinguishes the COLR
+/// table version the terminal should expect (v0 is layer-only, v1 is
+/// the full paint graph). Reusing the OpenType binary layout means
+/// applications can slice existing fonts directly; the terminal uses
+/// `ttf_parser::colr::Table` to walk the paint graph and our own
+/// `glyf` decoder (same as `fmt=glyf`) for the leaf outlines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlyphPayload {
+    Glyf { glyf: Vec<u8>, upm: u16 },
+    ColrV0 { container: ColrContainer, upm: u16 },
+    ColrV1 { container: ColrContainer, upm: u16 },
+}
+
+/// Wire container for `fmt=colrv0` and `fmt=colrv1` payloads.
+///
+/// Layout after base64-decode:
+/// ```text
+///   u16 BE  n_glyphs
+///   per glyph:
+///     u16 BE  glyf_len
+///     glyf_len bytes  (simple-glyph, same encoding as fmt=glyf)
+///   u16 BE  colr_len
+///   colr_len bytes   (OpenType COLR table, v0 or v1)
+///   u16 BE  cpal_len
+///   cpal_len bytes   (OpenType CPAL table; may be zero-length when
+///                     the COLR references only foreground / direct
+///                     sRGB values in the v1 paint graph)
+/// ```
+///
+/// Glyph IDs in the COLR table resolve to indices into `glyphs`.
+/// CPAL palette index `0xFFFF` means "current foreground colour", per
+/// the OpenType spec.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColrContainer {
+    pub glyphs: Vec<Vec<u8>>,
+    pub colr: Vec<u8>,
+    pub cpal: Vec<u8>,
+}
+
+/// Three-level reply control for the `r` verb, selected with the
+/// `reply` parameter on a register request. The values mirror the
+/// wire encoding (`reply=0` / `reply=1` / `reply=2`) so dispatchers
+/// can skip a round of translation.
+///
+/// Fire-and-forget bulk registrations should use [`ReplyMode::None`]
+/// so `status=0` ACKs don't queue in the PTY and spill to the shell
+/// when the client exits. Bulk registrations that want failure
+/// telemetry without the success noise should use
+/// [`ReplyMode::ErrorsOnly`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReplyMode {
+    /// `reply=0`: the dispatcher emits nothing for this registration.
+    None,
+    /// `reply=1` (default): the dispatcher emits both success (`status=0`)
+    /// and failure (`status=<nonzero>`) replies. The default when
+    /// `reply` is omitted or holds an unrecognised value.
+    #[default]
+    All,
+    /// `reply=2`: the dispatcher emits only failure replies, dropping
+    /// the `status=0` ACK on success. Handy for large bulk
+    /// registrations that want errors surfaced without the noise of
+    /// 256 ACKs on the happy path.
+    ErrorsOnly,
+}
+
+impl ReplyMode {
+    /// Whether a successful register should emit `status=0`.
+    pub fn emit_success(self) -> bool {
+        matches!(self, ReplyMode::All)
+    }
+    /// Whether a failed register should emit `status=<nonzero>;reason=…`.
+    pub fn emit_error(self) -> bool {
+        matches!(self, ReplyMode::All | ReplyMode::ErrorsOnly)
+    }
+
+    fn from_wire(raw: &[u8]) -> Self {
+        match raw {
+            b"0" => ReplyMode::None,
+            b"2" => ReplyMode::ErrorsOnly,
+            // `reply=1`, an unrecognised value, or an absent parameter
+            // all land here. Per §11 unknown-params rule the default
+            // behaviour (emit both) is the safe fallback.
+            _ => ReplyMode::All,
+        }
+    }
 }
 
 /// Query status — two-bit field per spec §5.2. Bit 0: system coverage.
@@ -105,8 +223,14 @@ pub enum ParseError {
     /// Framing was recognised but malformed.
     Malformed(&'static str),
     /// Register rejected at parse time. Dispatcher formats this as
-    /// `status=<nonzero>; reason=<code>` with the supplied `cp`.
-    RegisterFailed { cp: u32, reason: RegisterError },
+    /// `status=<nonzero>; reason=<code>` with the supplied `cp`,
+    /// unless the original `r` request carried a `reply` level that
+    /// disables error replies (see [`ReplyMode::emit_error`]).
+    RegisterFailed {
+        cp: u32,
+        reason: RegisterError,
+        reply: ReplyMode,
+    },
     /// `c;cp=<hex>` where the codepoint is not in any PUA range.
     ClearOutOfNamespace,
 }
@@ -171,17 +295,27 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     let cp =
         parse_hex_cp(cp_raw).ok_or(ParseError::Malformed("register cp invalid hex"))?;
 
+    // Extract `reply` before any can-fail validation so every error
+    // path below can honour the level. Unrecognised values fall back
+    // to the default (emit both success and failure replies).
+    let reply = params
+        .get("reply")
+        .map(|v| ReplyMode::from_wire(v))
+        .unwrap_or_default();
+
     // PUA check is the protocol's security contract — reject early so
     // we don't bother decoding the payload.
     if !is_pua(cp) {
         return Err(ParseError::RegisterFailed {
             cp,
             reason: RegisterError::OutOfNamespace,
+            reply,
         });
     }
 
-    if params.get("fmt").copied().unwrap_or(b"glyf") != b"glyf" {
-        return Err(ParseError::Malformed("register fmt must be glyf"));
+    let fmt = params.get("fmt").copied().unwrap_or(b"glyf");
+    if fmt != b"glyf" && fmt != b"colrv0" && fmt != b"colrv1" {
+        return Err(ParseError::Malformed("register fmt unknown"));
     }
 
     let upm = match params.get("upm") {
@@ -195,20 +329,128 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     }
 
     let payload_b64 = trim(payload_b64);
-    let glyf = BASE64
+    let raw = BASE64
         .decode(payload_b64)
         .map_err(|_| ParseError::RegisterFailed {
             cp,
             reason: RegisterError::MalformedPayload,
+            reply,
         })?;
-    if glyf.len() > MAX_PAYLOAD_BYTES {
+    if raw.len() > MAX_PAYLOAD_BYTES {
         return Err(ParseError::RegisterFailed {
             cp,
             reason: RegisterError::PayloadTooLarge,
+            reply,
         });
     }
 
-    Ok(GlyphCommand::Register { cp, upm, glyf })
+    let payload = match fmt {
+        b"glyf" => GlyphPayload::Glyf { glyf: raw, upm },
+        b"colrv0" => {
+            let container = parse_colr_container(&raw).map_err(|reason| {
+                ParseError::RegisterFailed {
+                    cp,
+                    reason,
+                    reply,
+                }
+            })?;
+            GlyphPayload::ColrV0 { container, upm }
+        }
+        b"colrv1" => {
+            let container = parse_colr_container(&raw).map_err(|reason| {
+                ParseError::RegisterFailed {
+                    cp,
+                    reason,
+                    reply,
+                }
+            })?;
+            GlyphPayload::ColrV1 { container, upm }
+        }
+        _ => unreachable!("fmt validated above"),
+    };
+
+    Ok(GlyphCommand::Register { cp, payload, reply })
+}
+
+/// Decode a `colrv0`/`colrv1` container (see [`ColrContainer`] doc for
+/// the wire layout). Validation is structural only: the OpenType COLR
+/// and CPAL tables are handed off to the renderer, which parses them
+/// with `ttf_parser::colr::Table` when the glyph is rasterised — that
+/// way any COLR-version-specific validation lives next to the code
+/// that actually interprets it.
+fn parse_colr_container(data: &[u8]) -> Result<ColrContainer, RegisterError> {
+    let mut cur = Cursor::new(data);
+
+    let n_glyphs = cur.u16_be().ok_or(RegisterError::MalformedPayload)?;
+    if n_glyphs == 0 || n_glyphs > MAX_COLR_GLYPHS {
+        return Err(RegisterError::MalformedPayload);
+    }
+
+    let mut glyphs: Vec<Vec<u8>> = Vec::with_capacity(n_glyphs as usize);
+    for _ in 0..n_glyphs {
+        let glyf_len = cur.u16_be().ok_or(RegisterError::MalformedPayload)? as usize;
+        let glyf = cur
+            .slice(glyf_len)
+            .ok_or(RegisterError::MalformedPayload)?
+            .to_vec();
+        glyphs.push(glyf);
+    }
+
+    let colr_len = cur.u16_be().ok_or(RegisterError::MalformedPayload)? as usize;
+    if colr_len == 0 {
+        return Err(RegisterError::MalformedPayload);
+    }
+    let colr = cur
+        .slice(colr_len)
+        .ok_or(RegisterError::MalformedPayload)?
+        .to_vec();
+
+    let cpal_len = cur.u16_be().ok_or(RegisterError::MalformedPayload)? as usize;
+    let cpal = cur
+        .slice(cpal_len)
+        .ok_or(RegisterError::MalformedPayload)?
+        .to_vec();
+
+    if cur.remaining() != 0 {
+        return Err(RegisterError::MalformedPayload);
+    }
+
+    Ok(ColrContainer { glyphs, colr, cpal })
+}
+
+/// Minimal big-endian byte cursor. Used by the `colrv0`/`colrv1`
+/// container parser — the OpenType tables nested inside are parsed by
+/// `ttf-parser` downstream, so we only need enough here to carve out
+/// their byte ranges.
+struct Cursor<'a> {
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Cursor<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, pos: 0 }
+    }
+    fn remaining(&self) -> usize {
+        self.data.len().saturating_sub(self.pos)
+    }
+    fn u16_be(&mut self) -> Option<u16> {
+        if self.pos + 2 > self.data.len() {
+            return None;
+        }
+        let hi = self.data[self.pos] as u16;
+        let lo = self.data[self.pos + 1] as u16;
+        self.pos += 2;
+        Some((hi << 8) | lo)
+    }
+    fn slice(&mut self, n: usize) -> Option<&'a [u8]> {
+        if self.pos + n > self.data.len() {
+            return None;
+        }
+        let s = &self.data[self.pos..self.pos + n];
+        self.pos += n;
+        Some(s)
+    }
 }
 
 fn parse_clear(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
@@ -456,8 +698,11 @@ mod tests {
             got,
             GlyphCommand::Register {
                 cp: 0xE0A0,
-                upm: 1000,
-                glyf: vec![0x01, 0x02, 0x03],
+                payload: GlyphPayload::Glyf {
+                    glyf: vec![0x01, 0x02, 0x03],
+                    upm: 1000,
+                },
+                reply: ReplyMode::All,
             }
         );
     }
@@ -468,7 +713,10 @@ mod tests {
         let body = format!("25a1;r;cp=E0A0;fmt=glyf;upm=1000;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()).unwrap(),
-            GlyphCommand::Register { .. }
+            GlyphCommand::Register {
+                payload: GlyphPayload::Glyf { .. },
+                ..
+            }
         ));
     }
 
@@ -477,10 +725,14 @@ mod tests {
         let payload = b64(&[0x01]);
         let body = format!("25a1;r;cp=E0A0;{}", payload);
         let got = parse(body.as_bytes()).unwrap();
-        if let GlyphCommand::Register { upm, .. } = got {
+        if let GlyphCommand::Register {
+            payload: GlyphPayload::Glyf { upm, .. },
+            ..
+        } = got
+        {
             assert_eq!(upm, 1000);
         } else {
-            panic!("expected register");
+            panic!("expected glyf register");
         }
     }
 
@@ -493,6 +745,7 @@ mod tests {
             Err(ParseError::RegisterFailed {
                 cp: 0x61,
                 reason: RegisterError::OutOfNamespace,
+                reply: ReplyMode::All,
             })
         );
     }
@@ -613,16 +866,16 @@ mod tests {
     }
 
     #[test]
-    fn support_response_advertises_glyf_bit() {
+    fn support_response_advertises_glyf_colrv0_colrv1() {
+        // bit 0 = glyf, bit 1 = colrv0, bit 2 = colrv1.
         assert_eq!(
             format_support_response(SUPPORTED_FORMATS),
-            "\x1b_25a1;s;fmt=1\x1b\\"
+            "\x1b_25a1;s;fmt=7\x1b\\"
         );
     }
 
     #[test]
     fn support_response_encodes_arbitrary_bitfield() {
-        // Forward-compat: adding `colr` later would set bit 1.
         assert_eq!(
             format_support_response(0b0000_0011),
             "\x1b_25a1;s;fmt=3\x1b\\"
@@ -636,6 +889,256 @@ mod tests {
             parse(b"25a1;z;cp=0061"),
             Err(ParseError::Malformed(_))
         ));
+    }
+
+    // ----- colrv0 / colrv1 container ----------------------------------
+
+    /// Build a colour-payload container from component byte slices.
+    /// Lays out exactly as documented on [`ColrContainer`].
+    fn build_container(glyphs: &[&[u8]], colr: &[u8], cpal: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&(glyphs.len() as u16).to_be_bytes());
+        for g in glyphs {
+            out.extend_from_slice(&(g.len() as u16).to_be_bytes());
+            out.extend_from_slice(g);
+        }
+        out.extend_from_slice(&(colr.len() as u16).to_be_bytes());
+        out.extend_from_slice(colr);
+        out.extend_from_slice(&(cpal.len() as u16).to_be_bytes());
+        out.extend_from_slice(cpal);
+        out
+    }
+
+    #[test]
+    fn parses_colrv0_single_glyph() {
+        let container = build_container(&[&[0xAA, 0xBB]], &[0x01; 14], &[0x02; 12]);
+        let body = format!(
+            "25a1;r;cp=E0A0;fmt=colrv0;upm=1000;{}",
+            b64(&container)
+        );
+        let got = parse(body.as_bytes()).unwrap();
+        match got {
+            GlyphCommand::Register {
+                cp: 0xE0A0,
+                payload:
+                    GlyphPayload::ColrV0 {
+                        container: c,
+                        upm: 1000,
+                    },
+                reply: ReplyMode::All,
+            } => {
+                assert_eq!(c.glyphs.len(), 1);
+                assert_eq!(c.glyphs[0], vec![0xAA, 0xBB]);
+                assert_eq!(c.colr.len(), 14);
+                assert_eq!(c.cpal.len(), 12);
+            }
+            other => panic!("expected colrv0 register, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_colrv1_multi_glyph_with_empty_cpal() {
+        // CPAL can legitimately be zero-length when the COLR uses only
+        // foreground or direct-sRGB paints (v1 doesn't require CPAL at
+        // all if no palette index is referenced).
+        let container = build_container(
+            &[&[0x01], &[0x02, 0x03], &[0x04, 0x05, 0x06]],
+            &[0xF0; 32],
+            &[],
+        );
+        let body = format!(
+            "25a1;r;cp=100000;fmt=colrv1;upm=2048;{}",
+            b64(&container)
+        );
+        let got = parse(body.as_bytes()).unwrap();
+        match got {
+            GlyphCommand::Register {
+                cp: 0x100000,
+                payload:
+                    GlyphPayload::ColrV1 {
+                        container: c,
+                        upm: 2048,
+                    },
+                reply: ReplyMode::All,
+            } => {
+                assert_eq!(c.glyphs.len(), 3);
+                assert_eq!(c.glyphs[2], vec![0x04, 0x05, 0x06]);
+                assert_eq!(c.colr.len(), 32);
+                assert!(c.cpal.is_empty());
+            }
+            other => panic!("expected colrv1 register, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn colr_rejects_zero_glyphs() {
+        // Every colour glyph needs at least one outline; `0 glyphs` is
+        // meaningless and likely indicates a corrupt payload.
+        let container = build_container(&[], &[0x00; 4], &[]);
+        let body = format!(
+            "25a1;r;cp=E0A0;fmt=colrv0;upm=1000;{}",
+            b64(&container)
+        );
+        assert!(matches!(
+            parse(body.as_bytes()),
+            Err(ParseError::RegisterFailed {
+                reason: RegisterError::MalformedPayload,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn colr_rejects_empty_colr_table() {
+        let container = build_container(&[&[0x01]], &[], &[]);
+        let body = format!(
+            "25a1;r;cp=E0A0;fmt=colrv0;upm=1000;{}",
+            b64(&container)
+        );
+        assert!(matches!(
+            parse(body.as_bytes()),
+            Err(ParseError::RegisterFailed {
+                reason: RegisterError::MalformedPayload,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn colr_rejects_truncated_payload() {
+        // Claim 2 glyphs but only ship one — the cursor runs out of
+        // bytes inside the loop.
+        let mut bad = Vec::new();
+        bad.extend_from_slice(&2u16.to_be_bytes());
+        bad.extend_from_slice(&1u16.to_be_bytes());
+        bad.push(0xAA);
+        // …no second glyph, no COLR, no CPAL.
+        let body = format!(
+            "25a1;r;cp=E0A0;fmt=colrv1;upm=1000;{}",
+            b64(&bad)
+        );
+        assert!(matches!(
+            parse(body.as_bytes()),
+            Err(ParseError::RegisterFailed {
+                reason: RegisterError::MalformedPayload,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn colr_rejects_trailing_garbage() {
+        // Extra bytes after the CPAL slice means the sender's layout
+        // doesn't match ours; reject rather than silently ignoring.
+        let mut container = build_container(&[&[0x01]], &[0x00; 4], &[]);
+        container.push(0xFF);
+        let body = format!(
+            "25a1;r;cp=E0A0;fmt=colrv0;upm=1000;{}",
+            b64(&container)
+        );
+        assert!(matches!(
+            parse(body.as_bytes()),
+            Err(ParseError::RegisterFailed {
+                reason: RegisterError::MalformedPayload,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn colr_rejects_excessive_glyph_count() {
+        // n_glyphs = MAX_COLR_GLYPHS + 1 blows the bound.
+        let mut bad = Vec::new();
+        bad.extend_from_slice(&(MAX_COLR_GLYPHS + 1).to_be_bytes());
+        // … no actual glyph bytes; parse should reject at the count.
+        let body = format!(
+            "25a1;r;cp=E0A0;fmt=colrv0;upm=1000;{}",
+            b64(&bad)
+        );
+        assert!(matches!(
+            parse(body.as_bytes()),
+            Err(ParseError::RegisterFailed {
+                reason: RegisterError::MalformedPayload,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn register_defaults_silent_to_false() {
+        let payload = b64(&[0x01]);
+        let body = format!("25a1;r;cp=E0A0;upm=1000;{}", payload);
+        match parse(body.as_bytes()).unwrap() {
+            GlyphCommand::Register { silent, .. } => assert!(!silent),
+            other => panic!("expected register, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn register_honours_silent_flag_on_success() {
+        let payload = b64(&[0x01]);
+        let body = format!("25a1;r;cp=E0A0;silent=1;upm=1000;{}", payload);
+        match parse(body.as_bytes()).unwrap() {
+            GlyphCommand::Register { silent, .. } => assert!(silent),
+            other => panic!("expected register, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn register_honours_silent_flag_on_parse_failure() {
+        // Non-PUA cp fails validation; the silent flag must propagate
+        // into the error so the dispatcher drops the reply too.
+        let payload = b64(&[0x01]);
+        let body = format!("25a1;r;cp=61;silent=1;upm=1000;{}", payload);
+        assert_eq!(
+            parse(body.as_bytes()),
+            Err(ParseError::RegisterFailed {
+                cp: 0x61,
+                reason: RegisterError::OutOfNamespace,
+                silent: true,
+            })
+        );
+    }
+
+    #[test]
+    fn register_silent_only_matches_exact_one() {
+        // Any value other than `1` leaves silent at its default. The
+        // protocol picks `silent=1` as the opt-in convention and the
+        // parser mirrors it; `silent=true`, `silent=yes`, `silent=01`
+        // do NOT trigger silent mode.
+        let payload = b64(&[0x01]);
+        for bad in ["0", "true", "yes", "01", ""].iter() {
+            let body = format!(
+                "25a1;r;cp=E0A0;silent={};upm=1000;{}",
+                bad, payload
+            );
+            match parse(body.as_bytes()).unwrap() {
+                GlyphCommand::Register { silent, .. } => {
+                    assert!(!silent, "silent={:?} should not opt in", bad);
+                }
+                other => panic!("expected register, got {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn colr_register_respects_pua_check_before_fmt_parse() {
+        // Non-PUA should still be rejected for colour formats, and the
+        // error should be `out_of_namespace` (not a payload error) so
+        // the client sees the same contract as fmt=glyf.
+        let container = build_container(&[&[0x01]], &[0x00; 4], &[]);
+        let body = format!(
+            "25a1;r;cp=61;fmt=colrv0;upm=1000;{}",
+            b64(&container)
+        );
+        assert_eq!(
+            parse(body.as_bytes()),
+            Err(ParseError::RegisterFailed {
+                cp: 0x61,
+                reason: RegisterError::OutOfNamespace,
+                reply: ReplyMode::All,
+            })
+        );
     }
 
     #[test]

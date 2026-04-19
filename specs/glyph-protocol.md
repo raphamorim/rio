@@ -25,9 +25,11 @@ ranges the user never types and existing text never contains — so
 the protocol cannot be used to modify the appearance of real text.
 
 The protocol is transported over APC (Application Program Command)
-sequences, uses the OpenType `glyf` simple-glyph format as its
-payload, and defines three verbs: query (`q`), register (`r`), and
-clear (`c`).
+sequences. The default payload is the OpenType `glyf` simple-glyph
+record for monochrome icons; colour icons ride OpenType `COLR` v0
+(layered flat colour) or `COLR` v1 (full paint graph). Four verbs
+are defined: support-negotiation (`s`), query (`q`), register
+(`r`), and clear (`c`).
 
 ## 1. Motivation
 
@@ -58,8 +60,9 @@ it can render before it renders it.
 
 ## 2. Design goals
 
-- **Small surface.** Three verbs, one payload format, no daemons,
-  no caches, no cross-session state.
+- **Small surface.** Four verbs, three payload formats (one
+  required, two optional), no daemons, no caches, no cross-session
+  state.
 - **Zero new terminal dependencies.** Every terminal that renders
   text already links a `glyf` rasterizer.
 - **Resolution independent.** Glyphs are vector and scale to any
@@ -106,9 +109,28 @@ decimal u8 values for the `status` field of every response.
 
 | Verb | Meaning |
 |------|---------|
+| `s`  | Advertise supported payload formats. Doubles as a protocol-detection ping — any reply confirms Glyph Protocol; a timeout means unsupported. |
 | `q`  | Query the state of a codepoint. |
 | `r`  | Register a glyph for a PUA codepoint. |
 | `c`  | Clear one slot or every slot in this session's glossary. |
+
+The `s` verb takes no parameters and returns a decimal `u8`
+bitfield under the `fmt` key:
+
+| Bit | `fmt=` value | Format name |
+|-----|--------------|-------------|
+| 0   | 1            | `glyf` (monochrome simple-glyph; §8). |
+| 1   | 2            | `colrv0` (layered flat colour; §8.6). |
+| 2   | 4            | `colrv1` (OpenType paint graph; §8.7). |
+
+Further bits are reserved. Clients treat unknown bits as
+unsupported and ignore them. A terminal that advertises only
+`fmt=1` (monochrome) and receives an `r` with `fmt=colrv0` /
+`fmt=colrv1` MUST reject the registration (`reason=malformed_payload`
+is acceptable for parser-level rejection). Clients SHOULD check
+the `s` reply before emitting colour registrations so they can
+fall back to a monochrome `fmt=glyf` without making a doomed
+round-trip.
 
 ## 4. Glossary namespace
 
@@ -307,8 +329,8 @@ TrueType semantics:
 ### 8.4 Color
 
 `glyf` outlines carry no color. Terminals MUST render them in the
-current foreground color. Colored and multi-layer glyphs are
-deferred to a future `fmt=colr` extension.
+current foreground color. For colored icons see the `colrv0` and
+`colrv1` formats in §8.6 / §8.7.
 
 ### 8.5 Scaling
 
@@ -316,6 +338,102 @@ The `upm` value defines the glyph's authoring coordinate space.
 The terminal maps that space onto its cell at render time.
 Applications MUST NOT assume a particular cell size and MUST NOT
 re-register glyphs on font size change.
+
+### 8.6 Payload format: `colrv0`
+
+`fmt=colrv0` carries a layered flat-colour glyph using the
+OpenType `COLR` v0 and `CPAL` tables verbatim. The protocol wraps
+those tables in a small container that also ships the simple-glyph
+outlines each layer references, so a colour glyph is self-
+contained: no external font needed.
+
+**Container layout** (all integers big-endian, post-base64-decode):
+
+```
+u16     n_glyphs              # 1..=256
+repeat n_glyphs:
+  u16   glyf_len
+  glyf_len bytes              # simple-glyph record, §8.2 subset
+u16     colr_len              # > 0
+colr_len bytes                # OpenType COLR v0 table
+u16     cpal_len              # may be 0 (see below)
+cpal_len bytes                # OpenType CPAL table (required for v0)
+```
+
+`GlyphId` values in the `COLR` table resolve to indices into the
+outline array (glyph 0 is the base glyph rendered when the
+terminal emits `cp`). `paletteIndex` values in the `COLR` layer
+records resolve to entries in the CPAL colour records array, in
+standard OpenType order (one record = one BGRA quadruple).
+`paletteIndex = 0xFFFF` MUST be rendered as the current foreground
+colour, per the OpenType spec.
+
+**Rendering rules.**
+
+- Layers composite in painter order (first layer painted first).
+- Per-layer colours come from CPAL; `0xFFFF` means foreground.
+- `COLR` v0 defines no transforms or compositing modes beyond
+  `src-over`, so terminals MAY implement v0 in one pass with no
+  graphics-state stack.
+
+**Validation.** Terminals SHOULD validate the wrapped `COLR` and
+`CPAL` tables using an OpenType parser (e.g. `ttf-parser`); a
+`COLR` table that fails to parse SHOULD be rejected with
+`reason=malformed_payload`. Every carried outline MUST satisfy the
+`glyf` simple-glyph subset of §8.2; violations use the same error
+codes as `fmt=glyf`.
+
+### 8.7 Payload format: `colrv1`
+
+`fmt=colrv1` shares the container layout of §8.6 but ships an
+OpenType `COLR` v1 table, which adds a full paint graph: linear,
+radial, and sweep gradients, affine transforms, clip boxes, and
+per-layer compositing modes. `CPAL` remains valid but is optional
+— v1 paints may carry sRGBA directly — so `cpal_len = 0` is
+permitted and means "the COLR references no palette index."
+
+**Paint types.** Terminals implementing `colrv1` SHOULD support
+the full OpenType paint-graph vocabulary for maximum interop. A
+conforming subset for low-overhead implementations is:
+
+- Solid (direct sRGBA or palette index).
+- Linear gradient.
+- Radial gradient.
+- Affine transforms on paint subtrees.
+- `src-over` layer composite.
+
+Terminals MAY render unsupported paint nodes (sweep gradients,
+blend modes beyond `src-over`, variations) using a reasonable
+fallback — typically the paint subtree's first solid colour —
+rather than rejecting the registration.
+
+**Foreground inheritance.** CPAL palette index `0xFFFF` and
+v1's `PaintSolid` with the foreground sentinel MUST resolve to
+the cell's current foreground colour at rasterisation time.
+Terminals that cache rasterised colour glyphs MUST re-rasterise
+on foreground change for any glyph whose paint graph references
+`0xFFFF`.
+
+**Security.** The colour formats add no new attack surface beyond
+§9: `cp` is still PUA-only, the cell buffer is still authoritative
+for copy/selection, and registrations are still session-scoped.
+A malformed `COLR` is a rendering error, not an injection vector
+— the rendered pixels can only affect cells the client itself
+emits at a PUA codepoint.
+
+### 8.8 Authoring
+
+Most applications will not hand-author `COLR` bytes either.
+Typical flows:
+
+- **From an existing colour font.** Use `fontTools` to extract the
+  `COLR`/`CPAL` tables for the glyphs of interest, then pack them
+  with the referenced outlines into the container above.
+- **From SVG.** The Skia team publishes `nanoemoji` / `maximum-color`,
+  which compiles a directory of SVGs into a `COLR` v1 font; feed
+  its output into the packer.
+
+Rio ships an `svg2colr` helper alongside `svg2glyf` for this flow.
 
 ## 9. Security considerations
 
@@ -368,8 +486,10 @@ Other considerations:
   each run.
 - **No cross-application sharing.** Each terminal session owns its
   glossary. No IPC, no daemon.
-- **No colored glyphs.** Deferred to a future `fmt=colr`
-  extension.
+- **No bitmap colour glyphs.** Colour is delivered via `colrv0`
+  and `colrv1` (§8.6 / §8.7), which are vector. `CBDT`/`sbix`/
+  `SVG ` tables are explicitly out of scope so resolution
+  independence is preserved.
 - **No subpixel positioning control.** The terminal's normal cell
   positioning applies.
 - **No bitmap payloads.** Vector only, to preserve resolution
@@ -380,14 +500,20 @@ Other considerations:
 A terminal emulator is Glyph Protocol v1 conformant if it:
 
 1. Recognizes the `25a1` identifier in APC sequences.
-2. Implements all three verbs (`q`, `r`, `c`) with the semantics
-   defined in this specification.
+2. Implements the `s`, `q`, `r`, and `c` verbs with the semantics
+   defined in this specification, and advertises every accepted
+   payload format via the `fmt=` bitfield in the `s` reply.
 3. Restricts register/clear `cp` to the three PUA ranges; rejects
    anything else with `reason=out_of_namespace`.
 4. Holds at most 256 simultaneous registrations per session and
    evicts in FIFO order when full.
-5. Accepts the `glyf` simple-glyph subset defined in §8.2.
-6. Renders registered glyphs in the current foreground color.
+5. Accepts the `glyf` simple-glyph subset defined in §8.2. The
+   `colrv0` and `colrv1` formats are OPTIONAL; terminals that
+   accept them MUST set the corresponding bit in the `s` reply.
+6. Renders registered `glyf` glyphs in the current foreground
+   color; renders `colrv0`/`colrv1` glyphs using the COLR paint
+   graph, resolving palette index `0xFFFF` to the current
+   foreground color.
 7. Scales glyphs according to `upm` and the current cell size.
 8. Enforces the cell-buffer authority invariant in §9: selection,
    copy, and search return the raw codepoint.
@@ -499,3 +625,5 @@ rather than serving a stale bitmap.
 | Date       | Version | Notes |
 |------------|---------|-------|
 | 2026-04-17 | v1      | Initial release. Register accepts a client-picked `cp` restricted to PUA; 256-slot glossary with FIFO eviction; numeric `status` field; ligatures out of scope. |
+| 2026-04-19 | v1.1    | Added `s` verb (support advertisement / protocol ping). |
+| 2026-04-19 | v1.2    | Added `fmt=colrv0` and `fmt=colrv1` payload formats wrapping OpenType `COLR` / `CPAL` tables with sidecar `glyf` outlines. Both advertised via bits 1 and 2 of the `s` reply's `fmt=` bitfield. |

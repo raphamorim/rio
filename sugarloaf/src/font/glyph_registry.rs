@@ -39,11 +39,43 @@ pub fn is_pua(cp: u32) -> bool {
         || (0x10_0000..=0x10_FFFD).contains(&cp)
 }
 
-/// A single registered glyph. The raw `glyf` bytes are retained so the
+/// Payload retained per registration. `Glyf` is a single monochrome
+/// outline; `ColrV0` and `ColrV1` carry the full colour container (a
+/// table of outlines + raw OpenType `COLR`/`CPAL` bytes) so the
+/// renderer can walk the paint graph at any cell size without
+/// re-transmitting. The two colour variants share structure; the
+/// variant tag tells the renderer which COLR table version to parse.
+#[derive(Debug, Clone)]
+pub enum StoredPayload {
+    Glyf {
+        glyf: Vec<u8>,
+    },
+    ColrV0 {
+        glyphs: Vec<Vec<u8>>,
+        colr: Vec<u8>,
+        cpal: Vec<u8>,
+    },
+    ColrV1 {
+        glyphs: Vec<Vec<u8>>,
+        colr: Vec<u8>,
+        cpal: Vec<u8>,
+    },
+}
+
+impl StoredPayload {
+    /// Constructor for the legacy monochrome-only path. Lets existing
+    /// tests and call-sites keep their prior ergonomics while the new
+    /// colour variants are plumbed through.
+    pub fn glyf(bytes: Vec<u8>) -> Self {
+        StoredPayload::Glyf { glyf: bytes }
+    }
+}
+
+/// A single registered glyph. The raw payload is retained so the
 /// renderer can re-rasterize at any cell size without re-transmitting.
 #[derive(Debug, Clone)]
 pub struct RegisteredGlyph {
-    pub glyf: Vec<u8>,
+    pub payload: StoredPayload,
     pub upm: u16,
     /// Stable render-side index in `0..=255`. Because codepoints are
     /// 21-bit and the renderer's glyph-id field is u16, we hand every
@@ -109,7 +141,7 @@ impl GlyphRegistry {
     pub fn register(
         &self,
         cp: u32,
-        glyf: Vec<u8>,
+        payload: StoredPayload,
         upm: u16,
     ) -> Result<Option<u32>, RegisterRejection> {
         if !is_pua(cp) {
@@ -120,7 +152,7 @@ impl GlyphRegistry {
         // Overwrite path: reuse the existing slot index. Insertion id
         // is preserved so overwrite does not refresh eviction order.
         if let Some(existing) = inner.by_cp.get_mut(&cp) {
-            existing.glyf = glyf;
+            existing.payload = payload;
             existing.upm = upm;
             return Ok(None);
         }
@@ -149,7 +181,7 @@ impl GlyphRegistry {
         inner.by_cp.insert(
             cp,
             RegisteredGlyph {
-                glyf,
+                payload,
                 upm,
                 index: slot_index,
                 insertion_id: id,
@@ -214,12 +246,23 @@ mod tests {
         assert!(!is_pua(0x1F600)); // emoji
     }
 
+    fn glyf(bytes: Vec<u8>) -> StoredPayload {
+        StoredPayload::glyf(bytes)
+    }
+
+    fn assert_glyf_bytes(p: &StoredPayload, expected: &[u8]) {
+        match p {
+            StoredPayload::Glyf { glyf } => assert_eq!(glyf, expected),
+            other => panic!("expected Glyf, got {:?}", other),
+        }
+    }
+
     #[test]
     fn register_and_lookup() {
         let r = GlyphRegistry::new();
-        assert_eq!(r.register(0xE0A0, vec![1, 2, 3], 1000).unwrap(), None);
+        assert_eq!(r.register(0xE0A0, glyf(vec![1, 2, 3]), 1000).unwrap(), None);
         let g = r.get(0xE0A0).unwrap();
-        assert_eq!(g.glyf, vec![1, 2, 3]);
+        assert_glyf_bytes(&g.payload, &[1, 2, 3]);
         assert_eq!(g.upm, 1000);
         assert!(r.contains(0xE0A0));
         assert_eq!(r.len(), 1);
@@ -229,7 +272,7 @@ mod tests {
     fn register_rejects_non_pua() {
         let r = GlyphRegistry::new();
         assert_eq!(
-            r.register(0x61, vec![1], 1000),
+            r.register(0x61, glyf(vec![1]), 1000),
             Err(RegisterRejection::OutOfNamespace)
         );
         assert!(r.is_empty());
@@ -238,14 +281,14 @@ mod tests {
     #[test]
     fn register_overwrites_preserving_insertion_order_and_index() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, vec![1], 1000).unwrap();
-        r.register(0xE0A1, vec![2], 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
+        r.register(0xE0A1, glyf(vec![2]), 1000).unwrap();
         let idx_before = r.get(0xE0A0).unwrap().index;
         // Overwrite the first entry — index and insertion order stable.
-        r.register(0xE0A0, vec![9], 2048).unwrap();
+        r.register(0xE0A0, glyf(vec![9]), 2048).unwrap();
         let a = r.get(0xE0A0).unwrap();
         let b = r.get(0xE0A1).unwrap();
-        assert_eq!(a.glyf, vec![9]);
+        assert_glyf_bytes(&a.payload, &[9]);
         assert_eq!(a.upm, 2048);
         assert_eq!(a.index, idx_before);
         assert!(a.insertion_id < b.insertion_id);
@@ -254,9 +297,9 @@ mod tests {
     #[test]
     fn distinct_registrations_get_distinct_indices() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, vec![1], 1000).unwrap();
-        r.register(0xE0A1, vec![2], 1000).unwrap();
-        r.register(0xE0A2, vec![3], 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
+        r.register(0xE0A1, glyf(vec![2]), 1000).unwrap();
+        r.register(0xE0A2, glyf(vec![3]), 1000).unwrap();
         let i0 = r.get(0xE0A0).unwrap().index;
         let i1 = r.get(0xE0A1).unwrap().index;
         let i2 = r.get(0xE0A2).unwrap().index;
@@ -270,19 +313,19 @@ mod tests {
     #[test]
     fn cleared_slot_is_reused_by_next_registration() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, vec![1], 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
         let old_index = r.get(0xE0A0).unwrap().index;
         r.clear_one(0xE0A0);
         assert_eq!(r.cp_for_index(old_index), None);
-        r.register(0xE0A1, vec![2], 1000).unwrap();
+        r.register(0xE0A1, glyf(vec![2]), 1000).unwrap();
         assert_eq!(r.get(0xE0A1).unwrap().index, old_index);
     }
 
     #[test]
     fn clear_one_removes_registration() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, vec![1], 1000).unwrap();
-        r.register(0xE0A1, vec![2], 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
+        r.register(0xE0A1, glyf(vec![2]), 1000).unwrap();
         r.clear_one(0xE0A0);
         assert!(!r.contains(0xE0A0));
         assert!(r.contains(0xE0A1));
@@ -298,8 +341,8 @@ mod tests {
     #[test]
     fn clear_all_drops_everything() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, vec![1], 1000).unwrap();
-        r.register(0xE0A1, vec![2], 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
+        r.register(0xE0A1, glyf(vec![2]), 1000).unwrap();
         r.clear_all();
         assert!(r.is_empty());
     }
@@ -309,12 +352,12 @@ mod tests {
         let r = GlyphRegistry::new();
         // Fill the glossary using contiguous PUA codepoints.
         for i in 0..GLOSSARY_CAPACITY as u32 {
-            r.register(0xE000 + i, vec![i as u8], 1000).unwrap();
+            r.register(0xE000 + i, glyf(vec![i as u8]), 1000).unwrap();
         }
         assert_eq!(r.len(), GLOSSARY_CAPACITY);
 
         // 257th register evicts the oldest (U+E000) to make room.
-        let evicted = r.register(0xE500, vec![0xFF], 1000).unwrap();
+        let evicted = r.register(0xE500, glyf(vec![0xFF]), 1000).unwrap();
         assert_eq!(evicted, Some(0xE000));
         assert!(!r.contains(0xE000));
         assert!(r.contains(0xE500));
@@ -325,20 +368,93 @@ mod tests {
     fn overwrite_at_capacity_does_not_evict() {
         let r = GlyphRegistry::new();
         for i in 0..GLOSSARY_CAPACITY as u32 {
-            r.register(0xE000 + i, vec![i as u8], 1000).unwrap();
+            r.register(0xE000 + i, glyf(vec![i as u8]), 1000).unwrap();
         }
         // Overwriting an existing codepoint MUST NOT evict.
-        let evicted = r.register(0xE000, vec![0xAB], 1000).unwrap();
+        let evicted = r.register(0xE000, glyf(vec![0xAB]), 1000).unwrap();
         assert_eq!(evicted, None);
         assert_eq!(r.len(), GLOSSARY_CAPACITY);
-        assert_eq!(r.get(0xE000).unwrap().glyf, vec![0xAB]);
+        assert_glyf_bytes(&r.get(0xE000).unwrap().payload, &[0xAB]);
     }
 
     #[test]
     fn registry_is_arc_shareable() {
         let r1 = GlyphRegistry::new();
         let r2 = r1.clone();
-        r1.register(0xE0A0, vec![1], 1000).unwrap();
+        r1.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
         assert!(r2.contains(0xE0A0));
+    }
+
+    // ----- colour payload storage round-trip --------------------------
+
+    #[test]
+    fn register_stores_colrv0_payload() {
+        let r = GlyphRegistry::new();
+        let colr = vec![0xC0, 0x00, 0x01];
+        let cpal = vec![0xCA, 0xFE];
+        r.register(
+            0xE0A0,
+            StoredPayload::ColrV0 {
+                glyphs: vec![vec![0xA], vec![0xB, 0xC]],
+                colr: colr.clone(),
+                cpal: cpal.clone(),
+            },
+            1024,
+        )
+        .unwrap();
+        match r.get(0xE0A0).unwrap().payload {
+            StoredPayload::ColrV0 {
+                glyphs,
+                colr: c,
+                cpal: p,
+            } => {
+                assert_eq!(glyphs.len(), 2);
+                assert_eq!(c, colr);
+                assert_eq!(p, cpal);
+            }
+            other => panic!("expected ColrV0, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn register_stores_colrv1_payload() {
+        let r = GlyphRegistry::new();
+        r.register(
+            0x100000,
+            StoredPayload::ColrV1 {
+                glyphs: vec![vec![0xDE, 0xAD]],
+                colr: vec![0x01; 12],
+                cpal: vec![],
+            },
+            2048,
+        )
+        .unwrap();
+        assert!(matches!(
+            r.get(0x100000).unwrap().payload,
+            StoredPayload::ColrV1 { .. }
+        ));
+    }
+
+    #[test]
+    fn overwrite_replaces_payload_across_formats() {
+        // Re-registering the same codepoint with a different format
+        // should swap the stored payload while preserving index and
+        // insertion order (FIFO eviction invariant).
+        let r = GlyphRegistry::new();
+        r.register(0xE0A0, glyf(vec![1, 2, 3]), 1000).unwrap();
+        let idx = r.get(0xE0A0).unwrap().index;
+        r.register(
+            0xE0A0,
+            StoredPayload::ColrV0 {
+                glyphs: vec![vec![0]],
+                colr: vec![0x00; 4],
+                cpal: vec![],
+            },
+            1000,
+        )
+        .unwrap();
+        let g = r.get(0xE0A0).unwrap();
+        assert_eq!(g.index, idx);
+        assert!(matches!(g.payload, StoredPayload::ColrV0 { .. }));
     }
 }

@@ -463,14 +463,15 @@ pub trait Handler {
     fn glyph_protocol_response(&mut self, _response: String) {}
 
     /// Register a custom glyph at a client-chosen PUA codepoint. The
-    /// parser has already verified `cp` is in PUA, `glyf` is non-empty,
-    /// and the payload size is within bounds. `Err(reason)` causes the
-    /// dispatcher to emit an error response.
+    /// parser has already verified `cp` is in PUA and the container
+    /// size is within bounds. The `payload` carries format-specific
+    /// data: monochrome `glyf`, or a `colrv0`/`colrv1` colour
+    /// container. `Err(reason)` causes the dispatcher to emit an error
+    /// response.
     fn glyph_register(
         &mut self,
         _cp: u32,
-        _glyf: Vec<u8>,
-        _upm: u16,
+        _payload: glyph_protocol::GlyphPayload,
     ) -> Result<(), glyph_protocol::RegisterError> {
         Ok(())
     }
@@ -933,18 +934,24 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                 let resp = glyph_protocol::format_query_response(cp, status);
                 self.handler.glyph_protocol_response(resp);
             }
-            Ok(glyph_protocol::GlyphCommand::Register { cp, upm, glyf }) => {
-                match self.handler.glyph_register(cp, glyf, upm) {
-                    Ok(()) => {
+            Ok(glyph_protocol::GlyphCommand::Register {
+                cp,
+                payload,
+                reply,
+            }) => match self.handler.glyph_register(cp, payload) {
+                Ok(()) => {
+                    if reply.emit_success() {
                         let resp = glyph_protocol::format_register_ok(cp);
                         self.handler.glyph_protocol_response(resp);
                     }
-                    Err(reason) => {
+                }
+                Err(reason) => {
+                    if reply.emit_error() {
                         let resp = glyph_protocol::format_register_error(cp, reason);
                         self.handler.glyph_protocol_response(resp);
                     }
                 }
-            }
+            },
             Ok(glyph_protocol::GlyphCommand::Clear { cp }) => {
                 self.handler.glyph_clear(cp);
                 let resp = glyph_protocol::format_clear_ok(cp);
@@ -956,9 +963,15 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                 // rather than warn, since a future dispatcher reorder
                 // could make this reachable.
             }
-            Err(glyph_protocol::ParseError::RegisterFailed { cp, reason }) => {
-                let resp = glyph_protocol::format_register_error(cp, reason);
-                self.handler.glyph_protocol_response(resp);
+            Err(glyph_protocol::ParseError::RegisterFailed {
+                cp,
+                reason,
+                reply,
+            }) => {
+                if reply.emit_error() {
+                    let resp = glyph_protocol::format_register_error(cp, reason);
+                    self.handler.glyph_protocol_response(resp);
+                }
             }
             Err(glyph_protocol::ParseError::ClearOutOfNamespace) => {
                 let resp = glyph_protocol::format_clear_error_out_of_namespace();

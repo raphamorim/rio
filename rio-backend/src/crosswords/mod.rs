@@ -3847,12 +3847,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn glyph_register(
         &mut self,
         cp: u32,
-        glyf: Vec<u8>,
-        upm: u16,
+        payload: crate::ansi::glyph_protocol::GlyphPayload,
     ) -> Result<(), crate::ansi::glyph_protocol::RegisterError> {
-        use crate::ansi::glyph_protocol::{is_pua, RegisterError};
+        use crate::ansi::glyph_protocol::{is_pua, GlyphPayload, RegisterError};
         use sugarloaf::font::glyf_decode;
-        use sugarloaf::font::glyph_registry::{GlyphRegistry, RegisterRejection};
+        use sugarloaf::font::glyph_registry::{
+            GlyphRegistry, RegisterRejection, StoredPayload,
+        };
 
         // PUA check first — callers that bypass the wire parser (direct
         // API, tests) still get the rejection without accidentally
@@ -3861,27 +3862,68 @@ impl<U: EventListener> Handler for Crosswords<U> {
             return Err(RegisterError::OutOfNamespace);
         }
 
-        // Decode next: enforces the simple-glyph + no-hinting
-        // constraints of spec §8.2 so a malformed payload is rejected
-        // synchronously with a defined `reason=`.
-        if let Err(e) = glyf_decode::decode(&glyf) {
-            return Err(match e {
+        // Translate a glyf_decode error into the protocol's defined
+        // `reason=` codes.
+        fn translate(err: glyf_decode::DecodeError) -> RegisterError {
+            match err {
                 glyf_decode::DecodeError::Composite => {
                     RegisterError::CompositeUnsupported
                 }
                 glyf_decode::DecodeError::Hinted => RegisterError::HintingUnsupported,
                 glyf_decode::DecodeError::Malformed => RegisterError::MalformedPayload,
-            });
+            }
         }
 
-        // Both checks passed. Lazily allocate the registry — idle
-        // terminals that never see Glyph Protocol traffic stay at
-        // `None` and pay nothing per frame.
+        // Validate the payload and convert to the registry's storage
+        // shape. For colour formats we enforce the simple-glyph / no-
+        // hinting constraint on every carried outline; OpenType COLR
+        // itself is validated when the renderer first rasterises the
+        // glyph (ttf-parser pass). Registration succeeds today even if
+        // the COLR bytes are structurally wrong, which manifests as a
+        // tofu fallback at render time rather than a register error —
+        // accepted trade-off: we don't want to pull an OpenType parser
+        // into the backend crate.
+        let (stored, upm) = match payload {
+            GlyphPayload::Glyf { glyf, upm } => {
+                glyf_decode::decode(&glyf).map_err(translate)?;
+                (StoredPayload::Glyf { glyf }, upm)
+            }
+            GlyphPayload::ColrV0 { container, upm } => {
+                for g in &container.glyphs {
+                    glyf_decode::decode(g).map_err(translate)?;
+                }
+                (
+                    StoredPayload::ColrV0 {
+                        glyphs: container.glyphs,
+                        colr: container.colr,
+                        cpal: container.cpal,
+                    },
+                    upm,
+                )
+            }
+            GlyphPayload::ColrV1 { container, upm } => {
+                for g in &container.glyphs {
+                    glyf_decode::decode(g).map_err(translate)?;
+                }
+                (
+                    StoredPayload::ColrV1 {
+                        glyphs: container.glyphs,
+                        colr: container.colr,
+                        cpal: container.cpal,
+                    },
+                    upm,
+                )
+            }
+        };
+
+        // Lazily allocate the registry — idle terminals that never see
+        // Glyph Protocol traffic stay at `None` and pay nothing per
+        // frame.
         let registry = self
             .glyph_registry
             .get_or_insert_with(GlyphRegistry::new);
 
-        match registry.register(cp, glyf, upm) {
+        match registry.register(cp, stored, upm) {
             Ok(_evicted) => Ok(()),
             Err(RegisterRejection::OutOfNamespace) => {
                 // Unreachable given the is_pua check above, but the
@@ -4259,6 +4301,13 @@ mod tests {
         v
     }
 
+    fn glyf_payload(
+        bytes: Vec<u8>,
+        upm: u16,
+    ) -> crate::ansi::glyph_protocol::GlyphPayload {
+        crate::ansi::glyph_protocol::GlyphPayload::Glyf { glyf: bytes, upm }
+    }
+
     fn registry_contains(cw: &Crosswords<VoidListener>, cp: u32) -> bool {
         cw.glyph_registry
             .as_ref()
@@ -4281,7 +4330,7 @@ mod tests {
 
         let glyf = minimal_glyf_bytes();
         // E0A0 is the Powerline branch codepoint — in basic PUA.
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf, 1000);
+        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(glyf, 1000));
         assert!(res.is_ok());
         assert!(cw.glyph_registry.is_some());
         assert!(registry_contains(&cw, 0xE0A0));
@@ -4300,7 +4349,11 @@ mod tests {
         let mut cw = make_crosswords();
 
         // 0x61 is 'a' — not in PUA. Registry must refuse.
-        let res = Handler::glyph_register(&mut cw, 0x61, minimal_glyf_bytes(), 1000);
+        let res = Handler::glyph_register(
+            &mut cw,
+            0x61,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+        );
         assert_eq!(res, Err(RegisterError::OutOfNamespace));
         assert!(cw.glyph_registry.is_none());
     }
@@ -4320,7 +4373,7 @@ mod tests {
         v.extend_from_slice(&0i16.to_be_bytes());
         v.extend_from_slice(&0i16.to_be_bytes());
 
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, v, 1000);
+        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(v, 1000));
         assert_eq!(res, Err(RegisterError::HintingUnsupported));
         // Decode failed before the registry was touched, so it stays
         // uninitialised.
@@ -4338,8 +4391,18 @@ mod tests {
     #[test]
     fn glyph_protocol_clear_all_wipes_registry() {
         let mut cw = make_crosswords();
-        Handler::glyph_register(&mut cw, 0xE0A0, minimal_glyf_bytes(), 1000).unwrap();
-        Handler::glyph_register(&mut cw, 0xE0A1, minimal_glyf_bytes(), 1000).unwrap();
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+        )
+        .unwrap();
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A1,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+        )
+        .unwrap();
         assert_eq!(registry_len(&cw), 2);
 
         Handler::glyph_clear(&mut cw, None);
@@ -4352,8 +4415,18 @@ mod tests {
     #[test]
     fn glyph_protocol_clear_one_leaves_others_intact() {
         let mut cw = make_crosswords();
-        Handler::glyph_register(&mut cw, 0xE0A0, minimal_glyf_bytes(), 1000).unwrap();
-        Handler::glyph_register(&mut cw, 0xE0A1, minimal_glyf_bytes(), 1000).unwrap();
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+        )
+        .unwrap();
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A1,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+        )
+        .unwrap();
 
         Handler::glyph_clear(&mut cw, Some(0xE0A0));
         assert!(!registry_contains(&cw, 0xE0A0));
