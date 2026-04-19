@@ -82,11 +82,22 @@ pub(super) fn rasterize(
     let colr = ttf_parser::colr::Table::parse(cpal, colr_bytes)?;
     let base_gid = first_base_glyph_id(colr_bytes, glyphs)?;
 
-    // Base glyph's header supplies the ink bbox; pad 1 px each side
-    // so anti-aliased layer edges that drift slightly past the
-    // header bbox (common in hand-authored fonts) aren't clipped.
-    let base_bytes = glyphs.get(base_gid as usize)?;
-    let (x_min, _y_min, x_max, y_max) = glyf_bbox(base_bytes)?;
+    // Prefer the COLR ClipBox — authoritative per the OpenType spec,
+    // and required for emoji fonts (Noto Color Emoji, etc.) whose base
+    // glyphs are empty wrappers that reference layer glyphs via the
+    // paint graph. Fall back to the base glyph's `glyf` bbox for fonts
+    // like Nabla that carry geometry on the base glyph. Pad 1 px each
+    // side so anti-aliased layer edges that drift slightly past the
+    // declared bbox (common in hand-authored fonts) aren't clipped.
+    let (x_min, _y_min, x_max, y_max) = match colr.clip_box(GlyphId(base_gid), &[]) {
+        Some(cb) => (
+            cb.x_min.floor() as i16,
+            cb.y_min.floor() as i16,
+            cb.x_max.ceil() as i16,
+            cb.y_max.ceil() as i16,
+        ),
+        None => glyf_bbox(glyphs.get(base_gid as usize)?)?,
+    };
     let scale = pixel_size as f32 / upm as f32;
 
     let pad = 1.0_f32;
