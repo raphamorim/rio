@@ -10,6 +10,7 @@ members = [
     "rio-window",
     "rio-notifier",
     "frontends/rioterm",
+    "rio-pty-host",
 ]
 resolver = "2"
 
@@ -85,6 +86,7 @@ criterion = { version = "0.6.0", features = ["html_reports"] }
 dashmap = "6.1.0"
 flate2 = "1.0"
 lazy_static = "1.5"
+thiserror = "2.0.1"
 
 [profile.release]
 strip = "symbols"           # See split-debuginfo - allows us to drop the size by ~65%

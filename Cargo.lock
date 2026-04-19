@@ -4173,6 +4173,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rio-pty-host"
+version = "0.3.11"
+dependencies = [
+ "libc",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "rio-window"
 version = "0.3.12"
 dependencies = [

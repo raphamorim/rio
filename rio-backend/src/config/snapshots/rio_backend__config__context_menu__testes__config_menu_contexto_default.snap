@@ -1,0 +1,33 @@
+---
+source: rio-backend/src/config/context_menu.rs
+assertion_line: 393
+expression: config
+---
+enabled = true
+background-color = [
+    0.11999999731779099,
+    0.11999999731779099,
+    0.11999999731779099,
+    1.0,
+]
+foreground-color = [
+    0.8999999761581421,
+    0.8999999761581421,
+    0.8999999761581421,
+    1.0,
+]
+selection-color = [
+    0.20000000298023224,
+    0.4699999988079071,
+    0.8199999928474426,
+    1.0,
+]
+divider-color = [
+    0.30000001192092896,
+    0.30000001192092896,
+    0.30000001192092896,
+    1.0,
+]
+font-size = 14.0
+border-radius = 6.0
+padding = 8.0
