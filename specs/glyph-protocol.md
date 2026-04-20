@@ -9,7 +9,7 @@
   <https://rapha.land/introducing-glyph-protocol-for-terminals/>
 - Reference implementation: [Rio terminal](https://raphamorim.io/rio)
 - Example apps (ratatui, bubbletea v2, ink) registering real Nerd Font
-  outlines at empty PUA-B slots:
+  outlines and colrv1/colrv0 emojis at empty PUA-B slots:
   [glyph-protocol-examples](https://github.com/raphamorim/glyph-protocol-examples)
 
 ---
@@ -17,11 +17,14 @@
 ## Abstract
 
 Glyph Protocol is a terminal protocol that lets applications ship
-custom vector glyphs to the terminal at runtime without requiring
-the user to install a patched font (Nerd Fonts, Powerline, etc.).
-Registrations are restricted to the Unicode Private Use Areas —
-ranges the user never types and existing text never contains — so
-the protocol cannot be used to modify the appearance of real text.
+custom vector glyphs to the terminal at runtime — monochrome via
+OpenType `glyf`, or full-colour via OpenType `COLR` v0 (flat layered
+colour) and `COLR` v1 (paint graph with gradients, transforms, and
+composites) — without requiring the user to install a patched font
+(Nerd Fonts, Powerline, etc.). Registrations are restricted to the
+Unicode Private Use Areas — ranges the user never types and existing
+text never contains — so the protocol cannot be used to modify the
+appearance of real text.
 
 The protocol is transported over APC (Application Program Command)
 sequences. The default payload is the OpenType `glyf` simple-glyph
