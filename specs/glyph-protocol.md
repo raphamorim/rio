@@ -62,11 +62,14 @@ it can render before it renders it.
 
 ## 2. Design goals
 
-- **Small surface.** Four verbs, three payload formats (one
+- **Small surface.** Few verbs, three payload formats (one
   required, two optional), no daemons, no caches, no cross-session
   state.
 - **Zero new terminal dependencies.** Every terminal that renders
-  text already links a `glyf` rasterizer.
+  OpenType text already links a `glyf` rasterizer; terminals that
+  render Apple / Google colour emoji also already parse `COLR` +
+  `CPAL`. No new format support is required — the protocol reuses
+  the tables the font stack already decodes.
 - **Resolution independent.** Glyphs are vector and scale to any
   cell size.
 - **Graceful degradation.** Terminals that do not implement the
@@ -77,8 +80,8 @@ it can render before it renders it.
   contains. The rendered appearance of `a`, `ssh`, or any URL
   cannot be changed by any program that writes to the terminal.
   See §9.
-- **Small on the wire.** Typical icons are 150–400 bytes of
-  `glyf`, 2–3× smaller than the equivalent SVG.
+- **Small on the wire.** Typical icons are 50–400 bytes of
+  `glyf`, 2–4× smaller than the equivalent SVG.
 
 ## 3. Transport
 
@@ -325,12 +328,15 @@ Terminals implementing Glyph Protocol MUST accept the following
 subset of `glyf` and MAY reject anything else with
 `reason=composite_unsupported` or `reason=hinting_unsupported`:
 
-- **Simple glyphs only.** No composite glyphs, no references to
-  other glyphs.
+- **Simple glyphs only** (in v1). No composite glyphs, no references
+  to other glyphs. Composite support may land in a future version
+  once the simple-glyph baseline is settled in the field.
 - **Standard flag encoding** as defined by the OpenType spec
   (on-curve, off-curve, x-short, y-short, repeat).
-- **No hinting instructions.** The `instructionLength` field MUST
-  be zero.
+- **No hinting instructions** (in v1). The `instructionLength`
+  field MUST be zero. Bytecode hinting may be allowed in a future
+  version once the unhinted baseline is settled; for now the
+  terminal's own anti-aliasing is what users see.
 - **Coordinate space** defined by `upm`. The terminal maps this
   space onto its cell at render time.
 
@@ -453,8 +459,6 @@ Typical flows:
 - **From SVG.** The Skia team publishes `nanoemoji` / `maximum-color`,
   which compiles a directory of SVGs into a `COLR` v1 font; feed
   its output into the packer.
-
-Rio ships an `svg2colr` helper alongside `svg2glyf` for this flow.
 
 ## 9. Security considerations
 
