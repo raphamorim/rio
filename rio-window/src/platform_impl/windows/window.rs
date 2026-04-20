@@ -148,9 +148,8 @@ struct ACCENT_POLICY {
     AnimationId: u32,
 }
 
-static SET_WINDOW_COMPOSITION_ATTRIBUTE: LazyLock<
-    Option<SetWindowCompositionAttribute>,
-> = LazyLock::new(|| unsafe { get_window_composition_attribute() });
+static SET_WINDOW_COMPOSITION_ATTRIBUTE: LazyLock<Option<SetWindowCompositionAttribute>> =
+    LazyLock::new(|| unsafe { get_window_composition_attribute() });
 
 unsafe fn get_window_composition_attribute() -> Option<SetWindowCompositionAttribute> {
     // user32 is a Known DLL so `LoadLibraryA` would also find it in

@@ -6,7 +6,7 @@ use corcovado::*;
 use std::time::Duration;
 
 /// Tests that Poll correctly closes file descriptors.
-/// 
+///
 /// This test creates and drops Poll instances repeatedly to ensure
 /// that file descriptors are properly released and no resource leaks occur.
 #[test]
@@ -26,4 +26,3 @@ fn test_poll_closes_fd() {
         drop(registration);
     }
 }
-
