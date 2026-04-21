@@ -780,7 +780,6 @@ impl FontLibraryData {
         // above, so skip embedding Twemoji there.
         #[cfg(not(target_os = "macos"))]
         self.insert(FontData::from_static_slice(FONT_TWEMOJI_EMOJI).unwrap());
-        self.insert(FontData::from_static_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
 
         // TODO: Currently, it will naively just extend fonts from symbol_map
         // without even look if the font has been loaded before.
@@ -846,7 +845,7 @@ impl FontLibraryData {
 
     #[cfg(target_arch = "wasm32")]
     pub fn load(&mut self, _font_spec: SugarloafFonts) -> Vec<SugarloafFont> {
-        self.insert(FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
+        self.insert(FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).unwrap());
 
         vec![]
     }
@@ -1517,13 +1516,13 @@ fn load_fallback_from_memory(font_spec: &SugarloafFont) -> FontData {
         (100, _) => constants::FONT_CASCADIAMONO_EXTRA_LIGHT,
         (200, _) => constants::FONT_CASCADIAMONO_LIGHT,
         (300, _) => constants::FONT_CASCADIAMONO_SEMI_LIGHT,
-        (400, _) => constants::FONT_CASCADIAMONO_REGULAR,
-        (500, _) => constants::FONT_CASCADIAMONO_REGULAR,
+        (400, _) => constants::FONT_CASCADIAMONO_NF_REGULAR,
+        (500, _) => constants::FONT_CASCADIAMONO_NF_REGULAR,
         (600, _) => constants::FONT_CASCADIAMONO_SEMI_BOLD,
         (700, _) => constants::FONT_CASCADIAMONO_SEMI_BOLD,
         (800, _) => constants::FONT_CASCADIAMONO_BOLD,
         (900, _) => constants::FONT_CASCADIAMONO_BOLD,
-        (_, _) => constants::FONT_CASCADIAMONO_REGULAR,
+        (_, _) => constants::FONT_CASCADIAMONO_NF_REGULAR,
     };
 
     FontData::from_static_slice(font_to_load).unwrap()
@@ -1594,12 +1593,12 @@ mod postscript_resolver_tests {
         // Read the PS name straight from the handle so the test doesn't
         // hardcode a value that changes if the bundled font is updated.
         let handle =
-            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIAMONO_REGULAR)
+            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIAMONO_NF_REGULAR)
                 .expect("parse CascadiaMono");
         let ps_name = handle.postscript_name();
 
         let mut lib = FontLibraryData::default();
-        let font_data = FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR)
+        let font_data = FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR)
             .expect("load CascadiaMono");
         lib.insert(font_data);
 
@@ -1623,16 +1622,16 @@ mod postscript_resolver_tests {
     #[test]
     fn duplicate_insert_keeps_first_id() {
         let handle =
-            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIAMONO_REGULAR)
+            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIAMONO_NF_REGULAR)
                 .expect("parse CascadiaMono");
         let ps_name = handle.postscript_name();
 
         let mut lib = FontLibraryData::default();
         lib.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR).expect("load a"),
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load a"),
         );
         lib.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR).expect("load b"),
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load b"),
         );
         assert_eq!(
             lib.font_id_for_postscript_name(&ps_name),
@@ -1653,7 +1652,7 @@ mod postscript_resolver_tests {
 
         let mut data = FontLibraryData::default();
         data.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR).expect("load"),
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load"),
         );
         let lib = FontLibrary {
             inner: Arc::new(parking_lot::RwLock::new(data)),
@@ -1692,7 +1691,7 @@ mod postscript_resolver_tests {
 
         let mut data = FontLibraryData::default();
         data.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR).expect("load"),
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load"),
         );
         let lib = FontLibrary {
             inner: Arc::new(parking_lot::RwLock::new(data)),

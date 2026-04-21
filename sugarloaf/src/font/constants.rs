@@ -42,8 +42,8 @@ pub const FONT_CASCADIAMONO_LIGHT: &[u8] =
 pub const FONT_CASCADIAMONO_LIGHT_ITALIC: &[u8] =
     font!("./resources/CascadiaCode/CascadiaCode-LightItalic.otf");
 
-pub const FONT_CASCADIAMONO_REGULAR: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-Regular.otf");
+pub const FONT_CASCADIAMONO_NF_REGULAR: &[u8] =
+    font!("./resources/CascadiaCode/CascadiaCodeNF-Regular.otf");
 
 pub const FONT_CASCADIAMONO_SEMI_BOLD: &[u8] =
     font!("./resources/CascadiaCode/CascadiaCode-SemiBold.otf");
@@ -57,8 +57,8 @@ pub const FONT_CASCADIAMONO_SEMI_LIGHT: &[u8] =
 pub const FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC: &[u8] =
     font!("./resources/CascadiaCode/CascadiaCode-SemiLightItalic.otf");
 
-pub const FONT_SYMBOLS_NERD_FONT_MONO: &[u8] =
-    font!("./resources/SymbolsNerdFontMono/SymbolsNerdFontMono-Regular.ttf");
+// pub const FONT_SYMBOLS_NERD_FONT_MONO: &[u8] =
+    // font!("./resources/SymbolsNerdFontMono/SymbolsNerdFontMono-Regular.ttf");
 
 // macOS gets system Apple Color Emoji through the font fallback chain (see
 // `fallbacks::external_fallbacks`) and doesn't need the bundled Twemoji —
