@@ -1532,28 +1532,11 @@ impl Renderer {
                         } => {
                             // Use cached glyph data but need to render
                             glyphs.clear();
-                            // Cell centering for East-Asian-Wide codepoints:
-                            // when a glyph's shaped slot is wider than one
-                            // primary cell (char_width > 1), shift it by
-                            // half the extra space so 겔 / 水 / 한 sit
-                            // visually centered across their two cells
-                            // instead of hugging the left cell. Formula:
-                            // `dx = (cell_width - face_width) / 2`. No-op
-                            // for char_width == 1 (Latin, box-drawing),
-                            // so glyphs that rely on tiling at their
-                            // natural pen advance stay aligned.
-                            let cell_shift = if use_grid_cell_size && char_width > 1.0 {
-                                cell_width * (char_width - 1.0) / 2.0
-                            } else {
-                                0.0
-                            };
                             for shaped_glyph in cached_glyphs.iter() {
-                                let x = px + cell_shift;
-                                let y = baseline;
                                 // Effective per-glyph pen advance — on the
                                 // grid-cell-size path this is `cell_width *
                                 // char_width` (e.g. 2 cells for East Asian
-                                // Wide emoji), not the shaper's advance.
+                                // Wide codepoints), not the shaper's advance.
                                 // Pass this through to the compositor so
                                 // emoji bitmaps center inside the actual
                                 // cell slot, not a 1-cell shaper advance.
@@ -1562,6 +1545,27 @@ impl Renderer {
                                 } else {
                                     shaped_glyph.x_advance
                                 };
+                                // Centre the shaper-native glyph within its
+                                // allocated slot. The shaper's `x_advance`
+                                // is the face-native width (≈1 cell for
+                                // Latin fallbacks, ≈2 cells for CJK glyphs)
+                                // and `advance` is the grid-allocated slot.
+                                // For a narrow glyph (e.g. Ambiguous-promoted
+                                // `→` picking the Latin variant) in a 2-cell
+                                // slot, this shifts by +0.5·cell_width so
+                                // the glyph sits centred instead of hugging
+                                // the left cell. For a natively wide CJK
+                                // glyph already filling the slot it stays
+                                // at 0 — previously we always added half
+                                // a cell, which pushed `案` / `水` into the
+                                // right neighbour.
+                                let cell_shift = if use_grid_cell_size {
+                                    (advance - shaped_glyph.x_advance) * 0.5
+                                } else {
+                                    0.0
+                                };
+                                let x = px + cell_shift;
+                                let y = baseline;
                                 px += advance;
 
                                 glyphs.push(Glyph {
@@ -1630,16 +1634,7 @@ impl Renderer {
                             glyphs.clear();
                             let mut shaped_glyphs = Vec::new();
 
-                            // Same cell centering as above.
-                            let cell_shift = if use_grid_cell_size && char_width > 1.0 {
-                                cell_width * (char_width - 1.0) / 2.0
-                            } else {
-                                0.0
-                            };
-
                             for glyph in &run.glyphs {
-                                let x = px + cell_shift;
-                                let y = baseline;
                                 let shaper_advance = glyph.simple_data().1;
                                 // See the cached-path comment above — on the
                                 // grid-cell-size path the effective advance
@@ -1649,6 +1644,19 @@ impl Renderer {
                                 } else {
                                     shaper_advance
                                 };
+                                // Same centring logic as the cached path:
+                                // shift by half the leftover slot so a
+                                // narrow glyph (Latin fallback, arrow,
+                                // etc.) sits centred in a wide slot while
+                                // a natively-wide CJK glyph stays pinned
+                                // to the left edge.
+                                let cell_shift = if use_grid_cell_size {
+                                    (advance - shaper_advance) * 0.5
+                                } else {
+                                    0.0
+                                };
+                                let x = px + cell_shift;
+                                let y = baseline;
                                 px += advance;
 
                                 let glyph_id = glyph.simple_data().0;
