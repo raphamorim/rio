@@ -3383,8 +3383,24 @@ impl Screen<'_> {
 
         self.sugarloaf.render();
 
-        // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
-        if self.renderer.needs_redraw() {
+        // Mark as dirty if we need continuous rendering (e.g., trail
+        // cursor / scrollbar animations, or any visible split with an
+        // indeterminate OSC 9;4 progress bar — which now lives per-pane
+        // on `RenderableContent.progress` instead of the window-wide
+        // Island slot).
+        let renderer_needs_redraw = self.renderer.needs_redraw();
+        let any_pane_needs_progress_redraw = self
+            .context_manager
+            .current_grid_mut()
+            .contexts_mut()
+            .values()
+            .any(|item| {
+                item.context()
+                    .renderable_content
+                    .progress
+                    .needs_continuous_redraw()
+            });
+        if renderer_needs_redraw || any_pane_needs_progress_redraw {
             self.context_manager
                 .current_mut()
                 .renderable_content

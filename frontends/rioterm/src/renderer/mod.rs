@@ -2,6 +2,7 @@ pub mod assistant;
 pub mod command_palette;
 pub mod custom_cursor;
 pub mod island;
+pub mod progress_bar;
 pub mod scrollbar;
 pub mod search;
 pub mod trail_cursor;
@@ -1331,6 +1332,34 @@ impl Renderer {
             }
         }
 
+        // Per-pane OSC 9;4 progress bars. Each split owns its own
+        // `ProgressTracker` on `RenderableContent.progress`, so two
+        // splits running long jobs side-by-side both render their own
+        // bar at the top edge of their own pane rect — no more
+        // window-wide clobbering. Rect math mirrors the dim overlay
+        // above (same scaled-margin / scale-factor application).
+        let (progress_color, progress_error_color) = self
+            .island
+            .as_ref()
+            .map(|i| (i.progress_bar_color, i.progress_bar_error_color))
+            .unwrap_or(([0.3, 0.6, 1.0, 1.0], [1.0, 0.3, 0.3, 1.0]));
+        for grid_context in grid.contexts_mut().values_mut() {
+            let panel_rect = grid_context.layout_rect;
+            let x = (panel_rect[0] + grid_scaled_margin.left) / scale_factor;
+            let y = (panel_rect[1] + grid_scaled_margin.top) / scale_factor;
+            let w = panel_rect[2] / scale_factor;
+            let tracker = &grid_context.context().renderable_content.progress;
+            progress_bar::draw(
+                sugarloaf,
+                x,
+                y,
+                w,
+                tracker,
+                progress_color,
+                progress_error_color,
+            );
+        }
+
         if let Some(island) = &mut self.island {
             island.render(
                 sugarloaf,
@@ -1440,7 +1469,11 @@ impl Renderer {
         window_update
     }
 
-    /// Check if the renderer needs continuous redraw (for animations)
+    /// Check if the renderer needs continuous redraw (for animations).
+    ///
+    /// Per-pane progress animations are checked separately at the screen
+    /// level (see [`Screen::any_pane_needs_progress_redraw`]) since they
+    /// require access to the [`ContextManager`].
     #[inline]
     pub fn needs_redraw(&mut self) -> bool {
         if self.trail_cursor.is_animating() {
@@ -1449,11 +1482,7 @@ impl Renderer {
         if self.scrollbar.needs_redraw() {
             return true;
         }
-        if let Some(island) = &self.island {
-            island.needs_redraw()
-        } else {
-            false
-        }
+        false
     }
 
     /// Find hint label at the specified position

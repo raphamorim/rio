@@ -71,6 +71,9 @@ pub struct RenderableContent {
     pub last_blink_toggle: Option<Instant>,
     pub pending_update: PendingUpdate,
     pub background: Option<BackgroundState>,
+    /// Per-pane OSC 9;4 progress tracking. Lives on the context so each
+    /// split owns its own progress state independently of all other panes.
+    pub progress: rio_backend::event::ProgressTracker,
 }
 
 impl RenderableContent {
@@ -88,6 +91,7 @@ impl RenderableContent {
             pending_update: PendingUpdate::default(),
             is_blinking_cursor_visible: false,
             background: None,
+            progress: rio_backend::event::ProgressTracker::default(),
         }
     }
 

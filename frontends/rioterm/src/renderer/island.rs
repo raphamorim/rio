@@ -8,7 +8,7 @@
 
 use crate::context::{next_rich_text_id, ContextManager};
 use crate::renderer::utils::add_span_with_fallback;
-use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
+use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{Attributes, SpanStyle, Sugarloaf};
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
@@ -16,12 +16,6 @@ use std::time::Instant;
 
 /// Height of the tab bar in pixels
 pub const ISLAND_HEIGHT: f32 = 34.0;
-
-/// Height of the progress bar in pixels
-const PROGRESS_BAR_HEIGHT: f32 = 3.0;
-
-/// Timeout in seconds for auto-dismissing stale progress bars
-const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
 
 const TITLE_FONT_SIZE: f32 = 12.0;
 
@@ -134,21 +128,11 @@ pub struct Island {
     pub active_text_color: [f32; 4],
     pub border_color: [f32; 4],
     tab_data: FxHashMap<usize, TabIslandData>,
-    /// Current progress bar state
-    progress_state: Option<ProgressState>,
-    /// Current progress value (0-100)
-    progress_value: Option<u8>,
-    /// When the *current* state began. Reset only when transitioning into a
-    /// new state, so the indeterminate animation phase is not yanked back to
-    /// zero by repeated identical OSC 9;4 reports (issue #1509).
-    progress_started_at: Option<Instant>,
-    /// Last time we saw an OSC 9;4 report — bumped on every report, used by
-    /// the stale-bar dismissal timer. Decoupled from `progress_started_at`
-    /// for the same reason.
-    progress_last_seen: Option<Instant>,
-    /// Progress bar color
+    /// Progress bar color (for `Set` / `Indeterminate` / `Pause` states).
+    /// Owned here so the per-pane progress renderer in
+    /// `renderer/progress_bar.rs` has a single source of truth for theme.
     pub progress_bar_color: [f32; 4],
-    /// Progress bar error color
+    /// Progress bar error color (for `Error` state).
     pub progress_bar_error_color: [f32; 4],
     /// Which tab has the color picker open (None = closed)
     color_picker_tab: Option<usize>,
@@ -177,10 +161,6 @@ impl Island {
             active_text_color,
             border_color,
             tab_data: FxHashMap::default(),
-            progress_state: None,
-            progress_value: None,
-            progress_started_at: None,
-            progress_last_seen: None,
             // Default progress bar color (blue-ish)
             progress_bar_color: [0.3, 0.6, 1.0, 1.0],
             // Default error color (red-ish)
@@ -206,135 +186,6 @@ impl Island {
         // Clear cached titles to force re-render with new colors
         for tab_data in self.tab_data.values_mut() {
             tab_data.last_title.clear();
-        }
-    }
-
-    /// Update the progress bar state from an OSC 9;4 report.
-    ///
-    /// `progress_last_seen` is bumped on every (non-Remove) report so the
-    /// stale-bar dismissal timer keeps the bar alive while the TUI is
-    /// actively reporting. `progress_started_at` is reset only when the
-    /// state actually transitions, so a TUI sending the same `OSC 9;4;3`
-    /// every 100 ms (issue #1509) doesn't yank the indeterminate animation
-    /// phase back to zero on every report. Mirrors ghostty's split between
-    /// `glib.timeoutAdd` (heartbeat) and `GtkProgressBar`'s internal pulse
-    /// state (animation).
-    pub fn set_progress_report(&mut self, report: ProgressReport) {
-        match report.state {
-            ProgressState::Remove => {
-                self.progress_state = None;
-                self.progress_value = None;
-                self.progress_started_at = None;
-                self.progress_last_seen = None;
-            }
-            new_state => {
-                let now = Instant::now();
-                self.progress_last_seen = Some(now);
-
-                let transitioning = self.progress_state != Some(new_state);
-                self.progress_state = Some(new_state);
-                self.progress_value = report.progress;
-                if transitioning {
-                    self.progress_started_at = Some(now);
-                }
-            }
-        }
-    }
-
-    /// Check if the progress bar needs continuous rendering (for animations)
-    pub fn needs_redraw(&self) -> bool {
-        matches!(self.progress_state, Some(ProgressState::Indeterminate))
-    }
-
-    /// Check if the progress bar should be auto-dismissed due to timeout.
-    /// Uses `progress_last_seen` (heartbeat), not `progress_started_at`, so
-    /// a long-running TUI that keeps reporting stays visible.
-    fn check_progress_timeout(&mut self) {
-        if let Some(last_seen) = self.progress_last_seen {
-            if last_seen.elapsed().as_secs() >= PROGRESS_BAR_TIMEOUT_SECS {
-                self.progress_state = None;
-                self.progress_value = None;
-                self.progress_started_at = None;
-                self.progress_last_seen = None;
-            }
-        }
-    }
-
-    /// Render the progress bar below the island
-    fn render_progress_bar(
-        &mut self,
-        sugarloaf: &mut Sugarloaf,
-        window_width: f32,
-        scale_factor: f32,
-    ) {
-        // Check for timeout first
-        self.check_progress_timeout();
-
-        let state = match self.progress_state {
-            Some(s) => s,
-            None => return, // No progress bar to render
-        };
-
-        let width = window_width / scale_factor;
-        let y_position = ISLAND_HEIGHT;
-
-        // Determine color based on state
-        let color = match state {
-            ProgressState::Error => self.progress_bar_error_color,
-            _ => self.progress_bar_color,
-        };
-
-        match state {
-            ProgressState::Remove => {
-                // Should not reach here, but just in case
-            }
-            ProgressState::Set | ProgressState::Error | ProgressState::Pause => {
-                // Render progress bar with specific percentage
-                let progress = self.progress_value.unwrap_or(0) as f32 / 100.0;
-                let bar_width = width * progress;
-
-                if bar_width > 0.0 {
-                    sugarloaf.rect(
-                        None,
-                        0.0,
-                        y_position,
-                        bar_width,
-                        PROGRESS_BAR_HEIGHT,
-                        color,
-                        0.0, // Same depth as other rects
-                        0,
-                    );
-                }
-            }
-            ProgressState::Indeterminate => {
-                // For indeterminate, show a pulsing/moving indicator.
-                // Phase is anchored to `progress_started_at` (set only on
-                // state transition) — using `progress_last_seen` here would
-                // freeze the bar at position 0 for any TUI that heartbeats
-                // its OSC 9;4;3 faster than `cycle_ms`. (Issue #1509.)
-                let elapsed = self
-                    .progress_started_at
-                    .map(|t| t.elapsed().as_millis() as f32)
-                    .unwrap_or(0.0);
-
-                // Move the bar from left to right over 2 seconds, then repeat
-                let cycle_ms = 2000.0;
-                let position = (elapsed % cycle_ms) / cycle_ms;
-                let bar_fraction = 0.2; // 20% of width
-                let bar_width = width * bar_fraction;
-                let x_pos = position * (width - bar_width);
-
-                sugarloaf.rect(
-                    None,
-                    x_pos,
-                    y_position,
-                    bar_width,
-                    PROGRESS_BAR_HEIGHT,
-                    color,
-                    0.0,
-                    0,
-                );
-            }
         }
     }
 
@@ -367,8 +218,6 @@ impl Island {
             for tab_data in self.tab_data.values() {
                 sugarloaf.set_visibility(tab_data.text_id, false);
             }
-            // Still render the progress bar even when tabs are hidden
-            self.render_progress_bar(sugarloaf, window_width, scale_factor);
             return;
         }
 
@@ -517,9 +366,6 @@ impl Island {
                 self.render_color_picker(sugarloaf, picker_tab_x, tab_width);
             }
         }
-
-        // Render the progress bar below the island
-        self.render_progress_bar(sugarloaf, window_width, scale_factor);
     }
 
     /// Toggle the color picker for a given tab index
@@ -960,95 +806,13 @@ mod tests {
     }
 
     #[test]
-    fn progress_first_report_seeds_started_and_seen() {
-        let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Indeterminate,
-            progress: None,
-        });
-        assert!(island.progress_started_at.is_some());
-        assert!(island.progress_last_seen.is_some());
-        assert_eq!(island.progress_state, Some(ProgressState::Indeterminate));
-    }
-
-    #[test]
-    fn progress_repeated_same_state_keeps_started_at_stable() {
-        // Issue #1509: a TUI that heartbeats `OSC 9;4;3` (or any same-state
-        // report) must NOT restart the indeterminate animation phase, or the
-        // pulsing block snaps back to the left edge on every report.
-        let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Indeterminate,
-            progress: None,
-        });
-        let first_started = island.progress_started_at.unwrap();
-        let first_seen = island.progress_last_seen.unwrap();
-
-        // Sleep so a subsequent Instant::now() is observably later — the
-        // started_at field must stay equal while last_seen advances.
-        std::thread::sleep(std::time::Duration::from_millis(15));
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Indeterminate,
-            progress: None,
-        });
-
-        assert_eq!(
-            island.progress_started_at,
-            Some(first_started),
-            "started_at must not move on a same-state heartbeat"
-        );
-        assert!(
-            island.progress_last_seen.unwrap() > first_seen,
-            "last_seen must advance on every report"
-        );
-    }
-
-    #[test]
-    fn progress_state_transition_resets_started_at() {
-        // Set → Indeterminate is a real state change, so the animation
-        // anchor should be reseated. (Set has no animation, but the
-        // started_at field still becomes meaningful as soon as we hit
-        // Indeterminate.)
-        let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(50),
-        });
-        let first = island.progress_started_at.unwrap();
-
-        std::thread::sleep(std::time::Duration::from_millis(15));
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Indeterminate,
-            progress: None,
-        });
-
-        assert!(
-            island.progress_started_at.unwrap() > first,
-            "transitioning into a new state must move started_at forward"
-        );
-        assert_eq!(island.progress_state, Some(ProgressState::Indeterminate));
-    }
-
-    #[test]
-    fn progress_set_value_change_does_not_reseat_started_at() {
-        // Same `Set` state with a different percentage is still the same
-        // state — only the value updates. started_at stays put; the bar
-        // just redraws at the new fraction.
-        let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(20),
-        });
-        let first = island.progress_started_at.unwrap();
-
-        std::thread::sleep(std::time::Duration::from_millis(15));
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(60),
-        });
-
-        assert_eq!(island.progress_started_at, Some(first));
-        assert_eq!(island.progress_value, Some(60));
+    fn island_carries_progress_bar_colors() {
+        // Progress *state* moved to per-pane `ProgressTracker` (see
+        // `rio_backend::event::ProgressTracker` tests), but the Island
+        // still owns the theme colors that the per-pane renderer reads.
+        let island = test_island();
+        assert_eq!(island.progress_bar_color.len(), 4);
+        assert_eq!(island.progress_bar_error_color.len(), 4);
     }
 
     /// Each char = 1.0 wide, including the ellipsis. Easy arithmetic.
@@ -1145,22 +909,5 @@ mod tests {
     fn title_exact_fit_not_truncated() {
         // Title "abcd" = 4.0, budget 4.0 → fits exactly, no truncation.
         assert_eq!(fit_title_with_widths("abcd", 4.0, fixed_unit_width), "abcd");
-    }
-
-    #[test]
-    fn progress_remove_clears_all_progress_state() {
-        let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(50),
-        });
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Remove,
-            progress: None,
-        });
-        assert!(island.progress_state.is_none());
-        assert!(island.progress_value.is_none());
-        assert!(island.progress_started_at.is_none());
-        assert!(island.progress_last_seen.is_none());
     }
 }
