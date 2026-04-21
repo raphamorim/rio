@@ -25,7 +25,7 @@ use crate::crosswords::{
     Mode,
 };
 use crate::hints::HintState;
-use crate::layout::ContextDimension;
+use crate::layout::{ContextDimension, SplitDirection};
 use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::renderer::{utils::padding_top_from_config, Renderer};
 use crate::screen::hint::HintMatches;
@@ -1194,6 +1194,30 @@ impl Screen<'_> {
                     Act::SelectPrevSplit => {
                         self.cancel_search(clipboard);
                         self.context_manager.select_prev_split();
+                        self.render();
+                    }
+                    Act::SelectSplitLeft => {
+                        self.cancel_search(clipboard);
+                        self.context_manager
+                            .select_split_direction(SplitDirection::Left);
+                        self.render();
+                    }
+                    Act::SelectSplitRight => {
+                        self.cancel_search(clipboard);
+                        self.context_manager
+                            .select_split_direction(SplitDirection::Right);
+                        self.render();
+                    }
+                    Act::SelectSplitUp => {
+                        self.cancel_search(clipboard);
+                        self.context_manager
+                            .select_split_direction(SplitDirection::Up);
+                        self.render();
+                    }
+                    Act::SelectSplitDown => {
+                        self.cancel_search(clipboard);
+                        self.context_manager
+                            .select_split_direction(SplitDirection::Down);
                         self.render();
                     }
                     Act::SelectNextSplitOrTab => {
@@ -3225,6 +3249,22 @@ impl Screen<'_> {
             }
             PaletteAction::SelectPrevSplit => {
                 self.context_manager.select_prev_split();
+            }
+            PaletteAction::SelectSplitLeft => {
+                self.context_manager
+                    .select_split_direction(SplitDirection::Left);
+            }
+            PaletteAction::SelectSplitRight => {
+                self.context_manager
+                    .select_split_direction(SplitDirection::Right);
+            }
+            PaletteAction::SelectSplitUp => {
+                self.context_manager
+                    .select_split_direction(SplitDirection::Up);
+            }
+            PaletteAction::SelectSplitDown => {
+                self.context_manager
+                    .select_split_direction(SplitDirection::Down);
             }
             PaletteAction::CloseCurrentSplitOrTab => self.close_split_or_tab(clipboard),
             PaletteAction::ConfigEditor => {

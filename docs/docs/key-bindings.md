@@ -84,6 +84,10 @@ Execute a predefined action in Rio terminal.
 | SplitDown            | Create a split by under current pane |
 | SelectNextSplit      | Select next split |
 | SelectPrevSplit      | Select previous split |
+| SelectSplitLeft      | Select the split directionally to the left of the current one |
+| SelectSplitRight     | Select the split directionally to the right of the current one |
+| SelectSplitUp        | Select the split directionally above the current one |
+| SelectSplitDown      | Select the split directionally below the current one |
 | CloseSplitOrTab      | Close split, if split is the last then will close the tab |
 | SelectNextSplitOrTab | Select next split if available if not next tab |
 | SelectPrevSplitOrTab | Select previous split if available if not previous tab |

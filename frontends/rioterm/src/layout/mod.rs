@@ -26,6 +26,93 @@ pub enum BorderDirection {
     Horizontal,
 }
 
+/// Compass direction for spatial split navigation. Used by
+/// [`ContextGrid::select_split_direction`] to pick the neighbour
+/// pane lying in the requested direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitDirection {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// Pure scoring core of [`ContextGrid::select_split_direction`].
+///
+/// Given the current pane's `[x, y, w, h]` rect and an iterator of other
+/// candidate `(id, rect)` pairs, returns the id that best matches the
+/// requested direction, or `None` if nothing lies on that side. Generic
+/// over the id type so it can be unit-tested without standing up a full
+/// `ContextGrid` (which needs a Sugarloaf, Taffy tree, EventListener…).
+///
+/// Algorithm: keep panes that lie on the requested side of the current
+/// pane (a half-pixel epsilon tolerates float jitter at the shared
+/// edge) AND that overlap us on the perpendicular axis, then pick the
+/// one with the most perpendicular overlap, tiebroken by smallest gap.
+/// "On the side" is a half-plane test, not strict adjacency, so panes
+/// separated by an inter-pane border (or even further away) still
+/// qualify; the closest one wins via the distance tiebreaker.
+pub fn pick_split_in_direction<Id: Copy>(
+    current: [f32; 4],
+    candidates: impl IntoIterator<Item = (Id, [f32; 4])>,
+    direction: SplitDirection,
+) -> Option<Id> {
+    // Half-pixel tolerance for the half-plane test, so that two panes
+    // sharing an edge (cx1 == x0 in exact math) still qualify when float
+    // rounding nudges the values apart by a fraction of a pixel.
+    const EPS: f32 = 0.5;
+
+    let (cx0, cy0, cx1, cy1) = (
+        current[0],
+        current[1],
+        current[0] + current[2],
+        current[1] + current[3],
+    );
+
+    let mut best: Option<(Id, f32, f32)> = None;
+    for (id, r) in candidates {
+        let (x0, y0, x1, y1) = (r[0], r[1], r[0] + r[2], r[1] + r[3]);
+
+        let (on_side, perp_overlap, distance) = match direction {
+            SplitDirection::Left => {
+                let overlap = cy1.min(y1) - cy0.max(y0);
+                (x1 <= cx0 + EPS, overlap, cx0 - x1)
+            }
+            SplitDirection::Right => {
+                let overlap = cy1.min(y1) - cy0.max(y0);
+                (x0 + EPS >= cx1, overlap, x0 - cx1)
+            }
+            SplitDirection::Up => {
+                let overlap = cx1.min(x1) - cx0.max(x0);
+                (y1 <= cy0 + EPS, overlap, cy0 - y1)
+            }
+            SplitDirection::Down => {
+                let overlap = cx1.min(x1) - cx0.max(x0);
+                (y0 + EPS >= cy1, overlap, y0 - cy1)
+            }
+        };
+
+        if !on_side || perp_overlap <= 0.0 {
+            continue;
+        }
+
+        // Smaller gap is better, so we negate it for the max-tuple
+        // comparison: higher `(overlap, -distance)` wins.
+        let neg_distance = -distance;
+        let better = match best {
+            None => true,
+            Some((_, best_overlap, best_neg_distance)) => {
+                (perp_overlap, neg_distance) > (best_overlap, best_neg_distance)
+            }
+        };
+        if better {
+            best = Some((id, perp_overlap, neg_distance));
+        }
+    }
+
+    best.map(|(id, _, _)| id)
+}
+
 /// Describes a draggable border between two panels
 #[derive(Debug, Clone, Copy)]
 pub struct PanelBorder {
@@ -1036,6 +1123,47 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         false
     }
 
+    /// Move focus to the neighbouring split lying in `direction` from the
+    /// currently focused pane, returning true if focus moved.
+    ///
+    /// Algorithm (loosely modelled on tmux's `window_pane_find_*`, but
+    /// relaxed to handle non-grid-aligned splits):
+    ///
+    /// 1. Filter to panes lying entirely on the requested side of the
+    ///    current pane (a small epsilon tolerates float rounding).
+    /// 2. Among those, keep only ones that overlap the current pane on
+    ///    the perpendicular axis — anything that doesn't is "diagonal"
+    ///    from the user's POV and should not steal focus.
+    /// 3. Score by `(perpendicular_overlap, -gap_distance)` and pick the
+    ///    max. Bigger overlap wins; ties go to the closest pane. This
+    ///    deterministically picks the pane the user "sees" in that
+    ///    direction without needing an LRU side table like tmux uses.
+    pub fn select_split_direction(&mut self, direction: SplitDirection) -> bool {
+        if self.inner.len() <= 1 {
+            return false;
+        }
+
+        let cur = match self.inner.get(&self.current) {
+            Some(item) => item.layout_rect,
+            None => return false,
+        };
+
+        let candidates = self.inner.iter().filter_map(|(&id, item)| {
+            if id == self.current {
+                None
+            } else {
+                Some((id, item.layout_rect))
+            }
+        });
+
+        if let Some(id) = pick_split_in_direction(cur, candidates, direction) {
+            self.current = id;
+            true
+        } else {
+            false
+        }
+    }
+
     #[inline]
     pub fn current_item(&self) -> Option<&ContextGridItem<T>> {
         self.inner.get(&self.current)
@@ -1662,5 +1790,95 @@ impl Dimensions for ContextDimension {
 
     fn square_height(&self) -> f32 {
         self.dimension.height
+    }
+}
+
+#[cfg(test)]
+mod split_direction_tests {
+    use super::{pick_split_in_direction, SplitDirection};
+
+    // Two side-by-side panes (no border).
+    //   +---+---+
+    //   | L | R |
+    //   +---+---+
+    #[test]
+    fn picks_right_neighbour() {
+        let cur = [0.0, 0.0, 100.0, 200.0];
+        let candidates = vec![("R", [100.0, 0.0, 100.0, 200.0])];
+        assert_eq!(
+            pick_split_in_direction(cur, candidates.clone(), SplitDirection::Right),
+            Some("R")
+        );
+        // ...and nothing on the left.
+        assert_eq!(
+            pick_split_in_direction(cur, candidates, SplitDirection::Left),
+            None
+        );
+    }
+
+    // Tolerates panes separated by a border / arbitrary gap.
+    #[test]
+    fn tolerates_border_gap() {
+        let cur = [0.0, 0.0, 100.0, 200.0];
+        // Right pane sits 2px to the right (typical inter-pane border).
+        // The "on side" test is a half-plane check, not strict adjacency,
+        // so any pane to the right of cx1 qualifies.
+        let candidates = vec![("R", [102.0, 0.0, 100.0, 200.0])];
+        assert_eq!(
+            pick_split_in_direction(cur, candidates, SplitDirection::Right),
+            Some("R")
+        );
+    }
+
+    // Three-pane layout: tall pane on the left, two stacked panes on
+    // the right. From the bottom-right pane, "Left" must pick the tall
+    // left pane (the only one whose Y range fully overlaps), not the
+    // top-right pane (which is above us, not to our left).
+    //   +---+---+
+    //   |   | T |
+    //   | L +---+
+    //   |   | B |   <- current
+    //   +---+---+
+    #[test]
+    fn prefers_perpendicular_overlap_over_diagonal() {
+        let cur = [100.0, 100.0, 100.0, 100.0]; // bottom-right
+        let candidates = vec![
+            ("L", [0.0, 0.0, 100.0, 200.0]),   // tall left
+            ("T", [100.0, 0.0, 100.0, 100.0]), // top-right (no overlap with us on Y)
+        ];
+        assert_eq!(
+            pick_split_in_direction(cur, candidates, SplitDirection::Left),
+            Some("L")
+        );
+    }
+
+    // When two candidates both lie to the right and overlap on Y, pick
+    // the one with the bigger perpendicular overlap.
+    //   +-----+-----+
+    //   |     |  A  |     <- A is small, only top half overlaps
+    //   |  C  +-----+
+    //   |     |  B  |     <- B fully overlaps with current bottom half
+    //   +-----+-----+
+    #[test]
+    fn breaks_ties_by_overlap_then_distance() {
+        let cur = [0.0, 0.0, 100.0, 200.0];
+        let candidates = vec![
+            ("A", [100.0, 0.0, 100.0, 50.0]),    // 50px overlap
+            ("B", [100.0, 50.0, 100.0, 150.0]),  // 150px overlap (wins)
+        ];
+        assert_eq!(
+            pick_split_in_direction(cur, candidates, SplitDirection::Right),
+            Some("B")
+        );
+    }
+
+    #[test]
+    fn returns_none_when_alone() {
+        let cur = [0.0, 0.0, 100.0, 100.0];
+        let candidates: Vec<(&str, [f32; 4])> = vec![];
+        assert_eq!(
+            pick_split_in_direction(cur, candidates, SplitDirection::Up),
+            None
+        );
     }
 }
