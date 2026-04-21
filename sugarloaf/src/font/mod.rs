@@ -467,7 +467,6 @@ impl FontLibraryData {
         }
 
         self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap());
-        self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
 
         // TODO: Currently, it will naively just extend fonts from symbol_map
         // without even look if the font has been loaded before.
@@ -533,7 +532,7 @@ impl FontLibraryData {
 
     #[cfg(target_arch = "wasm32")]
     pub fn load(&mut self, _font_spec: SugarloafFonts) -> Vec<SugarloafFont> {
-        self.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
+        self.insert(FontData::from_slice(FONT_CASCADIAMONO_NF_REGULAR).unwrap());
 
         vec![]
     }
@@ -907,13 +906,13 @@ fn load_fallback_from_memory(font_spec: &SugarloafFont) -> FontData {
         (100, _) => constants::FONT_CASCADIAMONO_EXTRA_LIGHT,
         (200, _) => constants::FONT_CASCADIAMONO_LIGHT,
         (300, _) => constants::FONT_CASCADIAMONO_SEMI_LIGHT,
-        (400, _) => constants::FONT_CASCADIAMONO_REGULAR,
-        (500, _) => constants::FONT_CASCADIAMONO_REGULAR,
+        (400, _) => constants::FONT_CASCADIAMONO_NF_REGULAR,
+        (500, _) => constants::FONT_CASCADIAMONO_NF_REGULAR,
         (600, _) => constants::FONT_CASCADIAMONO_SEMI_BOLD,
         (700, _) => constants::FONT_CASCADIAMONO_SEMI_BOLD,
         (800, _) => constants::FONT_CASCADIAMONO_BOLD,
         (900, _) => constants::FONT_CASCADIAMONO_BOLD,
-        (_, _) => constants::FONT_CASCADIAMONO_REGULAR,
+        (_, _) => constants::FONT_CASCADIAMONO_NF_REGULAR,
     };
 
     FontData::from_slice(font_to_load).unwrap()
