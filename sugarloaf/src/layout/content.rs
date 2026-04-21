@@ -1071,7 +1071,7 @@ impl Content {
                 }
             }
 
-            // Cache miss: shape the full run and store result
+            // Cache miss: shape the full run and store result.
             shaping_cache.set_content(font_id, content);
 
             #[cfg(target_os = "macos")]
