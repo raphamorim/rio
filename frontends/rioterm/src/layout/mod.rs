@@ -866,124 +866,44 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    fn find_horizontal_neighbors(&self, node_id: NodeId) -> Option<(NodeId, NodeId)> {
-        if !self.inner.contains_key(&node_id) {
-            return None;
-        }
-        let current_layout = self.tree.layout(node_id).ok()?;
+    /// Walk up the taffy tree from `node_id` to find the nearest ancestor flex
+    /// container whose direction matches `axis_is_row` AND where the branch
+    /// containing `node_id` has a sibling on the `pick_next` side (next
+    /// sibling if true, previous if false). Returns `(branch, neighbor)`.
+    /// Returns `None` if no such divider exists.
+    fn find_divider_siblings(
+        &self,
+        node_id: NodeId,
+        axis_is_row: bool,
+        pick_next: bool,
+    ) -> Option<(NodeId, NodeId)> {
+        let mut node = node_id;
+        loop {
+            let parent = self.tree.parent(node)?;
+            let parent_dir = self.tree.style(parent).ok()?.flex_direction;
+            let parent_is_row = matches!(
+                parent_dir,
+                taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+            );
 
-        let gap = self.panel_config.column_gap * self.scale;
-
-        // Find panel directly to the left (overlapping Y range, touching on X axis)
-        for &other_id in self.inner.keys() {
-            if other_id == node_id {
-                continue;
-            }
-
-            let other_layout = self.tree.layout(other_id).ok()?;
-
-            // Check if vertically overlapping (Y ranges overlap)
-            let current_y_end = current_layout.location.y + current_layout.size.height;
-            let other_y_end = other_layout.location.y + other_layout.size.height;
-            let y_overlap = current_layout.location.y < other_y_end
-                && other_layout.location.y < current_y_end;
-
-            if y_overlap {
-                // Check if other panel is directly to the left (touching with gap)
-                let other_right = other_layout.location.x + other_layout.size.width;
-                let distance = current_layout.location.x - other_right;
-
-                if distance >= 0.0 && distance <= gap + 1.0 {
-                    return Some((other_id, node_id));
+            if parent_is_row == axis_is_row {
+                let children = self.tree.children(parent).ok()?;
+                let idx = children.iter().position(|&n| n == node)?;
+                let neighbor = if pick_next {
+                    (idx + 1 < children.len()).then(|| children[idx + 1])
+                } else {
+                    (idx > 0).then(|| children[idx - 1])
+                };
+                if let Some(neighbor) = neighbor {
+                    return Some((node, neighbor));
                 }
             }
-        }
 
-        // Try finding panel to the right
-        let current_right = current_layout.location.x + current_layout.size.width;
-        for &other_id in self.inner.keys() {
-            if other_id == node_id {
-                continue;
-            }
-
-            let other_layout = self.tree.layout(other_id).ok()?;
-
-            // Check if vertically overlapping
-            let current_y_end = current_layout.location.y + current_layout.size.height;
-            let other_y_end = other_layout.location.y + other_layout.size.height;
-            let y_overlap = current_layout.location.y < other_y_end
-                && other_layout.location.y < current_y_end;
-
-            if y_overlap {
-                let distance = other_layout.location.x - current_right;
-
-                if distance >= 0.0 && distance <= gap + 1.0 {
-                    return Some((node_id, other_id));
-                }
+            node = parent;
+            if node == self.root_node {
+                return None;
             }
         }
-
-        None
-    }
-
-    fn find_vertical_neighbors(&self, node_id: NodeId) -> Option<(NodeId, NodeId)> {
-        if !self.inner.contains_key(&node_id) {
-            return None;
-        }
-        let current_layout = self.tree.layout(node_id).ok()?;
-
-        let gap = self.panel_config.row_gap * self.scale;
-
-        // Find panel directly above (overlapping X range, touching on Y axis)
-        for &other_id in self.inner.keys() {
-            if other_id == node_id {
-                continue;
-            }
-
-            let other_layout = self.tree.layout(other_id).ok()?;
-
-            // Check if horizontally overlapping (X ranges overlap)
-            let current_x_end = current_layout.location.x + current_layout.size.width;
-            let other_x_end = other_layout.location.x + other_layout.size.width;
-            let x_overlap = current_layout.location.x < other_x_end
-                && other_layout.location.x < current_x_end;
-
-            if x_overlap {
-                // Check if other panel is directly above (touching with gap)
-                let other_bottom = other_layout.location.y + other_layout.size.height;
-                let distance = current_layout.location.y - other_bottom;
-
-                if distance >= 0.0 && distance <= gap + 1.0 {
-                    return Some((other_id, node_id));
-                }
-            }
-        }
-
-        // Try finding panel below
-        let current_bottom = current_layout.location.y + current_layout.size.height;
-        for &other_id in self.inner.keys() {
-            if other_id == node_id {
-                continue;
-            }
-
-            let other_layout = self.tree.layout(other_id).ok()?;
-
-            // Check if horizontally overlapping
-            let current_x_end = current_layout.location.x + current_layout.size.width;
-            let other_x_end = other_layout.location.x + other_layout.size.width;
-            let x_overlap = current_layout.location.x < other_x_end
-                && other_layout.location.x < current_x_end;
-
-            if x_overlap {
-                let distance = other_layout.location.y - current_bottom;
-
-                if distance >= 0.0 && distance <= gap + 1.0 {
-                    return Some((node_id, other_id));
-                }
-            }
-        }
-
-        None
     }
 
     fn apply_taffy_layout(&mut self, sugarloaf: &mut Sugarloaf) -> bool {
@@ -1463,210 +1383,99 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn move_divider_up(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
+    /// Shared divider-move implementation. `direction` selects both the axis
+    /// (horizontal for Left/Right, vertical for Up/Down) and which side of
+    /// the divider should grow (Right/Down: upper/left side grows;
+    /// Left/Up: lower/right side grows).
+    fn move_divider(
+        &mut self,
+        direction: SplitDirection,
+        amount: f32,
+        sugarloaf: &mut Sugarloaf,
+    ) -> bool {
         if self.panel_count() <= 1 {
             return false;
         }
 
-        let current_node = self.current;
+        let (axis_is_row, grow_first) = match direction {
+            // Move divider right: upper/left sibling grows.
+            SplitDirection::Right => (true, true),
+            // Move divider left: upper/left sibling shrinks.
+            SplitDirection::Left => (true, false),
+            // Move divider down: upper sibling grows.
+            SplitDirection::Down => (false, true),
+            // Move divider up: upper sibling shrinks.
+            SplitDirection::Up => (false, false),
+        };
 
-        // Find vertically adjacent panels - returns (top_node, bottom_node)
-        if let Some((top_node, bottom_node)) = self.find_vertical_neighbors(current_node)
+        // Find an adjacent sibling pair on this axis. Try next sibling first,
+        // then fall back to the previous one. The pair is normalised so that
+        // `first` is the upper/left and `second` is the lower/right.
+        let (first, second) = if let Some((branch, next)) =
+            self.find_divider_siblings(self.current, axis_is_row, true)
         {
-            // Get current sizes
-            let top_layout = match self.tree.layout(top_node).ok() {
-                Some(layout) => layout,
-                None => return false,
-            };
-            let bottom_layout = match self.tree.layout(bottom_node).ok() {
-                Some(layout) => layout,
-                None => return false,
-            };
+            (branch, next)
+        } else if let Some((branch, prev)) =
+            self.find_divider_siblings(self.current, axis_is_row, false)
+        {
+            (prev, branch)
+        } else {
+            return false;
+        };
 
-            let min_height = 50.0;
+        let size_of = |node| {
+            self.tree.layout(node).ok().map(|l| {
+                if axis_is_row {
+                    l.size.width
+                } else {
+                    l.size.height
+                }
+            })
+        };
+        let (Some(first_size), Some(second_size)) = (size_of(first), size_of(second))
+        else {
+            return false;
+        };
+        let (new_first, new_second) = if grow_first {
+            (first_size + amount, second_size - amount)
+        } else {
+            (first_size - amount, second_size + amount)
+        };
 
-            // Determine which panel to shrink based on which one is current
-            let new_top_height;
-            let new_bottom_height;
-
-            if current_node == bottom_node {
-                // Current is bottom: shrink bottom, expand top (divider moves up)
-                new_bottom_height = bottom_layout.size.height - amount;
-                new_top_height = top_layout.size.height + amount;
-            } else {
-                // Current is top: shrink top, expand bottom (divider moves up)
-                new_top_height = top_layout.size.height - amount;
-                new_bottom_height = bottom_layout.size.height + amount;
-            }
-
-            if new_top_height < min_height || new_bottom_height < min_height {
-                return false;
-            }
-
-            // Update panel sizes using flex_basis
-            let _ = self.set_panel_size(top_node, None, Some(new_top_height));
-            let _ = self.set_panel_size(bottom_node, None, Some(new_bottom_height));
-
-            // Apply layout and update all contexts
-            return self.apply_taffy_layout(sugarloaf);
+        let min = if axis_is_row { 100.0 } else { 50.0 };
+        if new_first < min || new_second < min {
+            return false;
         }
 
-        false
+        let to_dims = |size| {
+            if axis_is_row {
+                (Some(size), None)
+            } else {
+                (None, Some(size))
+            }
+        };
+        let (w, h) = to_dims(new_first);
+        let _ = self.set_panel_size(first, w, h);
+        let (w, h) = to_dims(new_second);
+        let _ = self.set_panel_size(second, w, h);
+
+        self.apply_taffy_layout(sugarloaf)
+    }
+
+    pub fn move_divider_up(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
+        self.move_divider(SplitDirection::Up, amount, sugarloaf)
     }
 
     pub fn move_divider_down(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        if self.panel_count() <= 1 {
-            return false;
-        }
-
-        let current_node = self.current;
-
-        // Find vertically adjacent panels - returns (top_node, bottom_node)
-        if let Some((top_node, bottom_node)) = self.find_vertical_neighbors(current_node)
-        {
-            // Get current sizes
-            let top_layout = match self.tree.layout(top_node).ok() {
-                Some(layout) => layout,
-                None => return false,
-            };
-            let bottom_layout = match self.tree.layout(bottom_node).ok() {
-                Some(layout) => layout,
-                None => return false,
-            };
-
-            let min_height = 50.0;
-
-            // Determine which panel to expand based on which one is current
-            let new_top_height;
-            let new_bottom_height;
-
-            if current_node == bottom_node {
-                // Current is bottom: expand bottom, shrink top (divider moves down)
-                new_bottom_height = bottom_layout.size.height + amount;
-                new_top_height = top_layout.size.height - amount;
-            } else {
-                // Current is top: expand top, shrink bottom (divider moves down)
-                new_top_height = top_layout.size.height + amount;
-                new_bottom_height = bottom_layout.size.height - amount;
-            }
-
-            if new_top_height < min_height || new_bottom_height < min_height {
-                return false;
-            }
-
-            // Update panel sizes using flex_basis
-            let _ = self.set_panel_size(top_node, None, Some(new_top_height));
-            let _ = self.set_panel_size(bottom_node, None, Some(new_bottom_height));
-
-            // Apply layout and update all contexts
-            return self.apply_taffy_layout(sugarloaf);
-        }
-
-        false
+        self.move_divider(SplitDirection::Down, amount, sugarloaf)
     }
 
     pub fn move_divider_left(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        if self.panel_count() <= 1 {
-            return false;
-        }
-
-        let current_node = self.current;
-
-        // Find horizontally adjacent panels - returns (left_node, right_node)
-        if let Some((left_node, right_node)) =
-            self.find_horizontal_neighbors(current_node)
-        {
-            // Get current sizes
-            let left_layout = match self.tree.layout(left_node).ok() {
-                Some(layout) => layout,
-                None => return false,
-            };
-            let right_layout = match self.tree.layout(right_node).ok() {
-                Some(layout) => layout,
-                None => return false,
-            };
-
-            let min_width = 100.0;
-
-            // Determine which panel to shrink based on which one is current
-            let new_left_width;
-            let new_right_width;
-
-            if current_node == right_node {
-                // Current is right: shrink right, expand left (divider moves left)
-                new_right_width = right_layout.size.width - amount;
-                new_left_width = left_layout.size.width + amount;
-            } else {
-                // Current is left: shrink left, expand right (divider moves left)
-                new_left_width = left_layout.size.width - amount;
-                new_right_width = right_layout.size.width + amount;
-            }
-
-            if new_left_width < min_width || new_right_width < min_width {
-                return false;
-            }
-
-            // Update panel sizes using flex_basis
-            let _ = self.set_panel_size(left_node, Some(new_left_width), None);
-            let _ = self.set_panel_size(right_node, Some(new_right_width), None);
-
-            // Apply layout and update all contexts
-            return self.apply_taffy_layout(sugarloaf);
-        }
-
-        false
+        self.move_divider(SplitDirection::Left, amount, sugarloaf)
     }
 
     pub fn move_divider_right(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        if self.panel_count() <= 1 {
-            return false;
-        }
-
-        let current_node = self.current;
-
-        // Find horizontally adjacent panels - returns (left_node, right_node)
-        if let Some((left_node, right_node)) =
-            self.find_horizontal_neighbors(current_node)
-        {
-            // Get current sizes
-            let left_layout = match self.tree.layout(left_node).ok() {
-                Some(layout) => layout,
-                None => return false,
-            };
-            let right_layout = match self.tree.layout(right_node).ok() {
-                Some(layout) => layout,
-                None => return false,
-            };
-
-            let min_width = 100.0;
-
-            // Determine which panel to expand based on which one is current
-            let new_left_width;
-            let new_right_width;
-
-            if current_node == right_node {
-                // Current is right: expand right, shrink left (divider moves right)
-                new_right_width = right_layout.size.width + amount;
-                new_left_width = left_layout.size.width - amount;
-            } else {
-                // Current is left: expand left, shrink right (divider moves right)
-                new_left_width = left_layout.size.width + amount;
-                new_right_width = right_layout.size.width - amount;
-            }
-
-            if new_left_width < min_width || new_right_width < min_width {
-                return false;
-            }
-
-            // Update panel sizes using flex_basis
-            let _ = self.set_panel_size(left_node, Some(new_left_width), None);
-            let _ = self.set_panel_size(right_node, Some(new_right_width), None);
-
-            // Apply layout and update all contexts
-            return self.apply_taffy_layout(sugarloaf);
-        }
-
-        false
+        self.move_divider(SplitDirection::Right, amount, sugarloaf)
     }
 
     #[inline]
