@@ -1501,6 +1501,7 @@ impl Renderer {
                                 descent: run.descent,
                                 scale_constraint: None,
                                 nerd_font_constraint: None,
+                                is_custom_glyph_run: false,
                             };
                             comp.draw_run(
                                 &mut session,
@@ -1532,20 +1533,43 @@ impl Renderer {
                         } => {
                             // Use cached glyph data but need to render
                             glyphs.clear();
+                            // Cell centering for East-Asian-Wide codepoints:
+                            // when a glyph's shaped slot is wider than one
+                            // primary cell (char_width > 1), shift it by
+                            // half the extra space so 겔 / 水 / 한 sit
+                            // visually centered across their two cells
+                            // instead of hugging the left cell. Formula:
+                            // `dx = (cell_width - face_width) / 2`. No-op
+                            // for char_width == 1 (Latin, box-drawing),
+                            // so glyphs that rely on tiling at their
+                            // natural pen advance stay aligned.
+                            let cell_shift = if use_grid_cell_size && char_width > 1.0 {
+                                cell_width * (char_width - 1.0) / 2.0
+                            } else {
+                                0.0
+                            };
                             for shaped_glyph in cached_glyphs.iter() {
-                                let x = px;
+                                let x = px + cell_shift;
                                 let y = baseline;
-
-                                if use_grid_cell_size {
-                                    px += cell_width * char_width;
+                                // Effective per-glyph pen advance — on the
+                                // grid-cell-size path this is `cell_width *
+                                // char_width` (e.g. 2 cells for East Asian
+                                // Wide emoji), not the shaper's advance.
+                                // Pass this through to the compositor so
+                                // emoji bitmaps center inside the actual
+                                // cell slot, not a 1-cell shaper advance.
+                                let advance = if use_grid_cell_size {
+                                    cell_width * char_width
                                 } else {
-                                    px += shaped_glyph.x_advance;
-                                }
+                                    shaped_glyph.x_advance
+                                };
+                                px += advance;
 
                                 glyphs.push(Glyph {
                                     id: shaped_glyph.glyph_id as GlyphId,
                                     x,
                                     y,
+                                    advance,
                                 });
                             }
 
@@ -1575,6 +1599,8 @@ impl Renderer {
                                     rte_layout.map(|l| (l.dimensions.width, c as u8))
                                 }),
                                 nerd_font_constraint: run.span.nerd_font_constraint,
+                                is_custom_glyph_run: font
+                                    == crate::font::glyph_registry::CUSTOM_GLYPH_FONT_ID,
                             };
 
                             // Update font session if needed
@@ -1607,26 +1633,45 @@ impl Renderer {
                             glyphs.clear();
                             let mut shaped_glyphs = Vec::new();
 
-                            for glyph in &run.glyphs {
-                                let x = px;
-                                let y = baseline;
-                                let advance = glyph.simple_data().1;
+                            // Same cell centering as above.
+                            let cell_shift = if use_grid_cell_size && char_width > 1.0 {
+                                cell_width * (char_width - 1.0) / 2.0
+                            } else {
+                                0.0
+                            };
 
-                                if use_grid_cell_size {
-                                    px += cell_width * char_width;
+                            for glyph in &run.glyphs {
+                                let x = px + cell_shift;
+                                let y = baseline;
+                                let shaper_advance = glyph.simple_data().1;
+                                // See the cached-path comment above — on the
+                                // grid-cell-size path the effective advance
+                                // is cell_width × char_width, not the shaper's.
+                                let advance = if use_grid_cell_size {
+                                    cell_width * char_width
                                 } else {
-                                    px += advance;
-                                }
+                                    shaper_advance
+                                };
+                                px += advance;
 
                                 let glyph_id = glyph.simple_data().0;
 
-                                glyphs.push(Glyph { id: glyph_id, x, y });
+                                glyphs.push(Glyph {
+                                    id: glyph_id,
+                                    x,
+                                    y,
+                                    advance,
+                                });
 
-                                // Store for caching
+                                // Cache the raw shaper advance; `use_grid_cell_size`
+                                // is a property of the font/config pipeline and
+                                // its grid-adjusted advance is recomputed on
+                                // cache hits, so only the shaper value belongs
+                                // in the persistent cache.
                                 shaped_glyphs.push(
                                     crate::font::text_run_cache::ShapedGlyph {
                                         glyph_id: glyph_id as u32,
-                                        x_advance: advance,
+                                        x_advance: shaper_advance,
                                         y_advance: 0.0,
                                         x_offset: 0.0,
                                         y_offset: 0.0,
@@ -1672,6 +1717,8 @@ impl Renderer {
                                     rte_layout.map(|l| (l.dimensions.width, c as u8))
                                 }),
                                 nerd_font_constraint: run.span.nerd_font_constraint,
+                                is_custom_glyph_run: font
+                                    == crate::font::glyph_registry::CUSTOM_GLYPH_FONT_ID,
                             };
 
                             // Update font session if needed

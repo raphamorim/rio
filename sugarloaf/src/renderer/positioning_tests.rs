@@ -933,6 +933,7 @@ mod tests {
             descent,
             scale_constraint: None,
             nerd_font_constraint: None,
+            is_custom_glyph_run: false,
         };
 
         let _rect = Rect::new(0.0, 0.0, 100.0, line_height);

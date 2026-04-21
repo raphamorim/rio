@@ -218,8 +218,8 @@ impl Sugarloaf<'_> {
         if let Some(cached) = self.font_cache.get(&(ch, attrs)) {
             return *cached;
         }
-        let font_ctx = self.state.content.font_library().inner.read();
-        resolve_with(&mut self.font_cache, &font_ctx, ch, attrs)
+        let font_lib = self.state.content.font_library().clone();
+        resolve_with(&mut self.font_cache, &font_lib, ch, attrs)
     }
 
     /// Horizontal advance in pixels for a single char rendered with
@@ -309,10 +309,10 @@ impl Sugarloaf<'_> {
         if queries.is_empty() {
             return Vec::new();
         }
-        let font_ctx = self.state.content.font_library().inner.read();
+        let font_lib = self.state.content.font_library().clone();
         let mut out = Vec::with_capacity(queries.len());
         for &(ch, attrs) in queries {
-            out.push(resolve_with(&mut self.font_cache, &font_ctx, ch, attrs));
+            out.push(resolve_with(&mut self.font_cache, &font_lib, ch, attrs));
         }
         out
     }

@@ -60,6 +60,12 @@ pub struct TextRunStyle<'a> {
     /// ghostty's constrain() math — size + alignment + padding. Applies
     /// only to PUA glyphs that have a hand-tuned entry in the table.
     pub nerd_font_constraint: Option<crate::font::nerd_font_attributes::Constraint>,
+    /// Run is composed of Glyph Protocol custom glyphs. Custom glyphs
+    /// live at PUA codepoints with no Nerd Font patcher entry, so the
+    /// compositor's generic "natural position" fallback would leave
+    /// them uncentered in the cell. This flag restores the fit +
+    /// slot-center path for those runs only.
+    pub is_custom_glyph_run: bool,
 }
 
 /// Positioned glyph in a text run.
@@ -71,4 +77,7 @@ pub struct Glyph {
     pub x: f32,
     /// Y offset of the glyph.
     pub y: f32,
+    /// Horizontal advance. Used by the compositor to fit bitmap glyphs
+    /// (emoji) into their per-glyph cell slot.
+    pub advance: f32,
 }

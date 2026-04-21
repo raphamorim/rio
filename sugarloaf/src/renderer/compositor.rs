@@ -240,20 +240,13 @@ impl Compositor {
         } else {
             // Handle regular glyphs
             for glyph in glyphs {
-                // For PUA glyphs with a multi-cell constraint, rasterize at
-                // `cells × font_size` so the compositor only ever downscales
-                // in the fit pass below — upscaling an atlas bitmap would be
-                // blurry. For Cascadia-style fonts that already render ~2
-                // cells wide this is a no-op downscale; for JetBrainsMono NF
-                // Mono (~1 cell wide) this is what makes the 2-cell slot
-                // actually look 2-cell-sized instead of small-and-centered.
-                let entry = match style.scale_constraint {
-                    Some((_, cells)) if cells > 1 => {
-                        let larger = ((style.font_size * cells as f32) as u16).max(1);
-                        session.get_at_size(glyph.id, larger)
-                    }
-                    _ => session.get(glyph.id),
-                };
+                // Rasterize Nerd Font / PUA glyphs once at the nominal font
+                // size. An earlier "rasterize at cells × font_size" trick
+                // produced a 2× raster that the constraint math below then
+                // tried to re-scale *from*, compounding into a ~2× oversized
+                // glyph. With nominal rasterization, the constraint's
+                // width/height factors land where they should.
+                let entry = session.get(glyph.id);
                 if let Some(entry) = entry {
                     if let Some(img) = session.get_image(entry.image) {
                         let gx = (glyph.x + subpx_bias.0).floor() + entry.left as f32;
@@ -283,29 +276,79 @@ impl Compositor {
                                     topline: style.topline,
                                     baseline: style.baseline,
                                 })
-                            } else {
+                            } else if style.is_custom_glyph_run {
+                                // Glyph Protocol glyphs live at PUA
+                                // codepoints with no Nerd Font patcher
+                                // entry, so they'd otherwise take the
+                                // "natural position" fallback and sit
+                                // uncentered in their cell slot. Use the
+                                // generic cell-centered fit that the
+                                // pre-main compositor path gave to all
+                                // unknown PUA glyphs.
                                 let target_w = cell_w * cells as f32;
                                 let target_h = style.line_height;
                                 let orig_w = entry.width as f32;
                                 let orig_h = entry.height as f32;
-
-                                let scale = (target_w / orig_w).min(target_h / orig_h);
+                                let scale =
+                                    (target_w / orig_w).min(target_h / orig_h);
                                 let sw = orig_w * scale;
                                 let sh = orig_h * scale;
-
-                                // Center horizontally within the constraint
-                                // slot that starts at `glyph.x`.
                                 let cx = glyph.x + (target_w - sw) / 2.0;
-                                // Center vertically within the line. PUA /
-                                // Nerd Font symbols aren't baseline-anchored
-                                // the way text glyphs are — scaling `entry.top`
-                                // shifts the image up because the top-bearing
-                                // scales faster than the descent-bearing. Same
-                                // choice ghostty makes for `isSymbol(cp)` via
-                                // `.align_vertical = .center1`.
-                                let cy = style.topline + (style.line_height - sh) / 2.0;
-
+                                let cy = style.topline
+                                    + (style.line_height - sh) / 2.0;
                                 Rect::new(cx, cy, sw, sh)
+                            } else {
+                                // No per-codepoint attribute: no scaling, no
+                                // slot-centering. Glyph renders at its
+                                // natural pen position and natural raster
+                                // size.
+                                let _ = (cell_w, cells);
+                                Rect::new(gx, gy, entry.width as f32, entry.height as f32)
+                            }
+                        } else if entry.is_bitmap {
+                            // Color bitmap (emoji) glyphs fall here when the
+                            // shaper didn't attach an explicit constraint.
+                            //
+                            // `.cover` sizing with center alignment and
+                            // 2.5 % horizontal padding. Cover scales the
+                            // bitmap so it fills the advance × cell-height
+                            // slot on at least one axis, rather than fit
+                            // which leaves gaps.
+                            //
+                            // Vertical centering uses the font's *natural*
+                            // cell (ascent + descent) rather than
+                            // `line_height` — the latter picks up user
+                            // line-height modifiers that shouldn't shift the
+                            // emoji inside its cell.
+                            const PAD_EACH: f32 = 0.025;
+                            let orig_w = entry.width as f32;
+                            let orig_h = entry.height as f32;
+                            if orig_w > 0.0 && orig_h > 0.0 {
+                                let cell_top = style.baseline - style.ascent;
+                                let cell_h = style.ascent + style.descent;
+                                let available_w = glyph.advance * (1.0 - 2.0 * PAD_EACH);
+                                // Cover: pick the larger scale factor so the
+                                // emoji fills the slot on at least one axis.
+                                let scale = (available_w / orig_w).max(cell_h / orig_h);
+                                let sw = orig_w * scale;
+                                let sh = orig_h * scale;
+                                let cx = (glyph.x + subpx_bias.0).floor()
+                                    + (glyph.advance - sw) / 2.0;
+                                let cy = cell_top + (cell_h - sh) / 2.0;
+                                // Snap both edges to the pixel grid. Bitmap
+                                // emoji (sbix — Apple Color Emoji) sampled
+                                // at fractional offsets looks blurry;
+                                // rounding cx/cy/sw/sh to whole pixels lets
+                                // the sampler hit source texels cleanly.
+                                // No-op for COLR glyphs whose scale already
+                                // snapped.
+                                let x0 = cx.round();
+                                let x1 = (cx + sw).round();
+                                let y0 = cy.round();
+                                let y1 = (cy + sh).round();
+                                Rect::new(x0, y0, x1 - x0, y1 - y0)
+                            } else {
+                                Rect::new(gx, gy, orig_w, orig_h)
                             }
                         } else {
                             Rect::new(gx, gy, entry.width as f32, entry.height as f32)

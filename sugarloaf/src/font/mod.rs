@@ -5,6 +5,8 @@ pub mod glyf_decode;
 pub mod glyph_registry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod metrics;
 pub mod nerd_font_attributes;
 pub mod text_run_cache;
@@ -33,6 +35,25 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 pub use crate::font_introspector::{Style, Weight};
+
+/// Cross-platform shim: non-macOS threads `&loader::Database` through to
+/// `find_font`; macOS drops it since CoreText handles matching directly and
+/// we never build a Database there. The macro lets call sites stay uniform
+/// (`try_find_font!(&db, spec, evict)`) even though `db` doesn't exist on
+/// macOS — macOS expansion simply discards that token.
+#[cfg(target_os = "macos")]
+macro_rules! try_find_font {
+    ($_db:expr, $spec:expr, $evictable:expr) => {{
+        find_font($spec, $evictable)
+    }};
+}
+
+#[cfg(not(target_os = "macos"))]
+macro_rules! try_find_font {
+    ($db:expr, $spec:expr, $evictable:expr) => {{
+        find_font($db, $spec, $evictable)
+    }};
+}
 
 // Type alias for the font data cache to improve readability
 type FontDataCache = Arc<DashMap<PathBuf, SharedData>>;
@@ -91,19 +112,57 @@ pub fn lookup_for_font_match(
             }
         }
 
-        if let Some((shared_data, offset, key)) = library.get_data(&font_id) {
-            let font_ref = FontRef {
-                data: shared_data.as_ref(),
-                offset,
-                key,
-            };
-            let charmap = font_ref.charmap();
-            let status = cluster.map(|ch| charmap.map(ch));
-            if status != Status::Discard {
-                *synth = font_synth;
-                search_result = Some((font_id, is_emoji));
-                break;
+        #[cfg(target_os = "macos")]
+        let matched = {
+            // Ask the CTFont directly whether it carries a glyph for each
+            // codepoint. Avoids the `get_data` byte load — the fallback
+            // walk no longer touches the font file(s) at all.
+            let handle_opt = library.inner.get(&font_id).and_then(|font| {
+                if let Some(path) = &font.path {
+                    crate::font::macos::FontHandle::from_path(path)
+                } else if let Some(bytes) = &font.data {
+                    crate::font::macos::FontHandle::from_bytes(bytes.as_ref())
+                } else {
+                    None
+                }
+            });
+            if let Some(handle) = handle_opt {
+                let status = cluster.map(|ch| {
+                    // Non-zero u16 == "has glyph"; swash's cluster.map only
+                    // distinguishes zero vs non-zero, so `1` is fine as a
+                    // placeholder when CTFont carries the codepoint.
+                    if crate::font::macos::font_has_char(&handle, ch) {
+                        1
+                    } else {
+                        0
+                    }
+                });
+                status != Status::Discard
+            } else {
+                false
             }
+        };
+
+        #[cfg(not(target_os = "macos"))]
+        let matched = {
+            if let Some((shared_data, offset, key)) = library.get_data(&font_id) {
+                let font_ref = FontRef {
+                    data: shared_data.as_ref(),
+                    offset,
+                    key,
+                };
+                let charmap = font_ref.charmap();
+                let status = cluster.map(|ch| charmap.map(ch));
+                status != Status::Discard
+            } else {
+                false
+            }
+        };
+
+        if matched {
+            *synth = font_synth;
+            search_result = Some((font_id, is_emoji));
+            break;
         }
     }
 
@@ -140,9 +199,119 @@ impl FontLibrary {
         )
     }
 
+    /// Parsed CoreText font for `font_id` — a direct read of the handle
+    /// stored on the corresponding `FontData` (per-font pointer rather
+    /// than a library-global cache).
+    ///
+    /// Clone is a cheap CF retain; callers clone out to escape the read
+    /// lock scope. Returns `None` for unknown font ids or for fonts that
+    /// weren't eagerly given a handle at construction (non-macOS test
+    /// fonts loaded via `from_slice`).
+    ///
+    /// parking_lot's `RwLock` supports recursive reads, so calling this
+    /// from code that already holds a read lock on `inner` is safe.
+    #[cfg(target_os = "macos")]
+    pub fn ct_font(&self, font_id: usize) -> Option<crate::font::macos::FontHandle> {
+        self.inner
+            .read()
+            .inner
+            .get(&font_id)
+            .and_then(|f| f.handle().cloned())
+    }
+
+    /// Resolve a PostScript name back to Rio's `font_id`. Returns
+    /// `None` when the library doesn't hold a font with that name.
+    #[cfg(target_os = "macos")]
+    pub fn font_id_for_postscript_name(&self, name: &str) -> Option<usize> {
+        self.inner.read().font_id_for_postscript_name(name)
+    }
+
+    /// Resolve `ch` to a Rio `(font_id, is_emoji)`, walking the
+    /// registered fonts first and falling back to CoreText's cascade
+    /// via `CTFontCreateForString` when no registered font carries
+    /// the glyph. Discovered fonts are registered in-place so
+    /// subsequent queries for the same codepoint (or any codepoint
+    /// the discovered font covers) hit the registered-font walk
+    /// without re-invoking CoreText.
+    ///
+    /// Pre-shaping resolution with lazy discovery: the shaper
+    /// operates on a single font per call, and this method
+    /// guarantees that font covers the codepoint, so `CTLine` never
+    /// has to cascade-substitute at shape time.
+    ///
+    /// Returns `(0, false)` only when CoreText itself can't find
+    /// any font for the codepoint (truly unsupported by the system)
+    /// or when the library is empty. Both cases render as tofu.
+    #[cfg(target_os = "macos")]
+    pub fn resolve_font_for_char(
+        &self,
+        ch: char,
+        fragment_style: &SpanStyle,
+    ) -> (usize, bool) {
+        // Fast path: codepoint is covered by an already-registered
+        // font. No locks upgraded, no CoreText call.
+        if let Some(found) = self
+            .inner
+            .read()
+            .find_best_font_match_strict(ch, fragment_style)
+        {
+            return found;
+        }
+
+        // Slow path: ask CoreText which font it would cascade to,
+        // then register that font so future lookups hit the fast
+        // path. The read lock is released between phases so a
+        // concurrent resolver can't block on our registration work.
+        let Some(primary) = self.ct_font(FONT_ID_REGULAR) else {
+            return (0, false);
+        };
+        let Some(discovered) = crate::font::macos::discover_fallback(&primary, ch) else {
+            return (0, false);
+        };
+        let ps_name = discovered.postscript_name();
+
+        // Has it already been registered by a concurrent resolver?
+        {
+            let lib = self.inner.read();
+            if let Some(existing) = lib.font_id_for_postscript_name(&ps_name) {
+                let is_emoji = lib
+                    .inner
+                    .get(&existing)
+                    .map(|fd| fd.is_emoji)
+                    .unwrap_or(false);
+                return (existing, is_emoji);
+            }
+        }
+
+        // Register under write lock. Re-check inside the lock so a
+        // race doesn't insert the same PS name twice.
+        let mut lib = self.inner.write();
+        if let Some(existing) = lib.font_id_for_postscript_name(&ps_name) {
+            let is_emoji = lib
+                .inner
+                .get(&existing)
+                .map(|fd| fd.is_emoji)
+                .unwrap_or(false);
+            return (existing, is_emoji);
+        }
+        let font_data = FontData::from_ctfont_macos(discovered);
+        let is_emoji = font_data.is_emoji;
+        let new_id = lib.inner.len();
+        lib.insert(font_data);
+        tracing::debug!(
+            "CoreText cascade discovered {} for U+{:04X}, registered as font_id {}",
+            ps_name,
+            ch as u32,
+            new_id
+        );
+        (new_id, is_emoji)
+    }
+
     /// Sorted, deduplicated list of every font family name the host
-    /// system exposes via `font-kit`'s `SystemSource` (CoreText on
-    /// macOS, DirectWrite on Windows, fontconfig on Linux).
+    /// system exposes. On macOS this goes straight through CoreText; on
+    /// Linux and Windows it uses `font-kit`'s `SystemSource` (fontconfig
+    /// on Linux, DirectWrite on Windows). `wasm32` has no system font
+    /// enumeration.
     ///
     /// Intended for the command-palette "List Fonts" browser, so users
     /// can see what's installed without leaving the terminal. Does NOT
@@ -151,7 +320,12 @@ impl FontLibrary {
     /// `FontLibrary` past load, and walking the dirs again would
     /// duplicate I/O. A follow-up can widen this once `FontLibrary`
     /// keeps a `Database` alive.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(target_os = "macos")]
+    pub fn family_names(&self) -> Vec<String> {
+        crate::font::macos::all_families()
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_arch = "wasm32")))]
     pub fn family_names(&self) -> Vec<String> {
         let source = font_kit::source::SystemSource::new();
         let mut families = source.all_families().unwrap_or_default();
@@ -202,6 +376,13 @@ pub struct FontLibraryData {
     /// When present, a codepoint with a live registration short-circuits
     /// the font fallback chain and renders from the registered outline.
     pub glyph_registry: Option<glyph_registry::GlyphRegistry>,
+    /// PostScript-name → `font_id` lookup, populated on `insert`.
+    /// Used by the macOS shaper to map CoreText's per-CTRun font back to
+    /// a Rio `font_id` when cascade-list substitution kicks in. Kept
+    /// behind `cfg(target_os = "macos")` so non-mac builds don't pay
+    /// the storage cost.
+    #[cfg(target_os = "macos")]
+    postscript_to_id: FxHashMap<String, usize>,
 }
 
 impl Default for FontLibraryData {
@@ -212,6 +393,8 @@ impl Default for FontLibraryData {
             symbol_maps: None,
             primary_metrics_cache: FxHashMap::default(),
             glyph_registry: None,
+            #[cfg(target_os = "macos")]
+            postscript_to_id: FxHashMap::default(),
         }
     }
 }
@@ -284,9 +467,99 @@ impl FontLibraryData {
         Some((0, false))
     }
 
+    /// Like [`find_best_font_match`](Self::find_best_font_match) but
+    /// returns `None` on a true miss instead of the `(0, false)`
+    /// last-resort fallback. Enables callers (currently the macOS
+    /// lazy-discovery path on [`FontLibrary`]) to distinguish
+    /// "primary font is the answer" from "nothing in the library
+    /// covers this codepoint" so discovery can fire on the latter.
+    #[cfg(target_os = "macos")]
+    #[inline]
+    pub fn find_best_font_match_strict(
+        &self,
+        ch: char,
+        fragment_style: &SpanStyle,
+    ) -> Option<(usize, bool)> {
+        // Glyph Protocol override takes precedence over everything
+        // else — a registered codepoint must route to the custom
+        // sentinel before CoreText cascade discovery kicks in, or the
+        // registry is silently ignored on macOS.
+        if let Some(registry) = &self.glyph_registry {
+            if registry.contains(ch as u32) {
+                return Some((glyph_registry::CUSTOM_GLYPH_FONT_ID, false));
+            }
+        }
+
+        let mut synth = Synthesis::default();
+        let mut char_cluster = CharCluster::new();
+        let mut parser = Parser::new(
+            Script::Latin,
+            std::iter::once(Token {
+                ch,
+                offset: 0,
+                len: ch.len_utf8() as u8,
+                info: ch.properties().into(),
+                data: 0,
+            }),
+        );
+        if !parser.next(&mut char_cluster) {
+            return None;
+        }
+
+        if let Some(symbol_maps) = &self.symbol_maps {
+            for symbol_map in symbol_maps {
+                if symbol_map.range.contains(&ch) {
+                    return Some((symbol_map.font_index, false));
+                }
+            }
+        }
+
+        let is_italic = fragment_style.font_attrs.style() == Style::Italic;
+        let is_bold = fragment_style.font_attrs.weight() == Weight::BOLD;
+
+        let spec_font_attr = if is_bold && is_italic {
+            Some((Style::Italic, true))
+        } else if is_bold {
+            Some((Style::Normal, true))
+        } else if is_italic {
+            Some((Style::Italic, false))
+        } else {
+            None
+        };
+
+        lookup_for_font_match(
+            &mut char_cluster,
+            &mut synth,
+            self,
+            spec_font_attr.as_ref(),
+        )
+    }
+
     #[inline]
     pub fn insert(&mut self, font_data: FontData) {
-        self.inner.insert(self.inner.len(), font_data);
+        let id = self.inner.len();
+        // Pull the PS name off the handle here so the shaper's cascade-
+        // run resolver can map a CoreText `CTFont` back to a Rio
+        // `font_id`. Only paid at load time. Duplicate names (same face
+        // loaded twice) resolve to the first-inserted id, which is the
+        // entry the rest of the library already points at — good enough
+        // for cascade mapping.
+        #[cfg(target_os = "macos")]
+        if let Some(handle) = font_data.handle() {
+            self.postscript_to_id
+                .entry(handle.postscript_name())
+                .or_insert(id);
+        }
+        self.inner.insert(id, font_data);
+    }
+
+    /// Rio `font_id` registered for the given PostScript name, or
+    /// `None` when no loaded font reports that name. Used by the macOS
+    /// shaper to map a CTFont pulled from a `CTRun`'s attributes back
+    /// onto Rio's font registry.
+    #[cfg(target_os = "macos")]
+    pub fn font_id_for_postscript_name(&self, name: &str) -> Option<usize> {
+        self.postscript_to_id.get(name).copied()
     }
 
     #[inline]
@@ -387,14 +660,22 @@ impl FontLibraryData {
             font_family_overwrite.clone_into(&mut spec.italic.family);
         }
 
+        // On macOS we resolve fonts through CoreText (see `find_font` below)
+        // and never touch `loader::Database`, so skip its construction entirely
+        // — `SystemSource::new` walks the full CoreText font list on init, which
+        // is wasted work when we're about to do the same thing ourselves.
+        #[cfg(not(target_os = "macos"))]
         let mut db = loader::Database::new();
-        spec.additional_dirs
-            .unwrap_or_default()
-            .into_iter()
-            .map(PathBuf::from)
-            .for_each(|p| db.load_fonts_dir(p));
 
-        match find_font(&db, spec.regular, false) {
+        let additional_dirs = spec.additional_dirs.unwrap_or_default();
+        for dir in additional_dirs.into_iter().map(PathBuf::from) {
+            #[cfg(target_os = "macos")]
+            crate::font::macos::register_fonts_in_dir(&dir);
+            #[cfg(not(target_os = "macos"))]
+            db.load_fonts_dir(dir);
+        }
+
+        match try_find_font!(&db, spec.regular, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -408,7 +689,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.italic, false) {
+        match try_find_font!(&db, spec.italic, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -421,7 +702,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.bold, false) {
+        match try_find_font!(&db, spec.bold, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -434,7 +715,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.bold_italic, true) {
+        match try_find_font!(&db, spec.bold_italic, true) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -448,13 +729,13 @@ impl FontLibraryData {
         }
 
         for fallback in fallbacks::external_fallbacks() {
-            match find_font(
+            match try_find_font!(
                 &db,
                 SugarloafFont {
                     family: fallback,
                     ..SugarloafFont::default()
                 },
-                true,
+                true
             ) {
                 FindResult::Found(data) => {
                     self.insert(data);
@@ -466,6 +747,37 @@ impl FontLibraryData {
             }
         }
 
+        // On macOS, append CoreText's default cascade list for the primary
+        // font. Dynamic fallback: we let CoreText name every font it would
+        // normally fall back to (emoji, CJK, symbols, script typefaces) so
+        // users get the same coverage as any other macOS app.
+        //
+        // Critically, each cascade entry is constructed via `from_path_macos`
+        // — CoreText opens the file on demand, Rio never reads the bytes.
+        // This keeps us from pulling the 200 MB Apple Color Emoji file into
+        // `FONT_DATA_CACHE`.
+        #[cfg(target_os = "macos")]
+        {
+            let primary_handle = self.inner.get(&FONT_ID_REGULAR).and_then(|f| {
+                if let Some(path) = &f.path {
+                    crate::font::macos::FontHandle::from_path(path)
+                } else if let Some(bytes) = &f.data {
+                    crate::font::macos::FontHandle::from_bytes(bytes.as_ref())
+                } else {
+                    None
+                }
+            });
+            if let Some(primary_handle) = primary_handle {
+                let default_spec = SugarloafFont::default();
+                for path in crate::font::macos::default_cascade_list(&primary_handle) {
+                    if let Ok(font_data) = FontData::from_path_macos(path, &default_spec)
+                    {
+                        self.insert(font_data);
+                    }
+                }
+            }
+        }
+
         // User-configured fallbacks run before the bundled emoji / Nerd Font
         // slices so a color emoji family dropped into `extras` (e.g.
         // `extras = [{family = "Apple Color Emoji"}]`) takes priority over
@@ -473,8 +785,16 @@ impl FontLibraryData {
         // from_data` via `has_color_tables` (COLR/CBDT/CBLC/sbix), so real
         // emoji families get the wide-cell / color-atlas treatment while
         // Nerd Font families stay single-cell.
+        //
+        // On macOS the CoreText cascade list inserted above already includes
+        // emoji, CJK, symbols, and every other system-suggested fallback —
+        // `font.extras` is redundant there and would only duplicate or
+        // compete with the cascade order. Skipped entirely.
+        #[cfg(target_os = "macos")]
+        let _ = spec.extras;
+        #[cfg(not(target_os = "macos"))]
         for extra_font in spec.extras {
-            match find_font(
+            match try_find_font!(
                 &db,
                 SugarloafFont {
                     family: extra_font.family,
@@ -482,7 +802,7 @@ impl FontLibraryData {
                     weight: extra_font.weight,
                     width: extra_font.width,
                 },
-                true,
+                true
             ) {
                 FindResult::Found(data) => {
                     self.insert(data);
@@ -493,8 +813,10 @@ impl FontLibraryData {
             }
         }
 
-        self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap());
-        self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
+        // macOS finds Apple Color Emoji through `fallbacks::external_fallbacks`
+        // above, so skip embedding Twemoji there.
+        #[cfg(not(target_os = "macos"))]
+        self.insert(FontData::from_static_slice(FONT_TWEMOJI_EMOJI).unwrap());
 
         // TODO: Currently, it will naively just extend fonts from symbol_map
         // without even look if the font has been loaded before.
@@ -514,13 +836,13 @@ impl FontLibraryData {
         if let Some(symbol_map) = spec.symbol_map {
             let mut symbol_maps = Vec::default();
             for extra_font_from_symbol_map in symbol_map {
-                match find_font(
+                match try_find_font!(
                     &db,
                     SugarloafFont {
                         family: extra_font_from_symbol_map.font_family,
                         ..SugarloafFont::default()
                     },
-                    true,
+                    true
                 ) {
                     FindResult::Found(data) => {
                         if let Some(start) =
@@ -560,24 +882,61 @@ impl FontLibraryData {
 
     #[cfg(target_arch = "wasm32")]
     pub fn load(&mut self, _font_spec: SugarloafFonts) -> Vec<SugarloafFont> {
-        self.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
+        self.insert(FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).unwrap());
 
         vec![]
     }
 }
 
-/// Atomically reference counted, heap allocated or memory mapped buffer.
+/// Font byte storage. Three variants so each load path pays the smallest
+/// cost it can:
+///
+/// - [`Heap`](Self::Heap): Arc-shared `[u8]` on the heap. Fallback path
+///   for bytes we genuinely own (tests, `from_slice`).
+/// - [`Static`](Self::Static): a reference into `'static` data. Bundled
+///   fonts use this so their bytes stay in the binary's `.rodata` instead
+///   of being copied.
+/// - [`Mmap`](Self::Mmap): memory-mapped file. Non-mac file reads use this
+///   so the kernel backs the bytes with the font file and only pages in
+///   what's actually touched. A 100 MB emoji font costs maybe 1 MB of
+///   resident RAM instead of 100.
+///
+/// Clone is atomic-refcount on [`Heap`]/[`Mmap`] and a pointer copy on
+/// [`Static`]; all three are effectively free.
 #[derive(Clone, Debug)]
-pub struct SharedData {
-    inner: Arc<[u8]>,
+pub enum SharedData {
+    Heap(Arc<[u8]>),
+    Static(&'static [u8]),
+    #[cfg(not(target_arch = "wasm32"))]
+    Mmap(Arc<memmap2::Mmap>),
 }
 
 impl SharedData {
-    /// Creates shared data from the specified bytes.
+    /// Wrap an owned byte buffer. Used for ad-hoc / test loads; production
+    /// font paths prefer [`from_static`](Self::from_static) or
+    /// [`from_mmap`](Self::from_mmap).
     pub fn new(data: Vec<u8>) -> Self {
-        Self {
-            inner: Arc::from(data),
-        }
+        Self::Heap(Arc::from(data))
+    }
+
+    /// Reference `'static` bytes. Zero-copy — bytes stay wherever they are
+    /// (typically the binary's `.rodata` for bundled fonts).
+    pub const fn from_static(data: &'static [u8]) -> Self {
+        Self::Static(data)
+    }
+
+    /// Wrap a memory-mapped file. The `Arc<Mmap>` keeps the mapping alive
+    /// until every `SharedData` referencing it drops.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn from_mmap(mmap: memmap2::Mmap) -> Self {
+        Self::Mmap(Arc::new(mmap))
+    }
+
+    /// `true` when this `SharedData` references the binary's `.rodata`.
+    /// Callers (the CoreText path) use this to pick a no-copy
+    /// `CFDataCreateWithBytesNoCopy` when true.
+    pub const fn is_static(&self) -> bool {
+        matches!(self, Self::Static(_))
     }
 }
 
@@ -585,13 +944,23 @@ impl std::ops::Deref for SharedData {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        (*self.inner).as_ref()
+        match self {
+            Self::Heap(a) => a,
+            Self::Static(s) => s,
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Mmap(m) => m.as_ref(),
+        }
     }
 }
 
 impl AsRef<[u8]> for SharedData {
     fn as_ref(&self) -> &[u8] {
-        (*self.inner).as_ref()
+        match self {
+            Self::Heap(a) => a,
+            Self::Static(s) => s,
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Mmap(m) => m.as_ref(),
+        }
     }
 }
 
@@ -613,6 +982,13 @@ pub struct FontData {
     pub is_emoji: bool,
     // Cached metrics per font size (per-font caching)
     metrics_cache: FxHashMap<u32, Metrics>,
+    /// Parsed CoreText handle, constructed once at `FontData` creation
+    /// and cloned out via CF refcount on every access. Per-font pointer
+    /// rather than a library-global cache. `Clone` of `FontHandle` is an
+    /// atomic retain, so handing it out to the shape/raster/charmap paths
+    /// is effectively free.
+    #[cfg(target_os = "macos")]
+    handle: Option<crate::font::macos::FontHandle>,
 }
 
 impl PartialEq for FontData {
@@ -627,6 +1003,21 @@ impl FontData {
     /// Get font data reference
     pub fn data(&self) -> &Option<SharedData> {
         &self.data
+    }
+
+    /// On-disk path the font was loaded from, if any. Embedded fonts
+    /// (bundled `&[u8]` constants) have no path.
+    pub fn path(&self) -> Option<&PathBuf> {
+        self.path.as_ref()
+    }
+
+    /// The parsed CoreText handle, or `None` if this font was constructed
+    /// via a path that doesn't run on macOS. Access is a direct field read
+    /// (no map lookup); callers clone the handle (cheap CF retain) to
+    /// escape the lock scope.
+    #[cfg(target_os = "macos")]
+    pub fn handle(&self) -> Option<&crate::font::macos::FontHandle> {
+        self.handle.as_ref()
     }
 
     /// Get font offset
@@ -646,6 +1037,49 @@ impl FontData {
 
         if let Some(cached) = self.metrics_cache.get(&size_key) {
             return Some(*cached);
+        }
+
+        // macOS path-only (or handle-only) fonts: metrics come straight
+        // from CoreText. This fires for every cascade-list fallback, any
+        // user font discovered through `find_font_path`, AND any font
+        // registered at runtime via `from_ctfont_macos` (lazy cascade
+        // discovery) — none of which have `data` set. Prefer the stored
+        // CTFont handle when present (cheap CF retain); otherwise
+        // rebuild it from the path.
+        #[cfg(target_os = "macos")]
+        if self.data.is_none() {
+            let handle = if let Some(h) = self.handle.as_ref() {
+                h.clone()
+            } else {
+                self.path
+                    .as_ref()
+                    .and_then(|p| crate::font::macos::FontHandle::from_path(p))?
+            };
+            let font_metrics = crate::font::macos::design_unit_metrics(&handle);
+            let scaled_metrics = font_metrics.scale(font_size);
+            let face_metrics = FaceMetrics {
+                cell_width: scaled_metrics.max_width as f64,
+                ascent: scaled_metrics.ascent as f64,
+                descent: scaled_metrics.descent as f64,
+                line_gap: scaled_metrics.leading as f64,
+                underline_position: Some(scaled_metrics.underline_offset as f64),
+                underline_thickness: Some(scaled_metrics.stroke_size as f64),
+                strikethrough_position: Some(scaled_metrics.strikeout_offset as f64),
+                strikethrough_thickness: Some(scaled_metrics.stroke_size as f64),
+                cap_height: Some(scaled_metrics.cap_height as f64),
+                ex_height: Some(scaled_metrics.x_height as f64),
+                ic_width: crate::font::macos::cjk_ic_width(&handle).map(|u| {
+                    // design units → pixels at font_size
+                    u * font_size as f64 / scaled_metrics.units_per_em as f64
+                }),
+            };
+            let metrics = if let Some(primary) = primary_metrics {
+                Metrics::calc_with_primary_cell_dimensions(face_metrics, primary)
+            } else {
+                Metrics::calc(face_metrics)
+            };
+            self.metrics_cache.insert(size_key, metrics);
+            return Some(metrics);
         }
 
         // Calculate metrics if not cached
@@ -731,15 +1165,146 @@ impl FontData {
             path: Some(path),
             is_emoji,
             metrics_cache: FxHashMap::default(),
+            // `from_data` is the non-macOS code path — macOS goes through
+            // `from_path_macos` or `from_static_slice`, both of which
+            // populate `handle` themselves. Leave it unset here; if
+            // anything on mac does route through here, the `ct_font()`
+            // fallback rebuilds from bytes/path on demand.
+            #[cfg(target_os = "macos")]
+            handle: None,
         })
     }
 
+    /// macOS-only: construct a `FontData` straight from a file path, with
+    /// attributes read through CoreText. Never loads the font bytes.
+    ///
+    /// CoreText reads the file itself, so Rio's `FONT_DATA_CACHE` never
+    /// ends up holding hundreds of MB of Apple Color Emoji / CJK font
+    /// bytes.
+    /// macOS-only: wrap a CTFont discovered at runtime (e.g. via
+    /// `CTFontCreateForString` lazy cascade) into a `FontData` with no
+    /// backing path or bytes. Metrics, rasterization and PS-name
+    /// lookups all go through the handle directly — there's nothing
+    /// for `get_data` / `get_metrics` to fall back to besides the
+    /// stored CTFont.
+    ///
+    /// Weight/italic/stretch are left at defaults because lazy-cascade
+    /// fonts are picked by CoreText based on script coverage rather
+    /// than style matching; the primary font's style already dictated
+    /// what was searched. Callers should not treat these fields as
+    /// authoritative.
+    #[cfg(target_os = "macos")]
+    pub fn from_ctfont_macos(handle: crate::font::macos::FontHandle) -> Self {
+        let attrs = crate::font::macos::font_attributes(&handle);
+        let style = if attrs.is_italic {
+            crate::font_introspector::Style::Italic
+        } else {
+            crate::font_introspector::Style::Normal
+        };
+        let weight = crate::font_introspector::Weight(attrs.weight);
+        Self {
+            data: None,
+            path: None,
+            offset: 0,
+            key: CacheKey::new(),
+            weight,
+            style,
+            stretch: crate::font_introspector::Stretch::NORMAL,
+            synth: Synthesis::default(),
+            should_embolden: false,
+            should_italicize: false,
+            is_emoji: attrs.is_color,
+            metrics_cache: FxHashMap::default(),
+            handle: Some(handle),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn from_path_macos(
+        path: PathBuf,
+        font_spec: &SugarloafFont,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let handle = crate::font::macos::FontHandle::from_path(&path)
+            .ok_or_else(|| format!("CoreText refused {}", path.display()))?;
+        let attrs = crate::font::macos::font_attributes(&handle);
+
+        let style = if attrs.is_italic {
+            crate::font_introspector::Style::Italic
+        } else {
+            crate::font_introspector::Style::Normal
+        };
+        let weight = crate::font_introspector::Weight(attrs.weight);
+
+        let should_italicize =
+            font_spec.style == SugarloafFontStyle::Italic && !attrs.is_italic;
+        let should_embolden = font_spec.weight >= Some(700) && attrs.weight < 700;
+
+        Ok(Self {
+            data: None,
+            path: Some(path),
+            offset: 0,
+            key: CacheKey::new(),
+            weight,
+            style,
+            stretch: crate::font_introspector::Stretch::NORMAL,
+            synth: Synthesis::default(),
+            should_embolden,
+            should_italicize,
+            is_emoji: attrs.is_color,
+            metrics_cache: FxHashMap::default(),
+            handle: Some(handle),
+        })
+    }
+
+    /// Load a bundled font whose bytes live in `.rodata` (anything from
+    /// `include_bytes!` / `font!`).
+    ///
+    /// The bytes stay where they already are — no `.to_vec()` copy onto
+    /// the heap, no second copy into a CoreFoundation buffer. On macOS we
+    /// also eagerly construct the CTFont via `CFDataCreateWithBytesNoCopy`
+    /// + `kCFAllocatorNull` and cache it on `FontData.handle`.
+    #[inline]
+    pub fn from_static_slice(
+        data: &'static [u8],
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let font = FontRef::from_index(data, 0).unwrap();
+        let (offset, key) = (font.offset, font.key);
+        let attributes = font.attributes();
+        let style = attributes.style();
+        let weight = attributes.weight();
+        let stretch = attributes.stretch();
+        let synth = attributes.synthesize(attributes);
+        let is_emoji = has_color_tables(&font);
+
+        #[cfg(target_os = "macos")]
+        let handle = crate::font::macos::FontHandle::from_static_bytes(data);
+
+        Ok(Self {
+            data: Some(SharedData::from_static(data)),
+            offset,
+            key,
+            synth,
+            style,
+            should_embolden: false,
+            should_italicize: false,
+            weight,
+            stretch,
+            path: None,
+            is_emoji,
+            metrics_cache: FxHashMap::default(),
+            #[cfg(target_os = "macos")]
+            handle,
+        })
+    }
+
+    /// Legacy constructor kept for tests and any caller that only has a
+    /// non-static slice — copies the bytes into an owned `Vec<u8>`.
+    /// Production code should use [`from_static_slice`] for bundled fonts
+    /// and [`from_data`] for path-loaded ones.
     #[inline]
     pub fn from_slice(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         let font = FontRef::from_index(data, 0).unwrap();
         let (offset, key) = (font.offset, font.key);
-        // Return our struct with the original file data and copies of the
-        // offset and key from the font reference
         let attributes = font.attributes();
         let style = attributes.style();
         let weight = attributes.weight();
@@ -760,12 +1325,14 @@ impl FontData {
             path: None,
             is_emoji,
             metrics_cache: FxHashMap::default(),
+            #[cfg(target_os = "macos")]
+            handle: None,
         })
     }
 }
 
 /// Auto-detect emoji-ness from SFNT color tables (COLR, CBDT, CBLC, SBIX).
-/// Matches ghostty's `FT_HAS_COLOR()` / CoreText SBIX checks. Used to guard
+/// Used to guard
 /// against Nerd Font families being mis-flagged as emoji when loaded via the
 /// `extras` config slot (`is_emoji` is wired per-load-site, but a real emoji
 /// font in that slot would still need the wide-cell/color-atlas treatment).
@@ -787,7 +1354,59 @@ enum FindResult {
     NotFound(SugarloafFont),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_os = "macos")]
+#[inline]
+fn find_font(font_spec: SugarloafFont, evictable: bool) -> FindResult {
+    if font_spec.is_default_family() {
+        return FindResult::NotFound(font_spec);
+    }
+
+    let family = font_spec.family.to_string();
+    let weight = font_spec.weight.unwrap_or(400);
+    let italic = font_spec.style == SugarloafFontStyle::Italic;
+    let stretch = map_stretch_macos(&font_spec.width);
+
+    info!("Font search (CoreText): family='{family}' weight={weight} italic={italic}");
+
+    let Some(path) = crate::font::macos::find_font_path(&family, weight, italic, stretch)
+    else {
+        warn!("CoreText found no match for family='{family}'");
+        return FindResult::NotFound(font_spec);
+    };
+
+    // Path-based load: never reads bytes. `evictable` is ignored on the
+    // macOS path since `FontData.data` is always `None` here — there's
+    // nothing to evict.
+    let _ = evictable;
+    match FontData::from_path_macos(path.clone(), &font_spec) {
+        Ok(d) => {
+            info!("Font '{family}' matched via CoreText at {}", path.display());
+            FindResult::Found(d)
+        }
+        Err(e) => {
+            warn!("Failed to open font '{family}' via CoreText: {e}");
+            FindResult::NotFound(font_spec)
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn map_stretch_macos(width: &Option<SugarloafFontWidth>) -> crate::font::macos::Stretch {
+    use crate::font::macos::Stretch;
+    match width {
+        Some(SugarloafFontWidth::UltraCondensed) => Stretch::UltraCondensed,
+        Some(SugarloafFontWidth::ExtraCondensed) => Stretch::ExtraCondensed,
+        Some(SugarloafFontWidth::Condensed) => Stretch::Condensed,
+        Some(SugarloafFontWidth::SemiCondensed) => Stretch::SemiCondensed,
+        Some(SugarloafFontWidth::Normal) | None => Stretch::Normal,
+        Some(SugarloafFontWidth::SemiExpanded) => Stretch::SemiExpanded,
+        Some(SugarloafFontWidth::Expanded) => Stretch::Expanded,
+        Some(SugarloafFontWidth::ExtraExpanded) => Stretch::ExtraExpanded,
+        Some(SugarloafFontWidth::UltraExpanded) => Stretch::UltraExpanded,
+    }
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_arch = "wasm32")))]
 #[inline]
 fn find_font(
     db: &crate::font::loader::Database,
@@ -934,16 +1553,16 @@ fn load_fallback_from_memory(font_spec: &SugarloafFont) -> FontData {
         (100, _) => constants::FONT_CASCADIAMONO_EXTRA_LIGHT,
         (200, _) => constants::FONT_CASCADIAMONO_LIGHT,
         (300, _) => constants::FONT_CASCADIAMONO_SEMI_LIGHT,
-        (400, _) => constants::FONT_CASCADIAMONO_REGULAR,
-        (500, _) => constants::FONT_CASCADIAMONO_REGULAR,
+        (400, _) => constants::FONT_CASCADIAMONO_NF_REGULAR,
+        (500, _) => constants::FONT_CASCADIAMONO_NF_REGULAR,
         (600, _) => constants::FONT_CASCADIAMONO_SEMI_BOLD,
         (700, _) => constants::FONT_CASCADIAMONO_SEMI_BOLD,
         (800, _) => constants::FONT_CASCADIAMONO_BOLD,
         (900, _) => constants::FONT_CASCADIAMONO_BOLD,
-        (_, _) => constants::FONT_CASCADIAMONO_REGULAR,
+        (_, _) => constants::FONT_CASCADIAMONO_NF_REGULAR,
     };
 
-    FontData::from_slice(font_to_load).unwrap()
+    FontData::from_static_slice(font_to_load).unwrap()
 }
 
 #[allow(dead_code)]
@@ -971,8 +1590,6 @@ fn find_font_path(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn load_from_font_source(path: &PathBuf) -> Option<SharedData> {
-    use std::io::Read;
-
     let cache = get_font_data_cache();
 
     // Check if already cached - DashMap handles concurrent access efficiently
@@ -980,18 +1597,158 @@ fn load_from_font_source(path: &PathBuf) -> Option<SharedData> {
         return Some(cached_data.clone());
     }
 
-    // Load from disk if not cached
-    if let Ok(mut file) = std::fs::File::open(path) {
-        let mut font_data = vec![];
-        if file.read_to_end(&mut font_data).is_ok() {
-            let shared_data = SharedData::new(font_data);
-            // Use entry API to handle concurrent inserts properly
-            let entry = cache
-                .entry(path.clone())
-                .or_insert_with(|| shared_data.clone());
-            return Some(entry.clone());
-        }
+    // Memory-map the file rather than reading it into a `Vec<u8>`. The
+    // kernel backs the bytes with the font file and only pages in what
+    // font_introspector's charmap / metrics queries actually touch, so a
+    // large fallback (e.g. a CJK font, an emoji file) costs negligible
+    // resident RAM instead of its full on-disk size. Mmap is unsafe
+    // because the file can change underneath us or the mapping can fault;
+    // for read-only font files this is the universally-accepted trade-off
+    // (same as font-kit and FreeType).
+    let file = std::fs::File::open(path).ok()?;
+    let mmap = unsafe { memmap2::Mmap::map(&file).ok()? };
+    let shared_data = SharedData::from_mmap(mmap);
+    let entry = cache
+        .entry(path.clone())
+        .or_insert_with(|| shared_data.clone());
+    Some(entry.clone())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod postscript_resolver_tests {
+    use super::*;
+
+    /// End-to-end: insert a bundled font into a bare `FontLibraryData`
+    /// and verify the PostScript-name resolver returns the font_id we
+    /// just assigned. This is the bridge the macOS shaper's cascade-run
+    /// resolver walks over — if `insert` stops populating the map (e.g.
+    /// `handle()` returns `None` on a refactor), the shape path
+    /// silently falls back to primary instead of returning the right
+    /// font for a substituted run.
+    #[test]
+    fn insert_populates_postscript_lookup() {
+        // Read the PS name straight from the handle so the test doesn't
+        // hardcode a value that changes if the bundled font is updated.
+        let handle =
+            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIAMONO_NF_REGULAR)
+                .expect("parse CascadiaMono");
+        let ps_name = handle.postscript_name();
+
+        let mut lib = FontLibraryData::default();
+        let font_data = FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR)
+            .expect("load CascadiaMono");
+        lib.insert(font_data);
+
+        assert_eq!(
+            lib.font_id_for_postscript_name(&ps_name),
+            Some(0),
+            "inserted PS name '{ps_name}' should resolve to font_id 0"
+        );
+        assert_eq!(
+            lib.font_id_for_postscript_name("not-a-real-font"),
+            None,
+            "unknown PS names must return None, not a stale hit"
+        );
     }
 
-    None
+    /// `insert` keys on the handle's current PS name, so a second
+    /// insert of the same face must not overwrite the first's id —
+    /// otherwise later lookups would return a stale id pointing at a
+    /// now-shifted slot. The rest of the library keys on the first
+    /// id, so first-wins is the correct policy.
+    #[test]
+    fn duplicate_insert_keeps_first_id() {
+        let handle =
+            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIAMONO_NF_REGULAR)
+                .expect("parse CascadiaMono");
+        let ps_name = handle.postscript_name();
+
+        let mut lib = FontLibraryData::default();
+        lib.insert(
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load a"),
+        );
+        lib.insert(
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load b"),
+        );
+        assert_eq!(
+            lib.font_id_for_postscript_name(&ps_name),
+            Some(0),
+            "second insert of same face must not clobber the first's font_id"
+        );
+    }
+
+    /// Build a tiny `FontLibrary` that contains only CascadiaMono as
+    /// font_id=0 — i.e. no cascade fallbacks registered. Then ask it to
+    /// resolve a CJK codepoint CascadiaMono can't render. The lazy-
+    /// discovery path should call `CTFontCreateForString`, register the
+    /// discovered font under a new id, and return that id.
+    #[test]
+    fn resolve_font_for_char_lazy_discovers_cascade_font() {
+        use crate::SpanStyle;
+        use std::sync::Arc;
+
+        let mut data = FontLibraryData::default();
+        data.insert(
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load"),
+        );
+        let lib = FontLibrary {
+            inner: Arc::new(parking_lot::RwLock::new(data)),
+        };
+        let starting_len = lib.inner.read().inner.len();
+
+        let style = SpanStyle::default();
+        // U+6C34 ('水') — not in CascadiaMono. Library has no fallback
+        // registered, so the pre-resolve walk returns None and the
+        // discovery path has to fire.
+        let (font_id, _is_emoji) = lib.resolve_font_for_char('\u{6C34}', &style);
+
+        assert_ne!(
+            font_id, 0,
+            "lazy discovery should register a new font_id distinct from primary"
+        );
+        assert!(
+            font_id < lib.inner.read().inner.len(),
+            "returned font_id should index into the library"
+        );
+        assert_eq!(
+            lib.inner.read().inner.len(),
+            starting_len + 1,
+            "lazy discovery should have registered exactly one new font"
+        );
+    }
+
+    /// Two queries for codepoints that cascade to the same system font
+    /// (both CJK ideographs) must reuse the same `font_id` — the
+    /// postscript-name check under the write lock prevents double
+    /// registration so each face is stored at most once.
+    #[test]
+    fn resolve_font_for_char_reuses_discovered_font() {
+        use crate::SpanStyle;
+        use std::sync::Arc;
+
+        let mut data = FontLibraryData::default();
+        data.insert(
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load"),
+        );
+        let lib = FontLibrary {
+            inner: Arc::new(parking_lot::RwLock::new(data)),
+        };
+        let style = SpanStyle::default();
+
+        // Both codepoints should cascade to the same system CJK font on
+        // any stock macOS install.
+        let (id_a, _) = lib.resolve_font_for_char('\u{6C34}', &style);
+        let len_after_first = lib.inner.read().inner.len();
+        let (id_b, _) = lib.resolve_font_for_char('\u{6728}', &style);
+        let len_after_second = lib.inner.read().inner.len();
+
+        assert_eq!(
+            id_a, id_b,
+            "two CJK codepoints from the same cascade font should reuse the same font_id"
+        );
+        assert_eq!(
+            len_after_first, len_after_second,
+            "the second resolve must not register a duplicate font"
+        );
+    }
 }

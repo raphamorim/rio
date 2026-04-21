@@ -1,28 +1,73 @@
 use super::cache::ImageCache;
 use super::{AddImage, ImageData, ImageId, ImageLocation};
 use crate::font::FontLibrary;
-use crate::font_introspector::zeno::Format;
-use crate::font_introspector::{
-    scale::{
-        image::{Content, Image as GlyphImage},
-        *,
-    },
-    FontRef,
+use crate::font_introspector::scale::{
+    image::{Content, Image as GlyphImage},
+    *,
 };
+#[cfg(not(target_os = "macos"))]
+use crate::font_introspector::zeno::Format;
+#[cfg(not(target_os = "macos"))]
+use crate::font_introspector::FontRef;
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
 use rustc_hash::FxHashMap;
 use tracing::debug;
+#[cfg(not(target_os = "macos"))]
 use zeno::{Angle, Transform};
 
-// const IS_MACOS: bool = cfg!(target_os = "macos");
-
+#[cfg(not(target_os = "macos"))]
 const SOURCES: &[Source] = &[
     Source::ColorOutline(0),
     Source::ColorBitmap(StrikeWith::BestFit),
     // Source::Bitmap(StrikeWith::ExactSize),
     Source::Outline,
 ];
+
+/// macOS rasterization path: populates `scaled` with CoreText/CoreGraphics output
+/// shaped to match what zeno fills in on other platforms.
+///
+/// `is_emoji` drives the bitmap format (RGBA for color, R8 alpha for mono) —
+/// it's taken from `FontData::is_emoji` so the caller doesn't have to probe the
+/// font per glyph.
+#[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)]
+fn rasterize_macos(
+    scaled: &mut GlyphImage,
+    handle: &crate::font::macos::FontHandle,
+    glyph_id: u16,
+    size: u16,
+    is_emoji: bool,
+    synthetic_italic: bool,
+    synthetic_bold: bool,
+) -> bool {
+    match crate::font::macos::rasterize_glyph(
+        handle,
+        glyph_id,
+        size as f32,
+        is_emoji,
+        synthetic_italic,
+        synthetic_bold,
+    ) {
+        Some(g) => {
+            scaled.placement = zeno::Placement {
+                left: g.left,
+                top: g.top,
+                width: g.width,
+                height: g.height,
+            };
+            scaled.content = if g.is_color {
+                Content::Color
+            } else {
+                Content::Mask
+            };
+            scaled.data.clear();
+            scaled.data.extend_from_slice(&g.bytes);
+            true
+        }
+        None => false,
+    }
+}
 
 pub struct GlyphCache {
     scx: ScaleContext,
@@ -87,6 +132,7 @@ pub struct GlyphCacheSession<'a> {
     scaled_image: &'a mut GlyphImage,
     font: usize,
     font_library: &'a FontLibrary,
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     scale_context: &'a mut ScaleContext,
     quant_size: u16,
 }
@@ -141,15 +187,50 @@ impl GlyphCacheSession<'_> {
         );
 
         self.scaled_image.data.clear();
-        let font_library_data = self.font_library.inner.read();
-        let enable_hint = font_library_data.hinting;
-        let font_data = font_library_data.get(&self.font);
-        let should_embolden = font_data.should_embolden;
-        let should_italicize = font_data.should_italicize;
 
-        if let Some((shared_data, offset, cache_key)) =
-            font_library_data.get_data(&self.font)
+        // Pull per-font metadata under a brief read lock, then release it so
+        // the macOS `ct_font` call (which may take its own read lock on cache
+        // miss) doesn't nest acquisitions.
+        let should_embolden;
+        let should_italicize;
+        #[cfg(target_os = "macos")]
+        let is_emoji;
+        #[cfg(not(target_os = "macos"))]
+        let enable_hint;
+        #[cfg(not(target_os = "macos"))]
+        let font_bytes_opt;
         {
+            let font_library_data = self.font_library.inner.read();
+            let font_data = font_library_data.get(&self.font);
+            should_embolden = font_data.should_embolden;
+            should_italicize = font_data.should_italicize;
+            #[cfg(target_os = "macos")]
+            {
+                is_emoji = font_data.is_emoji;
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                enable_hint = font_library_data.hinting;
+                font_bytes_opt = font_library_data.get_data(&self.font);
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        let did_render = match self.font_library.ct_font(self.font) {
+            Some(handle) => rasterize_macos(
+                self.scaled_image,
+                &handle,
+                id,
+                size,
+                is_emoji,
+                should_italicize,
+                should_embolden,
+            ),
+            None => false,
+        };
+
+        #[cfg(not(target_os = "macos"))]
+        let did_render = if let Some((shared_data, offset, cache_key)) = font_bytes_opt {
             let font_ref = FontRef {
                 data: shared_data.as_ref(),
                 offset,
@@ -163,14 +244,12 @@ impl GlyphCacheSession<'_> {
                 // un-noticeable to the human eye.
                 // As a result Apple's Quartz text renderer, which is targeted for Retina displays,
                 // now ignores font hint information completely.
-                // .hint(!IS_MACOS)
                 .hint(enable_hint)
                 .size(size.into())
                 // .normalized_coords(coords)
                 .build();
 
-            // let embolden = if IS_MACOS { 0.25 } else { 0. };
-            if Render::new(SOURCES)
+            Render::new(SOURCES)
                 .format(Format::Alpha)
                 // .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
                 .embolden(if should_embolden { 0.5 } else { 0.0 })
@@ -183,71 +262,95 @@ impl GlyphCacheSession<'_> {
                     None
                 })
                 .render_into(&mut scaler, id, self.scaled_image)
-            {
-                let p = self.scaled_image.placement;
-                let w = p.width as u16;
-                let h = p.height as u16;
+        } else {
+            false
+        };
 
-                // Handle zero-sized glyphs (spaces, zero-width characters) efficiently
-                if w == 0 || h == 0 {
-                    let entry = GlyphEntry {
-                        left: p.left,
-                        top: p.top,
-                        width: w,
-                        height: h,
-                        image: ImageId::empty(), // Use a special empty image ID
-                        is_bitmap: false,
-                    };
-                    self.entry.glyphs.insert(key, entry);
-                    return Some(entry);
-                }
+        if did_render {
+            let p = self.scaled_image.placement;
+            let w = p.width as u16;
+            let h = p.height as u16;
 
-                // Use the appropriate content type and data format
-                let (image_data, content_type) = match self.scaled_image.content {
-                    Content::Mask => {
-                        // Alpha format: use data directly for R8 texture
-                        (
-                            ImageData::Borrowed(&self.scaled_image.data),
-                            super::ContentType::Mask,
-                        )
-                    }
-                    Content::Color => {
-                        // Already RGBA format
-                        (
-                            ImageData::Borrowed(&self.scaled_image.data),
-                            super::ContentType::Color,
-                        )
-                    }
-                    Content::SubpixelMask => {
-                        // Subpixel format (should not happen with Format::Alpha)
-                        (
-                            ImageData::Borrowed(&self.scaled_image.data),
-                            super::ContentType::Color,
-                        )
-                    }
-                };
-
-                let req = AddImage {
-                    width: w,
-                    height: h,
-                    has_alpha: true,
-                    data: image_data,
-                    content_type,
-                };
-                let image = self.images.allocate(req)?;
-
+            // Handle zero-sized glyphs (spaces, zero-width characters) efficiently
+            if w == 0 || h == 0 {
                 let entry = GlyphEntry {
                     left: p.left,
                     top: p.top,
                     width: w,
                     height: h,
-                    image,
-                    is_bitmap: self.scaled_image.content == Content::Color,
+                    image: ImageId::empty(), // Use a special empty image ID
+                    is_bitmap: false,
                 };
-
                 self.entry.glyphs.insert(key, entry);
                 return Some(entry);
             }
+
+            // Use the appropriate content type and data format
+            let (image_data, content_type) = match self.scaled_image.content {
+                Content::Mask => {
+                    // Alpha format: use data directly for R8 texture
+                    (
+                        ImageData::Borrowed(&self.scaled_image.data),
+                        super::ContentType::Mask,
+                    )
+                }
+                Content::Color => {
+                    // Already RGBA format
+                    (
+                        ImageData::Borrowed(&self.scaled_image.data),
+                        super::ContentType::Color,
+                    )
+                }
+                Content::SubpixelMask => {
+                    // Subpixel format (should not happen with Format::Alpha)
+                    (
+                        ImageData::Borrowed(&self.scaled_image.data),
+                        super::ContentType::Color,
+                    )
+                }
+            };
+
+            let req = AddImage {
+                width: w,
+                height: h,
+                has_alpha: true,
+                data: image_data,
+                content_type,
+            };
+            let image = self.images.allocate(req)?;
+
+            // let mut top = p.top;
+            // let mut height = h;
+
+            // If dimension is None it means that we are running
+            // for the first time and in this case, we will obtain
+            // what the next glyph entries should respect in terms of
+            // top and height values
+            //
+            // e.g: Placement { left: 11, top: 42, width: 8, height: 50 }
+            //
+            // The calculation is made based on max_height
+            // If the rect max height is 50 and the glyph height is 68
+            // and 48 top, then (68 - 50 = 18) height as difference and
+            // apply it to the top (bigger the top == up ^).
+            // if self.max_height > &0 && &h > self.max_height {
+            //     let difference = h - self.max_height;
+
+            //     top -= difference as i32;
+            //     height = *self.max_height;
+            // }
+
+            let entry = GlyphEntry {
+                left: p.left,
+                top: p.top,
+                width: w,
+                height: h,
+                image,
+                is_bitmap: self.scaled_image.content == Content::Color,
+            };
+
+            self.entry.glyphs.insert(key, entry);
+            return Some(entry);
         }
 
         None

@@ -94,12 +94,18 @@ impl FontCache {
 }
 
 /// Resolve a single glyph: read from `cache` if present, otherwise
-/// walk the fallback chain via `font_ctx` and store the result.
-/// `font_ctx` is borrowed by the caller so multiple resolutions can
-/// share one read-lock acquisition.
+/// walk the fallback chain via `font_lib` and store the result.
+///
+/// On macOS, `font_lib.resolve_font_for_char` includes lazy discovery
+/// via `CTFontCreateForString` — an unknown codepoint gets a new
+/// cascade font registered in the library on first encounter and the
+/// new `font_id` is returned. Subsequent queries for any codepoint the
+/// discovered font covers then hit the registered-font walk directly.
+///
+/// Off macOS, the resolver is the plain walk (no discovery).
 pub(crate) fn resolve_with(
     cache: &mut FontCache,
-    font_ctx: &crate::font::FontLibraryData,
+    font_lib: &crate::font::FontLibrary,
     ch: char,
     attrs: Attributes,
 ) -> ResolvedGlyph {
@@ -112,12 +118,20 @@ pub(crate) fn resolve_with(
         ..Default::default()
     };
     let mut width = ch.width().unwrap_or(1) as f32;
-    let mut font_id = 0;
-    if let Some((fid, is_emoji)) = font_ctx.find_best_font_match(ch, &style) {
-        font_id = fid;
-        if is_emoji {
-            width = 2.0;
-        }
+
+    #[cfg(target_os = "macos")]
+    let (font_id, is_emoji) = font_lib.resolve_font_for_char(ch, &style);
+
+    #[cfg(not(target_os = "macos"))]
+    let (font_id, is_emoji) = {
+        let font_ctx = font_lib.inner.read();
+        font_ctx
+            .find_best_font_match(ch, &style)
+            .unwrap_or((0, false))
+    };
+
+    if is_emoji {
+        width = 2.0;
     }
 
     let resolved = ResolvedGlyph {
@@ -134,6 +148,7 @@ pub(crate) fn resolve_with(
 /// under `font_id`. Returns `None` when the font data isn't available
 /// (font id unregistered or the SFNT bytes failed to parse); the
 /// caller is responsible for picking a rendering fallback.
+#[cfg(not(target_os = "macos"))]
 pub(crate) fn compute_advance(
     font_ctx: &crate::font::FontLibraryData,
     font_id: usize,
@@ -146,5 +161,30 @@ pub(crate) fn compute_advance(
     Some(AdvanceInfo {
         advance_units: metrics.advance_width(glyph_id),
         units_per_em: font_ref.metrics(&[]).units_per_em,
+    })
+}
+
+/// macOS variant: derive the advance from CoreText without ever touching
+/// the font's raw bytes. Matches Ghostty's bytes-free font handling on
+/// mac.
+#[cfg(target_os = "macos")]
+pub(crate) fn compute_advance(
+    font_ctx: &crate::font::FontLibraryData,
+    font_id: usize,
+    ch: char,
+) -> Option<AdvanceInfo> {
+    let font = font_ctx.inner.get(&font_id)?;
+    let handle = if let Some(path) = font.path() {
+        crate::font::macos::FontHandle::from_path(path)
+    } else if let Some(bytes) = font.data() {
+        crate::font::macos::FontHandle::from_bytes(bytes.as_ref())
+    } else {
+        None
+    }?;
+    let (advance_units, units_per_em) =
+        crate::font::macos::advance_units_for_char(&handle, ch)?;
+    Some(AdvanceInfo {
+        advance_units,
+        units_per_em,
     })
 }

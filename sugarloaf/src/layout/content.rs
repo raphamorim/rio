@@ -8,6 +8,7 @@
 use crate::font::FontLibrary;
 use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::Script;
+#[cfg(not(target_os = "macos"))]
 use crate::font_introspector::FontRef;
 use crate::layout::content_data::{ContentData, ContentState};
 use crate::layout::render_data::RenderData;
@@ -560,9 +561,31 @@ impl Content {
         &self,
         layout: &TextLayout,
     ) -> crate::layout::TextDimensions {
+        let font_size = layout.font_size;
+
+        // macOS: read metrics + space-glyph advance straight from the
+        // primary CTFont. This is the last byte-dependent path that
+        // mattered on mac — using CTFont here means `FONT_DATA_CACHE`
+        // never holds the primary font either.
+        #[cfg(target_os = "macos")]
+        if let Some(handle) = self.fonts.ct_font(0) {
+            let metrics = crate::font::macos::font_metrics(&handle, font_size);
+            let char_width = crate::font::macos::advance_units_for_char(&handle, ' ')
+                .map(|(units, upem)| units * font_size / upem as f32)
+                .unwrap_or(font_size);
+            let line_height =
+                (metrics.ascent + metrics.descent + metrics.leading) * layout.line_height;
+            let scale = layout.dimensions.scale;
+            return crate::layout::TextDimensions {
+                width: char_width * scale,
+                height: (line_height * scale).ceil(),
+                scale,
+            };
+        }
+
+        #[cfg(not(target_os = "macos"))]
         if let Some(font_library_data) = self.fonts.inner.try_read() {
             let font_id = 0; // FONT_ID_REGULAR
-            let font_size = layout.font_size;
 
             // Get font data to create swash FontRef
             if let Some((font_data, offset, _key)) = font_library_data.get_data(&font_id)
@@ -970,6 +993,7 @@ impl Content {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg_attr(target_os = "macos", allow(unused_variables))]
     fn process_text_line(
         text_state: &mut BuilderState,
         line_number: usize,
@@ -1092,36 +1116,61 @@ impl Content {
                 continue;
             }
 
-            // Cache miss: shape the full run and store result
+            // Cache miss: shape the full run and store result.
             shaping_cache.set_content(font_id, content);
 
-            // Only allocate vars on the miss path
-            let vars: Vec<_> = text_state.vars.get(font_vars).to_vec();
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(handle) = fonts.ct_font(font_id) {
+                    let shaped = crate::font::macos::shape_text(
+                        &handle,
+                        content,
+                        scaled_font_size,
+                    );
+                    let macos_metrics =
+                        crate::font::macos::font_metrics(&handle, scaled_font_size);
+                    line.render_data.push_run_macos(
+                        style,
+                        scaled_font_size,
+                        line_number as u32,
+                        &shaped,
+                        &macos_metrics,
+                        shaping_cache,
+                    );
+                }
+            }
 
-            let font_library = &fonts.inner.read();
-            if let Some((shared_data, offset, key)) = font_library.get_data(&font_id) {
-                let font_ref = FontRef {
-                    data: shared_data.as_ref(),
-                    offset,
-                    key,
-                };
-                let mut shaper = scx
-                    .builder(font_ref)
-                    .script(script)
-                    .size(scaled_font_size)
-                    .features(features.iter().copied())
-                    .variations(vars.iter().copied())
-                    .build();
+            #[cfg(not(target_os = "macos"))]
+            {
+                // Only allocate vars on the miss path
+                let vars: Vec<_> = text_state.vars.get(font_vars).to_vec();
 
-                shaper.add_str(content);
+                let font_library = &fonts.inner.read();
+                if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
+                {
+                    let font_ref = FontRef {
+                        data: shared_data.as_ref(),
+                        offset,
+                        key,
+                    };
+                    let mut shaper = scx
+                        .builder(font_ref)
+                        .script(script)
+                        .size(scaled_font_size)
+                        .features(features.iter().copied())
+                        .variations(vars.iter().copied())
+                        .build();
 
-                line.render_data.push_run(
-                    style,
-                    scaled_font_size,
-                    line_number as u32,
-                    shaper,
-                    shaping_cache,
-                );
+                    shaper.add_str(content);
+
+                    line.render_data.push_run(
+                        style,
+                        scaled_font_size,
+                        line_number as u32,
+                        shaper,
+                        shaping_cache,
+                    );
+                }
             }
         }
     }
