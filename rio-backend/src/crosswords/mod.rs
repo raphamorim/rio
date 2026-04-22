@@ -1507,15 +1507,12 @@ impl<U: EventListener> Crosswords<U> {
                 ..
             }) => {
                 for line in (start.row.0..end.row.0).map(Line::from) {
-                    res += self
-                        .line_to_string(line, start.col..end.col, start.col.0 != 0)
-                        .trim_end();
+                    res +=
+                        &self.line_to_string(line, start.col..end.col, start.col.0 != 0);
                     res += "\n";
                 }
 
-                res += self
-                    .line_to_string(end.row, start.col..end.col, true)
-                    .trim_end();
+                res += &self.line_to_string(end.row, start.col..end.col, true);
             }
             Some(Selection {
                 ty: SelectionType::Lines,
@@ -1587,7 +1584,8 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     /// Convert a single line in the grid to a String. Used by Block selection;
-    /// trailing blank cells are dropped.
+    /// trailing blank cells are dropped. No trailing newline is appended —
+    /// the caller controls row separation.
     fn line_to_string(
         &self,
         line: Line,
@@ -1596,10 +1594,6 @@ impl<U: EventListener> Crosswords<U> {
     ) -> String {
         let mut text = String::new();
         let mut blank_cells = 0;
-
-        let line_length = std::cmp::min(self.grid[line].line_length(), cols.end + 1);
-        let cols_end = cols.end;
-
         self.append_cells(
             &mut text,
             line,
@@ -1607,14 +1601,6 @@ impl<U: EventListener> Crosswords<U> {
             include_wrapped_wide,
             &mut blank_cells,
         );
-        // Trailing blank_cells intentionally dropped.
-
-        if cols_end >= self.grid.columns() - 1
-            && (line_length.0 == 0 || !self.grid[line][line_length - 1].wrapline())
-        {
-            text.push('\n');
-        }
-
         text
     }
 
