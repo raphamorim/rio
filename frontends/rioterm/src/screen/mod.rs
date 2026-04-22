@@ -75,6 +75,22 @@ pub struct Screen<'screen> {
     last_ime_cursor_pos: Option<(f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
     pub resize_state: Option<crate::layout::ResizeState>,
+    /// Per-panel `GridRenderer`, keyed by `route_id`. Lazily created
+    /// on first render of each panel so construction (which compiles
+    /// the Metal/WGSL shaders and builds pipeline states) runs once
+    /// per panel lifetime. Removed when the panel closes.
+    ///
+    /// Phase 2.0: the grids are constructed and kept in sync with
+    /// panel layout, but `sugarloaf.render_with_grids` is still
+    /// called with an empty slice — so behavior is unchanged and
+    /// this only validates that the shaders compile on real
+    /// hardware. Phase 2.1/2.2 flip the switch.
+    pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
+    /// Per-window glyph rasterizer shared across panels. Owns a
+    /// char → font resolution cache; the per-panel atlas lives on
+    /// each `GridRenderer`.
+    #[cfg(target_os = "macos")]
+    pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
 }
 
 pub struct ScreenWindowProperties {
@@ -284,7 +300,40 @@ impl Screen<'_> {
             bindings,
             last_ime_cursor_pos: None,
             resize_state: None,
+            grids: rustc_hash::FxHashMap::default(),
+            #[cfg(target_os = "macos")]
+            grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
         })
+    }
+
+    /// Ensure a `GridRenderer` exists for `route_id` with the given
+    /// dimensions. Lazily constructs on first call, resizes on
+    /// subsequent calls when `(cols, rows)` change. Phase 2.0: the
+    /// returned grid isn't yet bound into `render_with_grids`, so
+    /// this is a smoke-test for shader compilation and pipeline
+    /// creation on real hardware.
+    pub fn ensure_grid(&mut self, route_id: usize, cols: u32, rows: u32) {
+        use std::collections::hash_map::Entry;
+        match self.grids.entry(route_id) {
+            Entry::Occupied(mut e) => e.get_mut().resize(cols, rows),
+            Entry::Vacant(e) => {
+                e.insert(rio_backend::sugarloaf::grid::GridRenderer::new(
+                    &self.sugarloaf.ctx,
+                    cols,
+                    rows,
+                ));
+            }
+        }
+    }
+
+    /// Discard the grid for a panel that has closed. Frees the GPU
+    /// buffers + pipeline state. Wired into the context-close path
+    /// in Phase 2.1; kept `#[allow(dead_code)]` for Phase 2.0 so the
+    /// method is available without failing the warnings-as-errors
+    /// build.
+    #[allow(dead_code)]
+    pub fn drop_grid(&mut self, route_id: usize) {
+        self.grids.remove(&route_id);
     }
 
     #[inline]
@@ -3289,6 +3338,25 @@ impl Screen<'_> {
     }
 
     pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
+        // Phase 2.0 smoke test: ensure the active panel has a
+        // `GridRenderer`. This forces `MetalGridRenderer::new` /
+        // `WgpuGridRenderer::new` to actually run on real hardware,
+        // which is when the Metal shader compiler + wgpu pipeline
+        // creator first see our shader source. Any shader syntax
+        // error here becomes a startup panic rather than a silent
+        // failure later. Nothing is rendered *through* the grid yet
+        // — `sugarloaf.render()` is still called with no grids
+        // slice below.
+        let current_route = self.context_manager.current_route();
+        let (grid_cols, grid_rows) = {
+            let terminal =
+                self.context_manager.current().terminal.lock();
+            (terminal.columns() as u32, terminal.screen_lines() as u32)
+        };
+        if grid_cols > 0 && grid_rows > 0 {
+            self.ensure_grid(current_route, grid_cols, grid_rows);
+        }
+
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -3381,7 +3449,186 @@ impl Screen<'_> {
             }
         }
 
-        self.sugarloaf.render();
+        // Phase 2.2: per-panel CellBg + CellText emission. Iterates
+        // every panel in the active grid, not just the focused one,
+        // so split layouts render all panes. Per-panel uniforms
+        // carry each panel's layout rect as `grid_padding` so the bg
+        // shader anchors that panel's cells to its own rectangle.
+        {
+            // --- snapshot all panels' state under a short lock scope ---
+            struct PanelFrame {
+                route_id: usize,
+                layout_rect: [f32; 4],
+                cols: u32,
+                rows: u32,
+                cell_w: f32,
+                cell_h: f32,
+                visible_rows:
+                    Vec<rio_backend::crosswords::grid::row::Row<
+                        rio_backend::crosswords::square::Square,
+                    >>,
+                style_set: rio_backend::crosswords::style::StyleSet,
+                term_colors: rio_backend::config::colors::term::TermColors,
+                cursor_col: u16,
+                cursor_row: u16,
+                cursor_visible: bool,
+                is_active: bool,
+            }
+
+            let (active_key, scaled_margin) = {
+                let grid = self.context_manager.current_grid();
+                (grid.current, grid.scaled_margin)
+            };
+            let mut panels: Vec<PanelFrame> = Vec::new();
+            for (key, item) in self.context_manager.current_grid().contexts() {
+                let ctx = &item.val;
+                let dim = ctx.dimension;
+                let (visible_rows, style_set, term_colors) = {
+                    let terminal = ctx.terminal.lock();
+                    (
+                        terminal.visible_rows(),
+                        terminal.grid.style_set.clone(),
+                        terminal.colors,
+                    )
+                };
+                let cursor = &ctx.renderable_content.cursor;
+                panels.push(PanelFrame {
+                    route_id: ctx.route_id,
+                    layout_rect: item.layout_rect,
+                    cols: dim.columns.max(1) as u32,
+                    rows: dim.lines.max(1) as u32,
+                    cell_w: dim.dimension.width,
+                    cell_h: dim.dimension.height,
+                    visible_rows,
+                    style_set,
+                    term_colors,
+                    cursor_col: cursor.state.pos.col.0 as u16,
+                    cursor_row: cursor.state.pos.row.0 as u16,
+                    cursor_visible: cursor.state.is_visible(),
+                    is_active: *key == active_key,
+                });
+            }
+
+            // --- ensure every panel has a matching GridRenderer ---
+            for p in &panels {
+                self.ensure_grid(p.route_id, p.cols, p.rows);
+            }
+
+            // --- emit cells + build uniforms per panel ---
+            let window_size = self.sugarloaf.window_size();
+            let sugarloaf_style = self.sugarloaf.style();
+            let font_px =
+                sugarloaf_style.font_size * sugarloaf_style.scale_factor;
+            let font_library = self.sugarloaf.font_library().clone();
+            let bg_col = self.renderer.named_colors.background.0;
+            let cursor_col_rgba = self.renderer.named_colors.cursor;
+
+            let mut frame_grids: Vec<(
+                &mut rio_backend::sugarloaf::grid::GridRenderer,
+                rio_backend::sugarloaf::grid::GridUniforms,
+            )> = Vec::with_capacity(panels.len());
+
+            let rasterizer = &mut self.grid_rasterizer;
+            let renderer_ref = &self.renderer;
+            for (route_id, grid) in self.grids.iter_mut() {
+                let Some(p) = panels.iter().find(|p| p.route_id == *route_id)
+                else {
+                    continue;
+                };
+
+                let cols = p.cols as usize;
+                let mut bg_scratch: Vec<rio_backend::sugarloaf::grid::CellBg> =
+                    Vec::with_capacity(cols);
+                let mut fg_scratch: Vec<rio_backend::sugarloaf::grid::CellText> =
+                    Vec::with_capacity(cols);
+                for (y, row) in p.visible_rows.iter().enumerate() {
+                    bg_scratch.clear();
+                    fg_scratch.clear();
+                    for x in 0..cols {
+                        let sq =
+                            row[rio_backend::crosswords::pos::Column(x)];
+                        let rgba = crate::grid_emit::cell_bg(
+                            sq,
+                            &p.style_set,
+                            renderer_ref,
+                            &p.term_colors,
+                        );
+                        bg_scratch.push(
+                            rio_backend::sugarloaf::grid::CellBg { rgba },
+                        );
+                        #[cfg(target_os = "macos")]
+                        if let Some(ct) = crate::grid_emit::build_cell_text(
+                            sq,
+                            x as u16,
+                            y as u16,
+                            &p.style_set,
+                            renderer_ref,
+                            &p.term_colors,
+                            rasterizer,
+                            grid,
+                            font_px,
+                            &font_library,
+                        ) {
+                            fg_scratch.push(ct);
+                        }
+                    }
+                    grid.write_row(y as u32, &bg_scratch, &fg_scratch);
+                }
+
+                // Panel's grid origin in drawable-pixel space =
+                // window scaled_margin + the panel's layout rect
+                // offset inside the root container.
+                let panel_left = scaled_margin.left + p.layout_rect[0];
+                let panel_top = scaled_margin.top + p.layout_rect[1];
+
+                let (cursor_pos, cursor_col_u, cursor_bg_u) =
+                    if p.is_active && p.cursor_visible {
+                        (
+                            [p.cursor_col as u32, p.cursor_row as u32],
+                            [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
+                            [cursor_col_rgba[0], cursor_col_rgba[1], cursor_col_rgba[2], 1.0],
+                        )
+                    } else {
+                        ([u32::MAX; 2], [0.0; 4], [0.0; 4])
+                    };
+
+                let uniforms = rio_backend::sugarloaf::grid::GridUniforms {
+                    projection:
+                        rio_backend::sugarloaf::components::core::orthographic_projection(
+                            window_size.width,
+                            window_size.height,
+                        ),
+                    // grid_padding = (top, right, bottom, left). The
+                    // bg shader only reads `.w` (left) + `.x` (top)
+                    // to anchor the grid, so right/bottom can stay
+                    // 0. padding_extend is 0 too — each panel's
+                    // grid must stay bounded to its own rect so
+                    // sibling panels / the window margin aren't
+                    // painted by this grid. The full-window bg fill
+                    // (re-enabled in sugarloaf's render_metal) now
+                    // handles the space outside all panels.
+                    grid_padding: [panel_top, 0.0, 0.0, panel_left],
+                    cursor_color: cursor_col_u,
+                    cursor_bg_color: cursor_bg_u,
+                    cell_size: [p.cell_w, p.cell_h],
+                    grid_size: [p.cols, p.rows],
+                    cursor_pos,
+                    _pad_cursor: [0; 2],
+                    min_contrast: 0.0,
+                    flags: 0,
+                    padding_extend: 0,
+                    _pad_tail: 0,
+                };
+
+                frame_grids.push((grid, uniforms));
+            }
+
+            if frame_grids.is_empty() {
+                self.sugarloaf.render();
+            } else {
+                self.sugarloaf.render_with_grids(&mut frame_grids);
+            }
+        }
 
         // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
         if self.renderer.needs_redraw() {
