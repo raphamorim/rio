@@ -3349,8 +3349,7 @@ impl Screen<'_> {
         // slice below.
         let current_route = self.context_manager.current_route();
         let (grid_cols, grid_rows) = {
-            let terminal =
-                self.context_manager.current().terminal.lock();
+            let terminal = self.context_manager.current().terminal.lock();
             (terminal.columns() as u32, terminal.screen_lines() as u32)
         };
         if grid_cols > 0 && grid_rows > 0 {
@@ -3473,10 +3472,11 @@ impl Screen<'_> {
                 cell_w: f32,
                 cell_h: f32,
                 font_px: f32,
-                visible_rows:
-                    Vec<rio_backend::crosswords::grid::row::Row<
+                visible_rows: Vec<
+                    rio_backend::crosswords::grid::row::Row<
                         rio_backend::crosswords::square::Square,
-                    >>,
+                    >,
+                >,
                 style_set: rio_backend::crosswords::style::StyleSet,
                 term_colors: rio_backend::config::colors::term::TermColors,
                 cursor_col: u16,
@@ -3491,8 +3491,11 @@ impl Screen<'_> {
                 (grid.current, grid.scaled_margin)
             };
             let mut panels: Vec<PanelFrame> = Vec::new();
-            for (key, item) in
-                self.context_manager.current_grid_mut().contexts_mut().iter_mut()
+            for (key, item) in self
+                .context_manager
+                .current_grid_mut()
+                .contexts_mut()
+                .iter_mut()
             {
                 let ctx = &mut item.val;
                 let dim = ctx.dimension;
@@ -3571,8 +3574,7 @@ impl Screen<'_> {
             let rasterizer = &mut self.grid_rasterizer;
             let renderer_ref = &self.renderer;
             for (route_id, grid) in self.grids.iter_mut() {
-                let Some(p) = panels.iter().find(|p| p.route_id == *route_id)
-                else {
+                let Some(p) = panels.iter().find(|p| p.route_id == *route_id) else {
                     continue;
                 };
 
@@ -3589,10 +3591,7 @@ impl Screen<'_> {
                 //
                 // `Partial(lines)` → rebuild only those row indices.
                 let force_full = grid.needs_full_rebuild()
-                    || matches!(
-                        p.damage,
-                        rio_backend::event::TerminalDamage::Full
-                    );
+                    || matches!(p.damage, rio_backend::event::TerminalDamage::Full);
 
                 enum RowsToRebuild<'a> {
                     None,
@@ -3607,16 +3606,12 @@ impl Screen<'_> {
                     RowsToRebuild::All
                 } else {
                     match &p.damage {
-                        rio_backend::event::TerminalDamage::Full => {
-                            RowsToRebuild::All
-                        }
+                        rio_backend::event::TerminalDamage::Full => RowsToRebuild::All,
                         rio_backend::event::TerminalDamage::Partial(lines) => {
                             RowsToRebuild::Only(lines)
                         }
                         rio_backend::event::TerminalDamage::CursorOnly
-                        | rio_backend::event::TerminalDamage::Noop => {
-                            RowsToRebuild::None
-                        }
+                        | rio_backend::event::TerminalDamage::Noop => RowsToRebuild::None,
                     }
                 };
 
@@ -3629,43 +3624,45 @@ impl Screen<'_> {
                 // Small helper: rebuild one row into the grid's
                 // buffers. Closure-style to avoid duplicating the
                 // body between the `All` and `Only` branches.
+                //
+                // Two passes now: `build_row_bg` emits `CellBg` per
+                // cell (unconditional), `build_row_fg` does run-level
+                // shaping + glyph emission (macOS only). The bg pass
+                // never needs shaping so it runs on all platforms;
+                // the fg path is macOS-specific pending the
+                // wgpu+swash port.
                 let mut rebuild_row = |y: usize,
                                        grid: &mut rio_backend::sugarloaf::grid::GridRenderer,
                                        rasterizer: &mut crate::grid_emit::GridGlyphRasterizer| {
                     let Some(row) = p.visible_rows.get(y) else {
                         return;
                     };
-                    bg_scratch.clear();
-                    fg_scratch.clear();
-                    for x in 0..cols {
-                        let sq =
-                            row[rio_backend::crosswords::pos::Column(x)];
-                        let rgba = crate::grid_emit::cell_bg(
-                            sq,
-                            &p.style_set,
-                            renderer_ref,
-                            &p.term_colors,
-                        );
-                        bg_scratch.push(
-                            rio_backend::sugarloaf::grid::CellBg { rgba },
-                        );
-                        #[cfg(target_os = "macos")]
-                        if let Some(ct) = crate::grid_emit::build_cell_text(
-                            sq,
-                            x as u16,
-                            y as u16,
-                            &p.style_set,
-                            renderer_ref,
-                            &p.term_colors,
-                            rasterizer,
-                            grid,
-                            p.font_px,
-                            p.cell_h,
-                            &font_library,
-                        ) {
-                            fg_scratch.push(ct);
-                        }
-                        #[cfg(not(target_os = "macos"))]
+                    crate::grid_emit::build_row_bg(
+                        row,
+                        cols,
+                        &p.style_set,
+                        renderer_ref,
+                        &p.term_colors,
+                        &mut bg_scratch,
+                    );
+                    #[cfg(target_os = "macos")]
+                    crate::grid_emit::build_row_fg(
+                        row,
+                        cols,
+                        y as u16,
+                        &p.style_set,
+                        renderer_ref,
+                        &p.term_colors,
+                        rasterizer,
+                        grid,
+                        p.font_px,
+                        p.cell_h,
+                        &font_library,
+                        &mut fg_scratch,
+                    );
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        fg_scratch.clear();
                         let _ = rasterizer;
                     }
                     grid.write_row(y as u32, &bg_scratch, &fg_scratch);
@@ -3704,8 +3701,7 @@ impl Screen<'_> {
                 // `floor((pixel - padding) / cell_size)` disagrees
                 // with the text vertex's `cell_size * grid_pos`
                 // about where cell boundaries are → visible seams.
-                let panel_left =
-                    (scaled_margin.left + p.layout_rect[0]).round();
+                let panel_left = (scaled_margin.left + p.layout_rect[0]).round();
                 let panel_top = (scaled_margin.top + p.layout_rect[1]).round();
 
                 let (cursor_pos, cursor_col_u, cursor_bg_u) =
@@ -3713,7 +3709,12 @@ impl Screen<'_> {
                         (
                             [p.cursor_col as u32, p.cursor_row as u32],
                             [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
-                            [cursor_col_rgba[0], cursor_col_rgba[1], cursor_col_rgba[2], 1.0],
+                            [
+                                cursor_col_rgba[0],
+                                cursor_col_rgba[1],
+                                cursor_col_rgba[2],
+                                1.0,
+                            ],
                         )
                     } else {
                         ([u32::MAX; 2], [0.0; 4], [0.0; 4])

@@ -114,8 +114,7 @@ impl MetalGlyphAtlas {
             return false;
         }
 
-        let new_texture =
-            create_atlas_texture(device, self.format, new_size, self.label);
+        let new_texture = create_atlas_texture(device, self.format, new_size, self.label);
 
         // Blit the old texture into the top-left of the new one.
         // Slots are still addressed by their original (x, y) so we
@@ -461,11 +460,7 @@ impl MetalGridRenderer {
     ///
     ///   1. bg pass — fullscreen triangle, per-fragment cell lookup.
     ///   2. text pass — one instanced quad per `CellText` in `fg_rows`.
-    pub fn render(
-        &mut self,
-        encoder: &RenderCommandEncoderRef,
-        uniforms: &GridUniforms,
-    ) {
+    pub fn render(&mut self, encoder: &RenderCommandEncoderRef, uniforms: &GridUniforms) {
         let uniforms_bytes = bytemuck::bytes_of(uniforms);
 
         // ---------- bg pass ----------

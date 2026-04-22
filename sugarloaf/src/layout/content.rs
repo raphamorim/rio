@@ -581,14 +581,12 @@ impl Content {
             //      return None)
             //   3. `font_size` itself (the em — last-resort, wider
             //      than any real monospace advance)
-            let char_width = crate::font::macos::max_ascii_advance_px(
-                &handle, font_size,
-            )
-            .or_else(|| {
-                crate::font::macos::advance_units_for_char(&handle, ' ')
-                    .map(|(units, upem)| units * font_size / upem as f32)
-            })
-            .unwrap_or(font_size);
+            let char_width = crate::font::macos::max_ascii_advance_px(&handle, font_size)
+                .or_else(|| {
+                    crate::font::macos::advance_units_for_char(&handle, ' ')
+                        .map(|(units, upem)| units * font_size / upem as f32)
+                })
+                .unwrap_or(font_size);
             let line_height =
                 (metrics.ascent + metrics.descent + metrics.leading) * layout.line_height;
             let scale = layout.dimensions.scale;

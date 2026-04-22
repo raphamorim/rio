@@ -2794,49 +2794,50 @@ impl Renderer {
                     grid.render_metal(render_encoder, uniforms);
                 }
             }
-            let ok = ok && (|| {
-                if has_images
-                    && !Self::draw_images_metal(
-                        &self.image_draws,
-                        &self.image_textures,
-                        brush,
+            let ok = ok
+                && (|| {
+                    if has_images
+                        && !Self::draw_images_metal(
+                            &self.image_draws,
+                            &self.image_textures,
+                            brush,
+                            render_encoder,
+                            ImageLayer::BelowText,
+                            &instance_buffer,
+                            &mut instance_offset,
+                            &globals,
+                        )
+                    {
+                        return false;
+                    }
+                    if !brush.render(
+                        &self.instances,
+                        &self.vertices,
+                        &self.draw_cmds,
+                        &self.images,
                         render_encoder,
-                        ImageLayer::BelowText,
+                        context,
                         &instance_buffer,
                         &mut instance_offset,
-                        &globals,
-                    )
-                {
-                    return false;
-                }
-                if !brush.render(
-                    &self.instances,
-                    &self.vertices,
-                    &self.draw_cmds,
-                    &self.images,
-                    render_encoder,
-                    context,
-                    &instance_buffer,
-                    &mut instance_offset,
-                ) {
-                    return false;
-                }
-                if has_images
-                    && !Self::draw_images_metal(
-                        &self.image_draws,
-                        &self.image_textures,
-                        brush,
-                        render_encoder,
-                        ImageLayer::AboveText,
-                        &instance_buffer,
-                        &mut instance_offset,
-                        &globals,
-                    )
-                {
-                    return false;
-                }
-                true
-            })();
+                    ) {
+                        return false;
+                    }
+                    if has_images
+                        && !Self::draw_images_metal(
+                            &self.image_draws,
+                            &self.image_textures,
+                            brush,
+                            render_encoder,
+                            ImageLayer::AboveText,
+                            &instance_buffer,
+                            &mut instance_offset,
+                            &globals,
+                        )
+                    {
+                        return false;
+                    }
+                    true
+                })();
 
             if !ok {
                 // Discard the partial encoder + command buffer (never

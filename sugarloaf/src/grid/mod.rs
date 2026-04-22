@@ -148,10 +148,7 @@ impl GridRenderer {
 
     /// Color-atlas lookup (RGBA emoji glyphs). Mirrors `lookup_glyph`
     /// but hits the color atlas instead of the grayscale one.
-    pub fn lookup_glyph_color(
-        &self,
-        key: atlas::GlyphKey,
-    ) -> Option<atlas::AtlasSlot> {
+    pub fn lookup_glyph_color(&self, key: atlas::GlyphKey) -> Option<atlas::AtlasSlot> {
         match self {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.lookup_glyph_color(key),
