@@ -36,6 +36,85 @@ use rio_backend::sugarloaf::{
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 
+use crate::ime::Preedit;
+use unicode_width::UnicodeWidthChar;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreeditCell {
+    Char(char),
+    Spacer,
+}
+
+struct PreeditOverlay {
+    columns: usize,
+    cells: Vec<Option<PreeditCell>>,
+}
+
+impl PreeditOverlay {
+    fn new(
+        preedit: &Preedit,
+        start_row: usize,
+        start_col: usize,
+        columns: usize,
+        rows: usize,
+    ) -> Option<Self> {
+        if preedit.text.is_empty() || columns == 0 || rows == 0 {
+            return None;
+        }
+
+        let mut cells = vec![None; rows.saturating_mul(columns)];
+        let mut row = start_row;
+        let mut col = start_col;
+
+        for ch in preedit.text.chars() {
+            if row >= rows {
+                break;
+            }
+
+            if col >= columns {
+                row += 1;
+                col = 0;
+            }
+            if row >= rows {
+                break;
+            }
+
+            let width = ch.width().unwrap_or(1).max(1);
+            if width > 1 && col + 1 >= columns {
+                row += 1;
+                col = 0;
+                if row >= rows {
+                    break;
+                }
+            }
+
+            let idx = row * columns + col;
+            if let Some(cell) = cells.get_mut(idx) {
+                *cell = Some(PreeditCell::Char(ch));
+            }
+
+            if width > 1 && col + 1 < columns {
+                let spacer_idx = idx + 1;
+                if let Some(cell) = cells.get_mut(spacer_idx) {
+                    *cell = Some(PreeditCell::Spacer);
+                }
+            }
+
+            col = col.saturating_add(width);
+            if col >= columns {
+                row += 1;
+                col = 0;
+            }
+        }
+
+        Some(Self { columns, cells })
+    }
+
+    fn get(&self, row: usize, col: usize) -> Option<PreeditCell> {
+        let idx = row.checked_mul(self.columns)?.saturating_add(col);
+        self.cells.get(idx).copied().flatten()
+    }
+}
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
@@ -317,9 +396,11 @@ impl Renderer {
         style_set: &StyleSet,
         extras_table: &rio_backend::crosswords::grid::ExtrasTable,
         has_cursor: bool,
+        visible_row_index: usize,
         line_opt: Option<usize>,
         line: Line,
         renderable_content: &RenderableContent,
+        ime_preedit: Option<&PreeditOverlay>,
         hint_matches: Option<&[rio_backend::crosswords::search::Match]>,
         focused_match: &Option<RangeInclusive<Pos>>,
         term_colors: &TermColors,
@@ -352,8 +433,10 @@ impl Renderer {
         // First pass: collect all styles and identify font cache misses
         for column in 0..columns {
             let square = &row.inner[column];
+            let preedit_cell =
+                ime_preedit.and_then(|preedit| preedit.get(visible_row_index, column));
 
-            if matches!(square.wide(), Wide::Spacer) {
+            if matches!(square.wide(), Wide::Spacer) && preedit_cell.is_none() {
                 continue;
             }
 
@@ -521,6 +604,23 @@ impl Renderer {
                     Weight::BOLD,
                     current_attrs.style(),
                 );
+            }
+
+            if let Some(cell) = preedit_cell {
+                match cell {
+                    PreeditCell::Char(ch) => {
+                        square_content = ch;
+                    }
+                    PreeditCell::Spacer => {
+                        square_content = ' ';
+                    }
+                }
+                if !(has_cursor && column == cursor.state.pos.col) {
+                    style.color =
+                        self.color(NamedColor::DimForeground as usize, term_colors);
+                    style.decoration = None;
+                    style.decoration_color = None;
+                }
             }
 
             // Kitty Unicode placeholder (U+10EEEE): render as transparent
@@ -1152,6 +1252,15 @@ impl Renderer {
 
             // Update cursor state from snapshot
             context.renderable_content.cursor.state = terminal_snapshot.cursor.clone();
+            let preedit_overlay = context.ime.preedit().and_then(|preedit| {
+                PreeditOverlay::new(
+                    preedit,
+                    context.renderable_content.cursor.state.pos.row.0.max(0) as usize,
+                    context.renderable_content.cursor.state.pos.col.0,
+                    terminal_snapshot.columns,
+                    terminal_snapshot.visible_rows.len(),
+                )
+            });
 
             let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
 
@@ -1253,9 +1362,11 @@ impl Renderer {
                             &terminal_snapshot.style_set,
                             &terminal_snapshot.extras_table,
                             has_cursor,
+                            i,
                             None,
                             Line((i as i32) - terminal_snapshot.display_offset as i32),
                             &context.renderable_content,
+                            preedit_overlay.as_ref(),
                             hint_matches,
                             focused_match,
                             &terminal_snapshot.colors,
@@ -1281,12 +1392,14 @@ impl Renderer {
                                 &terminal_snapshot.style_set,
                                 &terminal_snapshot.extras_table,
                                 has_cursor,
+                                line,
                                 Some(line),
                                 Line(
                                     (line as i32)
                                         - terminal_snapshot.display_offset as i32,
                                 ),
                                 &context.renderable_content,
+                                preedit_overlay.as_ref(),
                                 hint_matches,
                                 focused_match,
                                 &terminal_snapshot.colors,
@@ -1799,6 +1912,80 @@ mod tests {
             &matches,
             Pos::new(Line(2), Column(12))
         ));
+    }
+
+    fn assert_preedit_overlay(
+        text: &str,
+        start_row: usize,
+        start_col: usize,
+        columns: usize,
+        rows: usize,
+        expected: &[(usize, usize, PreeditCell)],
+    ) {
+        let preedit = Preedit::new(text.to_string(), None);
+        let overlay =
+            PreeditOverlay::new(&preedit, start_row, start_col, columns, rows).unwrap();
+        let mut cells = vec![];
+
+        for row in 0..rows {
+            for col in 0..columns {
+                if let Some(cell) = overlay.get(row, col) {
+                    cells.push((row, col, cell));
+                }
+            }
+        }
+
+        assert_eq!(cells, expected);
+    }
+
+    #[test]
+    fn test_preedit_overlay_layout_cases() {
+        let cases = [
+            (
+                "abcd",
+                1,
+                2,
+                4,
+                3,
+                vec![
+                    (1, 2, PreeditCell::Char('a')),
+                    (1, 3, PreeditCell::Char('b')),
+                    (2, 0, PreeditCell::Char('c')),
+                    (2, 1, PreeditCell::Char('d')),
+                ],
+            ),
+            (
+                "啊b",
+                0,
+                3,
+                4,
+                3,
+                vec![
+                    (1, 0, PreeditCell::Char('啊')),
+                    (1, 1, PreeditCell::Spacer),
+                    (1, 2, PreeditCell::Char('b')),
+                ],
+            ),
+            (
+                "abc",
+                1,
+                3,
+                4,
+                2,
+                vec![(1, 3, PreeditCell::Char('a'))],
+            ),
+        ];
+
+        for (text, start_row, start_col, columns, rows, expected) in cases {
+            assert_preedit_overlay(
+                text,
+                start_row,
+                start_col,
+                columns,
+                rows,
+                expected.as_slice(),
+            );
+        }
     }
 
     /// Helper: create a row and set specific characters.
