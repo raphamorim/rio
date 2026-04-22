@@ -1702,25 +1702,78 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn preedit_overlay_places_wide_chars_and_spacers() {
-        let preedit = Preedit::new("啊a".to_string(), None);
-        let overlay = PreeditOverlay::new(&preedit, 0, 0, 4, 1).unwrap();
+    fn assert_preedit_overlay(
+        text: &str,
+        start_row: usize,
+        start_col: usize,
+        columns: usize,
+        rows: usize,
+        expected: &[(usize, usize, PreeditCell)],
+    ) {
+        let preedit = Preedit::new(text.to_string(), None);
+        let overlay =
+            PreeditOverlay::new(&preedit, start_row, start_col, columns, rows).unwrap();
+        let mut cells = vec![];
 
-        assert_eq!(overlay.get(0, 0), Some(PreeditCell::Char('啊')));
-        assert_eq!(overlay.get(0, 1), Some(PreeditCell::Spacer));
-        assert_eq!(overlay.get(0, 2), Some(PreeditCell::Char('a')));
-        assert_eq!(overlay.get(0, 3), None);
+        for row in 0..rows {
+            for col in 0..columns {
+                if let Some(cell) = overlay.get(row, col) {
+                    cells.push((row, col, cell));
+                }
+            }
+        }
+
+        assert_eq!(cells, expected);
     }
 
     #[test]
-    fn preedit_overlay_wraps_wide_chars() {
-        let preedit = Preedit::new("啊".to_string(), None);
-        let overlay = PreeditOverlay::new(&preedit, 0, 2, 3, 2).unwrap();
+    fn test_preedit_overlay_layout_cases() {
+        let cases = [
+            (
+                "abcd",
+                1,
+                2,
+                4,
+                3,
+                vec![
+                    (1, 2, PreeditCell::Char('a')),
+                    (1, 3, PreeditCell::Char('b')),
+                    (2, 0, PreeditCell::Char('c')),
+                    (2, 1, PreeditCell::Char('d')),
+                ],
+            ),
+            (
+                "啊b",
+                0,
+                3,
+                4,
+                3,
+                vec![
+                    (1, 0, PreeditCell::Char('啊')),
+                    (1, 1, PreeditCell::Spacer),
+                    (1, 2, PreeditCell::Char('b')),
+                ],
+            ),
+            (
+                "abc",
+                1,
+                3,
+                4,
+                2,
+                vec![(1, 3, PreeditCell::Char('a'))],
+            ),
+        ];
 
-        assert_eq!(overlay.get(0, 2), None);
-        assert_eq!(overlay.get(1, 0), Some(PreeditCell::Char('啊')));
-        assert_eq!(overlay.get(1, 1), Some(PreeditCell::Spacer));
+        for (text, start_row, start_col, columns, rows, expected) in cases {
+            assert_preedit_overlay(
+                text,
+                start_row,
+                start_col,
+                columns,
+                rows,
+                expected.as_slice(),
+            );
+        }
     }
 
     /// Helper: create a row and set specific characters.

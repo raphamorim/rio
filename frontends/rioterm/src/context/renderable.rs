@@ -212,3 +212,29 @@ impl PendingUpdate {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_update_tracks_terminal_damage_separately_from_ui_damage() {
+        let mut pending = PendingUpdate::default();
+
+        pending.set_terminal_damage(TerminalDamage::Full);
+        pending.set_ui_damage(UIDamage {
+            island: false,
+            search: true,
+        });
+
+        assert!(pending.is_dirty());
+        assert_eq!(pending.take_terminal_damage(), Some(TerminalDamage::Full));
+        assert_eq!(
+            pending.take_ui_damage(),
+            UIDamage {
+                island: false,
+                search: true,
+            }
+        );
+    }
+}
