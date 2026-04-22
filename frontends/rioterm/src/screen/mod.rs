@@ -3650,6 +3650,7 @@ impl Screen<'_> {
                             rasterizer,
                             grid,
                             font_px,
+                            p.cell_h,
                             &font_library,
                         ) {
                             fg_scratch.push(ct);

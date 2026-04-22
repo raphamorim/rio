@@ -759,6 +759,81 @@ pub fn advance_units_for_char(handle: &FontHandle, ch: char) -> Option<(f32, u16
     Some((advance.width as f32 * units_per_em as f32, units_per_em))
 }
 
+/// Return the max advance width in pixels across all printable
+/// ASCII (U+0020..U+007E) at `size_px`. Mirrors Ghostty's
+/// cell-width derivation at `ghostty/src/font/face/coretext.zig:773-804`.
+///
+/// Why ASCII-wide + max-of-all rather than just `space`:
+/// - Some fonts return `None` / glyph 0 for space and the caller
+///   falls back to a bad value (historically `font_size` aka the em,
+///   ~1.5× too wide).
+/// - For a real monospace font every ASCII char shares one advance,
+///   so `max` returns exactly that.
+///
+/// Why a properly-sized CTFont rather than `base_font` (1pt):
+/// `get_advances_for_glyphs` on the 1pt base returns an advance in
+/// user-space which some fonts report back as 1.0 for every glyph —
+/// a bogus "full em" that defeats the whole point of querying. At
+/// the real size the values come through correctly (points at that
+/// size ≈ pixels).
+pub fn max_ascii_advance_px(handle: &FontHandle, size_px: f32) -> Option<f32> {
+    use core_foundation::base::CFIndex;
+    use core_graphics::geometry::CGSize;
+
+    if size_px <= 0.0 {
+        return None;
+    }
+
+    // CTFont at the actual render size.
+    let ct_font = handle.base_font.clone_with_font_size(size_px as f64);
+
+    const FIRST: u16 = 0x20;
+    const LAST: u16 = 0x7E;
+    const COUNT: usize = (LAST - FIRST + 1) as usize;
+    let mut utf16 = [0u16; COUNT];
+    for (i, slot) in utf16.iter_mut().enumerate() {
+        *slot = FIRST + i as u16;
+    }
+
+    let mut glyphs = [0 as CGGlyph; COUNT];
+    let ok = unsafe {
+        ct_font.get_glyphs_for_characters(
+            utf16.as_ptr(),
+            glyphs.as_mut_ptr(),
+            COUNT as CFIndex,
+        )
+    };
+    if !ok {
+        return None;
+    }
+
+    let mut advances = [CGSize::new(0.0, 0.0); COUNT];
+    unsafe {
+        ct_font.get_advances_for_glyphs(
+            kCTFontOrientationDefault,
+            glyphs.as_ptr(),
+            advances.as_mut_ptr(),
+            COUNT as CFIndex,
+        );
+    }
+
+    let mut max_px: f32 = 0.0;
+    for i in 0..COUNT {
+        if glyphs[i] == 0 {
+            continue;
+        }
+        let w = advances[i].width as f32;
+        if w > max_px {
+            max_px = w;
+        }
+    }
+    if max_px <= 0.0 {
+        None
+    } else {
+        Some(max_px)
+    }
+}
+
 /// Font-level attributes read straight from a `CTFont`. Mirrors the subset
 /// of `font_introspector::Attributes` that Rio stores on `FontData` — used
 /// to build a `FontData` from a path (or static bytes) without parsing the

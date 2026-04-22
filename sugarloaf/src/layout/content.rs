@@ -570,9 +570,25 @@ impl Content {
         #[cfg(target_os = "macos")]
         if let Some(handle) = self.fonts.ct_font(0) {
             let metrics = crate::font::macos::font_metrics(&handle, font_size);
-            let char_width = crate::font::macos::advance_units_for_char(&handle, ' ')
-                .map(|(units, upem)| units * font_size / upem as f32)
-                .unwrap_or(font_size);
+            // Cell width = max advance across all printable ASCII,
+            // queried on a CTFont clone at the real render size (not
+            // the 1pt base — that returns bogus 1.0-per-glyph
+            // advances on some fonts). Mirrors Ghostty
+            // (`coretext.zig:773-804`). Progressive fallbacks:
+            //   1. max-ASCII at this size (right answer on every
+            //      real font we've seen)
+            //   2. advance of space (pre-existing behaviour; may
+            //      return None)
+            //   3. `font_size` itself (the em — last-resort, wider
+            //      than any real monospace advance)
+            let char_width = crate::font::macos::max_ascii_advance_px(
+                &handle, font_size,
+            )
+            .or_else(|| {
+                crate::font::macos::advance_units_for_char(&handle, ' ')
+                    .map(|(units, upem)| units * font_size / upem as f32)
+            })
+            .unwrap_or(font_size);
             let line_height =
                 (metrics.ascent + metrics.descent + metrics.leading) * layout.line_height;
             let scale = layout.dimensions.scale;

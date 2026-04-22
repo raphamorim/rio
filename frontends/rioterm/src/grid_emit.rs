@@ -103,10 +103,16 @@ fn normalized_to_u8(c: [f32; 4]) -> [u8; 4] {
 /// fallback walk on cache miss).
 pub struct GridGlyphRasterizer {
     font_resolve: FxHashMap<char, (u32, bool)>,
-    /// `(font_id, size_bucket)` → rounded descent in px. Cached so we
-    /// don't clone the CTFont + query metrics on every glyph lookup.
+    /// `(font_id, size_bucket)` → rounded ascent in px. Cached
+    /// because bearings.y needs it per-glyph; CT queries involve a
+    /// clone-with-size of the base font.
+    ///
+    /// Cell-bottom-relative `bearings.y` is derived as
+    /// `cell_h - ascent + top`, so whatever extra space sits at the
+    /// top of the cell (leading, `line_height > 1`) is absorbed
+    /// automatically rather than leaking as a visible gap.
     #[cfg(target_os = "macos")]
-    descent_cache: FxHashMap<(u32, u16), i16>,
+    ascent_cache: FxHashMap<(u32, u16), i16>,
     /// `font_id` → `FontHandle`. Avoids a `FontLibrary::ct_font`
     /// read-lock acquisition + FontHandle clone on every cell —
     /// `spf`-style full-screen scrolls hit the hot path ~5k times
@@ -126,7 +132,7 @@ impl GridGlyphRasterizer {
         Self {
             font_resolve: FxHashMap::default(),
             #[cfg(target_os = "macos")]
-            descent_cache: FxHashMap::default(),
+            ascent_cache: FxHashMap::default(),
             #[cfg(target_os = "macos")]
             handle_cache: FxHashMap::default(),
             #[cfg(target_os = "macos")]
@@ -144,6 +150,7 @@ impl GridGlyphRasterizer {
         grid: &mut GridRenderer,
         ch: char,
         size_px: f32,
+        cell_h: f32,
         flags: StyleFlags,
         font_library: &FontLibrary,
     ) -> Option<(GlyphKey, AtlasSlot)> {
@@ -215,19 +222,31 @@ impl GridGlyphRasterizer {
         }
 
         // Cell-bottom-relative bearings conversion. macOS rasterizer
-        // returns `top` baseline-relative; the shader expects
-        // `bearings.y` = distance from cell bottom to glyph top.
-        // With `cell_h ≈ ascent + descent`, that conversion is
-        // `bearings.y = top + descent`.
-        let descent_px = *self
-            .descent_cache
+        // returns `top` baseline-relative (distance from baseline
+        // up to bitmap top). The shader expects `bearings.y` =
+        // distance from cell bottom to bitmap top. For a cell
+        // laid out as `| leading | ascent | descent |` (top to
+        // bottom), baseline sits at `cell_top + leading + ascent`
+        // = `cell_bottom - descent`. Bitmap top = baseline - top.
+        // Distance from cell bottom to bitmap top =
+        //   cell_h - (bitmap_top - cell_top)
+        //   = cell_h - (leading + ascent - top)
+        //   = cell_h - ascent + top  (if we fold leading into cell_h,
+        //                             which sugarloaf already does).
+        //
+        // Caching ascent (rather than descent+leading) makes this
+        // formula robust to any extra space the cell picked up from
+        // `line_height > 1.0` too — it automatically sits on top
+        // of the glyph instead of pushing the glyph down.
+        let ascent_px = *self
+            .ascent_cache
             .entry((font_id, size_bucket))
             .or_insert_with(|| {
                 let m = rio_backend::sugarloaf::font::macos::font_metrics(
                     &handle,
                     size_u16 as f32,
                 );
-                m.descent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
+                m.ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
             });
 
         // Phase 2.2c simplification: no synthetic bold/italic even if
@@ -256,14 +275,25 @@ impl GridGlyphRasterizer {
             // `bearings.x` (distance from cell-left to glyph-left),
             // which is the same when advances equal cell width.
             bearing_x: raw.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-            // Convert baseline-relative `top` → cell-bottom-relative
-            // `bearings.y` by adding descent. See the `font_metrics`
-            // call above for where descent comes from.
-            bearing_y: (raw.top
-                .clamp(i16::MIN as i32, i16::MAX as i32) as i16)
-                .saturating_add(descent_px),
+            // `bearings.y = cell_h - ascent + top`. See the long
+            // comment at `ascent_cache` for the derivation. The
+            // cell_h-dependent part gets baked into the cached
+            // slot's bearing_y, so if the panel's cell_h changes
+            // (resize) the cached slot is still positionally wrong
+            // until re-inserted — acceptable because resize clears
+            // needs_full_rebuild which triggers a full rewrite.
+            bearing_y: {
+                let top_i16 =
+                    raw.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                let cell_h_i16 =
+                    cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
+                cell_h_i16
+                    .saturating_sub(ascent_px)
+                    .saturating_add(top_i16)
+            },
             bytes: &raw.bytes,
         };
+
         let slot = grid.insert_glyph(key, raster)?;
         Some((key, slot))
     }
@@ -283,6 +313,7 @@ pub fn build_cell_text(
     rasterizer: &mut GridGlyphRasterizer,
     grid: &mut GridRenderer,
     size_px: f32,
+    cell_h: f32,
     font_library: &FontLibrary,
 ) -> Option<CellText> {
     if sq.is_bg_only() {
@@ -294,8 +325,14 @@ pub fn build_cell_text(
     }
 
     let style: Style = style_set.get(sq.style_id());
-    let (_key, slot) =
-        rasterizer.ensure_glyph(grid, ch, size_px, style.flags, font_library)?;
+    let (_key, slot) = rasterizer.ensure_glyph(
+        grid,
+        ch,
+        size_px,
+        cell_h,
+        style.flags,
+        font_library,
+    )?;
     if slot.w == 0 || slot.h == 0 {
         return None;
     }
