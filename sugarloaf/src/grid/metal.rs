@@ -193,6 +193,14 @@ pub struct MetalGridRenderer {
     /// Grayscale glyph atlas. Color atlas lands in Phase 1c tail
     /// (emoji rendering); for now only grayscale is live.
     atlas_grayscale: MetalGlyphAtlas,
+
+    /// Set to `true` on construction + `resize()`. The emission
+    /// path checks this to force a full rebuild (every row) on the
+    /// next frame, regardless of whether `TerminalDamage` is
+    /// `Noop`. Mirrors Ghostty's `grid_size_diff` gate at
+    /// `ghostty/src/renderer/generic.zig:2353`. Cleared via
+    /// `mark_full_rebuild_done` after the emission loop runs.
+    needs_full_rebuild: bool,
 }
 
 impl MetalGridRenderer {
@@ -221,7 +229,18 @@ impl MetalGridRenderer {
             text_pipeline,
             fg_staging: Vec::new(),
             atlas_grayscale,
+            needs_full_rebuild: true,
         }
+    }
+
+    #[inline]
+    pub fn needs_full_rebuild(&self) -> bool {
+        self.needs_full_rebuild
+    }
+
+    #[inline]
+    pub fn mark_full_rebuild_done(&mut self) {
+        self.needs_full_rebuild = false;
     }
 
     /// Lookup a glyph in the grayscale atlas, or `None` if not yet
@@ -254,6 +273,9 @@ impl MetalGridRenderer {
         self.fg_buffers =
             std::array::from_fn(|_| alloc_fg_buffer(&self.device, initial_fg_capacity));
         self.fg_capacity = [initial_fg_capacity; FRAMES_IN_FLIGHT];
+        // Fresh buffers = zero contents; emission path must rewrite
+        // every row on the next frame even if no damage came in.
+        self.needs_full_rebuild = true;
     }
 
     pub fn write_row(&mut self, row: u32, bg: &[CellBg], fg: &[CellText]) {

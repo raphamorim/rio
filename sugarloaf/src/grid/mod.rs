@@ -160,4 +160,27 @@ impl GridRenderer {
             GridRenderer::Unsupported => None,
         }
     }
+
+    /// `true` on the first frame after `new` or `resize`. Callers
+    /// should treat this as "force full rebuild regardless of
+    /// per-row damage" since the underlying CPU buffers are zeroed.
+    pub fn needs_full_rebuild(&self) -> bool {
+        match self {
+            #[cfg(target_os = "macos")]
+            GridRenderer::Metal(r) => r.needs_full_rebuild(),
+            GridRenderer::Wgpu(r) => r.needs_full_rebuild(),
+            GridRenderer::Unsupported => false,
+        }
+    }
+
+    /// Clear the force-full flag after the emission loop has done a
+    /// full rebuild.
+    pub fn mark_full_rebuild_done(&mut self) {
+        match self {
+            #[cfg(target_os = "macos")]
+            GridRenderer::Metal(r) => r.mark_full_rebuild_done(),
+            GridRenderer::Wgpu(r) => r.mark_full_rebuild_done(),
+            GridRenderer::Unsupported => {}
+        }
+    }
 }

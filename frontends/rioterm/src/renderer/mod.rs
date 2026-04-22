@@ -1058,6 +1058,14 @@ impl Renderer {
 
                 terminal.reset_damage();
 
+                // Hand the computed damage off to the grid
+                // emission path in `Screen::render`. `snapshot` is
+                // still used on the non-macOS rich-text path below;
+                // this just persists a copy on the context. Cheap
+                // (`TerminalDamage::Partial` is a `BTreeSet` of a
+                // few dozen `LineDamage` entries at most).
+                context.renderable_content.last_frame_damage = damage.clone();
+
                 let snapshot = TerminalSnapshot {
                     colors: terminal.colors,
                     display_offset: terminal.display_offset(),

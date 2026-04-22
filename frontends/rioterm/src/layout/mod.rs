@@ -950,6 +950,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         &mut self.inner
     }
 
+    /// Immutable view into the panel map. Kept even though the
+    /// emission loop uses `contexts_mut` (it needs `&mut
+    /// renderable_content` to take damage) — this one is handy for
+    /// read-only cross-panel queries like the damage audit.
+    #[allow(dead_code)]
     #[inline]
     pub fn contexts(&self) -> &FxHashMap<NodeId, ContextGridItem<T>> {
         &self.inner

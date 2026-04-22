@@ -164,6 +164,10 @@ pub struct WgpuGridRenderer {
     text_pipeline: wgpu::RenderPipeline,
 
     atlas_grayscale: WgpuGlyphAtlas,
+
+    /// Mirror of `MetalGridRenderer::needs_full_rebuild`. Set on
+    /// `new` / `resize`, cleared via `mark_full_rebuild_done`.
+    needs_full_rebuild: bool,
 }
 
 impl WgpuGridRenderer {
@@ -243,7 +247,18 @@ impl WgpuGridRenderer {
             text_atlas_bg,
             text_pipeline,
             atlas_grayscale,
+            needs_full_rebuild: true,
         }
+    }
+
+    #[inline]
+    pub fn needs_full_rebuild(&self) -> bool {
+        self.needs_full_rebuild
+    }
+
+    #[inline]
+    pub fn mark_full_rebuild_done(&mut self) {
+        self.needs_full_rebuild = false;
     }
 
     pub fn resize(&mut self, cols: u32, rows: u32) {
@@ -261,6 +276,7 @@ impl WgpuGridRenderer {
         self.fg_buffers =
             std::array::from_fn(|_| alloc_fg_buffer(&self.device, initial_fg_capacity));
         self.fg_capacity = [initial_fg_capacity; FRAMES_IN_FLIGHT];
+        self.needs_full_rebuild = true;
         self.bg_bind_group = create_bg_bind_group(
             &self.device,
             &self.bg_bind_group_layout,
