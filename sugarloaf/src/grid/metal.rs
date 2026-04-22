@@ -1,0 +1,531 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+
+//! Metal backend for the grid renderer.
+//!
+//! Phase 1a: `bg` pass only. Fullscreen triangle + per-fragment cell
+//! lookup from `bg_buffers[0]`. Triple-buffering of the bg buffer is
+//! stubbed (the field is reserved) but not yet used — Phase 1c will
+//! add a GPU completion handler + semaphore gate. For now slot 0 is
+//! written and read on every frame.
+//!
+//! Mirrors Ghostty's `ghostty/src/renderer/cell.zig` allocation model:
+//! one flat `CellBg` buffer indexed `row * cols + col`, one
+//! `ArrayList(CellText)` per row plus two cursor slots. The per-row
+//! FG storage lands in Phase 1c alongside `cell_text` shader port.
+
+use metal::{
+    Buffer, CompileOptions, Device, MTLBlendFactor, MTLBlendOperation, MTLPixelFormat,
+    MTLPrimitiveType, MTLRegion, MTLResourceOptions, MTLTextureUsage,
+    MTLVertexFormat, MTLVertexStepFunction, RenderCommandEncoderRef,
+    RenderPipelineDescriptor, RenderPipelineState, Texture, TextureDescriptor,
+    VertexDescriptor,
+};
+use rustc_hash::FxHashMap;
+
+use super::atlas::{AtlasSlot, GlyphKey, RasterizedGlyph};
+use super::cell::{CellBg, CellText, GridUniforms};
+use crate::context::metal::MetalContext;
+use crate::renderer::image_cache::atlas::AtlasAllocator;
+
+/// Reserved for Phase 1c's completion-handler-gated triple buffering.
+/// Currently only slot 0 is used.
+const FRAMES_IN_FLIGHT: usize = 3;
+
+/// Extra slots appended to the per-row fg storage for cursor glyphs.
+/// Matches Ghostty's `rows + 2` layout (block cursor at slot 0,
+/// non-block-style cursor at the tail).
+const CURSOR_ROW_SLOTS: usize = 2;
+
+/// Side of the square grayscale atlas texture. 2048² @ R8 = 4 MiB,
+/// enough for a few thousand glyphs before we need multi-atlas
+/// support. Ghostty starts at the same size and grows (`generic.zig`
+/// in atlas/texture management). For now we're one-and-done — glyph
+/// churn past 4 MiB is a Phase 2+ concern.
+const ATLAS_SIZE: u16 = 2048;
+
+/// Grayscale (R8) glyph atlas. One `MTLTexture` + shelf packer +
+/// glyph→slot map. Mirrors Ghostty's `font_grid.atlas_grayscale`
+/// (see `ghostty/src/renderer/cell.zig`) — though in Ghostty the
+/// atlas is owned by the font subsystem rather than the renderer.
+pub struct MetalGlyphAtlas {
+    pub(crate) texture: Texture,
+    allocator: AtlasAllocator,
+    slots: FxHashMap<GlyphKey, AtlasSlot>,
+}
+
+impl MetalGlyphAtlas {
+    pub fn new(device: &Device) -> Self {
+        let descriptor = TextureDescriptor::new();
+        descriptor.set_width(ATLAS_SIZE as u64);
+        descriptor.set_height(ATLAS_SIZE as u64);
+        // R8Unorm: one byte per pixel, sampled as `float` alpha mask
+        // in `grid_text_fragment`.
+        descriptor.set_pixel_format(MTLPixelFormat::R8Unorm);
+        descriptor.set_storage_mode(metal::MTLStorageMode::Managed);
+        descriptor.set_usage(MTLTextureUsage::ShaderRead);
+        let texture = device.new_texture(&descriptor);
+        texture.set_label("grid.atlas_grayscale");
+
+        Self {
+            texture,
+            allocator: AtlasAllocator::new(ATLAS_SIZE, ATLAS_SIZE),
+            slots: FxHashMap::default(),
+        }
+    }
+
+    #[inline]
+    pub fn lookup(&self, key: GlyphKey) -> Option<AtlasSlot> {
+        self.slots.get(&key).copied()
+    }
+
+    /// Pack + upload a rasterized glyph. Returns `None` when the
+    /// atlas is full (Phase 2 will grow or multi-atlas in that case).
+    pub fn insert(
+        &mut self,
+        key: GlyphKey,
+        glyph: RasterizedGlyph<'_>,
+    ) -> Option<AtlasSlot> {
+        // Zero-size glyphs (space chars, combining marks) still get a
+        // slot so the shader doesn't see a stale key lookup result —
+        // their quad degenerates and no fragments are drawn.
+        if glyph.width == 0 || glyph.height == 0 {
+            let slot = AtlasSlot {
+                x: 0,
+                y: 0,
+                w: 0,
+                h: 0,
+                bearing_x: glyph.bearing_x,
+                bearing_y: glyph.bearing_y,
+            };
+            self.slots.insert(key, slot);
+            return Some(slot);
+        }
+
+        let (x, y) = self.allocator.allocate(glyph.width, glyph.height)?;
+        let slot = AtlasSlot {
+            x,
+            y,
+            w: glyph.width,
+            h: glyph.height,
+            bearing_x: glyph.bearing_x,
+            bearing_y: glyph.bearing_y,
+        };
+        self.slots.insert(key, slot);
+
+        let region = MTLRegion {
+            origin: metal::MTLOrigin {
+                x: x as u64,
+                y: y as u64,
+                z: 0,
+            },
+            size: metal::MTLSize {
+                width: glyph.width as u64,
+                height: glyph.height as u64,
+                depth: 1,
+            },
+        };
+        self.texture.replace_region(
+            region,
+            0,
+            glyph.bytes.as_ptr() as *const std::ffi::c_void,
+            glyph.width as u64,
+        );
+
+        Some(slot)
+    }
+
+    #[allow(dead_code)]
+    pub fn clear(&mut self) {
+        self.allocator.clear();
+        self.slots.clear();
+    }
+}
+
+pub struct MetalGridRenderer {
+    device: Device,
+
+    /// Current grid size (cells).
+    cols: u32,
+    rows: u32,
+
+    /// `cols * rows` CellBg entries. Triple-buffered storage is
+    /// allocated for Phase 1c; only `bg_buffers[0]` is active in
+    /// Phase 1a.
+    bg_buffers: [Buffer; FRAMES_IN_FLIGHT],
+
+    /// Per-row FG glyph storage. Slot 0 = block cursor cells,
+    /// 1..=rows = content rows, last = non-block cursor cells. Unused
+    /// in Phase 1a (Phase 1c turns this on alongside the text shader).
+    #[allow(dead_code)]
+    fg_rows: Vec<Vec<CellText>>,
+
+    /// GPU buffer that holds the concatenation of all `fg_rows`.
+    /// Reserved for Phase 1c.
+    #[allow(dead_code)]
+    fg_buffers: [Buffer; FRAMES_IN_FLIGHT],
+    #[allow(dead_code)]
+    fg_capacity: [usize; FRAMES_IN_FLIGHT],
+
+    /// Ring index — Phase 1a always reads/writes 0.
+    #[allow(dead_code)]
+    frame: usize,
+
+    /// Compiled bg render pipeline. Binds:
+    ///   buffer(0): `GridUniforms`  (via `set_vertex_bytes` /
+    ///                               `set_fragment_bytes`)
+    ///   buffer(1): `bg_buffers[0]`
+    bg_pipeline: RenderPipelineState,
+
+    /// Compiled text render pipeline. Binds:
+    ///   buffer(0): per-instance `CellText` vertex buffer
+    ///   buffer(1): `GridUniforms`
+    ///   texture(0): `atlas_grayscale`
+    ///   texture(1): `atlas_color` (reused = atlas_grayscale for now)
+    text_pipeline: RenderPipelineState,
+
+    /// Staging buffer for the concatenated fg instances. Rebuilt each
+    /// frame by flattening `fg_rows` into a contiguous slice.
+    fg_staging: Vec<CellText>,
+
+    /// Grayscale glyph atlas. Color atlas lands in Phase 1c tail
+    /// (emoji rendering); for now only grayscale is live.
+    atlas_grayscale: MetalGlyphAtlas,
+}
+
+impl MetalGridRenderer {
+    pub fn new(ctx: &MetalContext, cols: u32, rows: u32) -> Self {
+        let device = ctx.device.to_owned();
+        let bg_buffers = std::array::from_fn(|_| alloc_bg_buffer(&device, cols, rows));
+        let initial_fg_capacity = (cols as usize) * (rows as usize).max(1);
+        let fg_buffers =
+            std::array::from_fn(|_| alloc_fg_buffer(&device, initial_fg_capacity));
+        let fg_capacity = [initial_fg_capacity; FRAMES_IN_FLIGHT];
+
+        let bg_pipeline = build_bg_pipeline(&device);
+        let text_pipeline = build_text_pipeline(&device);
+        let atlas_grayscale = MetalGlyphAtlas::new(&device);
+
+        Self {
+            device,
+            cols,
+            rows,
+            bg_buffers,
+            fg_rows: init_fg_rows(rows),
+            fg_buffers,
+            fg_capacity,
+            frame: 0,
+            bg_pipeline,
+            text_pipeline,
+            fg_staging: Vec::new(),
+            atlas_grayscale,
+        }
+    }
+
+    /// Lookup a glyph in the grayscale atlas, or `None` if not yet
+    /// rasterized. Callers should follow a miss with `insert_glyph`.
+    pub fn lookup_glyph(&self, key: GlyphKey) -> Option<AtlasSlot> {
+        self.atlas_grayscale.lookup(key)
+    }
+
+    /// Pack + upload a rasterized glyph into the grayscale atlas.
+    /// Returns the assigned `AtlasSlot` (same as a later `lookup`).
+    /// `None` means the atlas is full — Phase 2 grows or shards.
+    pub fn insert_glyph(
+        &mut self,
+        key: GlyphKey,
+        glyph: RasterizedGlyph<'_>,
+    ) -> Option<AtlasSlot> {
+        self.atlas_grayscale.insert(key, glyph)
+    }
+
+    pub fn resize(&mut self, cols: u32, rows: u32) {
+        if cols == self.cols && rows == self.rows {
+            return;
+        }
+        self.cols = cols;
+        self.rows = rows;
+        self.bg_buffers =
+            std::array::from_fn(|_| alloc_bg_buffer(&self.device, cols, rows));
+        self.fg_rows = init_fg_rows(rows);
+        let initial_fg_capacity = (cols as usize) * (rows as usize).max(1);
+        self.fg_buffers =
+            std::array::from_fn(|_| alloc_fg_buffer(&self.device, initial_fg_capacity));
+        self.fg_capacity = [initial_fg_capacity; FRAMES_IN_FLIGHT];
+    }
+
+    pub fn write_row(&mut self, row: u32, bg: &[CellBg], fg: &[CellText]) {
+        // FG: stash in the CPU-side per-row vec. Phase 1c will
+        // concatenate these into a GPU buffer at render time.
+        let idx = (row as usize) + 1;
+        if let Some(slot) = self.fg_rows.get_mut(idx) {
+            slot.clear();
+            slot.extend_from_slice(fg);
+        }
+
+        if row >= self.rows {
+            return;
+        }
+        let row_start = (row as usize) * (self.cols as usize);
+        let row_len = (self.cols as usize).min(bg.len());
+        let buf = &self.bg_buffers[0];
+        unsafe {
+            let ptr = buf.contents() as *mut CellBg;
+            let dst =
+                std::slice::from_raw_parts_mut(ptr.add(row_start), self.cols as usize);
+            dst[..row_len].copy_from_slice(&bg[..row_len]);
+            for slot in &mut dst[row_len..] {
+                *slot = CellBg::TRANSPARENT;
+            }
+        }
+    }
+
+    pub fn clear_row(&mut self, row: u32) {
+        let idx = (row as usize) + 1;
+        if let Some(slot) = self.fg_rows.get_mut(idx) {
+            slot.clear();
+        }
+        if row >= self.rows {
+            return;
+        }
+        let row_start = (row as usize) * (self.cols as usize);
+        let buf = &self.bg_buffers[0];
+        unsafe {
+            let ptr = buf.contents() as *mut CellBg;
+            let dst =
+                std::slice::from_raw_parts_mut(ptr.add(row_start), self.cols as usize);
+            for slot in dst {
+                *slot = CellBg::TRANSPARENT;
+            }
+        }
+    }
+
+    /// Record both grid passes against the caller's `encoder`. The
+    /// caller owns the command buffer, drawable, and render pass
+    /// descriptor. Draw order:
+    ///
+    ///   1. bg pass — fullscreen triangle, per-fragment cell lookup.
+    ///   2. text pass — one instanced quad per `CellText` in `fg_rows`.
+    pub fn render(
+        &mut self,
+        encoder: &RenderCommandEncoderRef,
+        uniforms: &GridUniforms,
+    ) {
+        let uniforms_bytes = bytemuck::bytes_of(uniforms);
+
+        // ---------- bg pass ----------
+        encoder.set_render_pipeline_state(&self.bg_pipeline);
+        encoder.set_vertex_bytes(
+            0,
+            uniforms_bytes.len() as u64,
+            uniforms_bytes.as_ptr() as *const std::ffi::c_void,
+        );
+        encoder.set_fragment_bytes(
+            0,
+            uniforms_bytes.len() as u64,
+            uniforms_bytes.as_ptr() as *const std::ffi::c_void,
+        );
+        encoder.set_fragment_buffer(1, Some(&self.bg_buffers[0]), 0);
+        encoder.draw_primitives(MTLPrimitiveType::Triangle, 0, 3);
+
+        // ---------- text pass ----------
+        // Flatten per-row fg_rows into the staging vec. Order matters
+        // for z: slot 0 (block cursor) first, content rows next,
+        // non-block-cursor slot last — same as Ghostty's ordering.
+        self.fg_staging.clear();
+        for row in &self.fg_rows {
+            self.fg_staging.extend_from_slice(row);
+        }
+        let instance_count = self.fg_staging.len();
+        if instance_count == 0 {
+            return;
+        }
+
+        // Grow the GPU buffer if the staging vec outran current capacity.
+        if self.fg_staging.len() > self.fg_capacity[0] {
+            let new_cap = self.fg_staging.len().next_power_of_two();
+            self.fg_buffers[0] = alloc_fg_buffer(&self.device, new_cap);
+            self.fg_capacity[0] = new_cap;
+        }
+
+        // Upload staging → GPU buffer. Shared storage mode means the
+        // CPU pointer is the GPU pointer.
+        let fg_bytes = bytemuck::cast_slice::<CellText, u8>(&self.fg_staging);
+        unsafe {
+            let dst = self.fg_buffers[0].contents() as *mut u8;
+            std::ptr::copy_nonoverlapping(fg_bytes.as_ptr(), dst, fg_bytes.len());
+        }
+
+        encoder.set_render_pipeline_state(&self.text_pipeline);
+        // buffer(0): per-instance vertex data.
+        encoder.set_vertex_buffer(0, Some(&self.fg_buffers[0]), 0);
+        // buffer(1): uniforms (pushed inline).
+        encoder.set_vertex_bytes(
+            1,
+            uniforms_bytes.len() as u64,
+            uniforms_bytes.as_ptr() as *const std::ffi::c_void,
+        );
+        // textures: grayscale atlas at 0; bind grayscale to 1 too
+        // until the color atlas exists (shader picks via `atlas` field
+        // per instance, so color slot isn't sampled for current
+        // workloads).
+        encoder.set_fragment_texture(0, Some(&self.atlas_grayscale.texture));
+        encoder.set_fragment_texture(1, Some(&self.atlas_grayscale.texture));
+
+        // Four-vertex triangle strip per instance (the quad).
+        encoder.draw_primitives_instanced(
+            MTLPrimitiveType::TriangleStrip,
+            0,
+            4,
+            instance_count as u64,
+        );
+    }
+}
+
+fn build_text_pipeline(device: &Device) -> RenderPipelineState {
+    let shader_source = include_str!("shaders/grid.metal");
+    let library = device
+        .new_library_with_source(shader_source, &CompileOptions::new())
+        .expect("grid.metal failed to compile (text)");
+
+    let vertex_fn = library
+        .get_function("grid_text_vertex", None)
+        .expect("grid_text_vertex not found");
+    let fragment_fn = library
+        .get_function("grid_text_fragment", None)
+        .expect("grid_text_fragment not found");
+
+    // Per-instance vertex descriptor for `CellText`. Offsets match
+    // `CellText` in cell.rs; attribute indices match the
+    // `[[attribute(N)]]` tags in `grid_text_vertex` in grid.metal.
+    let vd = VertexDescriptor::new();
+    let attrs = vd.attributes();
+    // attribute 0: glyph_pos: [u32; 2] @ offset 0
+    let a = attrs.object_at(0).unwrap();
+    a.set_format(MTLVertexFormat::UInt2);
+    a.set_buffer_index(0);
+    a.set_offset(0);
+    // attribute 1: glyph_size: [u32; 2] @ offset 8
+    let a = attrs.object_at(1).unwrap();
+    a.set_format(MTLVertexFormat::UInt2);
+    a.set_buffer_index(0);
+    a.set_offset(8);
+    // attribute 2: bearings: [i16; 2] @ offset 16 → Short2 (sign-ext to int2)
+    let a = attrs.object_at(2).unwrap();
+    a.set_format(MTLVertexFormat::Short2);
+    a.set_buffer_index(0);
+    a.set_offset(16);
+    // attribute 3: grid_pos: [u16; 2] @ offset 20 → UShort2 (zero-ext to ushort2)
+    let a = attrs.object_at(3).unwrap();
+    a.set_format(MTLVertexFormat::UShort2);
+    a.set_buffer_index(0);
+    a.set_offset(20);
+    // attribute 4: color: [u8; 4] @ offset 24 → UChar4
+    let a = attrs.object_at(4).unwrap();
+    a.set_format(MTLVertexFormat::UChar4);
+    a.set_buffer_index(0);
+    a.set_offset(24);
+    // attribute 5: atlas: u8 @ offset 28 → UChar
+    let a = attrs.object_at(5).unwrap();
+    a.set_format(MTLVertexFormat::UChar);
+    a.set_buffer_index(0);
+    a.set_offset(28);
+    // attribute 6: bools: u8 @ offset 29 → UChar
+    let a = attrs.object_at(6).unwrap();
+    a.set_format(MTLVertexFormat::UChar);
+    a.set_buffer_index(0);
+    a.set_offset(29);
+    // Layout: per-instance, stride = sizeof(CellText) = 32.
+    let layout = vd.layouts().object_at(0).unwrap();
+    layout.set_stride(std::mem::size_of::<CellText>() as u64);
+    layout.set_step_function(MTLVertexStepFunction::PerInstance);
+    layout.set_step_rate(1);
+
+    let descriptor = RenderPipelineDescriptor::new();
+    descriptor.set_label("grid.text");
+    descriptor.set_vertex_function(Some(&vertex_fn));
+    descriptor.set_fragment_function(Some(&fragment_fn));
+    descriptor.set_vertex_descriptor(Some(vd));
+
+    let color = descriptor
+        .color_attachments()
+        .object_at(0)
+        .expect("color attachment 0 missing");
+    color.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+    color.set_blending_enabled(true);
+    color.set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
+    color.set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+    color.set_rgb_blend_operation(MTLBlendOperation::Add);
+    color.set_source_alpha_blend_factor(MTLBlendFactor::One);
+    color.set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+    color.set_alpha_blend_operation(MTLBlendOperation::Add);
+
+    device
+        .new_render_pipeline_state(&descriptor)
+        .expect("grid.text pipeline state creation failed")
+}
+
+fn build_bg_pipeline(device: &Device) -> RenderPipelineState {
+    let shader_source = include_str!("shaders/grid.metal");
+    let library = device
+        .new_library_with_source(shader_source, &CompileOptions::new())
+        .expect("grid.metal failed to compile");
+
+    let vertex_fn = library
+        .get_function("grid_bg_vertex", None)
+        .expect("grid_bg_vertex not found");
+    let fragment_fn = library
+        .get_function("grid_bg_fragment", None)
+        .expect("grid_bg_fragment not found");
+
+    let descriptor = RenderPipelineDescriptor::new();
+    descriptor.set_label("grid.bg");
+    descriptor.set_vertex_function(Some(&vertex_fn));
+    descriptor.set_fragment_function(Some(&fragment_fn));
+    // No vertex descriptor: the fullscreen triangle derives positions
+    // from `[[vertex_id]]`, and the fragment samples the bg buffer by
+    // screen position + uniforms.
+
+    let color = descriptor
+        .color_attachments()
+        .object_at(0)
+        .expect("color attachment 0 missing");
+    // Must match the drawable format configured in
+    // `sugarloaf/src/context/metal.rs:79`.
+    color.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+    color.set_blending_enabled(true);
+    // Premultiplied-over blend, matching sugarloaf's rich-text pipeline.
+    color.set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
+    color.set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+    color.set_rgb_blend_operation(MTLBlendOperation::Add);
+    color.set_source_alpha_blend_factor(MTLBlendFactor::One);
+    color.set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+    color.set_alpha_blend_operation(MTLBlendOperation::Add);
+
+    device
+        .new_render_pipeline_state(&descriptor)
+        .expect("grid.bg pipeline state creation failed")
+}
+
+fn alloc_bg_buffer(device: &Device, cols: u32, rows: u32) -> Buffer {
+    let size = (cols as u64)
+        .saturating_mul(rows as u64)
+        .saturating_mul(std::mem::size_of::<CellBg>() as u64)
+        .max(std::mem::size_of::<CellBg>() as u64);
+    device.new_buffer(size, MTLResourceOptions::StorageModeShared)
+}
+
+fn alloc_fg_buffer(device: &Device, capacity: usize) -> Buffer {
+    let size = (capacity as u64)
+        .saturating_mul(std::mem::size_of::<CellText>() as u64)
+        .max(std::mem::size_of::<CellText>() as u64);
+    device.new_buffer(size, MTLResourceOptions::StorageModeShared)
+}
+
+fn init_fg_rows(rows: u32) -> Vec<Vec<CellText>> {
+    (0..(rows as usize + CURSOR_ROW_SLOTS))
+        .map(|_| Vec::new())
+        .collect()
+}

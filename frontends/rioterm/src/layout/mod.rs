@@ -950,6 +950,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         &mut self.inner
     }
 
+    #[inline]
+    pub fn contexts(&self) -> &FxHashMap<NodeId, ContextGridItem<T>> {
+        &self.inner
+    }
+
     /// Get contexts ordered by visual position (top-to-bottom, left-to-right)
     pub fn get_ordered_keys(&self) -> Vec<NodeId> {
         let mut panels: Vec<(NodeId, f32, f32)> = self

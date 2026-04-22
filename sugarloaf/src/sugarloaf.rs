@@ -278,6 +278,14 @@ impl Sugarloaf<'_> {
         self.state.content.font_library().family_names()
     }
 
+    /// Borrow the font library. Used by the grid emission path to
+    /// resolve per-codepoint fonts before rasterizing into the grid's
+    /// own atlas.
+    #[inline]
+    pub fn font_library(&self) -> &crate::font::FontLibrary {
+        self.state.content.font_library()
+    }
+
     /// Resolve a batch of glyph queries with a single FontLibrary
     /// read lock acquisition. Cache hits short-circuit; misses are
     /// walked under the lock and stored back in the cache. Returned
@@ -981,6 +989,21 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render(&mut self) {
+        self.render_with_grids(&mut []);
+    }
+
+    /// Render variant that takes terminal grid renderers. Each grid's
+    /// cell draws land inside the same render pass as sugarloaf's own
+    /// UI overlays, so grid cells composite under island / assistant /
+    /// etc. with a single drawable acquisition + present.
+    ///
+    /// Pass `&mut []` to skip (equivalent to `render()`). Phase 2 call
+    /// sites in rioterm build the slice with one entry per panel.
+    #[inline]
+    pub fn render_with_grids(
+        &mut self,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    ) {
         self.state.compute_dimensions();
         self.state.compute_updates(
             &mut self.renderer,
@@ -991,11 +1014,11 @@ impl Sugarloaf<'_> {
 
         match self.ctx.inner {
             crate::context::ContextType::Wgpu(_) => {
-                self.render_wgpu();
+                self.render_wgpu(grids);
             }
             #[cfg(target_os = "macos")]
             crate::context::ContextType::Metal(_) => {
-                self.render_metal();
+                self.render_metal(grids);
             }
             crate::context::ContextType::Cpu(_) => {
                 self.render_cpu();
@@ -1027,7 +1050,10 @@ impl Sugarloaf<'_> {
     /// overflow loop can see them all (mirrors zed's `MetalRenderer::draw`).
     #[inline]
     #[cfg(target_os = "macos")]
-    pub fn render_metal(&mut self) {
+    pub fn render_metal(
+        &mut self,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    ) {
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Metal(metal) => metal,
             _ => return,
@@ -1036,13 +1062,16 @@ impl Sugarloaf<'_> {
         let bg_color = self
             .background_color
             .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32]);
-        self.renderer.render_metal(ctx, bg_color);
+        self.renderer.render_metal(ctx, bg_color, grids);
 
         self.reset();
     }
 
     #[inline]
-    pub fn render_wgpu(&mut self) {
+    pub fn render_wgpu(
+        &mut self,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    ) {
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Wgpu(wgpu) => wgpu,
             _ => return,
@@ -1084,6 +1113,12 @@ impl Sugarloaf<'_> {
                             depth_stencil_attachment: None,
                             multiview_mask: None,
                         });
+
+                    // Grid passes first — cell bg/text composite under
+                    // the rich-text UI overlays drawn below.
+                    for (grid, uniforms) in grids.iter_mut() {
+                        grid.render_wgpu(&mut rpass, uniforms);
+                    }
 
                     self.renderer.render(ctx, &mut rpass);
                 }

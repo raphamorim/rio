@@ -9,6 +9,7 @@ mod bindings;
 mod cli;
 mod constants;
 mod context;
+mod grid_emit;
 mod hints;
 mod ime;
 mod layout;

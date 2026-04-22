@@ -72,6 +72,7 @@ pub struct Renderer {
 /// Background color is intentionally excluded because it doesn't affect text shaping.
 /// This allows runs with varying background colors to share cache entries,
 /// dramatically improving cache hit rates for highlighted/selected text.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
     // PUA glyphs (and any glyph with a per-codepoint Nerd Font
     // constraint) must each be in their own run so the compositor can
@@ -97,12 +98,14 @@ fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
 }
 
 #[inline]
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn is_powerline(c: char) -> bool {
     ('\u{E0B0}'..='\u{E0D7}').contains(&c)
 }
 
 /// Compute the constraint width for a PUA (Nerd Font) glyph based on adjacent cells.
 /// Returns 1.0 (fit in 1 cell) or 2.0 (expand to 2 cells).
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn pua_constraint_width(row: &Row<Square>, col: usize, cols: usize) -> f32 {
     // At end of line -> constrain to 1 cell
     if col + 1 >= cols {
@@ -193,6 +196,7 @@ impl Renderer {
     }
 
     #[inline]
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     fn create_style(
         &mut self,
         square: &Square,
@@ -252,6 +256,7 @@ impl Renderer {
     }
 
     #[inline]
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     fn compute_decoration(
         &self,
         cell_style: &CellStyle,
@@ -302,6 +307,7 @@ impl Renderer {
     #[inline]
     #[allow(clippy::too_many_arguments)]
     /// Check if a position is within any hint match
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     fn is_position_in_hint_matches(
         matches: &[rio_backend::crosswords::search::Match],
         pos: Pos,
@@ -310,6 +316,7 @@ impl Renderer {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     fn create_line(
         &mut self,
         sugarloaf: &mut Sugarloaf,
@@ -741,7 +748,7 @@ impl Renderer {
     }
 
     #[inline]
-    fn compute_color(
+    pub(crate) fn compute_color(
         &self,
         color: &AnsiColor,
         flags: StyleFlags,
@@ -791,7 +798,7 @@ impl Renderer {
     }
 
     #[inline]
-    fn compute_bg_color(
+    pub(crate) fn compute_bg_color(
         &self,
         cell_style: &CellStyle,
         term_colors: &TermColors,
@@ -823,6 +830,7 @@ impl Renderer {
     }
 
     #[inline]
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     fn create_cursor_style(
         &self,
         square: &Square,
@@ -1241,6 +1249,32 @@ impl Renderer {
                 is_cursor_visible = true;
             }
 
+            // Phase 2.2d: on macOS the grid renderer is the
+            // authoritative terminal text path. Skip emitting into
+            // the rich-text content system — `sugarloaf.render`
+            // still iterates rich-text state, so we clear this
+            // context's rich-text slot once to drop anything that
+            // was there before the grid took over. Island /
+            // assistant / search / command palette emit into their
+            // own rich-text ids, so this doesn't affect them.
+            //
+            // On non-macOS the rich-text terminal path stays live
+            // until the grid gets a wgpu rasterization bridge
+            // (Phase 2.2c is macOS-only).
+            #[cfg(target_os = "macos")]
+            {
+                sugarloaf.content().sel(rich_text_id).clear();
+                sugarloaf.content().build();
+                // Intentionally ignore the previously-computed
+                // damage / cursor visibility — the grid emits from
+                // terminal state directly and resolves its own
+                // cursor cells.
+                let _ = specific_lines;
+                let _ = is_cursor_visible;
+                let _ = hint_matches;
+                let _ = focused_match;
+            }
+            #[cfg(not(target_os = "macos"))]
             match specific_lines {
                 None => {
                     sugarloaf.content().sel(rich_text_id).clear();
@@ -1263,7 +1297,6 @@ impl Renderer {
                         );
                     }
                     sugarloaf.content().build();
-                    // let _duration = start.elapsed();
                 }
                 Some(lines) => {
                     sugarloaf.content().sel(rich_text_id);
@@ -1294,8 +1327,6 @@ impl Renderer {
                             );
                         }
                     }
-
-                    // let _duration = start.elapsed();
                 }
             }
         }
@@ -1457,6 +1488,7 @@ impl Renderer {
     }
 
     /// Find hint label at the specified position
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     fn find_hint_label_at_position<'a>(
         &self,
         renderable_content: &'a RenderableContent,
