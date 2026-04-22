@@ -1592,9 +1592,10 @@ mod postscript_resolver_tests {
     fn insert_populates_postscript_lookup() {
         // Read the PS name straight from the handle so the test doesn't
         // hardcode a value that changes if the bundled font is updated.
-        let handle =
-            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIAMONO_NF_REGULAR)
-                .expect("parse CascadiaMono");
+        let handle = crate::font::macos::FontHandle::from_static_bytes(
+            FONT_CASCADIAMONO_NF_REGULAR,
+        )
+        .expect("parse CascadiaMono");
         let ps_name = handle.postscript_name();
 
         let mut lib = FontLibraryData::default();
@@ -1621,9 +1622,10 @@ mod postscript_resolver_tests {
     /// id, so first-wins is the correct policy.
     #[test]
     fn duplicate_insert_keeps_first_id() {
-        let handle =
-            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIAMONO_NF_REGULAR)
-                .expect("parse CascadiaMono");
+        let handle = crate::font::macos::FontHandle::from_static_bytes(
+            FONT_CASCADIAMONO_NF_REGULAR,
+        )
+        .expect("parse CascadiaMono");
         let ps_name = handle.postscript_name();
 
         let mut lib = FontLibraryData::default();
