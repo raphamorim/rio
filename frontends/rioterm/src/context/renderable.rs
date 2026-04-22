@@ -71,6 +71,15 @@ pub struct RenderableContent {
     pub last_blink_toggle: Option<Instant>,
     pub pending_update: PendingUpdate,
     pub background: Option<BackgroundState>,
+    /// Damage extracted by `Renderer::run` for this frame. Consumed
+    /// by the macOS grid emission path in `Screen::render` to gate
+    /// per-row rebuilds.
+    ///
+    /// `Full` on construction so the first frame's emission rebuilds
+    /// everything — the grid's CPU+GPU buffers start zeroed and
+    /// need a full fill. Reset to `Noop` after the grid consumes it
+    /// so next frame only re-emits if damage actually arrived.
+    pub last_frame_damage: TerminalDamage,
 }
 
 impl RenderableContent {
@@ -88,6 +97,7 @@ impl RenderableContent {
             pending_update: PendingUpdate::default(),
             is_blinking_cursor_visible: false,
             background: None,
+            last_frame_damage: TerminalDamage::Full,
         }
     }
 
