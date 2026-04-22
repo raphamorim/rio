@@ -64,7 +64,7 @@ impl Application<'_> {
         let scheduler = Scheduler::new(proxy);
         event_loop.listen_device_events(DeviceEvents::Never);
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         event_loop.set_confirm_before_quit(config.confirm_before_quit);
 
         rio_notifier::request_authorization();
@@ -902,10 +902,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         match event {
             WindowEvent::CloseRequested => {
-                // On macOS, just close the window. Quit confirmation is
-                // handled by Rio's Cmd+Q keybinding (RioEvent::Exit).
-                if cfg!(target_os = "macos") {
+                // macOS: Cmd+Q quit confirmation is handled by
+                // `applicationShouldTerminate` in rio-window.
+                // Windows: per-window close confirmation is handled
+                // by `MessageBoxW` in rio-window's WM_CLOSE handler
+                // (see `set_confirm_before_quit` plumbing).
+                // Either way, by the time we see `CloseRequested`
+                // the user has already confirmed — just close.
+                if cfg!(any(target_os = "macos", target_os = "windows")) {
                     self.router.routes.remove(&window_id);
+                    if self.router.routes.is_empty() {
+                        event_loop.exit();
+                    }
                     return;
                 }
 

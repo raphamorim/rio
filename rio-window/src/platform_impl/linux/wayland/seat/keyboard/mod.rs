@@ -31,6 +31,8 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
         _: &Connection,
         _: &QueueHandle<WinitState>,
     ) {
+        state.mark_input_received();
+
         let seat_state = match state.seats.get_mut(&data.seat.id()) {
             Some(seat_state) => seat_state,
             None => {

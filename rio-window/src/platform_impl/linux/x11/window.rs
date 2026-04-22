@@ -130,8 +130,10 @@ pub struct UnownedWindow {
     cursor_visible: Mutex<bool>,
     ime_sender: Mutex<ImeSender>,
     pub shared_state: Mutex<SharedState>,
-    redraw_sender: WakeSender<WindowId>,
     activation_sender: WakeSender<super::ActivationToken>,
+    pub(crate) redraw_pending: std::sync::atomic::AtomicBool,
+    redraw_flag: Arc<std::sync::atomic::AtomicBool>,
+    waker: calloop::ping::Ping,
 }
 
 macro_rules! leap {
@@ -372,8 +374,10 @@ impl UnownedWindow {
             cursor_visible: Mutex::new(true),
             ime_sender: Mutex::new(event_loop.ime_sender.clone()),
             shared_state: SharedState::new(guessed_monitor, &window_attrs),
-            redraw_sender: event_loop.redraw_sender.clone(),
             activation_sender: event_loop.activation_sender.clone(),
+            redraw_pending: std::sync::atomic::AtomicBool::new(false),
+            redraw_flag: event_loop.redraw_flag.clone(),
+            waker: event_loop.waker.clone(),
         };
 
         // Title must be set before mapping. Some tiling window managers (i.e. i3) use the window
@@ -1983,9 +1987,11 @@ impl UnownedWindow {
 
     #[inline]
     pub fn request_redraw(&self) {
-        self.redraw_sender
-            .send(WindowId(self.xwindow as _))
-            .unwrap();
+        self.redraw_pending
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.redraw_flag
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.waker.ping();
     }
 
     #[inline]

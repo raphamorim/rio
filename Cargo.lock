@@ -853,7 +853,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "copa"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "arrayvec",
  "criterion",
@@ -879,7 +879,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -980,6 +980,18 @@ checksum = "c9d2790b5c08465d49f8dc05c8bcae9fea467855947db39b0f8145c091aaced5"
 dependencies = [
  "core-foundation 0.9.4",
  "core-graphics 0.23.2",
+ "foreign-types",
+ "libc",
+]
+
+[[package]]
+name = "core-text"
+version = "21.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a593227b66cbd4007b2a050dfdd9e1d1318311409c8d600dc82ba1b15ca9c130"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-graphics 0.24.0",
  "foreign-types",
  "libc",
 ]
@@ -1544,7 +1556,7 @@ dependencies = [
  "byteorder",
  "core-foundation 0.9.4",
  "core-graphics 0.23.2",
- "core-text",
+ "core-text 20.1.0",
  "dirs",
  "dwrote",
  "float-ord",
@@ -4095,7 +4107,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "base64",
  "bitflags 2.11.0",
@@ -4133,7 +4145,7 @@ dependencies = [
 
 [[package]]
 name = "rio-grapheme-width"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "phf",
  "ucd-trie",
@@ -4141,7 +4153,7 @@ dependencies = [
 
 [[package]]
 name = "rio-notifier"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "block2 0.5.1",
  "objc-rs 0.3.1",
@@ -4154,7 +4166,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4162,7 +4174,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -4216,7 +4228,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "ahash",
  "bitflags 2.11.0",
@@ -4744,14 +4756,17 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "sugarloaf"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "approx",
+ "block",
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
+ "core-foundation 0.10.1",
  "core-graphics 0.24.0",
  "core-graphics-types 0.2.0",
+ "core-text 21.0.0",
  "criterion",
  "dashmap",
  "deflate",
@@ -4852,7 +4867,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "teletypewriter"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "corcovado",
  "dirs",

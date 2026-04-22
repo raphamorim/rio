@@ -2552,6 +2552,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
+        // Set the per-row kitty placeholder flag so the renderer can
+        // skip the U+10EEEE scan on rows that don't have any. Mirrors
+        // ghostty's `page.zig:1953-1958` approach.
+        if c == crate::ansi::kitty_virtual::PLACEHOLDER {
+            let line = self.grid.cursor.pos.row;
+            self.grid[line].kitty_virtual_placeholder = true;
+        }
+
         if width == 1 {
             self.write_at_cursor(c);
         } else {
@@ -3531,6 +3539,25 @@ impl<U: EventListener> Handler for Crosswords<U> {
             image_id, graphic_data.width, graphic_data.height
         );
 
+        // `a=T` + `U=1` is what `kitten icat --unicode-placeholder`
+        // emits: combined transmit+place where the placement is virtual.
+        // Route to the virtual-placement path so only metadata is
+        // registered (the application emits U+10EEEE cells itself).
+        // Unlike `place_kitty_overlay`, this path doesn't push to
+        // `pending_images`, so we have to do that here — otherwise the
+        // GPU never sees the pixel data and the placeholder cells render
+        // as blank space.
+        if placement.virtual_placement {
+            let pixel_data = graphic_data.clone();
+            self.graphics
+                .store_kitty_image(image_id, None, graphic_data);
+            self.graphics.pending_images.push((image_id, pixel_data));
+            self.graphics.kitty_graphics_dirty = true;
+            self.send_graphics_updates();
+            self.place_virtual_graphic(placement);
+            return;
+        }
+
         // Store takes ownership and sets transmit_time.
         self.graphics
             .store_kitty_image(image_id, None, graphic_data);
@@ -3544,20 +3571,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
         &mut self,
         placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
     ) {
-        // Place a previously stored image (a=p)
         debug!(
-            "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}, unicode_placeholder={}",
+            "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}, virtual={}",
             placement.image_id,
             placement.x,
             placement.y,
             placement.columns,
             placement.rows,
-            placement.unicode_placeholder
+            placement.virtual_placement,
         );
 
-        // Check if this is a virtual placement (unicode_placeholder > 0 means U=1)
-        if placement.unicode_placeholder > 0 {
-            // Virtual placement: Write placeholder character(s) to grid
+        // `U=1` → virtual placement: store metadata, the application
+        // emits U+10EEEE placeholder cells itself. The renderer scans
+        // visible cells and composites the image at those positions.
+        if placement.virtual_placement {
             self.place_virtual_graphic(placement);
             return;
         }
@@ -4077,19 +4104,27 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Register a virtual placement (kitty graphics `a=p,U=1`).
+    ///
+    /// Per the spec, this command only declares metadata — it does NOT
+    /// write any cells. The application (e.g. `kitten icat
+    /// --unicode-placeholder`, see kitty's `kittens/icat/transmit.go:221`)
+    /// emits the U+10EEEE placeholder cells itself as ordinary text right
+    /// after this APC. The renderer scans visible cells for U+10EEEE,
+    /// decodes the image_id from the foreground color and the row/col
+    /// indices from the combining-mark diacritics (kitty_virtual::*), and
+    /// looks up the metadata stored here to know which image to composite.
     fn place_virtual_graphic(
         &mut self,
         placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
     ) {
         use crate::ansi::graphics::VirtualPlacement;
-        use crate::ansi::kitty_virtual;
 
         debug!(
             "Virtual placement: image_id={}, placement_id={}, columns={}, rows={}",
             placement.image_id, placement.placement_id, placement.columns, placement.rows
         );
 
-        // Store the virtual placement metadata
         let vp = VirtualPlacement {
             image_id: placement.image_id,
             placement_id: placement.placement_id,
@@ -4101,92 +4136,6 @@ impl<U: EventListener> Crosswords<U> {
         self.graphics
             .kitty_virtual_placements
             .insert((placement.image_id, placement.placement_id), vp);
-
-        // Calculate the grid dimensions needed
-        let columns = if placement.columns > 0 {
-            placement.columns as usize
-        } else {
-            // Default to a reasonable size if not specified
-            10
-        };
-        let rows = if placement.rows > 0 {
-            placement.rows as usize
-        } else {
-            10
-        };
-
-        // Extract image ID components
-        let image_id_low = placement.image_id & 0x00FFFFFF; // Lower 24 bits
-        let image_id_high = if placement.image_id > 0x00FFFFFF {
-            Some(((placement.image_id >> 24) & 0xFF) as u8)
-        } else {
-            None
-        };
-
-        // Convert IDs to colors
-        let fg_color = kitty_virtual::id_to_rgb(image_id_low);
-        let underline_color = if placement.placement_id > 0 {
-            Some(kitty_virtual::id_to_rgb(placement.placement_id))
-        } else {
-            None
-        };
-
-        // Save cursor position and template
-        let start_col = self.grid.cursor.pos.col;
-        let _start_row = self.grid.cursor.pos.row;
-        let saved_template = self.grid.cursor.template;
-
-        // Move to placement position if specified
-        if placement.x > 0 || placement.y > 0 {
-            self.grid.cursor.pos.col = Column(placement.x as usize);
-            self.grid.cursor.pos.row = Line(placement.y as i32);
-        }
-
-        // Write placeholder characters with proper encoding
-        for row_idx in 0..rows {
-            // Move to start of row
-            self.grid.cursor.pos.col = if placement.x > 0 {
-                Column(placement.x as usize)
-            } else {
-                start_col
-            };
-
-            for col_idx in 0..columns {
-                // Set colors to encode image_id and placement_id via the
-                // style table.
-                let fg = crate::config::colors::AnsiColor::Spec(fg_color);
-                let ul = underline_color.map(crate::config::colors::AnsiColor::Spec);
-                self.grid.update_template_style(|s| {
-                    s.fg = fg;
-                    s.underline_color = ul;
-                });
-
-                // Encode placeholder with diacritics for this cell's position
-                let placeholder_str = kitty_virtual::encode_placeholder(
-                    row_idx as u32,
-                    col_idx as u32,
-                    image_id_high,
-                );
-
-                // Write each character of the encoded placeholder
-                for ch in placeholder_str.chars() {
-                    self.write_at_cursor(ch);
-                }
-            }
-
-            // Move to next row
-            if row_idx < rows - 1 {
-                self.linefeed();
-            }
-        }
-
-        // Restore cursor template
-        self.grid.cursor.template = saved_template;
-
-        debug!(
-            "Wrote {}x{} placeholder cells for virtual placement (image_id={:#X})",
-            columns, rows, placement.image_id
-        );
     }
 }
 
@@ -5836,5 +5785,218 @@ mod tests {
         assert_eq!(cw.grid[row][Column(2)].wide(), Wide::Spacer);
         assert_eq!(cw.grid[row][Column(3)].c(), '"');
         assert_eq!(cw.grid.cursor.pos.col, Column(4));
+    }
+
+    /// End-to-end: feed rio the exact byte sequence `kitten icat
+    /// --unicode-placeholder` emits and verify the grid ends up with the
+    /// expected U+10EEEE cells, fg colors, and diacritics. Reproduces
+    /// the wire protocol from kitty's `kittens/icat/transmit.go:221`
+    /// (`write_unicode_placeholder`) — `\e[38:2:R:G:Bm` foreground +
+    /// per-cell `<U+10EEEE><row diac><col diac><high diac>` payload.
+    #[test]
+    fn icat_unicode_placeholder_wire_sequence_lands_in_grid() {
+        use crate::ansi::kitty_virtual::{DIACRITICS, PLACEHOLDER};
+
+        let size = CrosswordsSize::new(40, 20);
+        let columns = size.columns;
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor: crate::performer::handler::Processor<
+            crate::performer::handler::StdSyncHandler,
+        > = crate::performer::handler::Processor::new();
+
+        // 32-bit image_id with high byte non-zero (matches icat's
+        // rejection-sample loop in `transmit.go:280-288`).
+        let image_id: u32 = 0x0201_0203;
+        let high = (image_id >> 24) & 0xFF;
+        let r = (image_id >> 16) & 0xFF;
+        let g = (image_id >> 8) & 0xFF;
+        let b = image_id & 0xFF;
+
+        // 1) Transmit a 1×1 RGBA pixel under the chosen image_id (we
+        //    don't care about the pixel data — we just need an entry in
+        //    `kitty_images` so the renderer's existence check passes).
+        //    base64("\xFF\x00\x00\xFF") = "/wAA/w==".
+        let xmit = format!("\x1b_Gf=32,a=t,i={image_id},s=1,v=1;/wAA/w==\x1b\\");
+        processor.advance(&mut cw, xmit.as_bytes());
+
+        // 2) Register the virtual placement: 4 cols × 2 rows.
+        let cols = 4u32;
+        let rows = 2u32;
+        let place = format!("\x1b_Ga=p,U=1,i={image_id},c={cols},r={rows},q=2\x1b\\");
+        processor.advance(&mut cw, place.as_bytes());
+
+        // 3) Emit the placeholder cells themselves (what icat writes
+        //    after the placement APC). Set fg via colon-separated SGR,
+        //    write `<U+10EEEE><row><col><high>` per cell.
+        let id_high_diac = DIACRITICS[high as usize];
+        let mut cells = format!("\x1b[38:2:{r}:{g}:{b}m");
+        for (row, &row_diac) in DIACRITICS.iter().enumerate().take(rows as usize) {
+            for &col_diac in DIACRITICS.iter().take(cols as usize) {
+                cells.push(PLACEHOLDER);
+                cells.push(row_diac);
+                cells.push(col_diac);
+                cells.push(id_high_diac);
+            }
+            if row < rows as usize - 1 {
+                cells.push_str("\n\r");
+            }
+        }
+        cells.push_str("\x1b[39m");
+        processor.advance(&mut cw, cells.as_bytes());
+
+        // Metadata stored.
+        let vp = cw
+            .graphics
+            .kitty_virtual_placements
+            .get(&(image_id, 0))
+            .expect("virtual placement registered");
+        assert_eq!(vp.columns, cols);
+        assert_eq!(vp.rows, rows);
+
+        // Image transmitted.
+        assert!(
+            cw.graphics.get_kitty_image(image_id).is_some(),
+            "image was not stored under id {image_id:#X}"
+        );
+
+        // Each cell of the placement carries U+10EEEE + the right fg
+        // RGB + the right two diacritics (zerowidth). The third
+        // diacritic encodes image_id_high.
+        let style_set = cw.grid.style_set.clone();
+        let extras = cw.grid.extras_table.clone();
+        let _ = columns;
+        for (row, &row_diac) in DIACRITICS.iter().enumerate().take(rows as usize) {
+            for (col, &col_diac) in DIACRITICS.iter().enumerate().take(cols as usize) {
+                let sq = cw.grid[Line(row as i32)][Column(col)];
+                assert_eq!(
+                    sq.c(),
+                    PLACEHOLDER,
+                    "expected U+10EEEE at ({row},{col}), got {:#X}",
+                    sq.c() as u32
+                );
+                let style = style_set.get(sq.style_id());
+                match style.fg {
+                    crate::config::colors::AnsiColor::Spec(rgb) => {
+                        assert_eq!(rgb.r as u32, r);
+                        assert_eq!(rgb.g as u32, g);
+                        assert_eq!(rgb.b as u32, b);
+                    }
+                    other => panic!("expected RGB fg at ({row},{col}), got {other:?}"),
+                }
+                let zw = sq
+                    .extras_id()
+                    .and_then(|id| extras.get(id))
+                    .map(|e| e.zerowidth.as_slice())
+                    .unwrap_or(&[]);
+                assert_eq!(
+                    zw.len(),
+                    3,
+                    "expected 3 diacritics at ({row},{col}), got {}",
+                    zw.len()
+                );
+                assert_eq!(zw[0], row_diac, "row diacritic mismatch at ({row},{col})");
+                assert_eq!(zw[1], col_diac, "col diacritic mismatch at ({row},{col})");
+                assert_eq!(
+                    zw[2], id_high_diac,
+                    "high diacritic mismatch at ({row},{col})"
+                );
+            }
+        }
+
+        // Per-row dirty flag: rows that received placeholder cells must
+        // have it set; other rows must not. Mirrors ghostty's
+        // `page.zig:1953-1958` `kitty_virtual_placeholder`.
+        for row in 0..(rows as i32) {
+            assert!(
+                cw.grid[Line(row)].kitty_virtual_placeholder,
+                "row {row} should have kitty_virtual_placeholder = true",
+            );
+        }
+        // A row past the placement (no placeholder cells written there).
+        let past = rows as i32;
+        if past < cw.grid.screen_lines() as i32 {
+            assert!(
+                !cw.grid[Line(past)].kitty_virtual_placeholder,
+                "row {past} (no placeholders) must not have the flag set",
+            );
+        }
+    }
+
+    /// `place_virtual_graphic` is the handler for `_Ga=p,U=1,…\e\` — the
+    /// virtual-placement registration used by `kitten icat
+    /// --unicode-placeholder`. Per the kitty protocol spec the command
+    /// only stores metadata; the application emits the U+10EEEE
+    /// placeholder cells itself as ordinary text afterwards. This test
+    /// pins that contract: previously rio also auto-wrote the cells,
+    /// which raced kitty's own writes and broke the rendering.
+    #[test]
+    fn place_virtual_graphic_stores_metadata_without_writing_cells() {
+        use crate::ansi::kitty_graphics_protocol::PlacementRequest;
+
+        let size = CrosswordsSize::new(40, 20);
+        let columns = size.columns;
+        let screen_lines = size.screen_lines as i32;
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+
+        let cursor_before = cw.grid.cursor.pos;
+        let placement = PlacementRequest {
+            image_id: 1234,
+            placement_id: 0,
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            columns: 8,
+            rows: 4,
+            z_index: 0,
+            virtual_placement: true,
+            unicode_placeholder: 0,
+            cursor_movement: 0,
+        };
+
+        cw.place_graphic(placement);
+
+        // Metadata stored …
+        let vp = cw
+            .graphics
+            .kitty_virtual_placements
+            .get(&(1234, 0))
+            .expect("virtual placement registered");
+        assert_eq!(vp.image_id, 1234);
+        assert_eq!(vp.columns, 8);
+        assert_eq!(vp.rows, 4);
+
+        // … but no placeholder cells written. The application is
+        // responsible for emitting U+10EEEE itself; the terminal must not
+        // double-write.
+        for line in 0..screen_lines {
+            for col in 0..columns {
+                let cp = cw.grid[Line(line)][Column(col)].c();
+                assert_ne!(
+                    cp,
+                    crate::ansi::kitty_virtual::PLACEHOLDER,
+                    "unexpected U+10EEEE cell at ({line},{col})"
+                );
+            }
+        }
+
+        // Cursor must be untouched.
+        assert_eq!(cw.grid.cursor.pos, cursor_before);
     }
 }

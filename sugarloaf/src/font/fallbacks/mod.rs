@@ -1,12 +1,12 @@
 #[cfg(target_os = "macos")]
 pub fn external_fallbacks() -> Vec<String> {
-    vec![
-        String::from("Menlo"),
-        String::from("Geneva"),
-        String::from("Arial Unicode MS"),
-        // String::from("Noto Emoji"),
-        // String::from("Noto Color Emoji"),
-    ]
+    // Empty on macOS by design: CoreText's default cascade list
+    // (`CTFontCopyDefaultCascadeListForLanguages`, wired in
+    // `FontLibraryData::load`) already includes Menlo / Geneva / Arial
+    // Unicode MS / Apple Color Emoji and whatever else the system considers
+    // the right fallback chain for the primary font. Hardcoding family
+    // names here would duplicate that list and fight it.
+    Vec::new()
 }
 
 #[cfg(target_os = "windows")]

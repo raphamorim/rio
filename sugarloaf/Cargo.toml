@@ -73,6 +73,9 @@ metal = "0.32.0"
 objc-rs = "0.2.8"
 core-graphics-types = "0.2.0"
 core-graphics = "0.24.0"
+core-text = "21.0.0"
+core-foundation = "0.10.1"
+block = "0.1.6"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.10.0"

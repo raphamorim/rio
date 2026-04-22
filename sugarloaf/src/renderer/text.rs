@@ -71,4 +71,7 @@ pub struct Glyph {
     pub x: f32,
     /// Y offset of the glyph.
     pub y: f32,
+    /// Horizontal advance. Used by the compositor to fit bitmap glyphs
+    /// (emoji) into their per-glyph cell slot.
+    pub advance: f32,
 }

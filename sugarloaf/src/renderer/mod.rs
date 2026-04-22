@@ -21,7 +21,12 @@ use crate::RichTextLinesRange;
 use compositor::{Compositor, Rect, Vertex};
 use rustc_hash::FxHashMap;
 use std::collections::HashSet;
+#[cfg(target_os = "macos")]
+use std::sync::Arc;
 use std::{borrow::Cow, mem};
+
+#[cfg(target_os = "macos")]
+use parking_lot::Mutex;
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
 
@@ -43,6 +48,13 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     },
 });
 
+// `WgpuRenderer` is much larger than `MetalRenderer` (which shrunk to a
+// pool handle + a few pipeline states after the triple-buffer refactor),
+// so the enum-variant size disparity is intentional. We don't `Box` the
+// hot variants — they're each constructed exactly once per Sugarloaf
+// instance, and the inline storage avoids an extra allocation + indirection
+// on every render call.
+#[allow(clippy::large_enum_variant)]
 pub enum RendererType {
     Wgpu(WgpuRenderer),
     #[cfg(target_os = "macos")]
@@ -96,29 +108,164 @@ struct Globals {
     _pad: [u8; 15],
 }
 
+/// Metal `MTLBuffer.contents` is a thread-safe pointer per Apple's docs; we
+/// only ever write into it before `commit()` and only ever read from it on
+/// the GPU after `commit()`, so the buffer can cross threads safely (the
+/// completion handler that returns it to the pool runs on a Metal-internal
+/// thread). Pool ownership transitions are mutex-protected.
+#[cfg(target_os = "macos")]
+#[derive(Debug)]
+pub(crate) struct PooledMetalBuffer(pub metal::Buffer);
+#[cfg(target_os = "macos")]
+unsafe impl Send for PooledMetalBuffer {}
+#[cfg(target_os = "macos")]
+unsafe impl Sync for PooledMetalBuffer {}
+
+/// One bump-allocated buffer per in-flight frame. Every per-frame pipeline
+/// (text quads, non-quad geometry, kitty/sixel images, bg image, bg fill)
+/// sub-allocates from the same buffer using a monotonically advancing
+/// offset; each `set_vertex_buffer` call binds at the matching offset.
+/// Mirrors zed's `gpui_macos::InstanceBuffer`.
+#[cfg(target_os = "macos")]
+#[derive(Debug)]
+pub(crate) struct InstanceBuffer {
+    pub buffer: PooledMetalBuffer,
+    pub size: usize,
+}
+
+/// Free list of equally-sized `metal::Buffer`s, plus the current target
+/// size. `acquire` pops a free buffer or allocates a new one; `release`
+/// pushes the buffer back if its size still matches the current target
+/// (otherwise it's dropped — see `grow`). Backpressure comes from the
+/// drawable-count limit on the layer; the pool naturally stays small.
+#[cfg(target_os = "macos")]
+#[derive(Debug)]
+pub(crate) struct InstanceBufferPool {
+    buffer_size: usize,
+    buffers: Vec<PooledMetalBuffer>,
+}
+
+#[cfg(target_os = "macos")]
+impl InstanceBufferPool {
+    /// Initial buffer size matches what rio used to allocate up-front
+    /// (~20k QuadInstances × 96 B ≈ 1.9 MiB). zed's default is the same
+    /// 2 MiB.
+    const INITIAL_SIZE: usize = 2 * 1024 * 1024;
+    /// Hard ceiling — beyond this, abort the frame rather than grow
+    /// unbounded. Same cap zed uses.
+    const MAX_SIZE: usize = 256 * 1024 * 1024;
+
+    pub fn new() -> Self {
+        Self {
+            buffer_size: Self::INITIAL_SIZE,
+            buffers: Vec::new(),
+        }
+    }
+
+    pub fn acquire(&mut self, device: &Device) -> InstanceBuffer {
+        let buffer = self.buffers.pop().unwrap_or_else(|| {
+            // On Apple Silicon (unified memory) `Shared` is a true zero-copy
+            // CPU/GPU mapping; `WriteCombined` skips the CPU read cache since
+            // we only ever write into this buffer. On Intel/AMD discrete GPUs
+            // there's no unified memory, so `Shared` would PCIe-shuttle every
+            // access — `Managed` lets us upload via a manual `did_modify_range`
+            // and keeps the GPU read fast. Same split zed uses.
+            let options = if device.has_unified_memory() {
+                MTLResourceOptions::StorageModeShared
+                    | MTLResourceOptions::CPUCacheModeWriteCombined
+            } else {
+                MTLResourceOptions::StorageModeManaged
+            };
+            let buf = device.new_buffer(self.buffer_size as u64, options);
+            buf.set_label("sugarloaf::pooled instance buffer");
+            PooledMetalBuffer(buf)
+        });
+        InstanceBuffer {
+            buffer,
+            size: self.buffer_size,
+        }
+    }
+
+    pub fn release(&mut self, buffer: InstanceBuffer) {
+        // Stale (post-grow) buffers are silently dropped; they fall out
+        // of scope and metal-rs releases the underlying MTLBuffer.
+        if buffer.size == self.buffer_size {
+            self.buffers.push(buffer.buffer);
+        }
+    }
+
+    /// Doubles the target buffer size and discards the free list — old
+    /// in-flight buffers will be rejected by `release` on completion and
+    /// dropped naturally. Returns `false` if we're already at the cap.
+    pub fn grow(&mut self) -> bool {
+        let next = self.buffer_size.saturating_mul(2);
+        if next > Self::MAX_SIZE {
+            return false;
+        }
+        self.buffer_size = next;
+        self.buffers.clear();
+        true
+    }
+
+    pub fn buffer_size(&self) -> usize {
+        self.buffer_size
+    }
+}
+
+/// Align a bump-allocator offset up to 256 bytes. Metal vertex-buffer
+/// offsets must be a multiple of `minimumLinearTextureAlignmentForPixelFormat`,
+/// which on every current Apple GPU is ≤ 256. 256 is the safe choice and
+/// matches zed's `align_offset`.
+#[cfg(target_os = "macos")]
+#[inline]
+fn align_offset(offset: &mut usize) {
+    *offset = (*offset).div_ceil(256) * 256;
+}
+
+/// Bump-allocate `byte_len` bytes inside `buf`, copying from `src`.
+/// Returns the offset where the data was written, or `None` on overflow.
+/// Caller must `align_offset` first if the binding requires alignment
+/// stricter than 1 byte (every `set_vertex_buffer` does).
+#[cfg(target_os = "macos")]
+#[inline]
+unsafe fn bump_copy<T>(
+    buf: &InstanceBuffer,
+    offset: &mut usize,
+    src: *const T,
+    count: usize,
+) -> Option<usize> {
+    let bytes = count * mem::size_of::<T>();
+    let next = *offset + bytes;
+    if next > buf.size {
+        return None;
+    }
+    let dst = unsafe { (buf.buffer.0.contents() as *mut u8).add(*offset) };
+    unsafe { std::ptr::copy_nonoverlapping(src as *const u8, dst, bytes) };
+    let where_ = *offset;
+    *offset = next;
+    Some(where_)
+}
+
 #[cfg(target_os = "macos")]
 #[derive(Debug)]
 pub struct MetalRenderer {
     pipeline_state: RenderPipelineState,
     instanced_pipeline_state: RenderPipelineState,
-    vertex_buffer: Buffer,
-    instance_buffer: Buffer,
-    uniform_buffer: Buffer,
     sampler: SamplerState,
-    supported_vertex_buffer: usize,
-    supported_instance_buffer: usize,
-    current_transform: [f32; 16],
     /// Interpretation of sRGB-encoded input colors. Set once at construction
     /// from the `[window] colorspace` config; written into every `Globals`
-    /// upload. Values: `0 = sRGB`, `1 = DisplayP3`, `2 = Rec.2020`.
+    /// uniform via `set_vertex_bytes`. Values: `0 = sRGB`, `1 = DisplayP3`,
+    /// `2 = Rec.2020`.
     input_colorspace: u8,
     // Image pipeline (separate from text)
     image_pipeline_state: RenderPipelineState,
-    image_vertex_buffer: Buffer,
-    /// Dedicated one-instance vertex buffer for the background image,
-    /// kept separate from the kitty `image_vertex_buffer` so it cannot
-    /// collide with kitty placement slots.
-    background_image_vertex_buffer: Buffer,
+    /// Pool of equally-sized buffers, one acquired per in-flight frame.
+    /// All per-frame data (text vertices, quad instances, image instances,
+    /// bg fill, bg image instance) bump-allocates from the acquired buffer.
+    /// `add_completed_handler` releases the buffer back here when the GPU
+    /// finishes. `Arc<Mutex<…>>` so the completion thread can release.
+    #[allow(clippy::arc_with_non_send_sync)]
+    instance_buffer_pool: Arc<Mutex<InstanceBufferPool>>,
 }
 
 #[cfg(target_os = "macos")]
@@ -129,7 +276,6 @@ impl MetalRenderer {
             crate::sugarloaf::Colorspace::DisplayP3 => 1u8,
             crate::sugarloaf::Colorspace::Rec2020 => 2u8,
         };
-        let supported_vertex_buffer = 500;
 
         // Create Metal shader library
         let shader_source = include_str!("renderer.metal");
@@ -246,8 +392,9 @@ impl MetalRenderer {
             .object_at(0)
             .unwrap();
         // Must match the drawable format in `context/metal.rs` — HW will
-        // reject the pipeline otherwise. `_sRGB` enables linear-light blending.
-        color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm_sRGB);
+        // reject the pipeline otherwise. Plain `BGRA8Unorm` → gamma-space
+        // alpha blending (ghostty `alpha-blending = native`).
+        color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         color_attachment.set_blending_enabled(true);
         // Match WGSL BLEND settings exactly:
         // color: src_factor: SrcAlpha, dst_factor: OneMinusSrcAlpha, operation: Add
@@ -279,7 +426,7 @@ impl MetalRenderer {
             .color_attachments()
             .object_at(0)
             .unwrap();
-        inst_color.set_pixel_format(MTLPixelFormat::BGRA8Unorm_sRGB);
+        inst_color.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         inst_color.set_blending_enabled(true);
         inst_color.set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
         inst_color.set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
@@ -293,28 +440,6 @@ impl MetalRenderer {
             .device
             .new_render_pipeline_state(&instanced_pipeline_descriptor)
             .expect("Failed to create instanced pipeline state");
-
-        // Create vertex buffer (for lines/triangles/arcs — rare)
-        let vertex_buffer = context.device.new_buffer(
-            (mem::size_of::<Vertex>() * supported_vertex_buffer) as u64,
-            MTLResourceOptions::StorageModeShared,
-        );
-        vertex_buffer.set_label("sugarloaf::rich_text vertex buffer");
-
-        // Create instance buffer (for quads — the hot path)
-        let supported_instance_buffer = 20_000usize;
-        let instance_buffer = context.device.new_buffer(
-            (mem::size_of::<batch::QuadInstance>() * supported_instance_buffer) as u64,
-            MTLResourceOptions::StorageModeShared,
-        );
-        instance_buffer.set_label("sugarloaf::rich_text instance buffer");
-
-        // Create uniform buffer
-        let uniform_buffer = context.device.new_buffer(
-            mem::size_of::<Globals>() as u64,
-            MTLResourceOptions::StorageModeShared,
-        );
-        uniform_buffer.set_label("sugarloaf::rich_text uniform buffer");
 
         // Create sampler for texture sampling - IMPROVED SAMPLER SETTINGS
         let sampler_descriptor = SamplerDescriptor::new();
@@ -388,7 +513,7 @@ impl MetalRenderer {
             .color_attachments()
             .object_at(0)
             .unwrap();
-        image_color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm_sRGB);
+        image_color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         image_color_attachment.set_blending_enabled(true);
         // Premultiplied alpha: One, OneMinusSrcAlpha
         image_color_attachment.set_source_rgb_blend_factor(MTLBlendFactor::One);
@@ -405,52 +530,28 @@ impl MetalRenderer {
             .new_render_pipeline_state(&image_pipeline_descriptor)
             .expect("Failed to create image pipeline state");
 
-        let image_vertex_buffer = context.device.new_buffer(
-            (mem::size_of::<ImageInstance>() * 64) as u64, // 64 images max
-            MTLResourceOptions::StorageModeShared,
-        );
-        image_vertex_buffer.set_label("sugarloaf::image instance buffer");
-
-        let background_image_vertex_buffer = context.device.new_buffer(
-            mem::size_of::<ImageInstance>() as u64,
-            MTLResourceOptions::StorageModeShared,
-        );
-        background_image_vertex_buffer
-            .set_label("sugarloaf::background image instance buffer");
-
         Self {
             pipeline_state,
             instanced_pipeline_state,
-            vertex_buffer,
-            instance_buffer,
             sampler,
-            supported_vertex_buffer,
-            supported_instance_buffer,
-            current_transform: [0.0; 16],
             input_colorspace,
-            uniform_buffer,
             image_pipeline_state,
-            image_vertex_buffer,
-            background_image_vertex_buffer,
+            instance_buffer_pool: Arc::new(Mutex::new(InstanceBufferPool::new())),
         }
     }
 
-    pub fn resize(&mut self, transform: [f32; 16]) {
-        if self.current_transform != transform {
-            let globals = Globals {
-                transform,
-                input_colorspace: self.input_colorspace,
-                _pad: [0; 15],
-            };
-            let contents = self.uniform_buffer.contents() as *mut Globals;
-            unsafe {
-                *contents = globals;
-            }
-            self.current_transform = transform;
-        }
-    }
-
-    pub fn render(
+    /// Encode the text/quad pipeline draws into `render_encoder`,
+    /// bump-allocating vertex/instance data from `instance_buffer` at
+    /// `instance_offset`. Returns `false` if the pool buffer overflows
+    /// — caller is expected to `end_encoding`, grow the pool, and retry
+    /// the whole frame.
+    ///
+    /// Globals (transform + input_colorspace) are uploaded inline via
+    /// `set_vertex_bytes` / `set_fragment_bytes` (no buffer needed for an
+    /// 80-byte struct).
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn render(
         &mut self,
         instances: &[batch::QuadInstance],
         vertices: &[Vertex],
@@ -458,61 +559,53 @@ impl MetalRenderer {
         images: &ImageCache,
         render_encoder: &RenderCommandEncoderRef,
         context: &MetalContext,
-    ) {
+        instance_buffer: &InstanceBuffer,
+        instance_offset: &mut usize,
+    ) -> bool {
         if instances.is_empty() && vertices.is_empty() {
-            return;
+            return true;
         }
 
-        // Upload instance buffer
-        if !instances.is_empty() {
-            if instances.len() > self.supported_instance_buffer {
-                self.supported_instance_buffer = (instances.len() as f32 * 1.25) as usize;
-                self.instance_buffer = context.device.new_buffer(
-                    (mem::size_of::<batch::QuadInstance>()
-                        * self.supported_instance_buffer) as u64,
-                    MTLResourceOptions::StorageModeShared,
-                );
-            }
-            unsafe {
-                std::ptr::copy_nonoverlapping(
+        let globals = Globals {
+            transform: orthographic_projection(context.size.width, context.size.height),
+            input_colorspace: self.input_colorspace,
+            _pad: [0; 15],
+        };
+
+        // Bump-allocate instance + vertex data.
+        let instances_bytes_offset = if !instances.is_empty() {
+            align_offset(instance_offset);
+            match unsafe {
+                bump_copy(
+                    instance_buffer,
+                    instance_offset,
                     instances.as_ptr(),
-                    self.instance_buffer.contents() as *mut batch::QuadInstance,
                     instances.len(),
-                );
+                )
+            } {
+                Some(o) => o,
+                None => return false,
             }
-        }
+        } else {
+            0
+        };
 
-        // Upload vertex buffer (lines/triangles/arcs — rare)
-        if !vertices.is_empty() {
-            if vertices.len() > self.supported_vertex_buffer {
-                self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
-                self.vertex_buffer = context.device.new_buffer(
-                    (mem::size_of::<Vertex>() * self.supported_vertex_buffer) as u64,
-                    MTLResourceOptions::StorageModeShared,
-                );
-            }
-            unsafe {
-                std::ptr::copy_nonoverlapping(
+        let vertices_bytes_offset = if !vertices.is_empty() {
+            align_offset(instance_offset);
+            match unsafe {
+                bump_copy(
+                    instance_buffer,
+                    instance_offset,
                     vertices.as_ptr(),
-                    self.vertex_buffer.contents() as *mut Vertex,
                     vertices.len(),
-                );
+                )
+            } {
+                Some(o) => o,
+                None => return false,
             }
-        }
-
-        // Update transform
-        let transform = orthographic_projection(context.size.width, context.size.height);
-        if self.current_transform != transform {
-            let globals = Globals {
-                transform,
-                input_colorspace: self.input_colorspace,
-                _pad: [0; 15],
-            };
-            unsafe {
-                *(self.uniform_buffer.contents() as *mut Globals) = globals;
-            }
-            self.current_transform = transform;
-        }
+        } else {
+            0
+        };
 
         render_encoder.set_fragment_sampler_state(0, Some(&self.sampler));
 
@@ -520,8 +613,10 @@ impl MetalRenderer {
         let mask_texture = images.get_mask_texture();
 
         let mut current_pipeline_instanced = false;
-        // Start with neither pipeline set — force first bind
         let mut pipeline_set = false;
+
+        let globals_ptr = &globals as *const Globals as *const std::ffi::c_void;
+        let globals_size = mem::size_of::<Globals>() as u64;
 
         for cmd in draw_cmds {
             let (color_layer, mask_layer) = match cmd {
@@ -564,49 +659,37 @@ impl MetalRenderer {
                     if !pipeline_set || !current_pipeline_instanced {
                         render_encoder
                             .set_render_pipeline_state(&self.instanced_pipeline_state);
-                        render_encoder.set_vertex_buffer(
-                            1,
-                            Some(&self.uniform_buffer),
-                            0,
-                        );
-                        // Fragment shader reads `input_colorspace` from the
-                        // same Globals buffer (see `renderer.metal` fs_main).
-                        render_encoder.set_fragment_buffer(
-                            1,
-                            Some(&self.uniform_buffer),
-                            0,
-                        );
+                        // Inline Globals via setBytes (no buffer needed).
+                        render_encoder.set_vertex_bytes(1, globals_size, globals_ptr);
+                        render_encoder.set_fragment_bytes(1, globals_size, globals_ptr);
                         current_pipeline_instanced = true;
                         pipeline_set = true;
                     }
-                    let byte_offset =
-                        *offset as u64 * mem::size_of::<batch::QuadInstance>() as u64;
+                    let byte_offset = (instances_bytes_offset
+                        + (*offset as usize) * mem::size_of::<batch::QuadInstance>())
+                        as u64;
                     render_encoder.set_vertex_buffer(
                         0,
-                        Some(&self.instance_buffer),
+                        Some(&instance_buffer.buffer.0),
                         byte_offset,
                     );
                     render_encoder.draw_primitives_instanced(
                         MTLPrimitiveType::TriangleStrip,
                         0,
-                        4, // 4 vertices per quad (triangle strip)
+                        4,
                         *count as u64,
                     );
                 }
                 batch::DrawCmd::Vertices { offset, count, .. } => {
                     if !pipeline_set || current_pipeline_instanced {
                         render_encoder.set_render_pipeline_state(&self.pipeline_state);
-                        render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
                         render_encoder.set_vertex_buffer(
-                            1,
-                            Some(&self.uniform_buffer),
                             0,
+                            Some(&instance_buffer.buffer.0),
+                            vertices_bytes_offset as u64,
                         );
-                        render_encoder.set_fragment_buffer(
-                            1,
-                            Some(&self.uniform_buffer),
-                            0,
-                        );
+                        render_encoder.set_vertex_bytes(1, globals_size, globals_ptr);
+                        render_encoder.set_fragment_bytes(1, globals_size, globals_ptr);
                         current_pipeline_instanced = false;
                         pipeline_set = true;
                     }
@@ -618,6 +701,7 @@ impl MetalRenderer {
                 }
             }
         }
+        true
     }
 }
 
@@ -764,7 +848,18 @@ fn upload_background_image_texture(
         #[cfg(target_os = "macos")]
         crate::context::ContextType::Metal(ctx) => {
             let desc = metal::TextureDescriptor::new();
-            desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
+            // `_sRGB` is mandatory: with bilinear sampling enabled on the
+            // image sampler, the HW interpolates between texels in the
+            // texture's native space. With a non-sRGB format the texels
+            // are gamma-encoded, so interpolation happens in gamma space
+            // and midtones at scaled edges come out visibly darker than
+            // ghostty's. With `_sRGB` the HW decodes each texel to linear
+            // before mixing, producing the correct linear-light blend
+            // (matches ghostty's `bgra8unorm_srgb` in `Metal.zig:374`).
+            // The fragment shader then `unlinearize`s the sampled value
+            // back to gamma-encoded sRGB before writing to the gamma
+            // framebuffer.
+            desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm_sRGB);
             desc.set_width(pixels.width as u64);
             desc.set_height(pixels.height as u64);
             desc.set_usage(
@@ -1437,20 +1532,43 @@ impl Renderer {
                         } => {
                             // Use cached glyph data but need to render
                             glyphs.clear();
+                            // Cell centering for East-Asian-Wide codepoints:
+                            // when a glyph's shaped slot is wider than one
+                            // primary cell (char_width > 1), shift it by
+                            // half the extra space so 겔 / 水 / 한 sit
+                            // visually centered across their two cells
+                            // instead of hugging the left cell. Formula:
+                            // `dx = (cell_width - face_width) / 2`. No-op
+                            // for char_width == 1 (Latin, box-drawing),
+                            // so glyphs that rely on tiling at their
+                            // natural pen advance stay aligned.
+                            let cell_shift = if use_grid_cell_size && char_width > 1.0 {
+                                cell_width * (char_width - 1.0) / 2.0
+                            } else {
+                                0.0
+                            };
                             for shaped_glyph in cached_glyphs.iter() {
-                                let x = px;
+                                let x = px + cell_shift;
                                 let y = baseline;
-
-                                if use_grid_cell_size {
-                                    px += cell_width * char_width;
+                                // Effective per-glyph pen advance — on the
+                                // grid-cell-size path this is `cell_width *
+                                // char_width` (e.g. 2 cells for East Asian
+                                // Wide emoji), not the shaper's advance.
+                                // Pass this through to the compositor so
+                                // emoji bitmaps center inside the actual
+                                // cell slot, not a 1-cell shaper advance.
+                                let advance = if use_grid_cell_size {
+                                    cell_width * char_width
                                 } else {
-                                    px += shaped_glyph.x_advance;
-                                }
+                                    shaped_glyph.x_advance
+                                };
+                                px += advance;
 
                                 glyphs.push(Glyph {
                                     id: shaped_glyph.glyph_id as GlyphId,
                                     x,
                                     y,
+                                    advance,
                                 });
                             }
 
@@ -1512,26 +1630,45 @@ impl Renderer {
                             glyphs.clear();
                             let mut shaped_glyphs = Vec::new();
 
-                            for glyph in &run.glyphs {
-                                let x = px;
-                                let y = baseline;
-                                let advance = glyph.simple_data().1;
+                            // Same cell centering as above.
+                            let cell_shift = if use_grid_cell_size && char_width > 1.0 {
+                                cell_width * (char_width - 1.0) / 2.0
+                            } else {
+                                0.0
+                            };
 
-                                if use_grid_cell_size {
-                                    px += cell_width * char_width;
+                            for glyph in &run.glyphs {
+                                let x = px + cell_shift;
+                                let y = baseline;
+                                let shaper_advance = glyph.simple_data().1;
+                                // See the cached-path comment above — on the
+                                // grid-cell-size path the effective advance
+                                // is cell_width × char_width, not the shaper's.
+                                let advance = if use_grid_cell_size {
+                                    cell_width * char_width
                                 } else {
-                                    px += advance;
-                                }
+                                    shaper_advance
+                                };
+                                px += advance;
 
                                 let glyph_id = glyph.simple_data().0;
 
-                                glyphs.push(Glyph { id: glyph_id, x, y });
+                                glyphs.push(Glyph {
+                                    id: glyph_id,
+                                    x,
+                                    y,
+                                    advance,
+                                });
 
-                                // Store for caching
+                                // Cache the raw shaper advance; `use_grid_cell_size`
+                                // is a property of the font/config pipeline and
+                                // its grid-adjusted advance is recomputed on
+                                // cache hits, so only the shaper value belongs
+                                // in the persistent cache.
                                 shaped_glyphs.push(
                                     crate::font::text_run_cache::ShapedGlyph {
                                         glyph_id: glyph_id as u32,
-                                        x_advance: advance,
+                                        x_advance: shaper_advance,
                                         y_advance: 0.0,
                                         x_offset: 0.0,
                                         y_offset: 0.0,
@@ -1757,7 +1894,11 @@ impl Renderer {
                 #[cfg(target_os = "macos")]
                 crate::context::ContextType::Metal(ctx) => {
                     let desc = metal::TextureDescriptor::new();
-                    desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
+                    // `_sRGB`: bilinear sampling must interpolate in
+                    // linear light, otherwise scaled midtones come out
+                    // dark — see the matching note on the background-image
+                    // texture above.
+                    desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm_sRGB);
                     desc.set_width(width as u64);
                     desc.set_height(height as u64);
                     desc.set_usage(
@@ -1803,7 +1944,7 @@ impl Renderer {
                 instance: ImageInstance {
                     dest_pos: [overlay.x, overlay.y],
                     dest_size: [overlay.width, overlay.height],
-                    source_rect: [0.0, 0.0, 1.0, 1.0],
+                    source_rect: overlay.source_rect,
                 },
                 layer: if overlay.z_index < 0 {
                     ImageLayer::BelowText
@@ -1824,44 +1965,34 @@ impl Renderer {
     /// last-written instance, so a screen with N kitty placements would
     /// only ever render the most recent one.
     #[cfg(target_os = "macos")]
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
     fn draw_images_metal(
         image_draws: &[ImageDraw],
         image_textures: &FxHashMap<u32, ImageTextureEntry>,
         brush: &MetalRenderer,
         render_encoder: &metal::RenderCommandEncoderRef,
         layer: ImageLayer,
-    ) {
+        instance_buffer: &InstanceBuffer,
+        instance_offset: &mut usize,
+        globals: &Globals,
+    ) -> bool {
         let has_any = image_draws.iter().any(|d| d.layer == layer);
         if !has_any {
-            return;
-        }
-
-        // The vertex buffer holds up to MAX_IMAGE_INSTANCES instances.
-        // Anything beyond that can't be uploaded in this frame.
-        const MAX_IMAGE_INSTANCES: usize = 64;
-        let limit = image_draws.len().min(MAX_IMAGE_INSTANCES);
-        if image_draws.len() > MAX_IMAGE_INSTANCES {
-            tracing::warn!(
-                "image_draws ({}) exceeds vertex buffer capacity ({}); \
-                 extra placements will not render this frame",
-                image_draws.len(),
-                MAX_IMAGE_INSTANCES
-            );
+            return true;
         }
 
         render_encoder.set_render_pipeline_state(&brush.image_pipeline_state);
-        render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
+        let globals_ptr = globals as *const Globals as *const std::ffi::c_void;
+        let globals_size = mem::size_of::<Globals>() as u64;
+        render_encoder.set_vertex_bytes(1, globals_size, globals_ptr);
         // image_fs_main reads `input_colorspace` from Globals.
-        render_encoder.set_fragment_buffer(1, Some(&brush.uniform_buffer), 0);
+        render_encoder.set_fragment_bytes(1, globals_size, globals_ptr);
         render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
 
-        let instance_data = brush.image_vertex_buffer.contents() as *mut ImageInstance;
-        let stride = mem::size_of::<ImageInstance>() as u64;
+        let stride = mem::size_of::<ImageInstance>();
 
-        for (i, draw) in image_draws.iter().take(limit).enumerate() {
-            if draw.layer != layer {
-                continue;
-            }
+        for draw in image_draws.iter().filter(|d| d.layer == layer) {
             let img = match image_textures.get(&draw.image_id) {
                 Some(e) => e,
                 None => continue,
@@ -1872,17 +2003,25 @@ impl Renderer {
                 _ => continue,
             };
 
-            // Write this instance into its own slot. With
-            // StorageModeShared the GPU will read this slot back when
-            // the command buffer is committed; using a unique slot per
-            // draw avoids the previous bug where all draws shared
-            // offset 0 and ended up rendering only the last instance.
-            unsafe {
-                *instance_data.add(i) = draw.instance;
-            }
+            align_offset(instance_offset);
+            let offset = match unsafe {
+                bump_copy(
+                    instance_buffer,
+                    instance_offset,
+                    &draw.instance as *const ImageInstance,
+                    1,
+                )
+            } {
+                Some(o) => o,
+                None => return false,
+            };
+            let _ = stride;
 
-            let offset = i as u64 * stride;
-            render_encoder.set_vertex_buffer(0, Some(&brush.image_vertex_buffer), offset);
+            render_encoder.set_vertex_buffer(
+                0,
+                Some(&instance_buffer.buffer.0),
+                offset as u64,
+            );
             render_encoder.set_fragment_texture(0, Some(tex));
             render_encoder.draw_primitives_instanced(
                 metal::MTLPrimitiveType::TriangleStrip,
@@ -1891,12 +2030,7 @@ impl Renderer {
                 1,
             );
         }
-
-        // Restore text pipeline
-        render_encoder.set_render_pipeline_state(&brush.pipeline_state);
-        render_encoder.set_vertex_buffer(0, Some(&brush.vertex_buffer), 0);
-        render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
-        render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
+        true
     }
 
     /// Draw a single fullscreen background image quad through the image
@@ -1904,19 +2038,23 @@ impl Renderer {
     /// `background_image_vertex_buffer` so it never collides with kitty
     /// placements, and reads the bg texture from `background_image_texture`.
     #[cfg(target_os = "macos")]
+    #[must_use]
     fn draw_background_image_metal(
         background_image_texture: &Option<ImageTextureEntry>,
         brush: &MetalRenderer,
         render_encoder: &metal::RenderCommandEncoderRef,
         physical_size: (f32, f32),
-    ) {
+        instance_buffer: &InstanceBuffer,
+        instance_offset: &mut usize,
+        globals: &Globals,
+    ) -> bool {
         let entry = match background_image_texture {
             Some(e) => e,
-            None => return,
+            None => return true,
         };
         let tex = match &entry.gpu {
             ImageTexture::Metal(tex) => tex,
-            _ => return,
+            _ => return true,
         };
 
         let instance = ImageInstance {
@@ -1924,19 +2062,29 @@ impl Renderer {
             dest_size: [physical_size.0, physical_size.1],
             source_rect: [0.0, 0.0, 1.0, 1.0],
         };
-        unsafe {
-            *(brush.background_image_vertex_buffer.contents() as *mut ImageInstance) =
-                instance;
-        }
+        align_offset(instance_offset);
+        let offset = match unsafe {
+            bump_copy(
+                instance_buffer,
+                instance_offset,
+                &instance as *const ImageInstance,
+                1,
+            )
+        } {
+            Some(o) => o,
+            None => return false,
+        };
 
         render_encoder.set_render_pipeline_state(&brush.image_pipeline_state);
-        render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
-        render_encoder.set_fragment_buffer(1, Some(&brush.uniform_buffer), 0);
+        let globals_ptr = globals as *const Globals as *const std::ffi::c_void;
+        let globals_size = mem::size_of::<Globals>() as u64;
+        render_encoder.set_vertex_bytes(1, globals_size, globals_ptr);
+        render_encoder.set_fragment_bytes(1, globals_size, globals_ptr);
         render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
         render_encoder.set_vertex_buffer(
             0,
-            Some(&brush.background_image_vertex_buffer),
-            0,
+            Some(&instance_buffer.buffer.0),
+            offset as u64,
         );
         render_encoder.set_fragment_texture(0, Some(tex));
         render_encoder.draw_primitives_instanced(
@@ -1945,12 +2093,77 @@ impl Renderer {
             4,
             1,
         );
+        true
+    }
 
-        // Restore text pipeline state for downstream batches.
-        render_encoder.set_render_pipeline_state(&brush.pipeline_state);
-        render_encoder.set_vertex_buffer(0, Some(&brush.vertex_buffer), 0);
-        render_encoder.set_vertex_buffer(1, Some(&brush.uniform_buffer), 0);
-        render_encoder.set_fragment_sampler_state(0, Some(&brush.sampler));
+    /// Full-screen GPU bg-color fill — runs first every frame on a
+    /// transparent-cleared surface. Drives the bg through the shader's
+    /// `prepare_output_rgb` so the colorspace + transfer-curve work
+    /// happens once, on the GPU, exactly the same as every other quad.
+    /// Replaces the previous `MTLClearColor` + Rust-side
+    /// `prepare_output_rgb_f64` path (one-shot CPU encode, with a
+    /// matrix that had to stay in sync with `renderer.metal`).
+    ///
+    /// The instanced pipeline blend factors are
+    /// `SrcAlpha / OneMinusSrcAlpha` for RGB and `One / OneMinusSrcAlpha`
+    /// for alpha; on the cleared `(0,0,0,0)` surface this writes
+    /// `(bg_gamma * bg.a, bg.a)`, which is correctly premultiplied —
+    /// translucent windows now pass the right bytes to the compositor
+    /// (the old `MTLClearColor` path stored non-premultiplied components
+    /// and made translucent bgs read too bright).
+    #[cfg(target_os = "macos")]
+    #[must_use]
+    fn draw_bg_fill_metal(
+        brush: &MetalRenderer,
+        render_encoder: &metal::RenderCommandEncoderRef,
+        physical_size: (f32, f32),
+        bg_color: [f32; 4],
+        instance_buffer: &InstanceBuffer,
+        instance_offset: &mut usize,
+        globals: &Globals,
+    ) -> bool {
+        use crate::renderer::batch::QuadInstance;
+
+        let instance = QuadInstance {
+            pos: [0.0, 0.0, 0.0],
+            color: bg_color,
+            uv_rect: [0.0; 4],
+            layers: [0, 0],
+            size: [physical_size.0, physical_size.1],
+            corner_radii: [0.0; 4],
+            underline_style: 0,
+            clip_rect: [0.0; 4],
+        };
+        align_offset(instance_offset);
+        let offset = match unsafe {
+            bump_copy(
+                instance_buffer,
+                instance_offset,
+                &instance as *const QuadInstance,
+                1,
+            )
+        } {
+            Some(o) => o,
+            None => return false,
+        };
+
+        render_encoder.set_render_pipeline_state(&brush.instanced_pipeline_state);
+        render_encoder.set_vertex_buffer(
+            0,
+            Some(&instance_buffer.buffer.0),
+            offset as u64,
+        );
+        let globals_ptr = globals as *const Globals as *const std::ffi::c_void;
+        let globals_size = mem::size_of::<Globals>() as u64;
+        render_encoder.set_vertex_bytes(1, globals_size, globals_ptr);
+        render_encoder.set_fragment_bytes(1, globals_size, globals_ptr);
+        render_encoder.draw_primitives_instanced(
+            metal::MTLPrimitiveType::TriangleStrip,
+            0,
+            4,
+            1,
+        );
+        true
     }
 
     /// Find the least recently used graphic ID for eviction.
@@ -2255,7 +2468,10 @@ impl Renderer {
                 // sized for `MAX_IMAGE_INSTANCES` instances; the same
                 // index space is used by the AboveText pass below so
                 // both layers see consistent instance data.
-                const MAX_IMAGE_INSTANCES: usize = 64;
+                // Bumped from 64 to accommodate kitty Unicode placeholders
+                // which can produce up to cols*rows draws per visible image
+                // (one per placeholder cell with its own source rect).
+                const MAX_IMAGE_INSTANCES: usize = 1024;
                 if image_draws.len() > MAX_IMAGE_INSTANCES {
                     tracing::warn!(
                         "image_draws ({}) exceeds vertex buffer capacity ({}); \
@@ -2418,7 +2634,10 @@ impl Renderer {
                 // See BelowText pass above for the rationale; both
                 // passes share the same indexing into image_draws so
                 // each placement always reads its own slot.
-                const MAX_IMAGE_INSTANCES: usize = 64;
+                // Bumped from 64 to accommodate kitty Unicode placeholders
+                // which can produce up to cols*rows draws per visible image
+                // (one per placeholder cell with its own source rect).
+                const MAX_IMAGE_INSTANCES: usize = 1024;
                 let limit = image_draws.len().min(MAX_IMAGE_INSTANCES);
                 let stride = std::mem::size_of::<ImageInstance>() as u64;
 
@@ -2461,55 +2680,182 @@ impl Renderer {
         }
     }
 
+    /// Drive an entire Metal frame: acquire a pooled buffer, encode all
+    /// passes (bg fill, bg image, BelowText images, text/quads, AboveText
+    /// images) into a single render command encoder, present and commit.
+    ///
+    /// On buffer overflow we end encoding, drop the partial command
+    /// buffer (never committed), grow the pool, and retry the frame.
+    /// Mirrors zed's `MetalRenderer::draw` (`gpui_macos/src/metal_renderer.rs`).
+    ///
+    /// The completion handler returns the buffer to the pool when the GPU
+    /// finishes — this is what makes 3 frames safely in-flight: each
+    /// frame owns its own buffer for the lifetime of GPU execution, so
+    /// the CPU can write the next frame's data without racing.
     #[cfg(target_os = "macos")]
-    pub fn render_metal(
-        &mut self,
-        context: &MetalContext,
-        render_encoder: &metal::RenderCommandEncoderRef,
-    ) {
-        if let RendererType::Metal(brush) = &mut self.brush_type {
+    pub fn render_metal(&mut self, context: &MetalContext, bg_color: Option<[f32; 4]>) {
+        use block::ConcreteBlock;
+        use std::cell::Cell as StdCell;
+
+        let brush = match &mut self.brush_type {
+            RendererType::Metal(b) => b,
+            _ => return,
+        };
+
+        let surface_texture = match context.get_current_texture() {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::error!("Metal surface error: {}", e);
+                return;
+            }
+        };
+
+        loop {
+            let instance_buffer =
+                brush.instance_buffer_pool.lock().acquire(&context.device);
+            let mut instance_offset: usize = 0;
+
+            let command_buffer = context.command_queue.new_command_buffer();
+            command_buffer.set_label("Sugarloaf Metal Render");
+
+            let render_pass_descriptor = metal::RenderPassDescriptor::new();
+            let color_attachment = render_pass_descriptor
+                .color_attachments()
+                .object_at(0)
+                .unwrap();
+            color_attachment.set_texture(Some(&surface_texture.texture));
+            color_attachment.set_store_action(metal::MTLStoreAction::Store);
+            color_attachment.set_load_action(metal::MTLLoadAction::Clear);
+            color_attachment
+                .set_clear_color(metal::MTLClearColor::new(0.0, 0.0, 0.0, 0.0));
+
+            let render_encoder =
+                command_buffer.new_render_command_encoder(render_pass_descriptor);
+            render_encoder.set_label("Sugarloaf Metal Render Pass");
+
+            let globals = Globals {
+                transform: orthographic_projection(
+                    context.size.width,
+                    context.size.height,
+                ),
+                input_colorspace: brush.input_colorspace,
+                _pad: [0; 15],
+            };
+
+            let physical_size = (context.size.width, context.size.height);
             let has_images = !self.image_draws.is_empty();
 
-            // Background image: drawn first so all subsequent text/rects
-            // composite on top.
-            Self::draw_background_image_metal(
-                &self.background_image_texture,
-                brush,
-                render_encoder,
-                (context.size.width, context.size.height),
-            );
-
-            // BelowText images (z < 0): before text
-            if has_images {
-                Self::draw_images_metal(
-                    &self.image_draws,
-                    &self.image_textures,
+            let ok = (|| {
+                if let Some(rgba) = bg_color {
+                    if !Self::draw_bg_fill_metal(
+                        brush,
+                        render_encoder,
+                        physical_size,
+                        rgba,
+                        &instance_buffer,
+                        &mut instance_offset,
+                        &globals,
+                    ) {
+                        return false;
+                    }
+                }
+                if !Self::draw_background_image_metal(
+                    &self.background_image_texture,
                     brush,
                     render_encoder,
-                    ImageLayer::BelowText,
-                );
-            }
-
-            // Text pipeline
-            brush.render(
-                &self.instances,
-                &self.vertices,
-                &self.draw_cmds,
-                &self.images,
-                render_encoder,
-                context,
-            );
-
-            // AboveText images (z >= 0): after text
-            if has_images {
-                Self::draw_images_metal(
-                    &self.image_draws,
-                    &self.image_textures,
-                    brush,
+                    physical_size,
+                    &instance_buffer,
+                    &mut instance_offset,
+                    &globals,
+                ) {
+                    return false;
+                }
+                if has_images
+                    && !Self::draw_images_metal(
+                        &self.image_draws,
+                        &self.image_textures,
+                        brush,
+                        render_encoder,
+                        ImageLayer::BelowText,
+                        &instance_buffer,
+                        &mut instance_offset,
+                        &globals,
+                    )
+                {
+                    return false;
+                }
+                if !brush.render(
+                    &self.instances,
+                    &self.vertices,
+                    &self.draw_cmds,
+                    &self.images,
                     render_encoder,
-                    ImageLayer::AboveText,
+                    context,
+                    &instance_buffer,
+                    &mut instance_offset,
+                ) {
+                    return false;
+                }
+                if has_images
+                    && !Self::draw_images_metal(
+                        &self.image_draws,
+                        &self.image_textures,
+                        brush,
+                        render_encoder,
+                        ImageLayer::AboveText,
+                        &instance_buffer,
+                        &mut instance_offset,
+                        &globals,
+                    )
+                {
+                    return false;
+                }
+                true
+            })();
+
+            if !ok {
+                // Discard the partial encoder + command buffer (never
+                // committed → no GPU work). Drop the buffer (it will not
+                // be returned to the pool because `release` rejects it
+                // after `grow` bumps the target size).
+                render_encoder.end_encoding();
+                drop(instance_buffer);
+                let mut pool = brush.instance_buffer_pool.lock();
+                let prev = pool.buffer_size();
+                if !pool.grow() {
+                    tracing::error!(
+                        "instance buffer would exceed cap (current {} bytes); \
+                         dropping frame",
+                        prev
+                    );
+                    return;
+                }
+                tracing::info!(
+                    "instance buffer grew {} → {} bytes",
+                    prev,
+                    pool.buffer_size()
                 );
+                continue;
             }
+
+            render_encoder.end_encoding();
+
+            // Completion handler returns the buffer to the pool on GPU
+            // finish. The block fires on a Metal-internal thread; we
+            // hop into the pool's mutex to release.
+            let pool = brush.instance_buffer_pool.clone();
+            let buffer_cell = StdCell::new(Some(instance_buffer));
+            let block = ConcreteBlock::new(move |_cb: &metal::CommandBufferRef| {
+                if let Some(b) = buffer_cell.take() {
+                    pool.lock().release(b);
+                }
+            })
+            .copy();
+            command_buffer.add_completed_handler(&block);
+
+            command_buffer.present_drawable(&surface_texture.drawable);
+            command_buffer.commit();
+            return;
         }
     }
 
@@ -2554,8 +2900,13 @@ impl Renderer {
                 }
             }
             #[cfg(target_os = "macos")]
-            RendererType::Metal(metal_brush) => {
-                metal_brush.resize(transform);
+            RendererType::Metal(_metal_brush) => {
+                // No-op: Metal Globals (transform + colorspace) are
+                // pushed inline per frame via `set_vertex_bytes` in
+                // `MetalRenderer::render`, so there's nothing to upload
+                // here on resize. The shader picks up the new viewport
+                // on the next frame's `orthographic_projection` call.
+                let _ = transform;
             }
             RendererType::Cpu => {}
         }
@@ -2974,7 +3325,8 @@ impl WgpuRenderer {
 
         let image_vertex_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("image instance buffer"),
-            size: mem::size_of::<ImageInstance>() as u64 * 64, // 64 images max
+            // 1024 max — see `MAX_IMAGE_INSTANCES` comment in render path.
+            size: mem::size_of::<ImageInstance>() as u64 * 1024,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });

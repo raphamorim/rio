@@ -13,6 +13,7 @@
 use super::glyph::*;
 #[cfg(test)]
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
+#[cfg(not(target_os = "macos"))]
 use crate::font_introspector::shape::Shaper;
 use crate::font_introspector::Metrics;
 use crate::layout::content::{CachedRun, ShapingCache, SpanStyleDecoration};
@@ -86,6 +87,7 @@ impl RenderData {
 }
 
 impl RenderData {
+    #[cfg(not(target_os = "macos"))]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn push_run(
         &mut self,
@@ -152,6 +154,90 @@ impl RenderData {
             underline_offset: metrics.underline_offset,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
+            x_height: metrics.x_height,
+            advance,
+            cache_key,
+        };
+        self.runs.push(run_data);
+    }
+
+    /// macOS equivalent of `push_run`: consumes a pre-shaped slice from
+    /// CoreText instead of running the swash `Shaper` callback.
+    ///
+    /// Packing / cache-fill / `RunData` layout are byte-identical to the
+    /// swash path, so the cache-hit path (`push_cached_run`) and downstream
+    /// composition don't care which shaper produced the glyphs.
+    ///
+    /// `metrics` comes from [`crate::font::macos::font_metrics`] — CoreText
+    /// native ascent/descent/leading/underline, plus strikeout derived from
+    /// x-height (CT has no strikeout API).
+    #[cfg(target_os = "macos")]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn push_run_macos(
+        &mut self,
+        style: SpanStyle,
+        size: f32,
+        line: u32,
+        shaped: &[crate::font::macos::ShapedGlyph],
+        metrics: &crate::font::macos::FontMetrics,
+        shaping_cache: &mut ShapingCache,
+    ) {
+        let mut glyphs = Vec::with_capacity(shaped.len());
+        let mut detailed_glyphs = Vec::new();
+        let mut advance = 0.0f32;
+
+        for g in shaped {
+            advance += g.advance;
+            const MAX_SIMPLE_ADVANCE: u32 = 0x7FFF;
+            if g.x == 0.0 && g.y == 0.0 {
+                let packed_advance = (g.advance * 64.0) as u32;
+                if packed_advance <= MAX_SIMPLE_ADVANCE {
+                    glyphs.push(GlyphData {
+                        data: g.id as u32 | (packed_advance << 16),
+                        size: g.cluster,
+                    });
+                    continue;
+                }
+            }
+            let detail_index = detailed_glyphs.len() as u32;
+            detailed_glyphs.push(Glyph {
+                id: g.id,
+                x: g.x,
+                y: g.y,
+                advance: g.advance,
+                span: g.cluster as usize,
+            });
+            glyphs.push(GlyphData {
+                data: GLYPH_DETAILED | detail_index,
+                size: g.cluster,
+            });
+        }
+
+        if let Some(graphic) = style.media {
+            self.graphics.insert(graphic.id);
+        }
+
+        let cache_key = compute_cache_key(&glyphs, style.font_id, size);
+
+        shaping_cache.finish_with_run(CachedRun {
+            glyphs: glyphs.clone(),
+            detailed_glyphs: detailed_glyphs.clone(),
+            advance,
+            cache_key,
+        });
+
+        let run_data = RunData {
+            span: style,
+            line,
+            size,
+            detailed_glyphs,
+            glyphs,
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+            leading: metrics.leading,
+            underline_offset: metrics.underline_offset,
+            strikeout_offset: metrics.strikeout_offset,
+            strikeout_size: metrics.strikeout_thickness,
             x_height: metrics.x_height,
             advance,
             cache_key,

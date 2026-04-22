@@ -309,7 +309,7 @@ impl<T> EventLoop<T> {
     }
 
     #[inline]
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     pub fn set_confirm_before_quit(&self, confirmation: bool) {
         self.event_loop.set_confirm_before_quit(confirmation)
     }

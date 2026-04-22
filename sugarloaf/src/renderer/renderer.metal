@@ -105,26 +105,31 @@ vertex VertexOutput vs_instanced(
     return out;
 }
 
-// sRGB → linear light. Colors uploaded from the CPU side are sRGB-encoded
-// 8-bit values normalized to 0..1. The color attachment's `_sRGB` pixel
-// format expects the fragment to emit *linear* RGB: the GPU then applies
-// the sRGB transfer curve on write and its inverse on read so alpha
-// blending runs in linear light. Without this the HW gamma encode would
-// shift every pixel too bright and defeat the point of the _sRGB target.
-// Alpha is already linear by convention — do not transform it.
+// sRGB transfer curve (IEC 61966-2-1). We need both directions because the
+// pipeline is: sRGB-encoded CPU input → linearize → gamut conversion matrix →
+// unlinearize → write to a plain `BGRA8Unorm` / DisplayP3-tagged drawable.
+// The drawable has no HW transfer-curve handling (we dropped `_sRGB` on
+// purpose — see `context/metal.rs`), so alpha blending runs on already-
+// gamma-encoded values, matching ghostty's default `alpha-blending = native`
+// look on macOS. Alpha is linear by convention — never route through these.
 float3 srgb_to_linear(float3 c) {
     float3 lo = c / 12.92;
     float3 hi = pow((c + 0.055) / 1.055, 2.4);
     return select(lo, hi, c > 0.04045);
 }
 
+float3 linear_to_srgb(float3 c) {
+    float3 lo = c * 12.92;
+    float3 hi = pow(c, 1.0 / 2.4) * 1.055 - 0.055;
+    return select(lo, hi, c > 0.0031308);
+}
+
 // Bradford-adapted sRGB D65 primaries → DisplayP3 D65 primaries, in linear
-// light. Required because our CAMetalLayer is tagged DisplayP3: a linear
-// value we write is interpreted with P3's primaries, so we must convert
-// input colors to match. Applied only when `input_colorspace == 0` (sRGB) —
+// light. Required because our CAMetalLayer is tagged DisplayP3: a stored
+// value is interpreted with P3's primaries, so we must convert input
+// colors to match. Applied only when `input_colorspace == 0` (sRGB) —
 // skipping it leaves `#ff0000` displaying as P3-pure red (oversaturated
-// vs. the sRGB standard red every other app draws). Matches ghostty's
-// `kSrgbToDisplayP3` / the colour.science constant.
+// vs. the sRGB standard red every other app draws).
 float3 srgb_to_p3(float3 linear_srgb) {
     return float3(
         dot(linear_srgb, float3(0.82246197, 0.17753803, 0.0)),
@@ -146,10 +151,12 @@ float3 rec2020_to_p3(float3 linear_r2020) {
     );
 }
 
-// One-shot: sRGB-encoded → linear, then convert primaries to DisplayP3
-// based on `input_colorspace`. Every fragment return path goes through
-// this so the framebuffer — which is sRGB-transfer-curve encoded but
-// DisplayP3-tagged — shows the intended colour.
+// One-shot: sRGB-encoded → linear → primaries to DisplayP3 (by
+// `input_colorspace`) → sRGB-encode again. Every fragment return path
+// goes through this so the framebuffer — plain `BGRA8Unorm` tagged
+// DisplayP3 — stores gamma-encoded values that the compositor can
+// display directly, and our alpha blending stays in gamma space
+// (matches ghostty `alpha-blending = native`).
 //   0 = sRGB      → sRGB → P3 matrix
 //   1 = DisplayP3 → identity (already P3)
 //   2 = Rec.2020  → Rec.2020 → P3 matrix
@@ -160,7 +167,7 @@ float3 prepare_output_rgb(float3 srgb, uchar input_colorspace) {
     } else if (input_colorspace == 2u) {
         lin = rec2020_to_p3(lin);
     }
-    return lin;
+    return linear_to_srgb(lin);
 }
 
 // Pick the corner radius based on which quadrant the point is in

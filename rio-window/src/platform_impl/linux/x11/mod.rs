@@ -145,6 +145,14 @@ pub struct ActiveEventLoop {
     redraw_sender: WakeSender<WindowId>,
     activation_sender: WakeSender<ActivationToken>,
     device_events: Cell<DeviceEvents>,
+    /// Timestamp of the most recent input event.
+    last_input_timestamp: Cell<std::time::Instant>,
+    /// Shared with `EventLoopState` and every window. Set by
+    /// `request_redraw`, checked by `has_pending`, cleared by
+    /// the vsync tick after fanning out.
+    pub(super) redraw_flag: Arc<std::sync::atomic::AtomicBool>,
+    /// Waker ping so `request_redraw` can unblock calloop dispatch.
+    pub(super) waker: Ping,
 }
 
 pub struct EventLoop<T: 'static> {
@@ -166,6 +174,11 @@ type ActivationToken = (WindowId, crate::event_loop::AsyncRequestSerial);
 struct EventLoopState {
     /// The latest readiness state for the x11 file descriptor
     x11_readiness: Readiness,
+    vsync_pending: bool,
+    /// Set by `request_redraw` (via the shared `Arc<AtomicBool>`).
+    /// Checked by `has_pending` so the event loop wakes even when
+    /// the timer hasn't fired yet.
+    redraw_flag: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub struct EventLoopProxy<T: 'static> {
@@ -279,6 +292,30 @@ impl<T: 'static> EventLoop<T> {
             })
             .expect("Failed to register the event loop waker source");
 
+        // Vsync tick source at the primary monitor's refresh rate;
+        // sets `state.vsync_pending` for the main pump to fan out.
+        let vblank_interval = {
+            let primary_rate_mhz = xconn
+                .primary_monitor()
+                .ok()
+                .and_then(|m| m.refresh_rate_millihertz())
+                .unwrap_or(60_000);
+            // millihertz → microseconds per frame: 1_000_000_000 / mHz.
+            let micros = 1_000_000_000u64 / primary_rate_mhz.max(1) as u64;
+            std::time::Duration::from_micros(micros)
+        };
+        let vsync_timer = calloop::timer::Timer::from_duration(vblank_interval);
+        event_loop
+            .handle()
+            .insert_source(vsync_timer, move |_deadline, _, state| {
+                state.vsync_pending = true;
+                // Reschedule for the next vblank.
+                calloop::timer::TimeoutAction::ToInstant(
+                    std::time::Instant::now() + vblank_interval,
+                )
+            })
+            .expect("Failed to register the vsync timer source");
+
         // Create a channel for handling redraw requests.
         let (redraw_sender, redraw_channel) = mpsc::channel();
 
@@ -314,10 +351,15 @@ impl<T: 'static> EventLoop<T> {
                 waker: waker.clone(),
             },
             device_events: Default::default(),
+            last_input_timestamp: Cell::new(std::time::Instant::now()),
+            redraw_flag: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            waker: waker.clone(),
         };
 
         // Set initial device event filter.
         window_target.update_listen_device_events(true);
+
+        let redraw_flag = window_target.redraw_flag.clone();
 
         let root_window_target = RootAEL {
             p: PlatformActiveEventLoop::X(window_target),
@@ -380,6 +422,8 @@ impl<T: 'static> EventLoop<T> {
             user_sender,
             state: EventLoopState {
                 x11_readiness: Readiness::EMPTY,
+                vsync_pending: false,
+                redraw_flag,
             },
         }
     }
@@ -461,7 +505,12 @@ impl<T: 'static> EventLoop<T> {
     }
 
     fn has_pending(&mut self) -> bool {
-        self.event_processor.poll()
+        self.state.vsync_pending
+            || self
+                .state
+                .redraw_flag
+                .load(std::sync::atomic::Ordering::Acquire)
+            || self.event_processor.poll()
             || self.user_receiver.has_incoming()
             || self.redraw_receiver.has_incoming()
     }
@@ -595,6 +644,25 @@ impl<T: 'static> EventLoop<T> {
             }
         }
 
+        // Vsync tick → per-window dirty OR sustain check (matches
+        // macOS CVDisplayLink / Windows DwmFlush / zed X11 timer).
+        if self.state.vsync_pending {
+            self.state.vsync_pending = false;
+            let wt = EventProcessor::window_target(&self.event_processor.target);
+            let present_after_input = wt.should_present_after_input();
+            let windows = wt.windows.borrow();
+            for (&id, weak) in windows.iter() {
+                if let Some(window) = weak.upgrade() {
+                    let was_dirty = window
+                        .redraw_pending
+                        .swap(false, std::sync::atomic::Ordering::AcqRel);
+                    if was_dirty || present_after_input {
+                        let _ = wt.redraw_sender.sender.send(id);
+                    }
+                }
+            }
+        }
+
         // Empty the redraw requests
         {
             let mut windows = HashSet::new();
@@ -679,6 +747,16 @@ impl<T> AsRawFd for EventLoop<T> {
 }
 
 impl ActiveEventLoop {
+    #[inline]
+    pub(crate) fn mark_input_received(&self) {
+        self.last_input_timestamp.set(std::time::Instant::now());
+    }
+
+    #[inline]
+    pub(crate) fn should_present_after_input(&self) -> bool {
+        self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
+    }
+
     /// Returns the `XConnection` of this events loop.
     #[inline]
     pub(crate) fn x_connection(&self) -> &Arc<XConnection> {

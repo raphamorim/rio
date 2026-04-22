@@ -40,10 +40,6 @@ pub struct Sugarloaf<'a> {
     /// width (for the grid) and unscaled glyph advance (for
     /// proportional UI via `char_advance`).
     font_cache: FontCache,
-    /// Cached input colorspace from the renderer config — used by the
-    /// Metal clear-color path to keep the first HW-cleared pixel in the
-    /// same colorspace the shader will emit subsequent pixels in.
-    colorspace: Colorspace,
 }
 
 #[derive(Debug)]
@@ -95,69 +91,6 @@ pub enum Colorspace {
     Srgb,
     DisplayP3,
     Rec2020,
-}
-
-/// Linearize a single sRGB channel (IEC 61966-2-1). Mirrors the
-/// `srgb_to_linear` helper in `renderer.metal` / `image.metal` — used at the
-/// Rust boundary when handing colors to `_sRGB` render targets (clear colors,
-/// etc.) so we don't double-encode a value that the HW will gamma-encode on
-/// write. Alpha is linear by convention; never pass it through this.
-#[cfg(target_os = "macos")]
-#[inline]
-fn srgb_channel_to_linear(c: f64) -> f64 {
-    if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-/// Bradford-adapted sRGB D65 → DisplayP3 D65 matrix applied in linear light.
-/// Must stay in sync with the `srgb_to_p3` helper in `renderer.metal` so the
-/// clear color lands in the same colorspace as shader-emitted pixels.
-#[cfg(target_os = "macos")]
-#[inline]
-fn linear_srgb_to_linear_p3(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
-    (
-        0.82246197 * r + 0.17753803 * g,
-        0.03319420 * r + 0.96680580 * g,
-        0.01708263 * r + 0.07239744 * g + 0.91051993 * b,
-    )
-}
-
-/// Bradford-adapted Rec.2020 D65 → DisplayP3 D65 matrix, linear light. Mirrors
-/// `rec2020_to_p3` in `renderer.metal`. Can produce components outside [0, 1]
-/// because Rec.2020 is wider than P3 — clip at framebuffer write time.
-#[cfg(target_os = "macos")]
-#[inline]
-fn linear_rec2020_to_linear_p3(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
-    (
-        1.34357825 * r + -0.28217967 * g + -0.06139858 * b,
-        -0.06529745 * r + 1.08782226 * g + -0.02252481 * b,
-        0.00282179 * r + -0.02598807 * g + 1.02316628 * b,
-    )
-}
-
-/// Prepare a CPU-side theme color for an `_sRGB` + DisplayP3-tagged render
-/// target. Linearizes (mandatory for the HW encode to work) and, depending
-/// on `colorspace`, runs the matching primaries matrix so the clear color
-/// matches what the shader emits for the same input bytes.
-#[cfg(target_os = "macos")]
-#[inline]
-fn prepare_output_rgb_f64(
-    r: f64,
-    g: f64,
-    b: f64,
-    colorspace: Colorspace,
-) -> (f64, f64, f64) {
-    let r = srgb_channel_to_linear(r);
-    let g = srgb_channel_to_linear(g);
-    let b = srgb_channel_to_linear(b);
-    match colorspace {
-        Colorspace::Srgb => linear_srgb_to_linear_p3(r, g, b),
-        Colorspace::DisplayP3 => (r, g, b),
-        Colorspace::Rec2020 => linear_rec2020_to_linear_p3(r, g, b),
-    }
 }
 
 #[allow(clippy::derivable_impls)]
@@ -246,7 +179,6 @@ impl Sugarloaf<'_> {
             image_data: rustc_hash::FxHashMap::default(),
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
             font_cache,
-            colorspace,
         };
 
         Ok(instance)
@@ -286,8 +218,8 @@ impl Sugarloaf<'_> {
         if let Some(cached) = self.font_cache.get(&(ch, attrs)) {
             return *cached;
         }
-        let font_ctx = self.state.content.font_library().inner.read();
-        resolve_with(&mut self.font_cache, &font_ctx, ch, attrs)
+        let font_lib = self.state.content.font_library().clone();
+        resolve_with(&mut self.font_cache, &font_lib, ch, attrs)
     }
 
     /// Horizontal advance in pixels for a single char rendered with
@@ -358,10 +290,10 @@ impl Sugarloaf<'_> {
         if queries.is_empty() {
             return Vec::new();
         }
-        let font_ctx = self.state.content.font_library().inner.read();
+        let font_lib = self.state.content.font_library().clone();
         let mut out = Vec::with_capacity(queries.len());
         for &(ch, attrs) in queries {
-            out.push(resolve_with(&mut self.font_cache, &font_ctx, ch, attrs));
+            out.push(resolve_with(&mut self.font_cache, &font_lib, ch, attrs));
         }
         out
     }
@@ -1089,75 +1021,22 @@ impl Sugarloaf<'_> {
         self.reset();
     }
 
+    /// Drive a Metal frame. All command-buffer / encoder / drawable
+    /// orchestration now lives inside `Renderer::render_metal` so the
+    /// triple-buffered pool's acquire / completion-handler / retry-on-
+    /// overflow loop can see them all (mirrors zed's `MetalRenderer::draw`).
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn render_metal(&mut self) {
-        use metal::*;
-
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Metal(metal) => metal,
             _ => return,
         };
 
-        match ctx.get_current_texture() {
-            Ok(surface_texture) => {
-                // Create command buffer
-                let command_buffer = ctx.command_queue.new_command_buffer();
-                command_buffer.set_label("Sugarloaf Metal Render");
-
-                // Create render pass descriptor
-                let render_pass_descriptor = RenderPassDescriptor::new();
-                let color_attachment = render_pass_descriptor
-                    .color_attachments()
-                    .object_at(0)
-                    .unwrap();
-
-                color_attachment.set_texture(Some(&surface_texture.texture));
-                color_attachment.set_store_action(MTLStoreAction::Store);
-                color_attachment.set_load_action(MTLLoadAction::Clear);
-
-                // Set background color.
-                //
-                // The drawable is `BGRA8Unorm_sRGB` + DisplayP3-tagged (see
-                // `context/metal.rs`). That means Metal reads `MTLClearColor`
-                // components as *linear* RGB in the drawable's color space
-                // and applies the sRGB transfer curve on write. Rio's theme
-                // colors arrive here sRGB-encoded with their primaries
-                // declared by `[window] colorspace`, so we need to:
-                // 1. Linearize (mandatory — HW-encode expects linear input),
-                // 2. Convert sRGB → P3 primaries if the config says the
-                //    inputs are sRGB, so the clear pixel matches what the
-                //    shader emits for the same theme bytes (see
-                //    `renderer.metal`'s `prepare_output_rgb`).
-                let clear_color = if let Some(background_color) = self.background_color {
-                    let (r, g, b) = prepare_output_rgb_f64(
-                        background_color.r,
-                        background_color.g,
-                        background_color.b,
-                        self.colorspace,
-                    );
-                    MTLClearColor::new(r, g, b, background_color.a)
-                } else {
-                    // Default to transparent black if no background color set
-                    MTLClearColor::new(0.0, 0.0, 0.0, 0.0)
-                };
-                color_attachment.set_clear_color(clear_color);
-
-                // Create render command encoder
-                let render_encoder =
-                    command_buffer.new_render_command_encoder(render_pass_descriptor);
-                render_encoder.set_label("Sugarloaf Metal Render Pass");
-
-                self.renderer.render_metal(ctx, render_encoder);
-
-                render_encoder.end_encoding();
-                command_buffer.present_drawable(&surface_texture.drawable);
-                command_buffer.commit();
-            }
-            Err(error) => {
-                tracing::error!("Metal surface error: {}", error);
-            }
-        }
+        let bg_color = self
+            .background_color
+            .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32]);
+        self.renderer.render_metal(ctx, bg_color);
 
         self.reset();
     }
