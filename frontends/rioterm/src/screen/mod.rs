@@ -3449,13 +3449,22 @@ impl Screen<'_> {
             }
         }
 
-        // Phase 2.2: per-panel CellBg + CellText emission. Iterates
-        // every panel in the active grid, not just the focused one,
-        // so split layouts render all panes. Per-panel uniforms
-        // carry each panel's layout rect as `grid_padding` so the bg
-        // shader anchors that panel's cells to its own rectangle.
+        // Phase 2.2/2.3: per-panel CellBg + CellText emission with
+        // per-row dirty gating. Iterates every panel in the active
+        // grid. For each:
+        //   - `damage == Noop | CursorOnly` + grid not forcing full:
+        //         skip `write_row` entirely. Cursor state is carried
+        //         by `GridUniforms`, so a pure blink/move doesn't
+        //         touch the cell buffers.
+        //   - `damage == Full` | first-frame | resize:
+        //         rebuild every visible row.
+        //   - `damage == Partial(lines)`:
+        //         rebuild only those rows.
+        // Unchanged rows keep their CellBg + CellText resident in
+        // the grid's CPU state, which is re-uploaded verbatim. Same
+        // pattern as Ghostty's `.partial` path at
+        // `ghostty/src/renderer/generic.zig:2431-2440`.
         {
-            // --- snapshot all panels' state under a short lock scope ---
             struct PanelFrame {
                 route_id: usize,
                 layout_rect: [f32; 4],
@@ -3473,6 +3482,7 @@ impl Screen<'_> {
                 cursor_row: u16,
                 cursor_visible: bool,
                 is_active: bool,
+                damage: rio_backend::event::TerminalDamage,
             }
 
             let (active_key, scaled_margin) = {
@@ -3480,9 +3490,22 @@ impl Screen<'_> {
                 (grid.current, grid.scaled_margin)
             };
             let mut panels: Vec<PanelFrame> = Vec::new();
-            for (key, item) in self.context_manager.current_grid().contexts() {
-                let ctx = &item.val;
+            for (key, item) in
+                self.context_manager.current_grid_mut().contexts_mut().iter_mut()
+            {
+                let ctx = &mut item.val;
                 let dim = ctx.dimension;
+                // Snap to integer pixel cells. `dim.dimension.width`
+                // comes from `char_width * scale` (fractional);
+                // `dim.dimension.height` is already `.ceil()`'d in
+                // sugarloaf's layout. Mixed fractional widths drift
+                // the bg fragment's `floor((pixel - padding) /
+                // cell_size)` across cell boundaries — adjacent
+                // columns end up 7 vs 8 px wide → visible seams.
+                // Rounding both to the same integer stride the cell
+                // grid is actually drawn on removes the drift.
+                let cell_w = dim.dimension.width.round().max(1.0);
+                let cell_h = dim.dimension.height.round().max(1.0);
                 let (visible_rows, style_set, term_colors) = {
                     let terminal = ctx.terminal.lock();
                     (
@@ -3492,13 +3515,19 @@ impl Screen<'_> {
                     )
                 };
                 let cursor = &ctx.renderable_content.cursor;
+                // Take + reset so next frame sees fresh damage only
+                // from this frame's `Renderer::run`.
+                let damage = std::mem::replace(
+                    &mut ctx.renderable_content.last_frame_damage,
+                    rio_backend::event::TerminalDamage::Noop,
+                );
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
                     cols: dim.columns.max(1) as u32,
                     rows: dim.lines.max(1) as u32,
-                    cell_w: dim.dimension.width,
-                    cell_h: dim.dimension.height,
+                    cell_w,
+                    cell_h,
                     visible_rows,
                     style_set,
                     term_colors,
@@ -3506,6 +3535,7 @@ impl Screen<'_> {
                     cursor_row: cursor.state.pos.row.0 as u16,
                     cursor_visible: cursor.state.is_visible(),
                     is_active: *key == active_key,
+                    damage,
                 });
             }
 
@@ -3536,12 +3566,65 @@ impl Screen<'_> {
                     continue;
                 };
 
+                // Decide which rows to rebuild.
+                //
+                // `force_full` short-circuits damage to "rebuild all":
+                //   - grid was just created or resized (CPU buffers
+                //     are zeroed, so whatever damage says we have to
+                //     do a full fill).
+                //   - damage == Full (the terminal explicitly asked).
+                //
+                // `Noop` / `CursorOnly` → no row rebuilds, uniforms
+                // alone carry the frame's state change.
+                //
+                // `Partial(lines)` → rebuild only those row indices.
+                let force_full = grid.needs_full_rebuild()
+                    || matches!(
+                        p.damage,
+                        rio_backend::event::TerminalDamage::Full
+                    );
+
+                enum RowsToRebuild<'a> {
+                    None,
+                    All,
+                    Only(
+                        &'a std::collections::BTreeSet<
+                            rio_backend::crosswords::LineDamage,
+                        >,
+                    ),
+                }
+                let rows_to_rebuild = if force_full {
+                    RowsToRebuild::All
+                } else {
+                    match &p.damage {
+                        rio_backend::event::TerminalDamage::Full => {
+                            RowsToRebuild::All
+                        }
+                        rio_backend::event::TerminalDamage::Partial(lines) => {
+                            RowsToRebuild::Only(lines)
+                        }
+                        rio_backend::event::TerminalDamage::CursorOnly
+                        | rio_backend::event::TerminalDamage::Noop => {
+                            RowsToRebuild::None
+                        }
+                    }
+                };
+
                 let cols = p.cols as usize;
                 let mut bg_scratch: Vec<rio_backend::sugarloaf::grid::CellBg> =
                     Vec::with_capacity(cols);
                 let mut fg_scratch: Vec<rio_backend::sugarloaf::grid::CellText> =
                     Vec::with_capacity(cols);
-                for (y, row) in p.visible_rows.iter().enumerate() {
+
+                // Small helper: rebuild one row into the grid's
+                // buffers. Closure-style to avoid duplicating the
+                // body between the `All` and `Only` branches.
+                let mut rebuild_row = |y: usize,
+                                       grid: &mut rio_backend::sugarloaf::grid::GridRenderer,
+                                       rasterizer: &mut crate::grid_emit::GridGlyphRasterizer| {
+                    let Some(row) = p.visible_rows.get(y) else {
+                        return;
+                    };
                     bg_scratch.clear();
                     fg_scratch.clear();
                     for x in 0..cols {
@@ -3571,15 +3654,48 @@ impl Screen<'_> {
                         ) {
                             fg_scratch.push(ct);
                         }
+                        #[cfg(not(target_os = "macos"))]
+                        let _ = rasterizer;
                     }
                     grid.write_row(y as u32, &bg_scratch, &fg_scratch);
+                };
+
+                match rows_to_rebuild {
+                    RowsToRebuild::None => {
+                        // Nothing to rebuild — previous frame's
+                        // CellBg/CellText stay resident. The GPU
+                        // pass below still runs so updated uniforms
+                        // (cursor_pos moved, etc.) take effect.
+                    }
+                    RowsToRebuild::All => {
+                        for y in 0..p.visible_rows.len() {
+                            rebuild_row(y, grid, rasterizer);
+                        }
+                        grid.mark_full_rebuild_done();
+                    }
+                    RowsToRebuild::Only(lines) => {
+                        for ld in lines {
+                            rebuild_row(ld.line, grid, rasterizer);
+                        }
+                    }
                 }
 
                 // Panel's grid origin in drawable-pixel space =
                 // window scaled_margin + the panel's layout rect
-                // offset inside the root container.
-                let panel_left = scaled_margin.left + p.layout_rect[0];
-                let panel_top = scaled_margin.top + p.layout_rect[1];
+                // offset inside the root container. Snap to integer
+                // pixels so `cell_size * grid_pos + grid_padding`
+                // always lands on pixel boundaries — same approach
+                // as Ghostty's `@floatFromInt(blank.top)` at
+                // `ghostty/src/renderer/generic.zig:1976-1981`.
+                // Without this, a fractional margin (e.g. Taffy
+                // layout computing 10.5px offsets) shifts the whole
+                // grid half a pixel and the bg fragment's
+                // `floor((pixel - padding) / cell_size)` disagrees
+                // with the text vertex's `cell_size * grid_pos`
+                // about where cell boundaries are → visible seams.
+                let panel_left =
+                    (scaled_margin.left + p.layout_rect[0]).round();
+                let panel_top = (scaled_margin.top + p.layout_rect[1]).round();
 
                 let (cursor_pos, cursor_col_u, cursor_bg_u) =
                     if p.is_active && p.cursor_visible {
