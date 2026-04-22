@@ -3,6 +3,7 @@ pub mod context;
 pub mod font;
 mod font_cache;
 pub mod font_introspector;
+pub mod grid;
 pub mod layout;
 pub mod renderer;
 mod sugarloaf;

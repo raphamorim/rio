@@ -1,7 +1,7 @@
 mod batch;
 mod compositor;
 pub mod cpu;
-mod image_cache;
+pub(crate) mod image_cache;
 #[cfg(test)]
 mod positioning_tests;
 pub mod text;
@@ -2693,7 +2693,12 @@ impl Renderer {
     /// frame owns its own buffer for the lifetime of GPU execution, so
     /// the CPU can write the next frame's data without racing.
     #[cfg(target_os = "macos")]
-    pub fn render_metal(&mut self, context: &MetalContext, bg_color: Option<[f32; 4]>) {
+    pub fn render_metal(
+        &mut self,
+        context: &MetalContext,
+        bg_color: Option<[f32; 4]>,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    ) {
         use block::ConcreteBlock;
         use std::cell::Cell as StdCell;
 
@@ -2746,6 +2751,14 @@ impl Renderer {
             let has_images = !self.image_draws.is_empty();
 
             let ok = (|| {
+                // Always draw the window bg fill. With the grid
+                // owning per-cell bg, `padding_extend` in the grid
+                // shader was initially used to extend edge cell
+                // colors into the window margin — but that only
+                // works for a single full-window grid. Once splits
+                // exist, each panel's grid covers only its own rect,
+                // so the window margin + gutters between panels
+                // rely on this fullscreen fill again.
                 if let Some(rgba) = bg_color {
                     if !Self::draw_bg_fill_metal(
                         brush,
@@ -2770,6 +2783,18 @@ impl Renderer {
                 ) {
                     return false;
                 }
+                // Terminal grid passes — drawn after the window bg
+                // fill but before rich-text UI overlays, so each
+                // panel's cells composite over the window bg and
+                // under the tab-bar / assistant / search overlays.
+                true
+            })();
+            if ok {
+                for (grid, uniforms) in grids.iter_mut() {
+                    grid.render_metal(render_encoder, uniforms);
+                }
+            }
+            let ok = ok && (|| {
                 if has_images
                     && !Self::draw_images_metal(
                         &self.image_draws,

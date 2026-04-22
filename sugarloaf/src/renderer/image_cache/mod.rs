@@ -1,4 +1,4 @@
-mod atlas;
+pub(crate) mod atlas;
 mod cache;
 pub mod glyph;
 
