@@ -40,6 +40,7 @@ pub struct AtlasSlot {
 /// Raw rasterized glyph bitmap, caller-supplied. The atlas doesn't
 /// rasterize itself — that stays in whatever shaping / scaling path
 /// the caller uses (sugarloaf's swash-backed `ScaleContext`).
+#[derive(Clone, Copy)]
 pub struct RasterizedGlyph<'a> {
     pub width: u16,
     pub height: u16,

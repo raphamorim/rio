@@ -3472,6 +3472,7 @@ impl Screen<'_> {
                 rows: u32,
                 cell_w: f32,
                 cell_h: f32,
+                font_px: f32,
                 visible_rows:
                     Vec<rio_backend::crosswords::grid::row::Row<
                         rio_backend::crosswords::square::Square,
@@ -3506,6 +3507,17 @@ impl Screen<'_> {
                 // grid is actually drawn on removes the drift.
                 let cell_w = dim.dimension.width.round().max(1.0);
                 let cell_h = dim.dimension.height.round().max(1.0);
+                // Per-panel font size (zoom is per-rich-text, not root).
+                // Falls back to root × scale if the text id can't be
+                // found — shouldn't happen post-init but keeps the emit
+                // loop from dividing by zero.
+                let font_px = self
+                    .sugarloaf
+                    .text_scaled_font_size(&ctx.rich_text_id)
+                    .unwrap_or_else(|| {
+                        let s = self.sugarloaf.style();
+                        s.font_size * s.scale_factor
+                    });
                 let (visible_rows, style_set, term_colors) = {
                     let terminal = ctx.terminal.lock();
                     (
@@ -3528,6 +3540,7 @@ impl Screen<'_> {
                     rows: dim.lines.max(1) as u32,
                     cell_w,
                     cell_h,
+                    font_px,
                     visible_rows,
                     style_set,
                     term_colors,
@@ -3546,9 +3559,6 @@ impl Screen<'_> {
 
             // --- emit cells + build uniforms per panel ---
             let window_size = self.sugarloaf.window_size();
-            let sugarloaf_style = self.sugarloaf.style();
-            let font_px =
-                sugarloaf_style.font_size * sugarloaf_style.scale_factor;
             let font_library = self.sugarloaf.font_library().clone();
             let bg_col = self.renderer.named_colors.background.0;
             let cursor_col_rgba = self.renderer.named_colors.cursor;
@@ -3649,7 +3659,7 @@ impl Screen<'_> {
                             &p.term_colors,
                             rasterizer,
                             grid,
-                            font_px,
+                            p.font_px,
                             p.cell_h,
                             &font_library,
                         ) {

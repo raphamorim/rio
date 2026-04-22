@@ -17,8 +17,8 @@
 //! FG storage lands in Phase 1c alongside `cell_text` shader port.
 
 use metal::{
-    Buffer, CompileOptions, Device, MTLBlendFactor, MTLBlendOperation, MTLPixelFormat,
-    MTLPrimitiveType, MTLRegion, MTLResourceOptions, MTLTextureUsage,
+    Buffer, CommandQueue, CompileOptions, Device, MTLBlendFactor, MTLBlendOperation,
+    MTLPixelFormat, MTLPrimitiveType, MTLRegion, MTLResourceOptions, MTLTextureUsage,
     MTLVertexFormat, MTLVertexStepFunction, RenderCommandEncoderRef,
     RenderPipelineDescriptor, RenderPipelineState, Texture, TextureDescriptor,
     VertexDescriptor,
@@ -39,12 +39,16 @@ const FRAMES_IN_FLIGHT: usize = 3;
 /// non-block-style cursor at the tail).
 const CURSOR_ROW_SLOTS: usize = 2;
 
-/// Side of the square grayscale atlas texture. 2048² @ R8 = 4 MiB,
-/// enough for a few thousand glyphs before we need multi-atlas
-/// support. Ghostty starts at the same size and grows (`generic.zig`
-/// in atlas/texture management). For now we're one-and-done — glyph
-/// churn past 4 MiB is a Phase 2+ concern.
+/// Initial square atlas texture side. 2048² @ R8 = 4 MiB, grown to
+/// 4096² / 8192² on demand when the allocator reports full (see
+/// `MetalGlyphAtlas::grow`). Mirrors Ghostty's `atlas.grow` in
+/// `ghostty/src/font/Atlas.zig`.
 const ATLAS_SIZE: u16 = 2048;
+
+/// Hard cap on atlas side — Metal textures support 16384² on Apple
+/// Silicon but 8192² is the safe floor across Intel Mac + discrete
+/// GPUs. Beyond this we'd need a multi-atlas strategy.
+const ATLAS_MAX_SIZE: u16 = 8192;
 
 /// Glyph atlas for grayscale OR color glyphs. A single instance
 /// holds one `MTLTexture`, an allocator, and the key→slot map; the
@@ -58,6 +62,10 @@ pub struct MetalGlyphAtlas {
     allocator: AtlasAllocator,
     slots: FxHashMap<GlyphKey, AtlasSlot>,
     bytes_per_pixel: u32,
+    format: MTLPixelFormat,
+    /// Persist for `set_label` on the grown texture so Xcode's GPU
+    /// debugger still identifies it after a grow.
+    label: &'static str,
 }
 
 impl MetalGlyphAtlas {
@@ -76,23 +84,68 @@ impl MetalGlyphAtlas {
         device: &Device,
         format: MTLPixelFormat,
         bytes_per_pixel: u32,
-        label: &str,
+        label: &'static str,
     ) -> Self {
-        let descriptor = TextureDescriptor::new();
-        descriptor.set_width(ATLAS_SIZE as u64);
-        descriptor.set_height(ATLAS_SIZE as u64);
-        descriptor.set_pixel_format(format);
-        descriptor.set_storage_mode(metal::MTLStorageMode::Managed);
-        descriptor.set_usage(MTLTextureUsage::ShaderRead);
-        let texture = device.new_texture(&descriptor);
-        texture.set_label(label);
+        let texture = create_atlas_texture(device, format, ATLAS_SIZE, label);
 
         Self {
             texture,
             allocator: AtlasAllocator::new(ATLAS_SIZE, ATLAS_SIZE),
             slots: FxHashMap::default(),
             bytes_per_pixel,
+            format,
+            label,
         }
+    }
+
+    /// Double the atlas texture + allocator dimensions, copying old
+    /// texel data into the top-left of the new texture via a blit.
+    /// Existing `AtlasSlot`s stay valid because their `(x, y)` fall
+    /// inside the unchanged old region. Returns `false` if the atlas
+    /// is already at `ATLAS_MAX_SIZE` (caller must handle the failure
+    /// — there's no eviction).
+    pub fn grow(&mut self, device: &Device, queue: &CommandQueue) -> bool {
+        let (old_w, old_h) = self.allocator.dimensions();
+        if old_w >= ATLAS_MAX_SIZE {
+            return false;
+        }
+        let new_size = old_w.saturating_mul(2).min(ATLAS_MAX_SIZE);
+        if new_size <= old_w {
+            return false;
+        }
+
+        let new_texture =
+            create_atlas_texture(device, self.format, new_size, self.label);
+
+        // Blit the old texture into the top-left of the new one.
+        // Slots are still addressed by their original (x, y) so we
+        // don't touch the allocator's shelf layout, just its bounds.
+        let cmd_buffer = queue.new_command_buffer();
+        let blit = cmd_buffer.new_blit_command_encoder();
+        blit.copy_from_texture(
+            &self.texture,
+            0,
+            0,
+            metal::MTLOrigin { x: 0, y: 0, z: 0 },
+            metal::MTLSize {
+                width: old_w as u64,
+                height: old_h as u64,
+                depth: 1,
+            },
+            &new_texture,
+            0,
+            0,
+            metal::MTLOrigin { x: 0, y: 0, z: 0 },
+        );
+        blit.end_encoding();
+        cmd_buffer.commit();
+        // Wait so subsequent `replace_region` writes to the new
+        // texture don't race the blit.
+        cmd_buffer.wait_until_completed();
+
+        self.texture = new_texture;
+        self.allocator.grow_to(new_size, new_size);
+        true
     }
 
     #[inline]
@@ -161,8 +214,29 @@ impl MetalGlyphAtlas {
     }
 }
 
+fn create_atlas_texture(
+    device: &Device,
+    format: MTLPixelFormat,
+    size: u16,
+    label: &str,
+) -> Texture {
+    let descriptor = TextureDescriptor::new();
+    descriptor.set_width(size as u64);
+    descriptor.set_height(size as u64);
+    descriptor.set_pixel_format(format);
+    descriptor.set_storage_mode(metal::MTLStorageMode::Managed);
+    descriptor.set_usage(MTLTextureUsage::ShaderRead);
+    let texture = device.new_texture(&descriptor);
+    texture.set_label(label);
+    texture
+}
+
 pub struct MetalGridRenderer {
     device: Device,
+    /// Needed for atlas-grow blits. Keeping a handle lets us submit
+    /// a one-off command buffer without threading the queue through
+    /// every emit-time call site.
+    command_queue: CommandQueue,
 
     /// Current grid size (cells).
     cols: u32,
@@ -230,6 +304,7 @@ pub struct MetalGridRenderer {
 impl MetalGridRenderer {
     pub fn new(ctx: &MetalContext, cols: u32, rows: u32) -> Self {
         let device = ctx.device.to_owned();
+        let command_queue = ctx.command_queue.to_owned();
         let bg_buffers = std::array::from_fn(|_| alloc_bg_buffer(&device, cols, rows));
         let initial_fg_capacity = (cols as usize) * (rows as usize).max(1);
         let fg_buffers =
@@ -243,6 +318,7 @@ impl MetalGridRenderer {
 
         Self {
             device,
+            command_queue,
             cols,
             rows,
             bg_buffers,
@@ -274,13 +350,23 @@ impl MetalGridRenderer {
         self.atlas_grayscale.lookup(key)
     }
 
-    /// Pack + upload a grayscale rasterized glyph.
+    /// Pack + upload a grayscale rasterized glyph. On atlas-full,
+    /// grows the atlas (doubles the texture, blits old texels into
+    /// the top-left) and retries once. Returns `None` only if the
+    /// atlas is at `ATLAS_MAX_SIZE` and still can't fit the glyph.
     pub fn insert_glyph(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        self.atlas_grayscale.insert(key, glyph)
+        if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
+            return Some(slot);
+        }
+        if self.atlas_grayscale.grow(&self.device, &self.command_queue) {
+            self.atlas_grayscale.insert(key, glyph)
+        } else {
+            None
+        }
     }
 
     /// Lookup a glyph in the color atlas.
@@ -289,12 +375,20 @@ impl MetalGridRenderer {
     }
 
     /// Pack + upload a color (RGBA8-premultiplied) rasterized glyph.
+    /// Same grow-on-full behaviour as `insert_glyph`.
     pub fn insert_glyph_color(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        self.atlas_color.insert(key, glyph)
+        if let Some(slot) = self.atlas_color.insert(key, glyph) {
+            return Some(slot);
+        }
+        if self.atlas_color.grow(&self.device, &self.command_queue) {
+            self.atlas_color.insert(key, glyph)
+        } else {
+            None
+        }
     }
 
     pub fn resize(&mut self, cols: u32, rows: u32) {
