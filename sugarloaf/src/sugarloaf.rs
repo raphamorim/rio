@@ -485,6 +485,19 @@ impl Sugarloaf<'_> {
         self.state.content.get_text_by_id(id)
     }
 
+    /// Device-pixel font size for the given rich-text id. This is
+    /// `layout.font_size * scale_factor` — the size glyphs should be
+    /// rasterized at. Mirrors per-text zoom (set via
+    /// `set_text_font_size_action`) so each panel can carry its own
+    /// size. Returns None for non-text ids or missing ids.
+    #[inline]
+    pub fn text_scaled_font_size(&self, id: &usize) -> Option<f32> {
+        self.state
+            .content
+            .get_text_by_id(*id)
+            .map(|s| s.scaled_font_size)
+    }
+
     #[inline]
     pub fn build_text_by_id(&mut self, id: usize) {
         self.state.content().sel(id).build();
