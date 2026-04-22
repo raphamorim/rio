@@ -145,6 +145,17 @@ impl AtlasAllocator {
         (self.width, self.height)
     }
 
+    /// Grow the atlas's free region to new dimensions. Existing shelf
+    /// coordinates (both x and y) stay valid because they're in the
+    /// top-left of the old region; the new area is appended on the
+    /// right and bottom. Caller is responsible for growing the backing
+    /// texture in lock-step.
+    pub fn grow_to(&mut self, new_width: u16, new_height: u16) {
+        debug_assert!(new_width >= self.width && new_height >= self.height);
+        self.width = new_width;
+        self.height = new_height;
+    }
+
     /// Deallocates a rectangle (simplified - in practice this is complex)
     pub fn deallocate(&mut self, _x: u16, _y: u16, _width: u16) {
         // For now, we don't implement deallocation as it's complex
