@@ -26,12 +26,39 @@ pub struct WgpuGlyphAtlas {
     allocator: AtlasAllocator,
     slots: FxHashMap<GlyphKey, AtlasSlot>,
     queue: wgpu::Queue,
+    bytes_per_pixel: u32,
 }
 
 impl WgpuGlyphAtlas {
-    pub fn new(device: &wgpu::Device, queue: wgpu::Queue) -> Self {
+    pub fn new_grayscale(device: &wgpu::Device, queue: wgpu::Queue) -> Self {
+        Self::new_with_format(
+            device,
+            queue,
+            wgpu::TextureFormat::R8Unorm,
+            1,
+            "grid.atlas_grayscale",
+        )
+    }
+
+    pub fn new_color(device: &wgpu::Device, queue: wgpu::Queue) -> Self {
+        Self::new_with_format(
+            device,
+            queue,
+            wgpu::TextureFormat::Rgba8Unorm,
+            4,
+            "grid.atlas_color",
+        )
+    }
+
+    fn new_with_format(
+        device: &wgpu::Device,
+        queue: wgpu::Queue,
+        format: wgpu::TextureFormat,
+        bytes_per_pixel: u32,
+        label: &'static str,
+    ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("grid.atlas_grayscale"),
+            label: Some(label),
             size: wgpu::Extent3d {
                 width: ATLAS_SIZE,
                 height: ATLAS_SIZE,
@@ -40,7 +67,7 @@ impl WgpuGlyphAtlas {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
@@ -52,6 +79,7 @@ impl WgpuGlyphAtlas {
             allocator: AtlasAllocator::new(ATLAS_SIZE as u16, ATLAS_SIZE as u16),
             slots: FxHashMap::default(),
             queue,
+            bytes_per_pixel,
         }
     }
 
@@ -103,7 +131,7 @@ impl WgpuGlyphAtlas {
             glyph.bytes,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(glyph.width as u32),
+                bytes_per_row: Some(glyph.width as u32 * self.bytes_per_pixel),
                 rows_per_image: Some(glyph.height as u32),
             },
             wgpu::Extent3d {
@@ -164,6 +192,7 @@ pub struct WgpuGridRenderer {
     text_pipeline: wgpu::RenderPipeline,
 
     atlas_grayscale: WgpuGlyphAtlas,
+    atlas_color: WgpuGlyphAtlas,
 
     /// Mirror of `MetalGridRenderer::needs_full_rebuild`. Set on
     /// `new` / `resize`, cleared via `mark_full_rebuild_done`.
@@ -200,7 +229,8 @@ impl WgpuGridRenderer {
         );
 
         // text pipeline — uniforms in group(0), atlas textures in group(1).
-        let atlas_grayscale = WgpuGlyphAtlas::new(&device, queue.clone());
+        let atlas_grayscale = WgpuGlyphAtlas::new_grayscale(&device, queue.clone());
+        let atlas_color = WgpuGlyphAtlas::new_color(&device, queue.clone());
         let text_uniform_bgl = create_text_uniform_bgl(&device);
         let text_uniform_bg =
             create_text_uniform_bg(&device, &text_uniform_bgl, &uniform_buffer);
@@ -209,7 +239,7 @@ impl WgpuGridRenderer {
             &device,
             &text_atlas_bgl,
             atlas_grayscale.view(),
-            atlas_grayscale.view(),
+            atlas_color.view(),
         );
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -247,6 +277,7 @@ impl WgpuGridRenderer {
             text_atlas_bg,
             text_pipeline,
             atlas_grayscale,
+            atlas_color,
             needs_full_rebuild: true,
         }
     }
@@ -323,12 +354,24 @@ impl WgpuGridRenderer {
         self.atlas_grayscale.lookup(key)
     }
 
+    pub fn lookup_glyph_color(&self, key: GlyphKey) -> Option<AtlasSlot> {
+        self.atlas_color.lookup(key)
+    }
+
     pub fn insert_glyph(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
         self.atlas_grayscale.insert(key, glyph)
+    }
+
+    pub fn insert_glyph_color(
+        &mut self,
+        key: GlyphKey,
+        glyph: RasterizedGlyph<'_>,
+    ) -> Option<AtlasSlot> {
+        self.atlas_color.insert(key, glyph)
     }
 
     /// Record bg pass + text pass against the caller's `render_pass`.
@@ -550,9 +593,12 @@ fn create_text_atlas_bg(
 }
 
 fn premultiplied_blend() -> wgpu::BlendState {
+    // Premultiplied-over, matching Ghostty. Text fragment returns
+    // premultiplied RGBA (`in.color * mask_a` for grayscale, atlas
+    // sample for color), so source RGB must be `One`.
     wgpu::BlendState {
         color: wgpu::BlendComponent {
-            src_factor: wgpu::BlendFactor::SrcAlpha,
+            src_factor: wgpu::BlendFactor::One,
             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
             operation: wgpu::BlendOperation::Add,
         },

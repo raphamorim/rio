@@ -146,6 +146,20 @@ impl GridRenderer {
         }
     }
 
+    /// Color-atlas lookup (RGBA emoji glyphs). Mirrors `lookup_glyph`
+    /// but hits the color atlas instead of the grayscale one.
+    pub fn lookup_glyph_color(
+        &self,
+        key: atlas::GlyphKey,
+    ) -> Option<atlas::AtlasSlot> {
+        match self {
+            #[cfg(target_os = "macos")]
+            GridRenderer::Metal(r) => r.lookup_glyph_color(key),
+            GridRenderer::Wgpu(r) => r.lookup_glyph_color(key),
+            GridRenderer::Unsupported => None,
+        }
+    }
+
     /// Pack + upload a rasterized glyph. Returns the assigned
     /// `AtlasSlot` or `None` if the atlas is full.
     pub fn insert_glyph(
@@ -157,6 +171,21 @@ impl GridRenderer {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.insert_glyph(key, glyph),
             GridRenderer::Wgpu(r) => r.insert_glyph(key, glyph),
+            GridRenderer::Unsupported => None,
+        }
+    }
+
+    /// Color-atlas insert. RGBA glyph bytes go into the RGBA8Unorm
+    /// color texture (slot 1 in the text fragment shader).
+    pub fn insert_glyph_color(
+        &mut self,
+        key: atlas::GlyphKey,
+        glyph: atlas::RasterizedGlyph<'_>,
+    ) -> Option<atlas::AtlasSlot> {
+        match self {
+            #[cfg(target_os = "macos")]
+            GridRenderer::Metal(r) => r.insert_glyph_color(key, glyph),
+            GridRenderer::Wgpu(r) => r.insert_glyph_color(key, glyph),
             GridRenderer::Unsupported => None,
         }
     }

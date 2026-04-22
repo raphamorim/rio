@@ -144,6 +144,10 @@ impl GridGlyphRasterizer {
     /// return its slot. Returns `None` for zero-width / missing
     /// glyphs — the caller should skip emitting a `CellText` in that
     /// case.
+    /// Result of `ensure_glyph`: the atlas slot plus which atlas
+    /// (grayscale mask vs color bitmap) the slot lives in. Callers
+    /// (`build_cell_text`) tag the emitted `CellText.atlas` from this
+    /// so the fragment shader picks the right texture.
     #[cfg(target_os = "macos")]
     pub fn ensure_glyph(
         &mut self,
@@ -153,7 +157,7 @@ impl GridGlyphRasterizer {
         cell_h: f32,
         flags: StyleFlags,
         font_library: &FontLibrary,
-    ) -> Option<(GlyphKey, AtlasSlot)> {
+    ) -> Option<(GlyphKey, AtlasSlot, bool /* is_color */)> {
         // Phase 2.2c: skip synthesis for now — treat every lookup as
         // upright regular. The renderer already marks bold/italic in
         // `StyleFlags`; the final implementation should pass them
@@ -165,10 +169,13 @@ impl GridGlyphRasterizer {
             (id as u32, emoji)
         });
 
-        // Color emoji path needs a separate atlas; defer to Phase 2.2c+.
-        if is_emoji {
-            return None;
-        }
+        // NOTE: do not early-return on `is_emoji` — that flag is
+        // per-font (e.g. "Apple Color Emoji") and the monochrome
+        // outline path handles color fonts too. Ghostty defers the
+        // decision to per-glyph `isColorGlyph()` at rasterize time
+        // (`ghostty/src/renderer/generic.zig:3272`); we use macOS
+        // rasterizer's per-glyph `is_color` below instead.
+        let _ = is_emoji;
 
         // Cache the FontHandle per font_id. `ct_font` takes a
         // read-lock + clones the handle; doing that on every cell is
@@ -217,8 +224,15 @@ impl GridGlyphRasterizer {
             glyph_id: glyph_id as u32,
             size_bucket,
         };
+        // Check both atlases — a glyph might be in either depending
+        // on its color status, which was decided at first-rasterize
+        // time. `font_id` is part of the key so a color-emoji font
+        // and a text font can't collide.
         if let Some(slot) = grid.lookup_glyph(key) {
-            return Some((key, slot));
+            return Some((key, slot, false));
+        }
+        if let Some(slot) = grid.lookup_glyph_color(key) {
+            return Some((key, slot, true));
         }
 
         // Cell-bottom-relative bearings conversion. macOS rasterizer
@@ -254,19 +268,22 @@ impl GridGlyphRasterizer {
         // handles that path; wire it in when bold/italic start to
         // matter visually.
         let _ = flags;
+        // `is_emoji = true` enables CoreText's color-rasterization
+        // path when the font (e.g. Apple Color Emoji) carries color
+        // tables. Monochrome fonts ignore this and still render
+        // grayscale. Per-glyph color status comes back as
+        // `raw.is_color` — that's the authoritative signal for
+        // which atlas to use.
         let raw = rio_backend::sugarloaf::font::macos::rasterize_glyph(
             &handle,
             glyph_id,
             size_u16 as f32,
-            /* is_emoji: */ false,
+            is_emoji,
             /* synthetic_italic: */ false,
             /* synthetic_bold: */ false,
         )?;
 
-        if raw.is_color {
-            // Color path not yet wired; bail rather than misrender.
-            return None;
-        }
+        let is_color = raw.is_color;
 
         let raster = RasterizedGlyph {
             width: raw.width.min(u16::MAX as u32) as u16,
@@ -294,8 +311,12 @@ impl GridGlyphRasterizer {
             bytes: &raw.bytes,
         };
 
-        let slot = grid.insert_glyph(key, raster)?;
-        Some((key, slot))
+        let slot = if is_color {
+            grid.insert_glyph_color(key, raster)?
+        } else {
+            grid.insert_glyph(key, raster)?
+        };
+        Some((key, slot, is_color))
     }
 }
 
@@ -325,7 +346,7 @@ pub fn build_cell_text(
     }
 
     let style: Style = style_set.get(sq.style_id());
-    let (_key, slot) = rasterizer.ensure_glyph(
+    let (_key, slot, is_color) = rasterizer.ensure_glyph(
         grid,
         ch,
         size_px,
@@ -337,14 +358,25 @@ pub fn build_cell_text(
         return None;
     }
 
-    let fg = cell_fg(sq, style_set, renderer, term_colors);
+    // For color glyphs (emoji), the fragment shader returns the
+    // atlas sample directly and ignores `color`. For grayscale
+    // glyphs, `color` is multiplied by the alpha mask — that's where
+    // the SGR foreground lands.
+    let (atlas, color) = if is_color {
+        (CellText::ATLAS_COLOR, [255, 255, 255, 255])
+    } else {
+        (
+            CellText::ATLAS_GRAYSCALE,
+            cell_fg(sq, style_set, renderer, term_colors),
+        )
+    };
     Some(CellText {
         glyph_pos: [slot.x as u32, slot.y as u32],
         glyph_size: [slot.w as u32, slot.h as u32],
         bearings: [slot.bearing_x, slot.bearing_y],
         grid_pos: [col, row],
-        color: fg,
-        atlas: CellText::ATLAS_GRAYSCALE,
+        color,
+        atlas,
         bools: 0,
         _pad: [0, 0],
     })

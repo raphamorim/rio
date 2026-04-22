@@ -46,33 +46,52 @@ const CURSOR_ROW_SLOTS: usize = 2;
 /// churn past 4 MiB is a Phase 2+ concern.
 const ATLAS_SIZE: u16 = 2048;
 
-/// Grayscale (R8) glyph atlas. One `MTLTexture` + shelf packer +
-/// glyph→slot map. Mirrors Ghostty's `font_grid.atlas_grayscale`
-/// (see `ghostty/src/renderer/cell.zig`) — though in Ghostty the
-/// atlas is owned by the font subsystem rather than the renderer.
+/// Glyph atlas for grayscale OR color glyphs. A single instance
+/// holds one `MTLTexture`, an allocator, and the key→slot map; the
+/// `bytes_per_pixel` field lets the same struct serve both paths
+/// (R8 for mask glyphs, RGBA8 for color emoji). Mirrors Ghostty's
+/// split between `atlas_grayscale` and `atlas_color`
+/// (`ghostty/src/renderer/cell.zig`) — owned by the renderer rather
+/// than the font subsystem.
 pub struct MetalGlyphAtlas {
     pub(crate) texture: Texture,
     allocator: AtlasAllocator,
     slots: FxHashMap<GlyphKey, AtlasSlot>,
+    bytes_per_pixel: u32,
 }
 
 impl MetalGlyphAtlas {
-    pub fn new(device: &Device) -> Self {
+    pub fn new_grayscale(device: &Device) -> Self {
+        Self::new(device, MTLPixelFormat::R8Unorm, 1, "grid.atlas_grayscale")
+    }
+
+    pub fn new_color(device: &Device) -> Self {
+        // RGBA8Unorm because macOS `rasterize_glyph` returns RGBA
+        // premultiplied bytes for color emoji. BGRA would need a
+        // byte swap on upload; RGBA is the zero-cost path.
+        Self::new(device, MTLPixelFormat::RGBA8Unorm, 4, "grid.atlas_color")
+    }
+
+    fn new(
+        device: &Device,
+        format: MTLPixelFormat,
+        bytes_per_pixel: u32,
+        label: &str,
+    ) -> Self {
         let descriptor = TextureDescriptor::new();
         descriptor.set_width(ATLAS_SIZE as u64);
         descriptor.set_height(ATLAS_SIZE as u64);
-        // R8Unorm: one byte per pixel, sampled as `float` alpha mask
-        // in `grid_text_fragment`.
-        descriptor.set_pixel_format(MTLPixelFormat::R8Unorm);
+        descriptor.set_pixel_format(format);
         descriptor.set_storage_mode(metal::MTLStorageMode::Managed);
         descriptor.set_usage(MTLTextureUsage::ShaderRead);
         let texture = device.new_texture(&descriptor);
-        texture.set_label("grid.atlas_grayscale");
+        texture.set_label(label);
 
         Self {
             texture,
             allocator: AtlasAllocator::new(ATLAS_SIZE, ATLAS_SIZE),
             slots: FxHashMap::default(),
+            bytes_per_pixel,
         }
     }
 
@@ -82,15 +101,13 @@ impl MetalGlyphAtlas {
     }
 
     /// Pack + upload a rasterized glyph. Returns `None` when the
-    /// atlas is full (Phase 2 will grow or multi-atlas in that case).
+    /// atlas is full. `glyph.bytes` length must be
+    /// `glyph.width * glyph.height * bytes_per_pixel`.
     pub fn insert(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        // Zero-size glyphs (space chars, combining marks) still get a
-        // slot so the shader doesn't see a stale key lookup result —
-        // their quad degenerates and no fragments are drawn.
         if glyph.width == 0 || glyph.height == 0 {
             let slot = AtlasSlot {
                 x: 0,
@@ -131,7 +148,7 @@ impl MetalGlyphAtlas {
             region,
             0,
             glyph.bytes.as_ptr() as *const std::ffi::c_void,
-            glyph.width as u64,
+            (glyph.width as u64) * (self.bytes_per_pixel as u64),
         );
 
         Some(slot)
@@ -190,9 +207,16 @@ pub struct MetalGridRenderer {
     /// frame by flattening `fg_rows` into a contiguous slice.
     fg_staging: Vec<CellText>,
 
-    /// Grayscale glyph atlas. Color atlas lands in Phase 1c tail
-    /// (emoji rendering); for now only grayscale is live.
+    /// Grayscale (R8) glyph atlas — outline mask bitmaps from the
+    /// monochrome rasterizer path.
     atlas_grayscale: MetalGlyphAtlas,
+
+    /// Color (RGBA8) glyph atlas — premultiplied bitmaps from
+    /// CoreText's color-emoji rasterizer. Same allocator + slot
+    /// bookkeeping as the grayscale atlas; the text fragment
+    /// shader picks between them via `CellText.atlas`
+    /// (`ATLAS_GRAYSCALE` vs `ATLAS_COLOR`).
+    atlas_color: MetalGlyphAtlas,
 
     /// Set to `true` on construction + `resize()`. The emission
     /// path checks this to force a full rebuild (every row) on the
@@ -214,7 +238,8 @@ impl MetalGridRenderer {
 
         let bg_pipeline = build_bg_pipeline(&device);
         let text_pipeline = build_text_pipeline(&device);
-        let atlas_grayscale = MetalGlyphAtlas::new(&device);
+        let atlas_grayscale = MetalGlyphAtlas::new_grayscale(&device);
+        let atlas_color = MetalGlyphAtlas::new_color(&device);
 
         Self {
             device,
@@ -229,6 +254,7 @@ impl MetalGridRenderer {
             text_pipeline,
             fg_staging: Vec::new(),
             atlas_grayscale,
+            atlas_color,
             needs_full_rebuild: true,
         }
     }
@@ -243,21 +269,32 @@ impl MetalGridRenderer {
         self.needs_full_rebuild = false;
     }
 
-    /// Lookup a glyph in the grayscale atlas, or `None` if not yet
-    /// rasterized. Callers should follow a miss with `insert_glyph`.
+    /// Lookup a glyph in the grayscale atlas.
     pub fn lookup_glyph(&self, key: GlyphKey) -> Option<AtlasSlot> {
         self.atlas_grayscale.lookup(key)
     }
 
-    /// Pack + upload a rasterized glyph into the grayscale atlas.
-    /// Returns the assigned `AtlasSlot` (same as a later `lookup`).
-    /// `None` means the atlas is full — Phase 2 grows or shards.
+    /// Pack + upload a grayscale rasterized glyph.
     pub fn insert_glyph(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
         self.atlas_grayscale.insert(key, glyph)
+    }
+
+    /// Lookup a glyph in the color atlas.
+    pub fn lookup_glyph_color(&self, key: GlyphKey) -> Option<AtlasSlot> {
+        self.atlas_color.lookup(key)
+    }
+
+    /// Pack + upload a color (RGBA8-premultiplied) rasterized glyph.
+    pub fn insert_glyph_color(
+        &mut self,
+        key: GlyphKey,
+        glyph: RasterizedGlyph<'_>,
+    ) -> Option<AtlasSlot> {
+        self.atlas_color.insert(key, glyph)
     }
 
     pub fn resize(&mut self, cols: u32, rows: u32) {
@@ -389,12 +426,8 @@ impl MetalGridRenderer {
             uniforms_bytes.len() as u64,
             uniforms_bytes.as_ptr() as *const std::ffi::c_void,
         );
-        // textures: grayscale atlas at 0; bind grayscale to 1 too
-        // until the color atlas exists (shader picks via `atlas` field
-        // per instance, so color slot isn't sampled for current
-        // workloads).
         encoder.set_fragment_texture(0, Some(&self.atlas_grayscale.texture));
-        encoder.set_fragment_texture(1, Some(&self.atlas_grayscale.texture));
+        encoder.set_fragment_texture(1, Some(&self.atlas_color.texture));
 
         // Four-vertex triangle strip per instance (the quad).
         encoder.draw_primitives_instanced(
@@ -477,7 +510,11 @@ fn build_text_pipeline(device: &Device) -> RenderPipelineState {
         .expect("color attachment 0 missing");
     color.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
     color.set_blending_enabled(true);
-    color.set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
+    // Premultiplied-over, matching Ghostty (Pipeline.zig:130-133).
+    // The text fragment returns `in.color * mask_a` (grayscale path)
+    // or the color-atlas sample directly (emoji) — both premultiplied
+    // already, so source RGB factor must be `One`, not `SourceAlpha`.
+    color.set_source_rgb_blend_factor(MTLBlendFactor::One);
     color.set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
     color.set_rgb_blend_operation(MTLBlendOperation::Add);
     color.set_source_alpha_blend_factor(MTLBlendFactor::One);
