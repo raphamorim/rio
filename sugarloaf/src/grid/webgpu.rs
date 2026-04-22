@@ -68,8 +68,7 @@ impl WgpuGlyphAtlas {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -247,7 +246,8 @@ impl WgpuGridRenderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/grid.wgsl").into()),
         });
 
-        let bg_pipeline = build_bg_pipeline(&device, ctx.format, &bg_bind_group_layout, &shader);
+        let bg_pipeline =
+            build_bg_pipeline(&device, ctx.format, &bg_bind_group_layout, &shader);
         let text_pipeline = build_text_pipeline(
             &device,
             ctx.format,
@@ -467,9 +467,10 @@ fn create_bg_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: std::num::NonZeroU64::new(
-                        std::mem::size_of::<GridUniforms>() as u64,
-                    ),
+                    min_binding_size: std::num::NonZeroU64::new(std::mem::size_of::<
+                        GridUniforms,
+                    >()
+                        as u64),
                 },
                 count: None,
             },
@@ -518,9 +519,9 @@ fn create_text_uniform_bgl(device: &wgpu::Device) -> wgpu::BindGroupLayout {
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: std::num::NonZeroU64::new(
-                    std::mem::size_of::<GridUniforms>() as u64,
-                ),
+                min_binding_size: std::num::NonZeroU64::new(std::mem::size_of::<
+                    GridUniforms,
+                >() as u64),
             },
             count: None,
         }],
