@@ -141,8 +141,12 @@ pub enum RioEvent {
 
     CursorBlinkingChangeOnRoute(usize),
 
-    /// Progress bar report from OSC 9;4 sequence
-    ProgressReport(ProgressReport),
+    /// Progress bar report from OSC 9;4 sequence, scoped to the originating
+    /// terminal pane (split) via `route_id`.
+    ProgressReport {
+        route_id: usize,
+        report: ProgressReport,
+    },
 
     /// Terminal bell ring.
     Bell,
@@ -201,8 +205,8 @@ impl Debug for RioEvent {
             RioEvent::CursorBlinkingChangeOnRoute(route_id) => {
                 write!(f, "CursorBlinkingChangeOnRoute {route_id}")
             }
-            RioEvent::ProgressReport(report) => {
-                write!(f, "ProgressReport({:?})", report)
+            RioEvent::ProgressReport { route_id, report } => {
+                write!(f, "ProgressReport(route {route_id}, {report:?})")
             }
             RioEvent::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
@@ -438,4 +442,93 @@ pub struct ProgressReport {
     pub state: ProgressState,
     /// Optional progress percentage (0-100), only used with Set, Error, and Pause states
     pub progress: Option<u8>,
+}
+
+/// Per-pane OSC 9;4 progress state. Lives on each [`Context`]'s
+/// `RenderableContent` so splits don't clobber each other.
+///
+/// `started_at` anchors the indeterminate animation phase and is reset
+/// only on actual state transitions, so a TUI that heartbeats
+/// `OSC 9;4;3` doesn't snap the moving bar back to position 0 every
+/// report (issue #1509).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ProgressTracker {
+    pub state: Option<ProgressState>,
+    pub value: Option<u8>,
+    pub started_at: Option<std::time::Instant>,
+}
+
+impl ProgressTracker {
+    pub fn apply(&mut self, report: ProgressReport) {
+        match report.state {
+            ProgressState::Remove => {
+                self.state = None;
+                self.value = None;
+                self.started_at = None;
+            }
+            new_state => {
+                let transitioning = self.state != Some(new_state);
+                self.state = Some(new_state);
+                self.value = report.progress;
+                if transitioning {
+                    self.started_at = Some(std::time::Instant::now());
+                }
+            }
+        }
+    }
+
+    /// Indeterminate state needs continuous redraws to animate the moving bar.
+    #[inline]
+    pub fn needs_continuous_redraw(&self) -> bool {
+        matches!(self.state, Some(ProgressState::Indeterminate))
+    }
+}
+
+#[cfg(test)]
+mod progress_tracker_tests {
+    use super::*;
+
+    #[test]
+    fn first_report_seeds_started_at() {
+        let mut t = ProgressTracker::default();
+        t.apply(ProgressReport {
+            state: ProgressState::Indeterminate,
+            progress: None,
+        });
+        assert!(t.started_at.is_some());
+        assert_eq!(t.state, Some(ProgressState::Indeterminate));
+    }
+
+    #[test]
+    fn repeated_same_state_keeps_started_at_stable() {
+        // Issue #1509: heartbeat reports must not restart the animation phase.
+        let mut t = ProgressTracker::default();
+        t.apply(ProgressReport {
+            state: ProgressState::Indeterminate,
+            progress: None,
+        });
+        let first = t.started_at.unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        t.apply(ProgressReport {
+            state: ProgressState::Indeterminate,
+            progress: None,
+        });
+        assert_eq!(t.started_at, Some(first));
+    }
+
+    #[test]
+    fn remove_clears_state() {
+        let mut t = ProgressTracker::default();
+        t.apply(ProgressReport {
+            state: ProgressState::Set,
+            progress: Some(40),
+        });
+        t.apply(ProgressReport {
+            state: ProgressState::Remove,
+            progress: None,
+        });
+        assert!(t.state.is_none());
+        assert!(t.value.is_none());
+        assert!(t.started_at.is_none());
+    }
 }

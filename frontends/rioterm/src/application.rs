@@ -494,10 +494,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::ProgressReport(report)) => {
+            RioEventType::Rio(RioEvent::ProgressReport { route_id, report }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if let Some(island) = &mut route.window.screen.renderer.island {
-                        island.set_progress_report(report);
+                    let cm = &mut route.window.screen.context_manager;
+                    if let Some(item) = cm.get_any_by_route_id(route_id) {
+                        item.context_mut().renderable_content.progress.apply(report);
                         route.request_redraw();
                     }
                 }

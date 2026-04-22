@@ -67,6 +67,10 @@ pub enum PaletteAction {
     SplitDown,
     SelectNextSplit,
     SelectPrevSplit,
+    SelectSplitLeft,
+    SelectSplitRight,
+    SelectSplitUp,
+    SelectSplitDown,
     ConfigEditor,
     WindowCreateNew,
     IncreaseFontSize,
@@ -140,6 +144,26 @@ const COMMANDS: &[Command] = &[
         title: "Previous Split",
         shortcut: "",
         action: PaletteAction::SelectPrevSplit,
+    },
+    Command {
+        title: "Select Split Left",
+        shortcut: "",
+        action: PaletteAction::SelectSplitLeft,
+    },
+    Command {
+        title: "Select Split Right",
+        shortcut: "",
+        action: PaletteAction::SelectSplitRight,
+    },
+    Command {
+        title: "Select Split Up",
+        shortcut: "",
+        action: PaletteAction::SelectSplitUp,
+    },
+    Command {
+        title: "Select Split Down",
+        shortcut: "",
+        action: PaletteAction::SelectSplitDown,
     },
     Command {
         title: "Close Split or Tab",

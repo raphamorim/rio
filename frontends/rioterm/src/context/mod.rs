@@ -583,6 +583,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.current_route = self.current().route_id;
     }
 
+    /// Move focus to the neighbouring split lying in `direction`.
+    /// Falls through with no effect (and no tab change) when there is
+    /// no pane on that side. See [`ContextGrid::select_split_direction`].
+    #[inline]
+    pub fn select_split_direction(
+        &mut self,
+        direction: crate::layout::SplitDirection,
+    ) {
+        if self.contexts[self.current_index].select_split_direction(direction) {
+            self.current_route = self.current().route_id;
+        }
+    }
+
     #[inline]
     pub fn switch_to_next_split_or_tab(&mut self) {
         if self.contexts[self.current_index].select_next_split_no_loop() {
@@ -758,6 +771,22 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         route_id: usize,
     ) -> Option<&mut ContextGridItem<T>> {
         self.contexts[self.current_index].get_by_route_id(route_id)
+    }
+
+    /// Find a context by `route_id` across **every** tab (not just the
+    /// current one). Used to route per-pane events such as OSC 9;4 progress
+    /// reports so background tabs keep their state up to date.
+    #[inline]
+    pub fn get_any_by_route_id(
+        &mut self,
+        route_id: usize,
+    ) -> Option<&mut ContextGridItem<T>> {
+        for grid in self.contexts.iter_mut() {
+            if let Some(item) = grid.get_by_route_id(route_id) {
+                return Some(item);
+            }
+        }
+        None
     }
 
     #[inline]

@@ -25,7 +25,7 @@ use crate::crosswords::{
     Mode,
 };
 use crate::hints::HintState;
-use crate::layout::ContextDimension;
+use crate::layout::{ContextDimension, SplitDirection};
 use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::renderer::{utils::padding_top_from_config, Renderer};
 use crate::screen::hint::HintMatches;
@@ -1007,12 +1007,10 @@ impl Screen<'_> {
                         self.split_down();
                     }
                     Act::MoveDividerUp => {
-                        // User wants divider to move up visually, which means expanding the bottom split
-                        self.move_divider_down();
+                        self.move_divider_up();
                     }
                     Act::MoveDividerDown => {
-                        // User wants divider to move down visually, which means expanding the top split
-                        self.move_divider_up();
+                        self.move_divider_down();
                     }
                     Act::MoveDividerLeft => {
                         self.move_divider_left();
@@ -1194,6 +1192,30 @@ impl Screen<'_> {
                     Act::SelectPrevSplit => {
                         self.cancel_search(clipboard);
                         self.context_manager.select_prev_split();
+                        self.render();
+                    }
+                    Act::SelectSplitLeft => {
+                        self.cancel_search(clipboard);
+                        self.context_manager
+                            .select_split_direction(SplitDirection::Left);
+                        self.render();
+                    }
+                    Act::SelectSplitRight => {
+                        self.cancel_search(clipboard);
+                        self.context_manager
+                            .select_split_direction(SplitDirection::Right);
+                        self.render();
+                    }
+                    Act::SelectSplitUp => {
+                        self.cancel_search(clipboard);
+                        self.context_manager
+                            .select_split_direction(SplitDirection::Up);
+                        self.render();
+                    }
+                    Act::SelectSplitDown => {
+                        self.cancel_search(clipboard);
+                        self.context_manager
+                            .select_split_direction(SplitDirection::Down);
                         self.render();
                     }
                     Act::SelectNextSplitOrTab => {
@@ -3226,6 +3248,22 @@ impl Screen<'_> {
             PaletteAction::SelectPrevSplit => {
                 self.context_manager.select_prev_split();
             }
+            PaletteAction::SelectSplitLeft => {
+                self.context_manager
+                    .select_split_direction(SplitDirection::Left);
+            }
+            PaletteAction::SelectSplitRight => {
+                self.context_manager
+                    .select_split_direction(SplitDirection::Right);
+            }
+            PaletteAction::SelectSplitUp => {
+                self.context_manager
+                    .select_split_direction(SplitDirection::Up);
+            }
+            PaletteAction::SelectSplitDown => {
+                self.context_manager
+                    .select_split_direction(SplitDirection::Down);
+            }
             PaletteAction::CloseCurrentSplitOrTab => self.close_split_or_tab(clipboard),
             PaletteAction::ConfigEditor => {
                 self.context_manager.switch_to_settings();
@@ -3383,8 +3421,24 @@ impl Screen<'_> {
 
         self.sugarloaf.render();
 
-        // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
-        if self.renderer.needs_redraw() {
+        // Mark as dirty if we need continuous rendering (e.g., trail
+        // cursor / scrollbar animations, or any visible split with an
+        // indeterminate OSC 9;4 progress bar — which now lives per-pane
+        // on `RenderableContent.progress` instead of the window-wide
+        // Island slot).
+        let renderer_needs_redraw = self.renderer.needs_redraw();
+        let any_pane_needs_progress_redraw = self
+            .context_manager
+            .current_grid_mut()
+            .contexts_mut()
+            .values()
+            .any(|item| {
+                item.context()
+                    .renderable_content
+                    .progress
+                    .needs_continuous_redraw()
+            });
+        if renderer_needs_redraw || any_pane_needs_progress_redraw {
             self.context_manager
                 .current_mut()
                 .renderable_content

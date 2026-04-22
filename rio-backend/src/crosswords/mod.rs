@@ -2495,8 +2495,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn set_progress_report(&mut self, report: crate::event::ProgressReport) {
-        self.event_proxy
-            .send_event(RioEvent::ProgressReport(report), self.window_id);
+        self.event_proxy.send_event(
+            RioEvent::ProgressReport {
+                route_id: self.route_id,
+                report,
+            },
+            self.window_id,
+        );
     }
 
     fn set_current_directory(&mut self, path: std::path::PathBuf) {
