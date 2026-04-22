@@ -35,6 +35,7 @@ use core_text::{
     },
     font_manager,
     line::CTLine,
+    run::CTRun,
     string_attributes::kCTFontAttributeName,
 };
 
@@ -93,6 +94,19 @@ extern "C" {
     fn CTFontManagerCreateFontDescriptorsFromData(
         data: core_foundation::data::CFDataRef,
     ) -> core_foundation::array::CFArrayRef;
+
+    // Returns the best CTFont for rendering `string` in `range`, using
+    // `current_font`'s cascade list. When the primary can render every
+    // codepoint in the range, CoreText returns the primary unchanged;
+    // otherwise it returns the cascade-picked fallback. Used by Rio's
+    // lazy font-discovery path to register an unknown cascade font on
+    // first encounter rather than pre-registering the full cascade at
+    // startup.
+    fn CTFontCreateForString(
+        current_font: CTFontRef,
+        string: core_foundation::string::CFStringRef,
+        range: CFRange,
+    ) -> CTFontRef;
 }
 
 /// Shear matrix applied to `CTFont` for synthetic italic. `c = tan(15°)`
@@ -274,6 +288,13 @@ impl FontHandle {
         let desc_ref = descriptors.get(0)?;
         let base_font = ct_font::new_from_descriptor(&desc_ref, 1.0);
         Some(Self { base_font })
+    }
+
+    /// Unique-per-face PostScript name (e.g. "CascadiaMono-Regular",
+    /// "AppleColorEmoji"). Used to map a CTFont selected by CoreText's
+    /// cascade fallback back to Rio's `font_id` in [`shape_text`].
+    pub fn postscript_name(&self) -> String {
+        self.base_font.postscript_name()
     }
 }
 
@@ -772,6 +793,43 @@ pub fn font_attributes(handle: &FontHandle) -> FontAttributes {
     }
 }
 
+/// Ask CoreText which font should render `ch` when `primary` can't.
+///
+/// Wraps `CTFontCreateForString(primary, string, range)`. When the
+/// primary font carries a glyph for the codepoint, CoreText returns
+/// the primary itself; when it doesn't, CoreText walks its cascade
+/// list and returns the best available fallback (emoji, CJK, symbol,
+/// etc.).
+///
+/// The returned handle is normalized to 1pt so it matches the
+/// convention for stored [`FontHandle`]s — per-render sizing goes
+/// through `clone_with_font_size` at shape/raster time.
+///
+/// Lets Rio register an unknown cascade font on first encounter rather
+/// than pre-registering every path-backed fallback at startup. Returns
+/// `None` only when CoreText itself refuses (exceptionally rare).
+pub fn discover_fallback(primary: &FontHandle, ch: char) -> Option<FontHandle> {
+    use core_foundation::base::CFIndex;
+
+    let ch_str = ch.to_string();
+    let cf_string = CFString::new(&ch_str);
+    let range = CFRange::init(0, ch.len_utf16() as CFIndex);
+    let ctfont_ref = unsafe {
+        CTFontCreateForString(
+            primary.base_font.as_concrete_TypeRef(),
+            cf_string.as_concrete_TypeRef(),
+            range,
+        )
+    };
+    if ctfont_ref.is_null() {
+        return None;
+    }
+    let ct = unsafe { CTFont::wrap_under_create_rule(ctfont_ref) };
+    Some(FontHandle {
+        base_font: ct.clone_with_font_size(1.0),
+    })
+}
+
 /// Check whether `handle`'s font has a real glyph for `ch`.
 ///
 /// Replaces the `font_introspector::FontRef::charmap().map(ch)` path on
@@ -887,8 +945,10 @@ fn read_os2_strikeout(ct_font: &CTFont, size_px: f32) -> Option<(f32, f32)> {
 #[derive(Debug, Clone, Copy)]
 pub struct ShapedGlyph {
     pub id: u16,
-    /// Pen-relative x in device pixels; CoreText coordinate system (positive
-    /// = right of run origin).
+    /// Pen-relative x in device pixels; offset from the expected pen
+    /// position if every prior glyph had advanced by its own `advance`.
+    /// Zero for LTR Latin text without kerning/marks, which is the
+    /// simple-glyph fast path in `push_run_macos`.
     pub x: f32,
     /// Pen-relative y in device pixels; CoreText coordinate system (positive
     /// = above baseline).
@@ -902,25 +962,43 @@ pub struct ShapedGlyph {
 /// Shape a text run via CoreText's `CTLine`.
 ///
 /// Picks up OpenType GSUB/GPOS, AAT, kerning and ligatures — whatever the
-/// font ships. Emits one `ShapedGlyph` per output glyph, in visual order.
-/// For Latin/CJK this is 1:1 with input characters minus any ligature
-/// substitutions; for complex scripts (RTL, Indic) glyph count may differ
-/// from character count and cluster offsets may repeat.
+/// font ships.
 ///
-/// Currently not wired into `layout/content.rs` — it's a building block
-/// for later phase-3 integration.
+/// Positions are emitted as pen-relative deltas (`ShapedGlyph::x`,
+/// `::y`): offsets from the expected pen position if each prior glyph
+/// had advanced by its own width. The pen accumulates across every
+/// CTRun on the line — `CTRunGetPositions` is documented as
+/// line-relative, never run-relative, so the last glyph of a non-first
+/// run uses the next run's first position (or the line's typographic
+/// width) as its advance sentinel. Never mix `CTRunGetTypographicBounds`
+/// into that math — it's run-local and produces negative advances for
+/// any run that doesn't start at x=0.
+///
+/// If the primary font can't render every codepoint, CoreText may split
+/// the line into multiple CTRuns and substitute from the cascade list.
+/// Rio handles cascade substitution *before* shaping (via
+/// `CodepointResolver`-style per-char font resolution with lazy
+/// discovery), so shape calls here normally see a single font. When a
+/// shape-time substitution does slip through, every run's glyphs are
+/// rasterized against `handle` — producing .notdef / tofu for the
+/// substituted glyphs, which is the signal that pre-resolution missed
+/// something and needs widening.
 pub fn shape_text(handle: &FontHandle, text: &str, size_px: f32) -> Vec<ShapedGlyph> {
     if text.is_empty() {
         return Vec::new();
     }
 
-    let ct_font = handle.base_font.clone_with_font_size(size_px as f64);
+    let primary_ct_font = handle.base_font.clone_with_font_size(size_px as f64);
 
     let mut attr = CFMutableAttributedString::new();
     attr.replace_str(&CFString::new(text), CFRange::init(0, 0));
     let utf16_len = attr.char_len();
     unsafe {
-        attr.set_attribute(CFRange::init(0, utf16_len), kCTFontAttributeName, &ct_font);
+        attr.set_attribute(
+            CFRange::init(0, utf16_len),
+            kCTFontAttributeName,
+            &primary_ct_font,
+        );
     }
 
     let line = CTLine::new_with_attributed_string(attr.as_concrete_TypeRef());
@@ -936,34 +1014,55 @@ pub fn shape_text(handle: &FontHandle, text: &str, size_px: f32) -> Vec<ShapedGl
         Some(build_utf16_to_utf8_map(text))
     };
 
+    // End-of-line sentinel for the last glyph's advance. `CTLineGetTypographicBounds`
+    // returns the width of the full line, which is line-relative and therefore
+    // comparable to positions read from `CTRunGetPositions`.
+    let line_width = line.get_typographic_bounds().width as f32;
+
+    // Retain every CTRun for the lifetime of the function so the
+    // `Cow<[T]>` slices returned by `run.glyphs()/positions()/string_indices()`
+    // stay valid. Cloning a CTRun is a CF retain, not a copy of the
+    // underlying data — cheap. This keeps the fast-path pointer read
+    // from core-text 21's accessors instead of forcing an owned Vec
+    // copy per run.
+    let glyph_runs = line.glyph_runs();
+    let runs: Vec<CTRun> = glyph_runs.iter().map(|r| (*r).clone()).collect();
+    if runs.is_empty() {
+        return Vec::new();
+    }
+
     let mut shaped = Vec::new();
-    for run in line.glyph_runs().iter() {
+    let mut pen_x = 0.0f32;
+
+    for run_idx in 0..runs.len() {
+        let run = &runs[run_idx];
         let glyphs = run.glyphs();
+        if glyphs.is_empty() {
+            continue;
+        }
         let positions = run.positions();
         let indices = run.string_indices();
         let n = glyphs.len();
-        if n == 0 {
-            continue;
-        }
 
-        // CoreText returns run-accumulated pen positions: glyph i sits at the
-        // sum of advances 0..i. Rio's renderer treats `x`/`y` as offsets from
-        // the *expected* pen (what you'd get if each prior glyph advanced its
-        // own width), not absolute run positions. For LTR Latin text without
-        // special positioning, the delta is always 0, which triggers the
-        // simple-glyph fast path in `push_run_macos`. Only unusual cases
-        // (combining marks, kern adjustments) produce non-zero deltas.
-        //
-        // `y` on the other hand is per-glyph in horizontal runs (CoreText
-        // doesn't accumulate in y), so pass it through verbatim.
-        let bounds = run.get_typographic_bounds();
-        let mut pen_x = 0.0f32;
+        // X-position just past this run's last glyph, in line
+        // coordinates. Scan forward for the first subsequent non-empty
+        // run's starting position; fall back to the line's typographic
+        // width when every following run is empty. Skipping empties
+        // matters on the rare line where CoreText splits an empty run
+        // in — without the skip, the preceding run's last glyph would
+        // advance all the way to `line_width` instead of to the next
+        // non-empty run's start.
+        let after_run_x = runs[run_idx + 1..]
+            .iter()
+            .find_map(|r| r.positions().first().map(|p| p.x as f32))
+            .unwrap_or(line_width);
+
         for i in 0..n {
             let pos_x = positions[i].x as f32;
             let next_x = if i + 1 < n {
                 positions[i + 1].x as f32
             } else {
-                bounds.width as f32
+                after_run_x
             };
             let advance = next_x - pos_x;
             let offset_x = pos_x - pen_x;
@@ -1007,7 +1106,7 @@ fn build_utf16_to_utf8_map(text: &str) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::font::constants::FONT_CASCADIAMONO_REGULAR;
+    use crate::font::constants::FONT_CASCADIAMONO_NF_REGULAR;
     use core_foundation::base::CFIndex;
 
     fn glyph_id_for_char(handle: &FontHandle, size: f64, ch: char) -> u16 {
@@ -1033,7 +1132,7 @@ mod tests {
     #[test]
     fn shapes_ascii_monospace() {
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
         let glyphs = shape_text(&handle, "Hello", 18.0);
 
         assert_eq!(glyphs.len(), 5, "one glyph per ASCII char");
@@ -1068,7 +1167,7 @@ mod tests {
         // CascadiaMono carries a well-formed OS/2 table, so we should get
         // real values — not the x-height/2 fallback.
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
         let m = font_metrics(&handle, 24.0);
 
         assert!(m.strikeout_thickness > 0.0, "thickness should be positive");
@@ -1094,7 +1193,7 @@ mod tests {
         // path swapped indices for the slow-path output it'd still compile,
         // but the cluster values would be wrong for multi-byte text.
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
         let glyphs = shape_text(&handle, "abcde", 18.0);
         for (i, g) in glyphs.iter().enumerate() {
             assert_eq!(g.cluster, i as u32);
@@ -1106,7 +1205,7 @@ mod tests {
         // Mixed BMP non-ASCII: 'é' is 2 bytes in UTF-8, 1 code unit in UTF-16.
         // Byte offsets should jump accordingly.
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
         let glyphs = shape_text(&handle, "aébc", 18.0);
         // Expected clusters: a=0, é=1, b=3 (after 2-byte é), c=4.
         assert_eq!(glyphs.len(), 4);
@@ -1119,8 +1218,97 @@ mod tests {
     #[test]
     fn shapes_empty_input() {
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
         assert!(shape_text(&handle, "", 18.0).is_empty());
+    }
+
+    #[test]
+    fn discover_fallback_handles_covered_char() {
+        // For a codepoint the primary font already has, `CTFontCreateForString`
+        // returns a font (usually the primary itself). The result must not be
+        // null — Rio's lazy-discovery path relies on that.
+        let primary =
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load primary");
+        let result = discover_fallback(&primary, 'A');
+        assert!(
+            result.is_some(),
+            "discover_fallback should return a font for a covered char"
+        );
+    }
+
+    #[test]
+    fn discover_fallback_returns_a_font_for_cjk() {
+        // CascadiaMono doesn't have U+6C34 ('水'). CoreText's cascade
+        // must produce *some* font — Rio registers whichever one comes
+        // back. The test asserts non-null and, to avoid being flaky on
+        // different macOS versions, does not hardcode the PS name.
+        let primary =
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load primary");
+        let fallback = discover_fallback(&primary, '\u{6C34}')
+            .expect("CoreText should cascade to a CJK font for 水");
+        // The discovered font must cover the codepoint — the whole
+        // point of the cascade is that it can render what primary
+        // couldn't.
+        assert!(
+            font_has_char(&fallback, '\u{6C34}'),
+            "CTFontCreateForString returned a font that doesn't cover U+6C34"
+        );
+    }
+
+    #[test]
+    fn shape_cascades_cjk_and_keeps_advances_positive() {
+        // Regression test for the "title moves to the left" bug: when the
+        // primary font (CascadiaMono) can't render a codepoint and
+        // CoreText substitutes from its internal cascade list, the
+        // resulting multi-CTRun output must still produce monotonically
+        // increasing pen positions and no negative advances. The old
+        // code read run-local `CTRunGetTypographicBounds` width against
+        // line-relative positions from `CTRunGetPositions`, which made
+        // the last glyph of every non-first run advance negatively,
+        // pulling later text to the left.
+        //
+        // Rio's production path avoids shape-time substitution by
+        // pre-resolving per-character font_ids (so `shape_text` sees a
+        // single-font fragment), but we still exercise the multi-run
+        // path here because it's the cheapest invariant to regress on.
+        let handle =
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
+        // "A水B" — the CJK "water" ideograph is not in CascadiaMono, so
+        // CoreText will cascade into a system CJK font for the middle
+        // glyph, splitting the line across 3 CTRuns.
+        let glyphs = shape_text(&handle, "A水B", 18.0);
+        assert!(!glyphs.is_empty(), "expected at least one glyph, got none");
+
+        // Invariant 1: every glyph's advance is positive. The old bug
+        // made the last glyph of each non-first CTRun have a negative
+        // advance (`bounds.width - positions[last].x`).
+        for g in &glyphs {
+            assert!(
+                g.advance > 0.0,
+                "non-positive advance {} at cluster {}",
+                g.advance,
+                g.cluster
+            );
+        }
+
+        // Invariant 2: reconstructing the pen by summing advances and
+        // applying per-glyph `x` deltas is monotonically non-decreasing.
+        // Any mix-up between line-relative and run-local coordinates
+        // would break this.
+        let mut cursor = 0.0f32;
+        for g in &glyphs {
+            let glyph_x = cursor + g.x;
+            assert!(
+                glyph_x + 0.001 >= cursor - g.advance,
+                "pen moved backwards at cluster {}: cursor={}, glyph_x={}",
+                g.cluster,
+                cursor,
+                glyph_x
+            );
+            cursor += g.advance;
+        }
+        let total: f32 = glyphs.iter().map(|g| g.advance).sum();
+        assert!(total > 0.0, "expected positive total advance, got {total}");
     }
 
     #[test]
@@ -1129,7 +1317,7 @@ mod tests {
         // CTFontDescriptor → CTFont → rasterize. Verifies the FFI is wired
         // correctly and the ref-don't-copy CFData is accepted by
         // CTFontManagerCreateFontDescriptorFromData.
-        let handle = FontHandle::from_static_bytes(FONT_CASCADIAMONO_REGULAR)
+        let handle = FontHandle::from_static_bytes(FONT_CASCADIAMONO_NF_REGULAR)
             .expect("static bytes should parse");
         let size = 18.0;
         let gid = glyph_id_for_char(&handle, size as f64, 'M');
@@ -1143,7 +1331,7 @@ mod tests {
     #[test]
     fn rasterizes_an_inked_glyph() {
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
         let size = 24.0;
         let gid = glyph_id_for_char(&handle, size as f64, 'A');
         let g = rasterize_glyph(&handle, gid, size, false, false, false)
@@ -1177,7 +1365,7 @@ mod tests {
         // This test is a regression guard — if `cascade_list_for_languages`
         // ever returns empty for a legit font, dynamic fallback stops working.
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
         let paths = default_cascade_list(&handle);
         assert!(
             !paths.is_empty(),
@@ -1194,8 +1382,8 @@ mod tests {
     fn from_bytes_index_zero_matches_from_bytes() {
         // For a plain TTF the single font is at index 0; both loaders
         // should land on equivalent CTFonts.
-        let a = FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("a");
-        let b = FontHandle::from_bytes_index(FONT_CASCADIAMONO_REGULAR, 0).expect("b");
+        let a = FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("a");
+        let b = FontHandle::from_bytes_index(FONT_CASCADIAMONO_NF_REGULAR, 0).expect("b");
         // Compare via a shape probe — identical glyph ids means same face.
         let gid_a = glyph_id_for_char(&a, 18.0, 'A');
         let gid_b = glyph_id_for_char(&b, 18.0, 'A');
@@ -1204,7 +1392,7 @@ mod tests {
 
     #[test]
     fn from_bytes_index_out_of_range_returns_none() {
-        let h = FontHandle::from_bytes_index(FONT_CASCADIAMONO_REGULAR, 99);
+        let h = FontHandle::from_bytes_index(FONT_CASCADIAMONO_NF_REGULAR, 99);
         assert!(h.is_none(), "index 99 on a single-font TTF should fail");
     }
 
@@ -1261,7 +1449,7 @@ mod tests {
     #[test]
     fn zero_ink_glyph_yields_empty_bitmap() {
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
         let size = 24.0;
         let gid = glyph_id_for_char(&handle, size as f64, ' ');
         let g = rasterize_glyph(&handle, gid, size, false, false, false)

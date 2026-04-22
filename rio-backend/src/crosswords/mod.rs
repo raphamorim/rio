@@ -1507,15 +1507,12 @@ impl<U: EventListener> Crosswords<U> {
                 ..
             }) => {
                 for line in (start.row.0..end.row.0).map(Line::from) {
-                    res += self
-                        .line_to_string(line, start.col..end.col, start.col.0 != 0)
-                        .trim_end();
+                    res +=
+                        &self.line_to_string(line, start.col..end.col, start.col.0 != 0);
                     res += "\n";
                 }
 
-                res += self
-                    .line_to_string(end.row, start.col..end.col, true)
-                    .trim_end();
+                res += &self.line_to_string(end.row, start.col..end.col, true);
             }
             Some(Selection {
                 ty: SelectionType::Lines,
@@ -1532,7 +1529,10 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn bounds_to_string(&self, start: Pos, end: Pos) -> String {
-        let mut res = String::new();
+        let mut text = String::new();
+        let mut blank_rows: usize = 0;
+        let mut blank_cells: usize = 0;
+        let last_col = self.grid.last_column();
 
         for line in (start.row.0..=end.row.0).map(Line::from) {
             let start_col = if line == start.row {
@@ -1540,32 +1540,93 @@ impl<U: EventListener> Crosswords<U> {
             } else {
                 Column(0)
             };
-            let end_col = if line == end.row {
-                end.col
-            } else {
-                self.grid.last_column()
-            };
+            let end_col = if line == end.row { end.col } else { last_col };
 
-            res += &self.line_to_string(line, start_col..end_col, line == end.row);
+            // Carry buffered blank cells across wrap continuations only.
+            // Without this, `aaa \n aaa"` (where row N wraps into N+1) would
+            // collapse the cross-row gap from two spaces to one.
+            let is_wrap_continuation =
+                line.0 > start.row.0 && self.grid[line - 1i32][last_col].wrapline();
+            if !is_wrap_continuation {
+                blank_cells = 0;
+            }
+
+            let mut row_text = String::new();
+            let had_content = self.append_cells(
+                &mut row_text,
+                line,
+                start_col..end_col,
+                line == end.row,
+                &mut blank_cells,
+            );
+
+            if !had_content {
+                // Defer entirely-blank rows; trailing blank rows get dropped.
+                blank_rows += 1;
+                continue;
+            }
+
+            for _ in 0..blank_rows {
+                text.push('\n');
+            }
+            blank_rows = 0;
+
+            text.push_str(&row_text);
+
+            let cur_wraps = self.grid[line][last_col].wrapline();
+            if end_col >= last_col && !cur_wraps {
+                text.push('\n');
+                blank_cells = 0;
+            }
         }
 
-        res.strip_suffix('\n').map(str::to_owned).unwrap_or(res)
+        text.strip_suffix('\n').map(str::to_owned).unwrap_or(text)
     }
 
-    /// Convert a single line in the grid to a String.
+    /// Convert a single line in the grid to a String. Used by Block selection;
+    /// trailing blank cells are dropped. No trailing newline is appended —
+    /// the caller controls row separation.
     fn line_to_string(
         &self,
         line: Line,
-        mut cols: Range<Column>,
+        cols: Range<Column>,
         include_wrapped_wide: bool,
     ) -> String {
         let mut text = String::new();
+        let mut blank_cells = 0;
+        self.append_cells(
+            &mut text,
+            line,
+            cols,
+            include_wrapped_wide,
+            &mut blank_cells,
+        );
+        text
+    }
 
+    /// Append cells from a single line to `text`, buffering blank cells
+    /// (`\0` and trailing spaces) so that:
+    ///   - `\0` cells inside a run of content become real spaces
+    ///   - trailing blanks at end of the run are dropped (caller decides
+    ///     whether to flush them via the `blank_cells` accumulator)
+    ///
+    /// Returns true if the line emitted any non-blank content.
+    fn append_cells(
+        &self,
+        text: &mut String,
+        line: Line,
+        mut cols: Range<Column>,
+        include_wrapped_wide: bool,
+        blank_cells: &mut usize,
+    ) -> bool {
+        let mut had_content = false;
         let grid_line = &self.grid[line];
         let line_length = std::cmp::min(grid_line.line_length(), cols.end + 1);
 
         // Include wide char when trailing spacer is selected.
-        if matches!(grid_line[cols.start].wide(), Wide::Spacer) {
+        if cols.start < self.grid.columns()
+            && matches!(grid_line[cols.start].wide(), Wide::Spacer)
+        {
             cols.start -= 1;
         }
 
@@ -1586,25 +1647,34 @@ impl<U: EventListener> Crosswords<U> {
                 tab_mode = true;
             }
 
-            if !matches!(cell.wide(), Wide::Spacer | Wide::LeadingSpacer) {
-                // Push cells primary character.
-                text.push(cell.c());
+            if matches!(cell.wide(), Wide::Spacer | Wide::LeadingSpacer) {
+                continue;
+            }
 
-                // Push zero-width characters.
-                if let Some(extras_id) = cell.extras_id() {
-                    if let Some(extras) = self.grid.extras_table.get(extras_id) {
-                        for c in &extras.zerowidth {
-                            text.push(*c);
-                        }
+            let c = cell.c();
+            let has_extras = cell.extras_id().is_some();
+
+            // Buffer blank cells. They only get emitted as real spaces if a
+            // non-blank cell follows (on this row or a wrap continuation).
+            if !has_extras && (c == '\0' || c == ' ') {
+                *blank_cells += 1;
+                continue;
+            }
+
+            for _ in 0..*blank_cells {
+                text.push(' ');
+            }
+            *blank_cells = 0;
+
+            text.push(c);
+            if let Some(extras_id) = cell.extras_id() {
+                if let Some(extras) = self.grid.extras_table.get(extras_id) {
+                    for c in &extras.zerowidth {
+                        text.push(*c);
                     }
                 }
             }
-        }
-
-        if cols.end >= self.grid.columns() - 1
-            && (line_length.0 == 0 || !self.grid[line][line_length - 1].wrapline())
-        {
-            text.push('\n');
+            had_content = true;
         }
 
         // If wide char is not part of the selection, but leading spacer is, include it.
@@ -1613,10 +1683,15 @@ impl<U: EventListener> Crosswords<U> {
             && matches!(grid_line[line_length - 1].wide(), Wide::LeadingSpacer)
             && include_wrapped_wide
         {
+            for _ in 0..*blank_cells {
+                text.push(' ');
+            }
+            *blank_cells = 0;
             text.push(self.grid[line - 1i32][Column(0)].c());
+            had_content = true;
         }
 
-        text
+        had_content
     }
 
     #[inline]
@@ -4695,9 +4770,12 @@ mod tests {
                 Side::Right,
             );
         }
+        // Trailing space on the wrapped row is preserved as a buffered blank
+        // and only flushed if a non-blank cell follows on the continuation
+        // row. Here the selection ends mid-wrap so the trailing space is dropped.
         assert_eq!(
             term.selection_to_string(),
-            Some(String::from("\"aaa\"\n\n aaa "))
+            Some(String::from("\"aaa\"\n\n aaa"))
         );
 
         // A wrapline.
@@ -4834,6 +4912,133 @@ mod tests {
             term.selection_to_string(),
             Some(String::from("\na\"\na\"\na"))
         );
+    }
+
+    fn make_term_for_selection(rows: usize, cols: usize) -> Crosswords<VoidListener> {
+        let size = CrosswordsSize::new(cols, rows);
+        let window_id = crate::event::WindowId::from(0);
+        Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        )
+    }
+
+    fn select_simple(
+        term: &mut Crosswords<VoidListener>,
+        start: (i32, usize),
+        end: (i32, usize),
+    ) {
+        term.selection = Some(Selection::new(
+            SelectionType::Simple,
+            Pos {
+                row: Line(start.0),
+                col: Column(start.1),
+            },
+            Side::Left,
+        ));
+        if let Some(s) = term.selection.as_mut() {
+            s.update(
+                Pos {
+                    row: Line(end.0),
+                    col: Column(end.1),
+                },
+                Side::Right,
+            );
+        }
+    }
+
+    /// `\0` cells in the middle of a run of content must be emitted as ASCII
+    /// spaces, not raw NULs. This is the "TUI redrew its UI and left holes"
+    /// case (e.g. fullscreen apps that paint with cursor positioning).
+    #[test]
+    fn null_cells_inside_run_become_spaces() {
+        let mut term = make_term_for_selection(1, 7);
+        let grid = &mut term.grid;
+        // Row layout: a, a, \0, \0, \0, b, b
+        grid[Line(0)][Column(0)].set_c('a');
+        grid[Line(0)][Column(1)].set_c('a');
+        grid[Line(0)][Column(5)].set_c('b');
+        grid[Line(0)][Column(6)].set_c('b');
+
+        select_simple(&mut term, (0, 0), (0, 6));
+        let s = term.selection_to_string().unwrap();
+        assert_eq!(s, "aa   bb");
+        assert!(!s.contains('\0'), "selection must not contain raw NULs");
+    }
+
+    /// Trailing `\0` and trailing spaces on a non-wrapped row must be dropped
+    /// rather than padding the copy out to column width.
+    #[test]
+    fn trailing_blanks_on_non_wrapped_row_are_dropped() {
+        let mut term = make_term_for_selection(1, 8);
+        let grid = &mut term.grid;
+        grid[Line(0)][Column(0)].set_c('h');
+        grid[Line(0)][Column(1)].set_c('i');
+        grid[Line(0)][Column(2)].set_c(' ');
+        grid[Line(0)][Column(3)].set_c(' ');
+        // cols 4..=7 stay as \0
+
+        select_simple(&mut term, (0, 0), (0, 7));
+        assert_eq!(term.selection_to_string(), Some(String::from("hi")));
+    }
+
+    /// Trailing blank rows in a multi-row selection must be dropped, not
+    /// emitted as a run of `\n`s.
+    #[test]
+    fn trailing_blank_rows_are_dropped() {
+        let mut term = make_term_for_selection(5, 5);
+        let grid = &mut term.grid;
+        grid[Line(0)][Column(0)].set_c('x');
+        grid[Line(0)][Column(1)].set_c('y');
+        // Rows 1..=4 are entirely \0.
+
+        select_simple(&mut term, (0, 0), (4, 4));
+        assert_eq!(term.selection_to_string(), Some(String::from("xy")));
+    }
+
+    /// Blank rows between non-blank rows must still be emitted as `\n`s, so
+    /// real visual gaps in the selection are preserved.
+    #[test]
+    fn blank_rows_between_content_are_preserved() {
+        let mut term = make_term_for_selection(5, 5);
+        let grid = &mut term.grid;
+        grid[Line(0)][Column(0)].set_c('a');
+        // Rows 1, 2 entirely \0.
+        grid[Line(3)][Column(0)].set_c('b');
+        // Row 4 entirely \0.
+
+        select_simple(&mut term, (0, 0), (4, 4));
+        assert_eq!(term.selection_to_string(), Some(String::from("a\n\n\nb")));
+    }
+
+    /// When a row wraps into the next, the trailing-space buffer must carry
+    /// across so the visual gap survives the round-trip through the clipboard.
+    #[test]
+    fn trailing_space_carries_across_wrap_continuation() {
+        let mut term = make_term_for_selection(2, 5);
+        let grid = &mut term.grid;
+        // Row 0: "ab   " with a wrap into row 1.
+        grid[Line(0)][Column(0)].set_c('a');
+        grid[Line(0)][Column(1)].set_c('b');
+        grid[Line(0)][Column(2)].set_c(' ');
+        grid[Line(0)][Column(3)].set_c(' ');
+        grid[Line(0)][Column(4)].set_c(' ');
+        grid[Line(0)][Column(4)].set_wrapline(true);
+        // Row 1: " cd  "
+        grid[Line(1)][Column(0)].set_c(' ');
+        grid[Line(1)][Column(1)].set_c('c');
+        grid[Line(1)][Column(2)].set_c('d');
+        grid[Line(1)][Column(3)].set_c(' ');
+        grid[Line(1)][Column(4)].set_c(' ');
+
+        // Trailing spaces on row 1 dropped (no further continuation), but the
+        // 4 spaces between `b` and `c` must survive across the wrap.
+        select_simple(&mut term, (0, 0), (1, 4));
+        assert_eq!(term.selection_to_string(), Some(String::from("ab    cd")));
     }
 
     #[test]

@@ -182,9 +182,9 @@ impl RenderData {
         metrics: &crate::font::macos::FontMetrics,
         shaping_cache: &mut ShapingCache,
     ) {
-        let mut glyphs = vec![];
-        let mut detailed_glyphs = vec![];
-        let mut advance = 0.0;
+        let mut glyphs = Vec::with_capacity(shaped.len());
+        let mut detailed_glyphs = Vec::new();
+        let mut advance = 0.0f32;
 
         for g in shaped {
             advance += g.advance;
