@@ -267,3 +267,58 @@ fragment float4 grid_text_fragment(
         return atlas_color.sample(atlas_sampler, in.tex_coord);
     }
 }
+
+//-------------------------------------------------------------------
+// UI text pass. Same atlas + fragment shader as the grid text pass
+// (reuses `grid_text_fragment`), but positions glyphs in free pixel
+// space instead of on the cell grid. Driven by `sugarloaf::text::Text`;
+// overlay call sites (tab titles, search overlay, command palette,
+// etc.) queue `TextInstance`s that flush here.
+//
+// `bearings.x` = distance from `pos.x` to glyph bitmap's left edge.
+// `bearings.y` = distance from `pos.y` (text-box top) to glyph bitmap
+// top, positive down. See `Text::lookup_or_rasterize_slot` in
+// `sugarloaf/src/text.rs` for the conversion from CoreText's
+// baseline-relative `top`.
+//-------------------------------------------------------------------
+struct TextVertexIn {
+    float2  pos        [[attribute(0)]];
+    uint2   glyph_pos  [[attribute(1)]];
+    uint2   glyph_size [[attribute(2)]];
+    int2    bearings   [[attribute(3)]];
+    uchar4  color      [[attribute(4)]];
+    uchar   atlas      [[attribute(5)]];
+};
+
+vertex CellTextVertexOut text_vertex(
+    uint                vid      [[vertex_id]],
+    TextVertexIn        in       [[stage_in]],
+    constant float2&    viewport [[buffer(1)]]
+) {
+    // Quad corner 0..1 in each dim, from vertex id. Matches the
+    // triangle-strip-4 pattern in `grid_text_vertex`.
+    float2 corner;
+    corner.x = float(vid == 1 || vid == 3);
+    corner.y = float(vid == 2 || vid == 3);
+
+    float2 size    = float2(in.glyph_size);
+    float2 origin  = in.pos + float2(in.bearings);
+    float2 quad_px = origin + size * corner;
+
+    // Pixel → NDC (y-flip so `pos.y` grows downward in screen space).
+    float2 ndc = float2(
+        (quad_px.x / viewport.x) * 2.0 - 1.0,
+        1.0 - (quad_px.y / viewport.y) * 2.0
+    );
+
+    CellTextVertexOut out;
+    out.position  = float4(ndc, 0.0, 1.0);
+    out.tex_coord = float2(in.glyph_pos) + size * corner;
+    out.atlas     = uint(in.atlas);
+
+    // Premultiplied RGBA. Matches the grid text path's blend model.
+    float4 color = float4(in.color) / 255.0;
+    color.rgb   *= color.a;
+    out.color    = color;
+    return out;
+}
