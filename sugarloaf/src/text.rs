@@ -289,8 +289,15 @@ impl Text {
                         FontStyle::Normal
                     };
                     ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
+                    #[cfg(target_os = "macos")]
                     let resolved =
                         self.font_library.resolve_font_for_char(first_ch, &ss);
+
+                    #[cfg(not(target_os = "macos"))]
+                    let resolved = {
+                        let lib = self.font_library.inner.read();
+                        lib.find_best_font_match(first_ch, &ss).unwrap_or((0, false))
+                    };
                     let v = (resolved.0 as u32, resolved.1);
                     e.insert(v);
                     v
@@ -1036,7 +1043,7 @@ fn build_text_pipeline_wgpu(
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("sugarloaf.text.pipeline_layout"),
         bind_group_layouts,
-        push_constant_ranges: &[],
+        immediate_size: 0,
     });
 
     let stride = std::mem::size_of::<TextInstance>() as u64;
@@ -1109,7 +1116,7 @@ fn build_text_pipeline_wgpu(
         },
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }
