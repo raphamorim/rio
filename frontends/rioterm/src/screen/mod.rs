@@ -3655,6 +3655,7 @@ impl Screen<'_> {
                         rasterizer,
                         grid,
                         p.font_px,
+                        p.cell_w,
                         p.cell_h,
                         &font_library,
                         &mut fg_scratch,
