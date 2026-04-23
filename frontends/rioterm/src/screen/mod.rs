@@ -3482,6 +3482,14 @@ impl Screen<'_> {
                 cursor_visible: bool,
                 is_active: bool,
                 damage: rio_backend::event::TerminalDamage,
+                /// Selection is per-context (`renderable_content`), not
+                /// per-terminal. Grabbed alongside the grid snapshot so
+                /// `build_row_bg`/`build_row_fg` can tint selected cells.
+                selection: Option<rio_backend::selection::SelectionRange>,
+                /// `i - display_offset = absolute Line` for the
+                /// per-row selection interval check. Snapshotted at
+                /// the same lock as `visible_rows` to stay consistent.
+                display_offset: i32,
             }
 
             let (active_key, scaled_margin) = {
@@ -3519,14 +3527,16 @@ impl Screen<'_> {
                         let s = self.sugarloaf.style();
                         s.font_size * s.scale_factor
                     });
-                let (visible_rows, style_set, term_colors) = {
+                let (visible_rows, style_set, term_colors, display_offset) = {
                     let terminal = ctx.terminal.lock();
                     (
                         terminal.visible_rows(),
                         terminal.grid.style_set.clone(),
                         terminal.colors,
+                        terminal.display_offset() as i32,
                     )
                 };
+                let selection = ctx.renderable_content.selection_range;
                 let cursor = &ctx.renderable_content.cursor;
                 // Take + reset so next frame sees fresh damage only
                 // from this frame's `Renderer::run`.
@@ -3550,6 +3560,8 @@ impl Screen<'_> {
                     cursor_visible: cursor.state.is_visible(),
                     is_active: *key == active_key,
                     damage,
+                    selection,
+                    display_offset,
                 });
             }
 
@@ -3635,12 +3647,19 @@ impl Screen<'_> {
                     let Some(row) = p.visible_rows.get(y) else {
                         return;
                     };
+                    let row_sel = crate::grid_emit::row_selection_for(
+                        p.selection,
+                        y,
+                        cols,
+                        p.display_offset,
+                    );
                     crate::grid_emit::build_row_bg(
                         row,
                         cols,
                         &p.style_set,
                         renderer_ref,
                         &p.term_colors,
+                        row_sel,
                         &mut bg_scratch,
                     );
                     crate::grid_emit::build_row_fg(
@@ -3655,6 +3674,7 @@ impl Screen<'_> {
                         p.font_px,
                         p.cell_w,
                         p.cell_h,
+                        row_sel,
                         &font_library,
                         &mut fg_scratch,
                     );

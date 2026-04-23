@@ -24,12 +24,73 @@
 
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::crosswords::grid::row::Row;
-use rio_backend::crosswords::pos::Column;
+use rio_backend::crosswords::pos::{Column, Line};
 use rio_backend::crosswords::square::{ContentTag, Square};
 use rio_backend::crosswords::style::{StyleFlags, StyleSet};
+use rio_backend::selection::SelectionRange;
 use rustc_hash::FxHashMap;
 
 use crate::renderer::Renderer;
+
+/// Per-row selection interval, in column indices. `None` = row is
+/// outside the selection. Block selections reduce to the same
+/// `[lo, hi]` on every row; linear selections expand middle rows to
+/// the full width.
+#[derive(Clone, Copy)]
+pub struct RowSelection {
+    pub lo: u16,
+    pub hi: u16,
+}
+
+/// Compute the selection interval (if any) for visible row `y`.
+/// `display_offset` translates visible-row index → absolute `Line`.
+pub fn row_selection_for(
+    sel: Option<SelectionRange>,
+    y: usize,
+    cols: usize,
+    display_offset: i32,
+) -> Option<RowSelection> {
+    let sel = sel?;
+    if cols == 0 {
+        return None;
+    }
+    let line = Line((y as i32) - display_offset);
+    if line < sel.start.row || line > sel.end.row {
+        return None;
+    }
+    let cols_max = cols.saturating_sub(1);
+    // Block selections: every row inside the band uses the same span.
+    if sel.is_block {
+        let lo = sel.start.col.0.min(cols_max);
+        let hi = sel.end.col.0.min(cols_max);
+        return Some(RowSelection {
+            lo: lo as u16,
+            hi: hi as u16,
+        });
+    }
+    let lo = if line == sel.start.row {
+        sel.start.col.0
+    } else {
+        0
+    };
+    let hi = if line == sel.end.row {
+        sel.end.col.0
+    } else {
+        cols_max
+    };
+    Some(RowSelection {
+        lo: lo.min(cols_max) as u16,
+        hi: hi.min(cols_max) as u16,
+    })
+}
+
+#[inline]
+fn cell_in_row_sel(row_sel: Option<RowSelection>, col: u16) -> bool {
+    match row_sel {
+        Some(s) => col >= s.lo && col <= s.hi,
+        None => false,
+    }
+}
 
 use rio_backend::sugarloaf::font::FontLibrary;
 use rio_backend::sugarloaf::grid::{
@@ -50,6 +111,27 @@ pub fn cell_fg(
     let style = style_set.get(sq.style_id());
     let color = renderer.compute_color(&style.fg, style.flags, term_colors);
     normalized_to_u8(color)
+}
+
+/// Foreground for a selected cell. Mirrors Ghostty's selection-fg
+/// rule (`generic.zig:2867`): use the configured `selection-foreground`
+/// unless the user asked to keep the cell's own fg (Rio's
+/// `ignore-selection-foreground-color`). Ghostty falls back to
+/// `state.colors.background` when no color is configured; Rio always
+/// has a default selection_foreground populated in its theme, so we
+/// use it directly.
+#[inline]
+pub fn cell_fg_selected(
+    sq: Square,
+    style_set: &StyleSet,
+    renderer: &Renderer,
+    term_colors: &TermColors,
+) -> [u8; 4] {
+    if renderer.ignore_selection_fg_color {
+        cell_fg(sq, style_set, renderer, term_colors)
+    } else {
+        normalized_to_u8(renderer.named_colors.selection_foreground)
+    }
 }
 
 //  Decoration sprites (underlines, strikethrough)
@@ -228,8 +310,7 @@ fn rasterize_decoration(
             // Top of strike sits at cell_h/2 + thickness/2 above cell
             // bottom (i.e., strike is centered at cell_h/2).
             let center_from_bottom = cell_h / 2;
-            let bearing_y =
-                center_from_bottom as i16 + (thickness as i16 + 1) / 2;
+            let bearing_y = center_from_bottom as i16 + (thickness as i16 + 1) / 2;
             (bytes, cell_w, thickness, bearing_y)
         }
     }
@@ -343,12 +424,25 @@ pub fn build_row_bg(
     style_set: &StyleSet,
     renderer: &Renderer,
     term_colors: &TermColors,
+    row_sel: Option<RowSelection>,
     bg_scratch: &mut Vec<CellBg>,
 ) {
     bg_scratch.clear();
+    // Precompute once — selection_background stays constant across the row.
+    let sel_bg = if row_sel.is_some() {
+        Some(normalized_to_u8(renderer.named_colors.selection_background))
+    } else {
+        None
+    };
     for x in 0..cols {
         let sq = row[Column(x)];
-        let rgba = cell_bg(sq, style_set, renderer, term_colors);
+        let rgba = if cell_in_row_sel(row_sel, x as u16) {
+            // Selection bg wins over the cell's own bg, matching Ghostty
+            // `generic.zig:2817` (`.selection` branch).
+            sel_bg.unwrap_or_else(|| cell_bg(sq, style_set, renderer, term_colors))
+        } else {
+            cell_bg(sq, style_set, renderer, term_colors)
+        };
         bg_scratch.push(CellBg { rgba });
     }
 }
@@ -458,7 +552,8 @@ impl GridGlyphRasterizer {
                 #[cfg(not(target_os = "macos"))]
                 let (id, emoji) = {
                     let lib = font_library.inner.read();
-                    lib.find_best_font_match(ch, &span_style).unwrap_or((0, false))
+                    lib.find_best_font_match(ch, &span_style)
+                        .unwrap_or((0, false))
                 };
                 (id as u32, emoji)
             })
@@ -672,6 +767,7 @@ pub fn build_row_fg(
     size_px: f32,
     cell_w: f32,
     cell_h: f32,
+    row_sel: Option<RowSelection>,
     font_library: &FontLibrary,
     fg_scratch: &mut Vec<CellText>,
 ) {
@@ -697,6 +793,7 @@ pub fn build_row_fg(
         cell_w_u32,
         cell_h_u32,
         thickness,
+        row_sel,
         fg_scratch,
     );
 
@@ -766,13 +863,8 @@ pub fn build_row_fg(
             let shaped_opt =
                 shape_run_ct(rasterizer, font_id, size_u16, size_bucket, font_library);
             #[cfg(not(target_os = "macos"))]
-            let shaped_opt = shape_run_swash(
-                rasterizer,
-                font_id,
-                size_u16,
-                size_bucket,
-                font_library,
-            );
+            let shaped_opt =
+                shape_run_swash(rasterizer, font_id, size_u16, size_bucket, font_library);
             let Some((glyphs, ascent_px)) = shaped_opt else {
                 x = end;
                 continue;
@@ -803,8 +895,7 @@ pub fn build_row_fg(
                 &rasterizer.run_str_scratch,
             )
             .expect("just inserted");
-            let mut char_cursor =
-                rasterizer.run_str_scratch.char_indices().peekable();
+            let mut char_cursor = rasterizer.run_str_scratch.char_indices().peekable();
             let mut cell_idx_in_run: u16 = 0;
             let mut out = Vec::with_capacity(glyphs.len());
             for g in glyphs {
@@ -851,8 +942,16 @@ pub fn build_row_fg(
             let src_col =
                 (run_start + cell_idx_in_run as usize).min(cols.saturating_sub(1));
             let src_sq = row[Column(src_col)];
+            let is_sel = cell_in_row_sel(row_sel, src_col as u16);
             let (atlas, color) = if is_color {
+                // Colour glyphs (emoji) don't take the selection-fg swap —
+                // matches Ghostty's behaviour for bitmap/COLR atlas entries.
                 (CellText::ATLAS_COLOR, [255, 255, 255, 255])
+            } else if is_sel {
+                (
+                    CellText::ATLAS_GRAYSCALE,
+                    cell_fg_selected(src_sq, style_set, renderer, term_colors),
+                )
             } else {
                 (
                     CellText::ATLAS_GRAYSCALE,
@@ -888,6 +987,7 @@ pub fn build_row_fg(
         cell_w_u32,
         cell_h_u32,
         thickness,
+        row_sel,
         fg_scratch,
     );
 }
@@ -904,6 +1004,7 @@ fn emit_underlines(
     cell_w: u32,
     cell_h: u32,
     thickness: u32,
+    row_sel: Option<RowSelection>,
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
@@ -919,7 +1020,15 @@ fn emit_underlines(
         if slot.w == 0 || slot.h == 0 {
             continue;
         }
-        let color = decoration_color(sq, &style, style_set, renderer, term_colors);
+        let color = if cell_in_row_sel(row_sel, x as u16) {
+            // Inside selection: underline follows the selection fg so
+            // it stays visible against the selection bg. SGR 58 is
+            // suppressed here — a theme's selection_foreground
+            // overrides per-cell decoration color.
+            cell_fg_selected(sq, style_set, renderer, term_colors)
+        } else {
+            decoration_color(sq, &style, style_set, renderer, term_colors)
+        };
         fg_scratch.push(CellText {
             glyph_pos: [slot.x as u32, slot.y as u32],
             glyph_size: [slot.w as u32, slot.h as u32],
@@ -945,6 +1054,7 @@ fn emit_strikethroughs(
     cell_w: u32,
     cell_h: u32,
     thickness: u32,
+    row_sel: Option<RowSelection>,
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
@@ -967,7 +1077,11 @@ fn emit_strikethroughs(
         }
         // Strikethrough always uses the cell fg (there's no SGR for
         // a separate strike color, matching Ghostty).
-        let color = cell_fg(sq, style_set, renderer, term_colors);
+        let color = if cell_in_row_sel(row_sel, x as u16) {
+            cell_fg_selected(sq, style_set, renderer, term_colors)
+        } else {
+            cell_fg(sq, style_set, renderer, term_colors)
+        };
         fg_scratch.push(CellText {
             glyph_pos: [slot.x as u32, slot.y as u32],
             glyph_size: [slot.w as u32, slot.h as u32],

@@ -11,14 +11,14 @@
 
 //! RenderData.
 use super::glyph::*;
-#[cfg(not(target_os = "macos"))]
-use swash::shape::Shaper;
-use swash::Metrics;
 use crate::layout::content::{CachedRun, ShapingCache, SpanStyleDecoration};
 use crate::layout::SpanStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
 use std::hash::Hasher;
+#[cfg(not(target_os = "macos"))]
+use swash::shape::Shaper;
+use swash::Metrics;
 use wyhash::WyHash;
 
 /// Compute a cache key from glyph IDs, font_id and size.

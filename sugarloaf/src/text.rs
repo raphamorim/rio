@@ -185,8 +185,7 @@ pub struct Text {
     /// Cached `(shared_data, offset, cache_key)` per font_id so the
     /// `FontLibraryData` read-lock isn't re-acquired per shape.
     #[cfg(not(target_os = "macos"))]
-    font_data_cache:
-        FxHashMap<u32, (crate::font::SharedData, u32, swash::CacheKey)>,
+    font_data_cache: FxHashMap<u32, (crate::font::SharedData, u32, swash::CacheKey)>,
     #[cfg(not(target_os = "macos"))]
     wgpu: Option<TextWgpuState>,
 }
@@ -277,32 +276,36 @@ impl Text {
             (if opts.bold { 1u8 } else { 0 }) | (if opts.italic { 2u8 } else { 0 });
 
         let first_ch = text.chars().next()?;
-        let (font_id, _is_emoji) =
-            match self.font_resolve.entry((first_ch, style_flags)) {
-                std::collections::hash_map::Entry::Occupied(e) => *e.get(),
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    let mut ss = SpanStyle::default();
-                    let weight = if opts.bold { Weight::BOLD } else { Weight::NORMAL };
-                    let fstyle = if opts.italic {
-                        FontStyle::Italic
-                    } else {
-                        FontStyle::Normal
-                    };
-                    ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
-                    #[cfg(target_os = "macos")]
-                    let resolved =
-                        self.font_library.resolve_font_for_char(first_ch, &ss);
+        let (font_id, _is_emoji) = match self.font_resolve.entry((first_ch, style_flags))
+        {
+            std::collections::hash_map::Entry::Occupied(e) => *e.get(),
+            std::collections::hash_map::Entry::Vacant(e) => {
+                let mut ss = SpanStyle::default();
+                let weight = if opts.bold {
+                    Weight::BOLD
+                } else {
+                    Weight::NORMAL
+                };
+                let fstyle = if opts.italic {
+                    FontStyle::Italic
+                } else {
+                    FontStyle::Normal
+                };
+                ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
+                #[cfg(target_os = "macos")]
+                let resolved = self.font_library.resolve_font_for_char(first_ch, &ss);
 
-                    #[cfg(not(target_os = "macos"))]
-                    let resolved = {
-                        let lib = self.font_library.inner.read();
-                        lib.find_best_font_match(first_ch, &ss).unwrap_or((0, false))
-                    };
-                    let v = (resolved.0 as u32, resolved.1);
-                    e.insert(v);
-                    v
-                }
-            };
+                #[cfg(not(target_os = "macos"))]
+                let resolved = {
+                    let lib = self.font_library.inner.read();
+                    lib.find_best_font_match(first_ch, &ss)
+                        .unwrap_or((0, false))
+                };
+                let v = (resolved.0 as u32, resolved.1);
+                e.insert(v);
+                v
+            }
+        };
         let font_id = opts.font_id.map(|id| id as u32).unwrap_or(font_id);
 
         let hash = shape_hash(font_id, size_bucket, style_flags, text);
@@ -310,22 +313,20 @@ impl Text {
             return Some(entry.clone());
         }
 
-        let (synthetic_bold, synthetic_italic) =
-            match self.synthesis_cache.entry(font_id) {
-                std::collections::hash_map::Entry::Occupied(e) => *e.get(),
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    let lib = self.font_library.inner.read();
-                    let fd = lib.get(&(font_id as usize));
-                    *e.insert((fd.should_embolden, fd.should_italicize))
-                }
-            };
+        let (synthetic_bold, synthetic_italic) = match self.synthesis_cache.entry(font_id)
+        {
+            std::collections::hash_map::Entry::Occupied(e) => *e.get(),
+            std::collections::hash_map::Entry::Vacant(e) => {
+                let lib = self.font_library.inner.read();
+                let fd = lib.get(&(font_id as usize));
+                *e.insert((fd.should_embolden, fd.should_italicize))
+            }
+        };
 
         #[cfg(target_os = "macos")]
         let (glyphs, ascent_px) = {
             let handle = match self.handle_cache.entry(font_id) {
-                std::collections::hash_map::Entry::Occupied(e) => {
-                    e.into_mut().clone()
-                }
+                std::collections::hash_map::Entry::Occupied(e) => e.into_mut().clone(),
                 std::collections::hash_map::Entry::Vacant(e) => {
                     let h = self.font_library.ct_font(font_id as usize)?;
                     e.insert(h.clone());
@@ -360,15 +361,12 @@ impl Text {
 
             // Pull (or cache) the font bytes + offset + key once per
             // font_id to avoid the RwLock read-lock per shape.
-            let font_entry = self
-                .font_data_cache
-                .entry(font_id)
-                .or_insert_with(|| {
-                    let lib = self.font_library.inner.read();
-                    lib.get_data(&(font_id as usize)).expect(
-                        "font id resolved but get_data returned None — cache invariant",
-                    )
-                });
+            let font_entry = self.font_data_cache.entry(font_id).or_insert_with(|| {
+                let lib = self.font_library.inner.read();
+                lib.get_data(&(font_id as usize)).expect(
+                    "font id resolved but get_data returned None — cache invariant",
+                )
+            });
             let font_ref = FontRef {
                 data: font_entry.0.as_ref(),
                 offset: font_entry.1,
@@ -376,12 +374,13 @@ impl Text {
             };
 
             // Ascent — via swash metrics scaled to device-px size.
-            let ascent_px = *self.ascent_cache.entry((font_id, size_bucket)).or_insert_with(
-                || {
+            let ascent_px = *self
+                .ascent_cache
+                .entry((font_id, size_bucket))
+                .or_insert_with(|| {
                     let m = font_ref.metrics(&[]).scale(size_u16 as f32);
                     m.ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
-                },
-            );
+                });
 
             // Shape with swash. Flatten clusters to a Vec<ShapedGlyph>
             // with UTF-8 byte offset as `cluster`.
@@ -502,8 +501,7 @@ impl Text {
                 height: raw.height.min(u16::MAX as u32) as u16,
                 bearing_x: raw.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
                 bearing_y: {
-                    let top_i16 =
-                        raw.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                    let top_i16 = raw.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
                     run.ascent_px.saturating_sub(top_i16)
                 },
                 bytes: &raw.bytes,
@@ -534,7 +532,15 @@ impl Text {
                     }
                 }
             };
-            Some((slot.x, slot.y, slot.w, slot.h, slot.bearing_x, slot.bearing_y, is_color))
+            Some((
+                slot.x,
+                slot.y,
+                slot.w,
+                slot.h,
+                slot.bearing_x,
+                slot.bearing_y,
+                is_color,
+            ))
         }
 
         // ---- non-macOS (swash → WgpuGlyphAtlas) ----
@@ -566,8 +572,7 @@ impl Text {
                 height: raw.height.min(u16::MAX as u32) as u16,
                 bearing_x: raw.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
                 bearing_y: {
-                    let top_i16 =
-                        raw.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                    let top_i16 = raw.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
                     run.ascent_px.saturating_sub(top_i16)
                 },
                 bytes: &raw.bytes,
@@ -577,7 +582,15 @@ impl Text {
             } else {
                 state.atlas_grayscale.insert(key, raster)?
             };
-            Some((slot.x, slot.y, slot.w, slot.h, slot.bearing_x, slot.bearing_y, is_color))
+            Some((
+                slot.x,
+                slot.y,
+                slot.w,
+                slot.h,
+                slot.bearing_x,
+                slot.bearing_y,
+                is_color,
+            ))
         }
     }
 
@@ -628,11 +641,7 @@ impl Text {
 
         unsafe {
             let dst = state.instance_buffer.contents() as *mut TextInstance;
-            std::ptr::copy_nonoverlapping(
-                self.instances.as_ptr(),
-                dst,
-                instance_count,
-            );
+            std::ptr::copy_nonoverlapping(self.instances.as_ptr(), dst, instance_count);
         }
 
         encoder.set_render_pipeline_state(&state.pipeline);
@@ -709,7 +718,8 @@ impl Text {
             atlas_color.view(),
         );
 
-        let pipeline = build_text_pipeline_wgpu(device, format, &[&uniform_bgl, &atlas_bgl]);
+        let pipeline =
+            build_text_pipeline_wgpu(device, format, &[&uniform_bgl, &atlas_bgl]);
         let instance_capacity: usize = 256;
         let instance_buffer = alloc_instance_buffer_wgpu(device, instance_capacity);
 
@@ -830,11 +840,7 @@ fn rasterize_swash_glyph(
         key: font_entry.2,
     };
 
-    let mut scaler = scale_ctx
-        .builder(font_ref)
-        .hint(hint)
-        .size(size_px)
-        .build();
+    let mut scaler = scale_ctx.builder(font_ref).hint(hint).size(size_px).build();
 
     let mut image = GlyphImage::new();
     let sources: &[Source] = &[
@@ -954,10 +960,7 @@ fn build_text_pipeline_metal(device: &metal::Device) -> metal::RenderPipelineSta
 }
 
 #[cfg(target_os = "macos")]
-fn alloc_instance_buffer_metal(
-    device: &metal::Device,
-    capacity: usize,
-) -> metal::Buffer {
+fn alloc_instance_buffer_metal(device: &metal::Device, capacity: usize) -> metal::Buffer {
     let size = (capacity.max(1) * std::mem::size_of::<TextInstance>()) as u64;
     device.new_buffer(size, metal::MTLResourceOptions::StorageModeShared)
 }
@@ -1035,9 +1038,7 @@ fn build_text_pipeline_wgpu(
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("sugarloaf.text.wgsl"),
-        source: wgpu::ShaderSource::Wgsl(
-            include_str!("text_shader.wgsl").into(),
-        ),
+        source: wgpu::ShaderSource::Wgsl(include_str!("text_shader.wgsl").into()),
     });
 
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

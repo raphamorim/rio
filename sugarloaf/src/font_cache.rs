@@ -3,10 +3,10 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use swash::Attributes;
 use crate::sugarloaf::primitives::is_private_user_area;
 use crate::SpanStyle;
 use rustc_hash::FxHashMap;
+use swash::Attributes;
 use unicode_width::UnicodeWidthChar;
 
 /// Unscaled horizontal advance for a glyph + the font's units-per-em,

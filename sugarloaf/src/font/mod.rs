@@ -17,12 +17,6 @@ pub const FONT_ID_REGULAR: usize = 0;
 use crate::font::constants::*;
 use crate::font::fonts::{parse_unicode, SugarloafFontStyle, SugarloafFontWidth};
 use crate::font::metrics::{FaceMetrics, Metrics};
-use swash::text::cluster::Parser;
-use swash::text::cluster::Token;
-use swash::text::cluster::{CharCluster, Status};
-use swash::text::Codepoint;
-use swash::text::Script;
-use swash::{tag_from_bytes, CacheKey, FontRef, Synthesis};
 use crate::layout::SpanStyle;
 use crate::SugarloafErrors;
 use dashmap::DashMap;
@@ -31,6 +25,12 @@ use rustc_hash::FxHashMap;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
+use swash::text::cluster::Parser;
+use swash::text::cluster::Token;
+use swash::text::cluster::{CharCluster, Status};
+use swash::text::Codepoint;
+use swash::text::Script;
+use swash::{tag_from_bytes, CacheKey, FontRef, Synthesis};
 
 pub use swash::{Style, Weight};
 

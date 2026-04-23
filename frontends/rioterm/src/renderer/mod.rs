@@ -45,8 +45,7 @@ pub struct Renderer {
     last_active: Option<NodeId>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
-    #[allow(dead_code)] // selection fg inverting is handled in cell_fg now
-    ignore_selection_fg_color: bool,
+    pub(crate) ignore_selection_fg_color: bool,
     pub search: search::SearchOverlay,
     pub assistant: assistant::AssistantOverlay,
     pub scrollbar: scrollbar::Scrollbar,
@@ -61,7 +60,6 @@ pub struct Renderer {
     pub trail_cursor_enabled: bool,
     pub trail_cursor: trail_cursor::TrailCursor,
 }
-
 
 impl Renderer {
     pub fn new(config: &Config) -> Renderer {
@@ -208,7 +206,6 @@ impl Renderer {
             }
         }
     }
-
 
     #[inline]
     pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
@@ -889,4 +886,3 @@ impl Renderer {
         }
     }
 }
-
