@@ -2510,6 +2510,11 @@ impl Screen<'_> {
         let window_width = self.sugarloaf.window_size().width;
         let num_tabs = self.context_manager.len();
 
+        // Island is hidden when hide_if_single is set with a single tab.
+        if self.renderer.navigation.hide_if_single && num_tabs <= 1 {
+            return false;
+        }
+
         // Check if the color picker is open and the click hits a swatch
         if let Some(ref mut island) = self.renderer.island {
             if island.is_color_picker_open() {
