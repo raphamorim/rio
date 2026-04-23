@@ -11,11 +11,9 @@
 
 //! RenderData.
 use super::glyph::*;
-#[cfg(test)]
-use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 #[cfg(not(target_os = "macos"))]
-use crate::font_introspector::shape::Shaper;
-use crate::font_introspector::Metrics;
+use swash::shape::Shaper;
+use swash::Metrics;
 use crate::layout::content::{CachedRun, ShapingCache, SpanStyleDecoration};
 use crate::layout::SpanStyle;
 use crate::sugarloaf::primitives::SugarCursor;
@@ -279,46 +277,45 @@ impl RenderData {
         self.runs.push(run_data);
     }
 
+    /// Test helper: pack a flat list of shaped glyphs into a `RunData`
+    /// as if `push_run` had been called, without going through swash's
+    /// `Shaper`. `glyphs_in` is cluster-flattened — cluster boundaries
+    /// don't affect the pack math (advance just sums across all glyphs)
+    /// so the signature takes a single slice.
     #[cfg(test)]
     pub(super) fn push_run_without_shaper(
         &mut self,
         style: SpanStyle,
         size: f32,
         line: u32,
-        glyph_clusters: &Vec<OwnedGlyphCluster>,
+        glyphs_in: &[swash::shape::cluster::Glyph],
         metrics: &Metrics,
     ) -> bool {
-        // In case is a new line,
-        // then needs to recompute the span index again
         let mut advance = 0.;
         let mut glyphs = vec![];
         let mut detailed_glyphs = vec![];
 
-        for c in glyph_clusters {
-            let mut cluster_advance = 0.;
-            for glyph in &c.glyphs {
-                cluster_advance += glyph.advance;
-                const MAX_SIMPLE_ADVANCE: u32 = 0x7FFF;
-                if glyph.x == 0. && glyph.y == 0. {
-                    let packed_advance = (glyph.advance * 64.) as u32;
-                    if packed_advance <= MAX_SIMPLE_ADVANCE {
-                        // Simple glyph
-                        glyphs.push(GlyphData {
-                            data: glyph.id as u32 | (packed_advance << 16),
-                            size: glyph.data,
-                        });
-                        continue;
-                    }
+        for glyph in glyphs_in {
+            advance += glyph.advance;
+            const MAX_SIMPLE_ADVANCE: u32 = 0x7FFF;
+            if glyph.x == 0. && glyph.y == 0. {
+                let packed_advance = (glyph.advance * 64.) as u32;
+                if packed_advance <= MAX_SIMPLE_ADVANCE {
+                    // Simple glyph
+                    glyphs.push(GlyphData {
+                        data: glyph.id as u32 | (packed_advance << 16),
+                        size: glyph.data,
+                    });
+                    continue;
                 }
-                // Complex glyph
-                let detail_index = detailed_glyphs.len() as u32;
-                detailed_glyphs.push(Glyph::new(glyph));
-                glyphs.push(GlyphData {
-                    data: GLYPH_DETAILED | detail_index,
-                    size: glyph.data,
-                });
             }
-            advance += cluster_advance;
+            // Complex glyph
+            let detail_index = detailed_glyphs.len() as u32;
+            detailed_glyphs.push(Glyph::new(glyph));
+            glyphs.push(GlyphData {
+                data: GLYPH_DETAILED | detail_index,
+                size: glyph.data,
+            });
         }
         if let Some(graphic) = style.media {
             self.graphics.insert(graphic.id);

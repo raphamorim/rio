@@ -11,7 +11,7 @@ use crate::components::core::orthographic_projection;
 use crate::context::webgpu::WgpuContext;
 use crate::context::{Context, ContextType};
 use crate::font::FontLibrary;
-use crate::font_introspector::GlyphId;
+use swash::GlyphId;
 use crate::layout::{TextDimensions, TextLayout};
 use crate::renderer::image_cache::{GlyphCache, ImageCache};
 use crate::renderer::text_run_manager::{CacheResult, TextRunManager};

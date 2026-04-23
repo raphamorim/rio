@@ -299,7 +299,7 @@ impl FontHandle {
 }
 
 /// Output of a single glyph rasterization. Mirrors the fields of
-/// `font_introspector::scale::image::Image` the zeno path fills in.
+/// `swash::scale::image::Image` the zeno path fills in.
 #[derive(Debug)]
 pub struct RasterizedGlyph {
     /// Bitmap width in device pixels. `0` signals a zero-area glyph
@@ -653,7 +653,7 @@ fn bgra_to_rgba_in_place(bytes: &mut [u8]) {
     }
 }
 
-/// Build a `font_introspector::Metrics` populated from CoreText, in font
+/// Build a `swash::Metrics` populated from CoreText, in font
 /// design units. Used by `FontData::get_metrics` on macOS so the metrics
 /// path works without raw font bytes.
 ///
@@ -661,7 +661,7 @@ fn bgra_to_rgba_in_place(bytes: &mut [u8]) {
 /// underline, x-height, cap-height, units_per_em). Strikeout has no CT
 /// API — we derive it like `font::macos::font_metrics` does, from the
 /// OS/2 table if available or x-height/2 as a fallback.
-pub fn design_unit_metrics(handle: &FontHandle) -> crate::font_introspector::Metrics {
+pub fn design_unit_metrics(handle: &FontHandle) -> swash::Metrics {
     let ct = &handle.base_font;
     let upem = ct.units_per_em() as f32;
 
@@ -683,7 +683,7 @@ pub fn design_unit_metrics(handle: &FontHandle) -> crate::font_introspector::Met
     // u32 traits instead. 1 << 10 is `kCTFontTraitMonoSpace`.
     let is_monospace = (ct.symbolic_traits() & (1 << 10)) != 0;
 
-    crate::font_introspector::Metrics {
+    swash::Metrics {
         units_per_em: upem as u16,
         glyph_count: ct.glyph_count() as u16,
         is_monospace,
@@ -835,7 +835,7 @@ pub fn max_ascii_advance_px(handle: &FontHandle, size_px: f32) -> Option<f32> {
 }
 
 /// Font-level attributes read straight from a `CTFont`. Mirrors the subset
-/// of `font_introspector::Attributes` that Rio stores on `FontData` — used
+/// of `swash::Attributes` that Rio stores on `FontData` — used
 /// to build a `FontData` from a path (or static bytes) without parsing the
 /// font file ourselves.
 #[derive(Debug, Clone, Copy)]
@@ -907,7 +907,7 @@ pub fn discover_fallback(primary: &FontHandle, ch: char) -> Option<FontHandle> {
 
 /// Check whether `handle`'s font has a real glyph for `ch`.
 ///
-/// Replaces the `font_introspector::FontRef::charmap().map(ch)` path on
+/// Replaces the `swash::FontRef::charmap().map(ch)` path on
 /// macOS so the fallback walk in `lookup_for_font_match` doesn't need the
 /// font's raw bytes — only the CTFont. Combined with path-based FontHandle
 /// construction, this lets us drop `FONT_DATA_CACHE` entirely.

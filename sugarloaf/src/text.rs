@@ -179,14 +179,14 @@ pub struct Text {
 
     // ----- non-macOS (swash) state -----
     #[cfg(not(target_os = "macos"))]
-    shape_ctx: crate::font_introspector::shape::ShapeContext,
+    shape_ctx: swash::shape::ShapeContext,
     #[cfg(not(target_os = "macos"))]
-    scale_ctx: crate::font_introspector::scale::ScaleContext,
+    scale_ctx: swash::scale::ScaleContext,
     /// Cached `(shared_data, offset, cache_key)` per font_id so the
     /// `FontLibraryData` read-lock isn't re-acquired per shape.
     #[cfg(not(target_os = "macos"))]
     font_data_cache:
-        FxHashMap<u32, (crate::font::SharedData, u32, crate::font_introspector::CacheKey)>,
+        FxHashMap<u32, (crate::font::SharedData, u32, swash::CacheKey)>,
     #[cfg(not(target_os = "macos"))]
     wgpu: Option<TextWgpuState>,
 }
@@ -206,9 +206,9 @@ impl Text {
             #[cfg(target_os = "macos")]
             metal: None,
             #[cfg(not(target_os = "macos"))]
-            shape_ctx: crate::font_introspector::shape::ShapeContext::new(),
+            shape_ctx: swash::shape::ShapeContext::new(),
             #[cfg(not(target_os = "macos"))]
-            scale_ctx: crate::font_introspector::scale::ScaleContext::new(),
+            scale_ctx: swash::scale::ScaleContext::new(),
             #[cfg(not(target_os = "macos"))]
             font_data_cache: FxHashMap::default(),
             #[cfg(not(target_os = "macos"))]
@@ -349,7 +349,7 @@ impl Text {
 
         #[cfg(not(target_os = "macos"))]
         let (glyphs, ascent_px) = {
-            use crate::font_introspector::FontRef;
+            use swash::FontRef;
 
             // Pull (or cache) the font bytes + offset + key once per
             // font_id to avoid the RwLock read-lock per shape.
@@ -802,20 +802,20 @@ struct SwashRawGlyph {
 
 #[cfg(not(target_os = "macos"))]
 fn rasterize_swash_glyph(
-    scale_ctx: &mut crate::font_introspector::scale::ScaleContext,
-    font_entry: &(crate::font::SharedData, u32, crate::font_introspector::CacheKey),
+    scale_ctx: &mut swash::scale::ScaleContext,
+    font_entry: &(crate::font::SharedData, u32, swash::CacheKey),
     glyph_id: u16,
     size_px: f32,
     synthetic_bold: bool,
     synthetic_italic: bool,
     hint: bool,
 ) -> Option<SwashRawGlyph> {
-    use crate::font_introspector::scale::{
+    use swash::scale::{
         image::{Content, Image as GlyphImage},
         Render, Source, StrikeWith,
     };
-    use crate::font_introspector::zeno::{Angle, Format, Transform};
-    use crate::font_introspector::FontRef;
+    use swash::zeno::{Angle, Format, Transform};
+    use swash::FontRef;
 
     let font_ref = FontRef {
         data: font_entry.0.as_ref(),
