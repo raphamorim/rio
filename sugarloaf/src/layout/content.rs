@@ -595,11 +595,7 @@ impl Content {
                     let glyph_id = font_ref.charmap().map(' ' as u32);
                     let char_width = {
                         // Get advance width for space character using GlyphMetrics
-                        let glyph_metrics =
-                            swash::GlyphMetrics::from_font(
-                                &font_ref,
-                                &[],
-                            );
+                        let glyph_metrics = font_ref.glyph_metrics(&[]);
                         let advance = glyph_metrics.advance_width(glyph_id);
 
                         // Scale to font size
