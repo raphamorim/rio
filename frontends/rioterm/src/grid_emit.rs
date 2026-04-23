@@ -459,7 +459,7 @@ impl GridGlyphRasterizer {
                 let (id, emoji) = {
                     let lib = font_library.inner.read();
                     lib.find_best_font_match(ch, &span_style).unwrap_or((0, false))
-                }
+                };
                 (id as u32, emoji)
             })
     }
