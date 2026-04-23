@@ -201,7 +201,7 @@ For non-PUA codepoints only `0` and `1` are possible.
 ### 6.1 Request
 
 ```
-ESC _ 25a1 ; r ; cp=<hex> ; fmt=glyf ; reply=<0|1|2> ; upm=<int> ; <base64-payload> ESC \
+ESC _ 25a1 ; r ; cp=<hex> ; fmt=glyf ; reply=<0|1|2> ; upm=<int> ; aw=<int> ; lh=<int> ; width=<1|2> ; size=<mode> ; align=<h>,<v> ; pad=<t>,<r>,<b>,<l> ; <base64-payload> ESC \
 ```
 
 Parameters:
@@ -225,6 +225,28 @@ Parameters:
   Unknown values fall back to `reply=1`.
 - `upm` — units per em, the coordinate space the outline is
   authored in. Optional; default `1000`.
+- `aw` — authored advance width, in upm units. The intended
+  horizontal extent of the glyph, NOT the outline's bounding box.
+  Optional; default `upm`.
+- `lh` — authored line height, in upm units. The intended vertical
+  extent (descender-to-ascender), NOT the outline's bounding box.
+  Optional; default `upm`.
+- `width` — the codepoint's Unicode width, in the `wcwidth` /
+  UAX #11 sense. One of `1` (narrow) or `2` (wide). Optional;
+  default `1`. Authoritative for all terminal layout decisions
+  (cursor advance, wrapping, selection geometry), overriding the
+  codepoint's UAX #11 East Asian Width (all PUA ranges are
+  Ambiguous by default).
+- `size` — scale policy. One of `height`, `advance`, `contain`,
+  `cover`, `stretch`. Optional; default `height`. See §8.5.
+- `align` — placement of the scaled outline within the render span,
+  as a comma-separated pair `<h>,<v>`. `<h>` is one of `start`,
+  `center`, `end`; `<v>` is one of `start`, `center`, `end`,
+  `baseline`. Optional; default `center,center`. See §8.5.
+- `pad` — insets from the render span edges, as comma-separated
+  fractions `<top>,<right>,<bottom>,<left>` (each `0.0`–`1.0`;
+  top/bottom are fractions of cell height, left/right of render
+  span width). Optional; default `0,0,0,0`. See §8.5.
 - payload — base64-encoded payload for the declared `fmt`.
 
 ### 6.2 Response
@@ -359,12 +381,115 @@ TrueType semantics:
 current foreground color. For colored icons see the `colrv0` and
 `colrv1` formats in §8.6 / §8.7.
 
-### 8.5 Scaling
+### 8.5 Sizing, placement, and coordinate convention
 
-The `upm` value defines the glyph's authoring coordinate space.
-The terminal maps that space onto its cell at render time.
+Every registered outline passes through three transforms at render
+time, in order: **pad** (compute the effective render span),
+**size** (pick scale factors), **align** (position the scaled
+outline within the span).
+
+#### 8.5.1 Coordinate convention
+
+Outlines are authored in `upm`-unit space, Y-up, with `y=0` at the
+baseline. The authored extent is the rectangle `[0, aw] × [y_min,
+y_max]` where `lh = y_max − y_min` (matching OpenType line height:
+descender to ascender, with descender ≤ 0). Points outside this
+rectangle are allowed — they clip or overflow per the `size`/align`
+rules below.
+
+#### 8.5.2 Render span and padding
+
+The render span is the rectangle of pixels the outline is scaled
+into. Before scaling, the span is:
+
+```
+W = width × cell_width_px      (cell_width_px from the terminal)
+H = cell_height_px
+```
+
+`pad=<t>,<r>,<b>,<l>` shrinks the span:
+
+```
+W' = W × (1 − l − r)
+H' = H × (1 − t − b)
+```
+
+Padding values are fractions. If `l + r ≥ 1` or `t + b ≥ 1` the
+terminal MUST treat the request as if `pad=0,0,0,0` (no padding)
+— a degenerate span is not useful and suggests a client bug. The
+effective span `W' × H'` is what `size` and `align` operate on.
+
+#### 8.5.3 Size modes
+
+Given the authored extent `aw × lh` and effective span `W' × H'`:
+
+| `size`     | `sx`              | `sy`              | Aspect ratio | Notes |
+|------------|-------------------|-------------------|--------------|-------|
+| `height`   | `H' / lh`         | `H' / lh`         | Preserved    | Default. Line-height drives. Horizontal extent is whatever `aw` scales to; may overflow the span. |
+| `advance`  | `W' / aw`         | `W' / aw`         | Preserved    | Advance drives. Vertical extent is whatever `lh` scales to; may overflow. |
+| `contain`  | `min(W'/aw, H'/lh)` | same            | Preserved    | Outline fits entirely inside the span on both axes. May leave empty space on one axis. |
+| `cover`    | `max(W'/aw, H'/lh)` | same            | Preserved    | Outline fills the span on both axes. May overflow on one axis. |
+| `stretch`  | `W' / aw`         | `H' / lh`         | Not preserved | Each axis independent. Useful for box-drawing. |
+
+`height` is the default because it matches how characters behave
+(the terminal's line-height maps to the cell's vertical pixels,
+the horizontal footprint is what the glyph's own advance dictates).
+For icons that must stay inside the cell regardless of aspect,
+prefer `contain`.
+
+#### 8.5.4 Alignment
+
+After scaling, the outline has a scaled authored extent `(aw×sx)
+× (lh×sy)` positioned somewhere within the effective span. `align`
+picks where.
+
+Horizontal:
+
+- `start` — outline's `x=0` aligns with the span's left edge
+  (`pad_left`).
+- `center` — outline's horizontal midpoint aligns with the span's
+  horizontal midpoint.
+- `end` — outline's `x=aw` aligns with the span's right edge
+  (`W − pad_right`).
+
+Vertical (Y-up):
+
+- `start` — outline's `y=y_min` aligns with the span's bottom edge
+  (`pad_bottom`).
+- `center` — outline's vertical midpoint aligns with the span's
+  vertical midpoint.
+- `end` — outline's `y=y_max` aligns with the span's top edge
+  (`H − pad_top`).
+- `baseline` — outline's `y=0` aligns with the terminal's text
+  baseline within the cell. Preferred for character-like glyphs
+  that must sit on the same baseline as surrounding text;
+  descenders extend below the baseline naturally.
+
+When `size=stretch`, the scaled extent exactly matches the span on
+both axes, so `align` has no visible effect. When `size=cover`,
+the scaled extent overflows on one axis; `align` picks which edge
+to anchor (and therefore which overflow is visible vs. clipped).
+When `size=contain`/`height`/`advance`, the scaled extent may be
+smaller than the span on at least one axis; `align` picks where
+the empty space goes.
+
+#### 8.5.5 Resolution independence
+
 Applications MUST NOT assume a particular cell size and MUST NOT
-re-register glyphs on font size change.
+re-register glyphs on font size change. All scaling is computed
+at render time from the parameters above and the terminal's
+current cell metrics.
+
+#### 8.5.6 Coordinated sets (no scale groups)
+
+There is no `group` parameter. A set of glyphs that must visually
+align — spinner frames, progress-bar steps, a multi-glyph logo —
+aligns automatically if authored with identical `aw`, `lh`, `size`,
+`align`, and `pad`, and if their outline geometry is coordinated
+(e.g. all spinner frames sized inside a common bounding circle).
+Scale-group semantics can be added later if authoring experience
+shows they are genuinely needed; for v1 the burden sits with
+the author, not the protocol.
 
 ### 8.6 Payload format: `colrv0`
 
@@ -539,7 +664,11 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
    color; renders `colrv0`/`colrv1` glyphs using the COLR paint
    graph, resolving palette index `0xFFFF` to the current
    foreground color.
-7. Scales glyphs according to `upm` and the current cell size.
+7. Scales and positions glyphs according to `upm`, `aw`, `lh`,
+   `width`, `size`, `align`, and `pad` as specified in §8.5, and
+   treats the registered codepoint as having the declared `width`
+   (`1` or `2`) for every layout decision, overriding the
+   codepoint's UAX #11 East Asian Width.
 8. Enforces the cell-buffer authority invariant in §9: selection,
    copy, and search return the raw codepoint.
 9. Ignores unrecognized parameters rather than failing the
@@ -662,3 +791,4 @@ rather than serving a stale bitmap.
 | 2026-04-19 | v1.4    | Raised the glossary capacity from 256 to 1024 simultaneous registrations per session, and raised the `n_glyphs` cap in `fmt=colrv0`/`colrv1` containers from 256 to 1024 outlines. Both bumps quadruple the worst-case memory footprint; the 64 KiB per-payload cap is unchanged. |
 | 2026-04-21 | v1.5    | Added `cp=auto` to the `r` verb: the terminal allocates a free PUA codepoint (SHOULD come from PUA-B) and echoes it in the success reply so the client can emit it. Added `reason=auto_unsupported` and `reason=glossary_exhausted` error codes. `cp=auto` forces a success reply regardless of `reply=0|2` because the allocated codepoint is only carried in the reply. |
 | 2026-04-23 | v1.6    | Removed `cp=auto` from the `r` verb (introduced in v1.5). Auto-allocation forced a stateful round-trip reply the client depended on to learn its codepoint, which recording tools like `asciinema` and `tee` cannot capture or replay — making `cp=auto` output impossible to reproduce from a transcript. Clients must pick their own PUA codepoint. The `auto_unsupported` and `glossary_exhausted` error codes are withdrawn. |
+| 2026-04-23 | v1.7    | Added a sizing and placement model to the `r` verb: `aw` / `lh` (authored extent in upm units), `width` (Unicode/wcwidth width, `1` or `2`, authoritative), `size` (`height`/`advance`/`contain`/`cover`/`stretch`), `align` (`<h>,<v>` positioning after scale, with `v=baseline` for character-like glyphs), and `pad` (fractional insets from the render span). Pinned the coordinate convention: Y-up, `y=0` at baseline, `lh` measured descender-to-ascender (OpenType). Scale groups are intentionally omitted — coordinated sets align via matching parameters and outline geometry. |
