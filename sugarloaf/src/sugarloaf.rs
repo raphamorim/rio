@@ -6,7 +6,7 @@ use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::font_cache::{compute_advance, resolve_with, FontCache, ResolvedGlyph};
-use crate::font_introspector::Attributes;
+use swash::Attributes;
 use crate::layout::{RootStyle, TextLayout};
 use crate::renderer::Renderer;
 use crate::sugarloaf::graphics::{GraphicDataEntry, Graphics};

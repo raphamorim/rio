@@ -34,11 +34,11 @@ impl SugarState {
 
     pub fn found_font_features(
         font_features: &Option<Vec<String>>,
-    ) -> Vec<crate::font_introspector::Setting<u16>> {
+    ) -> Vec<swash::Setting<u16>> {
         let mut found_font_features = vec![];
         if let Some(features) = font_features {
             for feature in features {
-                let setting: crate::font_introspector::Setting<u16> =
+                let setting: swash::Setting<u16> =
                     (feature.as_str(), 1).into();
                 found_font_features.push(setting);
             }

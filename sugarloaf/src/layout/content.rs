@@ -6,10 +6,10 @@
 #![allow(clippy::uninlined_format_args)]
 
 use crate::font::FontLibrary;
-use crate::font_introspector::shape::ShapeContext;
-use crate::font_introspector::text::Script;
+use swash::shape::ShapeContext;
+use swash::text::Script;
 #[cfg(not(target_os = "macos"))]
-use crate::font_introspector::FontRef;
+use swash::FontRef;
 use crate::layout::content_data::{ContentData, ContentState};
 use crate::layout::render_data::RenderData;
 use crate::layout::TextLayout;
@@ -21,8 +21,8 @@ use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use tracing::debug;
 
-use crate::font_introspector::Attributes;
-use crate::font_introspector::Setting;
+use swash::Attributes;
+use swash::Setting;
 use crate::{sugarloaf::primitives::SugarCursor, DrawableChar, Graphic};
 
 /// Pre-packed shaping result ready to push directly as a RunData.
@@ -421,7 +421,7 @@ impl Default for SpanStyle {
 /// Context for paragraph layout.
 pub struct Content {
     fonts: FontLibrary,
-    font_features: Vec<crate::font_introspector::Setting<u16>>,
+    font_features: Vec<swash::Setting<u16>>,
     scx: ShapeContext,
     pub states: FxHashMap<usize, ContentState>,
     /// Transient text content that gets cleared after each render
@@ -532,7 +532,7 @@ impl Content {
     #[inline]
     pub fn set_font_features(
         &mut self,
-        font_features: Vec<crate::font_introspector::Setting<u16>>,
+        font_features: Vec<swash::Setting<u16>>,
     ) {
         self.font_features = font_features;
     }
@@ -605,7 +605,7 @@ impl Content {
             if let Some((font_data, offset, _key)) = font_library_data.get_data(&font_id)
             {
                 // Create swash FontRef directly from font data
-                if let Some(font_ref) = crate::font_introspector::FontRef::from_index(
+                if let Some(font_ref) = swash::FontRef::from_index(
                     &font_data,
                     offset as usize,
                 ) {
@@ -617,7 +617,7 @@ impl Content {
                     let char_width = {
                         // Get advance width for space character using GlyphMetrics
                         let glyph_metrics =
-                            crate::font_introspector::GlyphMetrics::from_font(
+                            swash::GlyphMetrics::from_font(
                                 &font_ref,
                                 &[],
                             );
@@ -1013,7 +1013,7 @@ impl Content {
         line_number: usize,
         scaled_font_size: f32,
         script: Script,
-        features: &[crate::font_introspector::Setting<u16>],
+        features: &[swash::Setting<u16>],
         fonts: &FontLibrary,
         scx: &mut ShapeContext,
         shaping_cache: &mut ShapingCache,
@@ -1043,7 +1043,7 @@ impl Content {
                             .write()
                             .get_font_metrics(&font_id, scaled_font_size)
                     } {
-                        let metrics = crate::font_introspector::Metrics {
+                        let metrics = swash::Metrics {
                             ascent,
                             descent,
                             leading,
@@ -1528,8 +1528,7 @@ impl ShapingCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::font_introspector::shape::cluster::{Glyph, OwnedGlyphCluster};
-    use crate::font_introspector::text::cluster::SourceRange;
+    use swash::shape::cluster::Glyph;
 
     fn create_test_glyph(id: u16, x: f32, y: f32, advance: f32) -> Glyph {
         Glyph {
@@ -1538,23 +1537,6 @@ mod tests {
             x,
             y,
             advance,
-            data: Default::default(),
-        }
-    }
-
-    fn create_test_cluster(
-        source_start: u32,
-        source_end: u32,
-        glyph: Glyph,
-    ) -> OwnedGlyphCluster {
-        OwnedGlyphCluster {
-            source: SourceRange {
-                start: source_start,
-                end: source_end,
-            },
-            info: Default::default(),
-            glyphs: vec![glyph],
-            components: Vec::new(),
             data: Default::default(),
         }
     }
@@ -1680,7 +1662,7 @@ mod tests {
     fn test_empty_run_has_no_glyphs() {
         // Verify push_empty_run creates a run with empty glyphs
         let mut render_data = RenderData::new();
-        let metrics = crate::font_introspector::Metrics {
+        let metrics = swash::Metrics {
             ascent: 12.0,
             descent: 4.0,
             leading: 0.0,
@@ -1699,7 +1681,7 @@ mod tests {
         // Simulates a line like: "ABC" + [empty] + [empty] + "DEF"
         // All runs should be in order and empty runs between text runs
         let mut render_data = RenderData::new();
-        let metrics = crate::font_introspector::Metrics {
+        let metrics = swash::Metrics {
             ascent: 12.0,
             descent: 4.0,
             leading: 0.0,
@@ -1707,16 +1689,16 @@ mod tests {
         };
 
         // Simulate text run "ABC" with 3 glyphs
-        let clusters = vec![
-            create_test_cluster(0, 1, create_test_glyph(65, 0.0, 0.0, 8.0)),
-            create_test_cluster(1, 2, create_test_glyph(66, 0.0, 0.0, 8.0)),
-            create_test_cluster(2, 3, create_test_glyph(67, 0.0, 0.0, 8.0)),
+        let glyphs_abc = [
+            create_test_glyph(65, 0.0, 0.0, 8.0),
+            create_test_glyph(66, 0.0, 0.0, 8.0),
+            create_test_glyph(67, 0.0, 0.0, 8.0),
         ];
         render_data.push_run_without_shaper(
             SpanStyle::default(),
             16.0,
             0,
-            &clusters,
+            &glyphs_abc,
             &metrics,
         );
 
@@ -1725,16 +1707,16 @@ mod tests {
         render_data.push_empty_run(SpanStyle::default(), 16.0, 0, &metrics);
 
         // Another text run "DEF"
-        let clusters2 = vec![
-            create_test_cluster(0, 1, create_test_glyph(68, 0.0, 0.0, 8.0)),
-            create_test_cluster(1, 2, create_test_glyph(69, 0.0, 0.0, 8.0)),
-            create_test_cluster(2, 3, create_test_glyph(70, 0.0, 0.0, 8.0)),
+        let glyphs_def = [
+            create_test_glyph(68, 0.0, 0.0, 8.0),
+            create_test_glyph(69, 0.0, 0.0, 8.0),
+            create_test_glyph(70, 0.0, 0.0, 8.0),
         ];
         render_data.push_run_without_shaper(
             SpanStyle::default(),
             16.0,
             0,
-            &clusters2,
+            &glyphs_def,
             &metrics,
         );
 
@@ -1754,7 +1736,7 @@ mod tests {
     fn test_empty_run_preserves_background_color() {
         // '\0' cells with colored background (like from \033[K) should preserve bg
         let mut render_data = RenderData::new();
-        let metrics = crate::font_introspector::Metrics {
+        let metrics = swash::Metrics {
             ascent: 12.0,
             descent: 4.0,
             leading: 0.0,
@@ -1804,7 +1786,7 @@ mod tests {
         );
 
         // Simulate what process_text_line does for None fragments
-        let metrics = crate::font_introspector::Metrics {
+        let metrics = swash::Metrics {
             ascent: 12.0,
             descent: 4.0,
             leading: 0.0,
@@ -1887,7 +1869,7 @@ mod tests {
             style,
         });
 
-        let metrics = crate::font_introspector::Metrics {
+        let metrics = swash::Metrics {
             ascent: 12.0,
             descent: 4.0,
             leading: 0.0,

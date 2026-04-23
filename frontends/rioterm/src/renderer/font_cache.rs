@@ -1,5 +1,5 @@
 use lru::LruCache;
-use rio_backend::sugarloaf::font_introspector::Attributes;
+use rio_backend::sugarloaf::swash::Attributes;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use tracing::debug;
@@ -105,19 +105,19 @@ impl FontCache {
 
         let common_attrs = [
             Attributes::new(
-                rio_backend::sugarloaf::font_introspector::Stretch::NORMAL,
-                rio_backend::sugarloaf::font_introspector::Weight::NORMAL,
-                rio_backend::sugarloaf::font_introspector::Style::Normal,
+                rio_backend::sugarloaf::swash::Stretch::NORMAL,
+                rio_backend::sugarloaf::swash::Weight::NORMAL,
+                rio_backend::sugarloaf::swash::Style::Normal,
             ),
             Attributes::new(
-                rio_backend::sugarloaf::font_introspector::Stretch::NORMAL,
-                rio_backend::sugarloaf::font_introspector::Weight::BOLD,
-                rio_backend::sugarloaf::font_introspector::Style::Normal,
+                rio_backend::sugarloaf::swash::Stretch::NORMAL,
+                rio_backend::sugarloaf::swash::Weight::BOLD,
+                rio_backend::sugarloaf::swash::Style::Normal,
             ),
             Attributes::new(
-                rio_backend::sugarloaf::font_introspector::Stretch::NORMAL,
-                rio_backend::sugarloaf::font_introspector::Weight::NORMAL,
-                rio_backend::sugarloaf::font_introspector::Style::Italic,
+                rio_backend::sugarloaf::swash::Stretch::NORMAL,
+                rio_backend::sugarloaf::swash::Weight::NORMAL,
+                rio_backend::sugarloaf::swash::Style::Italic,
             ),
         ];
 
@@ -163,7 +163,7 @@ impl Default for FontCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rio_backend::sugarloaf::font_introspector::{Stretch, Style, Weight};
+    use rio_backend::sugarloaf::swash::{Stretch, Style, Weight};
 
     #[test]
     fn test_font_cache_basic_operations() {
