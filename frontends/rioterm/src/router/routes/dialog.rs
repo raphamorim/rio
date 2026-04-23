@@ -1,5 +1,6 @@
 use crate::layout::ContextDimension;
-use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
+use rio_backend::sugarloaf::text::DrawOpts;
+use rio_backend::sugarloaf::Sugarloaf;
 
 #[inline]
 pub fn screen(
@@ -38,38 +39,26 @@ pub fn screen(
         20,
     );
 
-    // Transient text — recreated each frame, cleared automatically
-    let text_idx = sugarloaf.text(None);
-    sugarloaf.set_transient_use_grid_cell_size(text_idx, false);
-    sugarloaf.set_transient_text_font_size(text_idx, 13.0);
-    sugarloaf.set_transient_order(text_idx, 20);
+    let heading_opts = DrawOpts {
+        font_size: 13.0,
+        color: [255, 255, 255, 255],
+        ..DrawOpts::default()
+    };
+    let gray_opts = DrawOpts {
+        font_size: 13.0,
+        color: [166, 166, 166, 255],
+        ..DrawOpts::default()
+    };
 
-    if let Some(state) = sugarloaf.get_transient_text_mut(text_idx) {
-        let gray = [0.65, 0.65, 0.65, 1.0];
-        let white = [1.0, 1.0, 1.0, 1.0];
-        state
-            .clear()
-            .add_span(
-                heading_content,
-                SpanStyle {
-                    color: white,
-                    ..SpanStyle::default()
-                },
-            )
-            .add_span(
-                &format!("  {}  /  {}", confirm_content, quit_content),
-                SpanStyle {
-                    color: gray,
-                    ..SpanStyle::default()
-                },
-            )
-            .build();
-    }
+    let text_x = box_x + padding_x;
+    let text_y = box_y + padding_y + 2.0;
 
-    sugarloaf.set_transient_position(
-        text_idx,
-        box_x + padding_x,
-        box_y + padding_y + 2.0,
+    let ui = sugarloaf.text_mut();
+    let heading_w = ui.draw(text_x, text_y, heading_content, &heading_opts);
+    ui.draw(
+        text_x + heading_w,
+        text_y,
+        &format!("  {}  /  {}", confirm_content, quit_content),
+        &gray_opts,
     );
-    sugarloaf.set_transient_visibility(text_idx, true);
 }

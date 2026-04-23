@@ -3645,7 +3645,6 @@ impl Screen<'_> {
                         &p.term_colors,
                         &mut bg_scratch,
                     );
-                    #[cfg(target_os = "macos")]
                     crate::grid_emit::build_row_fg(
                         row,
                         cols,
@@ -3660,11 +3659,6 @@ impl Screen<'_> {
                         &font_library,
                         &mut fg_scratch,
                     );
-                    #[cfg(not(target_os = "macos"))]
-                    {
-                        fg_scratch.clear();
-                        let _ = rasterizer;
-                    }
                     grid.write_row(y as u32, &bg_scratch, &fg_scratch);
                 };
 
