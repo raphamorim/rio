@@ -2,32 +2,23 @@ mod batch;
 mod compositor;
 pub mod cpu;
 pub(crate) mod image_cache;
-#[cfg(test)]
-mod positioning_tests;
-pub mod text;
-mod text_run_manager;
 
 use crate::components::core::orthographic_projection;
 use crate::context::webgpu::WgpuContext;
 use crate::context::{Context, ContextType};
 use crate::font::FontLibrary;
-use swash::GlyphId;
-use crate::layout::{TextDimensions, TextLayout};
-use crate::renderer::image_cache::{GlyphCache, ImageCache};
-use crate::renderer::text_run_manager::{CacheResult, TextRunManager};
+use crate::layout::TextDimensions;
+use crate::renderer::image_cache::ImageCache;
 use crate::sugarloaf::graphics::GraphicId;
 use crate::Graphics;
-use crate::RichTextLinesRange;
 use compositor::{Compositor, Rect, Vertex};
 use rustc_hash::FxHashMap;
-use std::collections::HashSet;
 #[cfg(target_os = "macos")]
 use std::sync::Arc;
 use std::{borrow::Cow, mem};
 
 #[cfg(target_os = "macos")]
 use parking_lot::Mutex;
-use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
 
 #[cfg(target_os = "macos")]
@@ -776,8 +767,6 @@ pub struct Renderer {
     vertices: Vec<Vertex>,
     draw_cmds: Vec<batch::DrawCmd>,
     images: ImageCache,
-    glyphs: GlyphCache,
-    text_run_manager: TextRunManager,
     graphic_cache: FxHashMap<GraphicId, CachedGraphic>,
     current_frame: u64,
     /// Per-image GPU textures (one map, any backend).
@@ -914,8 +903,6 @@ impl Renderer {
             vertices: vec![],
             draw_cmds: vec![],
             images: ImageCache::new(context),
-            glyphs: GlyphCache::new(),
-            text_run_manager: TextRunManager::new(),
             graphic_cache: FxHashMap::default(),
             current_frame: 0,
             image_textures: FxHashMap::default(),
@@ -942,18 +929,25 @@ impl Renderer {
         &mut self,
         context: &mut crate::context::Context,
         state: &crate::sugarloaf::state::SugarState,
-        graphics: &mut Graphics,
+        _graphics: &mut Graphics,
         image_data: &mut rustc_hash::FxHashMap<
             u32,
             crate::sugarloaf::graphics::GraphicDataEntry,
+        >,
+        image_overlays: &rustc_hash::FxHashMap<
+            usize,
+            Vec<crate::sugarloaf::graphics::GraphicOverlay>,
         >,
     ) {
         self.instances.clear();
         self.vertices.clear();
         self.draw_cmds.clear();
 
-        let library = state.content.font_library();
-        // Iterate over all content states and render visible ones
+        // Iterate over all content states and render visible ones.
+        // The Text arm is gone — rich-text emission replaced by
+        // `sugarloaf::text` (UI) and `grid_emit::build_row_fg`
+        // (terminal). The remaining arms are shape primitives the
+        // frontend still drives through `sugarloaf.rect()` etc.
         for content_state in state.content.states.values() {
             // Skip if marked for removal or hidden
             if content_state.render_data.should_remove || content_state.render_data.hidden
@@ -966,30 +960,10 @@ impl Renderer {
                 content_state.render_data.bounds.unwrap_or([0.0; 4]);
 
             match &content_state.data {
-                crate::layout::ContentData::Text(builder_state) => {
-                    // Skip if there are no lines to render
-                    if builder_state.lines.is_empty() {
-                        continue;
-                    }
-
-                    let pos = (
-                        content_state.render_data.position[0],
-                        content_state.render_data.position[1],
-                    );
-                    let depth = content_state.render_data.depth;
-                    let order = content_state.render_data.order;
-
-                    self.draw_layout(
-                        &builder_state.lines,
-                        &None,
-                        Some(pos),
-                        depth,
-                        library,
-                        Some(&builder_state.layout),
-                        graphics,
-                        content_state.render_data.use_grid_cell_size,
-                        order,
-                    );
+                crate::layout::ContentData::Text(_) => {
+                    // Rich-text Text content is inert — the builder
+                    // state is kept for panel font-size / dimensions
+                    // bookkeeping but no glyphs are emitted from it.
                 }
                 crate::layout::ContentData::Rect {
                     x,
@@ -1103,64 +1077,32 @@ impl Renderer {
             }
         }
 
-        // Process transient texts (rendered once then cleared)
-        for content_state in state.content.transient_texts.iter() {
-            // Skip if hidden
-            if content_state.render_data.hidden {
-                continue;
-            }
-
-            // Set clip_rect for this content element's bounds
-            self.comp.batches.clip_rect =
-                content_state.render_data.bounds.unwrap_or([0.0; 4]);
-
-            if let crate::layout::ContentData::Text(builder_state) = &content_state.data {
-                // Skip if there are no lines to render
-                if builder_state.lines.is_empty() {
-                    continue;
-                }
-
-                let pos = (
-                    content_state.render_data.position[0],
-                    content_state.render_data.position[1],
-                );
-                let depth = content_state.render_data.depth;
-                let order = content_state.render_data.order;
-
-                // Use index + large offset to avoid collision with cached text IDs
-                self.draw_layout(
-                    &builder_state.lines,
-                    &None,
-                    Some(pos),
-                    depth,
-                    library,
-                    Some(&builder_state.layout),
-                    graphics,
-                    content_state.render_data.use_grid_cell_size,
-                    order,
-                );
-            }
-        }
+        // Transient texts gone — previously rendered one-shot rich
+        // text overlays (welcome screen / dialog); migrated to
+        // `sugarloaf::text` immediate-mode primitive.
 
         // Reset clip_rect after rendering all content
         self.comp.batches.clip_rect = [0.0; 4];
 
-        // Render image overlays from visible content states only.
-        // Hidden states (e.g. inactive tabs) must be excluded so
-        // their images don't bleed through.
-        let has_overlays = state
-            .content
-            .states
-            .values()
-            .any(|cs| !cs.render_data.hidden && !cs.image_overlays.is_empty());
-        if has_overlays {
-            let overlays: Vec<_> = state
-                .content
-                .states
-                .values()
-                .filter(|cs| !cs.render_data.hidden)
-                .flat_map(|cs| cs.image_overlays.iter())
-                .collect();
+        // Image overlays come from the per-panel `image_overlays` map
+        // on `Sugarloaf`. Visibility filter: skip hidden panels so
+        // inactive-tab overlays don't bleed through. We still consult
+        // `state.content.states[id].render_data.hidden` for that —
+        // panel visibility bookkeeping lives in Content for now while
+        // the rest of the rich-text pipeline is being torn down.
+        let overlays: Vec<_> = image_overlays
+            .iter()
+            .filter(|(id, _)| {
+                state
+                    .content
+                    .states
+                    .get(id)
+                    .map(|cs| !cs.render_data.hidden)
+                    .unwrap_or(true)
+            })
+            .flat_map(|(_, v)| v.iter())
+            .collect();
+        if !overlays.is_empty() {
             self.render_graphic_overlays(context, image_data, &overlays);
         } else {
             // No overlays visible — clear draw commands so stale images
@@ -1269,538 +1211,6 @@ impl Renderer {
 
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    fn draw_layout(
-        &mut self,
-        lines: &Vec<crate::layout::BuilderLine>,
-        selected_lines: &Option<RichTextLinesRange>,
-        pos: Option<(f32, f32)>,
-        depth: f32,
-        font_library: &FontLibrary,
-        rte_layout: Option<&TextLayout>,
-        graphics: &mut Graphics,
-        use_grid_cell_size: bool,
-        order: u8,
-    ) {
-        if lines.is_empty() {
-            return;
-        }
-
-        // For dimensions mode, we only process the first line
-        let lines_to_process = lines.as_slice();
-
-        // Extract font metrics before borrowing self.comp
-        let font_metrics =
-            self.extract_normalized_metrics(lines_to_process, font_library);
-
-        // let start = std::time::Instant::now();
-        // Get initial position
-        let (x, y) = pos.unwrap_or((0.0, 0.0));
-
-        // Increment frame counter for LRU tracking
-        self.current_frame += 1;
-
-        // Pre-process: Upload graphics to atlas and cache their data
-        // This must happen BEFORE we borrow comp to avoid borrow checker issues
-        for line in lines_to_process {
-            for run in &line.render_data.runs {
-                if let Some(graphic) = run.span.media {
-                    // Check if already cached
-                    if let Some(cached) = self.graphic_cache.get_mut(&graphic.id) {
-                        // Update last used frame
-                        cached.last_used_frame = self.current_frame;
-                        continue;
-                    }
-
-                    // Not cached - need to upload to atlas
-                    if let Some(entry) = graphics.get(&graphic.id) {
-                        if let crate::components::core::image::Data::Rgba {
-                            width,
-                            height,
-                            ref pixels,
-                        } = entry.handle.data
-                        {
-                            let add_image = image_cache::AddImage {
-                                width: width as u16,
-                                height: height as u16,
-                                has_alpha: true,
-                                data: image_cache::ImageData::Borrowed(pixels.as_ref()),
-                                content_type: image_cache::ContentType::Color,
-                            };
-
-                            // Try to allocate, with eviction retry if needed
-                            let mut image_id = self.images.allocate(add_image.clone());
-
-                            if image_id.is_none() {
-                                // Atlas full - try evicting oldest graphics
-                                tracing::warn!(
-                                    "Atlas full, attempting to evict oldest graphics"
-                                );
-                                let mut evicted_count = 0;
-
-                                // Try evicting up to 5 graphics
-                                while evicted_count < 5 {
-                                    if let Some(oldest_id) = self.find_oldest_graphic() {
-                                        self.evict_graphic(oldest_id);
-                                        evicted_count += 1;
-
-                                        // Retry allocation
-                                        image_id =
-                                            self.images.allocate(add_image.clone());
-                                        if image_id.is_some() {
-                                            tracing::info!("Successfully allocated after evicting {} graphics", evicted_count);
-                                            break;
-                                        }
-                                    } else {
-                                        break; // No more graphics to evict
-                                    }
-                                }
-
-                                if image_id.is_none() {
-                                    tracing::error!("Failed to allocate graphic {:?} even after evicting {} graphics", graphic.id, evicted_count);
-                                }
-                            }
-
-                            if let Some(id) = image_id {
-                                if let Some(location) = self.images.get(&id) {
-                                    // Get atlas layer for this image
-                                    let atlas_layer = self
-                                        .images
-                                        .get_atlas_index(id)
-                                        .map(|idx| (idx + 1) as i32)
-                                        .unwrap_or(1);
-
-                                    // Cache coords + dimensions + frame + atlas layer
-                                    self.graphic_cache.insert(
-                                        graphic.id,
-                                        CachedGraphic {
-                                            location,
-                                            image_id: id,
-                                            width: entry.width,
-                                            height: entry.height,
-                                            last_used_frame: self.current_frame,
-                                            atlas_layer,
-                                        },
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Now set up rendering - borrow comp and caches
-        let comp = &mut self.comp;
-        let caches = (&mut self.images, &mut self.glyphs);
-        let (image_cache, glyphs_cache) = caches;
-        let font_coords: &[i16] = &[0, 0, 0, 0];
-
-        // Set up caches based on mode
-        let mut glyphs = Vec::new();
-        let mut last_rendered_graphic = HashSet::new();
-        let mut line_y = y;
-        if let Some((
-            ascent,
-            descent,
-            leading,
-            current_font_from_valid_run,
-            current_font_size_from_valid_run,
-        )) = font_metrics
-        {
-            // Initialize from first run if available
-            let mut current_font = current_font_from_valid_run;
-            let mut current_font_size = current_font_size_from_valid_run;
-
-            let mut session = glyphs_cache.session(
-                image_cache,
-                current_font,
-                font_library,
-                font_coords,
-                current_font_size,
-            );
-
-            // Calculate line height with modifier if available
-            let line_height_without_mod = ascent + descent + leading;
-            let line_height_mod = rte_layout.map_or(1.0, |layout| layout.line_height);
-            let line_height = line_height_without_mod * line_height_mod;
-
-            let skip_count = selected_lines.map_or(0, |range| range.start);
-            let take_count = selected_lines
-                .map_or(lines_to_process.len(), |range| range.end - range.start);
-
-            for (_line_idx, line) in lines_to_process
-                .iter()
-                .enumerate()
-                .skip(skip_count)
-                .take(take_count)
-            {
-                if line.render_data.runs.is_empty() {
-                    continue;
-                }
-
-                let mut px = x;
-
-                // Calculate baseline using proper typographic positioning
-                let padding_top = (line_height - ascent - descent) / 2.0;
-                let baseline = line_y + padding_top + ascent;
-
-                // Keep line_y as the top of the line for proper line spacing
-                // Don't modify line_y here - it should remain at the top of the line
-
-                // Calculate padding
-                let padding_y = if line_height_mod > 1.0 {
-                    (line_height - line_height_without_mod) / 2.0
-                } else {
-                    0.0
-                };
-
-                let py = line_y;
-
-                let cell_width = rte_layout.unwrap().dimensions.width;
-
-                for run in &line.render_data.runs {
-                    let char_width = run.span.width;
-
-                    // Fast path: empty run (blanks/spaces) — just advance
-                    // and optionally paint background/cursor/decoration.
-                    // Decoration must be checked too: an underline cursor
-                    // on a blank cell carries its line through `decoration`
-                    // (not `cursor`) and the cell's `background_color` may
-                    // have been stripped to `None` when the window has a
-                    // background image / opacity < 1, so without the
-                    // decoration check the cursor would silently vanish.
-                    if run.glyphs.is_empty() {
-                        let advance = cell_width * char_width;
-                        let run_x = px;
-                        px += advance;
-
-                        if run.span.background_color.is_some()
-                            || run.span.cursor.is_some()
-                            || run.span.decoration.is_some()
-                        {
-                            let style = TextRunStyle {
-                                font_coords,
-                                font_size: run.size,
-                                color: run.span.color,
-                                cursor: run.span.cursor,
-                                drawable_char: run.span.drawable_char,
-                                background_color: run.span.background_color,
-                                baseline,
-                                topline: py,
-                                line_height,
-                                padding_y,
-                                line_height_without_mod,
-                                advance,
-                                decoration: run.span.decoration,
-                                decoration_color: run.span.decoration_color,
-                                underline_offset: run.underline_offset,
-                                strikeout_offset: run.strikeout_offset,
-                                underline_thickness: run.strikeout_size,
-                                x_height: run.x_height,
-                                ascent: run.ascent,
-                                descent: run.descent,
-                                scale_constraint: None,
-                                nerd_font_constraint: None,
-                            };
-                            comp.draw_run(
-                                &mut session,
-                                Rect::new(run_x, py, advance, 1.),
-                                depth,
-                                &style,
-                                &[],
-                                order,
-                            );
-                        }
-
-                        continue;
-                    }
-
-                    let font = run.span.font_id;
-                    let run_x = px;
-
-                    // Use pre-computed cache key — no String allocation needed
-                    let cached_result = if run.cache_key != 0 {
-                        self.text_run_manager.get_cached_data_by_key(run.cache_key)
-                    } else {
-                        CacheResult::Miss
-                    };
-
-                    match cached_result {
-                        CacheResult::Hit {
-                            glyphs: cached_glyphs,
-                            ..
-                        } => {
-                            // Use cached glyph data but need to render
-                            glyphs.clear();
-                            // Cell centering for East-Asian-Wide codepoints:
-                            // when a glyph's shaped slot is wider than one
-                            // primary cell (char_width > 1), shift it by
-                            // half the extra space so 겔 / 水 / 한 sit
-                            // visually centered across their two cells
-                            // instead of hugging the left cell. Formula:
-                            // `dx = (cell_width - face_width) / 2`. No-op
-                            // for char_width == 1 (Latin, box-drawing),
-                            // so glyphs that rely on tiling at their
-                            // natural pen advance stay aligned.
-                            let cell_shift = if use_grid_cell_size && char_width > 1.0 {
-                                cell_width * (char_width - 1.0) / 2.0
-                            } else {
-                                0.0
-                            };
-                            for shaped_glyph in cached_glyphs.iter() {
-                                let x = px + cell_shift;
-                                let y = baseline;
-                                // Effective per-glyph pen advance — on the
-                                // grid-cell-size path this is `cell_width *
-                                // char_width` (e.g. 2 cells for East Asian
-                                // Wide emoji), not the shaper's advance.
-                                // Pass this through to the compositor so
-                                // emoji bitmaps center inside the actual
-                                // cell slot, not a 1-cell shaper advance.
-                                let advance = if use_grid_cell_size {
-                                    cell_width * char_width
-                                } else {
-                                    shaped_glyph.x_advance
-                                };
-                                px += advance;
-
-                                glyphs.push(Glyph {
-                                    id: shaped_glyph.glyph_id as GlyphId,
-                                    x,
-                                    y,
-                                    advance,
-                                });
-                            }
-
-                            // Render using cached glyph data
-                            let style = TextRunStyle {
-                                font_coords,
-                                font_size: run.size,
-                                color: run.span.color,
-                                cursor: run.span.cursor,
-                                drawable_char: run.span.drawable_char,
-                                background_color: run.span.background_color,
-                                baseline,
-                                topline: py, // Use py (line top) for cursor positioning
-                                line_height,
-                                padding_y,
-                                line_height_without_mod,
-                                advance: cached_glyphs.iter().map(|g| g.x_advance).sum(),
-                                decoration: run.span.decoration,
-                                decoration_color: run.span.decoration_color,
-                                underline_offset: run.underline_offset,
-                                strikeout_offset: run.strikeout_offset,
-                                underline_thickness: run.strikeout_size,
-                                x_height: run.x_height,
-                                ascent: run.ascent,
-                                descent: run.descent,
-                                scale_constraint: run.span.pua_constraint.and_then(|c| {
-                                    rte_layout.map(|l| (l.dimensions.width, c as u8))
-                                }),
-                                nerd_font_constraint: run.span.nerd_font_constraint,
-                            };
-
-                            // Update font session if needed
-                            if font != current_font
-                                || style.font_size != current_font_size
-                            {
-                                current_font = font;
-                                current_font_size = style.font_size;
-
-                                session = glyphs_cache.session(
-                                    image_cache,
-                                    current_font,
-                                    font_library,
-                                    font_coords,
-                                    style.font_size,
-                                );
-                            }
-
-                            comp.draw_run(
-                                &mut session,
-                                Rect::new(run_x, py, px - run_x, 1.),
-                                depth,
-                                &style,
-                                &glyphs,
-                                order,
-                            );
-                        }
-                        CacheResult::Miss => {
-                            // No cached data - need to shape and render from scratch
-                            glyphs.clear();
-                            let mut shaped_glyphs = Vec::new();
-
-                            // Same cell centering as above.
-                            let cell_shift = if use_grid_cell_size && char_width > 1.0 {
-                                cell_width * (char_width - 1.0) / 2.0
-                            } else {
-                                0.0
-                            };
-
-                            for glyph in &run.glyphs {
-                                let x = px + cell_shift;
-                                let y = baseline;
-                                let shaper_advance = glyph.simple_data().1;
-                                // See the cached-path comment above — on the
-                                // grid-cell-size path the effective advance
-                                // is cell_width × char_width, not the shaper's.
-                                let advance = if use_grid_cell_size {
-                                    cell_width * char_width
-                                } else {
-                                    shaper_advance
-                                };
-                                px += advance;
-
-                                let glyph_id = glyph.simple_data().0;
-
-                                glyphs.push(Glyph {
-                                    id: glyph_id,
-                                    x,
-                                    y,
-                                    advance,
-                                });
-
-                                // Cache the raw shaper advance; `use_grid_cell_size`
-                                // is a property of the font/config pipeline and
-                                // its grid-adjusted advance is recomputed on
-                                // cache hits, so only the shaper value belongs
-                                // in the persistent cache.
-                                shaped_glyphs.push(
-                                    crate::font::text_run_cache::ShapedGlyph {
-                                        glyph_id: glyph_id as u32,
-                                        x_advance: shaper_advance,
-                                        y_advance: 0.0,
-                                        x_offset: 0.0,
-                                        y_offset: 0.0,
-                                        cluster: 0,
-                                    },
-                                );
-                            }
-
-                            // Cache the shaped glyphs for future use
-                            if run.cache_key != 0 {
-                                self.text_run_manager.cache_shaping_data_by_key(
-                                    run.cache_key,
-                                    font,
-                                    run.size,
-                                    shaped_glyphs,
-                                    false,
-                                );
-                            }
-
-                            // Create style for rendering
-                            let style = TextRunStyle {
-                                font_coords,
-                                font_size: run.size,
-                                color: run.span.color,
-                                cursor: run.span.cursor,
-                                drawable_char: run.span.drawable_char,
-                                background_color: run.span.background_color,
-                                baseline,
-                                topline: py, // Use py (line top) for cursor positioning
-                                line_height,
-                                padding_y,
-                                line_height_without_mod,
-                                advance: px - run_x,
-                                decoration: run.span.decoration,
-                                decoration_color: run.span.decoration_color,
-                                underline_offset: run.underline_offset,
-                                strikeout_offset: run.strikeout_offset,
-                                underline_thickness: run.strikeout_size,
-                                x_height: run.x_height,
-                                ascent: run.ascent,
-                                descent: run.descent,
-                                scale_constraint: run.span.pua_constraint.and_then(|c| {
-                                    rte_layout.map(|l| (l.dimensions.width, c as u8))
-                                }),
-                                nerd_font_constraint: run.span.nerd_font_constraint,
-                            };
-
-                            // Update font session if needed
-                            if font != current_font
-                                || style.font_size != current_font_size
-                            {
-                                current_font = font;
-                                current_font_size = style.font_size;
-
-                                session = glyphs_cache.session(
-                                    image_cache,
-                                    current_font,
-                                    font_library,
-                                    font_coords,
-                                    style.font_size,
-                                );
-                            }
-
-                            comp.draw_run(
-                                &mut session,
-                                Rect::new(run_x, py, px - run_x, 1.),
-                                depth,
-                                &style,
-                                &glyphs,
-                                order,
-                            );
-                        }
-                    }
-
-                    // Handle graphics - render directly using add_image_rect
-                    if let Some(graphic) = run.span.media {
-                        // Each cell stores which part of the graphic it shows via offset_x/offset_y
-                        // We render once per graphic per frame, using the first cell we encounter
-                        // We calculate the graphic's position by subtracting the cell's offset
-                        // This ensures the graphic renders even when the origin cell is scrolled off-screen
-                        if !last_rendered_graphic.contains(&graphic.id) {
-                            // Get cached graphic data
-                            if let Some(cached) = self.graphic_cache.get(&graphic.id) {
-                                // Calculate graphic position: current cell position minus this cell's offset
-                                // This positions the full graphic correctly regardless of which cell we encounter
-                                let gx = run_x - graphic.offset_x as f32;
-                                let gy = py - graphic.offset_y as f32;
-
-                                tracing::info!(
-                                    "Drawing graphic at ({}, {}), size={}x{}, atlas_layer={}",
-                                    gx,
-                                    gy,
-                                    cached.width,
-                                    cached.height,
-                                    cached.atlas_layer
-                                );
-
-                                // Clip display size to cell grid boundaries
-                                // so the image never overflows into the next line.
-                                let cw = rte_layout.unwrap().dimensions.width;
-                                let render_w = (cached.width / cw).floor() * cw;
-                                let render_h =
-                                    (cached.height / line_height).floor() * line_height;
-                                comp.batches.add_image_rect(
-                                    &Rect::new(gx, gy, render_w, render_h),
-                                    depth,
-                                    &[1.0, 1.0, 1.0, 1.0],
-                                    &[
-                                        cached.location.min.0,
-                                        cached.location.min.1,
-                                        cached.location.max.0,
-                                        cached.location.max.1,
-                                    ],
-                                    cached.atlas_layer,
-                                );
-                            } else {
-                                tracing::warn!(
-                                    "Graphic {} not in cache!",
-                                    graphic.id.get()
-                                );
-                            }
-
-                            last_rendered_graphic.insert(graphic.id);
-                        }
-                    }
-                }
-
-                // Advance line_y for the next line
-                line_y += line_height;
-            }
-        }
-    }
 
     /// Render image overlays using per-image GPU textures.
     fn render_graphic_overlays(
@@ -2192,8 +1602,6 @@ impl Renderer {
 
     #[inline]
     pub fn reset(&mut self) {
-        self.glyphs = GlyphCache::new();
-        self.text_run_manager.clear_all();
         self.graphic_cache.clear();
         self.image_textures.clear();
         self.image_draws.clear();
@@ -2202,14 +1610,10 @@ impl Renderer {
     #[inline]
     pub fn clear_atlas(&mut self) {
         self.images.clear_atlas();
-        self.glyphs = GlyphCache::new();
-        self.text_run_manager.clear_all();
         self.graphic_cache.clear();
         self.image_textures.clear();
         self.image_draws.clear();
-        tracing::info!(
-            "Renderer atlas, glyph cache, text run cache, and graphic cache cleared"
-        );
+        tracing::info!("Renderer atlas + graphic cache cleared");
     }
 
     #[inline]
