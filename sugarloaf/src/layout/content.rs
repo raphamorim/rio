@@ -458,27 +458,6 @@ impl Content {
         self
     }
 
-    /// Clear image overlays on the selected content state.
-    pub fn clear_image_overlays(&mut self) {
-        if let Some(id) = self.selector {
-            if let Some(state) = self.states.get_mut(&id) {
-                state.image_overlays.clear();
-            }
-        }
-    }
-
-    /// Push an image overlay onto the selected content state.
-    pub fn push_image_overlay(
-        &mut self,
-        overlay: crate::sugarloaf::graphics::GraphicOverlay,
-    ) {
-        if let Some(id) = self.selector {
-            if let Some(state) = self.states.get_mut(&id) {
-                state.image_overlays.push(overlay);
-            }
-        }
-    }
-
     #[inline]
     pub fn font_library(&self) -> &FontLibrary {
         &self.fonts

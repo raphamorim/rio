@@ -373,14 +373,17 @@ impl Renderer {
             let has_virtual = !terminal_snapshot.kitty_virtual_placements.is_empty();
             if has_overlays || has_virtual {
                 let line_height = sugarloaf.style().line_height;
-                let content = sugarloaf.content();
-                content.sel(context.rich_text_id);
-                content.clear_image_overlays();
                 let layout = context.dimension;
                 let cell_width = layout.dimension.width;
                 let cell_height = layout.dimension.height * line_height;
                 let origin_x = panel_rect[0] + grid_scaled_margin.left;
                 let origin_y = panel_rect[1] + grid_scaled_margin.top;
+
+                let overlays = sugarloaf
+                    .image_overlays
+                    .entry(context.rich_text_id)
+                    .or_default();
+                overlays.clear();
 
                 if has_overlays {
                     let history_size = terminal_snapshot.history_size as i64;
@@ -394,8 +397,7 @@ impl Renderer {
                         if image_bottom_row <= 0 || screen_row >= screen_lines {
                             continue;
                         }
-                        content
-                            .push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
+                        overlays.push(rio_backend::sugarloaf::GraphicOverlay {
                             image_id: p.image_id,
                             x: origin_x + p.dest_col as f32 * cell_width,
                             y: origin_y + screen_row as f32 * cell_height,
@@ -410,7 +412,7 @@ impl Renderer {
 
                 if has_virtual {
                     Self::push_virtual_placeholder_overlays(
-                        content,
+                        overlays,
                         &terminal_snapshot,
                         origin_x,
                         origin_y,
@@ -420,9 +422,7 @@ impl Renderer {
                 }
             } else if terminal_snapshot.kitty_graphics_dirty {
                 // Placements were removed — clear overlays
-                let content = sugarloaf.content();
-                content.sel(context.rich_text_id);
-                content.clear_image_overlays();
+                sugarloaf.clear_image_overlays_for(context.rich_text_id);
             }
 
             // Get hint matches from renderable content
@@ -717,7 +717,7 @@ impl Renderer {
     ///      cells that fall in the centering padding
     ///      (`renderPlacement`, `graphics_unicode.zig:212-329`).
     fn push_virtual_placeholder_overlays(
-        content: &mut rio_backend::sugarloaf::Content,
+        overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
         snapshot: &TerminalSnapshot,
         origin_x: f32,
         origin_y: f32,
@@ -748,7 +748,7 @@ impl Renderer {
                 if square.c() != PLACEHOLDER {
                     if let Some((p, start_col)) = run.take() {
                         flush_run(
-                            content,
+                            overlays,
                             snapshot,
                             p.complete(),
                             line_idx,
@@ -783,7 +783,7 @@ impl Renderer {
                     _ => {
                         if let Some((p, start_col)) = run.take() {
                             flush_run(
-                                content,
+                                overlays,
                                 snapshot,
                                 p.complete(),
                                 line_idx,
@@ -814,7 +814,7 @@ impl Renderer {
 
             if let Some((p, start_col)) = run {
                 flush_run(
-                    content,
+                    overlays,
                     snapshot,
                     p.complete(),
                     line_idx,
@@ -836,7 +836,7 @@ impl Renderer {
         /// entirely in the aspect-fit centering padding.
         #[allow(clippy::too_many_arguments)]
         fn flush_run(
-            content: &mut rio_backend::sugarloaf::Content,
+            overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
             snapshot: &TerminalSnapshot,
             run: PlaceholderRun,
             screen_line: usize,
@@ -877,7 +877,7 @@ impl Renderer {
                 None => return,
             };
 
-            content.push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
+            overlays.push(rio_backend::sugarloaf::GraphicOverlay {
                 image_id: run.image_id,
                 x: geom.x,
                 y: geom.y,

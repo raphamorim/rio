@@ -166,10 +166,14 @@ impl SugarState {
         context: &mut super::Context,
         graphics: &mut Graphics,
         image_data: &mut rustc_hash::FxHashMap<u32, super::graphics::GraphicDataEntry>,
+        image_overlays: &rustc_hash::FxHashMap<
+            usize,
+            Vec<super::graphics::GraphicOverlay>,
+        >,
     ) {
         // Shape transient texts before rendering
         self.content.build_transient_texts();
-        advance_brush.prepare(context, self, graphics, image_data);
+        advance_brush.prepare(context, self, graphics, image_data, image_overlays);
     }
 
     #[inline]
