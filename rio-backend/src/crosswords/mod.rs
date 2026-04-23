@@ -1543,17 +1543,13 @@ impl<U: EventListener> Crosswords<U> {
             } else {
                 Column(0)
             };
-            let end_col = if line == end.row {
-                end.col
-            } else {
-                last_col
-            };
+            let end_col = if line == end.row { end.col } else { last_col };
 
             // Carry buffered blank cells across wrap continuations only.
             // Without this, `aaa \n aaa"` (where row N wraps into N+1) would
             // collapse the cross-row gap from two spaces to one.
-            let is_wrap_continuation = line.0 > start.row.0
-                && self.grid[line - 1i32][last_col].wrapline();
+            let is_wrap_continuation =
+                line.0 > start.row.0 && self.grid[line - 1i32][last_col].wrapline();
             if !is_wrap_continuation {
                 blank_cells = 0;
             }
@@ -1604,7 +1600,13 @@ impl<U: EventListener> Crosswords<U> {
         let line_length = std::cmp::min(self.grid[line].line_length(), cols.end + 1);
         let cols_end = cols.end;
 
-        self.append_cells(&mut text, line, cols, include_wrapped_wide, &mut blank_cells);
+        self.append_cells(
+            &mut text,
+            line,
+            cols,
+            include_wrapped_wide,
+            &mut blank_cells,
+        );
         // Trailing blank_cells intentionally dropped.
 
         if cols_end >= self.grid.columns() - 1
