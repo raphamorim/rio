@@ -1,5 +1,6 @@
 use crate::layout::ContextDimension;
-use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
+use rio_backend::sugarloaf::text::DrawOpts;
+use rio_backend::sugarloaf::Sugarloaf;
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -104,40 +105,28 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         white,
     );
 
-    // press enter
-    let confirm_idx = sugarloaf.text(None);
-    sugarloaf.set_transient_use_grid_cell_size(confirm_idx, false);
-    sugarloaf.set_transient_text_font_size(confirm_idx, 14.0);
+    let bottom_y = (layout.height / scale) - 50.0;
+    let ui = sugarloaf.text_mut();
+    ui.draw(
+        20.0,
+        bottom_y,
+        "press enter",
+        &DrawOpts {
+            font_size: 14.0,
+            color: [255, 255, 255, 255],
+            ..DrawOpts::default()
+        },
+    );
 
-    if let Some(config_state) = sugarloaf.get_transient_text_mut(confirm_idx) {
-        config_state
-            .clear()
-            .add_span("press enter", SpanStyle::default())
-            .build();
-    }
-
-    sugarloaf.set_transient_position(confirm_idx, 20.0, (layout.height / scale) - 50.0);
-    sugarloaf.set_transient_visibility(confirm_idx, true);
-
-    // config path
-    let config_idx = sugarloaf.text(None);
-    sugarloaf.set_transient_use_grid_cell_size(config_idx, false);
-    sugarloaf.set_transient_text_font_size(config_idx, 14.0);
-
-    if let Some(config_state) = sugarloaf.get_transient_text_mut(config_idx) {
-        let path = rio_backend::config::config_file_path();
-        config_state
-            .clear()
-            .add_span(
-                &path.display().to_string(),
-                SpanStyle {
-                    color: [0.5, 0.5, 0.5, 1.0],
-                    ..SpanStyle::default()
-                },
-            )
-            .build();
-    }
-
-    sugarloaf.set_transient_position(config_idx, 20.0, (layout.height / scale) - 30.0);
-    sugarloaf.set_transient_visibility(config_idx, true);
+    let path = rio_backend::config::config_file_path();
+    ui.draw(
+        20.0,
+        (layout.height / scale) - 30.0,
+        &path.display().to_string(),
+        &DrawOpts {
+            font_size: 14.0,
+            color: [128, 128, 128, 255],
+            ..DrawOpts::default()
+        },
+    );
 }

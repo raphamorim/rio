@@ -6,7 +6,7 @@ use crate::mouse::Mouse;
 use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
-use rio_backend::sugarloaf::{layout::TextDimensions, Object, Rect, RichText, Sugarloaf};
+use rio_backend::sugarloaf::{layout::TextDimensions, Object, Rect, Sugarloaf};
 use rustc_hash::FxHashMap;
 
 use taffy::{
@@ -119,26 +119,13 @@ pub struct ContextGrid<T: EventListener> {
 
 pub struct ContextGridItem<T: EventListener> {
     pub val: Context<T>,
-    rich_text_object: Object,
     pub layout_rect: [f32; 4],
 }
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
-        let rich_text_object = Object::RichText(RichText {
-            id: context.rich_text_id,
-            lines: None,
-            render_data: rio_backend::sugarloaf::RichTextRenderData {
-                position: [0.0, 0.0],
-                should_repaint: false,
-                should_remove: false,
-                hidden: false,
-            },
-        });
-
         Self {
             val: context,
-            rich_text_object,
             layout_rect: [0.0; 4],
         }
     }
@@ -153,12 +140,11 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
         &mut self.val
     }
 
-    /// Update the position in the rich text object
-    fn set_position(&mut self, position: [f32; 2]) {
-        if let Object::RichText(ref mut rich_text) = self.rich_text_object {
-            rich_text.render_data.position = position;
-        }
-    }
+    /// Previously stashed panel position into the rich-text object's
+    /// render_data; that object tree is gone with the Content drop.
+    /// The grid renderer reads panel positions directly from
+    /// `layout_rect`.
+    fn set_position(&mut self, _position: [f32; 2]) {}
 }
 
 impl<T: rio_backend::event::EventListener> ContextGrid<T> {
