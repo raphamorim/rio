@@ -157,7 +157,7 @@ pub(crate) fn compute_advance(
     let (data, offset, _key) = font_ctx.get_data(&font_id)?;
     let font_ref = swash::FontRef::from_index(&data, offset as usize)?;
     let glyph_id = font_ref.charmap().map(ch as u32);
-    let metrics = swash::GlyphMetrics::from_font(&font_ref, &[]);
+    let metrics = font_ref.glyph_metrics(&[]);
     Some(AdvanceInfo {
         advance_units: metrics.advance_width(glyph_id),
         units_per_em: font_ref.metrics(&[]).units_per_em,
