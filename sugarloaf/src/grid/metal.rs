@@ -223,7 +223,16 @@ fn create_atlas_texture(
     descriptor.set_width(size as u64);
     descriptor.set_height(size as u64);
     descriptor.set_pixel_format(format);
-    descriptor.set_storage_mode(metal::MTLStorageMode::Managed);
+    // Apple Silicon + other UMA devices (`hasUnifiedMemory`) can back
+    // the texture in shared memory — `replaceRegion` becomes a plain
+    // memcpy with no CPU/GPU coherency sync. Discrete-GPU Macs
+    // (pre-M1) still need `Managed` with an implicit sync on draw.
+    // Matches Ghostty `src/renderer/Metal.zig:79-83`.
+    descriptor.set_storage_mode(if device.has_unified_memory() {
+        metal::MTLStorageMode::Shared
+    } else {
+        metal::MTLStorageMode::Managed
+    });
     descriptor.set_usage(MTLTextureUsage::ShaderRead);
     let texture = device.new_texture(&descriptor);
     texture.set_label(label);
@@ -280,6 +289,19 @@ pub struct MetalGridRenderer {
     /// frame by flattening `fg_rows` into a contiguous slice.
     fg_staging: Vec<CellText>,
 
+    /// Instance count that's live on the GPU in `fg_buffers[0]` from
+    /// the previous render. When no row has been touched since, the
+    /// GPU copy is already correct and we skip the concat + upload,
+    /// reissuing the same `draw_primitives_instanced` call against
+    /// the resident data. Invalidated by `write_row` / `clear_row` /
+    /// `resize`.
+    fg_live_count: u32,
+
+    /// `true` when `fg_rows` holds writes not yet flushed to
+    /// `fg_buffers`. Set by any row-level write, cleared after a
+    /// successful flush in `render`.
+    fg_dirty: bool,
+
     /// Grayscale (R8) glyph atlas — outline mask bitmaps from the
     /// monochrome rasterizer path.
     atlas_grayscale: MetalGlyphAtlas,
@@ -328,6 +350,8 @@ impl MetalGridRenderer {
             bg_pipeline,
             text_pipeline,
             fg_staging: Vec::new(),
+            fg_live_count: 0,
+            fg_dirty: true,
             atlas_grayscale,
             atlas_color,
             needs_full_rebuild: true,
@@ -406,6 +430,8 @@ impl MetalGridRenderer {
         // Fresh buffers = zero contents; emission path must rewrite
         // every row on the next frame even if no damage came in.
         self.needs_full_rebuild = true;
+        self.fg_dirty = true;
+        self.fg_live_count = 0;
     }
 
     pub fn write_row(&mut self, row: u32, bg: &[CellBg], fg: &[CellText]) {
@@ -415,6 +441,7 @@ impl MetalGridRenderer {
         if let Some(slot) = self.fg_rows.get_mut(idx) {
             slot.clear();
             slot.extend_from_slice(fg);
+            self.fg_dirty = true;
         }
 
         if row >= self.rows {
@@ -437,6 +464,9 @@ impl MetalGridRenderer {
     pub fn clear_row(&mut self, row: u32) {
         let idx = (row as usize) + 1;
         if let Some(slot) = self.fg_rows.get_mut(idx) {
+            if !slot.is_empty() {
+                self.fg_dirty = true;
+            }
             slot.clear();
         }
         if row >= self.rows {
@@ -479,31 +509,43 @@ impl MetalGridRenderer {
         encoder.draw_primitives(MTLPrimitiveType::Triangle, 0, 3);
 
         // ---------- text pass ----------
-        // Flatten per-row fg_rows into the staging vec. Order matters
-        // for z: slot 0 (block cursor) first, content rows next,
-        // non-block-cursor slot last — same as Ghostty's ordering.
-        self.fg_staging.clear();
-        for row in &self.fg_rows {
-            self.fg_staging.extend_from_slice(row);
+        // When no row has been written since the last flush, `fg_buffers[0]`
+        // already holds the exact same instances the GPU needs — skip the
+        // concat + memcpy and just re-bind + re-draw. On a Noop/CursorOnly
+        // damage frame (blink tick, scrollbar fade, etc.) this is the
+        // whole difference between ~0 µs and ~(rows × cols × 32 B) of
+        // wasted CPU work per frame.
+        if self.fg_dirty {
+            // Flatten per-row fg_rows into the staging vec. Order matters
+            // for z: slot 0 (block cursor) first, content rows next,
+            // non-block-cursor slot last — same as Ghostty's ordering.
+            self.fg_staging.clear();
+            for row in &self.fg_rows {
+                self.fg_staging.extend_from_slice(row);
+            }
+
+            // Grow the GPU buffer if the staging vec outran current capacity.
+            if self.fg_staging.len() > self.fg_capacity[0] {
+                let new_cap = self.fg_staging.len().next_power_of_two();
+                self.fg_buffers[0] = alloc_fg_buffer(&self.device, new_cap);
+                self.fg_capacity[0] = new_cap;
+            }
+
+            // Upload staging → GPU buffer. Shared storage mode means the
+            // CPU pointer is the GPU pointer.
+            let fg_bytes = bytemuck::cast_slice::<CellText, u8>(&self.fg_staging);
+            unsafe {
+                let dst = self.fg_buffers[0].contents() as *mut u8;
+                std::ptr::copy_nonoverlapping(fg_bytes.as_ptr(), dst, fg_bytes.len());
+            }
+
+            self.fg_live_count = self.fg_staging.len() as u32;
+            self.fg_dirty = false;
         }
-        let instance_count = self.fg_staging.len();
+
+        let instance_count = self.fg_live_count as usize;
         if instance_count == 0 {
             return;
-        }
-
-        // Grow the GPU buffer if the staging vec outran current capacity.
-        if self.fg_staging.len() > self.fg_capacity[0] {
-            let new_cap = self.fg_staging.len().next_power_of_two();
-            self.fg_buffers[0] = alloc_fg_buffer(&self.device, new_cap);
-            self.fg_capacity[0] = new_cap;
-        }
-
-        // Upload staging → GPU buffer. Shared storage mode means the
-        // CPU pointer is the GPU pointer.
-        let fg_bytes = bytemuck::cast_slice::<CellText, u8>(&self.fg_staging);
-        unsafe {
-            let dst = self.fg_buffers[0].contents() as *mut u8;
-            std::ptr::copy_nonoverlapping(fg_bytes.as_ptr(), dst, fg_bytes.len());
         }
 
         encoder.set_render_pipeline_state(&self.text_pipeline);
