@@ -6,10 +6,6 @@
 #![allow(clippy::uninlined_format_args)]
 
 use crate::font::FontLibrary;
-use swash::shape::ShapeContext;
-use swash::text::Script;
-#[cfg(not(target_os = "macos"))]
-use swash::FontRef;
 use crate::layout::content_data::{ContentData, ContentState};
 use crate::layout::render_data::RenderData;
 use crate::layout::TextLayout;
@@ -19,11 +15,15 @@ use smallvec::SmallVec;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
+use swash::shape::ShapeContext;
+use swash::text::Script;
+#[cfg(not(target_os = "macos"))]
+use swash::FontRef;
 use tracing::debug;
 
+use crate::{sugarloaf::primitives::SugarCursor, DrawableChar, Graphic};
 use swash::Attributes;
 use swash::Setting;
-use crate::{sugarloaf::primitives::SugarCursor, DrawableChar, Graphic};
 
 /// Pre-packed shaping result ready to push directly as a RunData.
 /// Avoids re-packing OwnedGlyphClusters on every cache hit.
@@ -509,10 +509,7 @@ impl Content {
     }
 
     #[inline]
-    pub fn set_font_features(
-        &mut self,
-        font_features: Vec<swash::Setting<u16>>,
-    ) {
+    pub fn set_font_features(&mut self, font_features: Vec<swash::Setting<u16>>) {
         self.font_features = font_features;
     }
 
@@ -584,10 +581,9 @@ impl Content {
             if let Some((font_data, offset, _key)) = font_library_data.get_data(&font_id)
             {
                 // Create swash FontRef directly from font data
-                if let Some(font_ref) = swash::FontRef::from_index(
-                    &font_data,
-                    offset as usize,
-                ) {
+                if let Some(font_ref) =
+                    swash::FontRef::from_index(&font_data, offset as usize)
+                {
                     // Get metrics using swash
                     let font_metrics = font_ref.metrics(&[]);
 

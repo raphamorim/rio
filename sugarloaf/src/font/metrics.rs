@@ -113,9 +113,7 @@ impl FaceMetrics {
     /// - It's present in virtually all CJK fonts (basic kanji/hanzi)
     /// - Its width is representative of typical CJK character width
     /// - It avoids edge cases like punctuation or rare characters
-    fn measure_cjk_character_width(
-        font_ref: &swash::FontRef,
-    ) -> Option<f64> {
+    fn measure_cjk_character_width(font_ref: &swash::FontRef) -> Option<f64> {
         const CJK_WATER_IDEOGRAPH: u32 = 0x6C34; // "水"
 
         // Get character map

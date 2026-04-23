@@ -311,8 +311,9 @@ impl AssistantOverlay {
             color: color_u8(LINK_COLOR),
             ..DrawOpts::default()
         };
-        let rendered_width =
-            sugarloaf.text_mut().draw(link_x, link_y, DOCS_URL, &link_opts);
+        let rendered_width = sugarloaf
+            .text_mut()
+            .draw(link_x, link_y, DOCS_URL, &link_opts);
         self.link_button_width = rendered_width;
 
         let (dbx, dby, dbw, dbh) = self.docs_button_rect(ox, oy);
