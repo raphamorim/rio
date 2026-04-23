@@ -7,6 +7,7 @@ pub mod grid;
 pub mod layout;
 pub mod renderer;
 mod sugarloaf;
+pub mod text;
 
 // Expose WGPU
 pub use wgpu;

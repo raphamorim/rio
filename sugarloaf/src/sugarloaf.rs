@@ -40,6 +40,12 @@ pub struct Sugarloaf<'a> {
     /// width (for the grid) and unscaled glyph advance (for
     /// proportional UI via `char_advance`).
     font_cache: FontCache,
+    /// Immediate-mode UI-text recorder. Overlays (tab titles, search
+    /// overlay, command palette, etc.) drive this instead of the
+    /// `Content`/`BuilderState` pipeline. See `sugarloaf::text` and
+    /// `memory/project_sugarloaf_content_drop.md`. Phase 1a: scaffold
+    /// only — holds no atlases or GPU state yet.
+    text: crate::text::Text,
 }
 
 #[derive(Debug)]
@@ -168,6 +174,12 @@ impl Sugarloaf<'_> {
 
         let font_cache = FontCache::new();
 
+        let mut text = crate::text::Text::new(
+            #[cfg(target_os = "macos")]
+            font_library,
+        );
+        text.set_scale_factor(state.style.scale_factor);
+
         let instance = Sugarloaf {
             state,
             ctx,
@@ -179,6 +191,7 @@ impl Sugarloaf<'_> {
             image_data: rustc_hash::FxHashMap::default(),
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
             font_cache,
+            text,
         };
 
         Ok(instance)
@@ -935,6 +948,15 @@ impl Sugarloaf<'_> {
         self.state.content.update_dimensions(id);
     }
 
+    /// Immediate-mode text recorder for UI overlays. The per-sugarloaf
+    /// `Text` instance. Overlays call `draw` / `measure` via this
+    /// handle; sugarloaf flushes the recorded instances at render
+    /// time (Phase 1c; currently a no-op).
+    #[inline]
+    pub fn text_mut(&mut self) -> &mut crate::text::Text {
+        &mut self.text
+    }
+
     /// Get text dimensions. Returns None if id is not text
     /// Get the total rendered width of text content by summing glyph advances.
     /// Returns the width in logical (unscaled) pixels.
@@ -990,6 +1012,7 @@ impl Sugarloaf<'_> {
     pub fn rescale(&mut self, scale: f32) {
         self.ctx.set_scale(scale);
         self.state.compute_layout_rescale(scale);
+        self.text.set_scale_factor(scale);
     }
 
     #[inline]
@@ -998,6 +1021,9 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn reset(&mut self) {
         self.state.reset();
+        // Drop this frame's UI text instances — overlays re-record
+        // next frame (immediate mode).
+        self.text.clear();
     }
 
     #[inline]
@@ -1075,7 +1101,8 @@ impl Sugarloaf<'_> {
         let bg_color = self
             .background_color
             .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32]);
-        self.renderer.render_metal(ctx, bg_color, grids);
+        self.renderer
+            .render_metal(ctx, bg_color, grids, &mut self.text);
 
         self.reset();
     }

@@ -3,11 +3,22 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::context::next_rich_text_id;
 use crate::renderer::scrollbar;
-use crate::renderer::utils::add_span_with_fallback;
-use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
+use rio_backend::sugarloaf::text::DrawOpts;
+use rio_backend::sugarloaf::Sugarloaf;
 use std::time::Instant;
+
+/// Convert `[f32; 4]` colour to `[u8; 4]` for the `Text` API (the
+/// vertex shader premultiplies, so pass non-premul RGBA).
+#[inline]
+fn color_u8(c: [f32; 4]) -> [u8; 4] {
+    [
+        (c[0].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[1].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[2].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[3].clamp(0.0, 1.0) * 255.0) as u8,
+    ]
+}
 
 // Layout
 const PALETTE_WIDTH: f32 = 480.0;
@@ -430,12 +441,6 @@ pub struct CommandPalette {
     pub has_adaptive_theme: bool,
     /// Which list the palette is showing (commands or fonts).
     mode: PaletteMode,
-    /// Pre-allocated rich text ID for input (lazily initialized)
-    input_text_id: Option<usize>,
-    /// Pre-allocated rich text IDs for result rows (lazily initialized, fixed pool)
-    result_text_ids: Vec<usize>,
-    /// Pre-allocated rich text IDs for shortcut labels
-    shortcut_text_ids: Vec<usize>,
     /// Timestamp for caret blinking
     caret_blink_start: Instant,
     /// Timestamp of the last event that actually changed `scroll_offset`.
@@ -455,9 +460,6 @@ impl Default for CommandPalette {
             scroll_offset: 0,
             has_adaptive_theme: false,
             mode: PaletteMode::Commands,
-            input_text_id: None,
-            result_text_ids: Vec::new(),
-            shortcut_text_ids: Vec::new(),
             caret_blink_start: Instant::now(),
             last_scroll_time: None,
         }
@@ -663,58 +665,13 @@ impl CommandPalette {
         false
     }
 
-    /// Ensure the text ID pools are allocated.
-    fn ensure_text_ids(&mut self, sugarloaf: &mut Sugarloaf) {
-        if self.input_text_id.is_none() {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, INPUT_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.input_text_id = Some(id);
-        }
-
-        while self.result_text_ids.len() < MAX_VISIBLE_RESULTS {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, RESULT_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.result_text_ids.push(id);
-        }
-
-        while self.shortcut_text_ids.len() < MAX_VISIBLE_RESULTS {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, SHORTCUT_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.shortcut_text_ids.push(id);
-        }
-    }
-
-    /// Hide all text IDs (used when palette is closed or to reset).
-    fn hide_all_text_ids(&self, sugarloaf: &mut Sugarloaf) {
-        if let Some(id) = self.input_text_id {
-            sugarloaf.set_visibility(id, false);
-        }
-        for &id in &self.result_text_ids {
-            sugarloaf.set_visibility(id, false);
-        }
-        for &id in &self.shortcut_text_ids {
-            sugarloaf.set_visibility(id, false);
-        }
-    }
-
     pub fn render(&mut self, sugarloaf: &mut Sugarloaf, dimensions: (f32, f32, f32)) {
         if !self.enabled {
-            self.hide_all_text_ids(sugarloaf);
+            // Immediate mode: not drawing == not visible.
             return;
         }
 
         let (window_width, window_height, scale_factor) = dimensions;
-
-        self.ensure_text_ids(sugarloaf);
 
         let (palette_x, palette_y, palette_width, palette_height) =
             self.palette_rect(window_width, scale_factor);
@@ -748,7 +705,6 @@ impl CommandPalette {
 
         // No separate input background — blends with palette bg for minimalism
 
-        let input_id = self.input_text_id.unwrap();
         let placeholder = match self.mode {
             PaletteMode::Commands => "Type a command...",
             PaletteMode::Fonts(_) => "Type a font name...",
@@ -756,7 +712,7 @@ impl CommandPalette {
         let display_text = if self.query.is_empty() {
             placeholder
         } else {
-            &self.query
+            self.query.as_str()
         };
         let text_color = if self.query.is_empty() {
             DIM_TEXT_COLOR
@@ -764,18 +720,17 @@ impl CommandPalette {
             TEXT_COLOR
         };
 
-        let input_style = SpanStyle {
-            color: text_color,
-            ..SpanStyle::default()
-        };
-        sugarloaf.content().sel(input_id).clear().new_line();
-        add_span_with_fallback(sugarloaf, display_text, input_style);
-        sugarloaf.content().build();
-
         let text_x = input_x + INPUT_PADDING_X;
         let text_y = input_y + (INPUT_HEIGHT - INPUT_FONT_SIZE) / 2.0;
-        sugarloaf.set_position(input_id, text_x, text_y);
-        sugarloaf.set_visibility(input_id, true);
+        let input_opts = DrawOpts {
+            font_size: INPUT_FONT_SIZE,
+            color: color_u8(text_color),
+            ..DrawOpts::default()
+        };
+        let input_rendered_width =
+            sugarloaf
+                .text_mut()
+                .draw(text_x, text_y, display_text, &input_opts);
 
         let elapsed_ms = self.caret_blink_start.elapsed().as_millis();
         let caret_visible = (elapsed_ms / CARET_BLINK_MS).is_multiple_of(2);
@@ -784,7 +739,7 @@ impl CommandPalette {
             let text_width = if self.query.is_empty() {
                 0.0
             } else {
-                sugarloaf.get_text_rendered_width(&input_id)
+                input_rendered_width
             };
 
             let caret_x = text_x + text_width;
@@ -817,11 +772,12 @@ impl CommandPalette {
 
         let results_y = sep_y + SEPARATOR_HEIGHT + RESULTS_MARGIN_TOP;
         let filtered = self.filtered_rows();
-        let visible_count = filtered
-            .iter()
-            .skip(self.scroll_offset)
-            .take(MAX_VISIBLE_RESULTS)
-            .count();
+
+        let shortcut_opts = DrawOpts {
+            font_size: SHORTCUT_FONT_SIZE,
+            color: color_u8(SHORTCUT_TEXT_COLOR),
+            ..DrawOpts::default()
+        };
 
         for (display_i, (_, row)) in filtered
             .iter()
@@ -848,45 +804,31 @@ impl CommandPalette {
                 );
             }
 
-            let result_id = self.result_text_ids[display_i];
-            let result_style = SpanStyle {
-                color: if is_selected {
+            let result_opts = DrawOpts {
+                font_size: RESULT_FONT_SIZE,
+                color: color_u8(if is_selected {
                     TEXT_COLOR
                 } else {
                     [0.55, 0.55, 0.55, 1.0]
-                },
-                ..SpanStyle::default()
+                }),
+                ..DrawOpts::default()
             };
-            sugarloaf.content().sel(result_id).clear().new_line();
-            add_span_with_fallback(sugarloaf, row.title(), result_style);
-            sugarloaf.content().build();
-
             let row_text_x = input_x + INPUT_PADDING_X;
             let row_text_y = item_y + (RESULT_ITEM_HEIGHT - RESULT_FONT_SIZE) / 2.0;
-            sugarloaf.set_position(result_id, row_text_x, row_text_y);
-            sugarloaf.set_visibility(result_id, true);
+            sugarloaf
+                .text_mut()
+                .draw(row_text_x, row_text_y, row.title(), &result_opts);
 
             // Right-side hint: shortcut for commands, copy icon for
             // font rows (signals "Enter copies this to clipboard").
-            let shortcut_id = self.shortcut_text_ids[display_i];
             let shortcut = row.shortcut();
             let is_font_row = matches!(row, PaletteRow::Font { .. });
             if !shortcut.is_empty() {
-                let shortcut_style = SpanStyle {
-                    color: SHORTCUT_TEXT_COLOR,
-                    ..SpanStyle::default()
-                };
-                sugarloaf.content().sel(shortcut_id).clear().new_line();
-                add_span_with_fallback(sugarloaf, shortcut, shortcut_style);
-                sugarloaf.content().build();
-
-                let shortcut_width = shortcut.len() as f32 * 6.5;
+                let ui = sugarloaf.text_mut();
+                let shortcut_width = ui.measure(shortcut, &shortcut_opts);
                 let shortcut_x = input_x + input_width - INPUT_PADDING_X - shortcut_width;
                 let shortcut_y = item_y + (RESULT_ITEM_HEIGHT - SHORTCUT_FONT_SIZE) / 2.0;
-                sugarloaf.set_position(shortcut_id, shortcut_x, shortcut_y);
-                sugarloaf.set_visibility(shortcut_id, true);
-            } else {
-                sugarloaf.set_visibility(shortcut_id, false);
+                ui.draw(shortcut_x, shortcut_y, shortcut, &shortcut_opts);
             }
 
             if is_font_row {
@@ -915,12 +857,6 @@ impl CommandPalette {
                     ORDER,
                 );
             }
-        }
-
-        // Hide unused result/shortcut text IDs
-        for i in visible_count..MAX_VISIBLE_RESULTS {
-            sugarloaf.set_visibility(self.result_text_ids[i], false);
-            sugarloaf.set_visibility(self.shortcut_text_ids[i], false);
         }
 
         // Scrollbar: shares the terminal scrollbar's visual language

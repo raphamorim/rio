@@ -3,10 +3,21 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::context::next_rich_text_id;
-use crate::renderer::utils::add_span_with_fallback;
-use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
+use rio_backend::sugarloaf::text::DrawOpts;
+use rio_backend::sugarloaf::Sugarloaf;
 use std::time::Instant;
+
+/// Convert `[f32; 4]` colour to the `[u8; 4]` non-premul form the
+/// `Text` draw path expects (the vertex shader premultiplies).
+#[inline]
+fn color_u8(c: [f32; 4]) -> [u8; 4] {
+    [
+        (c[0].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[1].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[2].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[3].clamp(0.0, 1.0) * 255.0) as u8,
+    ]
+}
 
 // Layout
 const OVERLAY_WIDTH: f32 = 320.0;
@@ -50,10 +61,6 @@ pub enum SearchOverlayAction {
 
 pub struct SearchOverlay {
     active_search: Option<String>,
-    input_text_id: Option<usize>,
-    prev_text_id: Option<usize>,
-    next_text_id: Option<usize>,
-    close_text_id: Option<usize>,
     caret_blink_start: Instant,
     hovered_button: Option<SearchOverlayAction>,
 }
@@ -62,10 +69,6 @@ impl Default for SearchOverlay {
     fn default() -> Self {
         Self {
             active_search: None,
-            input_text_id: None,
-            prev_text_id: None,
-            next_text_id: None,
-            close_text_id: None,
             caret_blink_start: Instant::now(),
             hovered_button: None,
         }
@@ -196,68 +199,15 @@ impl SearchOverlay {
         false
     }
 
-    fn ensure_text_ids(&mut self, sugarloaf: &mut Sugarloaf) {
-        if self.input_text_id.is_none() {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, INPUT_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.input_text_id = Some(id);
-        }
-
-        if self.prev_text_id.is_none() {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, BUTTON_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.prev_text_id = Some(id);
-        }
-
-        if self.next_text_id.is_none() {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, BUTTON_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.next_text_id = Some(id);
-        }
-
-        if self.close_text_id.is_none() {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, BUTTON_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.close_text_id = Some(id);
-        }
-    }
-
-    fn hide_all_text_ids(&self, sugarloaf: &mut Sugarloaf) {
-        if let Some(id) = self.input_text_id {
-            sugarloaf.set_visibility(id, false);
-        }
-        if let Some(id) = self.prev_text_id {
-            sugarloaf.set_visibility(id, false);
-        }
-        if let Some(id) = self.next_text_id {
-            sugarloaf.set_visibility(id, false);
-        }
-        if let Some(id) = self.close_text_id {
-            sugarloaf.set_visibility(id, false);
-        }
-    }
-
     pub fn render(&mut self, sugarloaf: &mut Sugarloaf, dimensions: (f32, f32, f32)) {
         if !self.is_active() {
-            self.hide_all_text_ids(sugarloaf);
+            // Immediate mode: not drawing == not visible. No cleanup
+            // needed — previous frame's instances were cleared at
+            // render.
             return;
         }
 
         let (window_width, _window_height, scale_factor) = dimensions;
-
-        self.ensure_text_ids(sugarloaf);
 
         let (ox, oy, ow, oh) = self.overlay_rect(window_width, scale_factor);
 
@@ -294,7 +244,6 @@ impl SearchOverlay {
 
         // Input text
         let active_search = self.active_search.clone().unwrap_or_default();
-        let input_id = self.input_text_id.unwrap();
         let text_x = input_x + 6.0;
         let text_y = input_y + (input_height - INPUT_FONT_SIZE) / 2.0;
         let max_text_width = input_width - 12.0;
@@ -305,35 +254,28 @@ impl SearchOverlay {
             TEXT_COLOR
         };
 
-        // Determine visible text: trim from the front if it overflows
+        let input_opts = DrawOpts {
+            font_size: INPUT_FONT_SIZE,
+            color: color_u8(text_color),
+            ..DrawOpts::default()
+        };
+
+        // Determine visible text: trim from the front if it overflows.
         let display_text: String = if active_search.is_empty() {
             "Search...".to_string()
         } else {
             let chars: Vec<char> = active_search.chars().collect();
+            let ui = sugarloaf.text_mut();
             let mut start = 0;
-
-            let base_style = SpanStyle {
-                color: text_color,
-                ..SpanStyle::default()
-            };
-
-            let set_and_measure = |text: &str, sugarloaf: &mut Sugarloaf| {
-                sugarloaf.content().sel(input_id).clear().new_line();
-                add_span_with_fallback(sugarloaf, text, base_style);
-                sugarloaf.content().build();
-                sugarloaf.set_position(input_id, text_x, text_y);
-                sugarloaf.get_text_rendered_width(&input_id)
-            };
-
-            let full_width = set_and_measure(&active_search, sugarloaf);
+            let full_width = ui.measure(&active_search, &input_opts);
             if full_width > max_text_width {
-                // Binary search for the right start index
+                // Binary search for the right start index.
                 let mut lo = 0;
                 let mut hi = chars.len();
                 while lo < hi {
                     let mid = (lo + hi) / 2;
                     let substr: String = chars[mid..].iter().collect();
-                    let w = set_and_measure(&substr, sugarloaf);
+                    let w = ui.measure(&substr, &input_opts);
                     if w > max_text_width {
                         lo = mid + 1;
                     } else {
@@ -342,22 +284,13 @@ impl SearchOverlay {
                 }
                 start = lo;
             }
-
             chars[start..].iter().collect()
         };
 
-        let base_style = SpanStyle {
-            color: text_color,
-            ..SpanStyle::default()
-        };
-        sugarloaf.content().sel(input_id).clear().new_line();
-        add_span_with_fallback(sugarloaf, &display_text, base_style);
-        sugarloaf.content().build();
-
-        sugarloaf.set_position(input_id, text_x, text_y);
-        sugarloaf.set_visibility(input_id, true);
-
-        let rendered_width = sugarloaf.get_text_rendered_width(&input_id);
+        let rendered_width =
+            sugarloaf
+                .text_mut()
+                .draw(text_x, text_y, &display_text, &input_opts);
 
         // Caret
         let elapsed_ms = self.caret_blink_start.elapsed().as_millis();
@@ -391,11 +324,12 @@ impl SearchOverlay {
             SearchOverlayAction::Next,
             SearchOverlayAction::Close,
         ];
-        let text_ids = [
-            self.prev_text_id.unwrap(),
-            self.next_text_id.unwrap(),
-            self.close_text_id.unwrap(),
-        ];
+
+        let btn_opts = DrawOpts {
+            font_size: BUTTON_FONT_SIZE,
+            color: color_u8(BUTTON_TEXT_COLOR),
+            ..DrawOpts::default()
+        };
 
         for (i, (bx, by, bw, bh)) in button_rects.iter().enumerate() {
             let is_hovered = self.hovered_button == Some(actions[i]);
@@ -414,18 +348,14 @@ impl SearchOverlay {
                 );
             }
 
-            let btn_style = SpanStyle {
-                color: BUTTON_TEXT_COLOR,
-                ..SpanStyle::default()
-            };
-            sugarloaf.content().sel(text_ids[i]).clear().new_line();
-            add_span_with_fallback(sugarloaf, labels[i], btn_style);
-            sugarloaf.content().build();
-
-            let label_x = bx + (bw - BUTTON_FONT_SIZE * 0.6) / 2.0;
+            // Measure first so we can centre horizontally — the
+            // labels are single glyphs of varying width (arrows vs
+            // bullet).
+            let ui = sugarloaf.text_mut();
+            let label_w = ui.measure(labels[i], &btn_opts);
+            let label_x = bx + (bw - label_w) / 2.0;
             let label_y = by + (bh - BUTTON_FONT_SIZE) / 2.0;
-            sugarloaf.set_position(text_ids[i], label_x, label_y);
-            sugarloaf.set_visibility(text_ids[i], true);
+            ui.draw(label_x, label_y, labels[i], &btn_opts);
         }
     }
 }

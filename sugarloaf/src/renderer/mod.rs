@@ -2698,6 +2698,7 @@ impl Renderer {
         context: &MetalContext,
         bg_color: Option<[f32; 4]>,
         grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+        text: &mut crate::text::Text,
     ) {
         use block::ConcreteBlock;
         use std::cell::Cell as StdCell;
@@ -2836,6 +2837,15 @@ impl Renderer {
                     {
                         return false;
                     }
+                    // UI text pass. Lazy-init on the first frame with
+                    // a Metal ctx; subsequent calls are no-ops. Runs
+                    // after brush.render / above-text images so UI
+                    // labels sit on top of everything else.
+                    text.init_metal(&context.device, &context.command_queue);
+                    text.render_metal(
+                        render_encoder,
+                        [context.size.width as f32, context.size.height as f32],
+                    );
                     true
                 })();
 

@@ -2,62 +2,7 @@ use crate::constants;
 use crate::layout::ContextDimension;
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
-use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 use rio_window::window::Theme;
-
-/// Add text to the currently selected text content with per-character
-/// font fallback. Resolves each character against sugarloaf's glyph
-/// cache, groups consecutive chars by resolved `font_id`, and emits
-/// one span per group. The selected text id is whatever was last
-/// passed to `Content::sel(...)` by the caller.
-#[inline]
-pub fn add_span_with_fallback(
-    sugarloaf: &mut Sugarloaf,
-    text: &str,
-    base_style: SpanStyle,
-) {
-    let font_attrs = base_style.font_attrs;
-
-    // First walk: resolve every char against sugarloaf's font cache
-    // and group into runs by font_id. We can't push to `content` yet
-    // because `resolve_glyph` borrows sugarloaf mutably to fill the
-    // cache.
-    let mut runs: Vec<(usize, String)> = Vec::new();
-    let mut current_font_id: Option<usize> = None;
-    let mut current_run = String::new();
-
-    for ch in text.chars() {
-        let glyph = sugarloaf.resolve_glyph(ch, font_attrs);
-        if current_font_id == Some(glyph.font_id) {
-            current_run.push(ch);
-        } else {
-            if !current_run.is_empty() {
-                runs.push((
-                    current_font_id.unwrap_or(0),
-                    std::mem::take(&mut current_run),
-                ));
-            }
-            current_font_id = Some(glyph.font_id);
-            current_run.push(ch);
-        }
-    }
-    if !current_run.is_empty() {
-        runs.push((current_font_id.unwrap_or(0), current_run));
-    }
-
-    // Second walk: emit the runs. Now we can take `&mut Content`
-    // because all the cache fills are done.
-    let content = sugarloaf.content();
-    for (font_id, run) in runs {
-        content.add_span(
-            &run,
-            SpanStyle {
-                font_id,
-                ..base_style
-            },
-        );
-    }
-}
 
 #[inline]
 pub fn padding_top_from_config(
