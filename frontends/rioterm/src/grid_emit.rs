@@ -52,6 +52,258 @@ pub fn cell_fg(
     normalized_to_u8(color)
 }
 
+//  Decoration sprites (underlines, strikethrough)
+//
+// Ghostty pre-rasterizes underline/strikethrough sprites into the
+// grayscale atlas and emits them as regular `CellText` entries
+// (`ghostty/src/font/sprite/draw/special.zig`,
+// `ghostty/src/renderer/generic.zig:3074`). We do the same: one sprite
+// per (style, cell_w, thickness) cached in the grid atlas. Z-order is
+// enforced by emit order — underlines before glyphs (draws under),
+// strikethrough after (draws on top).
+
+#[derive(Clone, Copy, Debug)]
+#[repr(u32)]
+enum DecorationStyle {
+    Underline = 0,
+    DoubleUnderline = 1,
+    DottedUnderline = 2,
+    DashedUnderline = 3,
+    CurlyUnderline = 4,
+    Strikethrough = 5,
+}
+
+/// Sentinel font_id base for decoration sprites. Real font_ids come
+/// from sugarloaf's font library which packs into usize indices
+/// starting at 0; 0xFFFF_FF00+ is far outside that range. Matches
+/// Ghostty's `font.sprite_index` idea (`font/sprite.zig:17`).
+const DECORATION_FONT_ID_BASE: u32 = 0xFFFF_FF00;
+
+/// Underline thickness in physical pixels. Matches Ghostty's fallback
+/// (15% of ex-height, min 1px) when the font doesn't expose
+/// `underline_thickness` — we don't thread per-font metrics through to
+/// decorations because runs can mix fonts inside a row. 0.075 * size_px
+/// approximates 15% of ex-height at typical terminal fonts.
+#[inline]
+fn decoration_thickness(size_px: f32) -> u32 {
+    (size_px * 0.075).round().max(1.0) as u32
+}
+
+/// Offset (in pixels, from cell bottom) at which the BOTTOM of an
+/// underline sits. Small gap so underlines don't merge with the row
+/// below. Mirrors the spirit of Ghostty's `underline_position` but
+/// simplified — we don't have per-font metrics here.
+#[inline]
+fn underline_gap_below(cell_h: u32) -> u32 {
+    (cell_h / 20).max(1)
+}
+
+fn rasterize_decoration(
+    style: DecorationStyle,
+    cell_w: u32,
+    cell_h: u32,
+    thickness: u32,
+) -> (Vec<u8>, u32, u32, i16) {
+    // Returns (pixels, width, height, bearing_y). `pixels` is R8
+    // row-major, treated as alpha by the grayscale fragment branch.
+    // `bearing_y` is cell-bottom → sprite-top distance (Rio's
+    // grid-renderer convention).
+    match style {
+        DecorationStyle::Underline => {
+            let bytes = vec![0xFFu8; (cell_w * thickness) as usize];
+            let bearing_y = (thickness + underline_gap_below(cell_h)) as i16;
+            (bytes, cell_w, thickness, bearing_y)
+        }
+        DecorationStyle::DoubleUnderline => {
+            // Two strips with a `thickness` gap.
+            let gap = thickness;
+            let h = thickness * 2 + gap;
+            let mut bytes = vec![0u8; (cell_w * h) as usize];
+            let row_w = cell_w as usize;
+            // Top strip: rows [0, thickness)
+            for row in 0..thickness as usize {
+                let start = row * row_w;
+                bytes[start..start + row_w].fill(0xFF);
+            }
+            // Bottom strip: rows [thickness + gap, h)
+            for row in (thickness + gap) as usize..h as usize {
+                let start = row * row_w;
+                bytes[start..start + row_w].fill(0xFF);
+            }
+            let bearing_y = (h + underline_gap_below(cell_h)) as i16;
+            (bytes, cell_w, h, bearing_y)
+        }
+        DecorationStyle::DottedUnderline => {
+            // Dots of diameter=thickness, period=2*thickness.
+            let h = thickness;
+            let diameter = thickness.max(1);
+            let period = diameter * 2;
+            let mut bytes = vec![0u8; (cell_w * h) as usize];
+            let row_w = cell_w as usize;
+            let mut x = 0u32;
+            while x < cell_w {
+                let end = (x + diameter).min(cell_w);
+                for row in 0..h as usize {
+                    let start = row * row_w + x as usize;
+                    bytes[start..start + (end - x) as usize].fill(0xFF);
+                }
+                x += period;
+            }
+            let bearing_y = (h + underline_gap_below(cell_h)) as i16;
+            (bytes, cell_w, h, bearing_y)
+        }
+        DecorationStyle::DashedUnderline => {
+            // Two dashes per cell arranged as DASH-GAP-DASH-GAP on
+            // quarter boundaries. Each cell ends on a GAP and starts
+            // on a DASH, so adjacent cell sprites tile into one
+            // continuous periodic pattern (dash | gap | dash | gap | ...)
+            // across the row. For cell widths not divisible by 4,
+            // segment widths differ by a single pixel inside the
+            // cell but the cell-to-cell rhythm stays regular.
+            //
+            // Ghostty uses 3 segments per cell (`special.zig:135`)
+            // which meets DASH-to-DASH at every cell boundary — we
+            // prefer the 4-segment layout because it stays periodic
+            // under tiling.
+            let h = thickness;
+            let b1 = cell_w / 4;
+            let b2 = cell_w / 2;
+            let b3 = (cell_w * 3) / 4;
+            let mut bytes = vec![0u8; (cell_w * h) as usize];
+            let row_w = cell_w as usize;
+            for (x_lo, x_hi) in [(0u32, b1), (b2, b3)] {
+                if x_hi <= x_lo {
+                    continue;
+                }
+                for row in 0..h as usize {
+                    let start = row * row_w + x_lo as usize;
+                    let end = row * row_w + x_hi as usize;
+                    bytes[start..end].fill(0xFF);
+                }
+            }
+            let bearing_y = (h + underline_gap_below(cell_h)) as i16;
+            (bytes, cell_w, h, bearing_y)
+        }
+        DecorationStyle::CurlyUnderline => {
+            // One arch per cell: baseline → peak-at-center → baseline,
+            // with horizontal tangents at cell edges so tiled sprites
+            // join smoothly. Matches Ghostty's two-cubic-Bezier shape
+            // (`ghostty/src/font/sprite/draw/special.zig:167`):
+            //   amplitude = cell_w / π
+            //   stroke width = thickness, round caps
+            // We approximate the Bezier with a raised cosine, which
+            // has the same endpoints, same peak, and the same
+            // horizontal tangent at the edges. The two curves differ
+            // by a fraction of a pixel at the shoulders — invisible
+            // at terminal cell sizes.
+            use core::f32::consts::PI;
+            let amp = (cell_w as f32 / PI).max(thickness as f32);
+            let amp_i = amp.ceil() as u32;
+            let h = amp_i + thickness + 1;
+            let mut bytes = vec![0u8; (cell_w * h) as usize];
+            let row_w = cell_w as usize;
+            let half_t = thickness as f32 * 0.5;
+            // Baseline (bottom of arch) near sprite bottom; peak
+            // (top of arch) near sprite top, both inset by half a
+            // stroke + 0.5px so the stroke doesn't clip at edges.
+            let baseline = h as f32 - half_t - 0.5;
+            for col in 0..cell_w {
+                let x_norm = (col as f32 + 0.5) / cell_w as f32;
+                // Raised cosine: 0 at endpoints, 1 at midpoint. Zero
+                // derivative at both endpoints = smooth tiling.
+                let s = 0.5 * (1.0 - (x_norm * 2.0 * PI).cos());
+                let y_center = baseline - s * amp;
+                let y_lo = (y_center - half_t).floor().max(0.0) as u32;
+                let y_hi = ((y_center + half_t).ceil() as u32).min(h);
+                for row in y_lo..y_hi {
+                    bytes[row as usize * row_w + col as usize] = 0xFF;
+                }
+            }
+            let bearing_y = (h + underline_gap_below(cell_h)) as i16;
+            (bytes, cell_w, h, bearing_y)
+        }
+        DecorationStyle::Strikethrough => {
+            // Single strip through vertical middle of the cell.
+            let bytes = vec![0xFFu8; (cell_w * thickness) as usize];
+            // Top of strike sits at cell_h/2 + thickness/2 above cell
+            // bottom (i.e., strike is centered at cell_h/2).
+            let center_from_bottom = cell_h / 2;
+            let bearing_y =
+                center_from_bottom as i16 + (thickness as i16 + 1) / 2;
+            (bytes, cell_w, thickness, bearing_y)
+        }
+    }
+}
+
+/// Look up or insert a decoration sprite into the grid atlas. Key is
+/// (decoration font_id sentinel, cell_w as glyph_id, thickness as
+/// size_bucket) — the same cache that backs regular glyphs, so
+/// decorations ride the grid's glyph-eviction policy for free.
+fn ensure_decoration_slot(
+    grid: &mut GridRenderer,
+    style: DecorationStyle,
+    cell_w: u32,
+    cell_h: u32,
+    thickness: u32,
+) -> Option<AtlasSlot> {
+    let key = GlyphKey {
+        font_id: DECORATION_FONT_ID_BASE + style as u32,
+        glyph_id: cell_w,
+        size_bucket: thickness as u16,
+    };
+    if let Some(slot) = grid.lookup_glyph(key) {
+        return Some(slot);
+    }
+    let (bytes, w, h, bearing_y) = rasterize_decoration(style, cell_w, cell_h, thickness);
+    grid.insert_glyph(
+        key,
+        RasterizedGlyph {
+            width: w.min(u16::MAX as u32) as u16,
+            height: h.min(u16::MAX as u32) as u16,
+            bearing_x: 0,
+            bearing_y,
+            bytes: &bytes,
+        },
+    )
+}
+
+/// Pick the decoration enum value for a cell's `StyleFlags`, or `None`
+/// if the cell has no underline. Bit-test order matches StyleFlags
+/// ordering in `rio-backend/src/crosswords/style.rs`.
+#[inline]
+fn underline_style_from_flags(flags: StyleFlags) -> Option<DecorationStyle> {
+    if flags.contains(StyleFlags::UNDERLINE) {
+        Some(DecorationStyle::Underline)
+    } else if flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
+        Some(DecorationStyle::DoubleUnderline)
+    } else if flags.contains(StyleFlags::UNDERCURL) {
+        Some(DecorationStyle::CurlyUnderline)
+    } else if flags.contains(StyleFlags::DOTTED_UNDERLINE) {
+        Some(DecorationStyle::DottedUnderline)
+    } else if flags.contains(StyleFlags::DASHED_UNDERLINE) {
+        Some(DecorationStyle::DashedUnderline)
+    } else {
+        None
+    }
+}
+
+/// Decoration color: SGR 58 `underline_color` if set, else the cell's
+/// computed fg. Matches Ghostty `generic.zig:2968`.
+#[inline]
+fn decoration_color(
+    sq: Square,
+    style: &rio_backend::crosswords::style::Style,
+    style_set: &StyleSet,
+    renderer: &Renderer,
+    term_colors: &TermColors,
+) -> [u8; 4] {
+    if let Some(uc) = style.underline_color {
+        normalized_to_u8(renderer.compute_color(&uc, style.flags, term_colors))
+    } else {
+        cell_fg(sq, style_set, renderer, term_colors)
+    }
+}
+
 pub fn cell_bg(
     sq: Square,
     style_set: &StyleSet,
@@ -397,6 +649,10 @@ fn shape_run_swash(
 
 /// Run-level fg emission. Shapes once per run, emits one CellText per
 /// shaped glyph. Works on both macOS (CoreText) and non-macOS (swash).
+///
+/// Emits in three ordered phases so decoration z-order matches
+/// Ghostty's: underlines first (drawn under glyphs), glyphs, then
+/// strikethroughs (drawn on top).
 #[allow(clippy::too_many_arguments)]
 pub fn build_row_fg(
     row: &Row<Square>,
@@ -408,6 +664,7 @@ pub fn build_row_fg(
     rasterizer: &mut GridGlyphRasterizer,
     grid: &mut GridRenderer,
     size_px: f32,
+    cell_w: f32,
     cell_h: f32,
     font_library: &FontLibrary,
     fg_scratch: &mut Vec<CellText>,
@@ -416,6 +673,26 @@ pub fn build_row_fg(
 
     let size_bucket = (size_px * 4.0).round().clamp(0.0, u16::MAX as f32) as u16;
     let size_u16 = size_px.round().clamp(1.0, u16::MAX as f32) as u16;
+
+    let cell_w_u32 = cell_w.round().clamp(1.0, u32::MAX as f32) as u32;
+    let cell_h_u32 = cell_h.round().clamp(1.0, u32::MAX as f32) as u32;
+    let thickness = decoration_thickness(size_px);
+
+    // Phase 1: underline pass. Emit before glyphs so grayscale quads
+    // draw under the characters.
+    emit_underlines(
+        row,
+        cols,
+        y,
+        style_set,
+        renderer,
+        term_colors,
+        grid,
+        cell_w_u32,
+        cell_h_u32,
+        thickness,
+        fg_scratch,
+    );
 
     let mut x: usize = 0;
     while x < cols {
@@ -590,6 +867,111 @@ pub fn build_row_fg(
         }
 
         x = end;
+    }
+
+    // Phase 3: strikethrough pass. Emitted last so the strike overlays
+    // the glyph.
+    emit_strikethroughs(
+        row,
+        cols,
+        y,
+        style_set,
+        renderer,
+        term_colors,
+        grid,
+        cell_w_u32,
+        cell_h_u32,
+        thickness,
+        fg_scratch,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_underlines(
+    row: &Row<Square>,
+    cols: usize,
+    y: u16,
+    style_set: &StyleSet,
+    renderer: &Renderer,
+    term_colors: &TermColors,
+    grid: &mut GridRenderer,
+    cell_w: u32,
+    cell_h: u32,
+    thickness: u32,
+    fg_scratch: &mut Vec<CellText>,
+) {
+    for x in 0..cols {
+        let sq = row[Column(x)];
+        let style = style_set.get(sq.style_id());
+        let Some(deco) = underline_style_from_flags(style.flags) else {
+            continue;
+        };
+        let Some(slot) = ensure_decoration_slot(grid, deco, cell_w, cell_h, thickness)
+        else {
+            continue;
+        };
+        if slot.w == 0 || slot.h == 0 {
+            continue;
+        }
+        let color = decoration_color(sq, &style, style_set, renderer, term_colors);
+        fg_scratch.push(CellText {
+            glyph_pos: [slot.x as u32, slot.y as u32],
+            glyph_size: [slot.w as u32, slot.h as u32],
+            bearings: [slot.bearing_x, slot.bearing_y],
+            grid_pos: [x as u16, y],
+            color,
+            atlas: CellText::ATLAS_GRAYSCALE,
+            bools: 0,
+            _pad: [0, 0],
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_strikethroughs(
+    row: &Row<Square>,
+    cols: usize,
+    y: u16,
+    style_set: &StyleSet,
+    renderer: &Renderer,
+    term_colors: &TermColors,
+    grid: &mut GridRenderer,
+    cell_w: u32,
+    cell_h: u32,
+    thickness: u32,
+    fg_scratch: &mut Vec<CellText>,
+) {
+    for x in 0..cols {
+        let sq = row[Column(x)];
+        let style = style_set.get(sq.style_id());
+        if !style.flags.contains(StyleFlags::STRIKEOUT) {
+            continue;
+        }
+        let Some(slot) = ensure_decoration_slot(
+            grid,
+            DecorationStyle::Strikethrough,
+            cell_w,
+            cell_h,
+            thickness,
+        ) else {
+            continue;
+        };
+        if slot.w == 0 || slot.h == 0 {
+            continue;
+        }
+        // Strikethrough always uses the cell fg (there's no SGR for
+        // a separate strike color, matching Ghostty).
+        let color = cell_fg(sq, style_set, renderer, term_colors);
+        fg_scratch.push(CellText {
+            glyph_pos: [slot.x as u32, slot.y as u32],
+            glyph_size: [slot.w as u32, slot.h as u32],
+            bearings: [slot.bearing_x, slot.bearing_y],
+            grid_pos: [x as u16, y],
+            color,
+            atlas: CellText::ATLAS_GRAYSCALE,
+            bools: 0,
+            _pad: [0, 0],
+        });
     }
 }
 
