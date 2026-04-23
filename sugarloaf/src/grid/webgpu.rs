@@ -169,6 +169,15 @@ pub struct WgpuGridRenderer {
     fg_capacity: [usize; FRAMES_IN_FLIGHT],
     fg_staging: Vec<CellText>,
 
+    /// GPU-resident instance count in `fg_buffers[0]` from the last
+    /// flush. Reused on Noop/CursorOnly frames to skip the concat
+    /// and `write_buffer` call. Same pattern as `MetalGridRenderer`.
+    fg_live_count: u32,
+    /// Any row-level write since the last flush.
+    fg_dirty: bool,
+    /// `bg_cpu` changed since the last `write_buffer`.
+    bg_dirty: bool,
+
     #[allow(dead_code)]
     frame: usize,
 
@@ -266,6 +275,9 @@ impl WgpuGridRenderer {
             fg_buffers,
             fg_capacity: [initial_fg_capacity; FRAMES_IN_FLIGHT],
             fg_staging: Vec::new(),
+            fg_live_count: 0,
+            fg_dirty: true,
+            bg_dirty: true,
             frame: 0,
             uniform_buffer,
             bg_bind_group_layout,
@@ -308,6 +320,9 @@ impl WgpuGridRenderer {
             std::array::from_fn(|_| alloc_fg_buffer(&self.device, initial_fg_capacity));
         self.fg_capacity = [initial_fg_capacity; FRAMES_IN_FLIGHT];
         self.needs_full_rebuild = true;
+        self.fg_dirty = true;
+        self.bg_dirty = true;
+        self.fg_live_count = 0;
         self.bg_bind_group = create_bg_bind_group(
             &self.device,
             &self.bg_bind_group_layout,
@@ -321,6 +336,7 @@ impl WgpuGridRenderer {
         if let Some(slot) = self.fg_rows.get_mut(idx) {
             slot.clear();
             slot.extend_from_slice(fg);
+            self.fg_dirty = true;
         }
 
         if row >= self.rows {
@@ -333,11 +349,15 @@ impl WgpuGridRenderer {
         for slot in &mut cpu[row_start + row_len..row_start + self.cols as usize] {
             *slot = CellBg::TRANSPARENT;
         }
+        self.bg_dirty = true;
     }
 
     pub fn clear_row(&mut self, row: u32) {
         let idx = (row as usize) + 1;
         if let Some(slot) = self.fg_rows.get_mut(idx) {
+            if !slot.is_empty() {
+                self.fg_dirty = true;
+            }
             slot.clear();
         }
         if row >= self.rows {
@@ -348,6 +368,7 @@ impl WgpuGridRenderer {
         for slot in &mut cpu[row_start..row_start + self.cols as usize] {
             *slot = CellBg::TRANSPARENT;
         }
+        self.bg_dirty = true;
     }
 
     pub fn lookup_glyph(&self, key: GlyphKey) -> Option<AtlasSlot> {
@@ -380,14 +401,21 @@ impl WgpuGridRenderer {
         render_pass: &mut wgpu::RenderPass<'pass>,
         uniforms: &GridUniforms,
     ) {
-        // Upload uniforms + bg cells.
+        // Uniforms always upload (cheap, and cursor/min_contrast can
+        // change without a row write).
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
-        self.queue.write_buffer(
-            &self.bg_buffers[0],
-            0,
-            bytemuck::cast_slice(&self.bg_cpu[0]),
-        );
+
+        // Skip re-uploading bg cells when no row changed — the GPU
+        // copy is already correct from the previous frame.
+        if self.bg_dirty {
+            self.queue.write_buffer(
+                &self.bg_buffers[0],
+                0,
+                bytemuck::cast_slice(&self.bg_cpu[0]),
+            );
+            self.bg_dirty = false;
+        }
 
         // ---------- bg pass ----------
         render_pass.set_pipeline(&self.bg_pipeline);
@@ -395,25 +423,30 @@ impl WgpuGridRenderer {
         render_pass.draw(0..3, 0..1);
 
         // ---------- text pass ----------
-        self.fg_staging.clear();
-        for row in &self.fg_rows {
-            self.fg_staging.extend_from_slice(row);
+        if self.fg_dirty {
+            self.fg_staging.clear();
+            for row in &self.fg_rows {
+                self.fg_staging.extend_from_slice(row);
+            }
+
+            if self.fg_staging.len() > self.fg_capacity[0] {
+                let new_cap = self.fg_staging.len().next_power_of_two();
+                self.fg_buffers[0] = alloc_fg_buffer(&self.device, new_cap);
+                self.fg_capacity[0] = new_cap;
+            }
+            self.queue.write_buffer(
+                &self.fg_buffers[0],
+                0,
+                bytemuck::cast_slice(&self.fg_staging),
+            );
+            self.fg_live_count = self.fg_staging.len() as u32;
+            self.fg_dirty = false;
         }
-        let instance_count = self.fg_staging.len();
+
+        let instance_count = self.fg_live_count as usize;
         if instance_count == 0 {
             return;
         }
-
-        if self.fg_staging.len() > self.fg_capacity[0] {
-            let new_cap = self.fg_staging.len().next_power_of_two();
-            self.fg_buffers[0] = alloc_fg_buffer(&self.device, new_cap);
-            self.fg_capacity[0] = new_cap;
-        }
-        self.queue.write_buffer(
-            &self.fg_buffers[0],
-            0,
-            bytemuck::cast_slice(&self.fg_staging),
-        );
 
         render_pass.set_pipeline(&self.text_pipeline);
         render_pass.set_bind_group(0, &self.text_uniform_bg, &[]);

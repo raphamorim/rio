@@ -37,6 +37,7 @@ clap = { version = "4.5.42", features = ["derive"] }
 dirs = "6.0.0"
 notify = "8.2.0"
 rustc-hash = { workspace = true }
+rapidhash = { version = "4.4", default-features = false }
 image_rs = { workspace = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }

@@ -1178,6 +1178,107 @@ fn build_utf16_to_utf8_map(text: &str) -> Vec<usize> {
     map
 }
 
+/// UTF-16 shape path. Caller stages its run in UTF-16 already (the
+/// encoding CoreText uses natively), we hand the buffer to
+/// `CFStringCreateWithCharactersNoCopy`, and `ShapedGlyph.cluster`
+/// comes back as a UTF-16 code-unit offset. Skips the UTF-8 → UTF-16
+/// conversion inside `CFString::new` AND the UTF-16 → UTF-8 mapping
+/// pass after CoreText. Mirrors Ghostty's CoreText shaper at
+/// `ghostty/src/font/shaper/coretext.zig:652-680`.
+pub fn shape_text_utf16(
+    handle: &FontHandle,
+    utf16: &[u16],
+    size_px: f32,
+) -> Vec<ShapedGlyph> {
+    if utf16.is_empty() {
+        return Vec::new();
+    }
+
+    let primary_ct_font = handle.base_font.clone_with_font_size(size_px as f64);
+
+    // `NoCopy` with `kCFAllocatorNull` deallocator = CF references our
+    // `utf16` buffer directly; we own it and must keep it alive for
+    // the duration of this call. Both hold on the stack, safe.
+    let cf_string = unsafe {
+        use core_foundation::base::{kCFAllocatorDefault, kCFAllocatorNull, TCFType};
+        use core_foundation::string::{CFString, CFStringCreateWithCharactersNoCopy};
+        let string_ref = CFStringCreateWithCharactersNoCopy(
+            kCFAllocatorDefault,
+            utf16.as_ptr(),
+            utf16.len() as core_foundation::base::CFIndex,
+            kCFAllocatorNull,
+        );
+        if string_ref.is_null() {
+            return Vec::new();
+        }
+        CFString::wrap_under_create_rule(string_ref)
+    };
+
+    let mut attr = CFMutableAttributedString::new();
+    attr.replace_str(&cf_string, CFRange::init(0, 0));
+    let utf16_len = attr.char_len();
+    unsafe {
+        attr.set_attribute(
+            CFRange::init(0, utf16_len),
+            kCTFontAttributeName,
+            &primary_ct_font,
+        );
+    }
+
+    let line = CTLine::new_with_attributed_string(attr.as_concrete_TypeRef());
+    let line_width = line.get_typographic_bounds().width as f32;
+    let glyph_runs = line.glyph_runs();
+    let runs: Vec<CTRun> = glyph_runs.iter().map(|r| (*r).clone()).collect();
+    if runs.is_empty() {
+        return Vec::new();
+    }
+
+    let mut shaped = Vec::new();
+    let mut pen_x = 0.0f32;
+
+    for run_idx in 0..runs.len() {
+        let run = &runs[run_idx];
+        let glyphs = run.glyphs();
+        if glyphs.is_empty() {
+            continue;
+        }
+        let positions = run.positions();
+        let indices = run.string_indices();
+        let n = glyphs.len();
+
+        let after_run_x = runs[run_idx + 1..]
+            .iter()
+            .find_map(|r| r.positions().first().map(|p| p.x as f32))
+            .unwrap_or(line_width);
+
+        for i in 0..n {
+            let pos_x = positions[i].x as f32;
+            let next_x = if i + 1 < n {
+                positions[i + 1].x as f32
+            } else {
+                after_run_x
+            };
+            let advance = next_x - pos_x;
+            let offset_x = pos_x - pen_x;
+            let offset_y = positions[i].y as f32;
+
+            shaped.push(ShapedGlyph {
+                id: glyphs[i],
+                x: offset_x,
+                y: offset_y,
+                advance,
+                // CoreText reports UTF-16 code-unit offsets natively;
+                // the caller keeps a cell-start table in the same
+                // coordinate space for the cluster → cell mapping.
+                cluster: indices[i] as u32,
+            });
+
+            pen_x = next_x;
+        }
+    }
+    shaped
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

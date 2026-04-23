@@ -471,10 +471,14 @@ struct ShapedGlyph {
 }
 
 struct RunCacheEntry {
-    /// Stored so we can verify on lookup. FxHasher 64-bit collisions
-    /// are astronomically rare but not zero; on mismatch we re-shape.
+    /// 64-bit rapidhash of (font_id, size_bucket, style_flags, run bytes).
+    /// We key on the hash alone — no stored run string, no equality
+    /// check on lookup. Matches Ghostty's `CellCacheTable` pattern
+    /// (`font/shaper/Cache.zig:20-30`): rapidhash / wyhash pass
+    /// SMHasher, so a random collision costs a wrong-glyph frame
+    /// until the next row rebuild but never corrupts state. Birthday
+    /// bound at N=10k concurrent cache entries ≈ 2.7×10⁻¹².
     hash: u64,
-    run_str: String,
     glyphs: Vec<ShapedGlyph>,
 }
 
@@ -486,13 +490,28 @@ pub struct GridGlyphRasterizer {
     /// convention.
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
     run_cache: Vec<Vec<RunCacheEntry>>,
-    run_str_scratch: String,
 
-    // macOS: cached CoreText handles per font_id.
+    // macOS: stage the run in UTF-16 (what CoreText wants natively)
+    // so the shaper call can hand the buffer straight to
+    // `CFStringCreateWithCharactersNoCopy` with no encoding
+    // conversion. Matches Ghostty's `coretext.zig:88-104` — UTF-16
+    // `unichars` + a parallel cell-start table for the cluster →
+    // cell mapping.
+    #[cfg(target_os = "macos")]
+    run_utf16_scratch: Vec<u16>,
+    /// On macOS, `run_cell_starts[i]` is the offset (in UTF-16 code
+    /// units) where cell `i` of the run begins inside
+    /// `run_utf16_scratch`. Length = cells in the run. Used to walk
+    /// shaped glyphs back to the cell they belong to.
+    #[cfg(target_os = "macos")]
+    run_cell_starts: Vec<u32>,
+    /// Cached CoreText handles per font_id.
     #[cfg(target_os = "macos")]
     handle_cache: FxHashMap<u32, rio_backend::sugarloaf::font::macos::FontHandle>,
 
-    // non-macOS: swash contexts + cached font bytes per font_id.
+    // non-macOS: swash wants UTF-8, so keep a `String` scratch.
+    #[cfg(not(target_os = "macos"))]
+    run_str_scratch: String,
     #[cfg(not(target_os = "macos"))]
     shape_ctx: rio_backend::sugarloaf::swash::shape::ShapeContext,
     #[cfg(not(target_os = "macos"))]
@@ -523,6 +542,11 @@ impl GridGlyphRasterizer {
             run_cache: (0..RUN_BUCKET_COUNT)
                 .map(|_| Vec::with_capacity(RUN_BUCKET_SIZE))
                 .collect(),
+            #[cfg(target_os = "macos")]
+            run_utf16_scratch: Vec::new(),
+            #[cfg(target_os = "macos")]
+            run_cell_starts: Vec::new(),
+            #[cfg(not(target_os = "macos"))]
             run_str_scratch: String::new(),
             #[cfg(target_os = "macos")]
             handle_cache: FxHashMap::default(),
@@ -589,15 +613,23 @@ fn span_style_for_flags(style_flags: u8) -> rio_backend::sugarloaf::SpanStyle {
     s
 }
 
+/// Rapidhash-based run key. Rapidhash is the official successor to
+/// wyhash (Ghostty's choice at `font/shaper/run.zig:8`) — same
+/// quality, passes SMHasher, near-ideal collision probability. We use
+/// the streaming `Hasher` API so we don't have to glue the inputs
+/// into a single byte slice.
 #[inline]
-fn run_hash(font_id: u32, size_bucket: u16, style_flags: u8, run: &str) -> u64 {
+fn run_hash(font_id: u32, size_bucket: u16, style_flags: u8, run_bytes: &[u8]) -> u64 {
     use core::hash::Hasher;
-    use rustc_hash::FxHasher;
-    let mut h = FxHasher::default();
+    // `fast` flavour = the standard rapidhash algorithm tuned for
+    // throughput. Quality is still SMHasher-passing (near-ideal
+    // collision rate). `quality` is overkill for in-memory cache
+    // keys where we don't need DoS resistance.
+    let mut h = rapidhash::fast::RapidHasher::default();
     h.write_u32(font_id);
     h.write_u16(size_bucket);
     h.write_u8(style_flags);
-    h.write(run.as_bytes());
+    h.write(run_bytes);
     h.finish()
 }
 
@@ -610,17 +642,19 @@ fn is_run_breaker(sq: Square) -> bool {
     ch == '\0' || ch == ' '
 }
 
-/// Lookup. Hash → bucket; scan from most-recent; rotate on hit.
-fn run_cache_get<'a>(
-    buckets: &'a mut [Vec<RunCacheEntry>],
+/// Lookup. Hash → bucket; scan from most-recent; rotate on hit. No
+/// secondary comparison — we trust the 64-bit rapidhash to be
+/// collision-free across realistic workloads. Matches Ghostty
+/// (`font/shaper/Cache.zig:27`).
+fn run_cache_get(
+    buckets: &mut [Vec<RunCacheEntry>],
     hash: u64,
-    run_str: &str,
-) -> Option<&'a [ShapedGlyph]> {
+) -> Option<&[ShapedGlyph]> {
     let idx = (hash as usize) & (RUN_BUCKET_COUNT - 1);
     let bucket = &mut buckets[idx];
     let last = bucket.len().checked_sub(1)?;
     for i in (0..bucket.len()).rev() {
-        if bucket[i].hash == hash && bucket[i].run_str == run_str {
+        if bucket[i].hash == hash {
             if i != last {
                 bucket[i..=last].rotate_left(1);
             }
@@ -671,9 +705,9 @@ fn shape_run_ct(
             );
             m.ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
         });
-    let ct_glyphs = rio_backend::sugarloaf::font::macos::shape_text(
+    let ct_glyphs = rio_backend::sugarloaf::font::macos::shape_text_utf16(
         &handle,
-        &rasterizer.run_str_scratch,
+        &rasterizer.run_utf16_scratch,
         size_u16 as f32,
     );
     let glyphs: Vec<ShapedGlyph> = ct_glyphs
@@ -813,8 +847,23 @@ pub fn build_row_fg(
             rasterizer.resolve_font(ch, run_style_flags, font_library);
         let run_start = x;
 
-        rasterizer.run_str_scratch.clear();
-        rasterizer.run_str_scratch.push(ch);
+        #[cfg(target_os = "macos")]
+        {
+            rasterizer.run_utf16_scratch.clear();
+            rasterizer.run_cell_starts.clear();
+            rasterizer
+                .run_cell_starts
+                .push(rasterizer.run_utf16_scratch.len() as u32);
+            let mut buf = [0u16; 2];
+            rasterizer
+                .run_utf16_scratch
+                .extend_from_slice(ch.encode_utf16(&mut buf));
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            rasterizer.run_str_scratch.clear();
+            rasterizer.run_str_scratch.push(ch);
+        }
 
         // Extend the run while (font_id, style_flags) match.
         let mut end = x + 1;
@@ -833,25 +882,46 @@ pub fn build_row_fg(
             if font_id2 != font_id {
                 break;
             }
-            rasterizer.run_str_scratch.push(ch2);
+            #[cfg(target_os = "macos")]
+            {
+                rasterizer
+                    .run_cell_starts
+                    .push(rasterizer.run_utf16_scratch.len() as u32);
+                let mut buf = [0u16; 2];
+                rasterizer
+                    .run_utf16_scratch
+                    .extend_from_slice(ch2.encode_utf16(&mut buf));
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                rasterizer.run_str_scratch.push(ch2);
+            }
             end += 1;
         }
 
-        let hash = run_hash(
-            font_id,
-            size_bucket,
-            run_style_flags,
-            &rasterizer.run_str_scratch,
-        );
+        #[cfg(target_os = "macos")]
+        let run_bytes: &[u8] = {
+            // Reinterpret the u16 scratch as bytes for the hasher —
+            // same alignment rule as `slice::align_to`, but we know
+            // u16 → u8 is always well-aligned so this is a trivial
+            // cast. Only the byte pattern matters for the hash.
+            let s = &rasterizer.run_utf16_scratch;
+            // Safety: `u16` has stricter alignment than `u8`; the
+            // resulting byte slice aliases `s` read-only for the
+            // lifetime of this borrow.
+            unsafe {
+                core::slice::from_raw_parts(
+                    s.as_ptr() as *const u8,
+                    s.len() * core::mem::size_of::<u16>(),
+                )
+            }
+        };
+        #[cfg(not(target_os = "macos"))]
+        let run_bytes: &[u8] = rasterizer.run_str_scratch.as_bytes();
+        let hash = run_hash(font_id, size_bucket, run_style_flags, run_bytes);
 
         // Shape (cached) and capture ascent for this (font_id, size).
-        let ascent_px = if run_cache_get(
-            &mut rasterizer.run_cache,
-            hash,
-            &rasterizer.run_str_scratch,
-        )
-        .is_some()
-        {
+        let ascent_px = if run_cache_get(&mut rasterizer.run_cache, hash).is_some() {
             // Cache hit — ascent already stored.
             rasterizer
                 .ascent_cache
@@ -871,11 +941,7 @@ pub fn build_row_fg(
             };
             run_cache_put(
                 &mut rasterizer.run_cache,
-                RunCacheEntry {
-                    hash,
-                    run_str: rasterizer.run_str_scratch.clone(),
-                    glyphs,
-                },
+                RunCacheEntry { hash, glyphs },
             );
             ascent_px
         };
@@ -888,25 +954,41 @@ pub fn build_row_fg(
         // Done up-front so we can release borrows on `rasterizer`
         // before the emit loop (which takes `&mut rasterizer` for the
         // rasterize + atlas-insert step).
+        //
+        // Cluster space differs by platform: macOS CoreText reports
+        // UTF-16 code-unit offsets, swash reports UTF-8 byte offsets.
+        // Each backend walks its own cell-position table.
         let glyph_emits: Vec<(u16, u16)> = {
-            let glyphs = run_cache_get(
-                &mut rasterizer.run_cache,
-                hash,
-                &rasterizer.run_str_scratch,
-            )
-            .expect("just inserted");
-            let mut char_cursor = rasterizer.run_str_scratch.char_indices().peekable();
+            let glyphs = run_cache_get(&mut rasterizer.run_cache, hash)
+                .expect("just inserted");
             let mut cell_idx_in_run: u16 = 0;
             let mut out = Vec::with_capacity(glyphs.len());
-            for g in glyphs {
-                while let Some(&(byte_offset, _)) = char_cursor.peek() {
-                    if (byte_offset as u32) >= g.cluster {
-                        break;
+            #[cfg(target_os = "macos")]
+            {
+                let cell_starts = &rasterizer.run_cell_starts;
+                for g in glyphs {
+                    while (cell_idx_in_run as usize + 1) < cell_starts.len()
+                        && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
+                    {
+                        cell_idx_in_run = cell_idx_in_run.saturating_add(1);
                     }
-                    char_cursor.next();
-                    cell_idx_in_run = cell_idx_in_run.saturating_add(1);
+                    out.push((g.id, cell_idx_in_run));
                 }
-                out.push((g.id, cell_idx_in_run));
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let mut char_cursor =
+                    rasterizer.run_str_scratch.char_indices().peekable();
+                for g in glyphs {
+                    while let Some(&(byte_offset, _)) = char_cursor.peek() {
+                        if (byte_offset as u32) >= g.cluster {
+                            break;
+                        }
+                        char_cursor.next();
+                        cell_idx_in_run = cell_idx_in_run.saturating_add(1);
+                    }
+                    out.push((g.id, cell_idx_in_run));
+                }
             }
             out
         };
