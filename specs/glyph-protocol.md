@@ -2,7 +2,7 @@
 
 **Author:** Raphael Amorim
 **Year:** 2026
-**Last updated:** 2026-04-21
+**Last updated:** 2026-04-23
 
 **See also:**
 - Blog post introducing the protocol and its rationale:
@@ -201,18 +201,14 @@ For non-PUA codepoints only `0` and `1` are possible.
 ### 6.1 Request
 
 ```
-ESC _ 25a1 ; r ; cp=<hex|auto> ; fmt=glyf ; reply=<0|1|2> ; upm=<int> ; <base64-payload> ESC \
+ESC _ 25a1 ; r ; cp=<hex> ; fmt=glyf ; reply=<0|1|2> ; upm=<int> ; <base64-payload> ESC \
 ```
 
 Parameters:
 
-- `cp` — target codepoint in hex, OR the literal string `auto` to
-  request terminal-side auto-allocation.
-  - When hex: MUST be in one of the PUA ranges defined in §4.
-    Otherwise the request is rejected with `reason=out_of_namespace`.
-  - When `auto`: the terminal picks a free PUA codepoint, registers
-    the payload there, and echoes the allocated codepoint in the
-    reply's `cp` field. See §6.5.
+- `cp` — target codepoint in hex. MUST be in one of the PUA ranges
+  defined in §4. Otherwise the request is rejected with
+  `reason=out_of_namespace`.
 - `fmt` — payload format. One of `glyf`, `colrv0`, `colrv1`.
   Optional; `glyf` is the default. See §8 for each format's wire
   layout.
@@ -240,9 +236,7 @@ For `reply=1` (the default), successful registrations emit:
 ESC _ 25a1 ; r ; cp=<hex> ; status=0 ESC \
 ```
 
-`cp` is echoed from the request. When the request used `cp=auto`,
-the reply's `cp` is the hex codepoint the terminal allocated (never
-the literal `auto`), so the client can emit it.
+`cp` is echoed from the request.
 
 Failures, when not suppressed by `reply=0`, emit:
 
@@ -263,8 +257,6 @@ Defined error codes:
 | `hinting_unsupported`   | Payload contains hinting instructions. |
 | `malformed_payload`     | Payload failed to parse as `glyf`. |
 | `payload_too_large`     | Payload exceeds 64 KiB post-base64-decode. |
-| `auto_unsupported`      | `cp=auto` was requested but this terminal does not implement auto-allocation. |
-| `glossary_exhausted`    | `cp=auto` was requested and no free PUA codepoint was available (see §6.5). |
 
 ### 6.3 Overwrite and eviction
 
@@ -283,59 +275,6 @@ before emitting if they cannot tolerate silent eviction.
 Registrations live for the duration of the terminal session. A
 terminal reset (e.g. `ESC c`) MAY clear the entire glossary.
 Registrations MUST NOT persist across terminal restarts.
-
-### 6.5 Auto-allocation (`cp=auto`)
-
-`cp=auto` asks the terminal to pick the codepoint on the client's
-behalf. It exists so applications that do not care *which* PUA
-slot their icon lands at — the common case — do not have to hand-
-pick a codepoint, coordinate with other apps, or hardcode a range.
-
-**Allocation.** On `cp=auto` the terminal MUST allocate a codepoint
-that:
-
-1. Is in one of the three PUA ranges defined in §4.
-2. Is not currently registered in this session's glossary.
-
-Terminals SHOULD allocate from Supplementary PUA-B
-(`U+100000`–`U+10FFFD`) by default, because that range has no
-existing convention — no Nerd Font, Powerline, or Font Awesome
-mapping — so the allocated codepoint is unambiguously the
-registration's, not a system font's. The exact allocation strategy
-(sequential, random, recycled on clear) is implementation-defined;
-clients MUST NOT assume any particular ordering.
-
-**Reply.** The allocated codepoint is communicated to the client
-via the `cp=<hex>` field of the success reply (§6.2). Because the
-client has no other way to learn which codepoint was allocated,
-`cp=auto` MUST produce a reply regardless of the `reply` parameter:
-
-- `reply=1` (default) — normal success/failure replies. No change.
-- `reply=2` — the terminal MUST still emit the success reply for
-  `cp=auto` requests, because the allocated codepoint is carried
-  in it. For non-`auto` registrations in the same stream `reply=2`
-  still suppresses success ACKs as specified in §6.1.
-- `reply=0` — the terminal MUST still emit the success reply for
-  `cp=auto` requests for the same reason. A client that genuinely
-  wants fire-and-forget registration cannot use `cp=auto`; it must
-  pick its own codepoint.
-
-**Allocation failure.** If every PUA codepoint in the terminal's
-chosen allocation pool is already registered, the terminal MAY
-either evict the oldest registration in FIFO order (as with
-explicit `cp`, §6.3) and reuse that slot, or reject the request
-with `reason=glossary_exhausted`. With the default 1024-slot cap
-and ~64K codepoints in PUA-B alone, exhaustion is not reachable
-in practice; the error code exists so non-default allocation
-strategies (e.g. a small reserved window) remain conformant.
-
-**Unsupported.** Terminals that implement Glyph Protocol v1.4 or
-earlier will not recognise `cp=auto` and will most likely reject
-the request with `reason=malformed_payload` (the value fails hex
-parsing). Terminals that understand `cp=auto` but choose not to
-implement it SHOULD reject with `reason=auto_unsupported` so
-clients can distinguish a protocol-level "no" from a payload
-error and fall back to hand-picking a codepoint.
 
 ## 7. Clear (`c`)
 
@@ -590,9 +529,7 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
    defined in this specification, and advertises every accepted
    payload format via the `fmt=` bitfield in the `s` reply.
 3. Restricts register/clear `cp` to the three PUA ranges; rejects
-   anything else with `reason=out_of_namespace`. Accepts `cp=auto`
-   on `r` and allocates a free PUA codepoint per §6.5, OR rejects
-   with `reason=auto_unsupported`.
+   anything else with `reason=out_of_namespace`.
 4. Holds at most 1024 simultaneous registrations per session and
    evicts in FIFO order when full.
 5. Accepts the `glyf` simple-glyph subset defined in §8.2. The
@@ -724,3 +661,4 @@ rather than serving a stale bitmap.
 | 2026-04-19 | v1.3    | Added `reply=0|1|2` parameter to the `r` verb so bulk registrations can suppress success ACKs (`reply=2`) or go fully fire-and-forget (`reply=0`). Default `reply=1` preserves v1.0 behaviour. |
 | 2026-04-19 | v1.4    | Raised the glossary capacity from 256 to 1024 simultaneous registrations per session, and raised the `n_glyphs` cap in `fmt=colrv0`/`colrv1` containers from 256 to 1024 outlines. Both bumps quadruple the worst-case memory footprint; the 64 KiB per-payload cap is unchanged. |
 | 2026-04-21 | v1.5    | Added `cp=auto` to the `r` verb: the terminal allocates a free PUA codepoint (SHOULD come from PUA-B) and echoes it in the success reply so the client can emit it. Added `reason=auto_unsupported` and `reason=glossary_exhausted` error codes. `cp=auto` forces a success reply regardless of `reply=0|2` because the allocated codepoint is only carried in the reply. |
+| 2026-04-23 | v1.6    | Removed `cp=auto` from the `r` verb (introduced in v1.5). Auto-allocation forced a stateful round-trip reply the client depended on to learn its codepoint, which recording tools like `asciinema` and `tee` cannot capture or replay — making `cp=auto` output impossible to reproduce from a transcript. Clients must pick their own PUA codepoint. The `auto_unsupported` and `glossary_exhausted` error codes are withdrawn. |
