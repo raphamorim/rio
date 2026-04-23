@@ -453,7 +453,13 @@ impl GridGlyphRasterizer {
             .entry((ch, style_flags))
             .or_insert_with(|| {
                 let span_style = span_style_for_flags(style_flags);
+                #[cfg(target_os = "macos")]
                 let (id, emoji) = font_library.resolve_font_for_char(ch, &span_style);
+                #[cfg(not(target_os = "macos"))]
+                let (id, emoji) = {
+                    let lib = font_library.inner.read();
+                    lib.find_best_font_match(ch, &span_style).unwrap_or((0, false))
+                }
                 (id as u32, emoji)
             })
     }

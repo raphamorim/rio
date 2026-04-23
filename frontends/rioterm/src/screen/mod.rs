@@ -89,7 +89,6 @@ pub struct Screen<'screen> {
     /// Per-window glyph rasterizer shared across panels. Owns a
     /// char → font resolution cache; the per-panel atlas lives on
     /// each `GridRenderer`.
-    #[cfg(target_os = "macos")]
     pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
 }
 
@@ -301,7 +300,6 @@ impl Screen<'_> {
             last_ime_cursor_pos: None,
             resize_state: None,
             grids: rustc_hash::FxHashMap::default(),
-            #[cfg(target_os = "macos")]
             grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
         })
     }
