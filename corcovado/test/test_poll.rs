@@ -1,6 +1,14 @@
+//! Tests for Poll functionality
+//!
+//! These tests verify the core Poll event notification mechanism.
+
 use corcovado::*;
 use std::time::Duration;
 
+/// Tests that Poll correctly closes file descriptors.
+/// 
+/// This test creates and drops Poll instances repeatedly to ensure
+/// that file descriptors are properly released and no resource leaks occur.
 #[test]
 fn test_poll_closes_fd() {
     for _ in 0..2000 {
@@ -18,3 +26,4 @@ fn test_poll_closes_fd() {
         drop(registration);
     }
 }
+
