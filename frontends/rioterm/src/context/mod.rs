@@ -757,7 +757,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &mut self,
         route_id: usize,
     ) -> Option<&mut ContextGridItem<T>> {
-        self.contexts[self.current_index].get_by_route_id(route_id)
+        // Search all grids, not just the current one: damage events from
+        // background tabs must still reach their own panel so dirty flags
+        // accumulate and the terminal's damage_event_in_flight can be reset
+        // on the next render. Looking only at the current grid silently
+        // drops those events and leaves the background terminal's
+        // in_flight=true, which blocks subsequent notifications even after
+        // the tab is brought back to the foreground.
+        self.contexts
+            .iter_mut()
+            .find_map(|grid| grid.get_by_route_id(route_id))
     }
 
     #[inline]
