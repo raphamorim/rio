@@ -174,10 +174,7 @@ impl Sugarloaf<'_> {
 
         let font_cache = FontCache::new();
 
-        let mut text = crate::text::Text::new(
-            #[cfg(target_os = "macos")]
-            font_library,
-        );
+        let mut text = crate::text::Text::new(font_library);
         text.set_scale_factor(state.style.scale_factor);
 
         let instance = Sugarloaf {
@@ -1161,6 +1158,23 @@ impl Sugarloaf<'_> {
                     }
 
                     self.renderer.render(ctx, &mut rpass);
+
+                    // UI text pass (swash-backed). Lazy-init the
+                    // wgpu pipeline + atlases on the first frame.
+                    // The wgpu text backend is compiled only on
+                    // non-macOS; macOS uses Metal. If a wgpu context
+                    // is ever selected on macOS, text renders via
+                    // the Metal path from a different sugarloaf
+                    // call instead (today macOS always takes the
+                    // Metal branch).
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        self.text.init_wgpu(&ctx.device, &ctx.queue, ctx.format);
+                        self.text.render_wgpu(
+                            &mut rpass,
+                            [ctx.size.width as f32, ctx.size.height as f32],
+                        );
+                    }
                 }
 
                 if let Some(ref mut filters_brush) = self.filters_brush {
