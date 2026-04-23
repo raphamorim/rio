@@ -48,8 +48,6 @@ pub struct Sugarloaf<'a> {
     text: crate::text::Text,
     /// Per-panel (rich_text_id) image overlays. Driven by the kitty
     /// graphics frontend path; read by the renderer's image pass.
-    /// Replaces the old `BuilderState.image_overlays` storage — keeps
-    /// panel overlays alive while the Content system is stripped.
     pub image_overlays:
         rustc_hash::FxHashMap<usize, Vec<crate::sugarloaf::graphics::GraphicOverlay>>,
 }
