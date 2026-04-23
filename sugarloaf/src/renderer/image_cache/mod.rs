@@ -1,11 +1,9 @@
 pub(crate) mod atlas;
 mod cache;
-pub mod glyph;
 
 use std::sync::Arc;
 
 pub use cache::ImageCache;
-pub use glyph::GlyphCache;
 
 /// Identifier for an image in a cache.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

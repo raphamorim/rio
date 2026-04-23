@@ -46,6 +46,12 @@ pub struct Sugarloaf<'a> {
     /// `memory/project_sugarloaf_content_drop.md`. Phase 1a: scaffold
     /// only — holds no atlases or GPU state yet.
     text: crate::text::Text,
+    /// Per-panel (rich_text_id) image overlays. Driven by the kitty
+    /// graphics frontend path; read by the renderer's image pass.
+    /// Replaces the old `BuilderState.image_overlays` storage — keeps
+    /// panel overlays alive while the Content system is stripped.
+    pub image_overlays:
+        rustc_hash::FxHashMap<usize, Vec<crate::sugarloaf::graphics::GraphicOverlay>>,
 }
 
 #[derive(Debug)]
@@ -189,6 +195,7 @@ impl Sugarloaf<'_> {
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
             font_cache,
             text,
+            image_overlays: rustc_hash::FxHashMap::default(),
         };
 
         Ok(instance)
@@ -542,83 +549,6 @@ impl Sugarloaf<'_> {
         }
     }
 
-    /// Get mutable reference to text content by id (for cached text)
-    #[inline]
-    pub fn get_text_mut(
-        &mut self,
-        id: usize,
-    ) -> Option<&mut crate::layout::BuilderState> {
-        self.state.content.get_text_by_id_mut(id)
-    }
-
-    /// Get mutable reference to transient text by index
-    #[inline]
-    pub fn get_transient_text_mut(
-        &mut self,
-        index: usize,
-    ) -> Option<&mut crate::layout::BuilderState> {
-        self.state.content.get_transient_text_mut(index)
-    }
-
-    /// Set font size for transient text
-    #[inline]
-    pub fn set_transient_text_font_size(&mut self, index: usize, font_size: f32) {
-        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            if let Some(text_state) = content_state.as_text_mut() {
-                text_state.layout.font_size = font_size;
-                text_state.scaled_font_size = font_size * self.state.style.scale_factor;
-            }
-            content_state.render_data.needs_repaint = true;
-        }
-    }
-
-    /// Set position for transient text
-    #[inline]
-    pub fn set_transient_position(&mut self, index: usize, x: f32, y: f32) {
-        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            content_state.render_data.set_position(
-                x * self.state.style.scale_factor,
-                y * self.state.style.scale_factor,
-            );
-        }
-    }
-
-    /// Set visibility for transient text
-    #[inline]
-    pub fn set_transient_visibility(&mut self, index: usize, visible: bool) {
-        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            content_state.render_data.set_hidden(!visible);
-        }
-    }
-
-    /// Set whether to use grid cell size for glyph positioning (cached text)
-    /// - true: monospace grid alignment (default, for terminal)
-    /// - false: proportional text using actual glyph advances (for rich text)
-    #[inline]
-    pub fn set_use_grid_cell_size(&mut self, id: usize, use_grid: bool) {
-        if let Some(content_state) = self.state.content.states.get_mut(&id) {
-            content_state.render_data.use_grid_cell_size = use_grid;
-        }
-    }
-
-    /// Set the render order for a transient text element.
-    #[inline]
-    pub fn set_transient_order(&mut self, index: usize, order: u8) {
-        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            content_state.render_data.order = order;
-        }
-    }
-
-    /// Set whether to use grid cell size for glyph positioning (transient text)
-    /// - true: monospace grid alignment (default, for terminal)
-    /// - false: proportional text using actual glyph advances (for rich text)
-    #[inline]
-    pub fn set_transient_use_grid_cell_size(&mut self, index: usize, use_grid: bool) {
-        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            content_state.render_data.use_grid_cell_size = use_grid;
-        }
-    }
-
     /// Get the next available ID for cached content.
     /// Returns the highest key + 1 (wrapping on overflow).
     /// Useful for dynamically allocating IDs without hardcoded constants.
@@ -954,6 +884,30 @@ impl Sugarloaf<'_> {
         &mut self.text
     }
 
+    /// Register an image overlay anchored to `panel_id` (a
+    /// `rich_text_id`). Driven by the kitty graphics frontend; read
+    /// by the renderer's image pass.
+    #[inline]
+    pub fn push_image_overlay(
+        &mut self,
+        panel_id: usize,
+        overlay: crate::sugarloaf::graphics::GraphicOverlay,
+    ) {
+        self.image_overlays
+            .entry(panel_id)
+            .or_default()
+            .push(overlay);
+    }
+
+    /// Drop all overlays for `panel_id`. Called by the frontend when
+    /// placements are removed or the kitty graphics cache clears.
+    #[inline]
+    pub fn clear_image_overlays_for(&mut self, panel_id: usize) {
+        if let Some(v) = self.image_overlays.get_mut(&panel_id) {
+            v.clear();
+        }
+    }
+
     /// Get text dimensions. Returns None if id is not text
     /// Get the total rendered width of text content by summing glyph advances.
     /// Returns the width in logical (unscaled) pixels.
@@ -1046,6 +1000,7 @@ impl Sugarloaf<'_> {
             &mut self.ctx,
             &mut self.graphics,
             &mut self.image_data,
+            &self.image_overlays,
         );
 
         match self.ctx.inner {
