@@ -9,7 +9,7 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
-use crate::font_introspector::{GlyphId, NormalizedCoord};
+use swash::{GlyphId, NormalizedCoord};
 use crate::layout::SpanStyleDecoration;
 use crate::sugarloaf::primitives::{DrawableChar, SugarCursor};
 

@@ -1,14 +1,14 @@
 use super::cache::ImageCache;
 use super::{AddImage, ImageData, ImageId, ImageLocation};
 use crate::font::FontLibrary;
-use crate::font_introspector::scale::{
+use swash::scale::{
     image::{Content, Image as GlyphImage},
     *,
 };
 #[cfg(not(target_os = "macos"))]
-use crate::font_introspector::zeno::Format;
+use swash::zeno::Format;
 #[cfg(not(target_os = "macos"))]
-use crate::font_introspector::FontRef;
+use swash::FontRef;
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
 use rustc_hash::FxHashMap;

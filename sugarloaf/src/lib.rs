@@ -2,17 +2,20 @@ pub mod components;
 pub mod context;
 pub mod font;
 mod font_cache;
-pub mod font_introspector;
 pub mod grid;
 pub mod layout;
 pub mod renderer;
 mod sugarloaf;
 pub mod text;
 
+// Re-export upstream swash so call sites can use `sugarloaf::swash::*`.
+// This path was used by the in-tree fork; preserve it for stability.
+pub use swash;
+
 // Expose WGPU
 pub use wgpu;
 
-pub use font_introspector::{Attributes, Stretch, Style, Weight};
+pub use swash::{Attributes, Stretch, Style, Weight};
 
 pub use crate::font_cache::ResolvedGlyph;
 pub use crate::sugarloaf::{

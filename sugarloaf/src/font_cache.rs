@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::font_introspector::Attributes;
+use swash::Attributes;
 use crate::sugarloaf::primitives::is_private_user_area;
 use crate::SpanStyle;
 use rustc_hash::FxHashMap;
@@ -155,9 +155,9 @@ pub(crate) fn compute_advance(
     ch: char,
 ) -> Option<AdvanceInfo> {
     let (data, offset, _key) = font_ctx.get_data(&font_id)?;
-    let font_ref = crate::font_introspector::FontRef::from_index(&data, offset as usize)?;
+    let font_ref = swash::FontRef::from_index(&data, offset as usize)?;
     let glyph_id = font_ref.charmap().map(ch as u32);
-    let metrics = crate::font_introspector::GlyphMetrics::from_font(&font_ref, &[]);
+    let metrics = swash::GlyphMetrics::from_font(&font_ref, &[]);
     Some(AdvanceInfo {
         advance_units: metrics.advance_width(glyph_id),
         units_per_em: font_ref.metrics(&[]).units_per_em,

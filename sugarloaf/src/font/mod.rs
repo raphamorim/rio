@@ -17,12 +17,12 @@ pub const FONT_ID_REGULAR: usize = 0;
 use crate::font::constants::*;
 use crate::font::fonts::{parse_unicode, SugarloafFontStyle, SugarloafFontWidth};
 use crate::font::metrics::{FaceMetrics, Metrics};
-use crate::font_introspector::text::cluster::Parser;
-use crate::font_introspector::text::cluster::Token;
-use crate::font_introspector::text::cluster::{CharCluster, Status};
-use crate::font_introspector::text::Codepoint;
-use crate::font_introspector::text::Script;
-use crate::font_introspector::{tag_from_bytes, CacheKey, FontRef, Synthesis};
+use swash::text::cluster::Parser;
+use swash::text::cluster::Token;
+use swash::text::cluster::{CharCluster, Status};
+use swash::text::Codepoint;
+use swash::text::Script;
+use swash::{tag_from_bytes, CacheKey, FontRef, Synthesis};
 use crate::layout::SpanStyle;
 use crate::SugarloafErrors;
 use dashmap::DashMap;
@@ -32,7 +32,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
-pub use crate::font_introspector::{Style, Weight};
+pub use swash::{Style, Weight};
 
 /// Cross-platform shim: non-macOS threads `&loader::Database` through to
 /// `find_font`; macOS drops it since CoreText handles matching directly and
@@ -78,7 +78,7 @@ pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
     synth: &mut Synthesis,
     library: &FontLibraryData,
-    spec_font_attr_opt: Option<&(crate::font_introspector::Style, bool)>,
+    spec_font_attr_opt: Option<&(swash::Style, bool)>,
 ) -> Option<(usize, bool)> {
     let mut search_result = None;
     let mut font_synth = Synthesis::default();
@@ -936,9 +936,9 @@ pub struct FontData {
     offset: u32,
     // Cache key
     pub key: CacheKey,
-    pub weight: crate::font_introspector::Weight,
-    pub style: crate::font_introspector::Style,
-    pub stretch: crate::font_introspector::Stretch,
+    pub weight: swash::Weight,
+    pub style: swash::Style,
+    pub stretch: swash::Stretch,
     pub synth: Synthesis,
     pub should_embolden: bool,
     pub should_italicize: bool,
@@ -1047,15 +1047,13 @@ impl FontData {
 
         // Calculate metrics if not cached
         if let Some(ref data) = self.data {
-            let font_ref = crate::font_introspector::FontRef {
+            let font_ref = swash::FontRef {
                 data: data.as_ref(),
                 offset: self.offset,
                 key: self.key,
             };
 
-            let font_metrics =
-                crate::font_introspector::Metrics::from_font(&font_ref, &[]);
-            let scaled_metrics = font_metrics.scale(font_size);
+            let scaled_metrics = font_ref.metrics(&[]).scale(font_size);
 
             // Use the unified method that always includes CJK measurement
             let face_metrics = FaceMetrics::from_font(&font_ref, &scaled_metrics);
@@ -1160,11 +1158,11 @@ impl FontData {
     pub fn from_ctfont_macos(handle: crate::font::macos::FontHandle) -> Self {
         let attrs = crate::font::macos::font_attributes(&handle);
         let style = if attrs.is_italic {
-            crate::font_introspector::Style::Italic
+            swash::Style::Italic
         } else {
-            crate::font_introspector::Style::Normal
+            swash::Style::Normal
         };
-        let weight = crate::font_introspector::Weight(attrs.weight);
+        let weight = swash::Weight(attrs.weight);
         Self {
             data: None,
             path: None,
@@ -1172,7 +1170,7 @@ impl FontData {
             key: CacheKey::new(),
             weight,
             style,
-            stretch: crate::font_introspector::Stretch::NORMAL,
+            stretch: swash::Stretch::NORMAL,
             synth: Synthesis::default(),
             should_embolden: false,
             should_italicize: false,
@@ -1192,11 +1190,11 @@ impl FontData {
         let attrs = crate::font::macos::font_attributes(&handle);
 
         let style = if attrs.is_italic {
-            crate::font_introspector::Style::Italic
+            swash::Style::Italic
         } else {
-            crate::font_introspector::Style::Normal
+            swash::Style::Normal
         };
-        let weight = crate::font_introspector::Weight(attrs.weight);
+        let weight = swash::Weight(attrs.weight);
 
         let should_italicize =
             font_spec.style == SugarloafFontStyle::Italic && !attrs.is_italic;
@@ -1209,7 +1207,7 @@ impl FontData {
             key: CacheKey::new(),
             weight,
             style,
-            stretch: crate::font_introspector::Stretch::NORMAL,
+            stretch: swash::Stretch::NORMAL,
             synth: Synthesis::default(),
             should_embolden,
             should_italicize,
@@ -1562,7 +1560,7 @@ fn load_from_font_source(path: &PathBuf) -> Option<SharedData> {
 
     // Memory-map the file rather than reading it into a `Vec<u8>`. The
     // kernel backs the bytes with the font file and only pages in what
-    // font_introspector's charmap / metrics queries actually touch, so a
+    // swash's charmap / metrics queries actually touch, so a
     // large fallback (e.g. a CJK font, an emoji file) costs negligible
     // resident RAM instead of its full on-disk size. Mmap is unsafe
     // because the file can change underneath us or the mapping can fault;

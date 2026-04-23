@@ -27,7 +27,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
-use rio_backend::sugarloaf::font_introspector::Attributes;
+use rio_backend::sugarloaf::swash::Attributes;
 use rio_backend::sugarloaf::{
     drawable_character, is_private_user_area, CursorKind, Graphic, SpanStyle,
     SpanStyleDecoration, Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo,
@@ -521,7 +521,7 @@ impl Renderer {
                 }
 
                 // Make hint labels bold for better visibility
-                use rio_backend::sugarloaf::font_introspector::{Attributes, Weight};
+                use rio_backend::sugarloaf::swash::{Attributes, Weight};
                 let current_attrs = style.font_attrs;
                 style.font_attrs = Attributes::new(
                     current_attrs.stretch(),
