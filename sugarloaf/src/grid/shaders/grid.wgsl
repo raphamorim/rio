@@ -241,3 +241,4 @@ fn grid_text_fragment(in: TextVsOut) -> @location(0) vec4<f32> {
         return textureLoad(atlas_color, ic, 0);
     }
 }
+
