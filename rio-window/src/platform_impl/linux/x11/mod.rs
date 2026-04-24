@@ -145,8 +145,12 @@ pub struct ActiveEventLoop {
     redraw_sender: WakeSender<WindowId>,
     activation_sender: WakeSender<ActivationToken>,
     device_events: Cell<DeviceEvents>,
-    /// Timestamp of the most recent input event.
-    last_input_timestamp: Cell<std::time::Instant>,
+    /// Rate-gated post-input sustain tracker. Only sustained high-rate
+    /// input (≥ 60 events/sec over 100 ms) extends the 1-second
+    /// presentation window — single keystrokes don't. See
+    /// `platform_impl::input_rate`.
+    input_rate_tracker:
+        RefCell<crate::platform_impl::input_rate::InputRateTracker>,
     /// Shared with `EventLoopState` and every window. Set by
     /// `request_redraw`, checked by `has_pending`, cleared by
     /// the vsync tick after fanning out.
@@ -351,7 +355,9 @@ impl<T: 'static> EventLoop<T> {
                 waker: waker.clone(),
             },
             device_events: Default::default(),
-            last_input_timestamp: Cell::new(std::time::Instant::now()),
+            input_rate_tracker: RefCell::new(
+                crate::platform_impl::input_rate::InputRateTracker::new(),
+            ),
             redraw_flag: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             waker: waker.clone(),
         };
@@ -749,12 +755,12 @@ impl<T> AsRawFd for EventLoop<T> {
 impl ActiveEventLoop {
     #[inline]
     pub(crate) fn mark_input_received(&self) {
-        self.last_input_timestamp.set(std::time::Instant::now());
+        self.input_rate_tracker.borrow_mut().record_input();
     }
 
     #[inline]
     pub(crate) fn should_present_after_input(&self) -> bool {
-        self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
+        self.input_rate_tracker.borrow().is_high_rate()
     }
 
     /// Returns the `XConnection` of this events loop.
