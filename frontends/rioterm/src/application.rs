@@ -301,6 +301,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             // Just mark dirty — damage will be extracted from
                             // the terminal when the renderer locks it.
                             ctx_item.val.renderable_content.pending_update.set_dirty();
+                            // Skip the scheduler timer (only firable from
+                            // `about_to_wait`, which the IME key-repeat
+                            // message flood starves) and request the
+                            // paint directly. Vblank pacing stays with
+                            // the VSync worker.
                             route.request_redraw();
                         }
                     }

@@ -979,6 +979,13 @@ static EXEC_MSG_ID: LazyMessageId = LazyMessageId::new("Winit::ExecMsg\0");
 // WPARAM and LPARAM are unused.
 pub(crate) static DESTROY_MSG_ID: LazyMessageId =
     LazyMessageId::new("Winit::DestroyMsg\0");
+// Message posted by `Window::request_redraw` to drive a paint via the
+// normal posted-message queue. Sustained input (IME key repeat) can
+// starve the low-priority `WM_PAINT` slot until key release; a regular
+// registered message interleaves with input and reaches the WndProc
+// per-frame. WPARAM and LPARAM are unused.
+pub(crate) static REDRAW_REQUESTED_MSG_ID: LazyMessageId =
+    LazyMessageId::new("Winit::RedrawRequested\0");
 // WPARAM is a bool specifying the `WindowFlags::MARKER_RETAIN_STATE_ON_SIZE` flag. See the
 // documentation in the `window_state` module for more information.
 pub(crate) static SET_RETAIN_STATE_ON_SIZE_MSG_ID: LazyMessageId =
@@ -2652,6 +2659,18 @@ unsafe fn public_window_callback_inner(
                 window_state.set_window_flags_in_place(|f| {
                     f.set(WindowFlags::MARKER_RETAIN_STATE_ON_SIZE, wparam != 0)
                 });
+                result = ProcResult::Value(0);
+            } else if msg == REDRAW_REQUESTED_MSG_ID.get() {
+                // If we're nested inside another handler, defer to the
+                // buffered-event flush via `redraw_requested`.
+                if !userdata.event_loop_runner.should_buffer() {
+                    userdata.send_event(Event::WindowEvent {
+                        window_id: RootWindowId(WindowId(window)),
+                        event: WindowEvent::RedrawRequested,
+                    });
+                } else {
+                    userdata.window_state_lock().redraw_requested = true;
+                }
                 result = ProcResult::Value(0);
             } else if msg == TASKBAR_CREATED.get() {
                 let window_state = userdata.window_state_lock();
