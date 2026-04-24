@@ -25,6 +25,11 @@ pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
     renderer: Renderer,
     state: state::SugarState,
+    /// Input colorspace configured at construction. Exposed via
+    /// `input_colorspace()` so the grid renderer can feed the same
+    /// value into its own uniform — keeps grid + quad-fill pipelines
+    /// producing byte-identical framebuffer colors.
+    colorspace: Colorspace,
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
@@ -184,6 +189,7 @@ impl Sugarloaf<'_> {
         let instance = Sugarloaf {
             state,
             ctx,
+            colorspace,
             background_color: Some(wgpu::Color::BLACK),
             background_image: None,
             renderer,
@@ -197,6 +203,18 @@ impl Sugarloaf<'_> {
         };
 
         Ok(instance)
+    }
+
+    /// Encoding for `GridUniforms.input_colorspace` — same mapping
+    /// the Metal quad pipeline uses:
+    ///   0 = sRGB, 1 = DisplayP3, 2 = Rec.2020.
+    #[inline]
+    pub fn input_colorspace(&self) -> u32 {
+        match self.colorspace {
+            Colorspace::Srgb => 0,
+            Colorspace::DisplayP3 => 1,
+            Colorspace::Rec2020 => 2,
+        }
     }
 
     #[inline]

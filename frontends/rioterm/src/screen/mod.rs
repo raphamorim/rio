@@ -3574,6 +3574,12 @@ impl Screen<'_> {
             let window_size = self.sugarloaf.window_size();
             let font_library = self.sugarloaf.font_library().clone();
             let bg_col = self.renderer.named_colors.background.0;
+            // Same `input_colorspace` value the Metal quad pipeline
+            // feeds into `Globals` — the grid shader applies the
+            // matching sRGB → DisplayP3 transform so cell bg, window
+            // fill, and UI overlays produce identical framebuffer
+            // colors. Matches Ghostty's single `load_color` path.
+            let input_colorspace = self.sugarloaf.input_colorspace();
             let cursor_col_rgba = self.renderer.named_colors.cursor;
 
             let mut frame_grids: Vec<(
@@ -3758,7 +3764,7 @@ impl Screen<'_> {
                     min_contrast: 0.0,
                     flags: 0,
                     padding_extend: 0,
-                    _pad_tail: 0,
+                    input_colorspace,
                 };
 
                 frame_grids.push((grid, uniforms));

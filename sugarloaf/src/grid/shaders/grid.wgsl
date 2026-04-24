@@ -21,19 +21,62 @@
 // `sugarloaf/src/grid/webgpu.rs`.
 
 struct Uniforms {
-    projection:      mat4x4<f32>,   // offset   0
-    grid_padding:    vec4<f32>,     //        64
-    cursor_color:    vec4<f32>,     //        80
-    cursor_bg_color: vec4<f32>,     //        96
-    cell_size:       vec2<f32>,     //       112
-    grid_size:       vec2<u32>,     //       120
-    cursor_pos:      vec2<u32>,     //       128
-    _pad_cursor:     vec2<u32>,     //       136
-    min_contrast:    f32,           //       144
-    flags:           u32,           //       148
-    padding_extend:  u32,           //       152
-    _pad_tail:       u32,           //       156
+    projection:       mat4x4<f32>,   // offset   0
+    grid_padding:     vec4<f32>,     //        64
+    cursor_color:     vec4<f32>,     //        80
+    cursor_bg_color:  vec4<f32>,     //        96
+    cell_size:        vec2<f32>,     //       112
+    grid_size:        vec2<u32>,     //       120
+    cursor_pos:       vec2<u32>,     //       128
+    _pad_cursor:      vec2<u32>,     //       136
+    min_contrast:     f32,           //       144
+    flags:            u32,           //       148
+    padding_extend:   u32,           //       152
+    input_colorspace: u32,           //       156
 };
+
+// Color space / transfer curve helpers. Matrices match the Metal
+// peer (`grid.metal`) and `sugarloaf/src/renderer/renderer.metal`,
+// so grid + quad pipelines produce byte-identical framebuffer values.
+// WGSL has no `select` with a `bool3` mask returning vec3, so we use
+// the scalar `select` per-component via a helper.
+fn grid_srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    let lo = c / 12.92;
+    let hi = pow((c + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
+    return select(lo, hi, c > vec3<f32>(0.04045));
+}
+
+fn grid_linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let lo = c * 12.92;
+    let hi = pow(c, vec3<f32>(1.0 / 2.4)) * vec3<f32>(1.055) - vec3<f32>(0.055);
+    return select(lo, hi, c > vec3<f32>(0.0031308));
+}
+
+fn grid_srgb_to_p3(linear_srgb: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        dot(linear_srgb, vec3<f32>(0.82246197, 0.17753803, 0.0)),
+        dot(linear_srgb, vec3<f32>(0.03319420, 0.96680580, 0.0)),
+        dot(linear_srgb, vec3<f32>(0.01708263, 0.07239744, 0.91051993))
+    );
+}
+
+fn grid_rec2020_to_p3(linear_r2020: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        dot(linear_r2020, vec3<f32>( 1.34357825, -0.28217967, -0.06139858)),
+        dot(linear_r2020, vec3<f32>(-0.06529745,  1.08782226, -0.02252481)),
+        dot(linear_r2020, vec3<f32>( 0.00282179, -0.02598807,  1.02316628))
+    );
+}
+
+fn grid_prepare_output_rgb(srgb: vec3<f32>, input_colorspace: u32) -> vec3<f32> {
+    var lin = grid_srgb_to_linear(srgb);
+    if (input_colorspace == 0u) {
+        lin = grid_srgb_to_p3(lin);
+    } else if (input_colorspace == 2u) {
+        lin = grid_rec2020_to_p3(lin);
+    }
+    return grid_linear_to_srgb(lin);
+}
 
 const PAD_EXTEND_LEFT:  u32 = 1u;
 const PAD_EXTEND_RIGHT: u32 = 2u;
@@ -126,12 +169,26 @@ fn grid_bg_fragment(in: VsOut) -> @location(0) vec4<f32> {
     if (uniforms.cursor_bg_color.a > 0.0
         && orig_grid_pos.x == i32(uniforms.cursor_pos.x)
         && orig_grid_pos.y == i32(uniforms.cursor_pos.y)) {
+        let rgb = grid_prepare_output_rgb(
+            uniforms.cursor_bg_color.rgb,
+            uniforms.input_colorspace,
+        );
         let a = uniforms.cursor_bg_color.a;
-        return vec4<f32>(uniforms.cursor_bg_color.rgb * a, a);
+        return vec4<f32>(rgb * a, a);
     }
 
+    // Load cell, convert to output color space, then premultiply.
+    // Same pipeline as the quad fill in `sugarloaf/src/renderer/renderer.metal`
+    // so the grid and window-fill paths produce identical framebuffer
+    // values.
     let idx = u32(grid_pos.y) * uniforms.grid_size.x + u32(grid_pos.x);
-    return load_cell_bg(idx);
+    let word = cells[idx];
+    let r = f32((word >>  0u) & 0xFFu) / 255.0;
+    let g = f32((word >>  8u) & 0xFFu) / 255.0;
+    let b = f32((word >> 16u) & 0xFFu) / 255.0;
+    let a = f32((word >> 24u) & 0xFFu) / 255.0;
+    let rgb = grid_prepare_output_rgb(vec3<f32>(r, g, b), uniforms.input_colorspace);
+    return vec4<f32>(rgb * a, a);
 }
 
 // -------------------------------------------------------------------
@@ -212,17 +269,25 @@ fn grid_text_vertex(
     out.tex_coord = vec2<f32>(in.glyph_pos) + vec2<f32>(in.glyph_size) * corner;
     out.atlas = in.atlas;
 
-    // Foreground color — premultiplied. `in.color` arrives normalized
-    // via UNorm8x4 in the vertex buffer layout.
+    // Foreground color — `in.color` arrives normalized via UNorm8x4.
+    // Convert to output color space first, then premultiply. Same
+    // pipeline as `grid_bg_fragment` and the quad fill so glyph/cell
+    // bg/window bg agree.
     var color = in.color;
-    color = vec4<f32>(color.rgb * color.a, color.a);
+    color = vec4<f32>(
+        grid_prepare_output_rgb(color.rgb, uniforms.input_colorspace) * color.a,
+        color.a,
+    );
 
     // Cursor-pos fg swap.
     let is_cursor_pos = in.grid_pos.x == uniforms.cursor_pos.x
                      && in.grid_pos.y == uniforms.cursor_pos.y;
     if ((in.bools & BOOL_IS_CURSOR_GLYPH) == 0u && is_cursor_pos) {
-        color = uniforms.cursor_color;
-        color = vec4<f32>(color.rgb * color.a, color.a);
+        let c = uniforms.cursor_color;
+        color = vec4<f32>(
+            grid_prepare_output_rgb(c.rgb, uniforms.input_colorspace) * c.a,
+            c.a,
+        );
     }
 
     out.color = color;

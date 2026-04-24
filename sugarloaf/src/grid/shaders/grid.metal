@@ -25,19 +25,71 @@ using namespace metal;
 // Must match `GridUniforms` in `sugarloaf/src/grid/cell.rs`.
 // Field order is load-bearing — vertex descriptor + WGSL port rely on it.
 struct Uniforms {
-    float4x4 projection;      // offset   0
-    float4   grid_padding;    //        64
-    float4   cursor_color;    //        80
-    float4   cursor_bg_color; //        96
-    float2   cell_size;       //       112
-    uint2    grid_size;       //       120
-    uint2    cursor_pos;      //       128
-    uint2    _pad_cursor;     //       136
-    float    min_contrast;    //       144
-    uint     flags;           //       148
-    uint     padding_extend;  //       152
-    uint     _pad_tail;       //       156 → total 160
+    float4x4 projection;       // offset   0
+    float4   grid_padding;     //        64
+    float4   cursor_color;     //        80
+    float4   cursor_bg_color;  //        96
+    float2   cell_size;        //       112
+    uint2    grid_size;        //       120
+    uint2    cursor_pos;       //       128
+    uint2    _pad_cursor;      //       136
+    float    min_contrast;     //       144
+    uint     flags;            //       148
+    uint     padding_extend;   //       152
+    uint     input_colorspace; //       156 → total 160
 };
+
+//-------------------------------------------------------------------
+// Color space / transfer curve helpers. Matrices match
+// `sugarloaf/src/renderer/renderer.metal` (Bradford-adapted D65) so
+// the grid's output is byte-identical to sugarloaf's quad pipeline
+// (`draw_bg_fill_metal`, UI overlays). Same role as Ghostty's
+// `linearize` / `unlinearize` / `srgb_to_display_p3` at
+// `ghostty/src/renderer/shaders/shaders.metal:57-85`.
+//-------------------------------------------------------------------
+float3 grid_srgb_to_linear(float3 c) {
+    float3 lo = c / 12.92;
+    float3 hi = pow((c + 0.055) / 1.055, 2.4);
+    return select(lo, hi, c > 0.04045);
+}
+
+float3 grid_linear_to_srgb(float3 c) {
+    float3 lo = c * 12.92;
+    float3 hi = pow(c, 1.0 / 2.4) * 1.055 - 0.055;
+    return select(lo, hi, c > 0.0031308);
+}
+
+float3 grid_srgb_to_p3(float3 linear_srgb) {
+    return float3(
+        dot(linear_srgb, float3(0.82246197, 0.17753803, 0.0)),
+        dot(linear_srgb, float3(0.03319420, 0.96680580, 0.0)),
+        dot(linear_srgb, float3(0.01708263, 0.07239744, 0.91051993))
+    );
+}
+
+float3 grid_rec2020_to_p3(float3 linear_r2020) {
+    return float3(
+        dot(linear_r2020, float3( 1.34357825, -0.28217967, -0.06139858)),
+        dot(linear_r2020, float3(-0.06529745,  1.08782226, -0.02252481)),
+        dot(linear_r2020, float3( 0.00282179, -0.02598807,  1.02316628))
+    );
+}
+
+/// sRGB-encoded CPU input → linearize → primaries to DisplayP3 (per
+/// `input_colorspace`) → sRGB-encode again. Every shader output goes
+/// through this so the framebuffer (BGRA8Unorm tagged DisplayP3)
+/// stores gamma-encoded values the compositor can display directly
+/// and alpha blending runs in gamma space — matching Ghostty's
+/// `alpha-blending = native` default.
+float3 grid_prepare_output_rgb(float3 srgb, uint input_colorspace) {
+    float3 lin = grid_srgb_to_linear(srgb);
+    if (input_colorspace == 0u) {
+        lin = grid_srgb_to_p3(lin);
+    } else if (input_colorspace == 2u) {
+        lin = grid_rec2020_to_p3(lin);
+    }
+    return grid_linear_to_srgb(lin);
+}
 
 constant uint FLAG_DISPLAY_P3      = 1u << 0;
 constant uint FLAG_LINEAR_BLENDING = 1u << 1;
@@ -136,6 +188,7 @@ fragment float4 grid_bg_fragment(
         && orig_grid_pos.y == int(uniforms.cursor_pos.y))
     {
         float4 c = uniforms.cursor_bg_color;
+        c.rgb = grid_prepare_output_rgb(c.rgb, uniforms.input_colorspace);
         c.rgb *= c.a;
         return c;
     }
@@ -143,6 +196,7 @@ fragment float4 grid_bg_fragment(
     // Load the cell and convert to normalized premultiplied color.
     uchar4 cell = cells[grid_pos.y * int(uniforms.grid_size.x) + grid_pos.x];
     float4 color = float4(cell) / 255.0;
+    color.rgb = grid_prepare_output_rgb(color.rgb, uniforms.input_colorspace);
     color.rgb *= color.a;
 
     return color;
@@ -229,8 +283,11 @@ vertex CellTextVertexOut grid_text_vertex(
     out.tex_coord = float2(in.glyph_pos) + float2(in.glyph_size) * corner;
     out.atlas = uint(in.atlas);
 
-    // Foreground color — straight u8 → float, premultiplied.
+    // Foreground color — u8 → float, convert to output space, then
+    // premultiply. Same pipeline as `grid_bg_fragment` so glyph and
+    // cell bg agree.
     float4 color = float4(in.color) / 255.0;
+    color.rgb = grid_prepare_output_rgb(color.rgb, uniforms.input_colorspace);
     color.rgb *= color.a;
 
     // Cursor-pos fg swap: if this glyph's cell is under the cursor and
@@ -240,6 +297,7 @@ vertex CellTextVertexOut grid_text_vertex(
         (uint(in.grid_pos.y) == uniforms.cursor_pos.y);
     if ((in.bools & BOOL_IS_CURSOR_GLYPH) == 0u && is_cursor_pos) {
         color = uniforms.cursor_color;
+        color.rgb = grid_prepare_output_rgb(color.rgb, uniforms.input_colorspace);
         color.rgb *= color.a;
     }
 

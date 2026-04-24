@@ -43,6 +43,10 @@ pub struct Renderer {
     unfocused_split_opacity: f32,
     unfocused_split_fill: Option<ColorArray>,
     last_active: Option<NodeId>,
+    /// Last `wgpu::Color` we applied to sugarloaf's window clear via
+    /// `set_background_color`. Lets the per-frame "derive bg from
+    /// active panel's OSC state" loop avoid redundant resyncs.
+    last_window_bg: Option<wgpu::Color>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     pub(crate) ignore_selection_fg_color: bool,
@@ -91,6 +95,7 @@ impl Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
             unfocused_split_fill: config.navigation.unfocused_split_fill,
             last_active: None,
+            last_window_bg: None,
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
@@ -550,11 +555,28 @@ impl Renderer {
                 if &active_key == key {
                     continue;
                 }
-                let panel_rect = grid_context.layout_rect;
-                let x = (panel_rect[0] + grid_scaled_margin.left) / scale_factor;
-                let y = (panel_rect[1] + grid_scaled_margin.top) / scale_factor;
-                let w = panel_rect[2] / scale_factor;
-                let h = panel_rect[3] / scale_factor;
+                // Match the grid renderer's actual paint region —
+                // `.round()`ed integer-pixel origin +
+                // `cols * round(cell_w)` × `rows * round(cell_h)`
+                // content size (same math as `GridUniforms.grid_padding`
+                // / `cell_size` in `screen/mod.rs:~3717`). Using raw
+                // `layout_rect` leaves a sub-pixel un-dimmed fringe at
+                // the right/bottom edges of inactive splits because
+                // taffy allocates fractional sizes while the grid
+                // snaps to whole cells.
+                let dim = grid_context.val.dimension;
+                let cell_w = dim.dimension.width.round().max(1.0);
+                let cell_h = dim.dimension.height.round().max(1.0);
+                let cols = dim.columns.max(1) as f32;
+                let rows = dim.lines.max(1) as f32;
+                let panel_left =
+                    (grid_context.layout_rect[0] + grid_scaled_margin.left).round();
+                let panel_top =
+                    (grid_context.layout_rect[1] + grid_scaled_margin.top).round();
+                let x = panel_left / scale_factor;
+                let y = panel_top / scale_factor;
+                let w = (cols * cell_w) / scale_factor;
+                let h = (rows * cell_h) / scale_factor;
                 sugarloaf.rect(None, x, y, w, h, dim_color, 0.0, 3);
             }
         }
@@ -644,22 +666,31 @@ impl Renderer {
             }
         }
 
-        // Apply background color from current context if changed
+        // Derive the window bg color from the currently-active panel's
+        // OSC 11 state (sticky on `renderable_content.background`) on
+        // every frame, not just the frame where OSC arrived. Without
+        // this, switching from a panel that ran OSC 11 to one that
+        // didn't keeps sugarloaf's bg stuck at the OSC color — we
+        // want it to follow focus the way Ghostty does (each surface's
+        // `terminal.colors.background` drives its own window chrome).
         let current_context = context_manager.current_grid_mut().current_mut();
-        let window_update = if let Some(bg_state) =
-            current_context.renderable_content.background.take()
-        {
-            use crate::context::renderable::BackgroundState;
-            match bg_state {
-                BackgroundState::Set(color) => {
-                    sugarloaf.set_background_color(Some(color));
-                }
-                BackgroundState::Reset => {
-                    sugarloaf.set_background_color(None);
-                }
+        let effective_bg = match &current_context.renderable_content.background {
+            Some(crate::context::renderable::BackgroundState::Set(color)) => *color,
+            // Explicit OSC 111 reset OR panel that never ran OSC 11 →
+            // fall back to the config / dynamic_background (honors
+            // window-opacity / background-image).
+            Some(crate::context::renderable::BackgroundState::Reset) | None => {
+                self.dynamic_background.1
             }
+        };
+
+        let window_update = if self.last_window_bg != Some(effective_bg) {
+            sugarloaf.set_background_color(Some(effective_bg));
+            self.last_window_bg = Some(effective_bg);
+            // Native-window chrome (`setBackgroundColor` on macOS,
+            // titlebar color on Windows) follows the same value.
             Some(crate::context::renderable::WindowUpdate::Background(
-                bg_state,
+                crate::context::renderable::BackgroundState::Set(effective_bg),
             ))
         } else {
             None
