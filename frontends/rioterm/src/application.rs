@@ -505,7 +505,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::SelectionScrollTick) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route.window.screen.selection_scroll_tick();
-                    route.window.screen.render();
                     route.request_redraw();
                 }
             }
@@ -1126,7 +1125,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                         if route.window.screen.renderer.scrollbar.is_dragging() {
                             route.window.screen.handle_scrollbar_release();
-                            route.window.screen.render();
                             route.request_redraw();
                             return;
                         }
@@ -1218,7 +1216,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .assistant
                         .hover(mx, my, win_w, scale)
                     {
-                        route.window.screen.render();
                         route.request_redraw();
                     }
 
@@ -1250,7 +1247,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .command_palette
                         .hover(mx, my, win_w, scale)
                     {
-                        route.window.screen.render();
                         route.request_redraw();
                     }
                     route.window.winit_window.set_cursor(CursorIcon::Default);
@@ -1270,7 +1266,25 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .search
                         .hover(mx, my, win_w, scale)
                     {
-                        route.window.screen.render();
+                        // The search overlay overlaps terminal cells,
+                        // so the panel behind it must re-render with
+                        // the new hover highlight on top. `UIDamage`
+                        // alone isn't enough — `renderer.run`'s inner
+                        // `(ui_terminal_damage, pty_damage)` match
+                        // falls through to `continue` when both are
+                        // `None`, even if `pending_update.is_dirty()`.
+                        // Force `TerminalDamage::Full` to keep the
+                        // panel in the render set.
+                        route
+                            .window
+                            .screen
+                            .ctx_mut()
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         route.request_redraw();
                     }
                 }

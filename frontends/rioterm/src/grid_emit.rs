@@ -24,7 +24,8 @@
 
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::crosswords::grid::row::Row;
-use rio_backend::crosswords::pos::{Column, Line};
+use rio_backend::crosswords::pos::{Column, Line, Pos};
+use rio_backend::crosswords::search::Match;
 use rio_backend::crosswords::square::{ContentTag, Square};
 use rio_backend::crosswords::style::{StyleFlags, StyleSet};
 use rio_backend::selection::SelectionRange;
@@ -89,6 +90,127 @@ fn cell_in_row_sel(row_sel: Option<RowSelection>, col: u16) -> bool {
     match row_sel {
         Some(s) => col >= s.lo && col <= s.hi,
         None => false,
+    }
+}
+
+/// Search-hint category at a cell. Matches Ghostty's `HighlightTag`
+/// (`ghostty/src/renderer/generic.zig:240`) — we use the same two-way
+/// split so `search_focused_match_background` can override the regular
+/// match color on the currently-focused hit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HintTag {
+    Match,
+    Focused,
+}
+
+/// Per-row hint interval, closed on both ends. Several `RowHint`s may
+/// exist on one row (when the row contains multiple matches).
+#[derive(Clone, Copy, Debug)]
+pub struct RowHint {
+    pub lo: u16,
+    pub hi: u16,
+    pub tag: HintTag,
+}
+
+/// Compute the hint-match intervals (if any) for visible row `y`.
+/// Linear-selection semantics: a match can span multiple rows; first
+/// / last rows clip to the match's column bounds; interior rows cover
+/// the full width. Mirrors `row_selection_for`.
+///
+/// `focused_match` is pushed first so it wins `cell_in_row_hints`
+/// iteration order when it overlaps another match — same precedence
+/// as Ghostty (`generic.zig:1330-1353`: "The order below matters.
+/// Highlights added earlier will take priority").
+pub fn row_hints_for(
+    hint_matches: Option<&[Match]>,
+    focused_match: Option<&Match>,
+    y: usize,
+    cols: usize,
+    display_offset: i32,
+    out: &mut Vec<RowHint>,
+) {
+    out.clear();
+    if cols == 0 {
+        return;
+    }
+    let Some(matches) = hint_matches else {
+        return;
+    };
+    let line = Line((y as i32) - display_offset);
+    let cols_max = cols.saturating_sub(1) as u16;
+
+    let to_row_hint = |m: &Match, tag: HintTag| -> Option<RowHint> {
+        let start = *m.start();
+        let end = *m.end();
+        if line < start.row || line > end.row {
+            return None;
+        }
+        let lo = if line == start.row {
+            start.col.0 as u16
+        } else {
+            0
+        };
+        let hi = if line == end.row {
+            end.col.0 as u16
+        } else {
+            cols_max
+        };
+        Some(RowHint {
+            lo: lo.min(cols_max),
+            hi: hi.min(cols_max),
+            tag,
+        })
+    };
+
+    let is_same_match = |a: &Match, b: &Match| -> bool {
+        let (a_start, a_end) = (*a.start(), *a.end());
+        let (b_start, b_end) = (*b.start(), *b.end());
+        pos_eq(a_start, b_start) && pos_eq(a_end, b_end)
+    };
+
+    if let Some(fm) = focused_match {
+        if let Some(rh) = to_row_hint(fm, HintTag::Focused) {
+            out.push(rh);
+        }
+    }
+    for m in matches {
+        if let Some(fm) = focused_match {
+            if is_same_match(m, fm) {
+                continue;
+            }
+        }
+        if let Some(rh) = to_row_hint(m, HintTag::Match) {
+            out.push(rh);
+        }
+    }
+}
+
+#[inline]
+fn pos_eq(a: Pos, b: Pos) -> bool {
+    a.row == b.row && a.col == b.col
+}
+
+#[inline]
+fn cell_in_row_hints(row_hints: &[RowHint], col: u16) -> Option<HintTag> {
+    for rh in row_hints {
+        if col >= rh.lo && col <= rh.hi {
+            return Some(rh.tag);
+        }
+    }
+    None
+}
+
+/// Foreground for a hint-matched cell. Mirrors `cell_fg_selected` but
+/// uses the configured `search_match_foreground` /
+/// `search_focused_match_foreground` from
+/// `colors::Colors` (`rio-backend/src/config/colors/mod.rs:287,299`).
+#[inline]
+fn cell_fg_hinted(tag: HintTag, renderer: &Renderer) -> [u8; 4] {
+    match tag {
+        HintTag::Focused => {
+            normalized_to_u8(renderer.named_colors.search_focused_match_foreground)
+        }
+        HintTag::Match => normalized_to_u8(renderer.named_colors.search_match_foreground),
     }
 }
 
@@ -425,6 +547,7 @@ pub fn build_row_bg(
     renderer: &Renderer,
     term_colors: &TermColors,
     row_sel: Option<RowSelection>,
+    row_hints: &[RowHint],
     bg_scratch: &mut Vec<CellBg>,
 ) {
     bg_scratch.clear();
@@ -434,12 +557,33 @@ pub fn build_row_bg(
     } else {
         None
     };
+    // Precompute hint bg colors if the row has any hints. Both variants
+    // are cheap enough to compute unconditionally when the row is hit.
+    let (match_bg, focused_bg) = if !row_hints.is_empty() {
+        (
+            Some(normalized_to_u8(renderer.named_colors.search_match_background)),
+            Some(normalized_to_u8(
+                renderer.named_colors.search_focused_match_background,
+            )),
+        )
+    } else {
+        (None, None)
+    };
     for x in 0..cols {
         let sq = row[Column(x)];
-        let rgba = if cell_in_row_sel(row_sel, x as u16) {
-            // Selection bg wins over the cell's own bg, matching Ghostty
-            // `generic.zig:2817` (`.selection` branch).
+        let col = x as u16;
+        let rgba = if cell_in_row_sel(row_sel, col) {
+            // Selection bg wins over hint bg and the cell's own bg,
+            // matching Ghostty `generic.zig:2775-2800` (selection check
+            // runs before highlight check).
             sel_bg.unwrap_or_else(|| cell_bg(sq, style_set, renderer, term_colors))
+        } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
+            match tag {
+                HintTag::Focused => focused_bg
+                    .unwrap_or_else(|| cell_bg(sq, style_set, renderer, term_colors)),
+                HintTag::Match => match_bg
+                    .unwrap_or_else(|| cell_bg(sq, style_set, renderer, term_colors)),
+            }
         } else {
             cell_bg(sq, style_set, renderer, term_colors)
         };
@@ -802,6 +946,7 @@ pub fn build_row_fg(
     cell_w: f32,
     cell_h: f32,
     row_sel: Option<RowSelection>,
+    row_hints: &[RowHint],
     font_library: &FontLibrary,
     fg_scratch: &mut Vec<CellText>,
 ) {
@@ -828,6 +973,7 @@ pub fn build_row_fg(
         cell_h_u32,
         thickness,
         row_sel,
+        row_hints,
         fg_scratch,
     );
 
@@ -1025,15 +1171,26 @@ pub fn build_row_fg(
                 (run_start + cell_idx_in_run as usize).min(cols.saturating_sub(1));
             let src_sq = row[Column(src_col)];
             let is_sel = cell_in_row_sel(row_sel, src_col as u16);
+            let hint_tag = if is_sel {
+                None
+            } else {
+                cell_in_row_hints(row_hints, src_col as u16)
+            };
             let (atlas, color) = if is_color {
-                // Colour glyphs (emoji) don't take the selection-fg swap —
-                // matches Ghostty's behaviour for bitmap/COLR atlas entries.
+                // Colour glyphs (emoji) don't take the selection-fg /
+                // hint-fg swap — matches Ghostty's behaviour for
+                // bitmap/COLR atlas entries.
                 (CellText::ATLAS_COLOR, [255, 255, 255, 255])
             } else if is_sel {
                 (
                     CellText::ATLAS_GRAYSCALE,
                     cell_fg_selected(src_sq, style_set, renderer, term_colors),
                 )
+            } else if let Some(tag) = hint_tag {
+                // Hint-fg wins over the cell's own fg, matching
+                // Ghostty's `.search` / `.search_selected` branches at
+                // `generic.zig:2829-2833` (the fg picker mirrors bg).
+                (CellText::ATLAS_GRAYSCALE, cell_fg_hinted(tag, renderer))
             } else {
                 (
                     CellText::ATLAS_GRAYSCALE,
@@ -1070,6 +1227,7 @@ pub fn build_row_fg(
         cell_h_u32,
         thickness,
         row_sel,
+        row_hints,
         fg_scratch,
     );
 }
@@ -1087,6 +1245,7 @@ fn emit_underlines(
     cell_h: u32,
     thickness: u32,
     row_sel: Option<RowSelection>,
+    row_hints: &[RowHint],
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
@@ -1102,12 +1261,17 @@ fn emit_underlines(
         if slot.w == 0 || slot.h == 0 {
             continue;
         }
-        let color = if cell_in_row_sel(row_sel, x as u16) {
+        let col = x as u16;
+        let color = if cell_in_row_sel(row_sel, col) {
             // Inside selection: underline follows the selection fg so
             // it stays visible against the selection bg. SGR 58 is
             // suppressed here — a theme's selection_foreground
             // overrides per-cell decoration color.
             cell_fg_selected(sq, style_set, renderer, term_colors)
+        } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
+            // Same reasoning as selection: underline inside a hint
+            // should stay legible on the hint bg.
+            cell_fg_hinted(tag, renderer)
         } else {
             decoration_color(sq, &style, style_set, renderer, term_colors)
         };
@@ -1137,6 +1301,7 @@ fn emit_strikethroughs(
     cell_h: u32,
     thickness: u32,
     row_sel: Option<RowSelection>,
+    row_hints: &[RowHint],
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
@@ -1157,10 +1322,13 @@ fn emit_strikethroughs(
         if slot.w == 0 || slot.h == 0 {
             continue;
         }
+        let col = x as u16;
         // Strikethrough always uses the cell fg (there's no SGR for
         // a separate strike color, matching Ghostty).
-        let color = if cell_in_row_sel(row_sel, x as u16) {
+        let color = if cell_in_row_sel(row_sel, col) {
             cell_fg_selected(sq, style_set, renderer, term_colors)
+        } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
+            cell_fg_hinted(tag, renderer)
         } else {
             cell_fg(sq, style_set, renderer, term_colors)
         };
