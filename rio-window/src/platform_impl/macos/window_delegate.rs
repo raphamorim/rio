@@ -135,10 +135,8 @@ pub(crate) struct State {
     display_link: RefCell<Option<super::display_link::DisplayLink>>,
     // Track when rendering is needed (dirty state)
     needs_redraw: Cell<bool>,
-    // Rate-gated post-input sustain window. Replaces the raw
-    // `last_input_timestamp` — single keystrokes no longer force
-    // 1 s of vsync redraws. See `platform_impl::input_rate`.
-    input_rate_tracker: RefCell<super::super::input_rate::InputRateTracker>,
+    // Track last input timestamp for 1-second presentation window
+    last_input_timestamp: Cell<std::time::Instant>,
     // Position of traffic light buttons (close, minimize, maximize)
     // Specified as (x, y) coordinates from top-left corner
     traffic_light_position: Cell<Option<(f64, f64)>>,
@@ -767,9 +765,7 @@ impl WindowDelegate {
             background_color: unsafe { NSColor::blackColor().into() },
             display_link: RefCell::new(None),
             needs_redraw: Cell::new(false),
-            input_rate_tracker: RefCell::new(
-                crate::platform_impl::input_rate::InputRateTracker::new(),
-            ),
+            last_input_timestamp: Cell::new(std::time::Instant::now()),
             traffic_light_position: Cell::new(
                 attrs.platform_specific.traffic_light_position,
             ),
@@ -982,25 +978,25 @@ impl WindowDelegate {
     #[inline]
     pub fn pre_present_notify(&self) {}
 
-    /// Record an input event for rate-gated post-input presentation.
+    /// Mark that input was received.
     ///
-    /// Only sustained high-rate input (≥ 60 events/sec over 100 ms)
-    /// extends the post-input vsync-redraw window — single keystrokes
-    /// don't. Matches Zed's `InputRateTracker`
-    /// (`zed/crates/gpui/src/window.rs:987`).
+    /// This updates the timestamp used for the 1-second presentation window
+    /// to prevent display downclocking.
     #[inline]
     pub(crate) fn mark_input_received(&self) {
-        self.ivars().input_rate_tracker.borrow_mut().record_input();
+        self.ivars()
+            .last_input_timestamp
+            .set(std::time::Instant::now());
     }
 
-    /// `true` while we're still inside a high-rate-input sustain
-    /// window. Used by the CVDisplayLink callback to decide whether
-    /// to fire a redraw even when the window isn't dirty, preventing
-    /// ProMotion / VRR displays from downclocking while the user is
-    /// actively typing / scrolling.
+    /// Check if we should keep presenting frames after input.
+    ///
+    /// After ANY input, keeps presenting frames for 1 second to prevent
+    /// the display from downclocking the refresh rate.
     #[inline]
     pub fn should_present_after_input(&self) -> bool {
-        self.ivars().input_rate_tracker.borrow().is_high_rate()
+        self.ivars().last_input_timestamp.get().elapsed()
+            < std::time::Duration::from_secs(1)
     }
 
     pub fn outer_position(&self) -> Result<PhysicalPosition<i32>, NotSupportedError> {

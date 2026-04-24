@@ -9,11 +9,8 @@
 //! `RedrawRequested` path is unchanged.
 //!
 //! `should_present_after_input` keeps the loop firing for one
-//! second *after a high-rate input burst* (≥ 60 events/sec over
-//! a 100 ms window) even if the app never sets the dirty flag —
-//! same gate macOS / Wayland / X11 use via `InputRateTracker`.
-//! Single keystrokes / lone mouse events no longer force a
-//! 1-second redraw storm.
+//! second after any input even if the app never sets the dirty
+//! flag — same gate macOS / Wayland / X11 use.
 //!
 //! When DWM is disabled, the monitor is unplugged, or under some
 //! RDP modes, `DwmFlush` returns immediately. The 1 ms threshold
@@ -27,8 +24,6 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use crate::platform_impl::input_rate::InputRateTracker;
-
 use windows_sys::Win32::Foundation::{HWND, S_OK};
 use windows_sys::Win32::Graphics::Dwm::{
     DwmFlush, DwmGetCompositionTimingInfo, DWM_TIMING_INFO,
@@ -39,28 +34,27 @@ use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 
 const VSYNC_INTERVAL_THRESHOLD: Duration = Duration::from_millis(1);
 const DEFAULT_VSYNC_INTERVAL: Duration = Duration::from_micros(16_666); // ~60Hz
+const POST_INPUT_PRESENT_WINDOW: Duration = Duration::from_secs(1);
 
 /// State shared between the event loop, window-callback thread,
 /// and the DwmFlush worker thread. Holds the per-window dirty-flag
-/// registry plus the rate-gated post-input sustain tracker.
+/// registry plus the most recent input timestamp.
 pub(crate) struct VSyncSharedState {
     /// HWND (as `usize` for `Hash`/`Eq`) → per-window dirty flag.
     /// `Window::request_redraw` sets the flag; the worker reads
     /// and clears it on each tick.
     windows: RwLock<HashMap<usize, Arc<AtomicBool>>>,
-    /// Rate-gated post-input sustain. Only sustained high-rate
-    /// input (≥ 60 events/sec over 100 ms) keeps the worker fanning
-    /// out redraws after the app stops marking windows dirty.
-    /// `Mutex` because the worker thread and the window-message
-    /// thread both touch this. See `platform_impl::input_rate`.
-    input_rate_tracker: Mutex<InputRateTracker>,
+    /// Updated by every input handler; checked by the worker to
+    /// decide whether to fan out a redraw even for windows whose
+    /// dirty flag is clear.
+    last_input_timestamp: Mutex<Instant>,
 }
 
 impl VSyncSharedState {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             windows: RwLock::new(HashMap::new()),
-            input_rate_tracker: Mutex::new(InputRateTracker::new()),
+            last_input_timestamp: Mutex::new(Instant::now()),
         })
     }
 
@@ -87,12 +81,12 @@ impl VSyncSharedState {
 
     #[inline]
     pub(crate) fn mark_input_received(&self) {
-        self.input_rate_tracker.lock().unwrap().record_input();
+        *self.last_input_timestamp.lock().unwrap() = Instant::now();
     }
 
     #[inline]
     pub(crate) fn should_present_after_input(&self) -> bool {
-        self.input_rate_tracker.lock().unwrap().is_high_rate()
+        self.last_input_timestamp.lock().unwrap().elapsed() < POST_INPUT_PRESENT_WINDOW
     }
 }
 
