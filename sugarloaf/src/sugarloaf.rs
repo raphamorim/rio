@@ -993,6 +993,21 @@ impl Sugarloaf<'_> {
         self.text.clear();
     }
 
+    /// Drop everything this frame's immediate-mode producers pushed
+    /// without submitting a draw. Callers use this when they
+    /// decided mid-frame to skip `render` / `render_with_grids`
+    /// (e.g. "no panel is dirty, nothing to present") — without
+    /// this, the `rect` / `quad` / `text_mut().draw` calls made
+    /// earlier in the frame stay queued in `comp.batches` /
+    /// `self.text` and stack into the next real present,
+    /// producing doubled overlays.
+    #[inline]
+    pub fn discard_frame(&mut self) {
+        self.renderer.discard_frame_batches();
+        self.state.reset();
+        self.text.clear();
+    }
+
     #[inline]
     pub fn render(&mut self) {
         self.render_with_grids(&mut []);

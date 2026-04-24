@@ -912,6 +912,17 @@ impl Renderer {
         }
     }
 
+    /// Drain per-frame batch state that was populated via
+    /// `rect` / `quad` / etc. Normally `comp.batches` is drained
+    /// inside `compute_updates` → `comp.finish()` during a render;
+    /// when the caller skips the GPU submit entirely (see
+    /// `Sugarloaf::discard_frame`), those recorded primitives would
+    /// otherwise pile into the next presented frame.
+    #[inline]
+    pub(crate) fn discard_frame_batches(&mut self) {
+        self.comp.batches.reset();
+    }
+
     /// Replace the background image. Pass `None` to clear it. The pixels
     /// are uploaded into a dedicated GPU texture on the next `prepare`
     /// call (so we don't go through the glyph atlas).

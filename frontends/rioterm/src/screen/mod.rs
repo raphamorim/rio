@@ -3853,6 +3853,13 @@ impl Screen<'_> {
                 } else {
                     self.sugarloaf.render_with_grids(&mut frame_grids);
                 }
+            } else {
+                // Nothing to draw this frame, but `Renderer::run`
+                // (plus overlays, borders, scrollbars, …) already
+                // pushed into sugarloaf's per-frame queues. Drain
+                // them so the next presented frame doesn't
+                // composite them on top of their re-pushed selves.
+                self.sugarloaf.discard_frame();
             }
         }
 
