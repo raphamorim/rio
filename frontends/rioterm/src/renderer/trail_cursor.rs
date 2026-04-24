@@ -415,28 +415,8 @@ impl TrailCursor {
     }
 
     /// `true` while the spring corners haven't settled *visibly*.
-    ///
-    /// TODO: neovide deviation. Their equivalent returns true while
-    /// any spring `|position| >= 0.01` (the internal `Spring::update`
-    /// reset tolerance). We raise that to 0.5 px so the outer render
-    /// loop exits ~15-25 frames sooner per animation — without this,
-    /// rio keeps re-posting `needs_redraw()` / `set_dirty()`
-    /// every vsync for the full spring tail, which starves the
-    /// compositor drawable pool and causes `next_drawable` to block
-    /// ~4 ms per frame on macOS. Neovide doesn't hit this because
-    /// Skia renders through a different present path.
-    ///
-    /// Proper fix is to not force full-screen redraws just because
-    /// the trail quad shifted sub-pixel — either trail-only damage
-    /// or a dedicated overlay layer. Once that's in, revert this to
-    /// plain `self.animating` to match neovide exactly.
     #[inline]
     pub fn is_animating(&self) -> bool {
-        if !self.animating {
-            return false;
-        }
-        self.corners
-            .iter()
-            .any(|c| c.spring_x.position.abs() >= 0.5 || c.spring_y.position.abs() >= 0.5)
+        !self.animating
     }
 }
