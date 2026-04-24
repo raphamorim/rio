@@ -529,22 +529,20 @@ impl Renderer {
                 context.renderable_content.history_size = terminal.history_size();
                 context.renderable_content.lines_evicted = terminal.lines_evicted();
                 context.renderable_content.blinking_cursor = terminal.blinking_cursor;
-                // Capture the cursor position the user most recently
-                // saw — before overwriting it with the fresh snapshot —
-                // so a live IME composition can anchor against it.
-                // Without this, a composition started just after
-                // Home/Ctrl-A or right after a commit would briefly snap
-                // to the previous line end while the PTY echo catches up.
-                let previous_cursor_pos = context.renderable_content.cursor.state.pos;
+                // The preedit overlay (built in screen/mod.rs against
+                // this same cursor pos) is anchored at whatever the
+                // snapshot cursor reports at render time, following
+                // wezterm's approach: if the PTY is still catching up
+                // with pending output when a composition starts, the
+                // overlay will briefly track the transient cursor
+                // position for a frame or two before the PTY settles.
+                // This short flicker is preferable to pinning an anchor
+                // to the first frame's position, which (a) freezes a
+                // stale cursor when a movement key was coalesced with
+                // the preedit event into a single render, and (b) locks
+                // the overlay in place if that first frame happens to
+                // land mid-escape-sequence.
                 context.renderable_content.cursor.state = terminal.cursor();
-                // While a preedit is active, pin the cursor to the anchor
-                // so the overlay and the terminal cursor stay together
-                // even if the snapshot cursor is momentarily out of sync
-                // with the screen.
-                if context.ime.preedit().is_some() {
-                    let anchor = context.ime.preedit_anchor_or_init(previous_cursor_pos);
-                    context.renderable_content.cursor.state.pos = anchor;
-                }
                 if terminal.graphics.kitty_graphics_dirty {
                     context.renderable_content.kitty_virtual_placements =
                         terminal.graphics.kitty_virtual_placements.clone();
