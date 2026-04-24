@@ -3389,7 +3389,6 @@ impl Screen<'_> {
             }
         }
 
-        // let renderer_run_start = std::time::Instant::now();
         let window_update = self.renderer.run(
             &mut self.sugarloaf,
             &mut self.context_manager,
