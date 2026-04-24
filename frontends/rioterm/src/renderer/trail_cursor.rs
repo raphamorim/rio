@@ -14,7 +14,6 @@ const SHORT_ANIMATION_LENGTH: f32 = 0.04;
 /// trailing edge lags most).
 const TRAIL_SIZE: f32 = 1.0;
 const DEPTH: f32 = 0.0;
-const ORDER: u8 = 10;
 
 #[derive(Clone)]
 struct Spring {
@@ -360,11 +359,14 @@ impl TrailCursor {
         }
     }
 
-    /// Draw the cursor trail as a filled convex quad between the four
-    /// animated corners.  We scanline-fill by intersecting each row with
-    /// all four edges of the polygon (TL→TR→BR→BL), taking the min/max X.
-    /// This handles diagonal movement correctly unlike the old left/right
-    /// edge assumption.
+    /// Draw the cursor trail as a single convex quad spanned by the four
+    /// animated corners — emitted as two triangles through the existing
+    /// `DrawCmd::Vertices` pipeline. Matches neovide's approach of
+    /// `PathBuilder::move_to(TL).line_to(TR).line_to(BR).line_to(BL).close()`
+    /// into a single `draw_path`. The old scanline fill (up to 640 rects
+    /// per frame) was a workaround for `sugarloaf.rect` being axis-aligned
+    /// only; `sugarloaf.triangle` already accepts arbitrary vertex
+    /// positions, so one fan covers the same pixels in one draw call.
     pub fn draw(
         &self,
         sugarloaf: &mut Sugarloaf,
@@ -377,72 +379,58 @@ impl TrailCursor {
 
         let inv = 1.0 / scale_factor;
 
-        // Corner positions: ordered TL, TR, BR, BL.
+        // Corner positions in *logical* pixels (sugarloaf.triangle scales
+        // by scale_factor internally). Ordered TL, TR, BR, BL — same
+        // winding as neovide's path builder.
         let pts: [(f32, f32); 4] = [
-            (self.corners[0].x, self.corners[0].y),
-            (self.corners[1].x, self.corners[1].y),
-            (self.corners[2].x, self.corners[2].y),
-            (self.corners[3].x, self.corners[3].y),
+            (self.corners[0].x * inv, self.corners[0].y * inv),
+            (self.corners[1].x * inv, self.corners[1].y * inv),
+            (self.corners[2].x * inv, self.corners[2].y * inv),
+            (self.corners[3].x * inv, self.corners[3].y * inv),
         ];
 
-        // Four edges of the quad: TL→TR, TR→BR, BR→BL, BL→TL.
-        const EDGES: [(usize, usize); 4] = [(0, 1), (1, 2), (2, 3), (3, 0)];
-
-        // Bounding box.
-        let min_y = pts.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
-        let max_y = pts.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max);
-        let height = max_y - min_y;
-
-        if height < 0.5 {
-            return;
-        }
-
-        let steps = (height as usize).clamp(1, 640);
-        let step_h = height / steps as f32;
-
-        for s in 0..steps {
-            let y = min_y + (s as f32 + 0.5) * step_h;
-            let mut x_min = f32::INFINITY;
-            let mut x_max = f32::NEG_INFINITY;
-
-            // Intersect this scanline with each edge.
-            for &(a, b) in &EDGES {
-                let (ax, ay) = pts[a];
-                let (bx, by) = pts[b];
-
-                // Check if scanline Y is within this edge's Y range.
-                let (lo_y, hi_y) = if ay < by { (ay, by) } else { (by, ay) };
-                if y < lo_y || y > hi_y || (hi_y - lo_y).abs() < 1e-6 {
-                    continue;
-                }
-
-                // Lerp X at this Y.
-                let t = (y - ay) / (by - ay);
-                let x = ax + (bx - ax) * t;
-                x_min = x_min.min(x);
-                x_max = x_max.max(x);
-            }
-
-            if x_max - x_min < 0.1 {
-                continue;
-            }
-
-            sugarloaf.rect(
-                None,
-                x_min * inv,
-                (min_y + s as f32 * step_h) * inv,
-                (x_max - x_min) * inv,
-                step_h * inv,
-                cursor_color,
-                DEPTH,
-                ORDER,
-            );
-        }
+        // Fan from TL: (TL, TR, BR) + (TL, BR, BL). Two triangles share
+        // TL and BR, so the shared diagonal seam is hidden inside the
+        // convex hull — same as any triangle-fan tessellation.
+        sugarloaf.triangle(
+            pts[0].0, pts[0].1,
+            pts[1].0, pts[1].1,
+            pts[2].0, pts[2].1,
+            DEPTH,
+            cursor_color,
+        );
+        sugarloaf.triangle(
+            pts[0].0, pts[0].1,
+            pts[2].0, pts[2].1,
+            pts[3].0, pts[3].1,
+            DEPTH,
+            cursor_color,
+        );
     }
 
-    /// `true` while the spring corners haven't settled.
+    /// `true` while the spring corners haven't settled *visibly*.
+    ///
+    /// TODO: neovide deviation. Their equivalent returns true while
+    /// any spring `|position| >= 0.01` (the internal `Spring::update`
+    /// reset tolerance). We raise that to 0.5 px so the outer render
+    /// loop exits ~15-25 frames sooner per animation — without this,
+    /// rio keeps re-posting `needs_redraw()` / `set_ui_damage(island)`
+    /// every vsync for the full spring tail, which starves the
+    /// compositor drawable pool and causes `next_drawable` to block
+    /// ~4 ms per frame on macOS. Neovide doesn't hit this because
+    /// Skia renders through a different present path.
+    ///
+    /// Proper fix is to not force full-screen redraws just because
+    /// the trail quad shifted sub-pixel — either trail-only damage
+    /// or a dedicated overlay layer. Once that's in, revert this to
+    /// plain `self.animating` to match neovide exactly.
     #[inline]
     pub fn is_animating(&self) -> bool {
-        self.animating
+        if !self.animating {
+            return false;
+        }
+        self.corners.iter().any(|c| {
+            c.spring_x.position.abs() >= 0.5 || c.spring_y.position.abs() >= 0.5
+        })
     }
 }
