@@ -66,17 +66,23 @@ fn compute(
         return (MIN_COLS, MIN_LINES);
     }
 
-    // Calculate columns - divide by scaled character width
+    // Calculate columns - divide by the ROUNDED cell width. Ghostty
+    // rounds `face_width` once in `font/Metrics.zig:265` (`cell_width =
+    // @round(face_width)`) and uses that integer everywhere — cols,
+    // grid shader, cursor hit-testing. Rio's grid renderer already
+    // does `.round()` on `cell_w` when building `GridUniforms`, so the
+    // column count has to use the same integer or the right edge of
+    // the grid floats `cols * (face_width - cell_width)` pixels short
+    // of the panel. Matches Ghostty; sacrifices at most 1 col vs
+    // fractional divide but keeps the render perfectly aligned.
+    let cell_width = dimensions.width.round().max(1.0);
     let visible_columns =
-        std::cmp::max((available_width / dimensions.width) as usize, MIN_COLS);
+        std::cmp::max((available_width / cell_width) as usize, MIN_COLS);
 
-    // note: TextDimensions.height already includes the line_height modifier
-    let char_height = dimensions.height;
-    if char_height <= 0.0 {
-        return (visible_columns, MIN_LINES);
-    }
-
-    let lines = (available_height / char_height).floor();
+    // Same treatment for rows: grid renders at `.round()`ed cell
+    // height, so cols-and-rows share the same integer snap.
+    let cell_height = dimensions.height.round().max(1.0);
+    let lines = (available_height / cell_height).floor();
     let visible_lines = std::cmp::max(lines as usize, MIN_LINES);
 
     (visible_columns, visible_lines)
