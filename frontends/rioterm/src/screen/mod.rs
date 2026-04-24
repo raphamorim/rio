@@ -3421,11 +3421,13 @@ impl Screen<'_> {
             }
         }
 
-        let window_update = self.renderer.run(
+        let (window_update, any_panel_dirty) = self.renderer.run(
             &mut self.sugarloaf,
             &mut self.context_manager,
             &self.search_state.focused_match,
         );
+        let has_animation = self.renderer.needs_redraw();
+        let should_present = any_panel_dirty || has_animation;
 
         if self.renderer.custom_mouse_cursor {
             let scale = self.sugarloaf.scale_factor();
@@ -3845,10 +3847,12 @@ impl Screen<'_> {
                 frame_grids.push((grid, uniforms));
             }
 
-            if frame_grids.is_empty() {
-                self.sugarloaf.render();
-            } else {
-                self.sugarloaf.render_with_grids(&mut frame_grids);
+            if should_present {
+                if frame_grids.is_empty() {
+                    self.sugarloaf.render();
+                } else {
+                    self.sugarloaf.render_with_grids(&mut frame_grids);
+                }
             }
         }
 
@@ -3856,7 +3860,7 @@ impl Screen<'_> {
         // indeterminate progress bar, trail cursor animation). UI-only
         // — terminal cells didn't change, but we want the next vsync
         // to fire a render so overlays/animations tick forward.
-        if self.renderer.needs_redraw() {
+        if has_animation {
             self.context_manager
                 .current_mut()
                 .renderable_content

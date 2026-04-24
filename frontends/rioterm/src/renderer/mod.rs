@@ -229,7 +229,8 @@ impl Renderer {
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
         focused_match: &Option<RangeInclusive<Pos>>,
-    ) -> Option<crate::context::renderable::WindowUpdate> {
+    ) -> (Option<crate::context::renderable::WindowUpdate>, bool) {
+        let mut any_panel_dirty = false;
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
         let grid_scaled_margin = grid.get_scaled_margin();
@@ -279,12 +280,14 @@ impl Renderer {
 
             let force_full_damage = has_active_changed || self.is_game_mode_enabled;
 
+            let is_dirty = context.renderable_content.pending_update.is_dirty();
+
             // Check if we need to render
-            if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
-            {
+            if !is_dirty && !force_full_damage {
                 // No updates pending, skip rendering
                 continue;
             }
+            any_panel_dirty = true;
 
             // UI-side damage (scroll, selection, resize, etc.)
             let ui_terminal_damage = context
@@ -699,7 +702,7 @@ impl Renderer {
             None
         };
 
-        window_update
+        (window_update, any_panel_dirty)
     }
 
     /// Check if the renderer needs continuous redraw (for animations)
