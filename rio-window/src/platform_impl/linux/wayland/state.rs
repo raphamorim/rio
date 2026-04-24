@@ -116,19 +116,24 @@ pub struct WinitState {
     /// send `AboutToWait` and normally wakeup the user.
     pub dispatched_events: bool,
 
-    /// Timestamp of the most recent input event.
-    pub last_input_timestamp: std::cell::Cell<std::time::Instant>,
+    /// Rate-gated post-input sustain tracker. Only sustained high-rate
+    /// input (≥ 60 events/sec over 100 ms) extends the 1-second
+    /// presentation window — single keystrokes don't. See
+    /// `platform_impl::input_rate`.
+    pub input_rate_tracker: std::cell::RefCell<
+        crate::platform_impl::input_rate::InputRateTracker,
+    >,
 }
 
 impl WinitState {
     #[inline]
     pub fn mark_input_received(&self) {
-        self.last_input_timestamp.set(std::time::Instant::now());
+        self.input_rate_tracker.borrow_mut().record_input();
     }
 
     #[inline]
     pub fn should_present_after_input(&self) -> bool {
-        self.last_input_timestamp.get().elapsed() < std::time::Duration::from_secs(1)
+        self.input_rate_tracker.borrow().is_high_rate()
     }
 }
 
@@ -210,7 +215,9 @@ impl WinitState {
             loop_handle,
             // Make it true by default.
             dispatched_events: true,
-            last_input_timestamp: std::cell::Cell::new(std::time::Instant::now()),
+            input_rate_tracker: std::cell::RefCell::new(
+                crate::platform_impl::input_rate::InputRateTracker::new(),
+            ),
         })
     }
 
