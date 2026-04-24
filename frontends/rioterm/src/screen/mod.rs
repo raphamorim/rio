@@ -3489,12 +3489,31 @@ impl Screen<'_> {
                 /// per-row selection interval check. Snapshotted at
                 /// the same lock as `visible_rows` to stay consistent.
                 display_offset: i32,
+                /// Search-hint matches for this panel. `None` when
+                /// search is inactive. Consumed alongside `selection`
+                /// inside `build_row_bg` / `build_row_fg` to apply
+                /// `search_match_background` / `_foreground`. Mirrors
+                /// Ghostty's `row_data.highlights` at
+                /// `ghostty/src/renderer/generic.zig:1317`.
+                hint_matches:
+                    Option<Vec<rio_backend::crosswords::search::Match>>,
+                /// Currently-focused search match (↑/↓ navigation).
+                /// Rendered with `search_focused_match_background` /
+                /// `_foreground` — matches Ghostty's `.search_selected`
+                /// highlight tag.
+                focused_match:
+                    Option<rio_backend::crosswords::search::Match>,
             }
 
             let (active_key, scaled_margin) = {
                 let grid = self.context_manager.current_grid();
                 (grid.current, grid.scaled_margin)
             };
+            // Snapshot the window's focused search match before the
+            // per-context borrow below. `search_state` lives on
+            // `Screen`, so we can't reach for it from inside the
+            // `contexts_mut` iteration.
+            let search_focused_match = self.search_state.focused_match.clone();
             let mut panels: Vec<PanelFrame> = Vec::new();
             for (key, item) in self
                 .context_manager
@@ -3543,6 +3562,18 @@ impl Screen<'_> {
                     &mut ctx.renderable_content.last_frame_damage,
                     rio_backend::event::TerminalDamage::Noop,
                 );
+                let hint_matches = ctx.renderable_content.hint_matches.clone();
+                let is_active = *key == active_key;
+                // `focused_match` lives on `Screen::search_state` — it's
+                // a per-window state tied to whichever panel has search
+                // focus, which is the active one. Don't paint a focused
+                // highlight on non-active panels even if they happen to
+                // carry hint_matches.
+                let focused_match = if is_active {
+                    search_focused_match.clone()
+                } else {
+                    None
+                };
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
@@ -3557,10 +3588,12 @@ impl Screen<'_> {
                     cursor_col: cursor.state.pos.col.0 as u16,
                     cursor_row: cursor.state.pos.row.0 as u16,
                     cursor_visible: cursor.state.is_visible(),
-                    is_active: *key == active_key,
+                    is_active,
                     damage,
                     selection,
                     display_offset,
+                    hint_matches,
+                    focused_match,
                 });
             }
 
@@ -3635,6 +3668,7 @@ impl Screen<'_> {
                     Vec::with_capacity(cols);
                 let mut fg_scratch: Vec<rio_backend::sugarloaf::grid::CellText> =
                     Vec::with_capacity(cols);
+                let mut hint_scratch: Vec<crate::grid_emit::RowHint> = Vec::new();
 
                 // Small helper: rebuild one row into the grid's
                 // buffers. Closure-style to avoid duplicating the
@@ -3646,6 +3680,8 @@ impl Screen<'_> {
                 // never needs shaping so it runs on all platforms;
                 // the fg path is macOS-specific pending the
                 // wgpu+swash port.
+                let hint_matches_slice = p.hint_matches.as_deref();
+                let focused_match_ref = p.focused_match.as_ref();
                 let mut rebuild_row = |y: usize,
                                        grid: &mut rio_backend::sugarloaf::grid::GridRenderer,
                                        rasterizer: &mut crate::grid_emit::GridGlyphRasterizer| {
@@ -3658,6 +3694,14 @@ impl Screen<'_> {
                         cols,
                         p.display_offset,
                     );
+                    crate::grid_emit::row_hints_for(
+                        hint_matches_slice,
+                        focused_match_ref,
+                        y,
+                        cols,
+                        p.display_offset,
+                        &mut hint_scratch,
+                    );
                     crate::grid_emit::build_row_bg(
                         row,
                         cols,
@@ -3665,6 +3709,7 @@ impl Screen<'_> {
                         renderer_ref,
                         &p.term_colors,
                         row_sel,
+                        &hint_scratch,
                         &mut bg_scratch,
                     );
                     crate::grid_emit::build_row_fg(
@@ -3680,6 +3725,7 @@ impl Screen<'_> {
                         p.cell_w,
                         p.cell_h,
                         row_sel,
+                        &hint_scratch,
                         &font_library,
                         &mut fg_scratch,
                     );
