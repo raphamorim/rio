@@ -3242,7 +3242,7 @@ impl Screen<'_> {
         }
     }
 
-    pub fn render_welcome(&mut self) {
+    pub(crate) fn render_welcome(&mut self) {
         crate::router::routes::welcome::screen(
             &mut self.sugarloaf,
             &self.context_manager.current().dimension,
@@ -3357,7 +3357,17 @@ impl Screen<'_> {
         }
     }
 
-    pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
+    /// The single entry point that actually draws to the GPU.
+    ///
+    /// Only `WindowEvent::RedrawRequested` in `application.rs` is
+    /// allowed to call this — everything else in the crate goes
+    /// through the damage system: mark `pending_update` via
+    /// `mark_dirty` / `set_terminal_damage` and call
+    /// `route.request_redraw()`. The next CVDisplayLink tick fires
+    /// `RedrawRequested` which consumes the damage here. `pub(crate)`
+    /// enforces that contract — external callers (plugins, tests)
+    /// can't force a render outside the vsync-paced path.
+    pub(crate) fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
         // Phase 2.0 smoke test: ensure the active panel has a
         // `GridRenderer`. This forces `MetalGridRenderer::new` /
         // `WgpuGridRenderer::new` to actually run on real hardware,

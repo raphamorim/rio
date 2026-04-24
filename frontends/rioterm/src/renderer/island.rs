@@ -563,11 +563,6 @@ impl Island {
         true
     }
 
-    /// Check if the picker needs continuous redraw (caret blink)
-    pub fn needs_rename_redraw(&self) -> bool {
-        self.color_picker_tab.is_some()
-    }
-
     /// Check if a click hits a color swatch in the picker.
     /// Returns true if the click was consumed.
     pub fn handle_color_picker_click(

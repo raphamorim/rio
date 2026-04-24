@@ -301,12 +301,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             // Just mark dirty — damage will be extracted from
                             // the terminal when the renderer locks it.
                             ctx_item.val.renderable_content.pending_update.set_dirty();
-                            route.schedule_redraw(&mut self.scheduler, route_id);
+                            route.request_redraw();
                         }
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
+            RioEventType::Rio(RioEvent::UpdateGraphics { route_id: _, queues }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
@@ -331,7 +331,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     // Request a redraw to display the updated graphics
-                    route.schedule_redraw(&mut self.scheduler, route_id);
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::PrepareUpdateConfig) => {
@@ -1763,36 +1763,32 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
 
-                let island_needs_redraw = route
-                    .window
-                    .screen
-                    .renderer
-                    .island
-                    .as_ref()
-                    .is_some_and(|i| i.needs_rename_redraw());
-                if self.config.renderer.strategy.is_game()
-                    || route.path == RoutePath::Welcome
-                    || route.path == RoutePath::ConfirmQuit
-                    || route.window.screen.renderer.command_palette.is_enabled()
-                    || island_needs_redraw
-                {
+                // Game mode = unlocked framerate, so keep the event loop
+                // spinning. Every other case is vsync-paced: a
+                // `request_redraw` tells winit to deliver
+                // `RedrawRequested` at the next platform vsync, and the
+                // OS parks the thread until that event arrives. Busy-
+                // polling between vsyncs here would burn CPU without
+                // delivering more frames.
+                if self.config.renderer.strategy.is_game() {
                     route.request_redraw();
-                } else if route
-                    .window
-                    .screen
-                    .ctx()
-                    .current()
-                    .renderable_content
-                    .pending_update
-                    .is_dirty()
-                {
-                    route.schedule_redraw(
-                        &mut self.scheduler,
-                        route.window.screen.ctx().current_route(),
-                    );
+                    event_loop.set_control_flow(ControlFlow::Poll);
+                } else {
+                    if route.path == RoutePath::Welcome
+                        || route.path == RoutePath::ConfirmQuit
+                        || route
+                            .window
+                            .screen
+                            .ctx()
+                            .current()
+                            .renderable_content
+                            .pending_update
+                            .is_dirty()
+                    {
+                        route.request_redraw();
+                    }
+                    event_loop.set_control_flow(ControlFlow::Wait);
                 }
-
-                event_loop.set_control_flow(ControlFlow::Wait);
             }
             _ => {}
         }
