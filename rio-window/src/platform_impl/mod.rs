@@ -3,10 +3,6 @@ use crate::monitor::{
 };
 use crate::window::Fullscreen as RootFullscreen;
 
-// Shared by every backend — "sustain presenting after high-rate
-// input" gate. See module docs for the rationale.
-pub(crate) mod input_rate;
-
 #[cfg(windows_platform)]
 #[path = "windows/mod.rs"]
 mod platform;
