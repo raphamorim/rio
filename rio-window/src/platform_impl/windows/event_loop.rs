@@ -1216,20 +1216,6 @@ unsafe fn public_window_callback_inner(
 ) -> LRESULT {
     let mut result = ProcResult::DefWindowProc(wparam);
 
-    // Mark any input message before further processing so the
-    // DwmFlush worker keeps fanning out redraws for the next 1 s.
-    // Mirrors macOS / Wayland / X11.
-    match msg {
-        WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP | WM_MOUSEMOVE
-        | WM_MOUSEWHEEL | WM_MOUSEHWHEEL | WM_LBUTTONDOWN | WM_LBUTTONUP
-        | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP
-        | WM_XBUTTONDOWN | WM_XBUTTONUP | WM_TOUCH | WM_POINTERDOWN
-        | WM_POINTERUPDATE | WM_POINTERUP => {
-            userdata.vsync_state.mark_input_received();
-        }
-        _ => (),
-    }
-
     // Send new modifiers before sending key events.
     let mods_changed_callback = || match msg {
         WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP => {
@@ -2661,6 +2647,10 @@ unsafe fn public_window_callback_inner(
                 });
                 result = ProcResult::Value(0);
             } else if msg == REDRAW_REQUESTED_MSG_ID.get() {
+                // Clear the VSync worker's dirty flag so it skips its
+                // own `RedrawWindow` on the next tick; the paint is
+                // already queued here.
+                userdata.vsync_state.clear_dirty(window);
                 // If we're nested inside another handler, defer to the
                 // buffered-event flush via `redraw_requested`.
                 if !userdata.event_loop_runner.should_buffer() {
