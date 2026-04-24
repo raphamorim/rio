@@ -417,6 +417,6 @@ impl TrailCursor {
     /// `true` while the spring corners haven't settled *visibly*.
     #[inline]
     pub fn is_animating(&self) -> bool {
-        !self.animating
+        self.animating
     }
 }

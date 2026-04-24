@@ -705,7 +705,7 @@ impl Renderer {
     /// Check if the renderer needs continuous redraw (for animations)
     #[inline]
     pub fn needs_redraw(&mut self) -> bool {
-        if self.trail_cursor.is_animating() {
+        if self.trail_cursor_enabled && self.trail_cursor.is_animating() {
             return true;
         }
         if self.scrollbar.needs_redraw() {
