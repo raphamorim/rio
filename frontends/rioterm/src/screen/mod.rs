@@ -344,6 +344,28 @@ impl Screen<'_> {
         &mut self.context_manager
     }
 
+    /// Mark the active context dirty. Replaces synchronous
+    /// `self.render()` calls scattered through keyboard / mouse / VI /
+    /// search / hint handlers — those used to force an immediate
+    /// render, which bypassed vsync. With the damage system, the
+    /// caller in `application.rs` already requests a redraw after the
+    /// handler returns, and the next vsync fires `RedrawRequested`
+    /// which consumes the dirty flag. UI-only: terminal cells didn't
+    /// change, so no row rebuild is needed — the `(None, None) =>
+    /// TerminalDamage::Noop` branch in `Renderer::run` keeps the
+    /// panel in the render set without re-emitting rows.
+    ///
+    /// Terminal-content changes (scroll, selection band, PTY output)
+    /// still flow through `set_terminal_damage` on their own paths.
+    #[inline]
+    pub fn mark_dirty(&mut self) {
+        self.context_manager
+            .current_mut()
+            .renderable_content
+            .pending_update
+            .set_dirty();
+    }
+
     #[inline]
     pub fn set_modifiers(&mut self, modifiers: Modifiers) {
         self.modifiers = modifiers;
@@ -512,7 +534,7 @@ impl Screen<'_> {
             .current_grid_mut()
             .update_dimensions(&mut self.sugarloaf);
 
-        self.render();
+        self.mark_dirty();
         self.resize_all_contexts();
     }
 
@@ -545,7 +567,7 @@ impl Screen<'_> {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.render();
+        self.mark_dirty();
         self.resize_all_contexts();
         self.context_manager
             .current_grid_mut()
@@ -663,7 +685,7 @@ impl Screen<'_> {
                 ) => {
                     self.hint_state.stop();
                     self.update_hint_state();
-                    self.render();
+                    self.mark_dirty();
                     return;
                 }
                 rio_window::keyboard::Key::Named(
@@ -673,7 +695,7 @@ impl Screen<'_> {
                     self.hint_state.keyboard_input(&*terminal, '\x08');
                     drop(terminal);
                     self.update_hint_state();
-                    self.render();
+                    self.mark_dirty();
                     return;
                 }
                 _ => {}
@@ -691,13 +713,13 @@ impl Screen<'_> {
                     // Stop hint mode and update state with proper damage tracking
                     self.hint_state.stop();
                     self.update_hint_state();
-                    self.render();
+                    self.mark_dirty();
                     return;
                 }
                 drop(terminal);
             }
             self.update_hint_state();
-            self.render();
+            self.mark_dirty();
             return;
         }
 
@@ -713,7 +735,7 @@ impl Screen<'_> {
                 self.search_input(character);
             }
 
-            self.render();
+            self.mark_dirty();
             return;
         }
 
@@ -886,52 +908,52 @@ impl Screen<'_> {
                     Act::SearchForward => {
                         self.start_search(Direction::Right);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SearchBackward => {
                         self.start_search(Direction::Left);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchConfirm) => {
                         self.confirm_search(clipboard);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchCancel) => {
                         self.cancel_search(clipboard);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchClear) => {
                         let direction = self.search_state.direction;
                         self.cancel_search(clipboard);
                         self.start_search(direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchFocusNext) => {
                         self.advance_search_origin(self.search_state.direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchFocusPrevious) => {
                         let direction = self.search_state.direction.opposite();
                         self.advance_search_origin(direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchDeleteWord) => {
                         self.search_pop_word();
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchHistoryPrevious) => {
                         self.search_history_previous();
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchHistoryNext) => {
                         self.search_history_next();
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ToggleViMode => {
                         let context = self.context_manager.current_mut();
@@ -946,7 +968,7 @@ impl Screen<'_> {
                                 rio_backend::event::TerminalDamage::Full,
                             );
                         self.renderer.set_vi_mode(has_vi_mode_enabled);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ViMotion(motion) => {
                         let context = self.context_manager.current_mut();
@@ -966,7 +988,7 @@ impl Screen<'_> {
                             .set_terminal_damage(
                                 rio_backend::event::TerminalDamage::Full,
                             );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
                         let context = self.context_manager.current_mut();
@@ -985,7 +1007,7 @@ impl Screen<'_> {
                             .set_terminal_damage(
                                 rio_backend::event::TerminalDamage::Full,
                             );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
                         self.toggle_selection(
@@ -1000,7 +1022,7 @@ impl Screen<'_> {
                             .set_terminal_damage(
                                 rio_backend::event::TerminalDamage::Full,
                             );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
                         self.toggle_selection(
@@ -1015,7 +1037,7 @@ impl Screen<'_> {
                             .set_terminal_damage(
                                 rio_backend::event::TerminalDamage::Full,
                             );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
                         self.toggle_selection(
@@ -1030,7 +1052,7 @@ impl Screen<'_> {
                             .set_terminal_damage(
                                 rio_backend::event::TerminalDamage::Full,
                             );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
                         self.toggle_selection(
@@ -1045,7 +1067,7 @@ impl Screen<'_> {
                             .set_terminal_damage(
                                 rio_backend::event::TerminalDamage::Full,
                             );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SplitRight => {
                         self.split_right();
@@ -1090,7 +1112,7 @@ impl Screen<'_> {
                         }
                         self.context_manager.close_unfocused_tabs();
                         self.resize_top_or_bottom_line(1);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Quit => {
                         self.context_manager.quit();
@@ -1115,7 +1137,7 @@ impl Screen<'_> {
                         terminal.scroll_display(Scroll::PageUp);
                         drop(terminal);
                         self.renderer.scrollbar.notify_scroll(rtid);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ScrollPageDown => {
                         // Move vi mode cursor.
@@ -1130,7 +1152,7 @@ impl Screen<'_> {
                         terminal.scroll_display(Scroll::PageDown);
                         drop(terminal);
                         self.renderer.scrollbar.notify_scroll(rtid);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ScrollHalfPageUp => {
                         // Move vi mode cursor.
@@ -1145,7 +1167,7 @@ impl Screen<'_> {
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
                         self.renderer.scrollbar.notify_scroll(rtid);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ScrollHalfPageDown => {
                         // Move vi mode cursor.
@@ -1160,7 +1182,7 @@ impl Screen<'_> {
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
                         self.renderer.scrollbar.notify_scroll(rtid);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ScrollToTop => {
                         let current = self.context_manager.current_mut();
@@ -1173,7 +1195,7 @@ impl Screen<'_> {
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
                         self.renderer.scrollbar.notify_scroll(rtid);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ScrollToBottom => {
                         let current = self.context_manager.current_mut();
@@ -1189,7 +1211,7 @@ impl Screen<'_> {
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
                         self.renderer.scrollbar.notify_scroll(rtid);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Scroll(delta) => {
                         let current = self.context_manager.current_mut();
@@ -1198,14 +1220,14 @@ impl Screen<'_> {
                         terminal.scroll_display(Scroll::Delta(*delta));
                         drop(terminal);
                         self.renderer.scrollbar.notify_scroll(rtid);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ClearHistory => {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
                         terminal.clear_saved_history();
                         drop(terminal);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
                     Act::ToggleAppearanceTheme => {
@@ -1220,7 +1242,7 @@ impl Screen<'_> {
                         // must NOT wipe the user's in-progress query.
                         if !self.renderer.command_palette.is_enabled() {
                             self.renderer.command_palette.set_enabled(true);
-                            self.render();
+                            self.mark_dirty();
                         }
                     }
                     Act::Minimize => {
@@ -1236,12 +1258,12 @@ impl Screen<'_> {
                     Act::SelectNextSplit => {
                         self.cancel_search(clipboard);
                         self.context_manager.select_next_split();
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SelectPrevSplit => {
                         self.cancel_search(clipboard);
                         self.context_manager.select_prev_split();
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SelectNextSplitOrTab => {
                         self.cancel_search(clipboard);
@@ -1254,7 +1276,7 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SelectPrevSplitOrTab => {
                         self.cancel_search(clipboard);
@@ -1267,7 +1289,7 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SelectTab(tab_index) => {
                         let old_index = self.context_manager.current_index();
@@ -1279,7 +1301,7 @@ impl Screen<'_> {
                             new_index,
                         );
                         self.cancel_search(clipboard);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SelectLastTab => {
                         self.cancel_search(clipboard);
@@ -1291,7 +1313,7 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SelectNextTab => {
                         self.cancel_search(clipboard);
@@ -1304,7 +1326,7 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::MoveCurrentTabToPrev => {
                         self.cancel_search(clipboard);
@@ -1317,7 +1339,7 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::MoveCurrentTabToNext => {
                         self.cancel_search(clipboard);
@@ -1330,7 +1352,7 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SelectPrevTab => {
                         self.cancel_search(clipboard);
@@ -1343,7 +1365,7 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
@@ -1369,7 +1391,7 @@ impl Screen<'_> {
             &mut self.sugarloaf,
         );
 
-        self.render();
+        self.mark_dirty();
     }
 
     pub fn split_right(&mut self) {
@@ -1386,7 +1408,7 @@ impl Screen<'_> {
         self.context_manager
             .split(rich_text_id, false, &mut self.sugarloaf);
 
-        self.render();
+        self.mark_dirty();
     }
 
     pub fn split_down(&mut self) {
@@ -1403,7 +1425,7 @@ impl Screen<'_> {
         self.context_manager
             .split(rich_text_id, true, &mut self.sugarloaf);
 
-        self.render();
+        self.mark_dirty();
     }
 
     pub fn move_divider_up(&mut self) {
@@ -1412,7 +1434,7 @@ impl Screen<'_> {
             .context_manager
             .move_divider_up(amount, &mut self.sugarloaf)
         {
-            self.render();
+            self.mark_dirty();
         }
     }
 
@@ -1422,7 +1444,7 @@ impl Screen<'_> {
             .context_manager
             .move_divider_down(amount, &mut self.sugarloaf)
         {
-            self.render();
+            self.mark_dirty();
         }
     }
 
@@ -1432,7 +1454,7 @@ impl Screen<'_> {
             .context_manager
             .move_divider_left(amount, &mut self.sugarloaf)
         {
-            self.render();
+            self.mark_dirty();
         }
     }
 
@@ -1442,7 +1464,7 @@ impl Screen<'_> {
             .context_manager
             .move_divider_right(amount, &mut self.sugarloaf)
         {
-            self.render();
+            self.mark_dirty();
         }
     }
 
@@ -1479,7 +1501,7 @@ impl Screen<'_> {
         );
 
         self.cancel_search(clipboard);
-        self.render();
+        self.mark_dirty();
     }
 
     pub fn close_split_or_tab(&mut self, clipboard: &mut Clipboard) {
@@ -1487,7 +1509,7 @@ impl Screen<'_> {
             self.clear_selection();
             self.context_manager
                 .remove_current_grid(&mut self.sugarloaf);
-            self.render();
+            self.mark_dirty();
         } else {
             self.close_tab(clipboard);
         }
@@ -1508,14 +1530,14 @@ impl Screen<'_> {
                 self.context_manager
                     .current_grid_mut()
                     .update_dimensions(&mut self.sugarloaf);
-                self.render();
+                self.mark_dirty();
             }
             return;
         }
 
         let num_tabs = self.ctx().len().wrapping_sub(1);
         self.resize_top_or_bottom_line(num_tabs);
-        self.render();
+        self.mark_dirty();
     }
 
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
@@ -2298,7 +2320,7 @@ impl Screen<'_> {
                     self.renderer.command_palette.set_enabled(false);
                     self.execute_palette_action(action, clipboard);
                 }
-                self.render();
+                self.mark_dirty();
                 true
             }
             Ok(None) => {
@@ -2308,7 +2330,7 @@ impl Screen<'_> {
             Err(()) => {
                 // Clicked outside — close palette
                 self.renderer.command_palette.set_enabled(false);
-                self.render();
+                self.mark_dirty();
                 true
             }
         }
@@ -2345,7 +2367,7 @@ impl Screen<'_> {
                         self.resize_top_or_bottom_line(self.ctx().len());
                     }
                 }
-                self.render();
+                self.mark_dirty();
                 true
             }
             Ok(None) => {
@@ -2386,7 +2408,7 @@ impl Screen<'_> {
                         Self::open_docs_url();
                     }
                 }
-                self.render();
+                self.mark_dirty();
                 true
             }
             Ok(None) => {
@@ -2396,7 +2418,7 @@ impl Screen<'_> {
             Err(()) => {
                 // Clicked outside — close the assistant overlay
                 self.renderer.assistant.clear();
-                self.render();
+                self.mark_dirty();
                 true
             }
         }
@@ -2469,7 +2491,7 @@ impl Screen<'_> {
                     drop(terminal);
                 }
             }
-            self.render();
+            self.mark_dirty();
             true
         } else {
             false
@@ -2489,7 +2511,7 @@ impl Screen<'_> {
                 terminal.scroll_display(Scroll::Delta(delta));
             }
             drop(terminal);
-            self.render();
+            self.mark_dirty();
         }
         true
     }
@@ -2568,7 +2590,7 @@ impl Screen<'_> {
                     num_tabs,
                 );
                 if consumed {
-                    self.render();
+                    self.mark_dirty();
                     return true;
                 }
             }
@@ -2580,7 +2602,7 @@ impl Screen<'_> {
             if let Some(ref mut island) = self.renderer.island {
                 if island.is_color_picker_open() {
                     island.close_color_picker();
-                    self.render();
+                    self.mark_dirty();
                 }
             }
             return false;
@@ -2639,7 +2661,7 @@ impl Screen<'_> {
                 .unwrap_or_else(|| String::from("~"));
             if let Some(ref mut island) = self.renderer.island {
                 island.toggle_color_picker(clicked_tab, &current_title);
-                self.render();
+                self.mark_dirty();
             }
             return true;
         }
@@ -2657,14 +2679,14 @@ impl Screen<'_> {
                 new_index,
             );
 
-            self.render();
+            self.mark_dirty();
         }
 
         // Close picker on normal click
         if let Some(ref mut island) = self.renderer.island {
             if island.is_color_picker_open() {
                 island.close_color_picker();
-                self.render();
+                self.mark_dirty();
             }
         }
 
@@ -2761,7 +2783,7 @@ impl Screen<'_> {
         // Enable IME so we can input into the search bar with it if we were in Vi mode.
         // self.window().set_ime_allowed(true);
 
-        self.render();
+        self.mark_dirty();
     }
 
     #[inline]
@@ -2810,7 +2832,7 @@ impl Screen<'_> {
         // Clear focused match.
         self.search_state.focused_match = None;
 
-        self.render();
+        self.mark_dirty();
     }
 
     #[inline]
@@ -2844,7 +2866,7 @@ impl Screen<'_> {
         }
 
         self.update_search();
-        self.render();
+        self.mark_dirty();
     }
 
     fn update_search(&mut self) {
@@ -3936,7 +3958,7 @@ impl Screen<'_> {
             drop(terminal);
             self.update_hint_state();
         }
-        self.render();
+        self.mark_dirty();
     }
 
     /// Start hint mode with the given hint configuration
@@ -3952,7 +3974,7 @@ impl Screen<'_> {
         // Update hint state and trigger damage tracking
         self.update_hint_state();
 
-        self.render();
+        self.mark_dirty();
     }
 
     /// Execute the action for a selected hint
@@ -3981,14 +4003,14 @@ impl Screen<'_> {
                     self.context_manager
                         .current_mut()
                         .set_selection(Some(selection));
-                    self.render();
+                    self.mark_dirty();
                 }
                 HintInternalAction::MoveViModeCursor => {
                     // Move vi mode cursor to hint position
                     let mut terminal = self.context_manager.current().terminal.lock();
                     terminal.vi_mode_cursor.pos = hint_match.start;
                     drop(terminal);
-                    self.render();
+                    self.mark_dirty();
                 }
             },
             HintAction::Command { command } => {
