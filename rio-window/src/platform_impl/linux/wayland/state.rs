@@ -120,9 +120,8 @@ pub struct WinitState {
     /// input (≥ 60 events/sec over 100 ms) extends the 1-second
     /// presentation window — single keystrokes don't. See
     /// `platform_impl::input_rate`.
-    pub input_rate_tracker: std::cell::RefCell<
-        crate::platform_impl::input_rate::InputRateTracker,
-    >,
+    pub input_rate_tracker:
+        std::cell::RefCell<crate::platform_impl::input_rate::InputRateTracker>,
 }
 
 impl WinitState {

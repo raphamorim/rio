@@ -60,8 +60,7 @@ impl InputRateTracker {
 
         // `min_events` = inputs_per_second × window_ms / 1000. For
         // defaults (60/s, 100 ms) that's 6 events in the last 100 ms.
-        let min_events =
-            self.inputs_per_second as u128 * self.window.as_millis() / 1000;
+        let min_events = self.inputs_per_second as u128 * self.window.as_millis() / 1000;
         if self.timestamps.len() as u128 >= min_events {
             self.sustain_until = now + self.sustain_duration;
         }

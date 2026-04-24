@@ -393,16 +393,22 @@ impl TrailCursor {
         // TL and BR, so the shared diagonal seam is hidden inside the
         // convex hull — same as any triangle-fan tessellation.
         sugarloaf.triangle(
-            pts[0].0, pts[0].1,
-            pts[1].0, pts[1].1,
-            pts[2].0, pts[2].1,
+            pts[0].0,
+            pts[0].1,
+            pts[1].0,
+            pts[1].1,
+            pts[2].0,
+            pts[2].1,
             DEPTH,
             cursor_color,
         );
         sugarloaf.triangle(
-            pts[0].0, pts[0].1,
-            pts[2].0, pts[2].1,
-            pts[3].0, pts[3].1,
+            pts[0].0,
+            pts[0].1,
+            pts[2].0,
+            pts[2].1,
+            pts[3].0,
+            pts[3].1,
             DEPTH,
             cursor_color,
         );
@@ -414,7 +420,7 @@ impl TrailCursor {
     /// any spring `|position| >= 0.01` (the internal `Spring::update`
     /// reset tolerance). We raise that to 0.5 px so the outer render
     /// loop exits ~15-25 frames sooner per animation — without this,
-    /// rio keeps re-posting `needs_redraw()` / `set_ui_damage(island)`
+    /// rio keeps re-posting `needs_redraw()` / `set_dirty()`
     /// every vsync for the full spring tail, which starves the
     /// compositor drawable pool and causes `next_drawable` to block
     /// ~4 ms per frame on macOS. Neovide doesn't hit this because
@@ -429,8 +435,8 @@ impl TrailCursor {
         if !self.animating {
             return false;
         }
-        self.corners.iter().any(|c| {
-            c.spring_x.position.abs() >= 0.5 || c.spring_y.position.abs() >= 0.5
-        })
+        self.corners
+            .iter()
+            .any(|c| c.spring_x.position.abs() >= 0.5 || c.spring_y.position.abs() >= 0.5)
     }
 }

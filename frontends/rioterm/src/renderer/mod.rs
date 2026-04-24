@@ -291,7 +291,6 @@ impl Renderer {
                 .renderable_content
                 .pending_update
                 .take_terminal_damage();
-            let _ui_damage = context.renderable_content.pending_update.take_ui_damage();
             context.renderable_content.pending_update.reset();
 
             // Compute snapshot at render time — extract PTY-side damage from the
@@ -313,10 +312,14 @@ impl Renderer {
                             PendingUpdate::merge_terminal_damages(ui, pty)
                         }
                         (Some(d), None) | (None, Some(d)) => d,
-                        (None, None) => {
-                            drop(terminal);
-                            continue;
-                        }
+                        // UI-only damage (overlay hover, command-palette
+                        // input, etc.): cells didn't change, but the
+                        // panel still has to go through the render path
+                        // so UI overlays paint on top of a fresh frame.
+                        // Noop propagates to `RowsToRebuild::None` in
+                        // `screen::render`'s emit loop — grid keeps its
+                        // resident CPU bg/fg buffers, zero row work.
+                        (None, None) => TerminalDamage::Noop,
                     }
                 };
 
