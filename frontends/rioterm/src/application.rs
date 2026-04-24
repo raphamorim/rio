@@ -825,7 +825,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Background color is index 1 relative to NamedColor::Foreground
                     if index == NamedColor::Foreground as usize + 1 {
                         let grid = screen.context_manager.current_grid_mut();
-                        if let Some(context_item) = grid.get_mut(route_id.into()) {
+                        // The event carries a `route_id: usize` (global
+                        // counter). `ContextGrid::get_mut` is keyed on
+                        // taffy `NodeId` — a different identifier space,
+                        // so `get_mut(route_id.into())` effectively
+                        // never matches. Look the panel up by its
+                        // actual route id.
+                        if let Some(context_item) = grid.get_by_route_id(route_id) {
                             use crate::context::renderable::BackgroundState;
                             context_item.context_mut().renderable_content.background =
                                 Some(match color {

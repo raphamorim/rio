@@ -146,8 +146,20 @@ pub struct GridUniforms {
     pub flags: u32,
     /// Padding-extend bitfield (bit 0 = left, 1 = right, 2 = up, 3 = down).
     pub padding_extend: u32,
-    /// Tail padding to round the struct size up to 160 = 10 × 16.
-    pub _pad_tail: u32,
+    /// How the shader should interpret the sRGB-encoded CPU color
+    /// inputs before writing to the DisplayP3-tagged drawable.
+    /// - `0` = sRGB      (apply sRGB → DisplayP3 primaries matrix)
+    /// - `1` = DisplayP3 (already P3, skip matrix)
+    /// - `2` = Rec.2020  (apply Rec.2020 → DisplayP3 matrix)
+    ///
+    /// Wired to the same source as sugarloaf's rich-text quad
+    /// `input_colorspace` (`renderer/mod.rs:264`), so the grid and
+    /// every other pipeline agree on the transform. Without this the
+    /// grid bg appears brighter/more saturated than the window bg
+    /// fill, which runs through `prepare_output_rgb`. Mirrors
+    /// Ghostty's `Uniforms.use_display_p3` + `load_color` pair at
+    /// `ghostty/src/renderer/shaders/shaders.metal:224`.
+    pub input_colorspace: u32,
 }
 
 impl GridUniforms {
