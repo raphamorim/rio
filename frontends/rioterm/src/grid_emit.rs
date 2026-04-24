@@ -561,7 +561,9 @@ pub fn build_row_bg(
     // are cheap enough to compute unconditionally when the row is hit.
     let (match_bg, focused_bg) = if !row_hints.is_empty() {
         (
-            Some(normalized_to_u8(renderer.named_colors.search_match_background)),
+            Some(normalized_to_u8(
+                renderer.named_colors.search_match_background,
+            )),
             Some(normalized_to_u8(
                 renderer.named_colors.search_focused_match_background,
             )),
@@ -1085,10 +1087,7 @@ pub fn build_row_fg(
                 x = end;
                 continue;
             };
-            run_cache_put(
-                &mut rasterizer.run_cache,
-                RunCacheEntry { hash, glyphs },
-            );
+            run_cache_put(&mut rasterizer.run_cache, RunCacheEntry { hash, glyphs });
             ascent_px
         };
 
@@ -1105,8 +1104,8 @@ pub fn build_row_fg(
         // UTF-16 code-unit offsets, swash reports UTF-8 byte offsets.
         // Each backend walks its own cell-position table.
         let glyph_emits: Vec<(u16, u16)> = {
-            let glyphs = run_cache_get(&mut rasterizer.run_cache, hash)
-                .expect("just inserted");
+            let glyphs =
+                run_cache_get(&mut rasterizer.run_cache, hash).expect("just inserted");
             let mut cell_idx_in_run: u16 = 0;
             let mut out = Vec::with_capacity(glyphs.len());
             #[cfg(target_os = "macos")]

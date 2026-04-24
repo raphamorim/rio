@@ -1266,15 +1266,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .search
                         .hover(mx, my, win_w, scale)
                     {
-                        // The search overlay overlaps terminal cells,
-                        // so the panel behind it must re-render with
-                        // the new hover highlight on top. `UIDamage`
-                        // alone isn't enough — `renderer.run`'s inner
-                        // `(ui_terminal_damage, pty_damage)` match
-                        // falls through to `continue` when both are
-                        // `None`, even if `pending_update.is_dirty()`.
-                        // Force `TerminalDamage::Full` to keep the
-                        // panel in the render set.
+                        // UI-only change (hover highlight). `set_dirty`
+                        // passes `Renderer::run`'s per-context gate;
+                        // the inner damage match hits
+                        // `(None, None) => TerminalDamage::Noop` so
+                        // no rows rebuild. The search overlay itself
+                        // is drawn unconditionally after the per-context
+                        // loop in `Renderer::run`.
                         route
                             .window
                             .screen
@@ -1282,9 +1280,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_terminal_damage(
-                                rio_backend::event::TerminalDamage::Full,
-                            );
+                            .set_dirty();
                         route.request_redraw();
                     }
                 }

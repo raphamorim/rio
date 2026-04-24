@@ -3495,14 +3495,12 @@ impl Screen<'_> {
                 /// `search_match_background` / `_foreground`. Mirrors
                 /// Ghostty's `row_data.highlights` at
                 /// `ghostty/src/renderer/generic.zig:1317`.
-                hint_matches:
-                    Option<Vec<rio_backend::crosswords::search::Match>>,
+                hint_matches: Option<Vec<rio_backend::crosswords::search::Match>>,
                 /// Currently-focused search match (↑/↓ navigation).
                 /// Rendered with `search_focused_match_background` /
                 /// `_foreground` — matches Ghostty's `.search_selected`
                 /// highlight tag.
-                focused_match:
-                    Option<rio_backend::crosswords::search::Match>,
+                focused_match: Option<rio_backend::crosswords::search::Match>,
             }
 
             let (active_key, scaled_margin) = {
@@ -3822,16 +3820,16 @@ impl Screen<'_> {
             }
         }
 
-        // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
+        // Mark as dirty if we need continuous rendering (e.g.,
+        // indeterminate progress bar, trail cursor animation). UI-only
+        // — terminal cells didn't change, but we want the next vsync
+        // to fire a render so overlays/animations tick forward.
         if self.renderer.needs_redraw() {
             self.context_manager
                 .current_mut()
                 .renderable_content
                 .pending_update
-                .set_ui_damage(crate::context::renderable::UIDamage {
-                    island: true,
-                    search: false,
-                });
+                .set_dirty();
         }
 
         // In case the configuration of blinking cursor is enabled
