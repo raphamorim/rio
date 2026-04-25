@@ -284,6 +284,9 @@ impl Sugarloaf<'_> {
 
         let mut text = crate::text::Text::new(font_library);
         text.set_scale_factor(state.style.scale_factor);
+        if matches!(ctx.inner, crate::context::ContextType::Cpu(_)) {
+            text.init_cpu();
+        }
 
         let instance = Sugarloaf {
             state,
@@ -1177,6 +1180,7 @@ impl Sugarloaf<'_> {
             &mut self.cpu_cache,
             bg,
             grids,
+            &self.text,
         );
 
         self.reset();
