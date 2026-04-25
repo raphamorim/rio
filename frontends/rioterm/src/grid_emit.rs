@@ -595,9 +595,7 @@ pub fn build_row_bg(
     // strip the per-cell `cell_in_row_sel` / `cell_in_row_hints`
     // checks and just walk cells.
     let has_sel = row_sel.is_some();
-    let has_color_hints = row_hints
-        .iter()
-        .any(|rh| rh.tag != HintTag::HyperlinkHover);
+    let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
     if !has_sel && !has_color_hints {
         bg_scratch.reserve(cols);
         for x in 0..cols {
@@ -731,7 +729,6 @@ pub struct GridGlyphRasterizer {
             rio_backend::sugarloaf::swash::CacheKey,
         ),
     >,
-
 }
 
 impl Default for GridGlyphRasterizer {
@@ -782,10 +779,7 @@ impl GridGlyphRasterizer {
         // the bold and italic font IDs are dynamic (depend on which
         // faces the user loaded), and non-ASCII can hit fallback.
         if style_flags == 0 && (' '..='~').contains(&ch) {
-            return (
-                rio_backend::sugarloaf::font::FONT_ID_REGULAR as u32,
-                false,
-            );
+            return (rio_backend::sugarloaf::font::FONT_ID_REGULAR as u32, false);
         }
 
         *self
@@ -1045,9 +1039,7 @@ pub fn build_row_fg(
     // `cell_in_row_sel` + `cell_in_row_hints` calls per glyph when
     // the row has no selection / no color-changing hints.
     let has_sel = row_sel.is_some();
-    let has_color_hints = row_hints
-        .iter()
-        .any(|rh| rh.tag != HintTag::HyperlinkHover);
+    let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
     let needs_per_cell_check = has_sel || has_color_hints;
 
     // Phase 1: underline pass. Emit before glyphs so grayscale quads

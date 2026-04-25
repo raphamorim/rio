@@ -12,7 +12,6 @@ use crate::context::{Context, ContextType};
 use crate::font::FontLibrary;
 use crate::layout::TextDimensions;
 use crate::renderer::image_cache::ImageCache;
-use crate::sugarloaf::graphics::GraphicId;
 use crate::Graphics;
 use compositor::{Compositor, Rect, Vertex};
 use rustc_hash::FxHashMap;
@@ -711,17 +710,6 @@ impl MetalRenderer {
     }
 }
 
-struct CachedGraphic {
-    location: image_cache::ImageLocation,
-    /// Atlas allocation ID for deallocation.
-    image_id: image_cache::ImageId,
-    width: f32,
-    height: f32,
-    last_used_frame: u64,
-    /// Atlas layer index (1-based, 0 = no texture)
-    atlas_layer: i32,
-}
-
 /// Backend-agnostic per-image GPU texture.
 /// Dropped when removed from the map → GPU memory freed immediately.
 ///
@@ -800,8 +788,6 @@ pub struct Renderer {
     vertices: Vec<Vertex>,
     draw_cmds: Vec<batch::DrawCmd>,
     images: ImageCache,
-    graphic_cache: FxHashMap<GraphicId, CachedGraphic>,
-    current_frame: u64,
     /// Per-image GPU textures (one map, any backend).
     image_textures: FxHashMap<u32, ImageTextureEntry>,
     /// Image draw commands for the current frame.
@@ -957,8 +943,6 @@ impl Renderer {
             vertices: vec![],
             draw_cmds: vec![],
             images: ImageCache::new(context),
-            graphic_cache: FxHashMap::default(),
-            current_frame: 0,
             image_textures: FxHashMap::default(),
             image_draws: Vec::new(),
             background_image_dirty: None,
@@ -1252,42 +1236,6 @@ impl Renderer {
             }
         }
         None
-    }
-
-    /// Extract font metrics using per-font calculation.
-    /// Each font calculates its own metrics using consistent approach.
-    #[inline]
-    fn extract_normalized_metrics(
-        &self,
-        lines: &[crate::layout::BuilderLine],
-        font_library: &FontLibrary,
-    ) -> Option<(f32, f32, f32, usize, f32)> {
-        // Get the first run to determine font_id and size
-        let first_run = lines
-            .iter()
-            .filter(|line| !line.render_data.runs.is_empty())
-            .map(|line| &line.render_data.runs[0])
-            .next()?;
-
-        let font_id = 0; // FONT_ID_REGULAR
-        let font_size = first_run.size;
-
-        // Get metrics from the specific font using consistent calculation
-        let mut font_library_data = font_library.inner.write();
-        if let Some((ascent, descent, leading)) =
-            font_library_data.get_font_metrics(&font_id, font_size)
-        {
-            Some((ascent, descent, leading, font_id, font_size))
-        } else {
-            // Fallback to run metrics if font metrics calculation fails
-            Some((
-                first_run.ascent,
-                first_run.descent,
-                first_run.leading,
-                font_id,
-                font_size,
-            ))
-        }
     }
 
     /// Render image overlays using per-image GPU textures.
@@ -1691,33 +1639,8 @@ impl Renderer {
         true
     }
 
-    /// Find the least recently used graphic ID for eviction.
-    /// Returns the GraphicId to evict, or None if cache is empty.
-    fn find_oldest_graphic(&self) -> Option<GraphicId> {
-        self.graphic_cache
-            .iter()
-            .min_by_key(|(_, cached)| cached.last_used_frame)
-            .map(|(id, _)| *id)
-    }
-
-    /// Evict a specific graphic from the cache.
-    fn evict_graphic(&mut self, graphic_id: GraphicId) -> bool {
-        if let Some(cached) = self.graphic_cache.remove(&graphic_id) {
-            // Deallocate from atlas to free GPU memory
-            self.images.deallocate(cached.image_id);
-            tracing::debug!(
-                "Evicted graphic {:?} (last used: frame {})",
-                graphic_id,
-                cached.last_used_frame
-            );
-            return true;
-        }
-        false
-    }
-
     #[inline]
     pub fn reset(&mut self) {
-        self.graphic_cache.clear();
         self.image_textures.clear();
         self.image_draws.clear();
     }
@@ -1725,10 +1648,9 @@ impl Renderer {
     #[inline]
     pub fn clear_atlas(&mut self) {
         self.images.clear_atlas();
-        self.graphic_cache.clear();
         self.image_textures.clear();
         self.image_draws.clear();
-        tracing::info!("Renderer atlas + graphic cache cleared");
+        tracing::info!("Renderer atlas cleared");
     }
 
     #[inline]
@@ -3267,114 +3189,6 @@ mod rect_positioning_tests {
         assert_eq!(
             baseline_offset_from_center, 4.0,
             "Baseline should be 4.0 units above glyph center"
-        );
-    }
-
-    #[test]
-    fn test_find_oldest_graphic() {
-        use super::CachedGraphic;
-        use crate::GraphicId;
-        use rustc_hash::FxHashMap;
-
-        let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
-
-        // Create dummy graphics with different last_used_frame values
-        let graphic1 = GraphicId::new(1);
-        let graphic2 = GraphicId::new(2);
-        let graphic3 = GraphicId::new(3);
-
-        // graphic2 is oldest (frame 5)
-        // graphic1 is middle (frame 10)
-        // graphic3 is newest (frame 15)
-        graphic_cache.insert(
-            graphic1,
-            CachedGraphic {
-                location: super::image_cache::ImageLocation {
-                    min: (0.0, 0.0),
-                    max: (1.0, 1.0),
-                },
-                image_id: super::image_cache::ImageId::empty(),
-                width: 100.0,
-                height: 100.0,
-                last_used_frame: 10,
-                atlas_layer: 1,
-            },
-        );
-
-        graphic_cache.insert(
-            graphic2,
-            CachedGraphic {
-                location: super::image_cache::ImageLocation {
-                    min: (0.0, 0.0),
-                    max: (1.0, 1.0),
-                },
-                image_id: super::image_cache::ImageId::empty(),
-                width: 100.0,
-                height: 100.0,
-                last_used_frame: 5, // Oldest
-                atlas_layer: 1,
-            },
-        );
-
-        graphic_cache.insert(
-            graphic3,
-            CachedGraphic {
-                location: super::image_cache::ImageLocation {
-                    min: (0.0, 0.0),
-                    max: (1.0, 1.0),
-                },
-                image_id: super::image_cache::ImageId::empty(),
-                width: 100.0,
-                height: 100.0,
-                last_used_frame: 15, // Newest
-                atlas_layer: 1,
-            },
-        );
-
-        // Find oldest should return graphic2
-        let oldest = graphic_cache
-            .iter()
-            .min_by_key(|(_, cached)| cached.last_used_frame)
-            .map(|(id, _)| *id);
-
-        assert_eq!(oldest, Some(graphic2), "Should find oldest graphic");
-    }
-
-    #[test]
-    fn test_graphic_lru_update() {
-        use super::CachedGraphic;
-        use crate::GraphicId;
-        use rustc_hash::FxHashMap;
-
-        let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
-        let current_frame = 100;
-
-        let graphic1 = GraphicId::new(1);
-        graphic_cache.insert(
-            graphic1,
-            CachedGraphic {
-                location: super::image_cache::ImageLocation {
-                    min: (0.0, 0.0),
-                    max: (1.0, 1.0),
-                },
-                image_id: super::image_cache::ImageId::empty(),
-                width: 100.0,
-                height: 100.0,
-                last_used_frame: 50,
-                atlas_layer: 1,
-            },
-        );
-
-        // Simulate accessing the graphic (updating last_used_frame)
-        if let Some(cached) = graphic_cache.get_mut(&graphic1) {
-            cached.last_used_frame = current_frame;
-        }
-
-        // Verify it was updated
-        assert_eq!(
-            graphic_cache.get(&graphic1).unwrap().last_used_frame,
-            current_frame,
-            "Last used frame should be updated"
         );
     }
 

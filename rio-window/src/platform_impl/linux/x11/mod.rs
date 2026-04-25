@@ -190,7 +190,7 @@ pub struct EventLoop<T: 'static> {
 
 type ActivationToken = (WindowId, crate::event_loop::AsyncRequestSerial);
 
-struct EventLoopState {
+pub(crate) struct EventLoopState {
     /// The latest readiness state for the x11 file descriptor
     x11_readiness: Readiness,
     /// Set by `request_redraw` (via the shared `Arc<AtomicBool>`).

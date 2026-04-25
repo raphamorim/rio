@@ -705,7 +705,7 @@ impl Text {
                 } else {
                     state.atlas_grayscale.insert(key, raster)?
                 };
-                return Some((
+                Some((
                     slot.x,
                     slot.y,
                     slot.w,
@@ -713,14 +713,10 @@ impl Text {
                     slot.bearing_x,
                     slot.bearing_y,
                     is_color,
-                ));
+                ))
             }
             #[cfg(not(feature = "wgpu"))]
             {
-                // No GPU atlas available — caller treats `None` as
-                // "skip this glyph". On Linux without wgpu the
-                // Vulkan branch above will have handled it; on
-                // other targets without wgpu there's no UI text path.
                 let _ = (run, glyph_id);
                 None
             }

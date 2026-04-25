@@ -490,6 +490,7 @@ fn blend_over(src: [u8; 4], dst: u32) -> u32 {
     pack_opaque(or.min(255) as u8, og.min(255) as u8, ob.min(255) as u8)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fill_rect(
     buf: &mut [u32],
     buf_w: i32,
