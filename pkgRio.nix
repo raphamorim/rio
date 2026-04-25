@@ -8,6 +8,7 @@
   darwin,
   autoPatchelfHook,
   cmake,
+  glslang,
   ncurses,
   pkg-config,
   gcc-unwrapped,
@@ -74,6 +75,7 @@ in
 
     nativeBuildInputs =
       [
+        glslang
         rustPlatform.bindgenHook
         ncurses
       ]
