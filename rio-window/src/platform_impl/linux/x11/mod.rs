@@ -836,9 +836,18 @@ impl ActiveEventLoop {
         let Some(window) = window else {
             return;
         };
-        let is_visible = !window
-            .is_occluded
+        // Match zed's `is_mapped && !FullyObscured`. Keeping the two
+        // signals separate matters: a `MapNotify` arriving while the
+        // window is still fully obscured (some WMs do this) must not
+        // restart the timer until the next `VisibilityNotify` clears
+        // the obscured state.
+        let is_mapped = window
+            .is_mapped
             .load(std::sync::atomic::Ordering::Acquire);
+        let is_fully_obscured = window
+            .is_fully_obscured
+            .load(std::sync::atomic::Ordering::Acquire);
+        let is_visible = is_mapped && !is_fully_obscured;
 
         let mut slot = window.refresh_state.lock().unwrap();
         let cur = slot.take();
@@ -1127,13 +1136,11 @@ impl Window {
             .windows
             .borrow_mut()
             .insert(window_id, Arc::downgrade(&window));
-        // Kick off the per-window vsync timer immediately. The
-        // `update_refresh_loop` impl is idempotent and will tear it
-        // back down once a `VisibilityNotify(FullyObscured)` arrives
-        // — until then we treat the window as visible (matches zed's
-        // initial state in `update_refresh_loop` for the
-        // `(true, None)` case).
-        event_loop.update_refresh_loop(window_id);
+        // The per-window vsync timer is started by the first
+        // `MapNotify` (matches zed). The window is constructed with
+        // `is_mapped=false`, so there's no useful work to do here —
+        // `update_refresh_loop` would be a no-op until the X server
+        // reports the window as mapped.
         Ok(Window(window))
     }
 }
