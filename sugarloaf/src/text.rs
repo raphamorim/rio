@@ -139,6 +139,16 @@ struct TextWgpuState {
     instance_capacity: usize,
 }
 
+/// Software backend state for the UI text overlay. Mirrors the
+/// shape of `TextMetalState` / `TextWgpuState` / `TextVulkanState`
+/// (two atlases — grayscale + color) but the atlases are RAM-backed.
+/// Always available; populated by `Text::init_cpu` when the active
+/// sugarloaf context is `ContextType::Cpu`.
+struct TextCpuState {
+    atlas_grayscale: crate::grid::cpu::CpuGridAtlas,
+    atlas_color: crate::grid::cpu::CpuGridAtlas,
+}
+
 #[cfg(target_os = "linux")]
 struct TextVulkanState {
     device: ash::Device,
@@ -183,7 +193,7 @@ pub struct Text {
     /// `rescale`; defaults to 1.0.
     scale_factor: f32,
 
-    // ----- shared state across both OS paths -----
+    // shared state across both OS paths
     font_library: FontLibrary,
 
     /// `(char, style_flags) → (font_id, is_emoji)` — first-char font
@@ -203,13 +213,11 @@ pub struct Text {
     /// `(font_id, size_bucket, style_flags, text)` → shaped run.
     shape_cache: FxHashMap<u64, ShapedRun>,
 
-    // ----- macOS-only state -----
     #[cfg(target_os = "macos")]
     handle_cache: FxHashMap<u32, crate::font::macos::FontHandle>,
     #[cfg(target_os = "macos")]
     metal: Option<TextMetalState>,
 
-    // ----- non-macOS (swash) state -----
     #[cfg(not(target_os = "macos"))]
     shape_ctx: swash::shape::ShapeContext,
     #[cfg(not(target_os = "macos"))]
@@ -222,6 +230,9 @@ pub struct Text {
     wgpu: Option<TextWgpuState>,
     #[cfg(target_os = "linux")]
     vulkan: Option<TextVulkanState>,
+    /// Software backend. Initialised by `init_cpu` when the
+    /// surrounding sugarloaf context is `ContextType::Cpu`.
+    cpu: Option<TextCpuState>,
 }
 
 impl Text {
@@ -248,7 +259,20 @@ impl Text {
             wgpu: None,
             #[cfg(target_os = "linux")]
             vulkan: None,
+            cpu: None,
         }
+    }
+
+    /// Idempotent CPU-state init. Call once before the first
+    /// `draw()` on the CPU backend; subsequent calls are no-ops.
+    pub fn init_cpu(&mut self) {
+        if self.cpu.is_some() {
+            return;
+        }
+        self.cpu = Some(TextCpuState {
+            atlas_grayscale: crate::grid::cpu::CpuGridAtlas::new_grayscale(),
+            atlas_color: crate::grid::cpu::CpuGridAtlas::new_color(),
+        });
     }
 
     /// Update the scale factor used to convert caller-supplied
@@ -510,7 +534,15 @@ impl Text {
             size_bucket: run.size_bucket,
         };
 
-        // ---- macOS (CoreText → MetalGlyphAtlas) ----
+        // CPU path takes precedence whenever it's initialized
+        // The CPU atlases are RAM-resident; the GPU branches below
+        // would either fail (no Metal/Vulkan/Wgpu state) or pointlessly
+        // upload to a GPU we won't read from.
+        if self.cpu.is_some() {
+            return self.rasterize_slot_cpu(run, glyph_id, key);
+        }
+
+        // macOS (CoreText → MetalGlyphAtlas)
         #[cfg(target_os = "macos")]
         {
             let state = self.metal.as_mut()?;
@@ -579,7 +611,7 @@ impl Text {
             ))
         }
 
-        // ---- non-macOS (swash → VulkanGlyphAtlas or WgpuGlyphAtlas) ----
+        // non-macOS (swash → VulkanGlyphAtlas or WgpuGlyphAtlas)
         #[cfg(not(target_os = "macos"))]
         {
             // Look up the slot first — backend-agnostic — and
@@ -691,6 +723,167 @@ impl Text {
                 // other targets without wgpu there's no UI text path.
                 let _ = (run, glyph_id);
                 None
+            }
+        }
+    }
+
+    /// Software-atlas variant of `rasterize_slot`. Same flow as the
+    /// GPU branches: lookup, then OS-native (CoreText) or swash
+    /// rasterize, then insert into the matching CPU atlas. Returns
+    /// `None` when shaping caches haven't been primed for this
+    /// font_id (shouldn't happen — `shape()` always runs first) or
+    /// when the atlas is at `ATLAS_MAX_SIZE` and the glyph won't fit.
+    #[allow(clippy::type_complexity)]
+    fn rasterize_slot_cpu(
+        &mut self,
+        run: &ShapedRun,
+        glyph_id: u16,
+        key: crate::grid::GlyphKey,
+    ) -> Option<(u16, u16, u16, u16, i16, i16, bool)> {
+        // Lookup first — both atlases.
+        {
+            let state = self.cpu.as_ref()?;
+            if let Some(s) = state.atlas_grayscale.lookup(key) {
+                return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, false));
+            }
+            if let Some(s) = state.atlas_color.lookup(key) {
+                return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, true));
+            }
+        }
+
+        // Rasterize. macOS uses CoreText so emoji come out correctly;
+        // every other target uses swash.
+        #[cfg(target_os = "macos")]
+        let (raw_w, raw_h, raw_left, raw_top, raw_is_color, raw_bytes) = {
+            let handle = self.handle_cache.get(&run.font_id)?.clone();
+            let raw = crate::font::macos::rasterize_glyph(
+                &handle,
+                glyph_id,
+                run.size_u16 as f32,
+                /* is_emoji: */ false,
+                run.synthetic_italic,
+                run.synthetic_bold,
+            )?;
+            (
+                raw.width,
+                raw.height,
+                raw.left,
+                raw.top,
+                raw.is_color,
+                raw.bytes,
+            )
+        };
+        #[cfg(not(target_os = "macos"))]
+        let (raw_w, raw_h, raw_left, raw_top, raw_is_color, raw_bytes) = {
+            let font_entry = self.font_data_cache.get(&run.font_id)?.clone();
+            let raw = rasterize_swash_glyph(
+                &mut self.scale_ctx,
+                &font_entry,
+                glyph_id,
+                run.size_u16 as f32,
+                run.synthetic_bold,
+                run.synthetic_italic,
+                self.font_library.inner.read().hinting,
+            )?;
+            (
+                raw.width,
+                raw.height,
+                raw.left,
+                raw.top,
+                raw.is_color,
+                raw.bytes,
+            )
+        };
+
+        let raster = crate::grid::RasterizedGlyph {
+            width: raw_w.min(u16::MAX as u32) as u16,
+            height: raw_h.min(u16::MAX as u32) as u16,
+            bearing_x: raw_left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+            bearing_y: {
+                let top_i16 = raw_top.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                run.ascent_px.saturating_sub(top_i16)
+            },
+            bytes: &raw_bytes,
+        };
+
+        let state = self.cpu.as_mut()?;
+        let slot = if raw_is_color {
+            state.atlas_color.insert(key, raster).or_else(|| {
+                if state.atlas_color.grow() {
+                    state.atlas_color.insert(key, raster)
+                } else {
+                    None
+                }
+            })?
+        } else {
+            state.atlas_grayscale.insert(key, raster).or_else(|| {
+                if state.atlas_grayscale.grow() {
+                    state.atlas_grayscale.insert(key, raster)
+                } else {
+                    None
+                }
+            })?
+        };
+        Some((
+            slot.x,
+            slot.y,
+            slot.w,
+            slot.h,
+            slot.bearing_x,
+            slot.bearing_y,
+            raw_is_color,
+        ))
+    }
+
+    /// Paint the queued UI text instances into the caller-supplied
+    /// `0x00RRGGBB` u32 buffer. Mirrors `text_vertex` /
+    /// `grid_text_fragment`: glyph origin = `pos + bearings`; mask
+    /// glyphs use `instance.color`, color glyphs sample directly.
+    /// No-op when CPU state is absent or no instances were queued.
+    pub fn render_cpu(&self, buf: &mut [u32], buf_w: u32, buf_h: u32) {
+        if self.instances.is_empty() {
+            return;
+        }
+        let Some(state) = self.cpu.as_ref() else {
+            return;
+        };
+        let buf_w_i = buf_w as i32;
+        let buf_h_i = buf_h as i32;
+        let mask = state.atlas_grayscale.pixels();
+        let mask_side = state.atlas_grayscale.side() as usize;
+        let color_atlas = state.atlas_color.pixels();
+        let color_side = state.atlas_color.side() as usize;
+
+        for inst in &self.instances {
+            let gw = inst.glyph_size[0] as i32;
+            let gh = inst.glyph_size[1] as i32;
+            if gw <= 0 || gh <= 0 {
+                continue;
+            }
+            let glyph_x = (inst.pos[0] + inst.bearings[0] as f32) as i32;
+            let glyph_y = (inst.pos[1] + inst.bearings[1] as f32) as i32;
+            let ax = inst.glyph_pos[0] as usize;
+            let ay = inst.glyph_pos[1] as usize;
+
+            if inst.atlas == 1 {
+                blit_text_color(
+                    buf,
+                    buf_w_i,
+                    buf_h_i,
+                    glyph_x,
+                    glyph_y,
+                    gw,
+                    gh,
+                    color_atlas,
+                    color_side,
+                    ax,
+                    ay,
+                );
+            } else {
+                blit_text_mask(
+                    buf, buf_w_i, buf_h_i, glyph_x, glyph_y, gw, gh, mask, mask_side, ax,
+                    ay, inst.color,
+                );
             }
         }
     }
@@ -1714,6 +1907,144 @@ impl Drop for TextVulkanState {
                 .destroy_descriptor_set_layout(self.uniform_descriptor_set_layout, None);
             self.device.destroy_sampler(self.sampler, None);
             // Buffers + atlas images drop themselves.
+        }
+    }
+}
+
+//  CPU blit helpers for `Text::render_cpu`. Same blend model as
+//  `grid::cpu`: premultiplied source-over against an opaque
+//  `0x00RRGGBB` destination.
+
+#[inline]
+fn pack_opaque(r: u8, g: u8, b: u8) -> u32 {
+    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+}
+
+#[inline]
+fn blend_premul_over(src: [u8; 4], dst: u32) -> u32 {
+    let sa = src[3] as u32;
+    if sa == 0 {
+        return dst;
+    }
+    if sa == 255 {
+        return pack_opaque(src[0], src[1], src[2]);
+    }
+    let inv = 255 - sa;
+    let dr = (dst >> 16) & 0xff;
+    let dg = (dst >> 8) & 0xff;
+    let db = dst & 0xff;
+    let or = src[0] as u32 + (dr * inv + 127) / 255;
+    let og = src[1] as u32 + (dg * inv + 127) / 255;
+    let ob = src[2] as u32 + (db * inv + 127) / 255;
+    pack_opaque(or.min(255) as u8, og.min(255) as u8, ob.min(255) as u8)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn blit_text_mask(
+    buf: &mut [u32],
+    buf_w: i32,
+    buf_h: i32,
+    glyph_x: i32,
+    glyph_y: i32,
+    gw: i32,
+    gh: i32,
+    atlas: &[u8],
+    atlas_side: usize,
+    ax: usize,
+    ay: usize,
+    color: [u8; 4],
+) {
+    if color[3] == 0 {
+        return;
+    }
+    let stride = buf_w as usize;
+    let x_start = glyph_x.max(0);
+    let y_start = glyph_y.max(0);
+    let x_end = (glyph_x + gw).min(buf_w);
+    let y_end = (glyph_y + gh).min(buf_h);
+    if x_end <= x_start || y_end <= y_start {
+        return;
+    }
+    let r = color[0] as u32;
+    let g = color[1] as u32;
+    let b = color[2] as u32;
+    let ca = color[3] as u32;
+
+    for dst_y in y_start..y_end {
+        let src_y = (dst_y - glyph_y) as usize + ay;
+        if src_y >= atlas_side {
+            continue;
+        }
+        let atlas_row = src_y * atlas_side;
+        let buf_row = (dst_y as usize) * stride;
+        for dst_x in x_start..x_end {
+            let src_x = (dst_x - glyph_x) as usize + ax;
+            if src_x >= atlas_side {
+                continue;
+            }
+            let m = atlas[atlas_row + src_x] as u32;
+            if m == 0 {
+                continue;
+            }
+            let a = (m * ca + 127) / 255;
+            if a == 0 {
+                continue;
+            }
+            let pr = (r * a + 127) / 255;
+            let pg = (g * a + 127) / 255;
+            let pb = (b * a + 127) / 255;
+            let src = [pr as u8, pg as u8, pb as u8, a as u8];
+            let idx = buf_row + (dst_x as usize);
+            buf[idx] = blend_premul_over(src, buf[idx]);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn blit_text_color(
+    buf: &mut [u32],
+    buf_w: i32,
+    buf_h: i32,
+    glyph_x: i32,
+    glyph_y: i32,
+    gw: i32,
+    gh: i32,
+    atlas: &[u8],
+    atlas_side: usize,
+    ax: usize,
+    ay: usize,
+) {
+    let stride = buf_w as usize;
+    let x_start = glyph_x.max(0);
+    let y_start = glyph_y.max(0);
+    let x_end = (glyph_x + gw).min(buf_w);
+    let y_end = (glyph_y + gh).min(buf_h);
+    if x_end <= x_start || y_end <= y_start {
+        return;
+    }
+    for dst_y in y_start..y_end {
+        let src_y = (dst_y - glyph_y) as usize + ay;
+        if src_y >= atlas_side {
+            continue;
+        }
+        let atlas_row = src_y * atlas_side * 4;
+        let buf_row = (dst_y as usize) * stride;
+        for dst_x in x_start..x_end {
+            let src_x = (dst_x - glyph_x) as usize + ax;
+            if src_x >= atlas_side {
+                continue;
+            }
+            let off = atlas_row + src_x * 4;
+            let r = atlas[off];
+            let g = atlas[off + 1];
+            let b = atlas[off + 2];
+            let a = atlas[off + 3];
+            if a == 0 {
+                continue;
+            }
+            let src = [r, g, b, a];
+            let idx = buf_row + (dst_x as usize);
+            buf[idx] = blend_premul_over(src, buf[idx]);
         }
     }
 }

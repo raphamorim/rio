@@ -2528,6 +2528,15 @@ impl Renderer {
         &self.vertices
     }
 
+    /// Per-quad instances accumulated for the current frame. The CPU
+    /// rasterizer walks these for `rect` / `quad` / `rounded_rect` /
+    /// `underline` calls, which the immediate-mode UI uses for splits,
+    /// panel borders, scrollbars, and dim overlays. The GPU paths
+    /// upload them to a per-instance vertex buffer; we just iterate.
+    pub(crate) fn instances(&self) -> &[crate::renderer::batch::QuadInstance] {
+        &self.instances
+    }
+
     /// Image cache for CPU rasterizer atlas sampling.
     pub(crate) fn image_cache(&self) -> &ImageCache {
         &self.images
