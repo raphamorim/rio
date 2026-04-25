@@ -44,13 +44,6 @@ use std::process::Command;
 /// scanned directories (we flatten output into a single `OUT_DIR`);
 /// `cargo build` panics with a clear message if two sources end up
 /// with the same `.spv` name.
-///
-/// Same auto-discovery pattern as `adrien-ben/vulkan-tutorial-rs`'s
-/// `build.rs` — a `fs::read_dir` walk, std-only, no `walkdir` /
-/// `glob` dep. Survey of comparable Rust+ash projects (kajiya,
-/// screen-13, vulkano-shaders, etc.) showed hard-coded lists are the
-/// norm; this is the cleanest "drop a file and it works" alternative
-/// that doesn't pull in a new crate.
 const SHADER_DIRS: &[&str] = &[
     // renderer (rich-text quad / non-quad / image / bootstrap)
     "src/renderer",
