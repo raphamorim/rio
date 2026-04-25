@@ -229,9 +229,9 @@ fn cell_in_row_hints(row_hints: &[RowHint], col: u16) -> Option<HintTag> {
 /// hyperlink / hint, regardless of its own SGR style flags.
 #[inline]
 fn cell_in_hover_underline(row_hints: &[RowHint], col: u16) -> bool {
-    row_hints.iter().any(|rh| {
-        rh.tag == HintTag::HyperlinkHover && col >= rh.lo && col <= rh.hi
-    })
+    row_hints
+        .iter()
+        .any(|rh| rh.tag == HintTag::HyperlinkHover && col >= rh.lo && col <= rh.hi)
 }
 
 /// Foreground for a hint-matched cell. Mirrors `cell_fg_selected` but

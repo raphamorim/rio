@@ -1587,42 +1587,6 @@ mod tests {
     }
 
     #[test]
-    fn rasterizes_a_color_emoji_glyph() {
-        use crate::font::constants::FONT_TWEMOJI_EMOJI;
-
-        // COLR fonts report a 0×0 outline bbox because the real drawing
-        // happens on color layers. This test asserts our fallback path
-        // (derive bbox from ascent/descent + advance) still produces an
-        // inked bitmap with real color content.
-        let handle = FontHandle::from_bytes(FONT_TWEMOJI_EMOJI).expect("load twemoji");
-        let size = 24.0;
-        // U+1F600 grinning face — the canonical "is color emoji working" check.
-        let gid = glyph_id_for_char(&handle, size as f64, '\u{1F600}');
-
-        let g = rasterize_glyph(&handle, gid, size, true, false, false)
-            .expect("emoji rasterize returned None");
-
-        assert!(
-            g.width > 0 && g.height > 0,
-            "expected inked emoji, got {g:?}"
-        );
-        assert!(g.is_color);
-        assert_eq!(g.bytes.len(), (g.width * g.height * 4) as usize);
-        // If CoreText dropped COLR tables we'd get a black silhouette —
-        // alpha non-zero but all RGB zero. Assert some color is present.
-        let rgb_sum: u64 = g
-            .bytes
-            .chunks_exact(4)
-            .map(|px| px[0] as u64 + px[1] as u64 + px[2] as u64)
-            .sum();
-        assert!(
-            rgb_sum > 0,
-            "COLR tables appear not to have been preserved — emoji drew as \
-             a monochrome silhouette"
-        );
-    }
-
-    #[test]
     fn zero_ink_glyph_yields_empty_bitmap() {
         let handle =
             FontHandle::from_bytes(FONT_CASCADIAMONO_REGULAR).expect("load font");

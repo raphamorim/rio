@@ -359,20 +359,6 @@ fonts.features = ["ss02", "ss03", "ss05", "ss19"]
 
 Note: Font features do not have support to live reload on configuration, so to reflect your changes, you will need to close and reopen Rio.
 
-## fonts.extras
-
-Extra font families searched after the configured regular/italic/bold slots. Use this to bring in a Nerd Font for icon glyphs, or to add a custom CJK / symbol family. Rio auto-detects color-emoji fonts from their SFNT color tables (`COLR`, `CBDT`, `CBLC`, `sbix`), so an emoji family dropped here is treated as wide-cell / color-atlas without needing a flag, while a Nerd Font family stays single-cell.
-
-```toml
-# A Nerd Font for icon glyphs
-fonts.extras = [{ family = "JetBrainsMono Nerd Font Mono" }]
-
-# Or a specific CJK / symbol family
-fonts.extras = [{ family = "Microsoft JhengHei" }]
-```
-
-**macOS note:** `fonts.extras` is ignored on macOS. Rio uses CoreText's `CTFontCopyDefaultCascadeListForLanguages` to pull the system-recommended fallback chain for the primary font — that already includes Apple Color Emoji, CJK fonts, symbols, and script-specific typefaces in the order the OS prefers. Adding `fonts.extras` entries on macOS would either duplicate what's already in the cascade or compete with CoreText's ordering, so it's skipped.
-
 ## fonts.hinting
 
 Enable or disable font hinting. It is enabled by default.

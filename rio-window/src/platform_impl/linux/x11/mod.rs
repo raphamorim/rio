@@ -841,9 +841,7 @@ impl ActiveEventLoop {
         // window is still fully obscured (some WMs do this) must not
         // restart the timer until the next `VisibilityNotify` clears
         // the obscured state.
-        let is_mapped = window
-            .is_mapped
-            .load(std::sync::atomic::Ordering::Acquire);
+        let is_mapped = window.is_mapped.load(std::sync::atomic::Ordering::Acquire);
         let is_fully_obscured = window
             .is_fully_obscured
             .load(std::sync::atomic::Ordering::Acquire);

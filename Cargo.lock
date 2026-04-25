@@ -4829,6 +4829,7 @@ dependencies = [
  "wide",
  "wyhash",
  "yazi",
+ "yeslogic-fontconfig-sys",
  "zeno",
 ]
 

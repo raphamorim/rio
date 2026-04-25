@@ -1,6 +1,7 @@
 pub mod constants;
-mod fallbacks;
 pub mod fonts;
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+pub mod linux;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
 #[cfg(target_os = "macos")]
@@ -8,6 +9,8 @@ pub mod macos;
 pub mod metrics;
 pub mod nerd_font_attributes;
 pub mod text_run_cache;
+#[cfg(target_os = "windows")]
+pub mod windows;
 
 #[cfg(test)]
 mod cjk_metrics_tests;
@@ -219,7 +222,6 @@ impl FontLibrary {
 
     /// Resolve a PostScript name back to Rio's `font_id`. Returns
     /// `None` when the library doesn't hold a font with that name.
-    #[cfg(target_os = "macos")]
     pub fn font_id_for_postscript_name(&self, name: &str) -> Option<usize> {
         self.inner.read().font_id_for_postscript_name(name)
     }
@@ -237,17 +239,18 @@ impl FontLibrary {
     /// guarantees that font covers the codepoint, so `CTLine` never
     /// has to cascade-substitute at shape time.
     ///
-    /// Returns `(0, false)` only when CoreText itself can't find
-    /// any font for the codepoint (truly unsupported by the system)
-    /// or when the library is empty. Both cases render as tofu.
-    #[cfg(target_os = "macos")]
+    /// Returns `(0, false)` only when the platform discovery layer
+    /// can't find any font for the codepoint (truly unsupported by
+    /// the system) or when the library is empty. Both cases render
+    /// as tofu.
     pub fn resolve_font_for_char(
         &self,
         ch: char,
         fragment_style: &SpanStyle,
     ) -> (usize, bool) {
         // Fast path: codepoint is covered by an already-registered
-        // font. No locks upgraded, no CoreText call.
+        // font. No locks upgraded, no FFI call. Shared across all
+        // platforms — only the cascade-discovery slow path differs.
         if let Some(found) = self
             .inner
             .read()
@@ -256,33 +259,29 @@ impl FontLibrary {
             return found;
         }
 
-        // Slow path: ask CoreText which font it would cascade to,
-        // then register that font so future lookups hit the fast
-        // path. The read lock is released between phases so a
-        // concurrent resolver can't block on our registration work.
-        let Some(primary) = self.ct_font(FONT_ID_REGULAR) else {
-            return (0, false);
-        };
-        let Some(discovered) = crate::font::macos::discover_fallback(&primary, ch) else {
-            return (0, false);
-        };
+        self.cascade_discover(ch, fragment_style)
+            .unwrap_or((0, false))
+    }
+
+    /// Slow-path cascade discovery — register a fallback font on
+    /// first hit so future queries land in the fast path. Per-platform
+    /// because the underlying API differs (CoreText `CTFontCreateForString`
+    /// on macOS, fontconfig `FcFontSort` on Linux, font-kit walk on
+    /// Windows). Returns `None` when no system font covers `ch`.
+    #[cfg(target_os = "macos")]
+    fn cascade_discover(
+        &self,
+        ch: char,
+        _fragment_style: &SpanStyle,
+    ) -> Option<(usize, bool)> {
+        let primary = self.ct_font(FONT_ID_REGULAR)?;
+        let discovered = crate::font::macos::discover_fallback(&primary, ch)?;
         let ps_name = discovered.postscript_name();
 
-        // Has it already been registered by a concurrent resolver?
-        {
-            let lib = self.inner.read();
-            if let Some(existing) = lib.font_id_for_postscript_name(&ps_name) {
-                let is_emoji = lib
-                    .inner
-                    .get(&existing)
-                    .map(|fd| fd.is_emoji)
-                    .unwrap_or(false);
-                return (existing, is_emoji);
-            }
+        if let Some(found) = self.dedupe_existing(&ps_name) {
+            return Some(found);
         }
 
-        // Register under write lock. Re-check inside the lock so a
-        // race doesn't insert the same PS name twice.
         let mut lib = self.inner.write();
         if let Some(existing) = lib.font_id_for_postscript_name(&ps_name) {
             let is_emoji = lib
@@ -290,7 +289,7 @@ impl FontLibrary {
                 .get(&existing)
                 .map(|fd| fd.is_emoji)
                 .unwrap_or(false);
-            return (existing, is_emoji);
+            return Some((existing, is_emoji));
         }
         let font_data = FontData::from_ctfont_macos(discovered);
         let is_emoji = font_data.is_emoji;
@@ -302,7 +301,104 @@ impl FontLibrary {
             ch as u32,
             new_id
         );
-        (new_id, is_emoji)
+        Some((new_id, is_emoji))
+    }
+
+    #[cfg(any(
+        all(unix, not(target_os = "macos"), not(target_os = "android")),
+        target_os = "windows"
+    ))]
+    fn cascade_discover(
+        &self,
+        ch: char,
+        fragment_style: &SpanStyle,
+    ) -> Option<(usize, bool)> {
+        let primary_family = self.primary_family_name()?;
+        let want_bold = fragment_style.font_attrs.weight() == swash::Weight::BOLD;
+        let want_italic = fragment_style.font_attrs.style() == swash::Style::Italic;
+        // Terminal — always bias toward monospace for consistent cell
+        // widths, even for fallback glyphs.
+        let want_mono = true;
+
+        #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+        let discovered = crate::font::linux::discover_fallback(
+            &primary_family,
+            ch,
+            want_mono,
+            want_bold,
+            want_italic,
+        )?;
+
+        #[cfg(target_os = "windows")]
+        let discovered = crate::font::windows::discover_fallback(
+            &primary_family,
+            ch,
+            want_mono,
+            want_bold,
+            want_italic,
+        )?;
+
+        let (path, face_index) = discovered;
+        let font_data = FontData::from_discovered_path(path, face_index).ok()?;
+        let ps_name = font_data.postscript_name()?.to_string();
+
+        if let Some(found) = self.dedupe_existing(&ps_name) {
+            return Some(found);
+        }
+
+        let mut lib = self.inner.write();
+        if let Some(existing) = lib.font_id_for_postscript_name(&ps_name) {
+            let is_emoji = lib
+                .inner
+                .get(&existing)
+                .map(|fd| fd.is_emoji)
+                .unwrap_or(false);
+            return Some((existing, is_emoji));
+        }
+        let is_emoji = font_data.is_emoji;
+        let new_id = lib.inner.len();
+        lib.insert(font_data);
+        tracing::debug!(
+            "system cascade discovered {} for U+{:04X}, registered as font_id {}",
+            ps_name,
+            ch as u32,
+            new_id
+        );
+        Some((new_id, is_emoji))
+    }
+
+    /// Read-lock-only check whether a font with this PostScript name
+    /// is already registered (e.g. by a concurrent cascade resolver).
+    /// Lets the slow path skip the upgrade-to-write-lock when there's
+    /// nothing to register.
+    fn dedupe_existing(&self, ps_name: &str) -> Option<(usize, bool)> {
+        let lib = self.inner.read();
+        let existing = lib.font_id_for_postscript_name(ps_name)?;
+        let is_emoji = lib
+            .inner
+            .get(&existing)
+            .map(|fd| fd.is_emoji)
+            .unwrap_or(false);
+        Some((existing, is_emoji))
+    }
+
+    /// Family name of the primary font (`FONT_ID_REGULAR`) used as a
+    /// hint to the platform cascade resolver. fontconfig prefers
+    /// fonts matching this family when ranking codepoint-coverage
+    /// candidates. Falls back to `"monospace"` when the primary
+    /// hasn't been loaded yet — fontconfig's generic family alias
+    /// covers the usual case.
+    #[cfg(any(
+        all(unix, not(target_os = "macos"), not(target_os = "android")),
+        target_os = "windows"
+    ))]
+    fn primary_family_name(&self) -> Option<String> {
+        let lib = self.inner.read();
+        let primary = lib.inner.get(&FONT_ID_REGULAR)?;
+        primary
+            .postscript_name()
+            .map(|s| s.to_string())
+            .or_else(|| Some(String::from("monospace")))
     }
 
     /// Sorted, deduplicated list of every font family name the host
@@ -361,12 +457,12 @@ pub struct FontLibraryData {
     pub hinting: bool,
     // Cache primary font metrics for consistent cell dimensions (consistent metrics approach)
     primary_metrics_cache: FxHashMap<u32, Metrics>,
-    /// PostScript-name → `font_id` lookup, populated on `insert`.
-    /// Used by the macOS shaper to map CoreText's per-CTRun font back to
-    /// a Rio `font_id` when cascade-list substitution kicks in. Kept
-    /// behind `cfg(target_os = "macos")` so non-mac builds don't pay
-    /// the storage cost.
-    #[cfg(target_os = "macos")]
+    /// PostScript-name → `font_id` lookup, populated on `insert`. Used
+    /// by the cascade resolver on every platform: macOS maps CoreText's
+    /// per-CTRun font back to a Rio `font_id` when the cascade-list
+    /// substitution kicks in; Linux and Windows use it to dedupe a
+    /// fontconfig-/font-kit-discovered fallback against fonts already
+    /// in the registry.
     postscript_to_id: FxHashMap<String, usize>,
 }
 
@@ -377,7 +473,6 @@ impl Default for FontLibraryData {
             hinting: true,
             symbol_maps: None,
             primary_metrics_cache: FxHashMap::default(),
-            #[cfg(target_os = "macos")]
             postscript_to_id: FxHashMap::default(),
         }
     }
@@ -442,11 +537,10 @@ impl FontLibraryData {
 
     /// Like [`find_best_font_match`](Self::find_best_font_match) but
     /// returns `None` on a true miss instead of the `(0, false)`
-    /// last-resort fallback. Enables callers (currently the macOS
-    /// lazy-discovery path on [`FontLibrary`]) to distinguish
-    /// "primary font is the answer" from "nothing in the library
-    /// covers this codepoint" so discovery can fire on the latter.
-    #[cfg(target_os = "macos")]
+    /// last-resort fallback. Enables callers (the lazy-discovery path
+    /// on [`FontLibrary`], on every platform) to distinguish "primary
+    /// font is the answer" from "nothing in the library covers this
+    /// codepoint" so discovery can fire on the latter.
     #[inline]
     pub fn find_best_font_match_strict(
         &self,
@@ -501,26 +595,24 @@ impl FontLibraryData {
     #[inline]
     pub fn insert(&mut self, font_data: FontData) {
         let id = self.inner.len();
-        // Pull the PS name off the handle here so the shaper's cascade-
-        // run resolver can map a CoreText `CTFont` back to a Rio
-        // `font_id`. Only paid at load time. Duplicate names (same face
-        // loaded twice) resolve to the first-inserted id, which is the
-        // entry the rest of the library already points at — good enough
-        // for cascade mapping.
-        #[cfg(target_os = "macos")]
-        if let Some(handle) = font_data.handle() {
+        // Index by PS name so the cascade resolver (CoreText on macOS,
+        // fontconfig on Linux, font-kit walk on Windows) can map a
+        // discovered font back to a Rio `font_id`. Only paid at load
+        // time. Duplicate names (same face loaded twice) resolve to
+        // the first-inserted id, which is the entry the rest of the
+        // library already points at — good enough for cascade mapping.
+        if let Some(ps_name) = font_data.postscript_name() {
             self.postscript_to_id
-                .entry(handle.postscript_name())
+                .entry(ps_name.to_string())
                 .or_insert(id);
         }
         self.inner.insert(id, font_data);
     }
 
     /// Rio `font_id` registered for the given PostScript name, or
-    /// `None` when no loaded font reports that name. Used by the macOS
-    /// shaper to map a CTFont pulled from a `CTRun`'s attributes back
-    /// onto Rio's font registry.
-    #[cfg(target_os = "macos")]
+    /// `None` when no loaded font reports that name. Used by the
+    /// cascade resolver to dedupe a discovered font against ones
+    /// already in the registry.
     pub fn font_id_for_postscript_name(&self, name: &str) -> Option<usize> {
         self.postscript_to_id.get(name).copied()
     }
@@ -691,25 +783,6 @@ impl FontLibraryData {
             }
         }
 
-        for fallback in fallbacks::external_fallbacks() {
-            match try_find_font!(
-                &db,
-                SugarloafFont {
-                    family: fallback,
-                    ..SugarloafFont::default()
-                },
-                true
-            ) {
-                FindResult::Found(data) => {
-                    self.insert(data);
-                }
-                FindResult::NotFound(spec) => {
-                    // Fallback should not add errors
-                    tracing::info!("{:?}", spec);
-                }
-            }
-        }
-
         // On macOS, append CoreText's default cascade list for the primary
         // font. Dynamic fallback: we let CoreText name every font it would
         // normally fall back to (emoji, CJK, symbols, script typefaces) so
@@ -740,46 +813,6 @@ impl FontLibraryData {
                 }
             }
         }
-
-        // User-configured fallbacks run before the bundled emoji / Nerd Font
-        // slices so a color emoji family dropped into `extras` (e.g.
-        // `extras = [{family = "Apple Color Emoji"}]`) takes priority over
-        // the bundled Twemoji. Emoji-ness is auto-detected inside `FontData::
-        // from_data` via `has_color_tables` (COLR/CBDT/CBLC/sbix), so real
-        // emoji families get the wide-cell / color-atlas treatment while
-        // Nerd Font families stay single-cell.
-        //
-        // On macOS the CoreText cascade list inserted above already includes
-        // emoji, CJK, symbols, and every other system-suggested fallback —
-        // `font.extras` is redundant there and would only duplicate or
-        // compete with the cascade order. Skipped entirely.
-        #[cfg(target_os = "macos")]
-        let _ = spec.extras;
-        #[cfg(not(target_os = "macos"))]
-        for extra_font in spec.extras {
-            match try_find_font!(
-                &db,
-                SugarloafFont {
-                    family: extra_font.family,
-                    style: extra_font.style,
-                    weight: extra_font.weight,
-                    width: extra_font.width,
-                },
-                true
-            ) {
-                FindResult::Found(data) => {
-                    self.insert(data);
-                }
-                FindResult::NotFound(spec) => {
-                    fonts_not_fount.push(spec);
-                }
-            }
-        }
-
-        // macOS finds Apple Color Emoji through `fallbacks::external_fallbacks`
-        // above, so skip embedding Twemoji there.
-        #[cfg(not(target_os = "macos"))]
-        self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap());
 
         // TODO: Currently, it will naively just extend fonts from symbol_map
         // without even look if the font has been loaded before.
@@ -952,6 +985,14 @@ pub struct FontData {
     /// is effectively free.
     #[cfg(target_os = "macos")]
     handle: Option<crate::font::macos::FontHandle>,
+    /// PostScript name extracted at construction so the cross-platform
+    /// `font_id_for_postscript_name` lookup can avoid reparsing the
+    /// font file. Used by both the macOS CoreText cascade resolver and
+    /// the Linux/Windows fontconfig/font-kit cascade resolver to map
+    /// a discovered font back to a Rio `font_id`. `None` only for
+    /// fonts where the PS name couldn't be parsed (rare — corrupt
+    /// font, or zero-name TTF).
+    postscript_name: Option<String>,
 }
 
 impl PartialEq for FontData {
@@ -981,6 +1022,14 @@ impl FontData {
     #[cfg(target_os = "macos")]
     pub fn handle(&self) -> Option<&crate::font::macos::FontHandle> {
         self.handle.as_ref()
+    }
+
+    /// PostScript name extracted at load time (`name` table ID 6).
+    /// `None` only for fonts whose name table couldn't be parsed.
+    /// Used to map a discovered font path back to a Rio `font_id` in
+    /// the cross-platform cascade resolver.
+    pub fn postscript_name(&self) -> Option<&str> {
+        self.postscript_name.as_deref()
     }
 
     /// Get font offset
@@ -1110,6 +1159,7 @@ impl FontData {
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
         let is_emoji = has_color_tables(&font);
+        let postscript_name = parse_postscript_name(&data);
 
         let data = (!evictable).then_some(data);
 
@@ -1133,6 +1183,7 @@ impl FontData {
             // fallback rebuilds from bytes/path on demand.
             #[cfg(target_os = "macos")]
             handle: None,
+            postscript_name,
         })
     }
 
@@ -1163,6 +1214,7 @@ impl FontData {
             swash::Style::Normal
         };
         let weight = swash::Weight(attrs.weight);
+        let postscript_name = Some(handle.postscript_name());
         Self {
             data: None,
             path: None,
@@ -1177,6 +1229,7 @@ impl FontData {
             is_emoji: attrs.is_color,
             metrics_cache: FxHashMap::default(),
             handle: Some(handle),
+            postscript_name,
         }
     }
 
@@ -1200,6 +1253,7 @@ impl FontData {
             font_spec.style == SugarloafFontStyle::Italic && !attrs.is_italic;
         let should_embolden = font_spec.weight >= Some(700) && attrs.weight < 700;
 
+        let postscript_name = Some(handle.postscript_name());
         Ok(Self {
             data: None,
             path: Some(path),
@@ -1214,6 +1268,7 @@ impl FontData {
             is_emoji: attrs.is_color,
             metrics_cache: FxHashMap::default(),
             handle: Some(handle),
+            postscript_name,
         })
     }
 
@@ -1236,6 +1291,7 @@ impl FontData {
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
         let is_emoji = has_color_tables(&font);
+        let postscript_name = parse_postscript_name(data);
 
         #[cfg(target_os = "macos")]
         let handle = crate::font::macos::FontHandle::from_static_bytes(data);
@@ -1255,6 +1311,7 @@ impl FontData {
             metrics_cache: FxHashMap::default(),
             #[cfg(target_os = "macos")]
             handle,
+            postscript_name,
         })
     }
 
@@ -1273,6 +1330,7 @@ impl FontData {
         let synth = attributes.synthesize(attributes);
         let is_emoji = has_color_tables(&font);
 
+        let postscript_name = parse_postscript_name(data);
         Ok(Self {
             data: Some(SharedData::new(data.to_vec())),
             offset,
@@ -1288,15 +1346,86 @@ impl FontData {
             metrics_cache: FxHashMap::default(),
             #[cfg(target_os = "macos")]
             handle: None,
+            postscript_name,
+        })
+    }
+
+    /// Build a `FontData` from a path discovered at runtime by the
+    /// Linux/Windows cascade resolver. The font bytes are mmapped (cached
+    /// in `FONT_DATA_CACHE`), parsed via swash to extract attributes,
+    /// and `is_emoji` is auto-detected from color tables. Mirrors
+    /// `from_path_macos` in shape but uses the cross-platform swash/
+    /// ttf-parser stack instead of CoreText.
+    ///
+    /// `face_index` lets us address fonts inside a TTC/OTC collection
+    /// (Noto Sans CJK ships as a single .ttc with separate faces for
+    /// SC/TC/JP/KR — fontconfig returns the right index per language tag).
+    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+    pub fn from_discovered_path(
+        path: PathBuf,
+        face_index: u32,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let data = load_from_font_source(&path).ok_or_else(|| {
+            format!("failed to load discovered font: {}", path.display())
+        })?;
+        let font = FontRef::from_index(&data, face_index as usize).ok_or_else(|| {
+            format!(
+                "failed to parse discovered font {} face {}",
+                path.display(),
+                face_index
+            )
+        })?;
+        let (offset, key) = (font.offset, font.key);
+        let attributes = font.attributes();
+        let style = attributes.style();
+        let weight = attributes.weight();
+        let stretch = attributes.stretch();
+        let synth = attributes.synthesize(attributes);
+        let is_emoji = has_color_tables(&font);
+        let postscript_name = parse_postscript_name(&data);
+
+        Ok(Self {
+            data: Some(data),
+            offset,
+            should_italicize: false,
+            should_embolden: false,
+            key,
+            synth,
+            style,
+            weight,
+            stretch,
+            path: Some(path),
+            is_emoji,
+            metrics_cache: FxHashMap::default(),
+            postscript_name,
         })
     }
 }
 
+/// Extract the PostScript name (`name` table ID 6) from font bytes.
+/// Used to populate `FontData.postscript_name` so the cross-platform
+/// resolver can map a discovered font path back to a Rio `font_id`
+/// without re-parsing. Falls back to the family name (ID 1) if the
+/// PS name is missing — a font without a usable name can't participate
+/// in the cascade-mapping anyway, so `None` is fine.
+fn parse_postscript_name(data: &[u8]) -> Option<String> {
+    let face = ttf_parser::Face::parse(data, 0).ok()?;
+    face.names()
+        .into_iter()
+        .find(|n| n.name_id == ttf_parser::name_id::POST_SCRIPT_NAME && n.is_unicode())
+        .and_then(|n| n.to_string())
+        .or_else(|| {
+            face.names()
+                .into_iter()
+                .find(|n| n.name_id == ttf_parser::name_id::FAMILY && n.is_unicode())
+                .and_then(|n| n.to_string())
+        })
+}
+
 /// Auto-detect emoji-ness from SFNT color tables (COLR, CBDT, CBLC, SBIX).
-/// Used to guard
-/// against Nerd Font families being mis-flagged as emoji when loaded via the
-/// `extras` config slot (`is_emoji` is wired per-load-site, but a real emoji
-/// font in that slot would still need the wide-cell/color-atlas treatment).
+/// Used to guard against Nerd Font families being mis-flagged as emoji,
+/// so a real emoji font gets the wide-cell/color-atlas treatment while
+/// icon fonts stay single-cell.
 fn has_color_tables(font: &FontRef<'_>) -> bool {
     font.table(tag_from_bytes(b"COLR")).is_some()
         || font.table(tag_from_bytes(b"CBDT")).is_some()
