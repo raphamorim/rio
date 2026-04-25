@@ -202,10 +202,18 @@ fn which(binary: &str) -> Option<PathBuf> {
 
 fn compile(compiler: &Compiler, src: &Path, out_dir: &Path) {
     let src_str = src.to_string_lossy();
-    let stage = if src_str.ends_with(".vert.glsl") {
-        "vertex"
+    // Stage names differ between compilers:
+    //   glslc accepts both `vertex`/`fragment` and `vert`/`frag` via
+    //         `-fshader-stage=`.
+    //   glslangValidator's `-S` flag only accepts the short forms
+    //         (`vert`, `frag`, `comp`, …) — pass the long form and it
+    //         prints its usage and exits non-zero. The renamed
+    //         `glslang` binary in newer glslang-tools packages
+    //         inherits the same restriction.
+    let (stage_long, stage_short) = if src_str.ends_with(".vert.glsl") {
+        ("vertex", "vert")
     } else if src_str.ends_with(".frag.glsl") {
-        "fragment"
+        ("fragment", "frag")
     } else {
         panic!("unrecognised GLSL stage suffix in {src_str}");
     };
@@ -224,7 +232,7 @@ fn compile(compiler: &Compiler, src: &Path, out_dir: &Path) {
 
     let output = match compiler {
         Compiler::Glslc(bin) => Command::new(bin)
-            .arg(format!("-fshader-stage={stage}"))
+            .arg(format!("-fshader-stage={stage_long}"))
             .arg(src)
             .arg("-o")
             .arg(&dst)
@@ -232,7 +240,7 @@ fn compile(compiler: &Compiler, src: &Path, out_dir: &Path) {
         Compiler::Glslang(bin) => Command::new(bin)
             .arg("-V")
             .arg("-S")
-            .arg(stage)
+            .arg(stage_short)
             .arg(src)
             .arg("-o")
             .arg(&dst)
