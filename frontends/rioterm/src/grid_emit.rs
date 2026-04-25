@@ -30,6 +30,7 @@ use rio_backend::crosswords::square::{ContentTag, Square};
 use rio_backend::crosswords::style::{StyleFlags, StyleSet};
 use rio_backend::selection::SelectionRange;
 use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 
 use crate::renderer::Renderer;
 
@@ -730,6 +731,7 @@ pub struct GridGlyphRasterizer {
             rio_backend::sugarloaf::swash::CacheKey,
         ),
     >,
+
 }
 
 impl Default for GridGlyphRasterizer {
@@ -1190,11 +1192,16 @@ pub fn build_row_fg(
         // Cluster space differs by platform: macOS CoreText reports
         // UTF-16 code-unit offsets, swash reports UTF-8 byte offsets.
         // Each backend walks its own cell-position table.
-        let glyph_emits: Vec<(u16, u16)> = {
+        //
+        // SmallVec inline capacity 64 covers terminal-typical runs
+        // (ASCII identifiers, short bursts of non-ligature text)
+        // entirely on the stack — no heap touch. Ligature-heavy or
+        // shaped emoji runs that outgrow 64 slots spill to heap once.
+        let mut glyph_emits: SmallVec<[(u16, u16); 64]> = SmallVec::new();
+        {
             let glyphs =
                 run_cache_get(&mut rasterizer.run_cache, hash).expect("just inserted");
             let mut cell_idx_in_run: u16 = 0;
-            let mut out = Vec::with_capacity(glyphs.len());
             #[cfg(target_os = "macos")]
             {
                 let cell_starts = &rasterizer.run_cell_starts;
@@ -1204,7 +1211,7 @@ pub fn build_row_fg(
                     {
                         cell_idx_in_run = cell_idx_in_run.saturating_add(1);
                     }
-                    out.push((g.id, cell_idx_in_run));
+                    glyph_emits.push((g.id, cell_idx_in_run));
                 }
             }
             #[cfg(not(target_os = "macos"))]
@@ -1219,13 +1226,12 @@ pub fn build_row_fg(
                         char_cursor.next();
                         cell_idx_in_run = cell_idx_in_run.saturating_add(1);
                     }
-                    out.push((g.id, cell_idx_in_run));
+                    glyph_emits.push((g.id, cell_idx_in_run));
                 }
             }
-            out
-        };
+        }
 
-        for (glyph_id, cell_idx_in_run) in glyph_emits {
+        for &(glyph_id, cell_idx_in_run) in &glyph_emits {
             let grid_col = (run_start as u16).saturating_add(cell_idx_in_run);
             if (grid_col as usize) >= cols {
                 continue;
