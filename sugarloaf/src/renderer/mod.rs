@@ -16,9 +16,9 @@ use crate::sugarloaf::graphics::GraphicId;
 use crate::Graphics;
 use compositor::{Compositor, Rect, Vertex};
 use rustc_hash::FxHashMap;
+use std::mem;
 #[cfg(target_os = "macos")]
 use std::sync::Arc;
-use std::mem;
 
 #[cfg(target_os = "macos")]
 use parking_lot::Mutex;

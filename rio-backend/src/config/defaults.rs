@@ -149,5 +149,7 @@ pub fn default_ime_cursor_positioning() -> bool {
 }
 
 pub fn default_config_file_content() -> String {
-    String::from("# See the full configuration reference: https://rioterm.com/docs/config\n")
+    String::from(
+        "# See the full configuration reference: https://rioterm.com/docs/config\n",
+    )
 }
