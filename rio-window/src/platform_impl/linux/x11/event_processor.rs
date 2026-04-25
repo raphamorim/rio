@@ -2087,8 +2087,7 @@ impl EventProcessor {
         // the cached per-window timer interval. Re-evaluate every window so
         // a 60Hz→144Hz switch (or VRR mode flip) starts hitting frames at
         // the new cadence instead of the old one.
-        let window_ids: Vec<WindowId> =
-            wt.windows.borrow().iter().map(|(id, _)| *id).collect();
+        let window_ids: Vec<WindowId> = wt.windows.borrow().keys().copied().collect();
         for id in window_ids {
             wt.refresh_rate_changed(id);
         }
