@@ -267,7 +267,10 @@ pub fn cell_fg(
     if sq.is_bg_only() {
         return normalized_to_u8(renderer.named_colors.foreground);
     }
-    let style = style_set.get(sq.style_id());
+    let mut style = style_set.get(sq.style_id());
+    if style.flags.contains(StyleFlags::INVERSE) {
+        std::mem::swap(&mut style.fg, &mut style.bg);
+    }
     let color = renderer.compute_color(&style.fg, style.flags, term_colors);
     normalized_to_u8(color)
 }
@@ -849,7 +852,10 @@ pub fn cell_bg(
             renderer.color(idx, term_colors)
         }
         ContentTag::Codepoint => {
-            let style = style_set.get(sq.style_id());
+            let mut style = style_set.get(sq.style_id());
+            if style.flags.contains(StyleFlags::INVERSE) {
+                std::mem::swap(&mut style.fg, &mut style.bg);
+            }
             renderer.compute_bg_color(&style, term_colors)
         }
     };
