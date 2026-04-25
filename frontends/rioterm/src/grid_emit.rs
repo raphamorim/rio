@@ -97,10 +97,15 @@ fn cell_in_row_sel(row_sel: Option<RowSelection>, col: u16) -> bool {
 /// (`ghostty/src/renderer/generic.zig:240`) — we use the same two-way
 /// split so `search_focused_match_background` can override the regular
 /// match color on the currently-focused hit.
+///
+/// `HyperlinkHover` is rio-specific: same row-interval shape but the
+/// only visual is a forced underline (no bg/fg color change), used for
+/// the OSC 8 / regex-hint-on-hover affordance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HintTag {
     Match,
     Focused,
+    HyperlinkHover,
 }
 
 /// Per-row hint interval, closed on both ends. Several `RowHint`s may
@@ -124,6 +129,7 @@ pub struct RowHint {
 pub fn row_hints_for(
     hint_matches: Option<&[Match]>,
     focused_match: Option<&Match>,
+    hover_hyperlink: Option<(Pos, Pos)>,
     y: usize,
     cols: usize,
     display_offset: i32,
@@ -133,15 +139,10 @@ pub fn row_hints_for(
     if cols == 0 {
         return;
     }
-    let Some(matches) = hint_matches else {
-        return;
-    };
     let line = Line((y as i32) - display_offset);
     let cols_max = cols.saturating_sub(1) as u16;
 
-    let to_row_hint = |m: &Match, tag: HintTag| -> Option<RowHint> {
-        let start = *m.start();
-        let end = *m.end();
+    let pos_pair_to_row_hint = |start: Pos, end: Pos, tag: HintTag| -> Option<RowHint> {
         if line < start.row || line > end.row {
             return None;
         }
@@ -162,10 +163,28 @@ pub fn row_hints_for(
         })
     };
 
+    let to_row_hint =
+        |m: &Match, tag: HintTag| pos_pair_to_row_hint(*m.start(), *m.end(), tag);
+
     let is_same_match = |a: &Match, b: &Match| -> bool {
         let (a_start, a_end) = (*a.start(), *a.end());
         let (b_start, b_end) = (*b.start(), *b.end());
         pos_eq(a_start, b_start) && pos_eq(a_end, b_end)
+    };
+
+    // Hyperlink hover sits in front of search matches in the priority
+    // order — a hovered cell shows the underline regardless of whether
+    // it also overlaps a search hit. The bg / fg paths skip this tag
+    // (see `build_row_bg` / `cell_fg_hinted`) so the search-tag visual
+    // still wins for color, but the underline is always emitted.
+    if let Some((start, end)) = hover_hyperlink {
+        if let Some(rh) = pos_pair_to_row_hint(start, end, HintTag::HyperlinkHover) {
+            out.push(rh);
+        }
+    }
+
+    let Some(matches) = hint_matches else {
+        return;
     };
 
     if let Some(fm) = focused_match {
@@ -192,12 +211,26 @@ fn pos_eq(a: Pos, b: Pos) -> bool {
 
 #[inline]
 fn cell_in_row_hints(row_hints: &[RowHint], col: u16) -> Option<HintTag> {
+    // Skip HyperlinkHover for the color paths — it only contributes
+    // an underline (handled separately in `emit_underlines`).
     for rh in row_hints {
+        if rh.tag == HintTag::HyperlinkHover {
+            continue;
+        }
         if col >= rh.lo && col <= rh.hi {
             return Some(rh.tag);
         }
     }
     None
+}
+
+/// Whether a cell should receive a forced underline from a hovered
+/// hyperlink / hint, regardless of its own SGR style flags.
+#[inline]
+fn cell_in_hover_underline(row_hints: &[RowHint], col: u16) -> bool {
+    row_hints.iter().any(|rh| {
+        rh.tag == HintTag::HyperlinkHover && col >= rh.lo && col <= rh.hi
+    })
 }
 
 /// Foreground for a hint-matched cell. Mirrors `cell_fg_selected` but
@@ -211,6 +244,9 @@ fn cell_fg_hinted(tag: HintTag, renderer: &Renderer) -> [u8; 4] {
             normalized_to_u8(renderer.named_colors.search_focused_match_foreground)
         }
         HintTag::Match => normalized_to_u8(renderer.named_colors.search_match_foreground),
+        // Hover doesn't change fg color; defensive — `cell_in_row_hints`
+        // already filters this tag out, so this arm shouldn't fire.
+        HintTag::HyperlinkHover => [0, 0, 0, 0],
     }
 }
 
@@ -585,6 +621,10 @@ pub fn build_row_bg(
                     .unwrap_or_else(|| cell_bg(sq, style_set, renderer, term_colors)),
                 HintTag::Match => match_bg
                     .unwrap_or_else(|| cell_bg(sq, style_set, renderer, term_colors)),
+                // `cell_in_row_hints` filters HyperlinkHover out, but
+                // make the match exhaustive so a future caller can't
+                // accidentally hit a panic.
+                HintTag::HyperlinkHover => cell_bg(sq, style_set, renderer, term_colors),
             }
         } else {
             cell_bg(sq, style_set, renderer, term_colors)
@@ -1250,8 +1290,18 @@ fn emit_underlines(
     for x in 0..cols {
         let sq = row[Column(x)];
         let style = style_set.get(sq.style_id());
-        let Some(deco) = underline_style_from_flags(style.flags) else {
-            continue;
+        let col = x as u16;
+        // SGR underline (UNDER, double, curly, …) wins over the
+        // hover-only forced underline. When the cell has no SGR
+        // decoration but is inside a hovered hyperlink, emit a plain
+        // single-line underline using the cell fg color — same shape
+        // as Ghostty's hyperlink-hover affordance.
+        let (deco, hover_force) = match underline_style_from_flags(style.flags) {
+            Some(d) => (d, false),
+            None if cell_in_hover_underline(row_hints, col) => {
+                (DecorationStyle::Underline, true)
+            }
+            None => continue,
         };
         let Some(slot) = ensure_decoration_slot(grid, deco, cell_w, cell_h, thickness)
         else {
@@ -1260,7 +1310,6 @@ fn emit_underlines(
         if slot.w == 0 || slot.h == 0 {
             continue;
         }
-        let col = x as u16;
         let color = if cell_in_row_sel(row_sel, col) {
             // Inside selection: underline follows the selection fg so
             // it stays visible against the selection bg. SGR 58 is
@@ -1271,6 +1320,11 @@ fn emit_underlines(
             // Same reasoning as selection: underline inside a hint
             // should stay legible on the hint bg.
             cell_fg_hinted(tag, renderer)
+        } else if hover_force {
+            // Hover-only forced underline: use the cell fg so the
+            // underline tracks the hyperlink text color (matches
+            // Ghostty's hyperlink hover affordance).
+            cell_fg(sq, style_set, renderer, term_colors)
         } else {
             decoration_color(sq, &style, style_set, renderer, term_colors)
         };
