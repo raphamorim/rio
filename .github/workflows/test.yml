@@ -40,7 +40,7 @@ jobs:
       - run: cargo fetch
       - run: cargo fmt -- --check --color always
       - run: cargo clippy --all-targets --all-features
-      - run: cargo test --release
+      - run: cargo test --release --features wgpu
   msys2-build-test: #cargo test doesn't necessarily build the exec we want
     strategy:
       matrix:
@@ -64,9 +64,9 @@ jobs:
           python:p
           fontconfig:p
 
-    - name: Run cargo 
+    - name: Run cargo
       shell: msys2 {0}
-      run: cargo build --release
+      run: cargo build --release --features wgpu
 
   # cli:
   #   strategy:
