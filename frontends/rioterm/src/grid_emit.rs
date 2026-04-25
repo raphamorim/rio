@@ -587,15 +587,34 @@ pub fn build_row_bg(
     bg_scratch: &mut Vec<CellBg>,
 ) {
     bg_scratch.clear();
-    // Precompute once — selection_background stays constant across the row.
-    let sel_bg = if row_sel.is_some() {
+
+    // Fast path: row has no selection and no color-changing hints
+    // (HyperlinkHover only contributes an underline, never bg). The
+    // overwhelming majority of rows in idle terminals hit this path —
+    // strip the per-cell `cell_in_row_sel` / `cell_in_row_hints`
+    // checks and just walk cells.
+    let has_sel = row_sel.is_some();
+    let has_color_hints = row_hints
+        .iter()
+        .any(|rh| rh.tag != HintTag::HyperlinkHover);
+    if !has_sel && !has_color_hints {
+        bg_scratch.reserve(cols);
+        for x in 0..cols {
+            let sq = row[Column(x)];
+            bg_scratch.push(CellBg {
+                rgba: cell_bg(sq, style_set, renderer, term_colors),
+            });
+        }
+        return;
+    }
+
+    // Slow path: selection and/or hint highlighting present.
+    let sel_bg = if has_sel {
         Some(normalized_to_u8(renderer.named_colors.selection_background))
     } else {
         None
     };
-    // Precompute hint bg colors if the row has any hints. Both variants
-    // are cheap enough to compute unconditionally when the row is hit.
-    let (match_bg, focused_bg) = if !row_hints.is_empty() {
+    let (match_bg, focused_bg) = if has_color_hints {
         (
             Some(normalized_to_u8(
                 renderer.named_colors.search_match_background,
@@ -752,6 +771,21 @@ impl GridGlyphRasterizer {
         style_flags: u8,
         font_library: &FontLibrary,
     ) -> (u32, bool) {
+        // ASCII printable + regular style → always primary font, never
+        // emoji. Skips the FxHashMap lookup that dominates this fn's
+        // cost on terminal-typical content. Mirrors Ghostty's
+        // `font/Group.zig` indexForCodepoint ASCII fast path.
+        //
+        // Bold / italic ASCII still goes through the cache because
+        // the bold and italic font IDs are dynamic (depend on which
+        // faces the user loaded), and non-ASCII can hit fallback.
+        if style_flags == 0 && (' '..='~').contains(&ch) {
+            return (
+                rio_backend::sugarloaf::font::FONT_ID_REGULAR as u32,
+                false,
+            );
+        }
+
         *self
             .font_resolve
             .entry((ch, style_flags))
@@ -1001,6 +1035,16 @@ pub fn build_row_fg(
     let cell_h_u32 = cell_h.round().clamp(1.0, u32::MAX as f32) as u32;
     let thickness = decoration_thickness(size_px);
 
+    // Row-level state hoisted out of the per-glyph emit loop. Same
+    // optimisation as `build_row_bg`'s fast path — avoids the
+    // `cell_in_row_sel` + `cell_in_row_hints` calls per glyph when
+    // the row has no selection / no color-changing hints.
+    let has_sel = row_sel.is_some();
+    let has_color_hints = row_hints
+        .iter()
+        .any(|rh| rh.tag != HintTag::HyperlinkHover);
+    let needs_per_cell_check = has_sel || has_color_hints;
+
     // Phase 1: underline pass. Emit before glyphs so grayscale quads
     // draw under the characters.
     emit_underlines(
@@ -1209,32 +1253,41 @@ pub fn build_row_fg(
             let src_col =
                 (run_start + cell_idx_in_run as usize).min(cols.saturating_sub(1));
             let src_sq = row[Column(src_col)];
-            let is_sel = cell_in_row_sel(row_sel, src_col as u16);
-            let hint_tag = if is_sel {
-                None
-            } else {
-                cell_in_row_hints(row_hints, src_col as u16)
-            };
             let (atlas, color) = if is_color {
                 // Colour glyphs (emoji) don't take the selection-fg /
                 // hint-fg swap — matches Ghostty's behaviour for
                 // bitmap/COLR atlas entries.
                 (CellText::ATLAS_COLOR, [255, 255, 255, 255])
-            } else if is_sel {
-                (
-                    CellText::ATLAS_GRAYSCALE,
-                    cell_fg_selected(src_sq, style_set, renderer, term_colors),
-                )
-            } else if let Some(tag) = hint_tag {
-                // Hint-fg wins over the cell's own fg, matching
-                // Ghostty's `.search` / `.search_selected` branches at
-                // `generic.zig:2829-2833` (the fg picker mirrors bg).
-                (CellText::ATLAS_GRAYSCALE, cell_fg_hinted(tag, renderer))
-            } else {
+            } else if !needs_per_cell_check {
+                // Fast path — no selection / color-changing hints on
+                // this row.
                 (
                     CellText::ATLAS_GRAYSCALE,
                     cell_fg(src_sq, style_set, renderer, term_colors),
                 )
+            } else {
+                let is_sel = cell_in_row_sel(row_sel, src_col as u16);
+                let hint_tag = if is_sel {
+                    None
+                } else {
+                    cell_in_row_hints(row_hints, src_col as u16)
+                };
+                if is_sel {
+                    (
+                        CellText::ATLAS_GRAYSCALE,
+                        cell_fg_selected(src_sq, style_set, renderer, term_colors),
+                    )
+                } else if let Some(tag) = hint_tag {
+                    // Hint-fg wins over the cell's own fg, matching
+                    // Ghostty's `.search` / `.search_selected` branches at
+                    // `generic.zig:2829-2833` (the fg picker mirrors bg).
+                    (CellText::ATLAS_GRAYSCALE, cell_fg_hinted(tag, renderer))
+                } else {
+                    (
+                        CellText::ATLAS_GRAYSCALE,
+                        cell_fg(src_sq, style_set, renderer, term_colors),
+                    )
+                }
             };
 
             fg_scratch.push(CellText {
