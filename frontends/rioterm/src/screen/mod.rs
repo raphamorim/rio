@@ -3574,6 +3574,14 @@ impl Screen<'_> {
                 /// `_foreground` — matches Ghostty's `.search_selected`
                 /// highlight tag.
                 focused_match: Option<rio_backend::crosswords::search::Match>,
+                /// (start, end) of the currently-hovered hyperlink /
+                /// regex hint. Only populated for the active panel.
+                /// Triggers the forced underline in `emit_underlines`;
+                /// no bg / fg color change.
+                hovered_hyperlink: Option<(
+                    rio_backend::crosswords::pos::Pos,
+                    rio_backend::crosswords::pos::Pos,
+                )>,
             }
 
             let (active_key, scaled_margin) = {
@@ -3645,6 +3653,17 @@ impl Screen<'_> {
                 } else {
                     None
                 };
+                // Only the active panel can be under the mouse, so
+                // hyperlink-hover state only makes sense there. Same
+                // reasoning as `focused_match` above.
+                let hovered_hyperlink = if is_active {
+                    ctx.renderable_content
+                        .highlighted_hint
+                        .as_ref()
+                        .map(|h| (h.start, h.end))
+                } else {
+                    None
+                };
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
@@ -3665,6 +3684,7 @@ impl Screen<'_> {
                     display_offset,
                     hint_matches,
                     focused_match,
+                    hovered_hyperlink,
                 });
             }
 
@@ -3753,6 +3773,7 @@ impl Screen<'_> {
                 // wgpu+swash port.
                 let hint_matches_slice = p.hint_matches.as_deref();
                 let focused_match_ref = p.focused_match.as_ref();
+                let hovered_hyperlink = p.hovered_hyperlink;
                 let mut rebuild_row = |y: usize,
                                        grid: &mut rio_backend::sugarloaf::grid::GridRenderer,
                                        rasterizer: &mut crate::grid_emit::GridGlyphRasterizer| {
@@ -3768,6 +3789,7 @@ impl Screen<'_> {
                     crate::grid_emit::row_hints_for(
                         hint_matches_slice,
                         focused_match_ref,
+                        hovered_hyperlink,
                         y,
                         cols,
                         p.display_offset,
