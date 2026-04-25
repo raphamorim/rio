@@ -1179,9 +1179,6 @@ width = 1024
 height = 768
 opacity = 0.9
 
-[renderer]
-performance = "High"
-
 [shell]
 program = "/bin/bash"
 args = ["--login"]
@@ -1204,32 +1201,23 @@ windows.env-vars = ["WINDOWS_VAR=value"]
 windows.shell = { program = "pwsh", args = ["-NoLogo"] }
 ```
 
-## renderer.performance
-
-Set WGPU rendering performance.
-
-- `High`: Adapter that has the highest performance. This is often a discrete GPU.
-- `Low`: Adapter that uses the least possible power. This is often an integrated GPU.
-
-```toml
-[renderer]
-performance = "High"
-```
-
 ## renderer.backend
 
-Set WGPU rendering backend.
+Selects the rendering backend. Sugarloaf ships native backends for Metal (macOS) and Vulkan (Linux); the remaining backends go through [wgpu](https://wgpu.rs/) and require Rio to be built with the `wgpu` Cargo feature (see [Build from source](/docs/install/build-from-source#wgpu-feature)).
 
-- `Automatic`: Leave Sugarloaf/WGPU to decide
-- `GL`: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
-- `Vulkan`: Supported on Windows, Linux/Android
-- `DX12`: Supported on Windows 10
-- `Metal`: Supported on macOS/iOS
+- `Automatic` (default): native Metal on macOS, native Vulkan on Linux, wgpu elsewhere.
+- `Metal` (default on macOS): native Metal backend. Smaller, skips the wgpu translation layer. Does **not** support RetroArch filters.
+- `Vulkan`: native Vulkan backend on Linux; wgpu Vulkan on other platforms.
+- `WgpuMetal`: route through the wgpu Metal translation layer on macOS. Required to use RetroArch filters on macOS.
+- `GL`: wgpu OpenGL/GLES backend (Linux/Android, plus Windows/macOS via ANGLE).
+- `DX12`: wgpu DirectX 12 backend (Windows 10+).
 
 ```toml
 [renderer]
 backend = "Automatic"
 ```
+
+> Selecting any backend other than `Automatic`, `Metal`, or `Vulkan` requires building with `--features wgpu`. The native Metal and native Vulkan backends do not include the librashader filter chain — see [`renderer.filter`](#rendererfilter) below.
 
 ## renderer.disable-unfocused-render
 
@@ -1273,7 +1261,7 @@ Builtin filters:
 - `newpixiecrt`.
 - `fubax_vr`.
 
-Note: Filters does not work with `GL` backend.
+Note: filters require Rio to be built with the `wgpu` Cargo feature and an active `wgpu`-backed renderer. They do **not** run on the native `Metal` (macOS) or native `Vulkan` (Linux) backends, nor on the `GL` backend. See [RetroArch shaders](/docs/features/retroarch-shaders) for details.
 
 ```toml
 [renderer]
