@@ -123,7 +123,11 @@ struct TextMetalState {
     instance_capacity: usize,
 }
 
-#[cfg(feature = "wgpu")]
+// On macOS the wgpu text path is never selected (we always go through
+// Metal — see `sugarloaf.rs:1399`'s `cfg(not(target_os = "macos"))`).
+// Excluding the struct from the macOS build keeps the unused atlases
+// from tripping `dead_code` and shrinks `Text` by one Option field.
+#[cfg(all(feature = "wgpu", not(target_os = "macos")))]
 struct TextWgpuState {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -226,7 +230,7 @@ pub struct Text {
     /// `FontLibraryData` read-lock isn't re-acquired per shape.
     #[cfg(not(target_os = "macos"))]
     font_data_cache: FxHashMap<u32, (crate::font::SharedData, u32, swash::CacheKey)>,
-    #[cfg(feature = "wgpu")]
+    #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
     wgpu: Option<TextWgpuState>,
     #[cfg(target_os = "linux")]
     vulkan: Option<TextVulkanState>,
@@ -255,7 +259,7 @@ impl Text {
             scale_ctx: swash::scale::ScaleContext::new(),
             #[cfg(not(target_os = "macos"))]
             font_data_cache: FxHashMap::default(),
-            #[cfg(feature = "wgpu")]
+            #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
             wgpu: None,
             #[cfg(target_os = "linux")]
             vulkan: None,
@@ -955,7 +959,7 @@ impl Text {
 
     //  wgpu GPU backend
 
-    #[cfg(feature = "wgpu")]
+    #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
     pub fn init_wgpu(
         &mut self,
         device: &wgpu::Device,
@@ -1030,7 +1034,7 @@ impl Text {
 
     /// Record the UI text pass into `render_pass`. No-op if wgpu state
     /// isn't initialised or there are no instances this frame.
-    #[cfg(feature = "wgpu")]
+    #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
     pub fn render_wgpu<'pass>(
         &'pass mut self,
         render_pass: &mut wgpu::RenderPass<'pass>,
@@ -1195,7 +1199,7 @@ fn shaped_width(run: &ShapedRun) -> f32 {
     run.glyphs.iter().map(|g| g.advance).sum()
 }
 
-#[cfg(feature = "wgpu")]
+#[cfg(all(feature = "wgpu", not(target_os = "macos")))]
 fn bytemuck_instances(insts: &[TextInstance]) -> &[u8] {
     // Safety: TextInstance is repr(C) with all-primitive fields (no
     // padding surprises thanks to 4-byte alignment + explicit _pad).
@@ -1371,7 +1375,7 @@ fn alloc_instance_buffer_metal(device: &metal::Device, capacity: usize) -> metal
 
 //  wgpu pipeline construction
 
-#[cfg(feature = "wgpu")]
+#[cfg(all(feature = "wgpu", not(target_os = "macos")))]
 fn create_text_atlas_bgl_wgpu(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("sugarloaf.text.atlas_bgl"),
@@ -1400,7 +1404,7 @@ fn create_text_atlas_bgl_wgpu(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     })
 }
 
-#[cfg(feature = "wgpu")]
+#[cfg(all(feature = "wgpu", not(target_os = "macos")))]
 fn create_text_atlas_bg_wgpu(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -1423,7 +1427,7 @@ fn create_text_atlas_bg_wgpu(
     })
 }
 
-#[cfg(feature = "wgpu")]
+#[cfg(all(feature = "wgpu", not(target_os = "macos")))]
 fn alloc_instance_buffer_wgpu(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
     let size = (capacity.max(1) * std::mem::size_of::<TextInstance>()) as u64;
     device.create_buffer(&wgpu::BufferDescriptor {
@@ -1434,7 +1438,7 @@ fn alloc_instance_buffer_wgpu(device: &wgpu::Device, capacity: usize) -> wgpu::B
     })
 }
 
-#[cfg(feature = "wgpu")]
+#[cfg(all(feature = "wgpu", not(target_os = "macos")))]
 fn build_text_pipeline_wgpu(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
@@ -1526,7 +1530,7 @@ fn build_text_pipeline_wgpu(
     })
 }
 
-#[cfg(feature = "wgpu")]
+#[cfg(all(feature = "wgpu", not(target_os = "macos")))]
 fn premul_blend_wgpu() -> wgpu::BlendState {
     wgpu::BlendState {
         color: wgpu::BlendComponent {

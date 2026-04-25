@@ -1722,13 +1722,14 @@ mod postscript_resolver_tests {
     fn insert_populates_postscript_lookup() {
         // Read the PS name straight from the handle so the test doesn't
         // hardcode a value that changes if the bundled font is updated.
-        let handle =
-            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIAMONO_REGULAR)
-                .expect("parse CascadiaMono");
+        let handle = crate::font::macos::FontHandle::from_static_bytes(
+            FONT_CASCADIAMONO_NF_REGULAR,
+        )
+        .expect("parse CascadiaMono");
         let ps_name = handle.postscript_name();
 
         let mut lib = FontLibraryData::default();
-        let font_data = FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR)
+        let font_data = FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR)
             .expect("load CascadiaMono");
         lib.insert(font_data);
 
@@ -1751,17 +1752,18 @@ mod postscript_resolver_tests {
     /// id, so first-wins is the correct policy.
     #[test]
     fn duplicate_insert_keeps_first_id() {
-        let handle =
-            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIAMONO_REGULAR)
-                .expect("parse CascadiaMono");
+        let handle = crate::font::macos::FontHandle::from_static_bytes(
+            FONT_CASCADIAMONO_NF_REGULAR,
+        )
+        .expect("parse CascadiaMono");
         let ps_name = handle.postscript_name();
 
         let mut lib = FontLibraryData::default();
         lib.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR).expect("load a"),
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load a"),
         );
         lib.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR).expect("load b"),
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load b"),
         );
         assert_eq!(
             lib.font_id_for_postscript_name(&ps_name),
@@ -1782,7 +1784,7 @@ mod postscript_resolver_tests {
 
         let mut data = FontLibraryData::default();
         data.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR).expect("load"),
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load"),
         );
         let lib = FontLibrary {
             inner: Arc::new(parking_lot::RwLock::new(data)),
@@ -1821,7 +1823,7 @@ mod postscript_resolver_tests {
 
         let mut data = FontLibraryData::default();
         data.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_REGULAR).expect("load"),
+            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load"),
         );
         let lib = FontLibrary {
             inner: Arc::new(parking_lot::RwLock::new(data)),

@@ -577,6 +577,7 @@ fn normalized_to_u8(c: [f32; 4]) -> [u8; 4] {
     ]
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_row_bg(
     row: &Row<Square>,
     cols: usize,

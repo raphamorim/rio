@@ -903,7 +903,14 @@ fn upload_background_image_texture(
             );
             ImageTexture::Metal(mtl_tex)
         }
-        _ => return None,
+        // Vulkan goes through `Renderer::upload_background_image_vulkan`
+        // (the renderer holds the descriptor set + sampler this free fn
+        // can't see), so this match arm just declines and lets the
+        // dispatcher try the renderer-bound path. Linux-only.
+        #[cfg(target_os = "linux")]
+        crate::context::ContextType::Vulkan(_) => return None,
+        #[cfg(not(feature = "wgpu"))]
+        crate::context::ContextType::_Phantom(_) => unreachable!(),
     };
     Some(ImageTextureEntry {
         gpu,
@@ -2285,7 +2292,7 @@ impl Renderer {
                     text.init_metal(&context.device, &context.command_queue);
                     text.render_metal(
                         render_encoder,
-                        [context.size.width as f32, context.size.height as f32],
+                        [context.size.width, context.size.height],
                     );
                     true
                 })();

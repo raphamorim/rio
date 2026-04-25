@@ -732,10 +732,6 @@ mod tests {
 
         assert!(!result.renderer.disable_unfocused_render);
 
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
 
@@ -751,10 +747,6 @@ mod tests {
     fn test_if_explicit_defaults_match() {
         let result = create_temporary_config("defaults", &default_config_file_content());
 
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
         let env_vars: Vec<String> = vec![];
         assert_eq!(result.env_vars, env_vars);
         assert_eq!(result.cursor.shape, default_cursor());
@@ -789,10 +781,6 @@ mod tests {
 
         let result = Config::load_from_path(&file_name);
 
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -813,7 +801,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         assert_eq!(result.renderer.backend, renderer::Backend::Vulkan);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -835,7 +822,6 @@ mod tests {
         );
 
         assert!(!result.renderer.disable_occluded_render);
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -854,7 +840,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
         assert_eq!(result.cursor.shape, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
@@ -884,7 +869,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.cursor.shape, CursorShape::Underline);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -904,7 +888,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.option_as_alt, String::from("Both"));
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -925,10 +908,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -950,10 +929,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Bindings
@@ -985,7 +960,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         assert_eq!(result.fonts.size, 14.0);
         assert_eq!(result.line_height, 2.0);
         assert_eq!(result.margin.top, 0.0);
@@ -1016,7 +990,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, "lucario");
         // Colors
@@ -1157,7 +1130,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         // Advanced
         assert!(result.renderer.disable_unfocused_render);
         assert!(result.use_fork);
@@ -1210,7 +1182,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         assert_eq!(result.renderer.backend, renderer::Backend::GL);
         // Developer
         assert_eq!(result.developer.log_level, String::from("INFO"));
@@ -1453,7 +1424,6 @@ mod tests {
         // Backend should be set
         assert_eq!(result.renderer.backend, renderer::Backend::Metal);
         // Other fields should be preserved
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert!(result.renderer.disable_unfocused_render);
     }
 
@@ -1554,7 +1524,6 @@ mod tests {
         assert_eq!(result.window.height, 768);
 
         // Renderer: performance overridden, disable_unfocused_render preserved
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert!(!result.renderer.disable_unfocused_render);
 
         // Navigation: clickable overridden, mode preserved

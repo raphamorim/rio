@@ -1609,6 +1609,7 @@ impl<U: EventListener> Crosswords<U> {
     ///   - `\0` cells inside a run of content become real spaces
     ///   - trailing blanks at end of the run are dropped (caller decides
     ///     whether to flush them via the `blank_cells` accumulator)
+    ///
     /// Returns true if the line emitted any non-blank content.
     fn append_cells(
         &self,

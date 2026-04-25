@@ -241,6 +241,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn get_mut(&mut self, key: NodeId) -> Option<&mut ContextGridItem<T>> {
         self.inner.get_mut(&key)
     }
