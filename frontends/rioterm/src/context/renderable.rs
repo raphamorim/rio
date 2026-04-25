@@ -11,7 +11,7 @@ use std::time::Instant;
 
 #[derive(Clone, Copy, Debug)]
 pub enum BackgroundState {
-    Set(wgpu::Color),
+    Set(rio_backend::sugarloaf::Color),
     Reset,
 }
 

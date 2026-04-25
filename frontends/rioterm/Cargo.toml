@@ -75,6 +75,22 @@ windows-sys = { version = "0.60.2", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Diagnostics_Debug",
 ]}
+# `wgpu` backend is a hard requirement on Windows — there's no native
+# DX12/Vulkan-via-ash backend yet, so without it the binary has no
+# GPU rendering path. Force it on for Windows builds; Linux/macOS
+# builds opt in via `--features wgpu` if they want librashader filters.
+[target.'cfg(windows)'.dependencies.sugarloaf]
+workspace = true
+features = ["wgpu"]
+[target.'cfg(windows)'.dependencies.rio-backend]
+workspace = true
+features = ["wgpu"]
+[target.'cfg(target_arch = "wasm32")'.dependencies.sugarloaf]
+workspace = true
+features = ["wgpu"]
+[target.'cfg(target_arch = "wasm32")'.dependencies.rio-backend]
+workspace = true
+features = ["wgpu"]
 
 [features]
 default = ["wayland", "x11"]
@@ -88,6 +104,11 @@ wayland = [
     "rio-window/wayland",
     "rio-window/wayland-dlopen",
 ]
+# Pull in wgpu (and the librashader filter chain). Off by default on
+# Linux/macOS where the native Vulkan/Metal backends cover everything
+# except CRT/scanline filters; auto-enabled on Windows + WASM via
+# target-conditional sugarloaf/rio-backend deps above.
+wgpu = ["sugarloaf/wgpu", "rio-backend/wgpu"]
 
 # "rio-window/wayland-csd-adwaita-crossfont",
 

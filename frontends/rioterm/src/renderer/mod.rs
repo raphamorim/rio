@@ -43,10 +43,10 @@ pub struct Renderer {
     unfocused_split_opacity: f32,
     unfocused_split_fill: Option<ColorArray>,
     last_active: Option<NodeId>,
-    /// Last `wgpu::Color` we applied to sugarloaf's window clear via
+    /// Last `rio_backend::sugarloaf::Color` we applied to sugarloaf's window clear via
     /// `set_background_color`. Lets the per-frame "derive bg from
     /// active panel's OSC state" loop avoid redundant resyncs.
-    last_window_bg: Option<wgpu::Color>,
+    last_window_bg: Option<rio_backend::sugarloaf::Color>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     pub(crate) ignore_selection_fg_color: bool,
@@ -59,7 +59,7 @@ pub struct Renderer {
     pub macos_use_unified_titlebar: bool,
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
-    pub dynamic_background: ([f32; 4], wgpu::Color, bool),
+    pub dynamic_background: ([f32; 4], rio_backend::sugarloaf::Color, bool),
     pub custom_mouse_cursor: bool,
     pub trail_cursor_enabled: bool,
     pub trail_cursor: trail_cursor::TrailCursor,
@@ -76,7 +76,7 @@ impl Renderer {
             dynamic_background.1.a = config.window.opacity as f64;
             dynamic_background.2 = true;
         } else if config.window.background_image.is_some() {
-            dynamic_background.1 = wgpu::Color::TRANSPARENT;
+            dynamic_background.1 = rio_backend::sugarloaf::Color::TRANSPARENT;
             dynamic_background.2 = true;
         }
 

@@ -144,7 +144,8 @@ impl Screen<'_> {
                 Backend::Automatic => {
                     // Linux + macOS pick their native GPU backend (ash
                     // / Metal). Other targets fall back to the wgpu
-                    // umbrella with whatever backends it can find.
+                    // umbrella (only available with the `wgpu`
+                    // feature; otherwise we degrade to CPU rasterizer).
                     #[cfg(target_os = "linux")]
                     {
                         SugarloafBackend::Vulkan
@@ -153,7 +154,10 @@ impl Screen<'_> {
                     {
                         SugarloafBackend::Metal
                     }
-                    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+                    #[cfg(all(
+                        not(any(target_os = "linux", target_os = "macos")),
+                        feature = "wgpu",
+                    ))]
                     {
                         #[cfg(target_arch = "wasm32")]
                         let default_backend =
@@ -163,20 +167,38 @@ impl Screen<'_> {
 
                         SugarloafBackend::Wgpu(default_backend)
                     }
+                    #[cfg(all(
+                        not(any(target_os = "linux", target_os = "macos")),
+                        not(feature = "wgpu"),
+                    ))]
+                    {
+                        SugarloafBackend::Cpu
+                    }
                 }
                 // `Backend::Vulkan` from the user config now means the
                 // native ash backend on Linux. Other OSes fall through
-                // to the wgpu Vulkan path (Windows MSI, etc.) so the
-                // config option keeps working there.
+                // to the wgpu Vulkan path when the `wgpu` feature is
+                // on; otherwise we degrade to CPU rasterizer.
                 #[cfg(target_os = "linux")]
                 Backend::Vulkan => SugarloafBackend::Vulkan,
-                #[cfg(not(target_os = "linux"))]
+                #[cfg(all(not(target_os = "linux"), feature = "wgpu"))]
                 Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
+                #[cfg(all(not(target_os = "linux"), not(feature = "wgpu")))]
+                Backend::Vulkan => SugarloafBackend::Cpu,
+                #[cfg(feature = "wgpu")]
                 Backend::GL => SugarloafBackend::Wgpu(wgpu::Backends::GL),
+                #[cfg(not(feature = "wgpu"))]
+                Backend::GL => SugarloafBackend::Cpu,
+                #[cfg(feature = "wgpu")]
                 Backend::WgpuMetal => SugarloafBackend::Wgpu(wgpu::Backends::METAL),
+                #[cfg(not(feature = "wgpu"))]
+                Backend::WgpuMetal => SugarloafBackend::Cpu,
                 #[cfg(target_os = "macos")]
                 Backend::Metal => SugarloafBackend::Metal,
+                #[cfg(feature = "wgpu")]
                 Backend::DX12 => SugarloafBackend::Wgpu(wgpu::Backends::DX12),
+                #[cfg(not(feature = "wgpu"))]
+                Backend::DX12 => SugarloafBackend::Cpu,
             }
         };
 
@@ -199,6 +221,7 @@ impl Screen<'_> {
             }
         };
 
+        #[cfg(feature = "wgpu")]
         sugarloaf.update_filters(config.renderer.filters.as_slice());
 
         let mut renderer = Renderer::new(config);
@@ -457,6 +480,7 @@ impl Screen<'_> {
         s.font_size = config.fonts.size;
         s.line_height = config.line_height;
 
+        #[cfg(feature = "wgpu")]
         self.sugarloaf
             .update_filters(config.renderer.filters.as_slice());
 
