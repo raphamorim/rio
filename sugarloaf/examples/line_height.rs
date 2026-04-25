@@ -83,7 +83,7 @@ impl ApplicationHandler for Application {
         )
         .expect("Sugarloaf instance should be created");
 
-        sugarloaf.set_background_color(Some(wgpu::Color::BLUE));
+        sugarloaf.set_background_color(Some(wgpu::Color::BLUE.into()));
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
