@@ -8,7 +8,10 @@ use serde::{de, Deserialize};
 use std::num::ParseIntError;
 use std::ops::Mul;
 
-pub type ColorWGPU = wgpu::Color;
+// `ColorWGPU` is the legacy name; `sugarloaf::Color` is the actual
+// type now (mirrors `wgpu::Color`'s shape, but doesn't drag wgpu
+// into the dep tree on Linux/macOS native builds).
+pub type ColorWGPU = sugarloaf::Color;
 pub type ColorArray = [f32; 4];
 pub type ColorComposition = (ColorArray, ColorWGPU);
 
@@ -583,8 +586,8 @@ impl ColorBuilder {
         }
     }
 
-    pub fn to_wgpu(&self) -> wgpu::Color {
-        wgpu::Color {
+    pub fn to_wgpu(&self) -> sugarloaf::Color {
+        sugarloaf::Color {
             r: self.red,
             g: self.green,
             b: self.blue,
@@ -735,7 +738,7 @@ mod tests {
 
     #[test]
     fn test_conversion_from_hex_sgb_255() {
-        let color: wgpu::Color =
+        let color: sugarloaf::Color =
             ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
                 .unwrap()
                 .to_wgpu();
@@ -764,7 +767,7 @@ mod tests {
 
     #[test]
     fn test_conversion_from_hex_sgb_1() {
-        let color: wgpu::Color =
+        let color: sugarloaf::Color =
             ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_255)
                 .unwrap()
                 .to_wgpu();

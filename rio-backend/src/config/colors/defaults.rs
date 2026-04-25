@@ -9,7 +9,7 @@ pub fn background() -> ColorComposition {
         .to_arr();
     (
         color,
-        wgpu::Color {
+        sugarloaf::Color {
             r: color[0] as f64,
             g: color[1] as f64,
             b: color[2] as f64,
