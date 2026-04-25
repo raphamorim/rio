@@ -174,5 +174,5 @@ impl GridUniforms {
 
 const _: () = {
     // Keep the uniform block a multiple of 16 bytes (WGSL / std140).
-    assert!(std::mem::size_of::<GridUniforms>() % 16 == 0);
+    assert!(std::mem::size_of::<GridUniforms>().is_multiple_of(16));
 };

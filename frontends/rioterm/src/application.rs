@@ -306,7 +306,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::UpdateGraphics { route_id: _, queues }) => {
+            RioEventType::Rio(RioEvent::UpdateGraphics {
+                route_id: _,
+                queues,
+            }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;

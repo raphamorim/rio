@@ -1,3 +1,9 @@
+// See `image_cache/mod.rs` — this whole module is reserved for the
+// rich-text image-cache APIs that the grid renderer + UI text
+// overlay are gradually superseding. Blanket-allow dead code rather
+// than litter every reserved item with `#[allow]`.
+#![allow(dead_code)]
+
 use crate::context::{Context, ContextType};
 use tracing::debug;
 
@@ -74,6 +80,7 @@ struct ColorAtlasWithTexture {
 }
 
 enum ColorAtlasTexture {
+    #[cfg(feature = "wgpu")]
     Wgpu(wgpu::Texture, wgpu::TextureView),
     #[cfg(target_os = "macos")]
     Metal(metal::Texture),
@@ -82,6 +89,7 @@ enum ColorAtlasTexture {
 }
 
 enum DeviceQueue {
+    #[cfg(feature = "wgpu")]
     Wgpu {
         device: std::sync::Arc<wgpu::Device>,
         queue: std::sync::Arc<wgpu::Queue>,
@@ -108,6 +116,9 @@ impl ImageCache {
     /// Creates a new image cache with mask atlas + initial color atlas
     pub fn new(context: &Context) -> Self {
         match &context.inner {
+            #[cfg(not(feature = "wgpu"))]
+            ContextType::_Phantom(_) => unreachable!(),
+            #[cfg(feature = "wgpu")]
             ContextType::Wgpu(wgpu_context) => {
                 let max_size = wgpu_context.max_texture_dimension_2d();
                 let max_texture_size = std::cmp::min(4096, max_size) as u16;
@@ -219,6 +230,25 @@ impl ImageCache {
             ContextType::Cpu(_) => {
                 // CPU backend: no GPU resources. Atlas buffers live in RAM and are sampled
                 // directly by the CPU rasterizer at present time.
+                let max_texture_size: u16 = 2048;
+                let color_atlases = vec![ColorAtlasWithTexture {
+                    atlas: Atlas::new(AtlasKind::Color, max_texture_size),
+                    texture: ColorAtlasTexture::Cpu,
+                }];
+                Self {
+                    entries: Vec::new(),
+                    mask_atlas: Atlas::new(AtlasKind::Mask, max_texture_size),
+                    color_atlases,
+                    max_texture_size,
+                    device_queue: DeviceQueue::Cpu,
+                }
+            }
+            // Phase 1 stub: the Vulkan backend doesn't draw rich-text
+            // yet, so the image cache has nothing to upload. Mirror
+            // the CPU path — RAM-resident atlases, no GPU mirror.
+            // Phase 6 grows this into real Vulkan texture allocation.
+            #[cfg(target_os = "linux")]
+            ContextType::Vulkan(_) => {
                 let max_texture_size: u16 = 2048;
                 let color_atlases = vec![ColorAtlasWithTexture {
                     atlas: Atlas::new(AtlasKind::Color, max_texture_size),
@@ -415,6 +445,7 @@ impl ImageCache {
         debug!("Creating color atlas {}", atlas_index);
 
         match &self.device_queue {
+            #[cfg(feature = "wgpu")]
             DeviceQueue::Wgpu {
                 device, queue: _, ..
             } => {
@@ -765,6 +796,9 @@ impl ImageCache {
     #[inline]
     pub fn process_atlases(&mut self, context: &mut Context) {
         match &context.inner {
+            #[cfg(not(feature = "wgpu"))]
+            ContextType::_Phantom(_) => unreachable!(),
+            #[cfg(feature = "wgpu")]
             ContextType::Wgpu(wgpu_context) => {
                 // Process mask atlas
                 if self.mask_atlas.dirty {
@@ -851,6 +885,17 @@ impl ImageCache {
                     atlas_with_texture.atlas.dirty = false;
                 }
             }
+            // Phase 1 stub: same as CPU — no GPU upload, atlas data
+            // lives in RAM. Phase 6 wires real Vulkan atlas uploads.
+            #[cfg(target_os = "linux")]
+            ContextType::Vulkan(_) => {
+                self.mask_atlas.fresh = false;
+                self.mask_atlas.dirty = false;
+                for atlas_with_texture in &mut self.color_atlases {
+                    atlas_with_texture.atlas.fresh = false;
+                    atlas_with_texture.atlas.dirty = false;
+                }
+            }
             #[cfg(target_os = "macos")]
             ContextType::Metal(_metal_context) => {
                 // Process mask atlas
@@ -911,6 +956,7 @@ impl ImageCache {
     }
 
     /// Get all texture views for WebGPU rendering (for texture array)
+    #[cfg(feature = "wgpu")]
     pub fn get_texture_views(&self) -> Vec<&wgpu::TextureView> {
         self.color_atlases
             .iter()
@@ -940,6 +986,7 @@ impl ImageCache {
     }
 
     /// Get the mask texture view for WebGPU rendering
+    #[cfg(feature = "wgpu")]
     pub fn get_mask_texture_view(&self) -> Option<&wgpu::TextureView> {
         match &self.device_queue {
             DeviceQueue::Wgpu {

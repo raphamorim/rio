@@ -2,8 +2,11 @@ mod batch;
 mod compositor;
 pub mod cpu;
 pub(crate) mod image_cache;
+#[cfg(target_os = "linux")]
+pub mod vulkan;
 
 use crate::components::core::orthographic_projection;
+#[cfg(feature = "wgpu")]
 use crate::context::webgpu::WgpuContext;
 use crate::context::{Context, ContextType};
 use crate::font::FontLibrary;
@@ -19,6 +22,7 @@ use std::{borrow::Cow, mem};
 
 #[cfg(target_os = "macos")]
 use parking_lot::Mutex;
+#[cfg(feature = "wgpu")]
 use wgpu::util::DeviceExt;
 
 #[cfg(target_os = "macos")]
@@ -26,6 +30,7 @@ use crate::context::metal::MetalContext;
 #[cfg(target_os = "macos")]
 use metal::*;
 
+#[cfg(feature = "wgpu")]
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
         src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -47,13 +52,20 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
 // on every render call.
 #[allow(clippy::large_enum_variant)]
 pub enum RendererType {
+    #[cfg(feature = "wgpu")]
     Wgpu(WgpuRenderer),
     #[cfg(target_os = "macos")]
     Metal(MetalRenderer),
+    /// Native Vulkan backend (Linux). Mirrors the `Metal` variant in
+    /// scope: no librashader filters. Phase 1 = clear-and-present;
+    /// real pipelines land in later phases.
+    #[cfg(target_os = "linux")]
+    Vulkan(vulkan::VulkanRenderer),
     /// CPU backend: no GPU brush; rasterization happens in `cpu::CpuPipeline` at present time.
     Cpu,
 }
 
+#[cfg(feature = "wgpu")]
 pub struct WgpuRenderer {
     vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
@@ -709,13 +721,26 @@ struct CachedGraphic {
 
 /// Backend-agnostic per-image GPU texture.
 /// Dropped when removed from the map → GPU memory freed immediately.
+///
+/// The Vulkan variant carries an inline `VulkanImageTexture`
+/// (image + view + memory + per-image descriptor pool/set) which is
+/// larger than the other variants. Boxing it would buy nothing —
+/// each entry is constructed once, lives until eviction, and is
+/// only stored in the per-image map.
+#[allow(clippy::large_enum_variant)]
 enum ImageTexture {
+    #[cfg(feature = "wgpu")]
     Wgpu {
         _texture: wgpu::Texture, // kept alive so `view` stays valid
         view: wgpu::TextureView,
     },
     #[cfg(target_os = "macos")]
     Metal(metal::Texture),
+    /// Native Vulkan upload — owns image + view + descriptor set
+    /// (the descriptor set's binding 0 is wired to the image view +
+    /// shared sampler at upload time, so draw paths just bind it).
+    #[cfg(target_os = "linux")]
+    Vulkan(vulkan::VulkanImageTexture),
 }
 
 /// Per-image texture entry stored in the renderer.
@@ -726,15 +751,20 @@ struct ImageTextureEntry {
 
 /// Per-instance data for image rendering (one instance = one image placement).
 /// The vertex shader generates 4 quad corners from vertex_id.
+///
+/// `pub` because it appears in the signature of
+/// `vulkan::VulkanRenderer::render_image_overlays` (also `pub` so
+/// the `Renderer` dispatcher can call it). Not part of the crate's
+/// public API in spirit — just in visibility.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
-struct ImageInstance {
+pub struct ImageInstance {
     /// Screen position of the image top-left (physical pixels).
-    dest_pos: [f32; 2],
+    pub dest_pos: [f32; 2],
     /// Size of the image on screen (physical pixels).
-    dest_size: [f32; 2],
+    pub dest_size: [f32; 2],
     /// Source rectangle in the texture: xy = origin, zw = size (normalized 0..1).
-    source_rect: [f32; 4],
+    pub source_rect: [f32; 4],
 }
 
 /// Which layer to render the image in (relative to text).
@@ -793,6 +823,26 @@ fn upload_background_image_texture(
     }
     let gpu = match &context.inner {
         crate::context::ContextType::Cpu(_) => return None,
+        // Vulkan path: the renderer owns the descriptor-set layout
+        // and shared sampler; we read them off the live brush_type
+        // here. Only the renderer is on the Sugarloaf struct, not
+        // the context, so the call site below threads them in.
+        // Actually: this function is a free fn taking only the
+        // context — we need to defer the upload until we have the
+        // renderer too. We do that by panicking here and pushing
+        // the real upload into a renderer method (see
+        // `Renderer::upload_background_image_vulkan`). When the
+        // dispatcher (`prepare`) sees a Vulkan ctx + dirty pixels,
+        // it calls the renderer method directly instead of this
+        // free function.
+        #[cfg(target_os = "linux")]
+        crate::context::ContextType::Vulkan(_) => {
+            unreachable!(
+                "Vulkan path uses Renderer::upload_background_image_vulkan, \
+                 not upload_background_image_texture"
+            )
+        }
+        #[cfg(feature = "wgpu")]
         crate::context::ContextType::Wgpu(ctx) => {
             let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("sugarloaf::background image"),
@@ -871,6 +921,8 @@ fn upload_background_image_texture(
             );
             ImageTexture::Metal(mtl_tex)
         }
+        #[cfg(not(any(feature = "wgpu", target_os = "macos")))]
+        _ => return None,
     };
     Some(ImageTextureEntry {
         gpu,
@@ -886,6 +938,7 @@ impl Renderer {
         #[cfg(not(target_os = "macos"))]
         let _ = colorspace;
         let brush_type = match &context.inner {
+            #[cfg(feature = "wgpu")]
             ContextType::Wgpu(wgpu_context) => {
                 RendererType::Wgpu(WgpuRenderer::new(wgpu_context))
             }
@@ -893,7 +946,13 @@ impl Renderer {
             ContextType::Metal(metal_context) => {
                 RendererType::Metal(MetalRenderer::new(metal_context, colorspace))
             }
+            #[cfg(target_os = "linux")]
+            ContextType::Vulkan(vulkan_context) => RendererType::Vulkan(
+                vulkan::VulkanRenderer::new(vulkan_context, colorspace),
+            ),
             ContextType::Cpu(_) => RendererType::Cpu,
+            #[cfg(not(feature = "wgpu"))]
+            ContextType::_Phantom(_) => unreachable!(),
         };
 
         Self {
@@ -1126,8 +1185,24 @@ impl Renderer {
         // begins. The texture stays cached until a new image arrives or
         // `set_background_image_pixels(None)` is called.
         if let Some(pixels) = self.background_image_dirty.take() {
-            self.background_image_texture =
-                upload_background_image_texture(context, &pixels);
+            // Vulkan needs the renderer's descriptor-set layout +
+            // sampler to wire the per-image descriptor set, so it
+            // takes a different path that knows about both.
+            #[cfg(target_os = "linux")]
+            let used_vulkan =
+                if matches!(&context.inner, crate::context::ContextType::Vulkan(_)) {
+                    self.upload_background_image_vulkan(context, &pixels);
+                    true
+                } else {
+                    false
+                };
+            #[cfg(not(target_os = "linux"))]
+            let used_vulkan = false;
+
+            if !used_vulkan {
+                self.background_image_texture =
+                    upload_background_image_texture(context, &pixels);
+            }
         }
 
         self.instances.clear();
@@ -1220,10 +1295,9 @@ impl Renderer {
         }
     }
 
+    /// Render image overlays using per-image GPU textures.
     #[inline]
     #[allow(clippy::too_many_arguments)]
-
-    /// Render image overlays using per-image GPU textures.
     fn render_graphic_overlays(
         &mut self,
         context: &mut crate::context::Context,
@@ -1268,8 +1342,43 @@ impl Renderer {
             if matches!(&context.inner, crate::context::ContextType::Cpu(_)) {
                 continue;
             }
+            // Vulkan: synchronous one-shot upload via the renderer's
+            // descriptor-set layout + sampler. The submit-and-wait
+            // is fine here — kitty placements come in bursts (a
+            // single image transmit, then many placements), and the
+            // upload is the cost we'd pay regardless. Move to a
+            // deferred per-frame pattern later if profiling shows
+            // image-heavy workloads stall.
+            #[cfg(target_os = "linux")]
+            if let crate::context::ContextType::Vulkan(vk_ctx) = &context.inner {
+                let RendererType::Vulkan(brush) = &self.brush_type else {
+                    continue;
+                };
+                let texture = vulkan::VulkanImageTexture::upload_rgba(
+                    vk_ctx,
+                    pixels,
+                    width,
+                    height,
+                    brush.image_texture_descriptor_set_layout,
+                    brush.image_sampler,
+                );
+                self.image_textures.insert(
+                    overlay.image_id,
+                    ImageTextureEntry {
+                        gpu: ImageTexture::Vulkan(texture),
+                        transmit_time: entry.transmit_time,
+                    },
+                );
+                continue;
+            }
             let gpu = match &context.inner {
                 crate::context::ContextType::Cpu(_) => unreachable!(),
+                #[cfg(target_os = "linux")]
+                crate::context::ContextType::Vulkan(_) => unreachable!(),
+                #[cfg(not(feature = "wgpu"))]
+                #[allow(unreachable_patterns)]
+                _ => continue,
+                #[cfg(feature = "wgpu")]
                 crate::context::ContextType::Wgpu(ctx) => {
                     let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
                         label: Some("kitty image"),
@@ -1803,6 +1912,7 @@ impl Renderer {
     }
 
     #[inline]
+    #[cfg(feature = "wgpu")]
     pub fn render<'pass>(
         &'pass mut self,
         ctx: &mut WgpuContext,
@@ -1821,7 +1931,6 @@ impl Renderer {
             ..
         } = self;
 
-        #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
         if let RendererType::Wgpu(brush) = brush_type {
             let color_views = images.get_texture_views();
             let mask_texture_view = images.get_mask_texture_view();
@@ -2310,6 +2419,115 @@ impl Renderer {
         }
     }
 
+    /// Synchronously upload a background image into a Vulkan texture
+    /// and descriptor set. Called from the prepare path when the
+    /// user calls `Sugarloaf::set_background_image`. The
+    /// submit-and-wait is acceptable for one-shot uploads
+    /// (config-load time); kitty per-frame images take a different
+    /// deferred path.
+    #[cfg(target_os = "linux")]
+    fn upload_background_image_vulkan(
+        &mut self,
+        context: &crate::context::Context,
+        pixels: &BackgroundImagePixels,
+    ) {
+        let crate::context::ContextType::Vulkan(ctx) = &context.inner else {
+            return;
+        };
+        let RendererType::Vulkan(brush) = &self.brush_type else {
+            return;
+        };
+        let texture = vulkan::VulkanImageTexture::upload_rgba(
+            ctx,
+            &pixels.pixels,
+            pixels.width,
+            pixels.height,
+            brush.image_texture_descriptor_set_layout,
+            brush.image_sampler,
+        );
+        self.background_image_texture = Some(ImageTextureEntry {
+            gpu: ImageTexture::Vulkan(texture),
+            transmit_time: std::time::Instant::now(),
+        });
+    }
+
+    /// Record sugarloaf's own draws inside the active dynamic-rendering
+    /// pass that `Sugarloaf::render_vulkan` opens. Order:
+    ///   1. Background image (full-screen quad).
+    ///   2. BelowText image overlays (kitty / sixel placements with
+    ///      `dest_pos.z < 0`).
+    ///   3. Rich-text quad pass — `quad()` / `rect()` calls + cell
+    ///      underline decorations (dashed/dotted/curly handled in
+    ///      `quad.frag.glsl`).
+    ///   4. Non-quad geometry — `polygon()` / `line()` / `triangle()`
+    ///      / `arc()` calls (cursor underline shape, hint highlights).
+    ///   5. AboveText image overlays.
+    ///   6. Optional bootstrap rect (`RIO_VULKAN_BOOTSTRAP=1`).
+    ///
+    /// Glyph atlas sampling through this pipeline isn't ported —
+    /// grid text + UI text overlay each own dedicated atlas
+    /// pipelines, so the rich-text path doesn't need it.
+    #[cfg(target_os = "linux")]
+    pub fn render_vulkan(
+        &mut self,
+        cmd: ash::vk::CommandBuffer,
+        frame: &crate::context::vulkan::VulkanFrame,
+    ) {
+        let viewport = [frame.extent.width as f32, frame.extent.height as f32];
+        let slot = frame.slot;
+
+        // Resolve image draws into (descriptor_set, instance) pairs
+        // before the &mut brush borrow takes hold; the per-image
+        // texture lookup needs an immutable borrow on
+        // `self.image_textures` which would conflict with the
+        // brush's `&mut self`.
+        let below: Vec<(ash::vk::DescriptorSet, ImageInstance)> = self
+            .image_draws
+            .iter()
+            .filter(|d| d.layer == ImageLayer::BelowText)
+            .filter_map(|d| {
+                let entry = self.image_textures.get(&d.image_id)?;
+                if let ImageTexture::Vulkan(tex) = &entry.gpu {
+                    Some((tex.descriptor_set, d.instance))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let above: Vec<(ash::vk::DescriptorSet, ImageInstance)> = self
+            .image_draws
+            .iter()
+            .filter(|d| d.layer == ImageLayer::AboveText)
+            .filter_map(|d| {
+                let entry = self.image_textures.get(&d.image_id)?;
+                if let ImageTexture::Vulkan(tex) = &entry.gpu {
+                    Some((tex.descriptor_set, d.instance))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if let RendererType::Vulkan(brush) = &mut self.brush_type {
+            if let Some(bg) = &self.background_image_texture {
+                if let ImageTexture::Vulkan(tex) = &bg.gpu {
+                    brush.render_background_image(
+                        cmd,
+                        slot,
+                        viewport,
+                        tex.descriptor_set,
+                    );
+                }
+            }
+
+            brush.render_image_overlays(cmd, slot, viewport, &below);
+            brush.render_quads(cmd, slot, viewport, &self.instances);
+            brush.render_geometry(cmd, slot, viewport, &self.vertices);
+            brush.render_image_overlays(cmd, slot, viewport, &above);
+            brush.draw_bootstrap(cmd);
+        }
+    }
+
     /// Vertices accumulated for the current frame (CPU rasterizer reads these).
     pub(crate) fn vertices(&self) -> &[Vertex] {
         &self.vertices
@@ -2322,6 +2540,7 @@ impl Renderer {
 
     pub fn resize(&mut self, context: &mut Context) {
         let transform = match &context.inner {
+            #[cfg(feature = "wgpu")]
             ContextType::Wgpu(wgpu_ctx) => {
                 orthographic_projection(wgpu_ctx.size.width, wgpu_ctx.size.height)
             }
@@ -2329,12 +2548,19 @@ impl Renderer {
             ContextType::Metal(metal_ctx) => {
                 orthographic_projection(metal_ctx.size.width, metal_ctx.size.height)
             }
+            #[cfg(target_os = "linux")]
+            ContextType::Vulkan(vulkan_ctx) => {
+                orthographic_projection(vulkan_ctx.size.width, vulkan_ctx.size.height)
+            }
             ContextType::Cpu(cpu_ctx) => {
                 orthographic_projection(cpu_ctx.size.width, cpu_ctx.size.height)
             }
+            #[cfg(not(feature = "wgpu"))]
+            ContextType::_Phantom(_) => unreachable!(),
         };
 
         match &mut self.brush_type {
+            #[cfg(feature = "wgpu")]
             RendererType::Wgpu(wgpu_brush) => {
                 if transform != wgpu_brush.current_transform {
                     let queue = match &context.inner {
@@ -2359,11 +2585,19 @@ impl Renderer {
                 // on the next frame's `orthographic_projection` call.
                 let _ = transform;
             }
+            #[cfg(target_os = "linux")]
+            RendererType::Vulkan(_vulkan_brush) => {
+                // No-op: viewport + scissor are dynamic state set per
+                // frame in `VulkanRenderer::render`. The swapchain
+                // itself is rebuilt by `VulkanContext::resize`.
+                let _ = transform;
+            }
             RendererType::Cpu => {}
         }
     }
 }
 
+#[cfg(feature = "wgpu")]
 impl WgpuRenderer {
     pub fn new(context: &WgpuContext) -> Self {
         let supported_vertex_buffer = 500;

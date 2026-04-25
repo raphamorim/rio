@@ -1,3 +1,6 @@
+// `grow_to` is reserved for atlas-resize on the rich-text path.
+#![allow(dead_code)]
+
 /// Improved shelf-based atlas allocator for better space utilization
 #[derive(Clone)]
 pub struct AtlasAllocator {

@@ -59,7 +59,12 @@ impl<'a> WgpuContext<'a> {
             instance.create_surface(sugarloaf_window).unwrap();
         let adapter = futures::executor::block_on(instance.request_adapter(
             &wgpu::RequestAdapterOptions {
-                power_preference: renderer_config.power_preference,
+                // Hard-coded — sugarloaf used to expose a
+                // `power_preference` knob, but in practice every Rio
+                // user picks `HighPerformance` (the alternative gives
+                // visibly worse text on hybrid laptops). Removed from
+                // the public API.
+                power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             },
