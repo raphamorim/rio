@@ -853,7 +853,10 @@ fn run_hash(font_id: u32, size_bucket: u16, style_flags: u8, run_bytes: &[u8]) -
     h.finish()
 }
 
-#[inline]
+// Force inline — called once per cell during run extension on the hot
+// path; body is two field reads + two compares so a real call is pure
+// overhead.
+#[inline(always)]
 fn is_run_breaker(sq: Square) -> bool {
     if sq.is_bg_only() {
         return true;
