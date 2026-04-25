@@ -291,10 +291,20 @@ pub fn render_cpu(
     renderer: &Renderer,
     cache: &mut CpuCache,
     background: Option<crate::sugarloaf::Color>,
+    grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
 ) {
     let vertices = renderer.vertices();
 
     // Frame skip.
+    //
+    // Hash includes the bg color, the overlay vertex stream, and each
+    // grid's uniforms + bg cells. Per-glyph fg state is hashed by
+    // length only — full fg-row hashing is too expensive on large
+    // panels (and a column of glyphs that swap colors will still
+    // change `cell_size` / `cursor_pos` / something downstream that's
+    // covered here). If you see stale text on the CPU backend after a
+    // pure-fg-color edit, expand this to hash bytemuck::cast_slice of
+    // each row.
     let frame_hash = {
         let mut h = rustc_hash::FxHasher::default();
         if let Some(c) = background {
@@ -307,6 +317,12 @@ pub fn render_cpu(
         }
         let bytes: &[u8] = bytemuck::cast_slice(vertices);
         h.write(bytes);
+        for (grid, uniforms) in grids.iter() {
+            h.write(bytemuck::bytes_of(uniforms));
+            if let crate::grid::GridRenderer::Cpu(cpu_grid) = &**grid {
+                cpu_grid.hash_state(&mut h);
+            }
+        }
         h.finish()
     };
 
@@ -339,6 +355,16 @@ pub fn render_cpu(
         None => 0,
     };
     buffer.fill(bg_u32);
+
+    // Grid pass: paint each panel's terminal cells (bg + glyphs) into
+    // the buffer before overlay vertices, so UI overlays composite on
+    // top.
+    {
+        let buf_slice: &mut [u32] = &mut buffer;
+        for (grid, uniforms) in grids.iter() {
+            grid.render_cpu(buf_slice, ctx.width_px, ctx.height_px, uniforms);
+        }
+    }
 
     if !vertices.is_empty() {
         let images = renderer.image_cache();

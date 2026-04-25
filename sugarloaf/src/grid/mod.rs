@@ -21,6 +21,7 @@
 
 pub mod atlas;
 pub mod cell;
+pub mod cpu;
 #[cfg(target_os = "macos")]
 pub mod metal;
 #[cfg(target_os = "linux")]
@@ -56,16 +57,14 @@ pub enum GridRenderer {
     /// atlases land in Phase 4.
     #[cfg(target_os = "linux")]
     Vulkan(vulkan::VulkanGridRenderer),
-    /// CPU backend has no grid renderer — it falls back to
-    /// rasterising via the existing cpu path. Terminal content won't
-    /// use the grid path on CPU builds.
-    Unsupported,
+    /// Software grid renderer. Same `CellBg` / `CellText` storage as
+    /// the GPU backends, blits into the softbuffer surface during
+    /// `Sugarloaf::render_cpu` instead of recording GPU draws.
+    Cpu(cpu::CpuGridRenderer),
 }
 
 impl GridRenderer {
-    /// Construct a grid renderer matching `context`'s backend. Returns
-    /// `Unsupported` for CPU contexts (the CPU rasterizer keeps its
-    /// current codepath).
+    /// Construct a grid renderer matching `context`'s backend.
     pub fn new(context: &Context<'_>, cols: u32, rows: u32) -> Self {
         match &context.inner {
             #[cfg(target_os = "macos")]
@@ -82,7 +81,9 @@ impl GridRenderer {
             ContextType::Vulkan(ctx) => {
                 GridRenderer::Vulkan(vulkan::VulkanGridRenderer::new(ctx, cols, rows))
             }
-            ContextType::Cpu(_) => GridRenderer::Unsupported,
+            ContextType::Cpu(_) => {
+                GridRenderer::Cpu(cpu::CpuGridRenderer::new(cols, rows))
+            }
         }
     }
 
@@ -96,7 +97,7 @@ impl GridRenderer {
             GridRenderer::Wgpu(r) => r.resize(cols, rows),
             #[cfg(target_os = "linux")]
             GridRenderer::Vulkan(r) => r.resize(cols, rows),
-            GridRenderer::Unsupported => {}
+            GridRenderer::Cpu(r) => r.resize(cols, rows),
         }
     }
 
@@ -113,7 +114,7 @@ impl GridRenderer {
             GridRenderer::Wgpu(r) => r.write_row(row, bg, fg),
             #[cfg(target_os = "linux")]
             GridRenderer::Vulkan(r) => r.write_row(row, bg, fg),
-            GridRenderer::Unsupported => {}
+            GridRenderer::Cpu(r) => r.write_row(row, bg, fg),
         }
     }
 
@@ -127,7 +128,7 @@ impl GridRenderer {
             GridRenderer::Wgpu(r) => r.clear_row(row),
             #[cfg(target_os = "linux")]
             GridRenderer::Vulkan(r) => r.clear_row(row),
-            GridRenderer::Unsupported => {}
+            GridRenderer::Cpu(r) => r.clear_row(row),
         }
     }
 
@@ -197,10 +198,29 @@ impl GridRenderer {
         }
     }
 
-    /// Whether this backend actually renders grid cells. Call sites
-    /// can fall back to the rich-text path when this returns false.
+    /// Software counterpart of `render_metal` / `render_vulkan` /
+    /// `render_wgpu`. Paints the grid into the caller-supplied
+    /// `0x00RRGGBB` u32 buffer (typically softbuffer's `buffer_mut`).
+    /// No-op for non-CPU variants.
+    pub fn render_cpu(
+        &self,
+        buf: &mut [u32],
+        buf_w: u32,
+        buf_h: u32,
+        uniforms: &GridUniforms,
+    ) {
+        if let GridRenderer::Cpu(r) = self {
+            r.render(buf, buf_w, buf_h, uniforms);
+        }
+    }
+
+    /// Whether this backend actually renders grid cells. All backends
+    /// — including CPU — render through the grid path now, so this
+    /// always returns `true`. Kept for backwards compatibility with
+    /// the previous `Unsupported` variant; remove once no caller
+    /// branches on it.
     pub fn is_active(&self) -> bool {
-        !matches!(self, GridRenderer::Unsupported)
+        true
     }
 
     /// Cached lookup for a previously-rasterized glyph. Returns the
@@ -213,7 +233,7 @@ impl GridRenderer {
             GridRenderer::Wgpu(r) => r.lookup_glyph(key),
             #[cfg(target_os = "linux")]
             GridRenderer::Vulkan(r) => r.lookup_glyph(key),
-            GridRenderer::Unsupported => None,
+            GridRenderer::Cpu(r) => r.lookup_glyph(key),
         }
     }
 
@@ -227,7 +247,7 @@ impl GridRenderer {
             GridRenderer::Wgpu(r) => r.lookup_glyph_color(key),
             #[cfg(target_os = "linux")]
             GridRenderer::Vulkan(r) => r.lookup_glyph_color(key),
-            GridRenderer::Unsupported => None,
+            GridRenderer::Cpu(r) => r.lookup_glyph_color(key),
         }
     }
 
@@ -245,7 +265,7 @@ impl GridRenderer {
             GridRenderer::Wgpu(r) => r.insert_glyph(key, glyph),
             #[cfg(target_os = "linux")]
             GridRenderer::Vulkan(r) => r.insert_glyph(key, glyph),
-            GridRenderer::Unsupported => None,
+            GridRenderer::Cpu(r) => r.insert_glyph(key, glyph),
         }
     }
 
@@ -263,7 +283,7 @@ impl GridRenderer {
             GridRenderer::Wgpu(r) => r.insert_glyph_color(key, glyph),
             #[cfg(target_os = "linux")]
             GridRenderer::Vulkan(r) => r.insert_glyph_color(key, glyph),
-            GridRenderer::Unsupported => None,
+            GridRenderer::Cpu(r) => r.insert_glyph_color(key, glyph),
         }
     }
 
@@ -278,7 +298,7 @@ impl GridRenderer {
             GridRenderer::Wgpu(r) => r.needs_full_rebuild(),
             #[cfg(target_os = "linux")]
             GridRenderer::Vulkan(r) => r.needs_full_rebuild(),
-            GridRenderer::Unsupported => false,
+            GridRenderer::Cpu(r) => r.needs_full_rebuild(),
         }
     }
 
@@ -292,7 +312,7 @@ impl GridRenderer {
             GridRenderer::Wgpu(r) => r.mark_full_rebuild_done(),
             #[cfg(target_os = "linux")]
             GridRenderer::Vulkan(r) => r.mark_full_rebuild_done(),
-            GridRenderer::Unsupported => {}
+            GridRenderer::Cpu(r) => r.mark_full_rebuild_done(),
         }
     }
 }

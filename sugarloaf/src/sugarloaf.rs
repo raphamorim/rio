@@ -1153,7 +1153,7 @@ impl Sugarloaf<'_> {
                 self.render_vulkan(grids);
             }
             crate::context::ContextType::Cpu(_) => {
-                self.render_cpu();
+                self.render_cpu(grids);
             }
             #[cfg(not(feature = "wgpu"))]
             crate::context::ContextType::_Phantom(_) => unreachable!(),
@@ -1161,7 +1161,10 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn render_cpu(&mut self) {
+    pub fn render_cpu(
+        &mut self,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    ) {
         let bg = self.background_color;
         let cpu_ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Cpu(c) => c,
@@ -1173,6 +1176,7 @@ impl Sugarloaf<'_> {
             &self.renderer,
             &mut self.cpu_cache,
             bg,
+            grids,
         );
 
         self.reset();
