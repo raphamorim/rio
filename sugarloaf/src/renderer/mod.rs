@@ -18,7 +18,7 @@ use compositor::{Compositor, Rect, Vertex};
 use rustc_hash::FxHashMap;
 #[cfg(target_os = "macos")]
 use std::sync::Arc;
-use std::{borrow::Cow, mem};
+use std::mem;
 
 #[cfg(target_os = "macos")]
 use parking_lot::Mutex;
@@ -29,6 +29,9 @@ use wgpu::util::DeviceExt;
 use crate::context::metal::MetalContext;
 #[cfg(target_os = "macos")]
 use metal::*;
+
+#[cfg(feature = "wgpu")]
+use std::borrow::Cow;
 
 #[cfg(feature = "wgpu")]
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
@@ -835,13 +838,6 @@ fn upload_background_image_texture(
         // dispatcher (`prepare`) sees a Vulkan ctx + dirty pixels,
         // it calls the renderer method directly instead of this
         // free function.
-        #[cfg(target_os = "linux")]
-        crate::context::ContextType::Vulkan(_) => {
-            unreachable!(
-                "Vulkan path uses Renderer::upload_background_image_vulkan, \
-                 not upload_background_image_texture"
-            )
-        }
         #[cfg(feature = "wgpu")]
         crate::context::ContextType::Wgpu(ctx) => {
             let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
@@ -921,7 +917,6 @@ fn upload_background_image_texture(
             );
             ImageTexture::Metal(mtl_tex)
         }
-        #[cfg(not(any(feature = "wgpu", target_os = "macos")))]
         _ => return None,
     };
     Some(ImageTextureEntry {
