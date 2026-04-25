@@ -4266,6 +4266,7 @@ dependencies = [
  "rustc-hash 2.1.2",
  "serde",
  "smallvec",
+ "sugarloaf",
  "taffy",
  "teletypewriter",
  "tinyvec",
