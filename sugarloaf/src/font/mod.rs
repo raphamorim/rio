@@ -1360,7 +1360,10 @@ impl FontData {
     /// `face_index` lets us address fonts inside a TTC/OTC collection
     /// (Noto Sans CJK ships as a single .ttc with separate faces for
     /// SC/TC/JP/KR — fontconfig returns the right index per language tag).
-    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+    #[cfg(any(
+        all(unix, not(target_os = "macos"), not(target_os = "android")),
+        target_os = "windows"
+    ))]
     pub fn from_discovered_path(
         path: PathBuf,
         face_index: u32,
