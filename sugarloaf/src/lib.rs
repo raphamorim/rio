@@ -12,7 +12,9 @@ pub mod text;
 // This path was used by the in-tree fork; preserve it for stability.
 pub use swash;
 
-// Expose WGPU
+// Expose WGPU when the `wgpu` feature is enabled. Downstream code
+// that needs `wgpu::Color` etc. picks it up via `sugarloaf::wgpu::…`.
+#[cfg(feature = "wgpu")]
 pub use wgpu;
 
 pub use swash::{Attributes, Stretch, Style, Weight};
@@ -28,9 +30,11 @@ pub use crate::sugarloaf::{
         CursorKind, DrawableChar, ImageProperties, Object, Quad, Rect, RichText,
         RichTextLinesRange, RichTextRenderData, SugarCursor,
     },
-    Colorspace, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
+    Color, Colorspace, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,
 };
+// `Filter` is the librashader CRT/scanline-filter wrapper — wgpu-only.
+#[cfg(feature = "wgpu")]
 pub use components::filters::Filter;
 pub use layout::{
     Content, RichTextConfig, SpanStyle, SpanStyleDecoration, TextDimensions,

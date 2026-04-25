@@ -35,7 +35,7 @@ use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::layout::Margin;
-use rio_backend::config::renderer::{Backend, Performance as RendererPerformance};
+use rio_backend::config::renderer::Backend;
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
@@ -137,24 +137,40 @@ impl Screen<'_> {
             },
         };
 
-        let power_preference = match config.renderer.performance {
-            RendererPerformance::High => wgpu::PowerPreference::HighPerformance,
-            RendererPerformance::Low => wgpu::PowerPreference::LowPower,
-        };
-
         let backend = if config.renderer.use_cpu {
             SugarloafBackend::Cpu
         } else {
             match config.renderer.backend {
                 Backend::Automatic => {
-                    #[cfg(target_arch = "wasm32")]
-                    let default_backend =
-                        wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-                    #[cfg(not(target_arch = "wasm32"))]
-                    let default_backend = wgpu::Backends::all();
+                    // Linux + macOS pick their native GPU backend (ash
+                    // / Metal). Other targets fall back to the wgpu
+                    // umbrella with whatever backends it can find.
+                    #[cfg(target_os = "linux")]
+                    {
+                        SugarloafBackend::Vulkan
+                    }
+                    #[cfg(target_os = "macos")]
+                    {
+                        SugarloafBackend::Metal
+                    }
+                    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+                    {
+                        #[cfg(target_arch = "wasm32")]
+                        let default_backend =
+                            wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let default_backend = wgpu::Backends::all();
 
-                    SugarloafBackend::Wgpu(default_backend)
+                        SugarloafBackend::Wgpu(default_backend)
+                    }
                 }
+                // `Backend::Vulkan` from the user config now means the
+                // native ash backend on Linux. Other OSes fall through
+                // to the wgpu Vulkan path (Windows MSI, etc.) so the
+                // config option keeps working there.
+                #[cfg(target_os = "linux")]
+                Backend::Vulkan => SugarloafBackend::Vulkan,
+                #[cfg(not(target_os = "linux"))]
                 Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
                 Backend::GL => SugarloafBackend::Wgpu(wgpu::Backends::GL),
                 Backend::WgpuMetal => SugarloafBackend::Wgpu(wgpu::Backends::METAL),
@@ -165,7 +181,6 @@ impl Screen<'_> {
         };
 
         let sugarloaf_renderer = SugarloafRenderer {
-            power_preference,
             backend,
             font_features: config.fonts.features.clone(),
             colorspace: config.window.colorspace.to_sugarloaf_colorspace(),

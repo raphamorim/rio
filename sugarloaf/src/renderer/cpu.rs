@@ -290,7 +290,7 @@ pub fn render_cpu(
     ctx: &mut CpuContext,
     renderer: &Renderer,
     cache: &mut CpuCache,
-    background: Option<wgpu::Color>,
+    background: Option<crate::sugarloaf::Color>,
 ) {
     let vertices = renderer.vertices();
 

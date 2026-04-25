@@ -4769,6 +4769,7 @@ name = "sugarloaf"
 version = "0.4.0"
 dependencies = [
  "approx",
+ "ash",
  "block",
  "bytemuck",
  "console_error_panic_hook",

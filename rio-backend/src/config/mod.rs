@@ -596,9 +596,6 @@ impl Config {
 
         // Merge renderer fields individually
         if let Some(renderer_overwrite) = &platform_config.renderer {
-            if let Some(performance) = renderer_overwrite.performance {
-                self.renderer.performance = performance;
-            }
             if let Some(backend) = &renderer_overwrite.backend {
                 self.renderer.backend = backend.clone();
             }

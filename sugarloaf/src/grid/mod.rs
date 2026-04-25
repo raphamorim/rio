@@ -23,6 +23,9 @@ pub mod atlas;
 pub mod cell;
 #[cfg(target_os = "macos")]
 pub mod metal;
+#[cfg(target_os = "linux")]
+pub mod vulkan;
+#[cfg(feature = "wgpu")]
 pub mod webgpu;
 
 use crate::context::{Context, ContextType};
@@ -37,10 +40,22 @@ pub use cell::{CellBg, CellText, GridUniforms};
 /// Backend selection matches sugarloaf's existing `ContextType` —
 /// there's no separate config knob for grid vs. rich-text, because
 /// the rich-text terminal path is being removed.
+///
+/// The Vulkan variant is significantly larger than the others
+/// because atlas and buffer-ring state lives inline, but only one
+/// variant is ever constructed per panel; boxing the bigger one
+/// would just trade stack size for one allocation per panel — not
+/// worth it.
+#[allow(clippy::large_enum_variant)]
 pub enum GridRenderer {
     #[cfg(target_os = "macos")]
     Metal(metal::MetalGridRenderer),
+    #[cfg(feature = "wgpu")]
     Wgpu(webgpu::WgpuGridRenderer),
+    /// Native Vulkan grid renderer. Phase 3 = bg pass; text pass +
+    /// atlases land in Phase 4.
+    #[cfg(target_os = "linux")]
+    Vulkan(vulkan::VulkanGridRenderer),
     /// CPU backend has no grid renderer — it falls back to
     /// rasterising via the existing cpu path. Terminal content won't
     /// use the grid path on CPU builds.
@@ -57,8 +72,15 @@ impl GridRenderer {
             ContextType::Metal(ctx) => {
                 GridRenderer::Metal(metal::MetalGridRenderer::new(ctx, cols, rows))
             }
+            #[cfg(not(feature = "wgpu"))]
+            ContextType::_Phantom(_) => unreachable!(),
+            #[cfg(feature = "wgpu")]
             ContextType::Wgpu(ctx) => {
                 GridRenderer::Wgpu(webgpu::WgpuGridRenderer::new(ctx, cols, rows))
+            }
+            #[cfg(target_os = "linux")]
+            ContextType::Vulkan(ctx) => {
+                GridRenderer::Vulkan(vulkan::VulkanGridRenderer::new(ctx, cols, rows))
             }
             ContextType::Cpu(_) => GridRenderer::Unsupported,
         }
@@ -70,7 +92,10 @@ impl GridRenderer {
         match self {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.resize(cols, rows),
+            #[cfg(feature = "wgpu")]
             GridRenderer::Wgpu(r) => r.resize(cols, rows),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.resize(cols, rows),
             GridRenderer::Unsupported => {}
         }
     }
@@ -84,7 +109,10 @@ impl GridRenderer {
         match self {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.write_row(row, bg, fg),
+            #[cfg(feature = "wgpu")]
             GridRenderer::Wgpu(r) => r.write_row(row, bg, fg),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.write_row(row, bg, fg),
             GridRenderer::Unsupported => {}
         }
     }
@@ -95,7 +123,10 @@ impl GridRenderer {
         match self {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.clear_row(row),
+            #[cfg(feature = "wgpu")]
             GridRenderer::Wgpu(r) => r.clear_row(row),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.clear_row(row),
             GridRenderer::Unsupported => {}
         }
     }
@@ -119,6 +150,7 @@ impl GridRenderer {
 
     /// Wgpu counterpart of `render_metal`. Phase 1b will record a bg
     /// pass against the caller's `wgpu::RenderPass`.
+    #[cfg(feature = "wgpu")]
     pub fn render_wgpu<'pass>(
         &'pass mut self,
         render_pass: &mut wgpu::RenderPass<'pass>,
@@ -126,6 +158,42 @@ impl GridRenderer {
     ) {
         if let GridRenderer::Wgpu(r) = self {
             r.render(render_pass, uniforms);
+        }
+    }
+
+    /// Vulkan counterpart of `render_metal`. Records draws into
+    /// `cmd_buffer`, which the caller (`Sugarloaf::render_vulkan`)
+    /// has already wrapped in `cmd_begin_rendering` against the
+    /// swapchain image. No-op when this renderer isn't a Vulkan
+    /// variant — same shape as `render_wgpu` / `render_metal`.
+    /// Pre-pass hook: flush atlas uploads before the caller opens
+    /// dynamic rendering. Must be called BEFORE `cmd_begin_rendering`
+    /// because `vkCmdCopyBufferToImage` is forbidden inside a render
+    /// pass. No-op for non-Vulkan renderers (Metal handles uploads
+    /// inside its own `replace_region`; wgpu handles them via
+    /// `queue.write_texture`).
+    #[cfg(target_os = "linux")]
+    pub fn prepare_vulkan(
+        &mut self,
+        ctx: &crate::context::vulkan::VulkanContext,
+        cmd_buffer: ash::vk::CommandBuffer,
+        frame_slot: usize,
+    ) {
+        if let GridRenderer::Vulkan(r) = self {
+            r.prepare(ctx, cmd_buffer, frame_slot);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn render_vulkan(
+        &mut self,
+        ctx: &crate::context::vulkan::VulkanContext,
+        cmd_buffer: ash::vk::CommandBuffer,
+        frame_slot: usize,
+        uniforms: &GridUniforms,
+    ) {
+        if let GridRenderer::Vulkan(r) = self {
+            r.render(ctx, cmd_buffer, frame_slot, uniforms);
         }
     }
 
@@ -141,7 +209,10 @@ impl GridRenderer {
         match self {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.lookup_glyph(key),
+            #[cfg(feature = "wgpu")]
             GridRenderer::Wgpu(r) => r.lookup_glyph(key),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.lookup_glyph(key),
             GridRenderer::Unsupported => None,
         }
     }
@@ -152,7 +223,10 @@ impl GridRenderer {
         match self {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.lookup_glyph_color(key),
+            #[cfg(feature = "wgpu")]
             GridRenderer::Wgpu(r) => r.lookup_glyph_color(key),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.lookup_glyph_color(key),
             GridRenderer::Unsupported => None,
         }
     }
@@ -167,7 +241,10 @@ impl GridRenderer {
         match self {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.insert_glyph(key, glyph),
+            #[cfg(feature = "wgpu")]
             GridRenderer::Wgpu(r) => r.insert_glyph(key, glyph),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.insert_glyph(key, glyph),
             GridRenderer::Unsupported => None,
         }
     }
@@ -182,7 +259,10 @@ impl GridRenderer {
         match self {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.insert_glyph_color(key, glyph),
+            #[cfg(feature = "wgpu")]
             GridRenderer::Wgpu(r) => r.insert_glyph_color(key, glyph),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.insert_glyph_color(key, glyph),
             GridRenderer::Unsupported => None,
         }
     }
@@ -194,7 +274,10 @@ impl GridRenderer {
         match self {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.needs_full_rebuild(),
+            #[cfg(feature = "wgpu")]
             GridRenderer::Wgpu(r) => r.needs_full_rebuild(),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.needs_full_rebuild(),
             GridRenderer::Unsupported => false,
         }
     }
@@ -205,7 +288,10 @@ impl GridRenderer {
         match self {
             #[cfg(target_os = "macos")]
             GridRenderer::Metal(r) => r.mark_full_rebuild_done(),
+            #[cfg(feature = "wgpu")]
             GridRenderer::Wgpu(r) => r.mark_full_rebuild_done(),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.mark_full_rebuild_done(),
             GridRenderer::Unsupported => {}
         }
     }

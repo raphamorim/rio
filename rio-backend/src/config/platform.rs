@@ -113,8 +113,6 @@ pub struct PlatformNavigation {
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct PlatformRenderer {
     #[serde(default = "Option::default")]
-    pub performance: Option<renderer::Performance>,
-    #[serde(default = "Option::default")]
     pub backend: Option<renderer::Backend>,
     #[serde(default = "Option::default", rename = "disable-unfocused-render")]
     pub disable_unfocused_render: Option<bool>,

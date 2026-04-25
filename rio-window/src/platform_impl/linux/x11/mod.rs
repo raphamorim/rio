@@ -149,8 +149,7 @@ pub struct ActiveEventLoop {
     /// input (≥ 60 events/sec over 100 ms) extends the 1-second
     /// presentation window — single keystrokes don't. See
     /// `platform_impl::input_rate`.
-    input_rate_tracker:
-        RefCell<crate::platform_impl::input_rate::InputRateTracker>,
+    input_rate_tracker: RefCell<crate::platform_impl::input_rate::InputRateTracker>,
     /// Shared with `EventLoopState` and every window. Set by
     /// `request_redraw`, checked by `has_pending`, cleared by
     /// the vsync tick after fanning out.

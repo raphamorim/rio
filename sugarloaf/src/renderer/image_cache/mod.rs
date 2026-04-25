@@ -1,3 +1,10 @@
+// Lots of dead code in this module — held in reserve for the
+// rich-text image-cache APIs that the grid renderer + UI text
+// overlay are gradually superseding. Suppress the warnings rather
+// than delete; the code is documented and will be revisited when
+// the rich-text path is removed entirely.
+#![allow(dead_code)]
+
 pub(crate) mod atlas;
 mod cache;
 

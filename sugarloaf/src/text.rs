@@ -139,6 +139,38 @@ struct TextWgpuState {
     instance_capacity: usize,
 }
 
+#[cfg(target_os = "linux")]
+struct TextVulkanState {
+    device: ash::Device,
+    instance: ash::Instance,
+    physical_device: ash::vk::PhysicalDevice,
+    /// Independent atlases owned by the UI text overlay — separate
+    /// from each `VulkanGridRenderer`'s atlases so an overlay glyph
+    /// doesn't have to compete for grid atlas space (and vice versa).
+    /// Same shape as the macOS / wgpu paths.
+    atlas_grayscale: crate::grid::vulkan::VulkanGlyphAtlas,
+    atlas_color: crate::grid::vulkan::VulkanGlyphAtlas,
+    /// Single sampler shared by both atlases. We only `texelFetch`,
+    /// so the sampler's filter / address mode don't matter — it just
+    /// has to exist for the COMBINED_IMAGE_SAMPLER descriptor.
+    sampler: ash::vk::Sampler,
+    uniform_buffers:
+        [crate::context::vulkan::VulkanBuffer; crate::context::vulkan::FRAMES_IN_FLIGHT],
+    /// Per-slot ring of instance buffers. Grow on demand, never shrink.
+    instance_buffers: [Option<crate::context::vulkan::VulkanBuffer>;
+        crate::context::vulkan::FRAMES_IN_FLIGHT],
+    instance_capacity: [usize; crate::context::vulkan::FRAMES_IN_FLIGHT],
+    descriptor_pool: ash::vk::DescriptorPool,
+    uniform_descriptor_set_layout: ash::vk::DescriptorSetLayout,
+    atlas_descriptor_set_layout: ash::vk::DescriptorSetLayout,
+    uniform_descriptor_sets:
+        [ash::vk::DescriptorSet; crate::context::vulkan::FRAMES_IN_FLIGHT],
+    atlas_descriptor_set: ash::vk::DescriptorSet,
+
+    pipeline_layout: ash::vk::PipelineLayout,
+    pipeline: ash::vk::Pipeline,
+}
+
 //  Text — the immediate-mode recorder owned by Sugarloaf
 
 pub struct Text {
@@ -188,6 +220,8 @@ pub struct Text {
     font_data_cache: FxHashMap<u32, (crate::font::SharedData, u32, swash::CacheKey)>,
     #[cfg(not(target_os = "macos"))]
     wgpu: Option<TextWgpuState>,
+    #[cfg(target_os = "linux")]
+    vulkan: Option<TextVulkanState>,
 }
 
 impl Text {
@@ -212,6 +246,8 @@ impl Text {
             font_data_cache: FxHashMap::default(),
             #[cfg(not(target_os = "macos"))]
             wgpu: None,
+            #[cfg(target_os = "linux")]
+            vulkan: None,
         }
     }
 
@@ -543,9 +579,61 @@ impl Text {
             ))
         }
 
-        // ---- non-macOS (swash → WgpuGlyphAtlas) ----
+        // ---- non-macOS (swash → VulkanGlyphAtlas or WgpuGlyphAtlas) ----
         #[cfg(not(target_os = "macos"))]
         {
+            // Look up the slot first — backend-agnostic — and
+            // rasterize+insert into whichever atlas is initialized.
+            // Vulkan takes precedence on Linux when the Vulkan
+            // backend is active; wgpu is the fallback.
+            #[cfg(target_os = "linux")]
+            if self.vulkan.is_some() {
+                let state = self.vulkan.as_mut()?;
+                if let Some(s) = state.atlas_grayscale.lookup(key) {
+                    return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, false));
+                }
+                if let Some(s) = state.atlas_color.lookup(key) {
+                    return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, true));
+                }
+
+                let font_entry = self.font_data_cache.get(&run.font_id)?.clone();
+                let raw = rasterize_swash_glyph(
+                    &mut self.scale_ctx,
+                    &font_entry,
+                    glyph_id,
+                    run.size_u16 as f32,
+                    run.synthetic_bold,
+                    run.synthetic_italic,
+                    self.font_library.inner.read().hinting,
+                )?;
+                let is_color = raw.is_color;
+                let raster = crate::grid::RasterizedGlyph {
+                    width: raw.width.min(u16::MAX as u32) as u16,
+                    height: raw.height.min(u16::MAX as u32) as u16,
+                    bearing_x: raw.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                    bearing_y: {
+                        let top_i16 =
+                            raw.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                        run.ascent_px.saturating_sub(top_i16)
+                    },
+                    bytes: &raw.bytes,
+                };
+                let slot = if is_color {
+                    state.atlas_color.insert(key, raster)?
+                } else {
+                    state.atlas_grayscale.insert(key, raster)?
+                };
+                return Some((
+                    slot.x,
+                    slot.y,
+                    slot.w,
+                    slot.h,
+                    slot.bearing_x,
+                    slot.bearing_y,
+                    is_color,
+                ));
+            }
+
             let state = self.wgpu.as_mut()?;
 
             if let Some(s) = state.atlas_grayscale.lookup(key) {
@@ -781,6 +869,120 @@ impl Text {
         render_pass.set_bind_group(1, &state.atlas_bind_group, &[]);
         render_pass.set_vertex_buffer(0, state.instance_buffer.slice(..));
         render_pass.draw(0..4, 0..instance_count as u32);
+    }
+
+    //  Vulkan GPU backend
+
+    #[cfg(target_os = "linux")]
+    pub fn init_vulkan(&mut self, ctx: &crate::context::vulkan::VulkanContext) {
+        if self.vulkan.is_some() {
+            return;
+        }
+        let state = build_text_vulkan_state(ctx);
+        self.vulkan = Some(state);
+    }
+
+    /// Pre-pass hook: drain pending atlas uploads into `cmd`. MUST be
+    /// called BEFORE `Sugarloaf::render_vulkan` opens its
+    /// dynamic-rendering pass (matches `GridRenderer::prepare_vulkan`).
+    /// No-op when neither atlas has pending uploads.
+    #[cfg(target_os = "linux")]
+    pub fn prepare_vulkan(
+        &mut self,
+        _ctx: &crate::context::vulkan::VulkanContext,
+        cmd: ash::vk::CommandBuffer,
+        slot: usize,
+    ) {
+        let Some(state) = self.vulkan.as_mut() else {
+            return;
+        };
+        state.atlas_grayscale.flush_uploads(
+            &state.device,
+            &state.instance,
+            state.physical_device,
+            cmd,
+            slot,
+        );
+        state.atlas_color.flush_uploads(
+            &state.device,
+            &state.instance,
+            state.physical_device,
+            cmd,
+            slot,
+        );
+    }
+
+    /// Record the UI text pass into `cmd`. Caller has already opened
+    /// the dynamic-rendering pass and set viewport/scissor. No-op
+    /// when no instances were recorded this frame or the Vulkan
+    /// state isn't initialised.
+    #[cfg(target_os = "linux")]
+    pub fn render_vulkan(
+        &mut self,
+        cmd: ash::vk::CommandBuffer,
+        slot: usize,
+        viewport: [f32; 2],
+    ) {
+        let instance_count = self.instances.len();
+        if instance_count == 0 {
+            return;
+        }
+        let Some(state) = self.vulkan.as_mut() else {
+            return;
+        };
+
+        // Upload uniforms (viewport + 8B pad — std140).
+        let uniforms: [f32; 4] = [viewport[0], viewport[1], 0.0, 0.0];
+        unsafe {
+            let dst = state.uniform_buffers[slot].as_mut_ptr() as *mut [f32; 4];
+            std::ptr::write(dst, uniforms);
+        }
+
+        // Grow per-slot instance buffer if needed.
+        let needed_bytes = instance_count * std::mem::size_of::<TextInstance>();
+        if instance_count > state.instance_capacity[slot] {
+            let new_cap = instance_count.next_power_of_two().max(256);
+            state.instance_buffers[slot] =
+                Some(crate::context::vulkan::allocate_host_visible_buffer_raw(
+                    &state.device,
+                    &state.instance,
+                    state.physical_device,
+                    (new_cap * std::mem::size_of::<TextInstance>()) as u64,
+                    ash::vk::BufferUsageFlags::VERTEX_BUFFER,
+                ));
+            state.instance_capacity[slot] = new_cap;
+        }
+        let instance_buf = state.instance_buffers[slot].as_ref().unwrap();
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                self.instances.as_ptr() as *const u8,
+                instance_buf.as_mut_ptr(),
+                needed_bytes,
+            );
+        }
+
+        unsafe {
+            state.device.cmd_bind_pipeline(
+                cmd,
+                ash::vk::PipelineBindPoint::GRAPHICS,
+                state.pipeline,
+            );
+            state.device.cmd_bind_descriptor_sets(
+                cmd,
+                ash::vk::PipelineBindPoint::GRAPHICS,
+                state.pipeline_layout,
+                0,
+                &[
+                    state.uniform_descriptor_sets[slot],
+                    state.atlas_descriptor_set,
+                ],
+                &[],
+            );
+            state
+                .device
+                .cmd_bind_vertex_buffers(cmd, 0, &[instance_buf.handle()], &[0]);
+            state.device.cmd_draw(cmd, 4, instance_count as u32, 0, 0);
+        }
     }
 }
 
@@ -1135,5 +1337,370 @@ fn premul_blend_wgpu() -> wgpu::BlendState {
             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
             operation: wgpu::BlendOperation::Add,
         },
+    }
+}
+
+//  Vulkan pipeline + state construction
+
+// Compiled at build time by `sugarloaf/build.rs`. The fragment
+// shader is shared with the grid text pass — same atlas sampling,
+// same inputs.
+#[cfg(target_os = "linux")]
+const UI_TEXT_VERT_SPV: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/ui_text.vert.spv"));
+#[cfg(target_os = "linux")]
+const UI_TEXT_FRAG_SPV: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/grid_text.frag.spv"));
+
+#[cfg(target_os = "linux")]
+fn build_text_vulkan_state(
+    ctx: &crate::context::vulkan::VulkanContext,
+) -> TextVulkanState {
+    use crate::context::vulkan::FRAMES_IN_FLIGHT;
+    use ash::vk;
+
+    let device = ctx.device().clone();
+    let instance = ctx.instance().clone();
+    let physical_device = ctx.physical_device();
+
+    let atlas_grayscale = crate::grid::vulkan::VulkanGlyphAtlas::new_grayscale(ctx);
+    let atlas_color = crate::grid::vulkan::VulkanGlyphAtlas::new_color(ctx);
+    let sampler = create_text_sampler(&device);
+
+    let uniform_buffers = std::array::from_fn(|_| {
+        ctx.allocate_host_visible_buffer(16, vk::BufferUsageFlags::UNIFORM_BUFFER)
+    });
+
+    // Layouts: set 0 = uniform (per slot), set 1 = atlases (shared).
+    let uniform_descriptor_set_layout = unsafe {
+        let bindings = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)];
+        let info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+        device
+            .create_descriptor_set_layout(&info, None)
+            .expect("create_descriptor_set_layout(ui_text uniform)")
+    };
+    let atlas_descriptor_set_layout = unsafe {
+        let bindings = [
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        ];
+        let info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+        device
+            .create_descriptor_set_layout(&info, None)
+            .expect("create_descriptor_set_layout(ui_text atlas)")
+    };
+
+    // Pool sized for FRAMES_IN_FLIGHT uniform sets + 1 atlas set.
+    let descriptor_pool = unsafe {
+        let sizes = [
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count: FRAMES_IN_FLIGHT as u32,
+            },
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 2,
+            },
+        ];
+        let info = vk::DescriptorPoolCreateInfo::default()
+            .max_sets((FRAMES_IN_FLIGHT + 1) as u32)
+            .pool_sizes(&sizes);
+        device
+            .create_descriptor_pool(&info, None)
+            .expect("create_descriptor_pool(ui_text)")
+    };
+
+    let uniform_descriptor_sets = unsafe {
+        let layouts = [uniform_descriptor_set_layout; FRAMES_IN_FLIGHT];
+        let info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&layouts);
+        let sets = device
+            .allocate_descriptor_sets(&info)
+            .expect("allocate_descriptor_sets(ui_text uniform)");
+        let mut out = [vk::DescriptorSet::null(); FRAMES_IN_FLIGHT];
+        out.copy_from_slice(&sets);
+        out
+    };
+    let atlas_descriptor_set = unsafe {
+        let layouts = [atlas_descriptor_set_layout];
+        let info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&layouts);
+        device
+            .allocate_descriptor_sets(&info)
+            .expect("allocate_descriptor_sets(ui_text atlas)")[0]
+    };
+
+    // Update descriptor sets.
+    for slot in 0..FRAMES_IN_FLIGHT {
+        let uniform_info = vk::DescriptorBufferInfo::default()
+            .buffer(uniform_buffers[slot].handle())
+            .offset(0)
+            .range(uniform_buffers[slot].size());
+        let infos = [uniform_info];
+        let write = vk::WriteDescriptorSet::default()
+            .dst_set(uniform_descriptor_sets[slot])
+            .dst_binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .buffer_info(&infos);
+        unsafe {
+            device.update_descriptor_sets(&[write], &[]);
+        }
+    }
+    {
+        let gray_info = vk::DescriptorImageInfo::default()
+            .sampler(sampler)
+            .image_view(atlas_grayscale.image_view())
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        let gray_infos = [gray_info];
+        let color_info = vk::DescriptorImageInfo::default()
+            .sampler(sampler)
+            .image_view(atlas_color.image_view())
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        let color_infos = [color_info];
+        let writes = [
+            vk::WriteDescriptorSet::default()
+                .dst_set(atlas_descriptor_set)
+                .dst_binding(0)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(&gray_infos),
+            vk::WriteDescriptorSet::default()
+                .dst_set(atlas_descriptor_set)
+                .dst_binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(&color_infos),
+        ];
+        unsafe {
+            device.update_descriptor_sets(&writes, &[]);
+        }
+    }
+
+    let pipeline_layout = unsafe {
+        let set_layouts = [uniform_descriptor_set_layout, atlas_descriptor_set_layout];
+        let info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
+        device
+            .create_pipeline_layout(&info, None)
+            .expect("create_pipeline_layout(ui_text)")
+    };
+    let pipeline = build_ui_text_pipeline_vulkan(
+        &device,
+        ctx.pipeline_cache(),
+        pipeline_layout,
+        ctx.swapchain_format(),
+    );
+
+    TextVulkanState {
+        device,
+        instance,
+        physical_device,
+        atlas_grayscale,
+        atlas_color,
+        sampler,
+        uniform_buffers,
+        instance_buffers: std::array::from_fn(|_| None),
+        instance_capacity: [0; FRAMES_IN_FLIGHT],
+        descriptor_pool,
+        uniform_descriptor_set_layout,
+        atlas_descriptor_set_layout,
+        uniform_descriptor_sets,
+        atlas_descriptor_set,
+        pipeline_layout,
+        pipeline,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn create_text_sampler(device: &ash::Device) -> ash::vk::Sampler {
+    use ash::vk;
+    let info = vk::SamplerCreateInfo::default()
+        .mag_filter(vk::Filter::NEAREST)
+        .min_filter(vk::Filter::NEAREST)
+        .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
+        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE);
+    unsafe {
+        device
+            .create_sampler(&info, None)
+            .expect("create_sampler(ui_text)")
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn build_ui_text_pipeline_vulkan(
+    device: &ash::Device,
+    pipeline_cache: ash::vk::PipelineCache,
+    layout: ash::vk::PipelineLayout,
+    color_format: ash::vk::Format,
+) -> ash::vk::Pipeline {
+    use ash::vk;
+
+    let vert = load_shader_module_vulkan(device, UI_TEXT_VERT_SPV);
+    let frag = load_shader_module_vulkan(device, UI_TEXT_FRAG_SPV);
+    let entry = c"main";
+    let stages = [
+        vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(vert)
+            .name(entry),
+        vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(frag)
+            .name(entry),
+    ];
+
+    // Vertex input mirrors `TextInstance` (36 bytes).
+    let bindings = [vk::VertexInputBindingDescription::default()
+        .binding(0)
+        .stride(std::mem::size_of::<TextInstance>() as u32)
+        .input_rate(vk::VertexInputRate::INSTANCE)];
+    let attrs = [
+        // 0: pos vec2 @ 0
+        vk::VertexInputAttributeDescription::default()
+            .location(0)
+            .binding(0)
+            .format(vk::Format::R32G32_SFLOAT)
+            .offset(0),
+        // 1: glyph_pos uvec2 @ 8
+        vk::VertexInputAttributeDescription::default()
+            .location(1)
+            .binding(0)
+            .format(vk::Format::R32G32_UINT)
+            .offset(8),
+        // 2: glyph_size uvec2 @ 16
+        vk::VertexInputAttributeDescription::default()
+            .location(2)
+            .binding(0)
+            .format(vk::Format::R32G32_UINT)
+            .offset(16),
+        // 3: bearings ivec2 @ 24
+        vk::VertexInputAttributeDescription::default()
+            .location(3)
+            .binding(0)
+            .format(vk::Format::R16G16_SINT)
+            .offset(24),
+        // 4: color vec4 @ 28
+        vk::VertexInputAttributeDescription::default()
+            .location(4)
+            .binding(0)
+            .format(vk::Format::R8G8B8A8_UNORM)
+            .offset(28),
+        // 5: atlas u8 @ 32
+        vk::VertexInputAttributeDescription::default()
+            .location(5)
+            .binding(0)
+            .format(vk::Format::R8_UINT)
+            .offset(32),
+    ];
+    let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()
+        .vertex_binding_descriptions(&bindings)
+        .vertex_attribute_descriptions(&attrs);
+
+    let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
+        .topology(vk::PrimitiveTopology::TRIANGLE_STRIP);
+    let viewport_state = vk::PipelineViewportStateCreateInfo::default()
+        .viewport_count(1)
+        .scissor_count(1);
+    let rasterization = vk::PipelineRasterizationStateCreateInfo::default()
+        .polygon_mode(vk::PolygonMode::FILL)
+        .cull_mode(vk::CullModeFlags::NONE)
+        .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+        .line_width(1.0);
+    let multisample = vk::PipelineMultisampleStateCreateInfo::default()
+        .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+
+    // Premultiplied-over-from-one — fragment returns premultiplied.
+    let blend_attachment = vk::PipelineColorBlendAttachmentState::default()
+        .blend_enable(true)
+        .src_color_blend_factor(vk::BlendFactor::ONE)
+        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+        .color_blend_op(vk::BlendOp::ADD)
+        .src_alpha_blend_factor(vk::BlendFactor::ONE)
+        .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+        .alpha_blend_op(vk::BlendOp::ADD)
+        .color_write_mask(vk::ColorComponentFlags::RGBA);
+    let blend_attachments = [blend_attachment];
+    let color_blend =
+        vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_attachments);
+
+    let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+    let dynamic_state =
+        vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
+
+    let color_attachment_formats = [color_format];
+    let mut rendering = vk::PipelineRenderingCreateInfo::default()
+        .color_attachment_formats(&color_attachment_formats);
+
+    let pipeline_info = vk::GraphicsPipelineCreateInfo::default()
+        .stages(&stages)
+        .vertex_input_state(&vertex_input)
+        .input_assembly_state(&input_assembly)
+        .viewport_state(&viewport_state)
+        .rasterization_state(&rasterization)
+        .multisample_state(&multisample)
+        .color_blend_state(&color_blend)
+        .dynamic_state(&dynamic_state)
+        .layout(layout)
+        .push_next(&mut rendering);
+
+    let pipeline = unsafe {
+        device
+            .create_graphics_pipelines(pipeline_cache, &[pipeline_info], None)
+            .map_err(|(_, e)| e)
+            .expect("create_graphics_pipelines(ui_text)")[0]
+    };
+    unsafe {
+        device.destroy_shader_module(vert, None);
+        device.destroy_shader_module(frag, None);
+    }
+    pipeline
+}
+
+#[cfg(target_os = "linux")]
+fn load_shader_module_vulkan(
+    device: &ash::Device,
+    bytes: &[u8],
+) -> ash::vk::ShaderModule {
+    use ash::vk;
+    let code = ash::util::read_spv(&mut std::io::Cursor::new(bytes))
+        .expect("read_spv (embedded ui_text shader is valid)");
+    let info = vk::ShaderModuleCreateInfo::default().code(&code);
+    unsafe {
+        device
+            .create_shader_module(&info, None)
+            .expect("create_shader_module(ui_text)")
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for TextVulkanState {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = self.device.device_wait_idle();
+            self.device.destroy_pipeline(self.pipeline, None);
+            self.device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
+            self.device
+                .destroy_descriptor_pool(self.descriptor_pool, None);
+            self.device
+                .destroy_descriptor_set_layout(self.atlas_descriptor_set_layout, None);
+            self.device
+                .destroy_descriptor_set_layout(self.uniform_descriptor_set_layout, None);
+            self.device.destroy_sampler(self.sampler, None);
+            // Buffers + atlas images drop themselves.
+        }
     }
 }

@@ -6,6 +6,22 @@ Sugarloaf is Rio rendering engine, designed to be multiplatform. It is based on 
 cargo run --example text
 ```
 
+## Build dependencies
+
+### Linux — Vulkan backend
+
+The native Vulkan backend (default on Linux) compiles its GLSL shaders to SPIR-V at build time. You need one GLSL → SPIR-V compiler installed on the build host:
+
+| Distro | Command |
+|---|---|
+| Debian / Ubuntu | `apt install glslang-tools` (or `apt install glslc`) |
+| Arch | `pacman -S shaderc` (provides `glslc`) |
+| Fedora | `dnf install glslang` (or `dnf install glslc`) |
+
+`glslc` is preferred when both are present. Override with `GLSLC=/path/to/binary` or `GLSLANG_VALIDATOR=/path/to/binary`.
+
+The compiled SPIR-V lives in `OUT_DIR` per build — the source `.glsl` files are checked in but the `.spv` artifacts are gitignored.
+
 ## WASM Tests
 
 ### Setup
