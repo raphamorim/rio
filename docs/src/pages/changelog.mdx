@@ -7,8 +7,9 @@ language: 'en'
 
 ## 0.4.0
 
-- macos core text.
-- removed the extra ir for rendering so no more textruns, less memory and faster operations.
+- macos core text for searching and shaping.
+- yeslogic-fontconfig-sys and windows core apis for searching. swash keeps for shaping.
+- removed the extra ir for rendering so no more textruns, less memory and faster operations
 - vulkan native support.
 - no more font extras, rio will always find the glyph if the font is installed.
 - wgpu now is optional via feature flag, this feature flag is required if you use rio with retro arch shaders. This is a movement to make rio possible for official debian.
