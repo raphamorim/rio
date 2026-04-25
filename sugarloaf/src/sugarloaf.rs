@@ -130,22 +130,47 @@ pub struct Color {
 }
 
 impl Color {
-    pub const TRANSPARENT: Self = Self { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
-    pub const BLACK: Self = Self { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
-    pub const WHITE: Self = Self { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+    pub const TRANSPARENT: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    };
+    pub const BLACK: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const WHITE: Self = Self {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
 }
 
 #[cfg(feature = "wgpu")]
 impl From<Color> for wgpu::Color {
     fn from(c: Color) -> Self {
-        wgpu::Color { r: c.r, g: c.g, b: c.b, a: c.a }
+        wgpu::Color {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: c.a,
+        }
     }
 }
 
 #[cfg(feature = "wgpu")]
 impl From<wgpu::Color> for Color {
     fn from(c: wgpu::Color) -> Self {
-        Color { r: c.r, g: c.g, b: c.b, a: c.a }
+        Color {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: c.a,
+        }
     }
 }
 
