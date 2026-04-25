@@ -769,8 +769,7 @@ fn draw_quad_instance(
             let pr = ((r as u32) * pa + 127) / 255;
             let pg = ((g as u32) * pa + 127) / 255;
             let pb = ((b as u32) * pa + 127) / 255;
-            let src_premul =
-                ((a as u32) << 24) | (pr << 16) | (pg << 8) | pb;
+            let src_premul = ((a as u32) << 24) | (pr << 16) | (pg << 8) | pb;
             for y in y0..y1 {
                 for x in x0..x1 {
                     let idx = (y as usize) * stride + (x as usize);

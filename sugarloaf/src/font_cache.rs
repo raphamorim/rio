@@ -96,13 +96,13 @@ impl FontCache {
 /// Resolve a single glyph: read from `cache` if present, otherwise
 /// walk the fallback chain via `font_lib` and store the result.
 ///
-/// On macOS, `font_lib.resolve_font_for_char` includes lazy discovery
-/// via `CTFontCreateForString` — an unknown codepoint gets a new
-/// cascade font registered in the library on first encounter and the
-/// new `font_id` is returned. Subsequent queries for any codepoint the
-/// discovered font covers then hit the registered-font walk directly.
-///
-/// Off macOS, the resolver is the plain walk (no discovery).
+/// `font_lib.resolve_font_for_char` does the registered-font walk
+/// first; on a miss it falls back to platform cascade discovery
+/// (CoreText `CTFontCreateForString` on macOS, fontconfig
+/// `FcFontSort`+`FcCharSet` on Linux, font-kit `all_fonts` walk on
+/// Windows) and registers the discovered font under a new `font_id`.
+/// Subsequent queries for any codepoint that the discovered font
+/// covers then hit the registered-font fast path directly.
 pub(crate) fn resolve_with(
     cache: &mut FontCache,
     font_lib: &crate::font::FontLibrary,
@@ -119,16 +119,12 @@ pub(crate) fn resolve_with(
     };
     let mut width = ch.width().unwrap_or(1) as f32;
 
-    #[cfg(target_os = "macos")]
+    // Cross-platform: `resolve_font_for_char` does the fast-path
+    // registered-font walk first, then falls back to platform cascade
+    // discovery (CoreText on macOS, fontconfig on Linux, font-kit walk
+    // on Windows) and registers the discovered font on first miss so
+    // subsequent codepoints in the same script hit the fast path.
     let (font_id, is_emoji) = font_lib.resolve_font_for_char(ch, &style);
-
-    #[cfg(not(target_os = "macos"))]
-    let (font_id, is_emoji) = {
-        let font_ctx = font_lib.inner.read();
-        font_ctx
-            .find_best_font_match(ch, &style)
-            .unwrap_or((0, false))
-    };
 
     if is_emoji {
         width = 2.0;

@@ -102,11 +102,26 @@ ttf-parser = { version = "0.25.1", default-features = false, features = ["std", 
 
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
 fontconfig-parser = { version = "0.5.8", default-features = false }
+# Direct fontconfig FFI for per-codepoint discovery (the missing
+# piece on Linux that macOS gets for free via CoreText). Already in
+# the dep tree as a transitive of font-kit; promoted to a direct
+# dep so we can call `FcFontSort` + `FcCharSet*` ourselves. Debian
+# ships this as `librust-yeslogic-fontconfig-sys-dev`.
+yeslogic-fontconfig-sys = "6"
 # Native Vulkan backend (mirrors the Metal backend in scope: no librashader
 # filters, owns its own swapchain + pipelines). Linux-only for now — Windows
 # would need khr::win32_surface added to context::vulkan, and macOS keeps
 # the native Metal path.
 ash = "0.38"
+
+# Windows uses font-kit's `SystemSource::all_fonts()` walk for codepoint
+# discovery (see `font/windows.rs`). Pure DirectWrite via `IDWriteFontFallback`
+# would be the moral twin of CoreText's `CTFontCreateForString`, but the
+# only Debian-packaged DirectWrite binding (winapi 0.3) is fading out and the
+# higher-level `windows` crate isn't in Debian at all. Ghostty itself
+# doesn't ship Windows discovery yet — the font-kit walk keeps Windows on
+# par with Linux's previous (no-cascade) state plus codepoint discovery
+# from the installed font set, which is the win we actually care about.
 
 [dev-dependencies]
 rio-window = { workspace = true }
