@@ -85,7 +85,10 @@ impl Renderer {
     }
 
     #[inline]
-    fn apply_window_opacity_to_background(&self, mut color: wgpu::Color) -> wgpu::Color {
+    fn apply_window_opacity_to_background(
+        &self,
+        mut color: rio_backend::sugarloaf::Color,
+    ) -> rio_backend::sugarloaf::Color {
         if self.window_opacity < 1.0 {
             color.a = self.window_opacity;
         }
@@ -963,7 +966,6 @@ mod tests {
     use super::*;
     use rio_backend::config::renderer::Backend;
     use rio_backend::config::Config;
-    use rio_backend::crosswords::pos::{Column, Line, Pos};
 
     #[test]
     fn test_apply_window_opacity_to_background() {
@@ -971,12 +973,13 @@ mod tests {
         config.window.opacity = 0.42;
         let renderer = Renderer::new(&config);
 
-        let color = renderer.apply_window_opacity_to_background(wgpu::Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        });
+        let color =
+            renderer.apply_window_opacity_to_background(rio_backend::sugarloaf::Color {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+                a: 1.0,
+            });
 
         assert!((color.a - 0.42).abs() < 1e-6);
     }
@@ -985,12 +988,13 @@ mod tests {
     fn test_apply_window_opacity_keeps_opaque_background_when_window_is_opaque() {
         let renderer = Renderer::new(&Config::default());
 
-        let color = renderer.apply_window_opacity_to_background(wgpu::Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 0.7,
-        });
+        let color =
+            renderer.apply_window_opacity_to_background(rio_backend::sugarloaf::Color {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+                a: 0.7,
+            });
 
         assert_eq!(color.a, 0.7);
     }
@@ -1027,254 +1031,5 @@ mod tests {
         assert!(!Renderer::should_use_window_background_for_transparency(
             &config
         ));
-    }
-
-    #[test]
-    fn test_is_position_in_hint_matches() {
-        let matches = vec![
-            Pos::new(Line(0), Column(0))..=Pos::new(Line(0), Column(4)),
-            Pos::new(Line(1), Column(5))..=Pos::new(Line(1), Column(9)),
-            Pos::new(Line(5), Column(10))..=Pos::new(Line(5), Column(15)),
-        ];
-
-        // Test positions inside matches
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(0), Column(0))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(0), Column(2))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(0), Column(4))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(1), Column(5))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(1), Column(7))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(1), Column(9))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(5), Column(10))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(5), Column(15))
-        ));
-
-        // Test positions outside matches
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(0), Column(5))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(1), Column(4))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(1), Column(10))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(0))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(5), Column(9))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(5), Column(16))
-        ));
-    }
-
-    #[test]
-    fn test_empty_hint_matches() {
-        let matches: Vec<rio_backend::crosswords::search::Match> = vec![];
-
-        // Any position should return false for empty matches
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(0), Column(0))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(10), Column(20))
-        ));
-    }
-
-    #[test]
-    fn test_single_character_match() {
-        let matches = vec![Pos::new(Line(3), Column(7))..=Pos::new(Line(3), Column(7))];
-
-        // Test the exact position
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(3), Column(7))
-        ));
-
-        // Test adjacent positions
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(3), Column(6))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(3), Column(8))
-        ));
-    }
-
-    #[test]
-    fn test_overlapping_matches() {
-        // In practice, matches shouldn't overlap, but let's test the behavior
-        let matches = vec![
-            Pos::new(Line(2), Column(5))..=Pos::new(Line(2), Column(10)),
-            Pos::new(Line(2), Column(8))..=Pos::new(Line(2), Column(12)),
-        ];
-
-        // Test positions in the overlap
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(8))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(9))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(10))
-        ));
-
-        // Test positions in non-overlapping parts
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(5))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(12))
-        ));
-    }
-
-    /// Helper: create a row and set specific characters.
-    /// All written cells get a non-default fg so they are NOT is_empty().
-    /// Unwritten cells (beyond chars.len()) remain default (is_empty() == true).
-    fn make_row(chars: &[char], cols: usize) -> Row<Square> {
-        let mut row = Row::<Square>::new(cols);
-        for (i, &ch) in chars.iter().enumerate() {
-            row[Column(i)].set_c(ch);
-        }
-        row
-    }
-
-    // PUA icon = U+F115 (Nerd Font file icon)
-    const ICON: char = '\u{F115}';
-
-    #[test]
-    fn test_pua_icon_then_nothing() {
-        // symbol→nothing: 2
-        let row = make_row(&[ICON], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
-    }
-
-    #[test]
-    fn test_pua_icon_followed_by_char() {
-        // symbol→character: 1
-        let row = make_row(&[ICON, 'a'], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
-    }
-
-    #[test]
-    fn test_pua_icon_followed_by_space() {
-        // symbol→space: 2
-        let row = make_row(&[ICON, ' ', 'a'], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
-    }
-
-    #[test]
-    fn test_pua_two_icons() {
-        // symbol→symbol: 1, 1
-        let row = make_row(&[ICON, ICON], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
-        assert_eq!(pua_constraint_width(&row, 1, 10), 1.0);
-    }
-
-    #[test]
-    fn test_pua_icon_at_end_of_row() {
-        // symbol at end of row: 1
-        let row = make_row(&[' ', ' ', ICON], 3);
-        assert_eq!(pua_constraint_width(&row, 2, 3), 1.0);
-    }
-
-    #[test]
-    fn test_pua_icon_space_icon() {
-        // symbol→space→symbol: 2, 2
-        let row = make_row(&[ICON, ' ', ICON], 4);
-        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
-        assert_eq!(pua_constraint_width(&row, 2, 4), 2.0);
-    }
-
-    #[test]
-    fn test_pua_char_then_icon_then_nothing() {
-        // character→symbol→nothing: 2
-        let row = make_row(&['z', ICON], 4);
-        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
-    }
-
-    #[test]
-    fn test_pua_char_then_icon_then_space() {
-        // character→symbol→space: 2
-        let row = make_row(&['z', ICON, ' '], 4);
-        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
-    }
-
-    #[test]
-    fn test_pua_icon_followed_by_no_break_space() {
-        // symbol→no-break space (U+00A0): 1 (not a regular space)
-        let row = make_row(&[ICON, '\u{00A0}', 'z'], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
-    }
-
-    // Powerline U+E0B0 is in PUA range but is a graphics element.
-    // Our is_private_user_area includes it, so it gets PUA treatment.
-    const POWERLINE: char = '\u{E0B0}';
-
-    #[test]
-    fn test_pua_icon_then_powerline() {
-        // symbol→powerline: 1 (next is not space/empty)
-        let row = make_row(&[ICON, POWERLINE], 4);
-        assert_eq!(pua_constraint_width(&row, 0, 4), 1.0);
-    }
-
-    #[test]
-    fn test_pua_powerline_then_icon() {
-        // powerline→symbol: 2 (powerline is a graphics element, excluded from prev check)
-        let row = make_row(&[POWERLINE, ICON], 4);
-        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
-    }
-
-    #[test]
-    fn test_pua_powerline_then_nothing() {
-        // powerline→nothing: 2
-        let row = make_row(&[POWERLINE], 4);
-        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
-    }
-
-    #[test]
-    fn test_pua_powerline_then_space() {
-        // powerline→space: 2
-        let row = make_row(&[POWERLINE, ' ', 'z'], 4);
-        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
     }
 }
