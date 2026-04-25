@@ -38,7 +38,8 @@ rio-grapheme-width = { workspace = true }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
-wgpu = { workspace = true }
+# `wgpu` is only needed when the corresponding sugarloaf feature is on.
+wgpu = { workspace = true, optional = true }
 url = { workspace = true }
 regex-automata = "0.4.9"
 cursor-icon = { version = "1.1.0", default-features = false }
@@ -59,3 +60,7 @@ x11 = [
 wayland = [
     "copypasta/wayland",
 ]
+# Enable the wgpu backend in sugarloaf (needed on Windows where the
+# native Vulkan/Metal backends aren't available, and as an opt-in for
+# librashader CRT/scanline filters on Linux/macOS).
+wgpu = ["dep:wgpu", "sugarloaf/wgpu"]

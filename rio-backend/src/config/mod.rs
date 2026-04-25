@@ -605,6 +605,7 @@ impl Config {
             if let Some(disable_occluded) = renderer_overwrite.disable_occluded_render {
                 self.renderer.disable_occluded_render = disable_occluded;
             }
+            #[cfg(feature = "wgpu")]
             if let Some(filters) = &renderer_overwrite.filters {
                 self.renderer.filters = filters.clone();
             }

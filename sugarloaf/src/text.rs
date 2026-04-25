@@ -123,7 +123,7 @@ struct TextMetalState {
     instance_capacity: usize,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(feature = "wgpu")]
 struct TextWgpuState {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -218,7 +218,7 @@ pub struct Text {
     /// `FontLibraryData` read-lock isn't re-acquired per shape.
     #[cfg(not(target_os = "macos"))]
     font_data_cache: FxHashMap<u32, (crate::font::SharedData, u32, swash::CacheKey)>,
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(feature = "wgpu")]
     wgpu: Option<TextWgpuState>,
     #[cfg(target_os = "linux")]
     vulkan: Option<TextVulkanState>,
@@ -244,7 +244,7 @@ impl Text {
             scale_ctx: swash::scale::ScaleContext::new(),
             #[cfg(not(target_os = "macos"))]
             font_data_cache: FxHashMap::default(),
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(feature = "wgpu")]
             wgpu: None,
             #[cfg(target_os = "linux")]
             vulkan: None,
@@ -634,51 +634,64 @@ impl Text {
                 ));
             }
 
-            let state = self.wgpu.as_mut()?;
+            #[cfg(feature = "wgpu")]
+            {
+                let state = self.wgpu.as_mut()?;
 
-            if let Some(s) = state.atlas_grayscale.lookup(key) {
-                return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, false));
+                if let Some(s) = state.atlas_grayscale.lookup(key) {
+                    return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, false));
+                }
+                if let Some(s) = state.atlas_color.lookup(key) {
+                    return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, true));
+                }
+
+                let font_entry = self.font_data_cache.get(&run.font_id)?.clone();
+                let raw = rasterize_swash_glyph(
+                    &mut self.scale_ctx,
+                    &font_entry,
+                    glyph_id,
+                    run.size_u16 as f32,
+                    run.synthetic_bold,
+                    run.synthetic_italic,
+                    self.font_library.inner.read().hinting,
+                )?;
+                let is_color = raw.is_color;
+
+                let raster = crate::grid::RasterizedGlyph {
+                    width: raw.width.min(u16::MAX as u32) as u16,
+                    height: raw.height.min(u16::MAX as u32) as u16,
+                    bearing_x: raw.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                    bearing_y: {
+                        let top_i16 =
+                            raw.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                        run.ascent_px.saturating_sub(top_i16)
+                    },
+                    bytes: &raw.bytes,
+                };
+                let slot = if is_color {
+                    state.atlas_color.insert(key, raster)?
+                } else {
+                    state.atlas_grayscale.insert(key, raster)?
+                };
+                return Some((
+                    slot.x,
+                    slot.y,
+                    slot.w,
+                    slot.h,
+                    slot.bearing_x,
+                    slot.bearing_y,
+                    is_color,
+                ));
             }
-            if let Some(s) = state.atlas_color.lookup(key) {
-                return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, true));
+            #[cfg(not(feature = "wgpu"))]
+            {
+                // No GPU atlas available — caller treats `None` as
+                // "skip this glyph". On Linux without wgpu the
+                // Vulkan branch above will have handled it; on
+                // other targets without wgpu there's no UI text path.
+                let _ = (run, glyph_id);
+                None
             }
-
-            let font_entry = self.font_data_cache.get(&run.font_id)?.clone();
-            let raw = rasterize_swash_glyph(
-                &mut self.scale_ctx,
-                &font_entry,
-                glyph_id,
-                run.size_u16 as f32,
-                run.synthetic_bold,
-                run.synthetic_italic,
-                self.font_library.inner.read().hinting,
-            )?;
-            let is_color = raw.is_color;
-
-            let raster = crate::grid::RasterizedGlyph {
-                width: raw.width.min(u16::MAX as u32) as u16,
-                height: raw.height.min(u16::MAX as u32) as u16,
-                bearing_x: raw.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                bearing_y: {
-                    let top_i16 = raw.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                    run.ascent_px.saturating_sub(top_i16)
-                },
-                bytes: &raw.bytes,
-            };
-            let slot = if is_color {
-                state.atlas_color.insert(key, raster)?
-            } else {
-                state.atlas_grayscale.insert(key, raster)?
-            };
-            Some((
-                slot.x,
-                slot.y,
-                slot.w,
-                slot.h,
-                slot.bearing_x,
-                slot.bearing_y,
-                is_color,
-            ))
         }
     }
 
@@ -753,7 +766,7 @@ impl Text {
 
     //  wgpu GPU backend
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(feature = "wgpu")]
     pub fn init_wgpu(
         &mut self,
         device: &wgpu::Device,
@@ -828,7 +841,7 @@ impl Text {
 
     /// Record the UI text pass into `render_pass`. No-op if wgpu state
     /// isn't initialised or there are no instances this frame.
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(feature = "wgpu")]
     pub fn render_wgpu<'pass>(
         &'pass mut self,
         render_pass: &mut wgpu::RenderPass<'pass>,
@@ -993,7 +1006,7 @@ fn shaped_width(run: &ShapedRun) -> f32 {
     run.glyphs.iter().map(|g| g.advance).sum()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(feature = "wgpu")]
 fn bytemuck_instances(insts: &[TextInstance]) -> &[u8] {
     // Safety: TextInstance is repr(C) with all-primitive fields (no
     // padding surprises thanks to 4-byte alignment + explicit _pad).
@@ -1169,7 +1182,7 @@ fn alloc_instance_buffer_metal(device: &metal::Device, capacity: usize) -> metal
 
 //  wgpu pipeline construction
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(feature = "wgpu")]
 fn create_text_atlas_bgl_wgpu(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("sugarloaf.text.atlas_bgl"),
@@ -1198,7 +1211,7 @@ fn create_text_atlas_bgl_wgpu(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(feature = "wgpu")]
 fn create_text_atlas_bg_wgpu(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -1221,7 +1234,7 @@ fn create_text_atlas_bg_wgpu(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(feature = "wgpu")]
 fn alloc_instance_buffer_wgpu(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
     let size = (capacity.max(1) * std::mem::size_of::<TextInstance>()) as u64;
     device.create_buffer(&wgpu::BufferDescriptor {
@@ -1232,7 +1245,7 @@ fn alloc_instance_buffer_wgpu(device: &wgpu::Device, capacity: usize) -> wgpu::B
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(feature = "wgpu")]
 fn build_text_pipeline_wgpu(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
@@ -1324,7 +1337,7 @@ fn build_text_pipeline_wgpu(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(feature = "wgpu")]
 fn premul_blend_wgpu() -> wgpu::BlendState {
     wgpu::BlendState {
         color: wgpu::BlendComponent {
