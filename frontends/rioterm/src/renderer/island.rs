@@ -1019,9 +1019,9 @@ mod tests {
     fn title_respects_budget_with_wide_chars() {
         // Mixed widths: 'W' = 2.0, others (including ellipsis) = 1.0.
         // Title "WxWxW", budget 4.0. Walk:
-        //   ix=0 W: before add, 0+1(suffix) ≤ 4 → truncate_ix=0; accum→2
-        //   ix=1 x: 2+1 ≤ 4 → truncate_ix=1; accum→3
-        //   ix=2 W: 3+1 ≤ 4 → truncate_ix=2; accum→5; 5>4 → cut.
+        // ix=0 W: before add, 0+1(suffix) ≤ 4 → truncate_ix=0; accum→2
+        // ix=1 x: 2+1 ≤ 4 → truncate_ix=1; accum→3
+        // ix=2 W: 3+1 ≤ 4 → truncate_ix=2; accum→5; 5>4 → cut.
         // Output: title[..2] + "…" = "Wx…", width 2+1+1 = 4 ≤ 4 ✓
         let widths = |c: char| if c == 'W' { 2.0 } else { 1.0 };
         let out = fit_title_with_widths("WxWxW", 4.0, widths);

@@ -188,8 +188,8 @@ declare_class!(
             false
         }
 
-        // NOTE: This will, globally, only be run once, no matter how many
-        // `EventLoop`s the user creates.
+ // NOTE: This will, globally, only be run once, no matter how many
+ // `EventLoop`s the user creates.
         #[method(applicationDidFinishLaunching:)]
         fn did_finish_launching(&self, _sender: Option<&AnyObject>) {
             trace_scope!("applicationDidFinishLaunching:");
@@ -197,17 +197,17 @@ declare_class!(
 
             let mtm = MainThreadMarker::from(self);
             let app = NSApplication::sharedApplication(mtm);
-            // We need to delay setting the activation policy and activating the app
-            // until `applicationDidFinishLaunching` has been called. Otherwise the
-            // menu bar is initially unresponsive on macOS 10.15.
+ // We need to delay setting the activation policy and activating the app
+ // until `applicationDidFinishLaunching` has been called. Otherwise the
+ // menu bar is initially unresponsive on macOS 10.15.
             app.setActivationPolicy(self.ivars().activation_policy.0);
 
             #[allow(deprecated)]
             app.activateIgnoringOtherApps(self.ivars().activate_ignoring_other_apps);
 
             if self.ivars().default_menu {
-                // The menubar initialization should be before the `NewEvents` event, to allow
-                // overriding of the default menu even if it's created
+ // The menubar initialization should be before the `NewEvents` event, to allow
+ // overriding of the default menu even if it's created
                 menu::initialize(&app);
             }
 
@@ -216,17 +216,17 @@ declare_class!(
             self.set_is_running(true);
             self.dispatch_init_events();
 
-            // If the application is being launched via `EventLoop::pump_app_events()` then we'll
-            // want to stop the app once it is launched (and return to the external loop)
-            //
-            // In this case we still want to consider Winit's `EventLoop` to be "running",
-            // so we call `start_running()` above.
+ // If the application is being launched via `EventLoop::pump_app_events()` then we'll
+ // want to stop the app once it is launched (and return to the external loop)
+ //
+ // In this case we still want to consider Winit's `EventLoop` to be "running",
+ // so we call `start_running()` above.
             if self.ivars().stop_on_launch.get() {
-                // NOTE: the original idea had been to only stop the underlying `RunLoop`
-                // for the app but that didn't work as expected (`-[NSApplication run]`
-                // effectively ignored the attempt to stop the RunLoop and re-started it).
-                //
-                // So we return from `pump_events` by stopping the application.
+ // NOTE: the original idea had been to only stop the underlying `RunLoop`
+ // for the app but that didn't work as expected (`-[NSApplication run]`
+ // effectively ignored the attempt to stop the RunLoop and re-started it).
+ //
+ // So we return from `pump_events` by stopping the application.
                 let app = NSApplication::sharedApplication(mtm);
                 stop_app_immediately(&app);
             }
@@ -235,7 +235,7 @@ declare_class!(
         #[method(applicationWillTerminate:)]
         fn will_terminate(&self, _sender: Option<&AnyObject>) {
             trace_scope!("applicationWillTerminate:");
-            // TODO: Notify every window that it will be destroyed, like done in iOS?
+ // TODO: Notify every window that it will be destroyed, like done in iOS?
             self.internal_exit();
         }
 
@@ -250,10 +250,10 @@ declare_class!(
             unsafe {
                 let user_defaults: *mut Object = msg_send![class!(NSUserDefaults), standardUserDefaults];
 
-                // The autofill heuristic controller causes slowdown and high CPU usage.
-                // We don't know exactly why. This disables the full heuristic controller.
-                //
-                // Adapted from: https://github.com/ghostty-org/ghostty/pull/8625
+ // The autofill heuristic controller causes slowdown and high CPU usage.
+ // We don't know exactly why. This disables the full heuristic controller.
+ //
+ // Adapted from: https://github.com/ghostty-org/ghostty/pull/8625
                 let name = str_to_nsstring("NSAutoFillHeuristicControllerEnabled");
                 let existing_value: *mut Object = msg_send![user_defaults, objectForKey: name];
                 if existing_value.is_null() {
@@ -282,7 +282,7 @@ declare_class!(
         }
     }
 
-    // Custom methods for menu actions
+ // Custom methods for menu actions
     unsafe impl ApplicationDelegate {
         #[method(rioCreateWindow:)]
         fn create_window(&self, _sender: Option<&AnyObject>) {
@@ -403,13 +403,13 @@ impl ApplicationDelegate {
         // let workspace = &unsafe { NSWorkspace::sharedWorkspace() };
         // let workspace_center = &unsafe { workspace.notificationCenter() };
         // unsafe {
-        //     workspace_center.addObserver_selector_name_object(
-        //         &this,
-        //         sel!(applicationDidUnhide:),
-        //         // Some(ns_string!("NSWorkspaceDidActivateApplicationNotification")),
-        //         Some(ns_string!("NSWorkspaceDidUnhideApplicationNotification")),
-        //         Some(workspace),
-        //     )
+        // workspace_center.addObserver_selector_name_object(
+        // &this,
+        // sel!(applicationDidUnhide:),
+        // // Some(ns_string!("NSWorkspaceDidActivateApplicationNotification")),
+        // Some(ns_string!("NSWorkspaceDidUnhideApplicationNotification")),
+        // Some(workspace),
+        // )
         // }
 
         unsafe { msg_send_id![super(this), init] }

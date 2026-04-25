@@ -6,15 +6,15 @@
 // Metal shader for the grid renderer.
 //
 // Ported from `ghostty/src/renderer/shaders/shaders.metal`:
-//   - full_screen_vertex      (line 191 in upstream)
-//   - cell_bg_fragment        (line 451)
+// - full_screen_vertex (line 191 in upstream)
+// - cell_bg_fragment (line 451)
 //
 // Phase 1a scope: bg pass only. `cell_text_*` (text pass) is ported in
 // Phase 1c. Color space conversion is deliberately minimal right now:
 // the CAMetalLayer in `sugarloaf/src/context/metal.rs` is tagged
 // DisplayP3 and `setPresentsWithTransaction:false`, and we emit cell
 // colors pre-multiplied in sRGB-gamma space to match the
-// non-linear-blending default. The full Ghostty `load_color` chain
+// non-linear-blending default. The full `load_color` chain
 // (linearize → sRGB_DP3 → unlinearize) lands when we add the
 // `use_display_p3` / `use_linear_blending` uniform paths.
 
@@ -43,7 +43,7 @@ struct Uniforms {
 // Color space / transfer curve helpers. Matrices match
 // `sugarloaf/src/renderer/renderer.metal` (Bradford-adapted D65) so
 // the grid's output is byte-identical to sugarloaf's quad pipeline
-// (`draw_bg_fill_metal`, UI overlays). Same role as Ghostty's
+// (`draw_bg_fill_metal`, UI overlays). Same role as 's
 // `linearize` / `unlinearize` / `srgb_to_display_p3` at
 // `ghostty/src/renderer/shaders/shaders.metal:57-85`.
 //-------------------------------------------------------------------
@@ -79,7 +79,7 @@ float3 grid_rec2020_to_p3(float3 linear_r2020) {
 /// `input_colorspace`) → sRGB-encode again. Every shader output goes
 /// through this so the framebuffer (BGRA8Unorm tagged DisplayP3)
 /// stores gamma-encoded values the compositor can display directly
-/// and alpha blending runs in gamma space — matching Ghostty's
+/// and alpha blending runs in gamma space — matching 's
 /// `alpha-blending = native` default.
 float3 grid_prepare_output_rgb(float3 srgb, uint input_colorspace) {
     float3 lin = grid_srgb_to_linear(srgb);
@@ -102,7 +102,7 @@ constant uint PAD_EXTEND_DOWN  = 1u << 3;
 // Per-cell background. One uchar4 per grid cell, indexed
 // `row * grid_size.x + col`. Matches `CellBg` in cell.rs (4 bytes).
 // Declared `constant` so Metal places it in constant address space —
-// same as Ghostty's `constant uchar4 *cells` parameter at
+// same approach's `constant uchar4 *cells` parameter at
 // `shaders.metal:454`.
 
 //-------------------------------------------------------------------
@@ -116,10 +116,10 @@ struct FullScreenVertexOut {
 vertex FullScreenVertexOut grid_bg_vertex(uint vid [[vertex_id]]) {
     FullScreenVertexOut out;
 
-    // Single triangle clipped to viewport.
-    //   vid 0: (-1, -3)
-    //   vid 1: (-1,  1)
-    //   vid 2: ( 3,  1)
+ // Single triangle clipped to viewport.
+ // vid 0: (-1, -3)
+ // vid 1: (-1, 1)
+ // vid 2: ( 3, 1)
     float4 position;
     position.x = (vid == 2) ? 3.0 : -1.0;
     position.y = (vid == 0) ? -3.0 :  1.0;
@@ -138,9 +138,9 @@ fragment float4 grid_bg_fragment(
     constant Uniforms&   uniforms [[buffer(0)]],
     constant uchar4*     cells    [[buffer(1)]]
 ) {
-    // `in.position.xy` is the pixel's center in framebuffer pixels.
-    // `grid_padding` is (top, right, bottom, left) — we only need
-    // left (.w) and top (.x) to locate the grid origin.
+ // `in.position.xy` is the pixel's center in framebuffer pixels.
+ // `grid_padding` is (top, right, bottom, left) — we only need
+ // left (.w) and top (.x) to locate the grid origin.
     int2 orig_grid_pos = int2(
         floor((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size)
     );
@@ -148,7 +148,7 @@ fragment float4 grid_bg_fragment(
 
     float4 bg = float4(0.0);
 
-    // Horizontal padding: clamp or discard based on padding_extend bits.
+ // Horizontal padding: clamp or discard based on padding_extend bits.
     if (grid_pos.x < 0) {
         if (uniforms.padding_extend & PAD_EXTEND_LEFT) {
             grid_pos.x = 0;
@@ -163,7 +163,7 @@ fragment float4 grid_bg_fragment(
         }
     }
 
-    // Vertical padding.
+ // Vertical padding.
     if (grid_pos.y < 0) {
         if (uniforms.padding_extend & PAD_EXTEND_UP) {
             grid_pos.y = 0;
@@ -178,11 +178,11 @@ fragment float4 grid_bg_fragment(
         }
     }
 
-    // Cursor overlay: paint `cursor_bg_color` only when this fragment
-    // is inside the actual cursor cell (compare against the original,
-    // pre-padding-clamp grid_pos). This keeps the cursor from
-    // leaking into the window margin when it sits on an edge row /
-    // column and `padding_extend` clamps inward to the cursor cell.
+ // Cursor overlay: paint `cursor_bg_color` only when this fragment
+ // is inside the actual cursor cell (compare against the original,
+ // pre-padding-clamp grid_pos). This keeps the cursor from
+ // leaking into the window margin when it sits on an edge row /
+ // column and `padding_extend` clamps inward to the cursor cell.
     if (uniforms.cursor_bg_color.a > 0.0
         && orig_grid_pos.x == int(uniforms.cursor_pos.x)
         && orig_grid_pos.y == int(uniforms.cursor_pos.y))
@@ -193,7 +193,7 @@ fragment float4 grid_bg_fragment(
         return c;
     }
 
-    // Load the cell and convert to normalized premultiplied color.
+ // Load the cell and convert to normalized premultiplied color.
     uchar4 cell = cells[grid_pos.y * int(uniforms.grid_size.x) + grid_pos.x];
     float4 color = float4(cell) / 255.0;
     color.rgb = grid_prepare_output_rgb(color.rgb, uniforms.input_colorspace);
@@ -207,10 +207,10 @@ fragment float4 grid_bg_fragment(
 //
 // Ported from `ghostty/src/renderer/shaders/shaders.metal:525-761`.
 // Phase 1c simplifications:
-//   - No Display P3 / linear-blending conversions; colors land
-//     already sRGB-encoded.
-//   - No WCAG min_contrast enforcement.
-//   - No `cursor_wide` handling (single-cell cursor only for now).
+// - No Display P3 / linear-blending conversions; colors land
+// already sRGB-encoded.
+// - No WCAG min_contrast enforcement.
+// - No `cursor_wide` handling (single-cell cursor only for now).
 //-------------------------------------------------------------------
 
 constant uint ATLAS_GRAYSCALE = 0u;
@@ -240,62 +240,68 @@ struct CellTextVertexOut {
 
 //
 // Triangle-strip-like quad via a 3-vertex triangle per instance. We use a
-// 4-vertex triangle-strip input (vid = 0..3) — same pattern as Ghostty's
+// 4-vertex triangle-strip input (vid = 0..3) — same pattern as 's
 // shader to avoid redundant vertex shader invocations.
 //
-//   0 --> 1
-//   |   .'|
-//   |  /  |
-//   | L   |
-//   2 --> 3
+// 0 --> 1
+// | .'|
+// | / |
+// | L |
+// 2 --> 3
 //
 vertex CellTextVertexOut grid_text_vertex(
     uint                 vid      [[vertex_id]],
     CellTextVertexIn     in       [[stage_in]],
     constant Uniforms&   uniforms [[buffer(1)]]
 ) {
-    // Cell origin in pixel space.
+ // Cell origin in pixel space.
     float2 cell_pos = uniforms.cell_size * float2(in.grid_pos);
 
-    // Quad corner (0..1 in each dim) from vertex id.
+ // Quad corner (0..1 in each dim) from vertex id.
     float2 corner;
     corner.x = float(vid == 1 || vid == 3);
     corner.y = float(vid == 2 || vid == 3);
 
-    // Glyph bbox inside the cell: bearings.x from left, bearings.y from
-    // bottom (font convention). See Ghostty diagram at shaders.metal:587.
+ // Glyph bbox inside the cell: bearings.x from left, bearings.y from
+ // bottom (font convention). See diagram at shaders.metal:587.
     float2 size   = float2(in.glyph_size);
     float2 offset = float2(in.bearings);
     offset.y = uniforms.cell_size.y - offset.y;
 
     float2 quad = cell_pos + size * corner + offset;
 
-    // Also shift by grid_padding (top/left) to position the whole grid
-    // inside the drawable — `grid_padding` is (top, right, bottom, left).
+ // Also shift by grid_padding (top/left) to position the whole grid
+ // inside the drawable — `grid_padding` is (top, right, bottom, left).
     quad.x += uniforms.grid_padding.w;
     quad.y += uniforms.grid_padding.x;
 
     CellTextVertexOut out;
     out.position = uniforms.projection * float4(quad.x, quad.y, 0.0, 1.0);
 
-    // Atlas tex coords in pixel space (the sampler is set to
-    // `coord::pixel`, so no normalization needed).
+ // Atlas tex coords in pixel space (the sampler is set to
+ // `coord::pixel`, so no normalization needed).
     out.tex_coord = float2(in.glyph_pos) + float2(in.glyph_size) * corner;
     out.atlas = uint(in.atlas);
 
-    // Foreground color — u8 → float, convert to output space, then
-    // premultiply. Same pipeline as `grid_bg_fragment` so glyph and
-    // cell bg agree.
+ // Foreground color — u8 → float, convert to output space, then
+ // premultiply. Same pipeline as `grid_bg_fragment` so glyph and
+ // cell bg agree.
     float4 color = float4(in.color) / 255.0;
     color.rgb = grid_prepare_output_rgb(color.rgb, uniforms.input_colorspace);
     color.rgb *= color.a;
 
-    // Cursor-pos fg swap: if this glyph's cell is under the cursor and
-    // it is *not* itself the cursor glyph, use `cursor_color` instead.
+ // Cursor-pos fg swap: if this glyph's cell is under the cursor and
+ // it is *not* itself the cursor glyph, use `cursor_color` instead.
     bool is_cursor_pos =
         (uint(in.grid_pos.x) == uniforms.cursor_pos.x) &&
         (uint(in.grid_pos.y) == uniforms.cursor_pos.y);
-    if ((in.bools & BOOL_IS_CURSOR_GLYPH) == 0u && is_cursor_pos) {
+ // The fg-swap only fires when an explicit cursor_color was
+ // supplied. Hollow / unfocused cursors skip this by setting
+ // `cursor_color.a = 0`, leaving the underlying glyph colour
+ // intact (`.block_hollow` path).
+    if ((in.bools & BOOL_IS_CURSOR_GLYPH) == 0u
+        && is_cursor_pos
+        && uniforms.cursor_color.a > 0.0) {
         color = uniforms.cursor_color;
         color.rgb = grid_prepare_output_rgb(color.rgb, uniforms.input_colorspace);
         color.rgb *= color.a;
@@ -317,11 +323,11 @@ fragment float4 grid_text_fragment(
     );
 
     if (in.atlas == ATLAS_GRAYSCALE) {
-        // Grayscale atlas: r channel is the alpha mask, multiply by color.
+ // Grayscale atlas: r channel is the alpha mask, multiply by color.
         float a = atlas_grayscale.sample(atlas_sampler, in.tex_coord).r;
         return in.color * a;
     } else {
-        // Color atlas: pre-multiplied RGBA directly.
+ // Color atlas: pre-multiplied RGBA directly.
         return atlas_color.sample(atlas_sampler, in.tex_coord);
     }
 }
@@ -353,8 +359,8 @@ vertex CellTextVertexOut text_vertex(
     TextVertexIn        in       [[stage_in]],
     constant float2&    viewport [[buffer(1)]]
 ) {
-    // Quad corner 0..1 in each dim, from vertex id. Matches the
-    // triangle-strip-4 pattern in `grid_text_vertex`.
+ // Quad corner 0..1 in each dim, from vertex id. Matches the
+ // triangle-strip-4 pattern in `grid_text_vertex`.
     float2 corner;
     corner.x = float(vid == 1 || vid == 3);
     corner.y = float(vid == 2 || vid == 3);
@@ -363,7 +369,7 @@ vertex CellTextVertexOut text_vertex(
     float2 origin  = in.pos + float2(in.bearings);
     float2 quad_px = origin + size * corner;
 
-    // Pixel → NDC (y-flip so `pos.y` grows downward in screen space).
+ // Pixel → NDC (y-flip so `pos.y` grows downward in screen space).
     float2 ndc = float2(
         (quad_px.x / viewport.x) * 2.0 - 1.0,
         1.0 - (quad_px.y / viewport.y) * 2.0
@@ -374,7 +380,7 @@ vertex CellTextVertexOut text_vertex(
     out.tex_coord = float2(in.glyph_pos) + size * corner;
     out.atlas     = uint(in.atlas);
 
-    // Premultiplied RGBA. Matches the grid text path's blend model.
+ // Premultiplied RGBA. Matches the grid text path's blend model.
     float4 color = float4(in.color) / 255.0;
     color.rgb   *= color.a;
     out.color    = color;

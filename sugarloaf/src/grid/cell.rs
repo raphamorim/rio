@@ -10,8 +10,8 @@
 //! as raw bytes — `CellBg` and `CellText` are `#[repr(C)]` + bytemuck
 //! `Pod` so that's sound.
 //!
-//! Layout is deliberately identical to Ghostty's `CellBg` / `CellText`
-//! (`ghostty/src/renderer/metal/shaders.zig:265-291`) so the shader
+//! Layout is deliberately identical to `CellBg` / `CellText`
+//! so the shader
 //! port in Phase 1 can stay a near-1:1 translation.
 
 use bytemuck::{Pod, Zeroable};
@@ -22,7 +22,7 @@ use bytemuck::{Pod, Zeroable};
 ///
 /// Selection / search / inverse-video tinting is folded into this value
 /// on the CPU side before upload — there are no shader-side bits for
-/// selection state. Same approach as Ghostty (`generic.zig:2823`).
+/// selection state. same approach.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Pod, Zeroable)]
 pub struct CellBg {
@@ -39,7 +39,7 @@ impl CellBg {
 /// GPU. A single terminal cell may emit multiple `CellText`s: one for
 /// the base glyph, plus one per decoration (underline / strikethrough
 /// / overline / curly underline / hyperlink underline). Matches
-/// Ghostty's approach where decorations are separate `CellText`
+/// approach where decorations are separate `CellText`
 /// entries rather than bit-packed onto the base glyph.
 ///
 /// Total size is **32 bytes** — verified by the `size_of` const assert
@@ -53,7 +53,7 @@ pub struct CellText {
     /// Glyph bitmap size (w, h) in atlas pixels.
     pub glyph_size: [u32; 2],
     /// Font bearings (x-left, y-bottom), relative to the grid cell
-    /// origin, in pixels. `i16` matches Ghostty; if Rio's font metrics
+    /// origin, in pixels. `i16` matches ; if Rio's font metrics
     /// ever exceed ±32k pixels we have bigger problems.
     pub bearings: [i16; 2],
     /// Terminal grid position (col, row). `u16` caps at 65535 which
@@ -63,8 +63,8 @@ pub struct CellText {
     /// dim + selection/search tint have been applied CPU-side).
     pub color: [u8; 4],
     /// Atlas discriminator:
-    ///   0 = grayscale (sampled as alpha mask, multiplied by `color`)
-    ///   1 = color (sampled directly, `color` ignored)
+    /// 0 = grayscale (sampled as alpha mask, multiplied by `color`)
+    /// 1 = color (sampled directly, `color` ignored)
     pub atlas: u8,
     /// Packed bits. bit 0 = `no_min_contrast`, bit 1 = `is_cursor_glyph`.
     /// Unused bits reserved for future decoration flags.
@@ -92,8 +92,8 @@ const _: () = {
 
 /// Per-frame uniform block bound to both bg and text pipelines.
 ///
-/// Field order / sizes mirror Ghostty's `Uniforms` struct
-/// (`ghostty/src/renderer/metal/shaders.zig` — search `Uniforms`). The
+/// Field order / sizes mirror `Uniforms` struct
+///. The
 /// layout is hand-packed so the same bytes round-trip through both
 /// Metal (`setVertexBytes`) and wgpu (`write_buffer` into a `uniform`
 /// binding). If you add a field:
@@ -141,23 +141,23 @@ pub struct GridUniforms {
     /// Minimum WCAG contrast ratio to enforce against bg. `0.0` disables.
     pub min_contrast: f32,
     /// Bool flags packed into u32 for WGSL compatibility:
-    ///   bit 0 = display_p3 colorspace tag
-    ///   bit 1 = linear_blending
+    /// bit 0 = display_p3 colorspace tag
+    /// bit 1 = linear_blending
     pub flags: u32,
     /// Padding-extend bitfield (bit 0 = left, 1 = right, 2 = up, 3 = down).
     pub padding_extend: u32,
     /// How the shader should interpret the sRGB-encoded CPU color
     /// inputs before writing to the DisplayP3-tagged drawable.
-    /// - `0` = sRGB      (apply sRGB → DisplayP3 primaries matrix)
+    /// - `0` = sRGB (apply sRGB → DisplayP3 primaries matrix)
     /// - `1` = DisplayP3 (already P3, skip matrix)
-    /// - `2` = Rec.2020  (apply Rec.2020 → DisplayP3 matrix)
+    /// - `2` = Rec.2020 (apply Rec.2020 → DisplayP3 matrix)
     ///
     /// Wired to the same source as sugarloaf's rich-text quad
     /// `input_colorspace` (`renderer/mod.rs:264`), so the grid and
     /// every other pipeline agree on the transform. Without this the
     /// grid bg appears brighter/more saturated than the window bg
     /// fill, which runs through `prepare_output_rgb`. Mirrors
-    /// Ghostty's `Uniforms.use_display_p3` + `load_color` pair at
+    /// `Uniforms.use_display_p3` + `load_color` pair at
     /// `ghostty/src/renderer/shaders/shaders.metal:224`.
     pub input_colorspace: u32,
 }

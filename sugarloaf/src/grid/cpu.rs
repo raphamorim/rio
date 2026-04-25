@@ -245,6 +245,33 @@ impl CpuGridRenderer {
         }
     }
 
+    pub fn set_block_cursor(&mut self, cells: &[CellText]) {
+        if let Some(slot) = self.fg_rows.first_mut() {
+            slot.clear();
+            slot.extend_from_slice(cells);
+        }
+    }
+
+    pub fn set_non_block_cursor(&mut self, cells: &[CellText]) {
+        let idx = self.fg_rows.len().saturating_sub(1);
+        if let Some(slot) = self.fg_rows.get_mut(idx) {
+            slot.clear();
+            slot.extend_from_slice(cells);
+        }
+    }
+
+    pub fn clear_cursor(&mut self) {
+        if let Some(slot) = self.fg_rows.first_mut() {
+            slot.clear();
+        }
+        let last = self.fg_rows.len().saturating_sub(1);
+        if last > 0 {
+            if let Some(slot) = self.fg_rows.get_mut(last) {
+                slot.clear();
+            }
+        }
+    }
+
     #[inline]
     pub fn lookup_glyph(&self, key: GlyphKey) -> Option<AtlasSlot> {
         self.atlas_grayscale.lookup(key)

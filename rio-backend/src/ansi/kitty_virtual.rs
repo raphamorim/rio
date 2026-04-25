@@ -419,7 +419,7 @@ fn color_to_id(color: AnsiColor) -> u32 {
 
 /// Per-cell decode of a U+10EEEE placeholder, before continuation rules
 /// resolve missing diacritics. Mirrors ghostty's `IncompletePlacement`
-/// (`graphics_unicode.zig:407-494`): row / col / `image_id_high` are
+///: row / col / `image_id_high` are
 /// `Option` because kitty allows applications to omit later diacritics
 /// when they would inherit from the previous cell.
 ///
@@ -465,12 +465,12 @@ impl IncompletePlacement {
     }
 
     /// True if `other` (the next cell in the same row) can extend this
-    /// run. Mirrors ghostty's `canAppend` (`graphics_unicode.zig:506-513`):
-    ///   - same `image_id_low` and `placement_id`
-    ///   - `other.row` is missing (inherit) or matches `self.row`
-    ///   - `other.col` is missing (inherit + auto-increment) or equals
-    ///     `self.col + self.width` (sequential)
-    ///   - `other.image_id_high` is missing or matches
+    /// run. Mirrors ghostty's `canAppend`:
+    /// - same `image_id_low` and `placement_id`
+    /// - `other.row` is missing (inherit) or matches `self.row`
+    /// - `other.col` is missing (inherit + auto-increment) or equals
+    ///   `self.col + self.width` (sequential)
+    /// - `other.image_id_high` is missing or matches
     pub fn can_append(&self, other: &IncompletePlacement) -> bool {
         self.image_id_low == other.image_id_low
             && self.placement_id == other.placement_id
@@ -489,7 +489,7 @@ impl IncompletePlacement {
     }
 
     /// Resolve the run into a final placement, defaulting any still-`None`
-    /// fields. Mirrors ghostty's `complete()` (`graphics_unicode.zig:520-535`).
+    /// fields. Mirrors ghostty's `complete()`.
     pub fn complete(&self) -> PlaceholderRun {
         PlaceholderRun {
             image_id: ((self.image_id_high.unwrap_or(0) as u32) << 24)
@@ -535,7 +535,7 @@ pub struct RunGeometry {
 /// Compute the screen rect + source rect for one row-run, taking the
 /// placement's grid size, the image's pixel size, and the cell metrics.
 /// Mirrors ghostty's `Placement.renderPlacement`
-/// (`graphics_unicode.zig:130-351`), specialised for a single row of
+///, specialised for a single row of
 /// cells (height = 1 cell). Returns `None` if the run lies entirely in
 /// the centering padding (no pixels to draw).
 ///

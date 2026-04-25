@@ -726,7 +726,7 @@ mod tests {
         let result = create_temporary_config(
             "empty",
             r#"
-            # Config is empty
+ # Config is empty
         "#,
         );
 
@@ -1087,10 +1087,10 @@ mod tests {
         );
 
         // assert_eq!(
-        //     result.colors.background,
-        //     ColorBuilder::from_hex(String::from("#2B3E50"), Format::SRGB0_1)
-        //         .unwrap()
-        //         .to_wgpu()
+        // result.colors.background,
+        // ColorBuilder::from_hex(String::from("#2B3E50"), Format::SRGB0_1)
+        // .unwrap()
+        // .to_wgpu()
         // );
 
         assert_eq!(result.colors.background.0, hex_to_color_arr("#2B3E50"));
@@ -1200,7 +1200,7 @@ mod tests {
             "symbol-map",
             r#"
             fonts.symbol-map = [
-                # covers: '⊗','⊘','⊙'
+ # covers: '⊗','⊘','⊙'
                 { start = "2297", end = "2299", font-family = "PowerlineSymbols" },
                 { start = "E0C0", end = "E0C7", font-family = "Cascadia Code NF" },
             ]
