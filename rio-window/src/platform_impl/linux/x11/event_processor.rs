@@ -857,14 +857,15 @@ impl EventProcessor {
 
         callback(&self.target, event);
 
-        // Window is mapped → clear the occluded bit (next paint can
-        // assume visibility) and (re)start the per-window vsync
-        // timer. Some WMs map without firing `VisibilityNotify`, so
-        // we can't rely on that path alone.
+        // Window is mapped → flip the mapped bit and (re)evaluate
+        // the per-window vsync timer. We DON'T touch the obscured
+        // flag here — `update_refresh_loop` checks both, so a map
+        // while still obscured won't restart the timer (matches
+        // zed's `is_mapped && !FullyObscured` semantics).
         self.with_window(window, |window| {
             window
-                .is_occluded
-                .store(false, std::sync::atomic::Ordering::Release);
+                .is_mapped
+                .store(true, std::sync::atomic::Ordering::Release);
         });
         let wt = Self::window_target(&self.target);
         wt.update_refresh_loop(WindowId(window as _));
@@ -875,14 +876,18 @@ impl EventProcessor {
         F: FnMut(&RootAEL, Event<T>),
     {
         let window = xev.window as xproto::Window;
-        // Treat unmap as fully obscured so the per-window vsync
-        // timer is torn down. We don't fire a `WindowEvent::Occluded`
-        // here — that's reserved for `VisibilityNotify` per X11
-        // semantics — but stopping the timer is the right action.
+        // Window is unmapped → tear down the per-window vsync timer
+        // by flipping the mapped bit. We don't fire
+        // `WindowEvent::Occluded` here — that's reserved for
+        // `VisibilityNotify` per X11 semantics. We also leave
+        // `is_fully_obscured` untouched: when the window is mapped
+        // again, the next `VisibilityNotify` will report the real
+        // state (and `update_refresh_loop` keeps the timer torn down
+        // until then if the window comes back obscured).
         self.with_window(window, |window| {
             window
-                .is_occluded
-                .store(true, std::sync::atomic::Ordering::Release);
+                .is_mapped
+                .store(false, std::sync::atomic::Ordering::Release);
         });
         let wt = Self::window_target(&self.target);
         wt.update_refresh_loop(WindowId(window as _));
@@ -953,7 +958,7 @@ impl EventProcessor {
 
         self.with_window(xwindow, |window| {
             window
-                .is_occluded
+                .is_fully_obscured
                 .store(fully_obscured, std::sync::atomic::Ordering::Release);
             window.visibility_notify();
         });
