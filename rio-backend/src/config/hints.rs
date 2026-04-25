@@ -20,7 +20,7 @@ pub const DEFAULT_HINTS_ALPHABET: &str = "jfkdls;ahgurieowpq";
 /// 3. **Bare relative paths** — `word/.../name.ext`. A dotted segment is
 ///    required, and lookbehinds prevent matching mid-word starts.
 pub const DEFAULT_URL_REGEX: &str = concat!(
-    // schemed URLs
+ // schemed URLs
     "(?:https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:)",
     "(?:",
         r"(?:\[[:0-9a-fA-F]+(?:[:0-9a-fA-F]*)+\](?::[0-9]+)?)",
@@ -29,17 +29,17 @@ pub const DEFAULT_URL_REGEX: &str = concat!(
     ")+",
     r"(?<![,.])",
     "|",
-    // rooted or explicitly-relative paths
+ // rooted or explicitly-relative paths
     r"(?:\.\./|\./|(?<!\w)~/|(?:[\w][\w\-.]*/)*(?<!\w)\$[A-Za-z_]\w*/|\.[\w][\w\-.]*/|(?<![\w~/])/(?!/))",
     "(?:",
-        // Dotted: file-like, allows internal spaces around dotted segments.
+ // Dotted: file-like, allows internal spaces around dotted segments.
         r"(?=[\w\-.~:/?#@!$&*+;=%]*\.)",
         r"[\w\-.~:/?#@!$&*+;=%]+",
         r"(?:(?<!:) (?!\w+://)(?!\.{0,2}/)(?!~/)[\w\-.~:/?#@!$&*+;=%]*[/.])*",
         r"(?<!:)",
         r"(?: +(?= *$))?",
         "|",
-        // Non-dotted: directory-like, broader.
+ // Non-dotted: directory-like, broader.
         r"(?![\w\-.~:/?#@!$&*+;=%]*\.)",
         r"[\w\-.~:/?#@!$&*+;=%]+",
         r"(?:(?<!:) (?!\w+://)(?!\.{0,2}/)(?!~/)[\w\-.~:/?#@!$&*+;=%]+)*",
@@ -47,7 +47,7 @@ pub const DEFAULT_URL_REGEX: &str = concat!(
         r"(?: +(?= *$))?",
     ")",
     "|",
-    // bare relative paths (word/foo.ext)
+ // bare relative paths (word/foo.ext)
     r"(?=[\w\-.~:/?#@!$&*+;=%]*\.)",
     r"(?<!\$\d*)(?<!\w)[\w][\w\-.]*/",
     r"[\w\-.~:/?#@!$&*+;=%]+",

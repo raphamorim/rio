@@ -20,22 +20,22 @@ use std::sync::Arc;
 // ---------------------------------------------------------------------------
 // Bit layout for Square(u64)
 //
-//   bits  0..20 (21): codepoint (Unicode scalar value, max 0x10_FFFF)
-//                     OR low bits of bg color when content_tag != Codepoint
-//   bits 21..22 (2):  wide                              (Wide enum)
-//   bits 23..29 (7):  per-cell flag bits (CellFlags), incl WRAPLINE at bit 0
-//   bits 30..31 (2):  content_tag (NEW)
-//                       0 = Codepoint        (text cell, use style_id below)
-//                       1 = BgPalette        (bg-only cell, palette index in 32..39)
-//                       2 = BgRgb            (bg-only cell, RGB packed in 32..55)
-//                       3 = reserved
-//   bits 32..47 (16): style_id      (when tag == Codepoint)
-//                     bg palette idx in low 8 (when tag == BgPalette)
-//                     bg RGB.r:g    in low 16  (when tag == BgRgb)
-//   bits 48..63 (16): extras_id     (when tag == Codepoint)
-//                     bg RGB.b      in low 8   (when tag == BgRgb)
+// bits 0..20 (21): codepoint (Unicode scalar value, max 0x10_FFFF)
+// OR low bits of bg color when content_tag != Codepoint
+// bits 21..22 (2): wide (Wide enum)
+// bits 23..29 (7): per-cell flag bits (CellFlags), incl WRAPLINE at bit 0
+// bits 30..31 (2): content_tag (NEW)
+// 0 = Codepoint (text cell, use style_id below)
+// 1 = BgPalette (bg-only cell, palette index in 32..39)
+// 2 = BgRgb (bg-only cell, RGB packed in 32..55)
+// 3 = reserved
+// bits 32..47 (16): style_id (when tag == Codepoint)
+// bg palette idx in low 8 (when tag == BgPalette)
+// bg RGB.r:g in low 16 (when tag == BgRgb)
+// bits 48..63 (16): extras_id (when tag == Codepoint)
+// bg RGB.b in low 8 (when tag == BgRgb)
 //
-// The bg-only encoding (BgPalette / BgRgb) is the Ghostty trick: cells that
+// The bg-only encoding (BgPalette / BgRgb) is the trick: cells that
 // represent a colored background with no text don't need a style table
 // lookup at all, which is the dominant cost for large filled regions
 // (selection, padding, blank lines after `clear`, color blocks).
@@ -127,18 +127,18 @@ impl ContentTag {
 }
 
 bitflags! {
-    /// Per-cell flags that DON'T live in the style table. SGR-related
-    /// attributes (bold, italic, underline, etc.) live in `StyleFlags`.
+ /// Per-cell flags that DON'T live in the style table. SGR-related
+ /// attributes (bold, italic, underline, etc.) live in `StyleFlags`.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct CellFlags: u8 {
-        /// Soft-wrap continuation marker on the last cell of a wrapped line.
+ /// Soft-wrap continuation marker on the last cell of a wrapped line.
         const WRAPLINE         = 1 << 0;
-        /// Cell carries graphics data (sixel / iTerm2 inline image piece).
-        /// Look up the actual graphic in `Grid::extras_table` via `extras_id`.
+ /// Cell carries graphics data (sixel / iTerm2 inline image piece).
+ /// Look up the actual graphic in `Grid::extras_table` via `extras_id`.
         const GRAPHICS         = 1 << 1;
-        /// Cell carries hyperlink metadata. Lookup via extras_id.
+ /// Cell carries hyperlink metadata. Lookup via extras_id.
         const HYPERLINK        = 1 << 2;
-        /// Cell carries multi-codepoint grapheme cluster. Lookup via extras_id.
+ /// Cell carries multi-codepoint grapheme cluster. Lookup via extras_id.
         const GRAPHEME         = 1 << 3;
     }
 }

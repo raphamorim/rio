@@ -12,7 +12,7 @@
 //! Slower per cold lookup than DirectWrite (we touch every font file
 //! once until we hit a match), but cached at the font-cache layer so
 //! the cost amortizes to zero after the first hit per codepoint per
-//! session. Ghostty doesn't ship Windows discovery yet either, so this
+//! session. doesn't ship Windows discovery yet either, so this
 //! still puts us ahead.
 //!
 //! Future replacement path: when either `windows` or `dwrote` lands in

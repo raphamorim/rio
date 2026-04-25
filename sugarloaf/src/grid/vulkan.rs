@@ -521,6 +521,51 @@ impl VulkanGridRenderer {
         self.bg_dirty = [true; FRAMES_IN_FLIGHT];
     }
 
+    pub fn set_block_cursor(&mut self, cells: &[CellText]) {
+        if let Some(slot) = self.fg_rows.first_mut() {
+            if slot.is_empty() && cells.is_empty() {
+                return;
+            }
+            slot.clear();
+            slot.extend_from_slice(cells);
+            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
+        }
+    }
+
+    pub fn set_non_block_cursor(&mut self, cells: &[CellText]) {
+        let idx = self.fg_rows.len().saturating_sub(1);
+        if let Some(slot) = self.fg_rows.get_mut(idx) {
+            if slot.is_empty() && cells.is_empty() {
+                return;
+            }
+            slot.clear();
+            slot.extend_from_slice(cells);
+            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
+        }
+    }
+
+    pub fn clear_cursor(&mut self) {
+        let mut changed = false;
+        if let Some(slot) = self.fg_rows.first_mut() {
+            if !slot.is_empty() {
+                slot.clear();
+                changed = true;
+            }
+        }
+        let last = self.fg_rows.len().saturating_sub(1);
+        if last > 0 {
+            if let Some(slot) = self.fg_rows.get_mut(last) {
+                if !slot.is_empty() {
+                    slot.clear();
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
+        }
+    }
+
     #[inline]
     pub fn lookup_glyph(&self, key: GlyphKey) -> Option<AtlasSlot> {
         self.atlas_grayscale.lookup(key)

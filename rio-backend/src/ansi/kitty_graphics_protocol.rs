@@ -453,9 +453,9 @@ pub fn parse(
     // Determine the key for this chunk:
     // - If this chunk has an explicit image_id or image_number, use that.
     // - If no ID in this chunk and we are mid-transmission (a chunked
-    //   command pinned `current_transmission_key`), reuse it.
+    // command pinned `current_transmission_key`), reuse it.
     // - Otherwise the client sent a fresh command without an explicit id
-    //   and we must allocate one per kitty spec.
+    // and we must allocate one per kitty spec.
     //
     // Importantly we only *pin* the key into `current_transmission_key`
     // when this is a chunked command (`cmd.more` is true). Pinning on
@@ -1792,9 +1792,9 @@ mod tests {
         // of this test is the chunking pattern, not meaningful pixels.
         //
         // Chunk 1: encodes 4 bytes [0xDE, 0xAD, 0xBE, 0xEF]
-        //   → 8 chars with padding: "3q2+7w=="
+        // → 8 chars with padding: "3q2+7w=="
         // Chunk 2: encodes 3 bytes [0xCA, 0xFE, 0xBA]
-        //   → 4 chars no padding: "yv66"
+        // → 4 chars no padding: "yv66"
         //
         // Concatenated raw base64 would be "3q2+7w==yv66" with `==` in
         // the middle — which a strict base64 decoder rejects.
@@ -2264,7 +2264,7 @@ mod tests {
         let response = result.expect("response struct must exist");
         assert!(response.response.is_none(), "q=1 must suppress OK");
 
-        // q=2 suppresses everything, including errors. Ghostty / kitty
+        // q=2 suppresses everything, including errors. / kitty
         // both document this as "absolute silence".
         let result = parse_kitty_graphics_protocol("a=q,i=1,q=2", "");
         let response = result.expect("response struct must exist");

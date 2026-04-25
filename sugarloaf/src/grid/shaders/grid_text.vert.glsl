@@ -123,10 +123,14 @@ void main() {
 
     // Cursor cell color swap: if this glyph's cell is under the cursor
     // and it's *not* the cursor glyph itself, override with cursor_color.
+    // Skip when cursor_color.a == 0 — that's the hollow / unfocused
+    // path where the underlying glyph colour should stay intact.
     bool is_cursor_pos =
         (in_grid_pos.x == uniforms.cursor_pos.x) &&
         (in_grid_pos.y == uniforms.cursor_pos.y);
-    if ((in_bools & BOOL_IS_CURSOR_GLYPH) == 0u && is_cursor_pos) {
+    if ((in_bools & BOOL_IS_CURSOR_GLYPH) == 0u
+        && is_cursor_pos
+        && uniforms.cursor_color.a > 0.0) {
         vec4 c = uniforms.cursor_color;
         c.rgb = grid_prepare_output_rgb(c.rgb, uniforms.input_colorspace);
         c.rgb *= c.a;

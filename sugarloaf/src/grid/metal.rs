@@ -11,7 +11,7 @@
 //! add a GPU completion handler + semaphore gate. For now slot 0 is
 //! written and read on every frame.
 //!
-//! Mirrors Ghostty's `ghostty/src/renderer/cell.zig` allocation model:
+//! `ghostty/src/renderer/cell.zig` allocation model:
 //! one flat `CellBg` buffer indexed `row * cols + col`, one
 //! `ArrayList(CellText)` per row plus two cursor slots. The per-row
 //! FG storage lands in Phase 1c alongside `cell_text` shader port.
@@ -35,13 +35,13 @@ use crate::renderer::image_cache::atlas::AtlasAllocator;
 const FRAMES_IN_FLIGHT: usize = 3;
 
 /// Extra slots appended to the per-row fg storage for cursor glyphs.
-/// Matches Ghostty's `rows + 2` layout (block cursor at slot 0,
+/// `rows + 2` layout (block cursor at slot 0,
 /// non-block-style cursor at the tail).
 const CURSOR_ROW_SLOTS: usize = 2;
 
 /// Initial square atlas texture side. 2048² @ R8 = 4 MiB, grown to
 /// 4096² / 8192² on demand when the allocator reports full (see
-/// `MetalGlyphAtlas::grow`). Mirrors Ghostty's `atlas.grow` in
+/// `MetalGlyphAtlas::grow`). `atlas.grow` in
 /// `ghostty/src/font/Atlas.zig`.
 const ATLAS_SIZE: u16 = 2048;
 
@@ -53,9 +53,9 @@ const ATLAS_MAX_SIZE: u16 = 8192;
 /// Glyph atlas for grayscale OR color glyphs. A single instance
 /// holds one `MTLTexture`, an allocator, and the key→slot map; the
 /// `bytes_per_pixel` field lets the same struct serve both paths
-/// (R8 for mask glyphs, RGBA8 for color emoji). Mirrors Ghostty's
+/// (R8 for mask glyphs, RGBA8 for color emoji).
 /// split between `atlas_grayscale` and `atlas_color`
-/// (`ghostty/src/renderer/cell.zig`) — owned by the renderer rather
+/// — owned by the renderer rather
 /// than the font subsystem.
 pub struct MetalGlyphAtlas {
     pub(crate) texture: Texture,
@@ -227,7 +227,7 @@ fn create_atlas_texture(
     // the texture in shared memory — `replaceRegion` becomes a plain
     // memcpy with no CPU/GPU coherency sync. Discrete-GPU Macs
     // (pre-M1) still need `Managed` with an implicit sync on draw.
-    // Matches Ghostty `src/renderer/Metal.zig:79-83`.
+    // `src/renderer/Metal.zig:79-83`.
     descriptor.set_storage_mode(if device.has_unified_memory() {
         metal::MTLStorageMode::Shared
     } else {
@@ -273,16 +273,16 @@ pub struct MetalGridRenderer {
     frame: usize,
 
     /// Compiled bg render pipeline. Binds:
-    ///   buffer(0): `GridUniforms`  (via `set_vertex_bytes` /
-    ///                               `set_fragment_bytes`)
-    ///   buffer(1): `bg_buffers[0]`
+    /// buffer(0): `GridUniforms` (via `set_vertex_bytes` /
+    /// `set_fragment_bytes`)
+    /// buffer(1): `bg_buffers[0]`
     bg_pipeline: RenderPipelineState,
 
     /// Compiled text render pipeline. Binds:
-    ///   buffer(0): per-instance `CellText` vertex buffer
-    ///   buffer(1): `GridUniforms`
-    ///   texture(0): `atlas_grayscale`
-    ///   texture(1): `atlas_color` (reused = atlas_grayscale for now)
+    /// buffer(0): per-instance `CellText` vertex buffer
+    /// buffer(1): `GridUniforms`
+    /// texture(0): `atlas_grayscale`
+    /// texture(1): `atlas_color` (reused = atlas_grayscale for now)
     text_pipeline: RenderPipelineState,
 
     /// Staging buffer for the concatenated fg instances. Rebuilt each
@@ -316,7 +316,7 @@ pub struct MetalGridRenderer {
     /// Set to `true` on construction + `resize()`. The emission
     /// path checks this to force a full rebuild (every row) on the
     /// next frame, regardless of whether `TerminalDamage` is
-    /// `Noop`. Mirrors Ghostty's `grid_size_diff` gate at
+    /// `Noop`. `grid_size_diff` gate at
     /// `ghostty/src/renderer/generic.zig:2353`. Cleared via
     /// `mark_full_rebuild_done` after the emission loop runs.
     needs_full_rebuild: bool,
@@ -484,12 +484,70 @@ impl MetalGridRenderer {
         }
     }
 
+    /// Replace the block cursor sprite slot. Drawn FIRST in the text
+    /// pass (slot 0) — sits BEHIND row glyphs so text inversion can
+    /// composite on top of the block. "block" cursor
+    /// slot at `fg_rows[0]`.
+    pub fn set_block_cursor(&mut self, cells: &[CellText]) {
+        if let Some(slot) = self.fg_rows.first_mut() {
+            if slot.is_empty() && cells.is_empty() {
+                return;
+            }
+            slot.clear();
+            slot.extend_from_slice(cells);
+            self.fg_dirty = true;
+        }
+    }
+
+    /// Replace the non-block cursor sprite slot. Drawn LAST in the
+    /// text pass — sits on top of all row glyphs. Used for hollow /
+    /// bar / underline cursor sprites that should overlay text. Pass
+    /// `&[]` to clear. "non-block" cursor slot at
+    /// `fg_rows[rows + 1]`.
+    pub fn set_non_block_cursor(&mut self, cells: &[CellText]) {
+        let idx = self.fg_rows.len().saturating_sub(1);
+        if let Some(slot) = self.fg_rows.get_mut(idx) {
+            if slot.is_empty() && cells.is_empty() {
+                return;
+            }
+            slot.clear();
+            slot.extend_from_slice(cells);
+            self.fg_dirty = true;
+        }
+    }
+
+    /// Empty both cursor slots (block + non-block). Call once per
+    /// frame before deciding whether to emit a cursor sprite for
+    /// this panel — without this, the previous frame's sprite stays
+    /// resident in fg_rows.
+    pub fn clear_cursor(&mut self) {
+        let mut changed = false;
+        if let Some(slot) = self.fg_rows.first_mut() {
+            if !slot.is_empty() {
+                slot.clear();
+                changed = true;
+            }
+        }
+        let last = self.fg_rows.len().saturating_sub(1);
+        if last > 0 {
+            if let Some(slot) = self.fg_rows.get_mut(last) {
+                if !slot.is_empty() {
+                    slot.clear();
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.fg_dirty = true;
+        }
+    }
+
     /// Record both grid passes against the caller's `encoder`. The
     /// caller owns the command buffer, drawable, and render pass
     /// descriptor. Draw order:
     ///
-    ///   1. bg pass — fullscreen triangle, per-fragment cell lookup.
-    ///   2. text pass — one instanced quad per `CellText` in `fg_rows`.
+    /// 1. bg pass — fullscreen triangle, per-fragment cell lookup.
+    /// 2. text pass — one instanced quad per `CellText` in `fg_rows`.
     pub fn render(&mut self, encoder: &RenderCommandEncoderRef, uniforms: &GridUniforms) {
         let uniforms_bytes = bytemuck::bytes_of(uniforms);
 
@@ -518,7 +576,7 @@ impl MetalGridRenderer {
         if self.fg_dirty {
             // Flatten per-row fg_rows into the staging vec. Order matters
             // for z: slot 0 (block cursor) first, content rows next,
-            // non-block-cursor slot last — same as Ghostty's ordering.
+            // non-block-cursor slot last — same approach's ordering.
             self.fg_staging.clear();
             for row in &self.fg_rows {
                 self.fg_staging.extend_from_slice(row);
@@ -641,7 +699,7 @@ fn build_text_pipeline(device: &Device) -> RenderPipelineState {
         .expect("color attachment 0 missing");
     color.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
     color.set_blending_enabled(true);
-    // Premultiplied-over, matching Ghostty (Pipeline.zig:130-133).
+    // Premultiplied-over, matching .
     // The text fragment returns `in.color * mask_a` (grayscale path)
     // or the color-atlas sample directly (emoji) — both premultiplied
     // already, so source RGB factor must be `One`, not `SourceAlpha`.

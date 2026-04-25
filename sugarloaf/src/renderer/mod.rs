@@ -97,7 +97,7 @@ pub struct WgpuRenderer {
 /// them to the DisplayP3-tagged framebuffer:
 /// - `0` = sRGB. Apply the sRGB → DisplayP3 primaries matrix after
 ///   linearization so `#ff0000` displays as the sRGB-standard red rather than
-///   P3-pure red. Matches ghostty's default.
+///   P3-pure red.
 /// - `1` = DisplayP3. Treat inputs as already-P3, skip the matrix.
 /// - `2` = Rec.2020. Skipped (matrix pending), matches `1` in practice.
 ///
@@ -1200,15 +1200,15 @@ impl Renderer {
 
         // Useful for debug occasionally
         // let inst_bytes =
-        //     self.instances.len() * std::mem::size_of::<batch::QuadInstance>();
+        // self.instances.len() * std::mem::size_of::<batch::QuadInstance>();
         // let vert_bytes = self.vertices.len() * std::mem::size_of::<Vertex>();
         // println!(
-        //     "gpu upload: {} instances ({:.2} MB) + {} verts ({:.2} MB) = {:.2} MB",
-        //     self.instances.len(),
-        //     inst_bytes as f64 / (1024.0 * 1024.0),
-        //     self.vertices.len(),
-        //     vert_bytes as f64 / (1024.0 * 1024.0),
-        //     (inst_bytes + vert_bytes) as f64 / (1024.0 * 1024.0),
+        // "gpu upload: {} instances ({:.2} MB) + {} verts ({:.2} MB) = {:.2} MB",
+        // self.instances.len(),
+        // inst_bytes as f64 / (1024.0 * 1024.0),
+        // self.vertices.len(),
+        // vert_bytes as f64 / (1024.0 * 1024.0),
+        // (inst_bytes + vert_bytes) as f64 / (1024.0 * 1024.0),
         // );
     }
 
@@ -2377,16 +2377,16 @@ impl Renderer {
 
     /// Record sugarloaf's own draws inside the active dynamic-rendering
     /// pass that `Sugarloaf::render_vulkan` opens. Order:
-    ///   1. Background image (full-screen quad).
-    ///   2. BelowText image overlays (kitty / sixel placements with
-    ///      `dest_pos.z < 0`).
-    ///   3. Rich-text quad pass — `quad()` / `rect()` calls + cell
-    ///      underline decorations (dashed/dotted/curly handled in
-    ///      `quad.frag.glsl`).
-    ///   4. Non-quad geometry — `polygon()` / `line()` / `triangle()`
-    ///      / `arc()` calls (cursor underline shape, hint highlights).
-    ///   5. AboveText image overlays.
-    ///   6. Optional bootstrap rect (`RIO_VULKAN_BOOTSTRAP=1`).
+    /// 1. Background image (full-screen quad).
+    /// 2. BelowText image overlays (kitty / sixel placements with
+    /// `dest_pos.z < 0`).
+    /// 3. Rich-text quad pass — `quad()` / `rect()` calls + cell
+    /// underline decorations (dashed/dotted/curly handled in
+    /// `quad.frag.glsl`).
+    /// 4. Non-quad geometry — `polygon()` / `line()` / `triangle()`
+    /// / `arc()` calls (cursor underline shape, hint highlights).
+    /// 5. AboveText image overlays.
+    /// 6. Optional bootstrap rect (`RIO_VULKAN_BOOTSTRAP=1`).
     ///
     /// Glyph atlas sampling through this pipeline isn't ported —
     /// grid text + UI text overlay each own dedicated atlas

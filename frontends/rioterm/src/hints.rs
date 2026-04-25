@@ -411,9 +411,9 @@ const URI_SCHEMES: &[&str] = &[
 /// fall back to the raw text and let the OS opener handle it.
 ///
 /// Modelled on ghostty's `resolvePathForOpening` (`src/Surface.zig:2045`).
-/// Ghostty's core only joins relative paths against the OSC 7 cwd; tilde
+/// core only joins relative paths against the OSC 7 cwd; tilde
 /// expansion lives in the macOS apprt's Swift `openURL`
-/// (`Ghostty.App.swift:715`, via `NSString.standardizingPath`), so `~/x`
+/// (`.App.swift:715`, via `NSString.standardizingPath`), so `~/x`
 /// works on macOS but isn't expanded on Linux/BSD where `xdg-open` gets the
 /// literal `~`. Rio doesn't have a per-platform apprt layer, so we do the
 /// expansion here to get consistent cross-platform behaviour:
@@ -424,7 +424,7 @@ const URI_SCHEMES: &[&str] = &[
 /// 3. Strings starting with a known URI scheme are rejected up front so the
 ///    OS opener routes them as URLs (saves one filesystem syscall vs
 ///    ghostty's "join cwd + stat → fail" path).
-/// 4. Absolute paths are existence-checked too. Ghostty short-circuits
+/// 4. Absolute paths are existence-checked too. short-circuits
 ///    absolute paths to `None` (caller passes raw); user-visible behaviour
 ///    is the same since the raw and resolved strings match.
 pub fn resolve_path_for_opening(text: &str, cwd: Option<&Path>) -> Option<PathBuf> {

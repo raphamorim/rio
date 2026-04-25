@@ -6,16 +6,16 @@
 // WGSL grid shader. Peer of `grid.metal`.
 //
 // Ported from `ghostty/src/renderer/shaders/shaders.metal`:
-//   - full_screen_vertex      (line 191 in upstream)
-//   - cell_bg_fragment        (line 451)
+// - full_screen_vertex (line 191 in upstream)
+// - cell_bg_fragment (line 451)
 //
 // Phase 1b scope: bg pass only. Same simplifications as the Metal
 // port — no full Display P3 / linear-blending chain yet (the colors
 // come in already sRGB-encoded from the CPU).
 //
 // Bindings:
-//   @group(0) @binding(0)  Uniforms      (140+4 = 144 bytes)
-//   @group(0) @binding(1)  CellBg[]      (cols * rows entries)
+// @group(0) @binding(0) Uniforms (140+4 = 144 bytes)
+// @group(0) @binding(1) CellBg[] (cols * rows entries)
 //
 // Must match `WgpuGridRenderer`'s bind group layout in
 // `sugarloaf/src/grid/webgpu.rs`.
@@ -97,10 +97,10 @@ struct VsOut {
 
 @vertex
 fn grid_bg_vertex(@builtin(vertex_index) vid: u32) -> VsOut {
-    // Fullscreen triangle (same trick as the Metal port).
-    //   vid 0: (-1, -3)
-    //   vid 1: (-1,  1)
-    //   vid 2: ( 3,  1)
+ // Fullscreen triangle (same trick as the Metal port).
+ // vid 0: (-1, -3)
+ // vid 1: (-1, 1)
+ // vid 2: ( 3, 1)
     var x = -1.0;
     var y =  1.0;
     if (vid == 2u) { x =  3.0; }
@@ -112,26 +112,26 @@ fn grid_bg_vertex(@builtin(vertex_index) vid: u32) -> VsOut {
 }
 
 fn load_cell_bg(idx: u32) -> vec4<f32> {
-    // One u32 per cell; unpack RGBA little-endian bytes.
+ // One u32 per cell; unpack RGBA little-endian bytes.
     let word = cells[idx];
     let r = f32((word >>  0u) & 0xFFu) / 255.0;
     let g = f32((word >>  8u) & 0xFFu) / 255.0;
     let b = f32((word >> 16u) & 0xFFu) / 255.0;
     let a = f32((word >> 24u) & 0xFFu) / 255.0;
-    // Premultiply.
+ // Premultiply.
     return vec4<f32>(r * a, g * a, b * a, a);
 }
 
 @fragment
 fn grid_bg_fragment(in: VsOut) -> @location(0) vec4<f32> {
-    // `grid_padding` is (top, right, bottom, left).
-    // Use .w (left) + .x (top) to find the grid origin, same as Metal port.
+ // `grid_padding` is (top, right, bottom, left).
+ // Use .w (left) + .x (top) to find the grid origin, same as Metal port.
     let cell_fx = (in.position.xy - vec2<f32>(uniforms.grid_padding.w, uniforms.grid_padding.x))
                     / uniforms.cell_size;
     let orig_grid_pos = vec2<i32>(floor(cell_fx));
     var grid_pos = orig_grid_pos;
 
-    // Horizontal padding.
+ // Horizontal padding.
     let cols = i32(uniforms.grid_size.x);
     if (grid_pos.x < 0) {
         if ((uniforms.padding_extend & PAD_EXTEND_LEFT) != 0u) {
@@ -147,7 +147,7 @@ fn grid_bg_fragment(in: VsOut) -> @location(0) vec4<f32> {
         }
     }
 
-    // Vertical padding.
+ // Vertical padding.
     let rows = i32(uniforms.grid_size.y);
     if (grid_pos.y < 0) {
         if ((uniforms.padding_extend & PAD_EXTEND_UP) != 0u) {
@@ -163,9 +163,9 @@ fn grid_bg_fragment(in: VsOut) -> @location(0) vec4<f32> {
         }
     }
 
-    // Cursor overlay at in-bounds cursor cell only (skip
-    // padding-extended fragments so an edge cursor doesn't bleed
-    // into the window margin).
+ // Cursor overlay at in-bounds cursor cell only (skip
+ // padding-extended fragments so an edge cursor doesn't bleed
+ // into the window margin).
     if (uniforms.cursor_bg_color.a > 0.0
         && orig_grid_pos.x == i32(uniforms.cursor_pos.x)
         && orig_grid_pos.y == i32(uniforms.cursor_pos.y)) {
@@ -177,10 +177,10 @@ fn grid_bg_fragment(in: VsOut) -> @location(0) vec4<f32> {
         return vec4<f32>(rgb * a, a);
     }
 
-    // Load cell, convert to output color space, then premultiply.
-    // Same pipeline as the quad fill in `sugarloaf/src/renderer/renderer.metal`
-    // so the grid and window-fill paths produce identical framebuffer
-    // values.
+ // Load cell, convert to output color space, then premultiply.
+ // Same pipeline as the quad fill in `sugarloaf/src/renderer/renderer.metal`
+ // so the grid and window-fill paths produce identical framebuffer
+ // values.
     let idx = u32(grid_pos.y) * uniforms.grid_size.x + u32(grid_pos.x);
     let word = cells[idx];
     let r = f32((word >>  0u) & 0xFFu) / 255.0;
@@ -206,8 +206,8 @@ const BOOL_NO_MIN_CONTRAST: u32 = 1u;
 const BOOL_IS_CURSOR_GLYPH: u32 = 2u;
 
 struct CellTextVertexIn {
-    // Per-instance attributes (attribute locations match the wgpu
-    // vertex buffer layout in grid/webgpu.rs).
+ // Per-instance attributes (attribute locations match the wgpu
+ // vertex buffer layout in grid/webgpu.rs).
     @location(0) glyph_pos:  vec2<u32>,
     @location(1) glyph_size: vec2<u32>,
     @location(2) bearings:   vec2<i32>,
@@ -236,53 +236,56 @@ fn grid_text_vertex(
     @builtin(vertex_index) vid: u32,
     in: CellTextVertexIn,
 ) -> TextVsOut {
-    // Cell origin in pixel space.
+ // Cell origin in pixel space.
     let cell_pos = uniforms.cell_size * vec2<f32>(in.grid_pos);
 
-    // Quad corner (0..1) from vertex id — 4-vertex triangle strip.
-    //   0 --> 1
-    //   |   .'|
-    //   |  /  |
-    //   | L   |
-    //   2 --> 3
+ // Quad corner (0..1) from vertex id — 4-vertex triangle strip.
+ // 0 --> 1
+ // | .'|
+ // | / |
+ // | L |
+ // 2 --> 3
     var corner: vec2<f32>;
     corner.x = select(0.0, 1.0, vid == 1u || vid == 3u);
     corner.y = select(0.0, 1.0, vid == 2u || vid == 3u);
 
-    // Glyph bbox inside cell: bearings.x from left, bearings.y from
-    // bottom (font convention).
+ // Glyph bbox inside cell: bearings.x from left, bearings.y from
+ // bottom (font convention).
     let size = vec2<f32>(in.glyph_size);
     var offset = vec2<f32>(in.bearings);
     offset.y = uniforms.cell_size.y - offset.y;
 
     var quad = cell_pos + size * corner + offset;
 
-    // Shift by grid_padding (top/left).
+ // Shift by grid_padding (top/left).
     quad.x += uniforms.grid_padding.w;
     quad.y += uniforms.grid_padding.x;
 
     var out: TextVsOut;
     out.position = uniforms.projection * vec4<f32>(quad, 0.0, 1.0);
 
-    // Atlas tex coords in PIXEL space — sampler is set to nearest,
-    // unnormalized coords equivalent via textureLoad below.
+ // Atlas tex coords in PIXEL space — sampler is set to nearest,
+ // unnormalized coords equivalent via textureLoad below.
     out.tex_coord = vec2<f32>(in.glyph_pos) + vec2<f32>(in.glyph_size) * corner;
     out.atlas = in.atlas;
 
-    // Foreground color — `in.color` arrives normalized via UNorm8x4.
-    // Convert to output color space first, then premultiply. Same
-    // pipeline as `grid_bg_fragment` and the quad fill so glyph/cell
-    // bg/window bg agree.
+ // Foreground color — `in.color` arrives normalized via UNorm8x4.
+ // Convert to output color space first, then premultiply. Same
+ // pipeline as `grid_bg_fragment` and the quad fill so glyph/cell
+ // bg/window bg agree.
     var color = in.color;
     color = vec4<f32>(
         grid_prepare_output_rgb(color.rgb, uniforms.input_colorspace) * color.a,
         color.a,
     );
 
-    // Cursor-pos fg swap.
+ // Cursor-pos fg swap. Skip when cursor_color.a == 0 — that's the
+ // hollow / unfocused path where text colour stays untouched.
     let is_cursor_pos = in.grid_pos.x == uniforms.cursor_pos.x
                      && in.grid_pos.y == uniforms.cursor_pos.y;
-    if ((in.bools & BOOL_IS_CURSOR_GLYPH) == 0u && is_cursor_pos) {
+    if ((in.bools & BOOL_IS_CURSOR_GLYPH) == 0u
+        && is_cursor_pos
+        && uniforms.cursor_color.a > 0.0) {
         let c = uniforms.cursor_color;
         color = vec4<f32>(
             grid_prepare_output_rgb(c.rgb, uniforms.input_colorspace) * c.a,
@@ -296,8 +299,8 @@ fn grid_text_vertex(
 
 @fragment
 fn grid_text_fragment(in: TextVsOut) -> @location(0) vec4<f32> {
-    // Pixel-space tex_coord → integer sample via textureLoad (no
-    // sampler filter; matches Metal's `coord::pixel` + `filter::nearest`).
+ // Pixel-space tex_coord → integer sample via textureLoad (no
+ // sampler filter; matches Metal's `coord::pixel` + `filter::nearest`).
     let ic = vec2<i32>(in.tex_coord);
     if (in.atlas == ATLAS_GRAYSCALE) {
         let a = textureLoad(atlas_grayscale, ic, 0).r;

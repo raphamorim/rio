@@ -11,7 +11,7 @@
 //! arrows, Font Awesome icons, chevrons, etc.), the upstream Nerd Fonts
 //! patcher ships hand-tuned size / alignment / padding rules so that e.g.
 //! adjacent Powerline triangles butt together cleanly and icons stay
-//! centered on their visual x-height. Ghostty compiled those rules out of
+//! centered on their visual x-height. compiled those rules out of
 //! the patcher metadata; we reproduce them here verbatim so Rio's rendering
 //! of the same codepoints lines up with ghostty / Apple Terminal.
 //!

@@ -66,14 +66,14 @@ fn compute(
         return (MIN_COLS, MIN_LINES);
     }
 
-    // Calculate columns - divide by the ROUNDED cell width. Ghostty
+    // Calculate columns - divide by the ROUNDED cell width.
     // rounds `face_width` once in `font/Metrics.zig:265` (`cell_width =
     // @round(face_width)`) and uses that integer everywhere — cols,
     // grid shader, cursor hit-testing. Rio's grid renderer already
     // does `.round()` on `cell_w` when building `GridUniforms`, so the
     // column count has to use the same integer or the right edge of
     // the grid floats `cols * (face_width - cell_width)` pixels short
-    // of the panel. Matches Ghostty; sacrifices at most 1 col vs
+    // of the panel. Matches ; sacrifices at most 1 col vs
     // fractional divide but keeps the render perfectly aligned.
     let cell_width = dimensions.width.round().max(1.0);
     let visible_columns =

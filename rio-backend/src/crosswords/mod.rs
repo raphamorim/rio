@@ -74,7 +74,7 @@ pub const MIN_LINES: usize = 1;
 // const MAX_GRAPHICS_PER_CELL: usize = 20;
 
 bitflags! {
-    #[derive(Debug, Copy, Clone)]
+     #[derive(Debug, Copy, Clone)]
      pub struct Mode: u32 {
         const NONE                    = 0;
         const SHOW_CURSOR             = 1;
@@ -982,11 +982,11 @@ impl<U: EventListener> Crosswords<U> {
         self.damage_cursor_line();
 
         // self.event_proxy.send_event(
-        //     RioEvent::TerminalDamaged {
-        //         route_id: self.route_id,
-        //         damage: TerminalDamage::CursorOnly(self.grid.cursor.pos.line, None),
-        //     },
-        //     self.window_id,
+        // RioEvent::TerminalDamaged {
+        // route_id: self.route_id,
+        // damage: TerminalDamage::CursorOnly(self.grid.cursor.pos.line, None),
+        // },
+        // self.window_id,
         // );
     }
 
@@ -999,11 +999,11 @@ impl<U: EventListener> Crosswords<U> {
             self.damage_cursor_line();
 
             // self.event_proxy.send_event(
-            //     RioEvent::TerminalDamaged {
-            //         route_id: self.route_id,
-            //         damage: TerminalDamage::CursorOnly,
-            //     },
-            //     self.window_id,
+            // RioEvent::TerminalDamaged {
+            // route_id: self.route_id,
+            // damage: TerminalDamage::CursorOnly,
+            // },
+            // self.window_id,
             // );
         }
     }
@@ -1606,9 +1606,9 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Append cells from a single line to `text`, buffering blank cells
     /// (`\0` and trailing spaces) so that:
-    ///   - `\0` cells inside a run of content become real spaces
-    ///   - trailing blanks at end of the run are dropped (caller decides
-    ///     whether to flush them via the `blank_cells` accumulator)
+    /// - `\0` cells inside a run of content become real spaces
+    /// - trailing blanks at end of the run are dropped (caller decides
+    ///   whether to flush them via the `blank_cells` accumulator)
     ///
     /// Returns true if the line emitted any non-blank content.
     fn append_cells(
@@ -3206,32 +3206,32 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn graphics_attribute(&mut self, pi: u16, pa: u16) {
         // From Xterm documentation:
         //
-        //   CSI ? Pi ; Pa ; Pv S
+        // CSI ? Pi ; Pa ; Pv S
         //
-        //   Pi = 1  -> item is number of color registers.
-        //   Pi = 2  -> item is Sixel graphics geometry (in pixels).
-        //   Pi = 3  -> item is ReGIS graphics geometry (in pixels).
+        // Pi = 1 -> item is number of color registers.
+        // Pi = 2 -> item is Sixel graphics geometry (in pixels).
+        // Pi = 3 -> item is ReGIS graphics geometry (in pixels).
         //
-        //   Pa = 1  -> read attribute.
-        //   Pa = 2  -> reset to default.
-        //   Pa = 3  -> set to value in Pv.
-        //   Pa = 4  -> read the maximum allowed value.
+        // Pa = 1 -> read attribute.
+        // Pa = 2 -> reset to default.
+        // Pa = 3 -> set to value in Pv.
+        // Pa = 4 -> read the maximum allowed value.
         //
-        //   Pv is ignored by xterm except when setting (Pa == 3).
-        //   Pv = n <- A single integer is used for color registers.
-        //   Pv = width ; height <- Two integers for graphics geometry.
+        // Pv is ignored by xterm except when setting (Pa == 3).
+        // Pv = n <- A single integer is used for color registers.
+        // Pv = width ; height <- Two integers for graphics geometry.
         //
-        //   xterm replies with a control sequence of the same form:
+        // xterm replies with a control sequence of the same form:
         //
-        //   CSI ? Pi ; Ps ; Pv S
+        // CSI ? Pi ; Ps ; Pv S
         //
-        //   where Ps is the status:
-        //   Ps = 0  <- success.
-        //   Ps = 1  <- error in Pi.
-        //   Ps = 2  <- error in Pa.
-        //   Ps = 3  <- failure.
+        // where Ps is the status:
+        // Ps = 0 <- success.
+        // Ps = 1 <- error in Pi.
+        // Ps = 2 <- error in Pa.
+        // Ps = 3 <- failure.
         //
-        //   On success, Pv represents the value read or set.
+        // On success, Pv represents the value read or set.
 
         fn generate_response(pi: u16, ps: u16, pv: &[usize]) -> String {
             use std::fmt::Write;
@@ -3510,7 +3510,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
                 // Bg-only cells (BgPalette/BgRgb) reuse the upper 32
                 // bits for the background color — `extras_id()` and
-                // `set_extras_id()` would read/write garbage.  Reset
+                // `set_extras_id()` would read/write garbage. Reset
                 // to a plain Codepoint cell so the extras slot is
                 // usable.
                 if cell_ref.is_bg_only() {
@@ -5021,14 +5021,14 @@ mod tests {
     fn trailing_space_carries_across_wrap_continuation() {
         let mut term = make_term_for_selection(2, 5);
         let grid = &mut term.grid;
-        // Row 0: "ab   " with a wrap into row 1.
+        // Row 0: "ab " with a wrap into row 1.
         grid[Line(0)][Column(0)].set_c('a');
         grid[Line(0)][Column(1)].set_c('b');
         grid[Line(0)][Column(2)].set_c(' ');
         grid[Line(0)][Column(3)].set_c(' ');
         grid[Line(0)][Column(4)].set_c(' ');
         grid[Line(0)][Column(4)].set_wrapline(true);
-        // Row 1: " cd  "
+        // Row 1: " cd "
         grid[Line(1)][Column(0)].set_c(' ');
         grid[Line(1)][Column(1)].set_c('c');
         grid[Line(1)][Column(2)].set_c('d');
@@ -6026,9 +6026,9 @@ mod tests {
         let b = image_id & 0xFF;
 
         // 1) Transmit a 1×1 RGBA pixel under the chosen image_id (we
-        //    don't care about the pixel data — we just need an entry in
-        //    `kitty_images` so the renderer's existence check passes).
-        //    base64("\xFF\x00\x00\xFF") = "/wAA/w==".
+        // don't care about the pixel data — we just need an entry in
+        // `kitty_images` so the renderer's existence check passes).
+        // base64("\xFF\x00\x00\xFF") = "/wAA/w==".
         let xmit = format!("\x1b_Gf=32,a=t,i={image_id},s=1,v=1;/wAA/w==\x1b\\");
         processor.advance(&mut cw, xmit.as_bytes());
 
@@ -6039,8 +6039,8 @@ mod tests {
         processor.advance(&mut cw, place.as_bytes());
 
         // 3) Emit the placeholder cells themselves (what icat writes
-        //    after the placement APC). Set fg via colon-separated SGR,
-        //    write `<U+10EEEE><row><col><high>` per cell.
+        // after the placement APC). Set fg via colon-separated SGR,
+        // write `<U+10EEEE><row><col><high>` per cell.
         let id_high_diac = DIACRITICS[high as usize];
         let mut cells = format!("\x1b[38:2:{r}:{g}:{b}m");
         for (row, &row_diac) in DIACRITICS.iter().enumerate().take(rows as usize) {

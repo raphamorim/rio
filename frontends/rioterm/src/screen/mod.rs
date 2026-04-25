@@ -899,7 +899,7 @@ impl Screen<'_> {
                 //
                 // For more see https://github.com/rust-windowing/winit/issues/2945.
                 // if (cfg!(target_os = "macos") || (cfg!(windows) && mods.control_key()))
-                //     && mods.alt_key()
+                // && mods.alt_key()
                 if (mods.shift_key() || mods.alt_key())
                     || mods.alt_key() && (cfg!(windows) && mods.control_key())
                 {
@@ -1893,11 +1893,11 @@ impl Screen<'_> {
             // Mark the hint range as damaged so it gets re-rendered.
             //
             // Two damage signals are required:
-            //   * Terminal-side: `update_selection_damage` marks the affected
-            //     lines so the partial render path knows what to redraw.
-            //   * Renderer-side: `pending_update.set_terminal_damage(Full)`
-            //     ensures the render loop doesn't early-exit on
-            //     `!pending_update.is_dirty()`
+            // * Terminal-side: `update_selection_damage` marks the affected
+            // lines so the partial render path knows what to redraw.
+            // * Renderer-side: `pending_update.set_terminal_damage(Full)`
+            // ensures the render loop doesn't early-exit on
+            // `!pending_update.is_dirty()`
             {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
@@ -2836,7 +2836,7 @@ impl Screen<'_> {
         // Force unlimited search if the previous one was interrupted.
         // let timer_id = TimerId::new(Topic::DelayedSearch, self.display.window.id());
         // if self.scheduler.scheduled(timer_id) {
-        //     self.goto_match(None);
+        // self.goto_match(None);
         // }
 
         self.exit_search();
@@ -3521,17 +3521,17 @@ impl Screen<'_> {
         // Phase 2.2/2.3: per-panel CellBg + CellText emission with
         // per-row dirty gating. Iterates every panel in the active
         // grid. For each:
-        //   - `damage == Noop | CursorOnly` + grid not forcing full:
-        //         skip `write_row` entirely. Cursor state is carried
-        //         by `GridUniforms`, so a pure blink/move doesn't
-        //         touch the cell buffers.
-        //   - `damage == Full` | first-frame | resize:
-        //         rebuild every visible row.
-        //   - `damage == Partial(lines)`:
-        //         rebuild only those rows.
+        // - `damage == Noop | CursorOnly` + grid not forcing full:
+        // skip `write_row` entirely. Cursor state is carried
+        // by `GridUniforms`, so a pure blink/move doesn't
+        // touch the cell buffers.
+        // - `damage == Full` | first-frame | resize:
+        // rebuild every visible row.
+        // - `damage == Partial(lines)`:
+        // rebuild only those rows.
         // Unchanged rows keep their CellBg + CellText resident in
         // the grid's CPU state, which is re-uploaded verbatim. Same
-        // pattern as Ghostty's `.partial` path at
+        // pattern as `.partial` path at
         // `ghostty/src/renderer/generic.zig:2431-2440`.
         {
             struct PanelFrame {
@@ -3552,6 +3552,29 @@ impl Screen<'_> {
                 cursor_col: u16,
                 cursor_row: u16,
                 cursor_visible: bool,
+                /// Terminal-side cursor shape (block / underline /
+                /// beam / hidden). Driven by DECSCUSR + the
+                /// configured default. Mapped to a render style
+                /// inside the rebuild loop.
+                cursor_shape: rio_backend::ansi::CursorShape,
+                /// `true` when the terminal has cursor blink
+                /// enabled (DECTCEM blink mode or SGR cursor blink).
+                cursor_blinking: bool,
+                /// `true` for the visible half of the blink cycle.
+                /// Always `true` when blink isn't enabled. Driven
+                /// by `Renderer::run`'s blink toggler.
+                cursor_blink_visible: bool,
+                /// `true` while an IME pre-edit string is active —
+                /// forces a block cursor regardless of the
+                /// configured shape so the user can tell IME is
+                /// taking input.
+                cursor_preedit: bool,
+                /// Resolved cursor color: OSC 12 wins, then config /
+                /// theme `cursor`.
+                /// `state.colors.cursor → config.cursor_color`
+                /// resolution. Per-panel
+                /// because each terminal can issue its own OSC 12.
+                cursor_color: rio_backend::config::colors::ColorArray,
                 is_active: bool,
                 damage: rio_backend::event::TerminalDamage,
                 /// Selection is per-context (`renderable_content`), not
@@ -3566,12 +3589,12 @@ impl Screen<'_> {
                 /// search is inactive. Consumed alongside `selection`
                 /// inside `build_row_bg` / `build_row_fg` to apply
                 /// `search_match_background` / `_foreground`. Mirrors
-                /// Ghostty's `row_data.highlights` at
+                /// `row_data.highlights` at
                 /// `ghostty/src/renderer/generic.zig:1317`.
                 hint_matches: Option<Vec<rio_backend::crosswords::search::Match>>,
                 /// Currently-focused search match (↑/↓ navigation).
                 /// Rendered with `search_focused_match_background` /
-                /// `_foreground` — matches Ghostty's `.search_selected`
+                /// `_foreground` — `.search_selected`
                 /// highlight tag.
                 focused_match: Option<rio_backend::crosswords::search::Match>,
                 /// (start, end) of the currently-hovered hyperlink /
@@ -3664,6 +3687,19 @@ impl Screen<'_> {
                 } else {
                     None
                 };
+                let cursor_shape = cursor.state.content;
+                let cursor_blinking = ctx.renderable_content.has_blinking_enabled;
+                let cursor_blink_visible =
+                    !cursor_blinking || ctx.renderable_content.is_blinking_cursor_visible;
+                let cursor_preedit = ctx.ime.preedit().is_some();
+                // OSC 12 wins; otherwise fall back to the named-color
+                // theme value. `Renderer::color`'s fallback (the
+                // indexed-color List) is not populated for the Cursor
+                // slot — `List::fill_named` skips it — so we read
+                // `named_colors.cursor` directly.
+                let cursor_color = term_colors
+                    [rio_backend::config::colors::NamedColor::Cursor as usize]
+                    .unwrap_or(self.renderer.named_colors.cursor);
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
@@ -3678,6 +3714,11 @@ impl Screen<'_> {
                     cursor_col: cursor.state.pos.col.0 as u16,
                     cursor_row: cursor.state.pos.row.0 as u16,
                     cursor_visible: cursor.state.is_visible(),
+                    cursor_shape,
+                    cursor_blinking,
+                    cursor_blink_visible,
+                    cursor_preedit,
+                    cursor_color,
                     is_active,
                     damage,
                     selection,
@@ -3701,9 +3742,8 @@ impl Screen<'_> {
             // feeds into `Globals` — the grid shader applies the
             // matching sRGB → DisplayP3 transform so cell bg, window
             // fill, and UI overlays produce identical framebuffer
-            // colors. Matches Ghostty's single `load_color` path.
+            // colors. single `load_color` path.
             let input_colorspace = self.sugarloaf.input_colorspace();
-            let cursor_col_rgba = self.renderer.named_colors.cursor;
 
             let mut frame_grids: Vec<(
                 &mut rio_backend::sugarloaf::grid::GridRenderer,
@@ -3720,10 +3760,10 @@ impl Screen<'_> {
                 // Decide which rows to rebuild.
                 //
                 // `force_full` short-circuits damage to "rebuild all":
-                //   - grid was just created or resized (CPU buffers
-                //     are zeroed, so whatever damage says we have to
-                //     do a full fill).
-                //   - damage == Full (the terminal explicitly asked).
+                // - grid was just created or resized (CPU buffers
+                // are zeroed, so whatever damage says we have to
+                // do a full fill).
+                // - damage == Full (the terminal explicitly asked).
                 //
                 // `Noop` / `CursorOnly` → no row rebuilds, uniforms
                 // alone carry the frame's state change.
@@ -3845,12 +3885,56 @@ impl Screen<'_> {
                     }
                 }
 
+                // Cursor pipeline (`addCursor` /
+                // `cursor.style()`):
+                // 1. Decide render style with strict priority:
+                // preedit > visible > focused > blink > shape.
+                // 2. Always clear both cursor slots first — last
+                // frame's sprite (if any) needs to disappear
+                // whether we emit a new one or not.
+                // 3. Some(style): emit a sprite into slot 0 (block)
+                // or slot rows+1 (others). For Block we ALSO
+                // write the bg-tint uniforms below so the bg
+                // fragment paints the block + the text shader
+                // inverts the underlying glyph.
+                // 4. None: leave both slots empty + zero uniforms.
+                let render_style = crate::grid_emit::cursor_render_style(
+                    crate::grid_emit::CursorRenderInputs {
+                        visible: p.cursor_visible,
+                        focused: p.is_active,
+                        blink_visible: p.cursor_blink_visible,
+                        blinking: p.cursor_blinking,
+                        preedit: p.cursor_preedit,
+                        shape: p.cursor_shape,
+                    },
+                );
+                grid.clear_cursor();
+                if let Some(style) = render_style {
+                    let cell_w = p.cell_w.round().clamp(1.0, u32::MAX as f32) as u32;
+                    let cell_h = p.cell_h.round().clamp(1.0, u32::MAX as f32) as u32;
+                    let cursor_color = [
+                        (p.cursor_color[0].clamp(0.0, 1.0) * 255.0) as u8,
+                        (p.cursor_color[1].clamp(0.0, 1.0) * 255.0) as u8,
+                        (p.cursor_color[2].clamp(0.0, 1.0) * 255.0) as u8,
+                        255,
+                    ];
+                    crate::grid_emit::emit_cursor_sprite(
+                        grid,
+                        style,
+                        p.cursor_col,
+                        p.cursor_row,
+                        cursor_color,
+                        cell_w,
+                        cell_h,
+                    );
+                }
+
                 // Panel's grid origin in drawable-pixel space =
                 // window scaled_margin + the panel's layout rect
                 // offset inside the root container. Snap to integer
                 // pixels so `cell_size * grid_pos + grid_padding`
                 // always lands on pixel boundaries — same approach
-                // as Ghostty's `@floatFromInt(blank.top)` at
+                // as `@floatFromInt(blank.top)` at
                 // `ghostty/src/renderer/generic.zig:1976-1981`.
                 // Without this, a fractional margin (e.g. Taffy
                 // layout computing 10.5px offsets) shifts the whole
@@ -3861,21 +3945,26 @@ impl Screen<'_> {
                 let panel_left = (scaled_margin.left + p.layout_rect[0]).round();
                 let panel_top = (scaled_margin.top + p.layout_rect[1]).round();
 
-                let (cursor_pos, cursor_col_u, cursor_bg_u) =
-                    if p.is_active && p.cursor_visible {
-                        (
-                            [p.cursor_col as u32, p.cursor_row as u32],
-                            [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
-                            [
-                                cursor_col_rgba[0],
-                                cursor_col_rgba[1],
-                                cursor_col_rgba[2],
-                                1.0,
-                            ],
-                        )
-                    } else {
-                        ([u32::MAX; 2], [0.0; 4], [0.0; 4])
-                    };
+                // Bg-tint uniforms fire ONLY for the active block
+                // style — the bg shader paints the cursor cell in
+                // `cursor_bg_color` and the text shader swaps glyph
+                // fg to `cursor_color` (so the character inverts on
+                // top of the block). All other styles (bar /
+                // underline / hollow) draw via the sprite emitted
+                // above; their bg/text stays untouched. Same gate as
+                // .
+                let (cursor_pos, cursor_col_u, cursor_bg_u) = if matches!(
+                    render_style,
+                    Some(crate::grid_emit::CursorRenderStyle::Block)
+                ) {
+                    (
+                        [p.cursor_col as u32, p.cursor_row as u32],
+                        [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
+                        [p.cursor_color[0], p.cursor_color[1], p.cursor_color[2], 1.0],
+                    )
+                } else {
+                    ([u32::MAX; 2], [0.0; 4], [0.0; 4])
+                };
 
                 let uniforms = rio_backend::sugarloaf::grid::GridUniforms {
                     projection:
