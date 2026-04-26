@@ -1098,15 +1098,20 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
             let current = self.current();
             let cursor = current.cursor_from_ref();
-            let mut dimension = current.dimension;
+            let has_blinking_enabled = current.renderable_content.has_blinking_enabled;
 
-            // If current has splits then shouldn't use that dimension
-            if self.current_grid().len() > 1 {
-                dimension = self.current_grid().grid_dimension();
-            }
+            // Always rebuild from the grid: current.dimension can hold a
+            // panel-sized value (margin=0, width/height = window − margin)
+            // after apply_taffy_layout has run on the old tab. Feeding that
+            // to ContextGrid::new would have it subtract the margin a second
+            // time and store a too-small self.width/self.height, so the next
+            // hide_if_single transition (e.g. closing back to one tab) sizes
+            // the surviving panel for window − 2·margin and leaves a tab-bar-
+            // sized gap at the bottom.
+            let dimension = self.current_grid().grid_dimension();
 
             match ContextManager::create_context(
-                (&cursor, current.renderable_content.has_blinking_enabled),
+                (&cursor, has_blinking_enabled),
                 self.event_proxy.clone(),
                 self.window_id,
                 rich_text_id,
