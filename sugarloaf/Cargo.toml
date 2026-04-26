@@ -97,7 +97,7 @@ wyhash = "0.5.0"
 memmap2 = { workspace = true }
 font-kit = "0.14.3"
 walkdir = "2.5.0"
-softbuffer = "0.4"
+softbuffer = "0.4.8"
 ttf-parser = { version = "0.25.1", default-features = false, features = ["std", "opentype-layout", "apple-layout", "variable-fonts", "glyph-names"] }
 
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
@@ -107,12 +107,12 @@ fontconfig-parser = { version = "0.5.8", default-features = false }
 # the dep tree as a transitive of font-kit; promoted to a direct
 # dep so we can call `FcFontSort` + `FcCharSet*` ourselves. Debian
 # ships this as `librust-yeslogic-fontconfig-sys-dev`.
-yeslogic-fontconfig-sys = "6"
+yeslogic-fontconfig-sys = "6.0.0"
 # Native Vulkan backend (mirrors the Metal backend in scope: no librashader
 # filters, owns its own swapchain + pipelines). Linux-only for now — Windows
 # would need khr::win32_surface added to context::vulkan, and macOS keeps
 # the native Metal path.
-ash = "0.38"
+ash = "0.38.0"
 
 # Windows uses font-kit's `SystemSource::all_fonts()` walk for codepoint
 # discovery (see `font/windows.rs`). Pure DirectWrite via `IDWriteFontFallback`

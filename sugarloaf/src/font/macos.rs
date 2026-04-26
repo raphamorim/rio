@@ -760,8 +760,8 @@ pub fn advance_units_for_char(handle: &FontHandle, ch: char) -> Option<(f32, u16
 }
 
 /// Return the max advance width in pixels across all printable
-/// ASCII (U+0020..U+007E) at `size_px`. Mirrors Ghostty's
-/// cell-width derivation at `ghostty/src/font/face/coretext.zig:773-804`.
+/// ASCII (U+0020..U+007E) at `size_px`.
+/// cell-width derivation.
 ///
 /// Why ASCII-wide + max-of-all rather than just `space`:
 /// - Some fonts return `None` / glyph 0 for space and the caller
@@ -1183,7 +1183,7 @@ fn build_utf16_to_utf8_map(text: &str) -> Vec<usize> {
 /// `CFStringCreateWithCharactersNoCopy`, and `ShapedGlyph.cluster`
 /// comes back as a UTF-16 code-unit offset. Skips the UTF-8 → UTF-16
 /// conversion inside `CFString::new` AND the UTF-16 → UTF-8 mapping
-/// pass after CoreText. Mirrors Ghostty's CoreText shaper at
+/// pass after CoreText. CoreText shaper at
 /// `ghostty/src/font/shaper/coretext.zig:652-680`.
 pub fn shape_text_utf16(
     handle: &FontHandle,

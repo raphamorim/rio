@@ -371,6 +371,51 @@ impl WgpuGridRenderer {
         self.bg_dirty = true;
     }
 
+    pub fn set_block_cursor(&mut self, cells: &[CellText]) {
+        if let Some(slot) = self.fg_rows.first_mut() {
+            if slot.is_empty() && cells.is_empty() {
+                return;
+            }
+            slot.clear();
+            slot.extend_from_slice(cells);
+            self.fg_dirty = true;
+        }
+    }
+
+    pub fn set_non_block_cursor(&mut self, cells: &[CellText]) {
+        let idx = self.fg_rows.len().saturating_sub(1);
+        if let Some(slot) = self.fg_rows.get_mut(idx) {
+            if slot.is_empty() && cells.is_empty() {
+                return;
+            }
+            slot.clear();
+            slot.extend_from_slice(cells);
+            self.fg_dirty = true;
+        }
+    }
+
+    pub fn clear_cursor(&mut self) {
+        let mut changed = false;
+        if let Some(slot) = self.fg_rows.first_mut() {
+            if !slot.is_empty() {
+                slot.clear();
+                changed = true;
+            }
+        }
+        let last = self.fg_rows.len().saturating_sub(1);
+        if last > 0 {
+            if let Some(slot) = self.fg_rows.get_mut(last) {
+                if !slot.is_empty() {
+                    slot.clear();
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.fg_dirty = true;
+        }
+    }
+
     pub fn lookup_glyph(&self, key: GlyphKey) -> Option<AtlasSlot> {
         self.atlas_grayscale.lookup(key)
     }
@@ -627,7 +672,7 @@ fn create_text_atlas_bg(
 }
 
 fn premultiplied_blend() -> wgpu::BlendState {
-    // Premultiplied-over, matching Ghostty. Text fragment returns
+    // Premultiplied-over, matching Text fragment returns
     // premultiplied RGBA (`in.color * mask_a` for grayscale, atlas
     // sample for color), so source RGB must be `One`.
     wgpu::BlendState {

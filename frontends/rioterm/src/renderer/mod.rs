@@ -408,7 +408,7 @@ impl Renderer {
 
             // Recalculate image overlay positions every frame when placements
             // exist. Positions depend on display_offset and history_size which
-            // change on scroll and text output (like Ghostty's approach).
+            // change on scroll and text output (like approach).
             let has_overlays = !terminal_snapshot.kitty_placements.is_empty();
             let has_virtual = !terminal_snapshot.kitty_virtual_placements.is_empty();
             if has_overlays || has_virtual {
@@ -433,7 +433,7 @@ impl Renderer {
                     for p in &terminal_snapshot.kitty_placements {
                         let screen_row = p.dest_row - (history_size - display_offset);
                         let image_bottom_row = screen_row + p.rows as i64;
-                        // Cull only if fully off-screen (like Ghostty)
+                        // Cull only if fully off-screen (like )
                         if image_bottom_row <= 0 || screen_row >= screen_lines {
                             continue;
                         }
@@ -709,7 +709,7 @@ impl Renderer {
         // every frame, not just the frame where OSC arrived. Without
         // this, switching from a panel that ran OSC 11 to one that
         // didn't keeps sugarloaf's bg stuck at the OSC color — we
-        // want it to follow focus the way Ghostty does (each surface's
+        // want it to follow focus the way does (each surface's
         // `terminal.colors.background` drives its own window chrome).
         let current_context = context_manager.current_grid_mut().current_mut();
         let effective_bg = match &current_context.renderable_content.background {
@@ -775,18 +775,18 @@ impl Renderer {
     /// push one `GraphicOverlay` per row-run. Ports the four key behaviors
     /// from ghostty's `graphics_unicode.zig`:
     ///
-    ///   1. Per-row `kitty_virtual_placeholder` flag check skips rows
-    ///      with no placeholders (`page.zig:1953-1958`).
-    ///   2. Continuation rules — a cell with missing diacritics inherits
-    ///      from the previous cell on the row (`canAppend`,
-    ///      `graphics_unicode.zig:506-513`).
-    ///   3. Run aggregation — consecutive cells with same image / row /
-    ///      sequential column collapse into one Placement
-    ///      (`PlacementIterator.next`, `graphics_unicode.zig:36-99`).
-    ///   4. Per-run source rect with aspect-fit + centering — handles
-    ///      partial visibility (placement scrolled half off-screen) and
-    ///      cells that fall in the centering padding
-    ///      (`renderPlacement`, `graphics_unicode.zig:212-329`).
+    /// 1. Per-row `kitty_virtual_placeholder` flag check skips rows
+    ///    with no placeholders.
+    /// 2. Continuation rules — a cell with missing diacritics inherits
+    ///    from the previous cell on the row (`canAppend`,
+    ///    `graphics_unicode.zig:506-513`).
+    /// 3. Run aggregation — consecutive cells with same image / row /
+    ///    sequential column collapse into one Placement
+    ///    (`PlacementIterator.next`, `graphics_unicode.zig:36-99`).
+    /// 4. Per-run source rect with aspect-fit + centering — handles
+    ///    partial visibility (placement scrolled half off-screen) and
+    ///    cells that fall in the centering padding
+    ///    (`renderPlacement`, `graphics_unicode.zig:212-329`).
     fn push_virtual_placeholder_overlays(
         overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
         snapshot: &TerminalSnapshot,

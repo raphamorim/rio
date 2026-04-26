@@ -20,7 +20,7 @@
 //! Both populate the same `ShapedGlyph` shape and route into the same
 //! `GridRenderer` atlases via the same emit loop.
 //!
-//! Mirrors Ghostty's `font::shaper::run::RunIterator` (`run.zig`).
+//! `font::shaper::run::RunIterator`.
 
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::crosswords::grid::row::Row;
@@ -94,8 +94,8 @@ fn cell_in_row_sel(row_sel: Option<RowSelection>, col: u16) -> bool {
     }
 }
 
-/// Search-hint category at a cell. Matches Ghostty's `HighlightTag`
-/// (`ghostty/src/renderer/generic.zig:240`) — we use the same two-way
+/// Search-hint category at a cell. `HighlightTag`
+/// — we use the same two-way
 /// split so `search_focused_match_background` can override the regular
 /// match color on the currently-focused hit.
 ///
@@ -125,7 +125,7 @@ pub struct RowHint {
 ///
 /// `focused_match` is pushed first so it wins `cell_in_row_hints`
 /// iteration order when it overlaps another match — same precedence
-/// as Ghostty (`generic.zig:1330-1353`: "The order below matters.
+/// as (`generic.zig:1330-1353`: "The order below matters.
 /// Highlights added earlier will take priority").
 pub fn row_hints_for(
     hint_matches: Option<&[Match]>,
@@ -256,7 +256,7 @@ use rio_backend::sugarloaf::grid::{
     AtlasSlot, CellBg, CellText, GlyphKey, GridRenderer, RasterizedGlyph,
 };
 
-//  Bg + shared helpers
+// Bg + shared helpers
 
 pub fn cell_fg(
     sq: Square,
@@ -267,15 +267,18 @@ pub fn cell_fg(
     if sq.is_bg_only() {
         return normalized_to_u8(renderer.named_colors.foreground);
     }
-    let style = style_set.get(sq.style_id());
+    let mut style = style_set.get(sq.style_id());
+    if style.flags.contains(StyleFlags::INVERSE) {
+        std::mem::swap(&mut style.fg, &mut style.bg);
+    }
     let color = renderer.compute_color(&style.fg, style.flags, term_colors);
     normalized_to_u8(color)
 }
 
-/// Foreground for a selected cell. Mirrors Ghostty's selection-fg
-/// rule (`generic.zig:2867`): use the configured `selection-foreground`
+/// Foreground for a selected cell. selection-fg
+/// rule: use the configured `selection-foreground`
 /// unless the user asked to keep the cell's own fg (Rio's
-/// `ignore-selection-foreground-color`). Ghostty falls back to
+/// `ignore-selection-foreground-color`). falls back to
 /// `state.colors.background` when no color is configured; Rio always
 /// has a default selection_foreground populated in its theme, so we
 /// use it directly.
@@ -293,9 +296,9 @@ pub fn cell_fg_selected(
     }
 }
 
-//  Decoration sprites (underlines, strikethrough)
+// Decoration sprites (underlines, strikethrough)
 //
-// Ghostty pre-rasterizes underline/strikethrough sprites into the
+// pre-rasterizes underline/strikethrough sprites into the
 // grayscale atlas and emits them as regular `CellText` entries
 // (`ghostty/src/font/sprite/draw/special.zig`,
 // `ghostty/src/renderer/generic.zig:3074`). We do the same: one sprite
@@ -317,10 +320,299 @@ enum DecorationStyle {
 /// Sentinel font_id base for decoration sprites. Real font_ids come
 /// from sugarloaf's font library which packs into usize indices
 /// starting at 0; 0xFFFF_FF00+ is far outside that range. Matches
-/// Ghostty's `font.sprite_index` idea (`font/sprite.zig:17`).
+/// `font.sprite_index` idea.
 const DECORATION_FONT_ID_BASE: u32 = 0xFFFF_FF00;
 
-/// Underline thickness in physical pixels. Matches Ghostty's fallback
+/// Sentinel font_id base for cursor sprites. Distinct from the
+/// decoration range so the two never collide in the atlas
+/// hash-key space.
+const CURSOR_FONT_ID_BASE: u32 = 0xFFFF_FE00;
+
+/// Cursor sprite styles. `font.Sprite::cursor_*`
+///. Each variant maps to a distinct
+/// rasterized bitmap stored in the grid's grayscale atlas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+enum CursorSpriteStyle {
+    /// Full-cell filled rectangle. Drawn UNDER text via slot 0 so
+    /// inverted text composites on top.
+    Block = 0,
+    /// Outlined rectangle (focused-cell border for inactive panes).
+    Hollow = 1,
+    /// Vertical bar, `thickness` px wide, centered on the LEFT edge
+    /// of the cursor cell (straddles the cell boundary).
+    Bar = 2,
+    /// Horizontal bar at the underline position, `thickness` px tall.
+    Underline = 3,
+}
+
+impl CursorSpriteStyle {
+    /// Block cursors land in `fg_rows[0]` so glyphs draw on top
+    /// (the text shader's fg-swap handles the inverted character).
+    /// Everything else lands in the non-block slot to overlay text.
+    #[inline]
+    fn is_block_slot(self) -> bool {
+        matches!(self, CursorSpriteStyle::Block)
+    }
+}
+
+/// Top-level cursor render decision.
+/// `renderer::cursor::Style` enum — a
+/// superset of the terminal's cursor shapes that adds the
+/// inactive-pane variant. Lock isn't implemented yet; password-input
+/// detection would need DEC mode 2004 plumbing in the parser.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CursorRenderStyle {
+    /// Active focused block, painted via uniforms (text inverts).
+    /// Also emits a `cursor_rect` sprite into slot 0 for parity with
+    /// .
+    Block,
+    /// Outlined rectangle for inactive split panels.
+    BlockHollow,
+    /// Vertical bar (`beam` in rio's config; calls it `bar`).
+    Bar,
+    /// Underscore at the cell baseline.
+    Underline,
+}
+
+/// Inputs to the cursor-style decision.
+/// `renderer::cursor::StyleOptions`.
+pub struct CursorRenderInputs {
+    /// `false` when DECTCEM hides the cursor.
+    pub visible: bool,
+    /// `true` when this panel currently has focus.
+    pub focused: bool,
+    /// `true` for the visible half of a blink cycle. Pass `true`
+    /// when blink is disabled.
+    pub blink_visible: bool,
+    /// `true` when the cursor is blinking (DEC blinking shape, or
+    /// SGR cursor blink).
+    pub blinking: bool,
+    /// `true` while an IME pre-edit string is active. Forces block
+    /// regardless of the configured shape so the user can tell IME
+    /// is taking input.
+    pub preedit: bool,
+    /// The terminal-side configured cursor shape (block / underline /
+    /// beam / hidden).
+    pub shape: rio_backend::ansi::CursorShape,
+}
+
+/// Decide which cursor variant to render this frame, or `None` to
+/// skip emission entirely (hidden cursor / blink-off half-frame).
+/// Strict priority order mirrors :
+/// preedit > visibility > focused > blink > terminal shape.
+pub fn cursor_render_style(opts: CursorRenderInputs) -> Option<CursorRenderStyle> {
+    use rio_backend::ansi::CursorShape;
+    if opts.preedit {
+        return Some(CursorRenderStyle::Block);
+    }
+    if !opts.visible || opts.shape == CursorShape::Hidden {
+        return None;
+    }
+    if !opts.focused {
+        return Some(CursorRenderStyle::BlockHollow);
+    }
+    if opts.blinking && !opts.blink_visible {
+        return None;
+    }
+    Some(match opts.shape {
+        CursorShape::Block => CursorRenderStyle::Block,
+        CursorShape::Underline => CursorRenderStyle::Underline,
+        CursorShape::Beam => CursorRenderStyle::Bar,
+        // Hidden was filtered out by the visibility check above.
+        CursorShape::Hidden => unreachable!("hidden shape is filtered above"),
+    })
+}
+
+impl CursorRenderStyle {
+    #[inline]
+    fn sprite(self) -> CursorSpriteStyle {
+        match self {
+            CursorRenderStyle::Block => CursorSpriteStyle::Block,
+            CursorRenderStyle::BlockHollow => CursorSpriteStyle::Hollow,
+            CursorRenderStyle::Bar => CursorSpriteStyle::Bar,
+            CursorRenderStyle::Underline => CursorSpriteStyle::Underline,
+        }
+    }
+}
+
+/// Cursor stroke thickness in physical px. pulls this from
+/// font metrics (`metrics.cursor_thickness`); we approximate from
+/// cell height. Capped at 2 px so deeply-zoomed cells don't get a
+/// chunky frame / fat bar instead of a cursor hint.
+#[inline]
+fn cursor_thickness(cell_h: u32) -> u32 {
+    (cell_h / 16).clamp(1, 2)
+}
+
+/// Per-style sprite bitmap + bearings. Top-of-sprite bearing is
+/// `cell_h` for vertical-fill sprites (block / hollow / bar) so the
+/// sprite's top edge aligns with the cell top; underline uses a
+/// smaller bearing so the sprite sits near the cell baseline.
+fn rasterize_cursor(
+    style: CursorSpriteStyle,
+    cell_w: u32,
+    cell_h: u32,
+    thickness: u32,
+) -> (Vec<u8>, u16, u16, i16, i16) {
+    let t = thickness.max(1);
+    match style {
+        CursorSpriteStyle::Block => {
+            // Full-cell fill.
+            let bytes = vec![0xFFu8; (cell_w * cell_h) as usize];
+            (
+                bytes,
+                cell_w.min(u16::MAX as u32) as u16,
+                cell_h.min(u16::MAX as u32) as u16,
+                0,
+                cell_h.min(i16::MAX as u32) as i16,
+            )
+        }
+        CursorSpriteStyle::Hollow => {
+            // Filled rect minus inset rect (= border ring). Same as
+            // `cursor_hollow_rect`.
+            let row_w = cell_w as usize;
+            let h = cell_h as usize;
+            let mut bytes = vec![0u8; row_w * h];
+            let ti = (t as usize).max(1);
+            for row in 0..ti.min(h) {
+                let s = row * row_w;
+                bytes[s..s + row_w].fill(0xFF);
+            }
+            for row in h.saturating_sub(ti)..h {
+                let s = row * row_w;
+                bytes[s..s + row_w].fill(0xFF);
+            }
+            for row in ti..h.saturating_sub(ti) {
+                let s = row * row_w;
+                for col in 0..ti.min(row_w) {
+                    bytes[s + col] = 0xFF;
+                }
+                for col in row_w.saturating_sub(ti)..row_w {
+                    bytes[s + col] = 0xFF;
+                }
+            }
+            (
+                bytes,
+                cell_w.min(u16::MAX as u32) as u16,
+                cell_h.min(u16::MAX as u32) as u16,
+                0,
+                cell_h.min(i16::MAX as u32) as i16,
+            )
+        }
+        CursorSpriteStyle::Bar => {
+            // Vertical bar `t` px wide, full cell height. Negative
+            // bearing_x straddles the cell boundary so a bar between
+            // cells `n-1` and `n` looks right. uses
+            // `x = -(thickness + 1) / 2`.
+            let bytes = vec![0xFFu8; (t * cell_h) as usize];
+            let bearing_x = -((t as i16 + 1) / 2);
+            (
+                bytes,
+                t.min(u16::MAX as u32) as u16,
+                cell_h.min(u16::MAX as u32) as u16,
+                bearing_x,
+                cell_h.min(i16::MAX as u32) as i16,
+            )
+        }
+        CursorSpriteStyle::Underline => {
+            // Horizontal bar at the underline position. Reuse the
+            // SGR-underline gap formula so the cursor underline sits
+            // at the same baseline as a regular underline.
+            let bytes = vec![0xFFu8; (cell_w * t) as usize];
+            // The text shader's `glyph_y = cell_pos.y + cell_h -
+            // bearing_y` puts the sprite top at
+            // `cell_h - (t + gap)`, leaving a `gap` of empty rows
+            // below the underline.
+            let bearing_y = (t + underline_gap_below(cell_h)) as i16;
+            (
+                bytes,
+                cell_w.min(u16::MAX as u32) as u16,
+                t.min(u16::MAX as u32) as u16,
+                0,
+                bearing_y,
+            )
+        }
+    }
+}
+
+/// Lookup or insert a cursor sprite. `size_bucket` packs `(thickness,
+/// cell_h)` so a font-size or DPI change invalidates the cached
+/// sprite. `cell_w` is the glyph_id so wide-cell sprites (CJK
+/// double-width) get their own slot.
+fn ensure_cursor_sprite_slot(
+    grid: &mut GridRenderer,
+    style: CursorSpriteStyle,
+    cell_w: u32,
+    cell_h: u32,
+    thickness: u32,
+) -> Option<AtlasSlot> {
+    let key = GlyphKey {
+        font_id: CURSOR_FONT_ID_BASE + style as u32,
+        glyph_id: cell_w,
+        size_bucket: ((thickness as u16 & 0xF) << 12) | (cell_h.min(0xFFF) as u16),
+    };
+    if let Some(slot) = grid.lookup_glyph(key) {
+        return Some(slot);
+    }
+    let (bytes, w, h, bearing_x, bearing_y) =
+        rasterize_cursor(style, cell_w, cell_h, thickness);
+    grid.insert_glyph(
+        key,
+        RasterizedGlyph {
+            width: w,
+            height: h,
+            bearing_x,
+            bearing_y,
+            bytes: &bytes,
+        },
+    )
+}
+
+/// Emit a cursor sprite into the appropriate `fg_rows` slot. Caller
+/// is responsible for clearing the OTHER slot (so a previous-frame
+/// block doesn't linger when this frame draws a hollow, etc.) — see
+/// `grid.clear_cursor()`. `addCursor`
+///.
+pub fn emit_cursor_sprite(
+    grid: &mut GridRenderer,
+    style: CursorRenderStyle,
+    col: u16,
+    row: u16,
+    color: [u8; 4],
+    cell_w: u32,
+    cell_h: u32,
+) {
+    let sprite = style.sprite();
+    let thickness = cursor_thickness(cell_h);
+    let Some(slot) = ensure_cursor_sprite_slot(grid, sprite, cell_w, cell_h, thickness)
+    else {
+        return;
+    };
+    if slot.w == 0 || slot.h == 0 {
+        return;
+    }
+    let cursor_cell = CellText {
+        glyph_pos: [slot.x as u32, slot.y as u32],
+        glyph_size: [slot.w as u32, slot.h as u32],
+        bearings: [slot.bearing_x, slot.bearing_y],
+        grid_pos: [col, row],
+        color,
+        atlas: CellText::ATLAS_GRAYSCALE,
+        // Marks this as "the cursor itself" so the text shader's
+        // fg-swap skips it (the sprite paints in `color` directly,
+        // not in `cursor_color` from the uniforms).
+        bools: CellText::BOOL_IS_CURSOR_GLYPH,
+        _pad: [0, 0],
+    };
+    if sprite.is_block_slot() {
+        grid.set_block_cursor(&[cursor_cell]);
+    } else {
+        grid.set_non_block_cursor(&[cursor_cell]);
+    }
+}
+
+/// Underline thickness in physical pixels. fallback
 /// (15% of ex-height, min 1px) when the font doesn't expose
 /// `underline_thickness` — we don't thread per-font metrics through to
 /// decorations because runs can mix fonts inside a row. 0.075 * size_px
@@ -332,7 +624,7 @@ fn decoration_thickness(size_px: f32) -> u32 {
 
 /// Offset (in pixels, from cell bottom) at which the BOTTOM of an
 /// underline sits. Small gap so underlines don't merge with the row
-/// below. Mirrors the spirit of Ghostty's `underline_position` but
+/// below. Mirrors the spirit of `underline_position` but
 /// simplified — we don't have per-font metrics here.
 #[inline]
 fn underline_gap_below(cell_h: u32) -> u32 {
@@ -402,7 +694,7 @@ fn rasterize_decoration(
             // segment widths differ by a single pixel inside the
             // cell but the cell-to-cell rhythm stays regular.
             //
-            // Ghostty uses 3 segments per cell (`special.zig:135`)
+            // uses 3 segments per cell
             // which meets DASH-to-DASH at every cell boundary — we
             // prefer the 4-segment layout because it stays periodic
             // under tiling.
@@ -428,10 +720,10 @@ fn rasterize_decoration(
         DecorationStyle::CurlyUnderline => {
             // One arch per cell: baseline → peak-at-center → baseline,
             // with horizontal tangents at cell edges so tiled sprites
-            // join smoothly. Matches Ghostty's two-cubic-Bezier shape
-            // (`ghostty/src/font/sprite/draw/special.zig:167`):
-            //   amplitude = cell_w / π
-            //   stroke width = thickness, round caps
+            // join smoothly. two-cubic-Bezier shape
+            //:
+            // amplitude = cell_w / π
+            // stroke width = thickness, round caps
             // We approximate the Bezier with a raised cosine, which
             // has the same endpoints, same peak, and the same
             // horizontal tangent at the edges. The two curves differ
@@ -528,7 +820,7 @@ fn underline_style_from_flags(flags: StyleFlags) -> Option<DecorationStyle> {
 }
 
 /// Decoration color: SGR 58 `underline_color` if set, else the cell's
-/// computed fg. Matches Ghostty `generic.zig:2968`.
+/// computed fg. `generic.zig:2968`.
 #[inline]
 fn decoration_color(
     sq: Square,
@@ -560,7 +852,10 @@ pub fn cell_bg(
             renderer.color(idx, term_colors)
         }
         ContentTag::Codepoint => {
-            let style = style_set.get(sq.style_id());
+            let mut style = style_set.get(sq.style_id());
+            if style.flags.contains(StyleFlags::INVERSE) {
+                std::mem::swap(&mut style.fg, &mut style.bg);
+            }
             renderer.compute_bg_color(&style, term_colors)
         }
     };
@@ -631,7 +926,7 @@ pub fn build_row_bg(
         let col = x as u16;
         let rgba = if cell_in_row_sel(row_sel, col) {
             // Selection bg wins over hint bg and the cell's own bg,
-            // matching Ghostty `generic.zig:2775-2800` (selection check
+            // matching `generic.zig:2775-2800` (selection check
             // runs before highlight check).
             sel_bg.unwrap_or_else(|| cell_bg(sq, style_set, renderer, term_colors))
         } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
@@ -652,14 +947,14 @@ pub fn build_row_bg(
     }
 }
 
-//  Run-shaping infrastructure (platform-agnostic types)
+// Run-shaping infrastructure (platform-agnostic types)
 
 /// Bits of `StyleFlags` that change shaping / font selection. Bold +
 /// italic pick different font files. Color / decoration / dim don't
 /// affect shaping so they don't break runs.
 const SHAPING_FLAG_MASK: u16 = StyleFlags::BOLD.bits() | StyleFlags::ITALIC.bits();
 
-/// 256 × 8 bucketed LRU cache — matches Ghostty's CellCacheTable.
+/// 256 × 8 bucketed LRU cache — CellCacheTable.
 const RUN_BUCKET_COUNT: usize = 256;
 const RUN_BUCKET_SIZE: usize = 8;
 
@@ -678,8 +973,8 @@ struct ShapedGlyph {
 struct RunCacheEntry {
     /// 64-bit rapidhash of (font_id, size_bucket, style_flags, run bytes).
     /// We key on the hash alone — no stored run string, no equality
-    /// check on lookup. Matches Ghostty's `CellCacheTable` pattern
-    /// (`font/shaper/Cache.zig:20-30`): rapidhash / wyhash pass
+    /// check on lookup. `CellCacheTable` pattern
+    ///: rapidhash / wyhash pass
     /// SMHasher, so a random collision costs a wrong-glyph frame
     /// until the next row rebuild but never corrupts state. Birthday
     /// bound at N=10k concurrent cache entries ≈ 2.7×10⁻¹².
@@ -699,7 +994,7 @@ pub struct GridGlyphRasterizer {
     // macOS: stage the run in UTF-16 (what CoreText wants natively)
     // so the shaper call can hand the buffer straight to
     // `CFStringCreateWithCharactersNoCopy` with no encoding
-    // conversion. Matches Ghostty's `coretext.zig:88-104` — UTF-16
+    // conversion. `coretext.zig:88-104` — UTF-16
     // `unichars` + a parallel cell-start table for the cluster →
     // cell mapping.
     #[cfg(target_os = "macos")]
@@ -773,7 +1068,7 @@ impl GridGlyphRasterizer {
     ) -> (u32, bool) {
         // ASCII printable + regular style → always primary font, never
         // emoji. Skips the FxHashMap lookup that dominates this fn's
-        // cost on terminal-typical content. Mirrors Ghostty's
+        // cost on terminal-typical content.
         // `font/Group.zig` indexForCodepoint ASCII fast path.
         //
         // Bold / italic ASCII still goes through the cache because
@@ -831,7 +1126,7 @@ fn span_style_for_flags(style_flags: u8) -> rio_backend::sugarloaf::SpanStyle {
 }
 
 /// Rapidhash-based run key. Rapidhash is the official successor to
-/// wyhash (Ghostty's choice at `font/shaper/run.zig:8`) — same
+/// wyhash (choice) — same
 /// quality, passes SMHasher, near-ideal collision probability. We use
 /// the streaming `Hasher` API so we don't have to glue the inputs
 /// into a single byte slice.
@@ -864,8 +1159,8 @@ fn is_run_breaker(sq: Square) -> bool {
 
 /// Lookup. Hash → bucket; scan from most-recent; rotate on hit. No
 /// secondary comparison — we trust the 64-bit rapidhash to be
-/// collision-free across realistic workloads. Matches Ghostty
-/// (`font/shaper/Cache.zig:27`).
+/// collision-free across realistic workloads. Matches
+///.
 fn run_cache_get(
     buckets: &mut [Vec<RunCacheEntry>],
     hash: u64,
@@ -894,7 +1189,7 @@ fn run_cache_put(buckets: &mut [Vec<RunCacheEntry>], entry: RunCacheEntry) {
     bucket.push(entry);
 }
 
-//  Platform-specific shape + ascent helpers
+// Platform-specific shape + ascent helpers
 
 /// Shape a single run on macOS via CoreText and populate
 /// `out.ascent_px` as a side effect via the rasterizer's cache.
@@ -1000,13 +1295,13 @@ fn shape_run_swash(
     Some((glyphs, ascent_px))
 }
 
-//  Emission
+// Emission
 
 /// Run-level fg emission. Shapes once per run, emits one CellText per
 /// shaped glyph. Works on both macOS (CoreText) and non-macOS (swash).
 ///
 /// Emits in three ordered phases so decoration z-order matches
-/// Ghostty's: underlines first (drawn under glyphs), glyphs, then
+/// 's: underlines first (drawn under glyphs), glyphs, then
 /// strikethroughs (drawn on top).
 #[allow(clippy::too_many_arguments)]
 pub fn build_row_fg(
@@ -1257,7 +1552,7 @@ pub fn build_row_fg(
             let src_sq = row[Column(src_col)];
             let (atlas, color) = if is_color {
                 // Colour glyphs (emoji) don't take the selection-fg /
-                // hint-fg swap — matches Ghostty's behaviour for
+                // hint-fg swap — behaviour for
                 // bitmap/COLR atlas entries.
                 (CellText::ATLAS_COLOR, [255, 255, 255, 255])
             } else if !needs_per_cell_check {
@@ -1281,7 +1576,7 @@ pub fn build_row_fg(
                     )
                 } else if let Some(tag) = hint_tag {
                     // Hint-fg wins over the cell's own fg, matching
-                    // Ghostty's `.search` / `.search_selected` branches at
+                    // `.search` / `.search_selected` branches at
                     // `generic.zig:2829-2833` (the fg picker mirrors bg).
                     (CellText::ATLAS_GRAYSCALE, cell_fg_hinted(tag, renderer))
                 } else {
@@ -1350,7 +1645,7 @@ fn emit_underlines(
         // hover-only forced underline. When the cell has no SGR
         // decoration but is inside a hovered hyperlink, emit a plain
         // single-line underline using the cell fg color — same shape
-        // as Ghostty's hyperlink-hover affordance.
+        // as hyperlink-hover affordance.
         let (deco, hover_force) = match underline_style_from_flags(style.flags) {
             Some(d) => (d, false),
             None if cell_in_hover_underline(row_hints, col) => {
@@ -1378,7 +1673,7 @@ fn emit_underlines(
         } else if hover_force {
             // Hover-only forced underline: use the cell fg so the
             // underline tracks the hyperlink text color (matches
-            // Ghostty's hyperlink hover affordance).
+            // hyperlink hover affordance).
             cell_fg(sq, style_set, renderer, term_colors)
         } else {
             decoration_color(sq, &style, style_set, renderer, term_colors)
@@ -1432,7 +1727,7 @@ fn emit_strikethroughs(
         }
         let col = x as u16;
         // Strikethrough always uses the cell fg (there's no SGR for
-        // a separate strike color, matching Ghostty).
+        // a separate strike color, matching ).
         let color = if cell_in_row_sel(row_sel, col) {
             cell_fg_selected(sq, style_set, renderer, term_colors)
         } else if let Some(tag) = cell_in_row_hints(row_hints, col) {

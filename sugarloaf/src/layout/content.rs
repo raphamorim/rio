@@ -357,7 +357,7 @@ pub enum SpanStyleDecoration {
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct SpanStyle {
     pub font_id: usize,
-    //  Unicode width
+    // Unicode width
     pub width: f32,
     /// Font attributes.
     pub font_attrs: Attributes,
@@ -549,14 +549,14 @@ impl Content {
             // Cell width = max advance across all printable ASCII,
             // queried on a CTFont clone at the real render size (not
             // the 1pt base — that returns bogus 1.0-per-glyph
-            // advances on some fonts). Mirrors Ghostty
-            // (`coretext.zig:773-804`). Progressive fallbacks:
-            //   1. max-ASCII at this size (right answer on every
-            //      real font we've seen)
-            //   2. advance of space (pre-existing behaviour; may
-            //      return None)
-            //   3. `font_size` itself (the em — last-resort, wider
-            //      than any real monospace advance)
+            // advances on some fonts). Mirrors
+            //. Progressive fallbacks:
+            // 1. max-ASCII at this size (right answer on every
+            // real font we've seen)
+            // 2. advance of space (pre-existing behaviour; may
+            // return None)
+            // 3. `font_size` itself (the em — last-resort, wider
+            // than any real monospace advance)
             let char_width = crate::font::macos::max_ascii_advance_px(&handle, font_size)
                 .or_else(|| {
                     crate::font::macos::advance_units_for_char(&handle, ' ')
@@ -627,8 +627,8 @@ impl Content {
                         scale: layout.dimensions.scale,
                     };
 
-                    // println!("  -> Returning dimensions (physical): width={}, height={}, scale={}",
-                    //     result.width, result.height, result.scale);
+                    // println!(" -> Returning dimensions (physical): width={}, height={}, scale={}",
+                    // result.width, result.height, result.scale);
 
                     return result;
                 }
@@ -1416,7 +1416,7 @@ impl Content {
     }
 }
 
-/// Run-level shaping cache (like Ghostty's ShaperCache).
+/// Run-level shaping cache (like ShaperCache).
 ///
 /// Caches pre-packed shaped runs per text run, keyed by (content + font_id).
 /// The shaper always sees the full run so ligatures are handled naturally.

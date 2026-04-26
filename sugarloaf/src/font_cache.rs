@@ -161,7 +161,7 @@ pub(crate) fn compute_advance(
 }
 
 /// macOS variant: derive the advance from CoreText without ever touching
-/// the font's raw bytes. Matches Ghostty's bytes-free font handling on
+/// the font's raw bytes. bytes-free font handling on
 /// mac.
 #[cfg(target_os = "macos")]
 pub(crate) fn compute_advance(

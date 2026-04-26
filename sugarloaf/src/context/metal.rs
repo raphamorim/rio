@@ -192,8 +192,8 @@ impl MetalContext {
     }
 
     // fn create_command_encoder(&self) -> Self::CommandEncoder {
-    //     let command_buffer = self.command_queue.new_command_buffer().to_owned();
-    //     MetalCommandEncoder { command_buffer }
+    // let command_buffer = self.command_queue.new_command_buffer().to_owned();
+    // MetalCommandEncoder { command_buffer }
     // }
 
     pub fn supports_f16(&self) -> bool {
