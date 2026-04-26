@@ -1,33 +1,27 @@
 mod batch;
 mod compositor;
 pub mod cpu;
-mod image_cache;
-#[cfg(test)]
-mod positioning_tests;
-pub mod text;
-mod text_run_manager;
+pub(crate) mod image_cache;
+#[cfg(target_os = "linux")]
+pub mod vulkan;
 
 use crate::components::core::orthographic_projection;
+#[cfg(feature = "wgpu")]
 use crate::context::webgpu::WgpuContext;
 use crate::context::{Context, ContextType};
 use crate::font::FontLibrary;
-use crate::font_introspector::GlyphId;
-use crate::layout::{TextDimensions, TextLayout};
-use crate::renderer::image_cache::{GlyphCache, ImageCache};
-use crate::renderer::text_run_manager::{CacheResult, TextRunManager};
-use crate::sugarloaf::graphics::GraphicId;
+use crate::layout::TextDimensions;
+use crate::renderer::image_cache::ImageCache;
 use crate::Graphics;
-use crate::RichTextLinesRange;
 use compositor::{Compositor, Rect, Vertex};
 use rustc_hash::FxHashMap;
-use std::collections::HashSet;
+use std::mem;
 #[cfg(target_os = "macos")]
 use std::sync::Arc;
-use std::{borrow::Cow, mem};
 
 #[cfg(target_os = "macos")]
 use parking_lot::Mutex;
-use text::{Glyph, TextRunStyle};
+#[cfg(feature = "wgpu")]
 use wgpu::util::DeviceExt;
 
 #[cfg(target_os = "macos")]
@@ -35,6 +29,10 @@ use crate::context::metal::MetalContext;
 #[cfg(target_os = "macos")]
 use metal::*;
 
+#[cfg(feature = "wgpu")]
+use std::borrow::Cow;
+
+#[cfg(feature = "wgpu")]
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
         src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -56,13 +54,20 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
 // on every render call.
 #[allow(clippy::large_enum_variant)]
 pub enum RendererType {
+    #[cfg(feature = "wgpu")]
     Wgpu(WgpuRenderer),
     #[cfg(target_os = "macos")]
     Metal(MetalRenderer),
+    /// Native Vulkan backend (Linux). Mirrors the `Metal` variant in
+    /// scope: no librashader filters. Phase 1 = clear-and-present;
+    /// real pipelines land in later phases.
+    #[cfg(target_os = "linux")]
+    Vulkan(vulkan::VulkanRenderer),
     /// CPU backend: no GPU brush; rasterization happens in `cpu::CpuPipeline` at present time.
     Cpu,
 }
 
+#[cfg(feature = "wgpu")]
 pub struct WgpuRenderer {
     vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
@@ -92,7 +97,7 @@ pub struct WgpuRenderer {
 /// them to the DisplayP3-tagged framebuffer:
 /// - `0` = sRGB. Apply the sRGB → DisplayP3 primaries matrix after
 ///   linearization so `#ff0000` displays as the sRGB-standard red rather than
-///   P3-pure red. Matches ghostty's default.
+///   P3-pure red.
 /// - `1` = DisplayP3. Treat inputs as already-P3, skip the matrix.
 /// - `2` = Rec.2020. Skipped (matrix pending), matches `1` in practice.
 ///
@@ -705,26 +710,28 @@ impl MetalRenderer {
     }
 }
 
-struct CachedGraphic {
-    location: image_cache::ImageLocation,
-    /// Atlas allocation ID for deallocation.
-    image_id: image_cache::ImageId,
-    width: f32,
-    height: f32,
-    last_used_frame: u64,
-    /// Atlas layer index (1-based, 0 = no texture)
-    atlas_layer: i32,
-}
-
 /// Backend-agnostic per-image GPU texture.
 /// Dropped when removed from the map → GPU memory freed immediately.
+///
+/// The Vulkan variant carries an inline `VulkanImageTexture`
+/// (image + view + memory + per-image descriptor pool/set) which is
+/// larger than the other variants. Boxing it would buy nothing —
+/// each entry is constructed once, lives until eviction, and is
+/// only stored in the per-image map.
+#[allow(clippy::large_enum_variant)]
 enum ImageTexture {
+    #[cfg(feature = "wgpu")]
     Wgpu {
         _texture: wgpu::Texture, // kept alive so `view` stays valid
         view: wgpu::TextureView,
     },
     #[cfg(target_os = "macos")]
     Metal(metal::Texture),
+    /// Native Vulkan upload — owns image + view + descriptor set
+    /// (the descriptor set's binding 0 is wired to the image view +
+    /// shared sampler at upload time, so draw paths just bind it).
+    #[cfg(target_os = "linux")]
+    Vulkan(vulkan::VulkanImageTexture),
 }
 
 /// Per-image texture entry stored in the renderer.
@@ -735,15 +742,20 @@ struct ImageTextureEntry {
 
 /// Per-instance data for image rendering (one instance = one image placement).
 /// The vertex shader generates 4 quad corners from vertex_id.
+///
+/// `pub` because it appears in the signature of
+/// `vulkan::VulkanRenderer::render_image_overlays` (also `pub` so
+/// the `Renderer` dispatcher can call it). Not part of the crate's
+/// public API in spirit — just in visibility.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
-struct ImageInstance {
+pub struct ImageInstance {
     /// Screen position of the image top-left (physical pixels).
-    dest_pos: [f32; 2],
+    pub dest_pos: [f32; 2],
     /// Size of the image on screen (physical pixels).
-    dest_size: [f32; 2],
+    pub dest_size: [f32; 2],
     /// Source rectangle in the texture: xy = origin, zw = size (normalized 0..1).
-    source_rect: [f32; 4],
+    pub source_rect: [f32; 4],
 }
 
 /// Which layer to render the image in (relative to text).
@@ -776,10 +788,6 @@ pub struct Renderer {
     vertices: Vec<Vertex>,
     draw_cmds: Vec<batch::DrawCmd>,
     images: ImageCache,
-    glyphs: GlyphCache,
-    text_run_manager: TextRunManager,
-    graphic_cache: FxHashMap<GraphicId, CachedGraphic>,
-    current_frame: u64,
     /// Per-image GPU textures (one map, any backend).
     image_textures: FxHashMap<u32, ImageTextureEntry>,
     /// Image draw commands for the current frame.
@@ -804,6 +812,19 @@ fn upload_background_image_texture(
     }
     let gpu = match &context.inner {
         crate::context::ContextType::Cpu(_) => return None,
+        // Vulkan path: the renderer owns the descriptor-set layout
+        // and shared sampler; we read them off the live brush_type
+        // here. Only the renderer is on the Sugarloaf struct, not
+        // the context, so the call site below threads them in.
+        // Actually: this function is a free fn taking only the
+        // context — we need to defer the upload until we have the
+        // renderer too. We do that by panicking here and pushing
+        // the real upload into a renderer method (see
+        // `Renderer::upload_background_image_vulkan`). When the
+        // dispatcher (`prepare`) sees a Vulkan ctx + dirty pixels,
+        // it calls the renderer method directly instead of this
+        // free function.
+        #[cfg(feature = "wgpu")]
         crate::context::ContextType::Wgpu(ctx) => {
             let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("sugarloaf::background image"),
@@ -882,6 +903,14 @@ fn upload_background_image_texture(
             );
             ImageTexture::Metal(mtl_tex)
         }
+        // Vulkan goes through `Renderer::upload_background_image_vulkan`
+        // (the renderer holds the descriptor set + sampler this free fn
+        // can't see), so this match arm just declines and lets the
+        // dispatcher try the renderer-bound path. Linux-only.
+        #[cfg(target_os = "linux")]
+        crate::context::ContextType::Vulkan(_) => return None,
+        #[cfg(not(feature = "wgpu"))]
+        crate::context::ContextType::_Phantom(_) => unreachable!(),
     };
     Some(ImageTextureEntry {
         gpu,
@@ -897,6 +926,7 @@ impl Renderer {
         #[cfg(not(target_os = "macos"))]
         let _ = colorspace;
         let brush_type = match &context.inner {
+            #[cfg(feature = "wgpu")]
             ContextType::Wgpu(wgpu_context) => {
                 RendererType::Wgpu(WgpuRenderer::new(wgpu_context))
             }
@@ -904,7 +934,13 @@ impl Renderer {
             ContextType::Metal(metal_context) => {
                 RendererType::Metal(MetalRenderer::new(metal_context, colorspace))
             }
+            #[cfg(target_os = "linux")]
+            ContextType::Vulkan(vulkan_context) => RendererType::Vulkan(
+                vulkan::VulkanRenderer::new(vulkan_context, colorspace),
+            ),
             ContextType::Cpu(_) => RendererType::Cpu,
+            #[cfg(not(feature = "wgpu"))]
+            ContextType::_Phantom(_) => unreachable!(),
         };
 
         Self {
@@ -914,15 +950,22 @@ impl Renderer {
             vertices: vec![],
             draw_cmds: vec![],
             images: ImageCache::new(context),
-            glyphs: GlyphCache::new(),
-            text_run_manager: TextRunManager::new(),
-            graphic_cache: FxHashMap::default(),
-            current_frame: 0,
             image_textures: FxHashMap::default(),
             image_draws: Vec::new(),
             background_image_dirty: None,
             background_image_texture: None,
         }
+    }
+
+    /// Drain per-frame batch state that was populated via
+    /// `rect` / `quad` / etc. Normally `comp.batches` is drained
+    /// inside `compute_updates` → `comp.finish()` during a render;
+    /// when the caller skips the GPU submit entirely (see
+    /// `Sugarloaf::discard_frame`), those recorded primitives would
+    /// otherwise pile into the next presented frame.
+    #[inline]
+    pub(crate) fn discard_frame_batches(&mut self) {
+        self.comp.batches.reset();
     }
 
     /// Replace the background image. Pass `None` to clear it. The pixels
@@ -942,18 +985,25 @@ impl Renderer {
         &mut self,
         context: &mut crate::context::Context,
         state: &crate::sugarloaf::state::SugarState,
-        graphics: &mut Graphics,
+        _graphics: &mut Graphics,
         image_data: &mut rustc_hash::FxHashMap<
             u32,
             crate::sugarloaf::graphics::GraphicDataEntry,
+        >,
+        image_overlays: &rustc_hash::FxHashMap<
+            usize,
+            Vec<crate::sugarloaf::graphics::GraphicOverlay>,
         >,
     ) {
         self.instances.clear();
         self.vertices.clear();
         self.draw_cmds.clear();
 
-        let library = state.content.font_library();
-        // Iterate over all content states and render visible ones
+        // Iterate over all content states and render visible ones.
+        // The Text arm is gone — rich-text emission replaced by
+        // `sugarloaf::text` (UI) and `grid_emit::build_row_fg`
+        // (terminal). The remaining arms are shape primitives the
+        // frontend still drives through `sugarloaf.rect()` etc.
         for content_state in state.content.states.values() {
             // Skip if marked for removal or hidden
             if content_state.render_data.should_remove || content_state.render_data.hidden
@@ -966,30 +1016,10 @@ impl Renderer {
                 content_state.render_data.bounds.unwrap_or([0.0; 4]);
 
             match &content_state.data {
-                crate::layout::ContentData::Text(builder_state) => {
-                    // Skip if there are no lines to render
-                    if builder_state.lines.is_empty() {
-                        continue;
-                    }
-
-                    let pos = (
-                        content_state.render_data.position[0],
-                        content_state.render_data.position[1],
-                    );
-                    let depth = content_state.render_data.depth;
-                    let order = content_state.render_data.order;
-
-                    self.draw_layout(
-                        &builder_state.lines,
-                        &None,
-                        Some(pos),
-                        depth,
-                        library,
-                        Some(&builder_state.layout),
-                        graphics,
-                        content_state.render_data.use_grid_cell_size,
-                        order,
-                    );
+                crate::layout::ContentData::Text(_) => {
+                    // Rich-text Text content is inert — the builder
+                    // state is kept for panel font-size / dimensions
+                    // bookkeeping but no glyphs are emitted from it.
                 }
                 crate::layout::ContentData::Rect {
                     x,
@@ -1103,64 +1133,32 @@ impl Renderer {
             }
         }
 
-        // Process transient texts (rendered once then cleared)
-        for content_state in state.content.transient_texts.iter() {
-            // Skip if hidden
-            if content_state.render_data.hidden {
-                continue;
-            }
-
-            // Set clip_rect for this content element's bounds
-            self.comp.batches.clip_rect =
-                content_state.render_data.bounds.unwrap_or([0.0; 4]);
-
-            if let crate::layout::ContentData::Text(builder_state) = &content_state.data {
-                // Skip if there are no lines to render
-                if builder_state.lines.is_empty() {
-                    continue;
-                }
-
-                let pos = (
-                    content_state.render_data.position[0],
-                    content_state.render_data.position[1],
-                );
-                let depth = content_state.render_data.depth;
-                let order = content_state.render_data.order;
-
-                // Use index + large offset to avoid collision with cached text IDs
-                self.draw_layout(
-                    &builder_state.lines,
-                    &None,
-                    Some(pos),
-                    depth,
-                    library,
-                    Some(&builder_state.layout),
-                    graphics,
-                    content_state.render_data.use_grid_cell_size,
-                    order,
-                );
-            }
-        }
+        // Transient texts gone — previously rendered one-shot rich
+        // text overlays (welcome screen / dialog); migrated to
+        // `sugarloaf::text` immediate-mode primitive.
 
         // Reset clip_rect after rendering all content
         self.comp.batches.clip_rect = [0.0; 4];
 
-        // Render image overlays from visible content states only.
-        // Hidden states (e.g. inactive tabs) must be excluded so
-        // their images don't bleed through.
-        let has_overlays = state
-            .content
-            .states
-            .values()
-            .any(|cs| !cs.render_data.hidden && !cs.image_overlays.is_empty());
-        if has_overlays {
-            let overlays: Vec<_> = state
-                .content
-                .states
-                .values()
-                .filter(|cs| !cs.render_data.hidden)
-                .flat_map(|cs| cs.image_overlays.iter())
-                .collect();
+        // Image overlays come from the per-panel `image_overlays` map
+        // on `Sugarloaf`. Visibility filter: skip hidden panels so
+        // inactive-tab overlays don't bleed through. We still consult
+        // `state.content.states[id].render_data.hidden` for that —
+        // panel visibility bookkeeping lives in Content for now while
+        // the rest of the rich-text pipeline is being torn down.
+        let overlays: Vec<_> = image_overlays
+            .iter()
+            .filter(|(id, _)| {
+                state
+                    .content
+                    .states
+                    .get(id)
+                    .map(|cs| !cs.render_data.hidden)
+                    .unwrap_or(true)
+            })
+            .flat_map(|(_, v)| v.iter())
+            .collect();
+        if !overlays.is_empty() {
             self.render_graphic_overlays(context, image_data, &overlays);
         } else {
             // No overlays visible — clear draw commands so stale images
@@ -1173,8 +1171,24 @@ impl Renderer {
         // begins. The texture stays cached until a new image arrives or
         // `set_background_image_pixels(None)` is called.
         if let Some(pixels) = self.background_image_dirty.take() {
-            self.background_image_texture =
-                upload_background_image_texture(context, &pixels);
+            // Vulkan needs the renderer's descriptor-set layout +
+            // sampler to wire the per-image descriptor set, so it
+            // takes a different path that knows about both.
+            #[cfg(target_os = "linux")]
+            let used_vulkan =
+                if matches!(&context.inner, crate::context::ContextType::Vulkan(_)) {
+                    self.upload_background_image_vulkan(context, &pixels);
+                    true
+                } else {
+                    false
+                };
+            #[cfg(not(target_os = "linux"))]
+            let used_vulkan = false;
+
+            if !used_vulkan {
+                self.background_image_texture =
+                    upload_background_image_texture(context, &pixels);
+            }
         }
 
         self.instances.clear();
@@ -1186,15 +1200,15 @@ impl Renderer {
 
         // Useful for debug occasionally
         // let inst_bytes =
-        //     self.instances.len() * std::mem::size_of::<batch::QuadInstance>();
+        // self.instances.len() * std::mem::size_of::<batch::QuadInstance>();
         // let vert_bytes = self.vertices.len() * std::mem::size_of::<Vertex>();
         // println!(
-        //     "gpu upload: {} instances ({:.2} MB) + {} verts ({:.2} MB) = {:.2} MB",
-        //     self.instances.len(),
-        //     inst_bytes as f64 / (1024.0 * 1024.0),
-        //     self.vertices.len(),
-        //     vert_bytes as f64 / (1024.0 * 1024.0),
-        //     (inst_bytes + vert_bytes) as f64 / (1024.0 * 1024.0),
+        // "gpu upload: {} instances ({:.2} MB) + {} verts ({:.2} MB) = {:.2} MB",
+        // self.instances.len(),
+        // inst_bytes as f64 / (1024.0 * 1024.0),
+        // self.vertices.len(),
+        // vert_bytes as f64 / (1024.0 * 1024.0),
+        // (inst_bytes + vert_bytes) as f64 / (1024.0 * 1024.0),
         // );
     }
 
@@ -1231,536 +1245,9 @@ impl Renderer {
         None
     }
 
-    /// Extract font metrics using per-font calculation.
-    /// Each font calculates its own metrics using consistent approach.
-    #[inline]
-    fn extract_normalized_metrics(
-        &self,
-        lines: &[crate::layout::BuilderLine],
-        font_library: &FontLibrary,
-    ) -> Option<(f32, f32, f32, usize, f32)> {
-        // Get the first run to determine font_id and size
-        let first_run = lines
-            .iter()
-            .filter(|line| !line.render_data.runs.is_empty())
-            .map(|line| &line.render_data.runs[0])
-            .next()?;
-
-        let font_id = 0; // FONT_ID_REGULAR
-        let font_size = first_run.size;
-
-        // Get metrics from the specific font using consistent calculation
-        let mut font_library_data = font_library.inner.write();
-        if let Some((ascent, descent, leading)) =
-            font_library_data.get_font_metrics(&font_id, font_size)
-        {
-            Some((ascent, descent, leading, font_id, font_size))
-        } else {
-            // Fallback to run metrics if font metrics calculation fails
-            Some((
-                first_run.ascent,
-                first_run.descent,
-                first_run.leading,
-                font_id,
-                font_size,
-            ))
-        }
-    }
-
+    /// Render image overlays using per-image GPU textures.
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    fn draw_layout(
-        &mut self,
-        lines: &Vec<crate::layout::BuilderLine>,
-        selected_lines: &Option<RichTextLinesRange>,
-        pos: Option<(f32, f32)>,
-        depth: f32,
-        font_library: &FontLibrary,
-        rte_layout: Option<&TextLayout>,
-        graphics: &mut Graphics,
-        use_grid_cell_size: bool,
-        order: u8,
-    ) {
-        if lines.is_empty() {
-            return;
-        }
-
-        // For dimensions mode, we only process the first line
-        let lines_to_process = lines.as_slice();
-
-        // Extract font metrics before borrowing self.comp
-        let font_metrics =
-            self.extract_normalized_metrics(lines_to_process, font_library);
-
-        // let start = std::time::Instant::now();
-        // Get initial position
-        let (x, y) = pos.unwrap_or((0.0, 0.0));
-
-        // Increment frame counter for LRU tracking
-        self.current_frame += 1;
-
-        // Pre-process: Upload graphics to atlas and cache their data
-        // This must happen BEFORE we borrow comp to avoid borrow checker issues
-        for line in lines_to_process {
-            for run in &line.render_data.runs {
-                if let Some(graphic) = run.span.media {
-                    // Check if already cached
-                    if let Some(cached) = self.graphic_cache.get_mut(&graphic.id) {
-                        // Update last used frame
-                        cached.last_used_frame = self.current_frame;
-                        continue;
-                    }
-
-                    // Not cached - need to upload to atlas
-                    if let Some(entry) = graphics.get(&graphic.id) {
-                        if let crate::components::core::image::Data::Rgba {
-                            width,
-                            height,
-                            ref pixels,
-                        } = entry.handle.data
-                        {
-                            let add_image = image_cache::AddImage {
-                                width: width as u16,
-                                height: height as u16,
-                                has_alpha: true,
-                                data: image_cache::ImageData::Borrowed(pixels.as_ref()),
-                                content_type: image_cache::ContentType::Color,
-                            };
-
-                            // Try to allocate, with eviction retry if needed
-                            let mut image_id = self.images.allocate(add_image.clone());
-
-                            if image_id.is_none() {
-                                // Atlas full - try evicting oldest graphics
-                                tracing::warn!(
-                                    "Atlas full, attempting to evict oldest graphics"
-                                );
-                                let mut evicted_count = 0;
-
-                                // Try evicting up to 5 graphics
-                                while evicted_count < 5 {
-                                    if let Some(oldest_id) = self.find_oldest_graphic() {
-                                        self.evict_graphic(oldest_id);
-                                        evicted_count += 1;
-
-                                        // Retry allocation
-                                        image_id =
-                                            self.images.allocate(add_image.clone());
-                                        if image_id.is_some() {
-                                            tracing::info!("Successfully allocated after evicting {} graphics", evicted_count);
-                                            break;
-                                        }
-                                    } else {
-                                        break; // No more graphics to evict
-                                    }
-                                }
-
-                                if image_id.is_none() {
-                                    tracing::error!("Failed to allocate graphic {:?} even after evicting {} graphics", graphic.id, evicted_count);
-                                }
-                            }
-
-                            if let Some(id) = image_id {
-                                if let Some(location) = self.images.get(&id) {
-                                    // Get atlas layer for this image
-                                    let atlas_layer = self
-                                        .images
-                                        .get_atlas_index(id)
-                                        .map(|idx| (idx + 1) as i32)
-                                        .unwrap_or(1);
-
-                                    // Cache coords + dimensions + frame + atlas layer
-                                    self.graphic_cache.insert(
-                                        graphic.id,
-                                        CachedGraphic {
-                                            location,
-                                            image_id: id,
-                                            width: entry.width,
-                                            height: entry.height,
-                                            last_used_frame: self.current_frame,
-                                            atlas_layer,
-                                        },
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Now set up rendering - borrow comp and caches
-        let comp = &mut self.comp;
-        let caches = (&mut self.images, &mut self.glyphs);
-        let (image_cache, glyphs_cache) = caches;
-        let font_coords: &[i16] = &[0, 0, 0, 0];
-
-        // Set up caches based on mode
-        let mut glyphs = Vec::new();
-        let mut last_rendered_graphic = HashSet::new();
-        let mut line_y = y;
-        if let Some((
-            ascent,
-            descent,
-            leading,
-            current_font_from_valid_run,
-            current_font_size_from_valid_run,
-        )) = font_metrics
-        {
-            // Initialize from first run if available
-            let mut current_font = current_font_from_valid_run;
-            let mut current_font_size = current_font_size_from_valid_run;
-
-            let mut session = glyphs_cache.session(
-                image_cache,
-                current_font,
-                font_library,
-                font_coords,
-                current_font_size,
-            );
-
-            // Calculate line height with modifier if available
-            let line_height_without_mod = ascent + descent + leading;
-            let line_height_mod = rte_layout.map_or(1.0, |layout| layout.line_height);
-            let line_height = line_height_without_mod * line_height_mod;
-
-            let skip_count = selected_lines.map_or(0, |range| range.start);
-            let take_count = selected_lines
-                .map_or(lines_to_process.len(), |range| range.end - range.start);
-
-            for (_line_idx, line) in lines_to_process
-                .iter()
-                .enumerate()
-                .skip(skip_count)
-                .take(take_count)
-            {
-                if line.render_data.runs.is_empty() {
-                    continue;
-                }
-
-                let mut px = x;
-
-                // Calculate baseline using proper typographic positioning
-                let padding_top = (line_height - ascent - descent) / 2.0;
-                let baseline = line_y + padding_top + ascent;
-
-                // Keep line_y as the top of the line for proper line spacing
-                // Don't modify line_y here - it should remain at the top of the line
-
-                // Calculate padding
-                let padding_y = if line_height_mod > 1.0 {
-                    (line_height - line_height_without_mod) / 2.0
-                } else {
-                    0.0
-                };
-
-                let py = line_y;
-
-                let cell_width = rte_layout.unwrap().dimensions.width;
-
-                for run in &line.render_data.runs {
-                    let char_width = run.span.width;
-
-                    // Fast path: empty run (blanks/spaces) — just advance
-                    // and optionally paint background/cursor/decoration.
-                    // Decoration must be checked too: an underline cursor
-                    // on a blank cell carries its line through `decoration`
-                    // (not `cursor`) and the cell's `background_color` may
-                    // have been stripped to `None` when the window has a
-                    // background image / opacity < 1, so without the
-                    // decoration check the cursor would silently vanish.
-                    if run.glyphs.is_empty() {
-                        let advance = cell_width * char_width;
-                        let run_x = px;
-                        px += advance;
-
-                        if run.span.background_color.is_some()
-                            || run.span.cursor.is_some()
-                            || run.span.decoration.is_some()
-                        {
-                            let style = TextRunStyle {
-                                font_coords,
-                                font_size: run.size,
-                                color: run.span.color,
-                                cursor: run.span.cursor,
-                                drawable_char: run.span.drawable_char,
-                                background_color: run.span.background_color,
-                                baseline,
-                                topline: py,
-                                line_height,
-                                padding_y,
-                                line_height_without_mod,
-                                advance,
-                                decoration: run.span.decoration,
-                                decoration_color: run.span.decoration_color,
-                                underline_offset: run.underline_offset,
-                                strikeout_offset: run.strikeout_offset,
-                                underline_thickness: run.strikeout_size,
-                                x_height: run.x_height,
-                                ascent: run.ascent,
-                                descent: run.descent,
-                                scale_constraint: None,
-                                nerd_font_constraint: None,
-                            };
-                            comp.draw_run(
-                                &mut session,
-                                Rect::new(run_x, py, advance, 1.),
-                                depth,
-                                &style,
-                                &[],
-                                order,
-                            );
-                        }
-
-                        continue;
-                    }
-
-                    let font = run.span.font_id;
-                    let run_x = px;
-
-                    // Use pre-computed cache key — no String allocation needed
-                    let cached_result = if run.cache_key != 0 {
-                        self.text_run_manager.get_cached_data_by_key(run.cache_key)
-                    } else {
-                        CacheResult::Miss
-                    };
-
-                    match cached_result {
-                        CacheResult::Hit {
-                            glyphs: cached_glyphs,
-                            ..
-                        } => {
-                            // Use cached glyph data but need to render
-                            glyphs.clear();
-                            for shaped_glyph in cached_glyphs.iter() {
-                                let x = px;
-                                let y = baseline;
-
-                                if use_grid_cell_size {
-                                    px += cell_width * char_width;
-                                } else {
-                                    px += shaped_glyph.x_advance;
-                                }
-
-                                glyphs.push(Glyph {
-                                    id: shaped_glyph.glyph_id as GlyphId,
-                                    x,
-                                    y,
-                                });
-                            }
-
-                            // Render using cached glyph data
-                            let style = TextRunStyle {
-                                font_coords,
-                                font_size: run.size,
-                                color: run.span.color,
-                                cursor: run.span.cursor,
-                                drawable_char: run.span.drawable_char,
-                                background_color: run.span.background_color,
-                                baseline,
-                                topline: py, // Use py (line top) for cursor positioning
-                                line_height,
-                                padding_y,
-                                line_height_without_mod,
-                                advance: cached_glyphs.iter().map(|g| g.x_advance).sum(),
-                                decoration: run.span.decoration,
-                                decoration_color: run.span.decoration_color,
-                                underline_offset: run.underline_offset,
-                                strikeout_offset: run.strikeout_offset,
-                                underline_thickness: run.strikeout_size,
-                                x_height: run.x_height,
-                                ascent: run.ascent,
-                                descent: run.descent,
-                                scale_constraint: run.span.pua_constraint.and_then(|c| {
-                                    rte_layout.map(|l| (l.dimensions.width, c as u8))
-                                }),
-                                nerd_font_constraint: run.span.nerd_font_constraint,
-                            };
-
-                            // Update font session if needed
-                            if font != current_font
-                                || style.font_size != current_font_size
-                            {
-                                current_font = font;
-                                current_font_size = style.font_size;
-
-                                session = glyphs_cache.session(
-                                    image_cache,
-                                    current_font,
-                                    font_library,
-                                    font_coords,
-                                    style.font_size,
-                                );
-                            }
-
-                            comp.draw_run(
-                                &mut session,
-                                Rect::new(run_x, py, px - run_x, 1.),
-                                depth,
-                                &style,
-                                &glyphs,
-                                order,
-                            );
-                        }
-                        CacheResult::Miss => {
-                            // No cached data - need to shape and render from scratch
-                            glyphs.clear();
-                            let mut shaped_glyphs = Vec::new();
-
-                            for glyph in &run.glyphs {
-                                let x = px;
-                                let y = baseline;
-                                let advance = glyph.simple_data().1;
-
-                                if use_grid_cell_size {
-                                    px += cell_width * char_width;
-                                } else {
-                                    px += advance;
-                                }
-
-                                let glyph_id = glyph.simple_data().0;
-
-                                glyphs.push(Glyph { id: glyph_id, x, y });
-
-                                // Store for caching
-                                shaped_glyphs.push(
-                                    crate::font::text_run_cache::ShapedGlyph {
-                                        glyph_id: glyph_id as u32,
-                                        x_advance: advance,
-                                        y_advance: 0.0,
-                                        x_offset: 0.0,
-                                        y_offset: 0.0,
-                                        cluster: 0,
-                                    },
-                                );
-                            }
-
-                            // Cache the shaped glyphs for future use
-                            if run.cache_key != 0 {
-                                self.text_run_manager.cache_shaping_data_by_key(
-                                    run.cache_key,
-                                    font,
-                                    run.size,
-                                    shaped_glyphs,
-                                    false,
-                                );
-                            }
-
-                            // Create style for rendering
-                            let style = TextRunStyle {
-                                font_coords,
-                                font_size: run.size,
-                                color: run.span.color,
-                                cursor: run.span.cursor,
-                                drawable_char: run.span.drawable_char,
-                                background_color: run.span.background_color,
-                                baseline,
-                                topline: py, // Use py (line top) for cursor positioning
-                                line_height,
-                                padding_y,
-                                line_height_without_mod,
-                                advance: px - run_x,
-                                decoration: run.span.decoration,
-                                decoration_color: run.span.decoration_color,
-                                underline_offset: run.underline_offset,
-                                strikeout_offset: run.strikeout_offset,
-                                underline_thickness: run.strikeout_size,
-                                x_height: run.x_height,
-                                ascent: run.ascent,
-                                descent: run.descent,
-                                scale_constraint: run.span.pua_constraint.and_then(|c| {
-                                    rte_layout.map(|l| (l.dimensions.width, c as u8))
-                                }),
-                                nerd_font_constraint: run.span.nerd_font_constraint,
-                            };
-
-                            // Update font session if needed
-                            if font != current_font
-                                || style.font_size != current_font_size
-                            {
-                                current_font = font;
-                                current_font_size = style.font_size;
-
-                                session = glyphs_cache.session(
-                                    image_cache,
-                                    current_font,
-                                    font_library,
-                                    font_coords,
-                                    style.font_size,
-                                );
-                            }
-
-                            comp.draw_run(
-                                &mut session,
-                                Rect::new(run_x, py, px - run_x, 1.),
-                                depth,
-                                &style,
-                                &glyphs,
-                                order,
-                            );
-                        }
-                    }
-
-                    // Handle graphics - render directly using add_image_rect
-                    if let Some(graphic) = run.span.media {
-                        // Each cell stores which part of the graphic it shows via offset_x/offset_y
-                        // We render once per graphic per frame, using the first cell we encounter
-                        // We calculate the graphic's position by subtracting the cell's offset
-                        // This ensures the graphic renders even when the origin cell is scrolled off-screen
-                        if !last_rendered_graphic.contains(&graphic.id) {
-                            // Get cached graphic data
-                            if let Some(cached) = self.graphic_cache.get(&graphic.id) {
-                                // Calculate graphic position: current cell position minus this cell's offset
-                                // This positions the full graphic correctly regardless of which cell we encounter
-                                let gx = run_x - graphic.offset_x as f32;
-                                let gy = py - graphic.offset_y as f32;
-
-                                tracing::info!(
-                                    "Drawing graphic at ({}, {}), size={}x{}, atlas_layer={}",
-                                    gx,
-                                    gy,
-                                    cached.width,
-                                    cached.height,
-                                    cached.atlas_layer
-                                );
-
-                                // Clip display size to cell grid boundaries
-                                // so the image never overflows into the next line.
-                                let cw = rte_layout.unwrap().dimensions.width;
-                                let render_w = (cached.width / cw).floor() * cw;
-                                let render_h =
-                                    (cached.height / line_height).floor() * line_height;
-                                comp.batches.add_image_rect(
-                                    &Rect::new(gx, gy, render_w, render_h),
-                                    depth,
-                                    &[1.0, 1.0, 1.0, 1.0],
-                                    &[
-                                        cached.location.min.0,
-                                        cached.location.min.1,
-                                        cached.location.max.0,
-                                        cached.location.max.1,
-                                    ],
-                                    cached.atlas_layer,
-                                );
-                            } else {
-                                tracing::warn!(
-                                    "Graphic {} not in cache!",
-                                    graphic.id.get()
-                                );
-                            }
-
-                            last_rendered_graphic.insert(graphic.id);
-                        }
-                    }
-                }
-
-                // Advance line_y for the next line
-                line_y += line_height;
-            }
-        }
-    }
-
-    /// Render image overlays using per-image GPU textures.
     fn render_graphic_overlays(
         &mut self,
         context: &mut crate::context::Context,
@@ -1805,8 +1292,43 @@ impl Renderer {
             if matches!(&context.inner, crate::context::ContextType::Cpu(_)) {
                 continue;
             }
+            // Vulkan: synchronous one-shot upload via the renderer's
+            // descriptor-set layout + sampler. The submit-and-wait
+            // is fine here — kitty placements come in bursts (a
+            // single image transmit, then many placements), and the
+            // upload is the cost we'd pay regardless. Move to a
+            // deferred per-frame pattern later if profiling shows
+            // image-heavy workloads stall.
+            #[cfg(target_os = "linux")]
+            if let crate::context::ContextType::Vulkan(vk_ctx) = &context.inner {
+                let RendererType::Vulkan(brush) = &self.brush_type else {
+                    continue;
+                };
+                let texture = vulkan::VulkanImageTexture::upload_rgba(
+                    vk_ctx,
+                    pixels,
+                    width,
+                    height,
+                    brush.image_texture_descriptor_set_layout,
+                    brush.image_sampler,
+                );
+                self.image_textures.insert(
+                    overlay.image_id,
+                    ImageTextureEntry {
+                        gpu: ImageTexture::Vulkan(texture),
+                        transmit_time: entry.transmit_time,
+                    },
+                );
+                continue;
+            }
             let gpu = match &context.inner {
                 crate::context::ContextType::Cpu(_) => unreachable!(),
+                #[cfg(target_os = "linux")]
+                crate::context::ContextType::Vulkan(_) => unreachable!(),
+                #[cfg(not(feature = "wgpu"))]
+                #[allow(unreachable_patterns)]
+                _ => continue,
+                #[cfg(feature = "wgpu")]
                 crate::context::ContextType::Wgpu(ctx) => {
                     let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
                         label: Some("kitty image"),
@@ -2124,35 +1646,8 @@ impl Renderer {
         true
     }
 
-    /// Find the least recently used graphic ID for eviction.
-    /// Returns the GraphicId to evict, or None if cache is empty.
-    fn find_oldest_graphic(&self) -> Option<GraphicId> {
-        self.graphic_cache
-            .iter()
-            .min_by_key(|(_, cached)| cached.last_used_frame)
-            .map(|(id, _)| *id)
-    }
-
-    /// Evict a specific graphic from the cache.
-    fn evict_graphic(&mut self, graphic_id: GraphicId) -> bool {
-        if let Some(cached) = self.graphic_cache.remove(&graphic_id) {
-            // Deallocate from atlas to free GPU memory
-            self.images.deallocate(cached.image_id);
-            tracing::debug!(
-                "Evicted graphic {:?} (last used: frame {})",
-                graphic_id,
-                cached.last_used_frame
-            );
-            return true;
-        }
-        false
-    }
-
     #[inline]
     pub fn reset(&mut self) {
-        self.glyphs = GlyphCache::new();
-        self.text_run_manager.clear_all();
-        self.graphic_cache.clear();
         self.image_textures.clear();
         self.image_draws.clear();
     }
@@ -2160,14 +1655,9 @@ impl Renderer {
     #[inline]
     pub fn clear_atlas(&mut self) {
         self.images.clear_atlas();
-        self.glyphs = GlyphCache::new();
-        self.text_run_manager.clear_all();
-        self.graphic_cache.clear();
         self.image_textures.clear();
         self.image_draws.clear();
-        tracing::info!(
-            "Renderer atlas, glyph cache, text run cache, and graphic cache cleared"
-        );
+        tracing::info!("Renderer atlas cleared");
     }
 
     #[inline]
@@ -2346,6 +1836,7 @@ impl Renderer {
     }
 
     #[inline]
+    #[cfg(feature = "wgpu")]
     pub fn render<'pass>(
         &'pass mut self,
         ctx: &mut WgpuContext,
@@ -2364,7 +1855,6 @@ impl Renderer {
             ..
         } = self;
 
-        #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
         if let RendererType::Wgpu(brush) = brush_type {
             let color_views = images.get_texture_views();
             let mask_texture_view = images.get_mask_texture_view();
@@ -2651,7 +2141,13 @@ impl Renderer {
     /// frame owns its own buffer for the lifetime of GPU execution, so
     /// the CPU can write the next frame's data without racing.
     #[cfg(target_os = "macos")]
-    pub fn render_metal(&mut self, context: &MetalContext, bg_color: Option<[f32; 4]>) {
+    pub fn render_metal(
+        &mut self,
+        context: &MetalContext,
+        bg_color: Option<[f32; 4]>,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+        text: &mut crate::text::Text,
+    ) {
         use block::ConcreteBlock;
         use std::cell::Cell as StdCell;
 
@@ -2704,6 +2200,14 @@ impl Renderer {
             let has_images = !self.image_draws.is_empty();
 
             let ok = (|| {
+                // Always draw the window bg fill. With the grid
+                // owning per-cell bg, `padding_extend` in the grid
+                // shader was initially used to extend edge cell
+                // colors into the window margin — but that only
+                // works for a single full-window grid. Once splits
+                // exist, each panel's grid covers only its own rect,
+                // so the window margin + gutters between panels
+                // rely on this fullscreen fill again.
                 if let Some(rgba) = bg_color {
                     if !Self::draw_bg_fill_metal(
                         brush,
@@ -2728,48 +2232,70 @@ impl Renderer {
                 ) {
                     return false;
                 }
-                if has_images
-                    && !Self::draw_images_metal(
-                        &self.image_draws,
-                        &self.image_textures,
-                        brush,
-                        render_encoder,
-                        ImageLayer::BelowText,
-                        &instance_buffer,
-                        &mut instance_offset,
-                        &globals,
-                    )
-                {
-                    return false;
-                }
-                if !brush.render(
-                    &self.instances,
-                    &self.vertices,
-                    &self.draw_cmds,
-                    &self.images,
-                    render_encoder,
-                    context,
-                    &instance_buffer,
-                    &mut instance_offset,
-                ) {
-                    return false;
-                }
-                if has_images
-                    && !Self::draw_images_metal(
-                        &self.image_draws,
-                        &self.image_textures,
-                        brush,
-                        render_encoder,
-                        ImageLayer::AboveText,
-                        &instance_buffer,
-                        &mut instance_offset,
-                        &globals,
-                    )
-                {
-                    return false;
-                }
+                // Terminal grid passes — drawn after the window bg
+                // fill but before rich-text UI overlays, so each
+                // panel's cells composite over the window bg and
+                // under the tab-bar / assistant / search overlays.
                 true
             })();
+            if ok {
+                for (grid, uniforms) in grids.iter_mut() {
+                    grid.render_metal(render_encoder, uniforms);
+                }
+            }
+            let ok = ok
+                && (|| {
+                    if has_images
+                        && !Self::draw_images_metal(
+                            &self.image_draws,
+                            &self.image_textures,
+                            brush,
+                            render_encoder,
+                            ImageLayer::BelowText,
+                            &instance_buffer,
+                            &mut instance_offset,
+                            &globals,
+                        )
+                    {
+                        return false;
+                    }
+                    if !brush.render(
+                        &self.instances,
+                        &self.vertices,
+                        &self.draw_cmds,
+                        &self.images,
+                        render_encoder,
+                        context,
+                        &instance_buffer,
+                        &mut instance_offset,
+                    ) {
+                        return false;
+                    }
+                    if has_images
+                        && !Self::draw_images_metal(
+                            &self.image_draws,
+                            &self.image_textures,
+                            brush,
+                            render_encoder,
+                            ImageLayer::AboveText,
+                            &instance_buffer,
+                            &mut instance_offset,
+                            &globals,
+                        )
+                    {
+                        return false;
+                    }
+                    // UI text pass. Lazy-init on the first frame with
+                    // a Metal ctx; subsequent calls are no-ops. Runs
+                    // after brush.render / above-text images so UI
+                    // labels sit on top of everything else.
+                    text.init_metal(&context.device, &context.command_queue);
+                    text.render_metal(
+                        render_encoder,
+                        [context.size.width, context.size.height],
+                    );
+                    true
+                })();
 
             if !ok {
                 // Discard the partial encoder + command buffer (never
@@ -2817,9 +2343,127 @@ impl Renderer {
         }
     }
 
+    /// Synchronously upload a background image into a Vulkan texture
+    /// and descriptor set. Called from the prepare path when the
+    /// user calls `Sugarloaf::set_background_image`. The
+    /// submit-and-wait is acceptable for one-shot uploads
+    /// (config-load time); kitty per-frame images take a different
+    /// deferred path.
+    #[cfg(target_os = "linux")]
+    fn upload_background_image_vulkan(
+        &mut self,
+        context: &crate::context::Context,
+        pixels: &BackgroundImagePixels,
+    ) {
+        let crate::context::ContextType::Vulkan(ctx) = &context.inner else {
+            return;
+        };
+        let RendererType::Vulkan(brush) = &self.brush_type else {
+            return;
+        };
+        let texture = vulkan::VulkanImageTexture::upload_rgba(
+            ctx,
+            &pixels.pixels,
+            pixels.width,
+            pixels.height,
+            brush.image_texture_descriptor_set_layout,
+            brush.image_sampler,
+        );
+        self.background_image_texture = Some(ImageTextureEntry {
+            gpu: ImageTexture::Vulkan(texture),
+            transmit_time: std::time::Instant::now(),
+        });
+    }
+
+    /// Record sugarloaf's own draws inside the active dynamic-rendering
+    /// pass that `Sugarloaf::render_vulkan` opens. Order:
+    /// 1. Background image (full-screen quad).
+    /// 2. BelowText image overlays (kitty / sixel placements with
+    /// `dest_pos.z < 0`).
+    /// 3. Rich-text quad pass — `quad()` / `rect()` calls + cell
+    /// underline decorations (dashed/dotted/curly handled in
+    /// `quad.frag.glsl`).
+    /// 4. Non-quad geometry — `polygon()` / `line()` / `triangle()`
+    /// / `arc()` calls (cursor underline shape, hint highlights).
+    /// 5. AboveText image overlays.
+    /// 6. Optional bootstrap rect (`RIO_VULKAN_BOOTSTRAP=1`).
+    ///
+    /// Glyph atlas sampling through this pipeline isn't ported —
+    /// grid text + UI text overlay each own dedicated atlas
+    /// pipelines, so the rich-text path doesn't need it.
+    #[cfg(target_os = "linux")]
+    pub fn render_vulkan(
+        &mut self,
+        cmd: ash::vk::CommandBuffer,
+        frame: &crate::context::vulkan::VulkanFrame,
+    ) {
+        let viewport = [frame.extent.width as f32, frame.extent.height as f32];
+        let slot = frame.slot;
+
+        // Resolve image draws into (descriptor_set, instance) pairs
+        // before the &mut brush borrow takes hold; the per-image
+        // texture lookup needs an immutable borrow on
+        // `self.image_textures` which would conflict with the
+        // brush's `&mut self`.
+        let below: Vec<(ash::vk::DescriptorSet, ImageInstance)> = self
+            .image_draws
+            .iter()
+            .filter(|d| d.layer == ImageLayer::BelowText)
+            .filter_map(|d| {
+                let entry = self.image_textures.get(&d.image_id)?;
+                if let ImageTexture::Vulkan(tex) = &entry.gpu {
+                    Some((tex.descriptor_set, d.instance))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let above: Vec<(ash::vk::DescriptorSet, ImageInstance)> = self
+            .image_draws
+            .iter()
+            .filter(|d| d.layer == ImageLayer::AboveText)
+            .filter_map(|d| {
+                let entry = self.image_textures.get(&d.image_id)?;
+                if let ImageTexture::Vulkan(tex) = &entry.gpu {
+                    Some((tex.descriptor_set, d.instance))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if let RendererType::Vulkan(brush) = &mut self.brush_type {
+            if let Some(bg) = &self.background_image_texture {
+                if let ImageTexture::Vulkan(tex) = &bg.gpu {
+                    brush.render_background_image(
+                        cmd,
+                        slot,
+                        viewport,
+                        tex.descriptor_set,
+                    );
+                }
+            }
+
+            brush.render_image_overlays(cmd, slot, viewport, &below);
+            brush.render_quads(cmd, slot, viewport, &self.instances);
+            brush.render_geometry(cmd, slot, viewport, &self.vertices);
+            brush.render_image_overlays(cmd, slot, viewport, &above);
+            brush.draw_bootstrap(cmd);
+        }
+    }
+
     /// Vertices accumulated for the current frame (CPU rasterizer reads these).
     pub(crate) fn vertices(&self) -> &[Vertex] {
         &self.vertices
+    }
+
+    /// Per-quad instances accumulated for the current frame. The CPU
+    /// rasterizer walks these for `rect` / `quad` / `rounded_rect` /
+    /// `underline` calls, which the immediate-mode UI uses for splits,
+    /// panel borders, scrollbars, and dim overlays. The GPU paths
+    /// upload them to a per-instance vertex buffer; we just iterate.
+    pub(crate) fn instances(&self) -> &[crate::renderer::batch::QuadInstance] {
+        &self.instances
     }
 
     /// Image cache for CPU rasterizer atlas sampling.
@@ -2829,6 +2473,7 @@ impl Renderer {
 
     pub fn resize(&mut self, context: &mut Context) {
         let transform = match &context.inner {
+            #[cfg(feature = "wgpu")]
             ContextType::Wgpu(wgpu_ctx) => {
                 orthographic_projection(wgpu_ctx.size.width, wgpu_ctx.size.height)
             }
@@ -2836,12 +2481,19 @@ impl Renderer {
             ContextType::Metal(metal_ctx) => {
                 orthographic_projection(metal_ctx.size.width, metal_ctx.size.height)
             }
+            #[cfg(target_os = "linux")]
+            ContextType::Vulkan(vulkan_ctx) => {
+                orthographic_projection(vulkan_ctx.size.width, vulkan_ctx.size.height)
+            }
             ContextType::Cpu(cpu_ctx) => {
                 orthographic_projection(cpu_ctx.size.width, cpu_ctx.size.height)
             }
+            #[cfg(not(feature = "wgpu"))]
+            ContextType::_Phantom(_) => unreachable!(),
         };
 
         match &mut self.brush_type {
+            #[cfg(feature = "wgpu")]
             RendererType::Wgpu(wgpu_brush) => {
                 if transform != wgpu_brush.current_transform {
                     let queue = match &context.inner {
@@ -2866,11 +2518,19 @@ impl Renderer {
                 // on the next frame's `orthographic_projection` call.
                 let _ = transform;
             }
+            #[cfg(target_os = "linux")]
+            RendererType::Vulkan(_vulkan_brush) => {
+                // No-op: viewport + scissor are dynamic state set per
+                // frame in `VulkanRenderer::render`. The swapchain
+                // itself is rebuilt by `VulkanContext::resize`.
+                let _ = transform;
+            }
             RendererType::Cpu => {}
         }
     }
 }
 
+#[cfg(feature = "wgpu")]
 impl WgpuRenderer {
     pub fn new(context: &WgpuContext) -> Self {
         let supported_vertex_buffer = 500;
@@ -3536,114 +3196,6 @@ mod rect_positioning_tests {
         assert_eq!(
             baseline_offset_from_center, 4.0,
             "Baseline should be 4.0 units above glyph center"
-        );
-    }
-
-    #[test]
-    fn test_find_oldest_graphic() {
-        use super::CachedGraphic;
-        use crate::GraphicId;
-        use rustc_hash::FxHashMap;
-
-        let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
-
-        // Create dummy graphics with different last_used_frame values
-        let graphic1 = GraphicId::new(1);
-        let graphic2 = GraphicId::new(2);
-        let graphic3 = GraphicId::new(3);
-
-        // graphic2 is oldest (frame 5)
-        // graphic1 is middle (frame 10)
-        // graphic3 is newest (frame 15)
-        graphic_cache.insert(
-            graphic1,
-            CachedGraphic {
-                location: super::image_cache::ImageLocation {
-                    min: (0.0, 0.0),
-                    max: (1.0, 1.0),
-                },
-                image_id: super::image_cache::ImageId::empty(),
-                width: 100.0,
-                height: 100.0,
-                last_used_frame: 10,
-                atlas_layer: 1,
-            },
-        );
-
-        graphic_cache.insert(
-            graphic2,
-            CachedGraphic {
-                location: super::image_cache::ImageLocation {
-                    min: (0.0, 0.0),
-                    max: (1.0, 1.0),
-                },
-                image_id: super::image_cache::ImageId::empty(),
-                width: 100.0,
-                height: 100.0,
-                last_used_frame: 5, // Oldest
-                atlas_layer: 1,
-            },
-        );
-
-        graphic_cache.insert(
-            graphic3,
-            CachedGraphic {
-                location: super::image_cache::ImageLocation {
-                    min: (0.0, 0.0),
-                    max: (1.0, 1.0),
-                },
-                image_id: super::image_cache::ImageId::empty(),
-                width: 100.0,
-                height: 100.0,
-                last_used_frame: 15, // Newest
-                atlas_layer: 1,
-            },
-        );
-
-        // Find oldest should return graphic2
-        let oldest = graphic_cache
-            .iter()
-            .min_by_key(|(_, cached)| cached.last_used_frame)
-            .map(|(id, _)| *id);
-
-        assert_eq!(oldest, Some(graphic2), "Should find oldest graphic");
-    }
-
-    #[test]
-    fn test_graphic_lru_update() {
-        use super::CachedGraphic;
-        use crate::GraphicId;
-        use rustc_hash::FxHashMap;
-
-        let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
-        let current_frame = 100;
-
-        let graphic1 = GraphicId::new(1);
-        graphic_cache.insert(
-            graphic1,
-            CachedGraphic {
-                location: super::image_cache::ImageLocation {
-                    min: (0.0, 0.0),
-                    max: (1.0, 1.0),
-                },
-                image_id: super::image_cache::ImageId::empty(),
-                width: 100.0,
-                height: 100.0,
-                last_used_frame: 50,
-                atlas_layer: 1,
-            },
-        );
-
-        // Simulate accessing the graphic (updating last_used_frame)
-        if let Some(cached) = graphic_cache.get_mut(&graphic1) {
-            cached.last_used_frame = current_frame;
-        }
-
-        // Verify it was updated
-        assert_eq!(
-            graphic_cache.get(&graphic1).unwrap().last_used_frame,
-            current_frame,
-            "Last used frame should be updated"
         );
     }
 

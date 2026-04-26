@@ -1,7 +1,7 @@
 // Font metrics implementation similar to consistent font metrics approach
 // Key insight: Primary font determines cell dimensions for ALL fonts
 
-use crate::font_introspector::Metrics as FontIntrospectorMetrics;
+use swash::Metrics as FontIntrospectorMetrics;
 
 /// Font metrics similar to Rio's Metrics struct
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -84,7 +84,7 @@ impl FaceMetrics {
     /// the CJK water ideograph "水" (U+6C34) for proper font size normalization
     /// when mixing CJK and Latin fonts.
     pub fn from_font(
-        font_ref: &crate::font_introspector::FontRef,
+        font_ref: &swash::FontRef,
         metrics: &FontIntrospectorMetrics,
     ) -> Self {
         Self {
@@ -113,9 +113,7 @@ impl FaceMetrics {
     /// - It's present in virtually all CJK fonts (basic kanji/hanzi)
     /// - Its width is representative of typical CJK character width
     /// - It avoids edge cases like punctuation or rare characters
-    fn measure_cjk_character_width(
-        font_ref: &crate::font_introspector::FontRef,
-    ) -> Option<f64> {
+    fn measure_cjk_character_width(font_ref: &swash::FontRef) -> Option<f64> {
         const CJK_WATER_IDEOGRAPH: u32 = 0x6C34; // "水"
 
         // Get character map
@@ -129,8 +127,7 @@ impl FaceMetrics {
         }
 
         // Get glyph metrics
-        let glyph_metrics =
-            crate::font_introspector::GlyphMetrics::from_font(font_ref, &[]);
+        let glyph_metrics = font_ref.glyph_metrics(&[]);
 
         // Get advance width for the glyph
         let advance_width = glyph_metrics.advance_width(glyph_id);

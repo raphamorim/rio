@@ -12,13 +12,10 @@ use rio_backend::crosswords::LineDamage;
 use rio_backend::event::TerminalDamage;
 use taffy::NodeId;
 
-use crate::ansi::CursorShape;
-use crate::context::renderable::{Cursor, PendingUpdate, RenderableContent};
+use crate::context::renderable::{PendingUpdate, RenderableContent};
 use crate::context::ContextManager;
-use crate::crosswords::grid::row::Row;
-use crate::crosswords::pos::{Column, Line, Pos};
-use crate::crosswords::square::{Square, Wide};
-use crate::crosswords::style::{Style as CellStyle, StyleFlags, StyleSet};
+use crate::crosswords::pos::Pos;
+use crate::crosswords::style::{Style as CellStyle, StyleFlags};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
@@ -27,12 +24,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
-use rio_backend::sugarloaf::font_introspector::Attributes;
-use rio_backend::sugarloaf::{
-    drawable_character, is_private_user_area, CursorKind, Graphic, SpanStyle,
-    SpanStyleDecoration, Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo,
-    UnderlineShape, Weight,
-};
+use rio_backend::sugarloaf::Sugarloaf;
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 
@@ -40,6 +32,7 @@ pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
     draw_bold_text_with_light_colors: bool,
+    #[allow(dead_code)] // grid path doesn't consult this yet
     use_drawable_chars: bool,
     pub named_colors: Colors,
     pub colors: List,
@@ -50,9 +43,13 @@ pub struct Renderer {
     unfocused_split_opacity: f32,
     unfocused_split_fill: Option<ColorArray>,
     last_active: Option<NodeId>,
+    /// Last `rio_backend::sugarloaf::Color` we applied to sugarloaf's window clear via
+    /// `set_background_color`. Lets the per-frame "derive bg from
+    /// active panel's OSC state" loop avoid redundant resyncs.
+    last_window_bg: Option<rio_backend::sugarloaf::Color>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
-    ignore_selection_fg_color: bool,
+    pub(crate) ignore_selection_fg_color: bool,
     pub search: search::SearchOverlay,
     pub assistant: assistant::AssistantOverlay,
     pub scrollbar: scrollbar::Scrollbar,
@@ -62,70 +59,10 @@ pub struct Renderer {
     pub macos_use_unified_titlebar: bool,
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
-    pub dynamic_background: ([f32; 4], wgpu::Color, bool),
+    pub dynamic_background: ([f32; 4], rio_backend::sugarloaf::Color, bool),
     pub custom_mouse_cursor: bool,
     pub trail_cursor_enabled: bool,
     pub trail_cursor: trail_cursor::TrailCursor,
-}
-
-/// Check if two styles are compatible for shaping (can be in the same text run)
-/// Background color is intentionally excluded because it doesn't affect text shaping.
-/// This allows runs with varying background colors to share cache entries,
-/// dramatically improving cache hit rates for highlighted/selected text.
-fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
-    // PUA glyphs (and any glyph with a per-codepoint Nerd Font
-    // constraint) must each be in their own run so the compositor can
-    // individually constrain / scale them.
-    if a.pua_constraint.is_some()
-        || b.pua_constraint.is_some()
-        || a.nerd_font_constraint.is_some()
-        || b.nerd_font_constraint.is_some()
-    {
-        return false;
-    }
-    a.font_id == b.font_id
-        && a.color == b.color
-        && a.font_attrs == b.font_attrs
-        && a.decoration == b.decoration
-        && a.decoration_color == b.decoration_color
-        && a.cursor == b.cursor
-        && a.media == b.media
-        && a.drawable_char == b.drawable_char
-        && a.font_vars == b.font_vars
-        && a.width == b.width
-    // note: background_color is intentionally excluded
-}
-
-#[inline]
-fn is_powerline(c: char) -> bool {
-    ('\u{E0B0}'..='\u{E0D7}').contains(&c)
-}
-
-/// Compute the constraint width for a PUA (Nerd Font) glyph based on adjacent cells.
-/// Returns 1.0 (fit in 1 cell) or 2.0 (expand to 2 cells).
-fn pua_constraint_width(row: &Row<Square>, col: usize, cols: usize) -> f32 {
-    // At end of line -> constrain to 1 cell
-    if col + 1 >= cols {
-        return 1.0;
-    }
-
-    // If previous cell is also a PUA glyph (but not a graphics element
-    // like powerline), constrain to 1 so consecutive icons align properly.
-    if col > 0 {
-        let prev = row.inner[col - 1].c();
-        if is_private_user_area(&prev) && !is_powerline(prev) {
-            return 1.0;
-        }
-    }
-
-    // If next cell is empty, space, or wide char spacer, expand to 2 cells.
-    let next = &row.inner[col + 1];
-    if next.c() == '\0' || next.c() == ' ' || matches!(next.wide(), Wide::Spacer) {
-        return 2.0;
-    }
-
-    // Next cell is occupied -> constrain to 1 cell
-    1.0
 }
 
 impl Renderer {
@@ -139,7 +76,7 @@ impl Renderer {
             dynamic_background.1.a = config.window.opacity as f64;
             dynamic_background.2 = true;
         } else if config.window.background_image.is_some() {
-            dynamic_background.1 = wgpu::Color::TRANSPARENT;
+            dynamic_background.1 = rio_backend::sugarloaf::Color::TRANSPARENT;
             dynamic_background.2 = true;
         }
 
@@ -158,6 +95,7 @@ impl Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
             unfocused_split_fill: config.navigation.unfocused_split_fill,
             last_active: None,
+            last_window_bg: None,
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
@@ -193,555 +131,7 @@ impl Renderer {
     }
 
     #[inline]
-    fn create_style(
-        &mut self,
-        square: &Square,
-        cell_style: &CellStyle,
-        term_colors: &TermColors,
-    ) -> (SpanStyle, char) {
-        let flags = cell_style.flags;
-
-        let mut foreground_color = self.compute_color(&cell_style.fg, flags, term_colors);
-        let mut background_color = self.compute_bg_color(cell_style, term_colors);
-
-        let content = if square.c() == '\t' || flags.contains(StyleFlags::HIDDEN) {
-            ' '
-        } else {
-            square.c()
-        };
-
-        let font_attrs = match (
-            flags.contains(StyleFlags::ITALIC),
-            flags.contains(StyleFlags::ITALIC) && flags.contains(StyleFlags::BOLD),
-            flags.contains(StyleFlags::BOLD),
-        ) {
-            (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
-            (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
-            (_, _, true) => (Stretch::NORMAL, Weight::BOLD, Style::Normal),
-            _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
-        };
-
-        if flags.contains(StyleFlags::INVERSE) {
-            std::mem::swap(&mut background_color, &mut foreground_color);
-        }
-
-        let background_color = if self.dynamic_background.2
-            && background_color[0] == self.dynamic_background.0[0]
-            && background_color[1] == self.dynamic_background.0[1]
-            && background_color[2] == self.dynamic_background.0[2]
-        {
-            None
-        } else {
-            Some(background_color)
-        };
-
-        let (decoration, decoration_color) =
-            self.compute_decoration(cell_style, term_colors);
-
-        (
-            SpanStyle {
-                color: foreground_color,
-                background_color,
-                font_attrs: font_attrs.into(),
-                decoration,
-                decoration_color,
-                ..SpanStyle::default()
-            },
-            content,
-        )
-    }
-
-    #[inline]
-    fn compute_decoration(
-        &self,
-        cell_style: &CellStyle,
-        term_colors: &TermColors,
-    ) -> (Option<SpanStyleDecoration>, Option<[f32; 4]>) {
-        let mut decoration = None;
-        let mut decoration_color = None;
-
-        if cell_style.flags.contains(StyleFlags::UNDERLINE) {
-            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
-                is_doubled: false,
-                shape: UnderlineShape::Regular,
-            }));
-        } else if cell_style.flags.contains(StyleFlags::STRIKEOUT) {
-            decoration = Some(SpanStyleDecoration::Strikethrough);
-        } else if cell_style.flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
-            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
-                is_doubled: true,
-                shape: UnderlineShape::Regular,
-            }));
-        } else if cell_style.flags.contains(StyleFlags::DOTTED_UNDERLINE) {
-            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
-                is_doubled: false,
-                shape: UnderlineShape::Dotted,
-            }));
-        } else if cell_style.flags.contains(StyleFlags::DASHED_UNDERLINE) {
-            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
-                is_doubled: false,
-                shape: UnderlineShape::Dashed,
-            }));
-        } else if cell_style.flags.contains(StyleFlags::UNDERCURL) {
-            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
-                is_doubled: false,
-                shape: UnderlineShape::Curly,
-            }));
-        }
-
-        if decoration.is_some() {
-            if let Some(color) = cell_style.underline_color {
-                decoration_color =
-                    Some(self.compute_color(&color, cell_style.flags, term_colors));
-            }
-        };
-
-        (decoration, decoration_color)
-    }
-
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    /// Check if a position is within any hint match
-    fn is_position_in_hint_matches(
-        matches: &[rio_backend::crosswords::search::Match],
-        pos: Pos,
-    ) -> bool {
-        matches.iter().any(|m| m.contains(&pos))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn create_line(
-        &mut self,
-        sugarloaf: &mut Sugarloaf,
-        row: &Row<Square>,
-        style_set: &StyleSet,
-        extras_table: &rio_backend::crosswords::grid::ExtrasTable,
-        has_cursor: bool,
-        line_opt: Option<usize>,
-        line: Line,
-        renderable_content: &RenderableContent,
-        hint_matches: Option<&[rio_backend::crosswords::search::Match]>,
-        focused_match: &Option<RangeInclusive<Pos>>,
-        term_colors: &TermColors,
-        is_active: bool,
-    ) {
-        // let start = std::time::Instant::now();
-        let cursor = &renderable_content.cursor;
-        let selection_range = renderable_content.selection_range;
-        let columns: usize = row.len();
-        let mut content = String::with_capacity(columns);
-        let mut last_style = SpanStyle::default();
-
-        // Collect all characters that need font lookups to batch them
-        let mut font_lookups = Vec::new();
-        let mut styles_and_chars = Vec::with_capacity(columns);
-
-        // Cache the looked-up cell style across consecutive cells with the
-        // same `style_id` — this is the common case (most rows have long
-        // runs of identically-styled cells), and avoids the StyleSet lookup
-        // per cell. Bg-only cells (Ghostty's `bg_color_palette`/`bg_color_rgb`
-        // trick) skip the lookup entirely; we synthesize a Style with the
-        // inline bg and reuse the same cache slot.
-        let mut cached_style_id: Option<crate::crosswords::style::StyleId> = None;
-        let mut cached_style: CellStyle = CellStyle::default();
-        // Bg-only cells don't have a style id; track them by a tag instead
-        // so the cache invalidates correctly when transitioning between
-        // bg-only and codepoint cells.
-        let mut cached_bg_only: u64 = u64::MAX;
-
-        // First pass: collect all styles and identify font cache misses
-        for column in 0..columns {
-            let square = &row.inner[column];
-
-            if matches!(square.wide(), Wide::Spacer) {
-                continue;
-            }
-
-            // Resolve the cell style. For bg-only cells we synthesize a
-            // Style with the inline bg and skip the StyleSet entirely.
-            // For codepoint cells we cache the looked-up style across runs
-            // of identical style_ids.
-            use crate::crosswords::square::ContentTag;
-            match square.content_tag() {
-                ContentTag::BgPalette => {
-                    let idx = square.bg_palette_index();
-                    let key = 0x0100_0000 | idx as u64;
-                    if cached_bg_only != key {
-                        cached_style = CellStyle {
-                            bg: AnsiColor::Indexed(idx),
-                            ..CellStyle::default()
-                        };
-                        cached_bg_only = key;
-                        cached_style_id = None;
-                    }
-                }
-                ContentTag::BgRgb => {
-                    let (r, g, b) = square.bg_rgb();
-                    let key =
-                        0x0200_0000 | ((r as u64) << 16) | ((g as u64) << 8) | b as u64;
-                    if cached_bg_only != key {
-                        cached_style =
-                            CellStyle {
-                                bg: AnsiColor::Spec(
-                                    rio_backend::config::colors::ColorRgb { r, g, b },
-                                ),
-                                ..CellStyle::default()
-                            };
-                        cached_bg_only = key;
-                        cached_style_id = None;
-                    }
-                }
-                ContentTag::Codepoint => {
-                    let sid = square.style_id();
-                    if Some(sid) != cached_style_id {
-                        cached_style = style_set.get(sid);
-                        cached_style_id = Some(sid);
-                        cached_bg_only = u64::MAX;
-                    }
-                }
-            }
-            let cell_style = &cached_style;
-
-            let (mut style, mut square_content) =
-                if has_cursor && column == cursor.state.pos.col {
-                    self.create_cursor_style(
-                        square,
-                        cell_style,
-                        cursor,
-                        is_active,
-                        term_colors,
-                    )
-                } else {
-                    self.create_style(square, cell_style, term_colors)
-                };
-
-            // Check selection before any early returns so '\0' cells get highlights
-            if let Some(ref range) = selection_range {
-                let pos = Pos::new(line, Column(column));
-                if range.contains(pos) {
-                    style.color = if self.ignore_selection_fg_color {
-                        self.compute_color(&cell_style.fg, cell_style.flags, term_colors)
-                    } else {
-                        self.named_colors.selection_foreground
-                    };
-                    style.background_color = Some(self.named_colors.selection_background);
-                }
-            }
-
-            if square_content == '\0' {
-                if square.has_graphics() {
-                    if let Some(eid) = square.extras_id() {
-                        if let Some(gc) = extras_table
-                            .get(eid)
-                            .and_then(|e| e.graphic.as_ref())
-                            .and_then(|g| g.first())
-                        {
-                            style.media = Some(Graphic {
-                                id: gc.texture.id,
-                                offset_x: gc.offset_x,
-                                offset_y: gc.offset_y,
-                            });
-                        }
-                    }
-                }
-                styles_and_chars.push((style, square_content, column));
-                continue;
-            }
-
-            // Apply underline for hyperlinks (OSC 8) or highlighted hints (hover).
-            let should_underline = {
-                if let Some(highlighted_hint) = &renderable_content.highlighted_hint {
-                    let current_pos = Pos::new(line, Column(column));
-                    highlighted_hint.start <= current_pos
-                        && current_pos <= highlighted_hint.end
-                } else {
-                    false
-                }
-            };
-
-            if should_underline {
-                style.decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
-                    is_doubled: false,
-                    shape: UnderlineShape::Regular,
-                }));
-            }
-
-            // Check hints (only for non-empty cells, selection already handled above)
-            if selection_range.is_none() {
-                if let Some(matches) = hint_matches {
-                    let pos = Pos::new(line, Column(column));
-                    if Self::is_position_in_hint_matches(matches, pos) {
-                        let is_focused =
-                            focused_match.as_ref().is_some_and(|fm| fm.contains(&pos));
-                        if is_focused {
-                            style.color =
-                                self.named_colors.search_focused_match_foreground;
-                            style.background_color =
-                                Some(self.named_colors.search_focused_match_background);
-                        } else {
-                            style.color = self.named_colors.search_match_foreground;
-                            style.background_color =
-                                Some(self.named_colors.search_match_background);
-                        }
-                    }
-                }
-            }
-
-            // Check for hint labels at this position
-            if let Some(hint_label) = self.find_hint_label_at_position(
-                renderable_content,
-                Pos::new(line, Column(column)),
-            ) {
-                // Override character with hint label character if available
-                if let Some(label_char) = hint_label.label.first() {
-                    square_content = *label_char;
-                }
-
-                // Apply hint label styling
-                if hint_label.is_first {
-                    // Use configurable hint colors
-                    style.color = self.named_colors.hint_foreground;
-                    style.background_color = Some(self.named_colors.hint_background);
-                } else {
-                    // End colors: use same foreground, slightly dimmed background
-                    style.color = self.named_colors.hint_foreground;
-                    let mut dimmed_bg = self.named_colors.hint_background;
-                    // Dim the background slightly for continuation labels
-                    dimmed_bg[0] *= 0.8;
-                    dimmed_bg[1] *= 0.8;
-                    dimmed_bg[2] *= 0.8;
-                    style.background_color = Some(dimmed_bg);
-                }
-
-                // Make hint labels bold for better visibility
-                use rio_backend::sugarloaf::font_introspector::{Attributes, Weight};
-                let current_attrs = style.font_attrs;
-                style.font_attrs = Attributes::new(
-                    current_attrs.stretch(),
-                    Weight::BOLD,
-                    current_attrs.style(),
-                );
-            }
-
-            // Kitty Unicode placeholder (U+10EEEE): render as transparent
-            // space so the image overlay underneath shows through. The
-            // overlay is queued at z=-1 (BelowText) and rendered BEFORE
-            // text/quads — without clearing the bg the per-cell bg quad
-            // would cover the image. The encoded fg color carries the
-            // image_id and is meaningless to display.
-            if square_content == '\u{10EEEE}' {
-                square_content = ' ';
-                style.background_color = None;
-            }
-
-            if square.has_graphics() {
-                if let Some(eid) = square.extras_id() {
-                    if let Some(gc) = extras_table
-                        .get(eid)
-                        .and_then(|e| e.graphic.as_ref())
-                        .and_then(|g| g.first())
-                    {
-                        style.media = Some(Graphic {
-                            id: gc.texture.id,
-                            offset_x: gc.offset_x,
-                            offset_y: gc.offset_y,
-                        });
-                    }
-                }
-            }
-
-            // Handle drawable characters
-            if self.use_drawable_chars {
-                if let Some(character) = drawable_character(square_content) {
-                    style.drawable_char = Some(character);
-                }
-            }
-
-            let has_drawable_char = style.drawable_char.is_some();
-            if !has_drawable_char {
-                if let Some(cached) =
-                    sugarloaf.try_glyph_cached(square_content, style.font_attrs)
-                {
-                    style.font_id = cached.font_id;
-                    style.width = cached.width;
-                    if cached.is_pua {
-                        style.pua_constraint =
-                            Some(pua_constraint_width(row, column, columns));
-                        style.nerd_font_constraint = rio_backend::sugarloaf::font::nerd_font_attributes::get_constraint(
-                            square_content as u32,
-                        );
-                    }
-                } else {
-                    // Mark this character for font lookup
-                    font_lookups.push((
-                        styles_and_chars.len(),
-                        square_content,
-                        style.font_attrs,
-                    ));
-                }
-            }
-
-            styles_and_chars.push((style, square_content, column));
-        }
-
-        // Batch font lookups with a single lock acquisition (the
-        // batch lives behind sugarloaf so the cache + FontLibrary
-        // stay co-located).
-        if !font_lookups.is_empty() {
-            let queries: Vec<(char, Attributes)> = font_lookups
-                .iter()
-                .map(|&(_, ch, attrs)| (ch, attrs))
-                .collect();
-            let resolved = sugarloaf.resolve_glyphs_batch(&queries);
-            for ((style_index, ch, _), glyph) in font_lookups.iter().zip(resolved.iter())
-            {
-                let column = styles_and_chars[*style_index].2;
-                let style = &mut styles_and_chars[*style_index].0;
-                style.font_id = glyph.font_id;
-                style.width = glyph.width;
-                if glyph.is_pua {
-                    style.pua_constraint =
-                        Some(pua_constraint_width(row, column, columns));
-                    style.nerd_font_constraint = rio_backend::sugarloaf::font::nerd_font_attributes::get_constraint(
-                        *ch as u32,
-                    );
-                }
-            }
-        }
-
-        // Second pass: render the line using the resolved styles.
-        // Grab the content builder now — pass 1 only touched the
-        // sugarloaf font cache, so we can take a fresh `&mut Content`
-        // here without conflict.
-        let builder = sugarloaf.content();
-        // Track consecutive blank cells ('\0' and ' ') to batch into a single rect
-        let mut pending_blank_width: f32 = 0.0;
-        let mut pending_blank_style = SpanStyle::default();
-
-        for (style, square_content, column) in styles_and_chars {
-            // Cells carrying a graphic (sixel/iTerm2/Kitty) must go
-            // through the normal text path so the renderer paints
-            // their image. They are NOT blank — even when their
-            // character slot is `'\0'` or `' '`.
-            let has_media = style.media.is_some();
-            let is_blank =
-                (square_content == '\0' || square_content == ' ') && !has_media;
-
-            // Flush pending blank run if this cell breaks the batch
-            if pending_blank_width > 0.0
-                && (!is_blank
-                    || style.background_color != pending_blank_style.background_color
-                    || style.cursor != pending_blank_style.cursor
-                    || style.decoration != pending_blank_style.decoration
-                    || style.decoration_color != pending_blank_style.decoration_color)
-            {
-                let mut rect_style = pending_blank_style;
-                rect_style.width = pending_blank_width;
-                if let Some(line) = line_opt {
-                    builder.add_span_as_rect_on_line(line, rect_style);
-                } else {
-                    builder.add_span_as_rect(rect_style);
-                }
-                pending_blank_width = 0.0;
-            }
-
-            // Handle drawable characters
-            if style.drawable_char.is_some() {
-                if !content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_span_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_span(&content, last_style);
-                    }
-                    content.clear();
-                }
-
-                last_style = style;
-                content.push(' '); // Ignore font shaping
-            } else if is_blank {
-                // Accumulate into pending blank run
-                if !content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_span_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_span(&content, last_style);
-                    }
-                    content.clear();
-                }
-                if pending_blank_width == 0.0 {
-                    pending_blank_style = style;
-                }
-                pending_blank_width += 1.0;
-                last_style = style;
-            } else {
-                // Break runs when styles differ in ways that affect shaping
-                // or when background color changes (for search highlights, etc.)
-                if !styles_are_compatible_for_shaping(&last_style, &style)
-                    || last_style.background_color != style.background_color
-                {
-                    if !content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_span_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_span(&content, last_style);
-                        }
-                        content.clear();
-                    }
-
-                    last_style = style;
-                }
-
-                // A '\0' cell with a graphic still needs a glyph to
-                // anchor the image draw. Substitute a space so the
-                // shaper produces a real run.
-                let push_char = if has_media && square_content == '\0' {
-                    ' '
-                } else {
-                    square_content
-                };
-                content.push(push_char);
-            }
-
-            // Render last column and break row
-            if column == (columns - 1) {
-                if !content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_span_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_span(&content, last_style);
-                    }
-                }
-
-                // Flush any remaining pending blank cells
-                if pending_blank_width > 0.0 {
-                    let mut rect_style = pending_blank_style;
-                    rect_style.width = pending_blank_width;
-                    if let Some(line) = line_opt {
-                        builder.add_span_as_rect_on_line(line, rect_style);
-                    } else {
-                        builder.add_span_as_rect(rect_style);
-                    }
-                }
-
-                break;
-            }
-        }
-
-        if let Some(line) = line_opt {
-            builder.build_line(line);
-        } else {
-            builder.new_line();
-        }
-
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in --renderer.update.create_line() is: {:?}",
-        //     duration
-        // );
-    }
-
-    #[inline]
-    fn compute_color(
+    pub(crate) fn compute_color(
         &self,
         color: &AnsiColor,
         flags: StyleFlags,
@@ -791,7 +181,7 @@ impl Renderer {
     }
 
     #[inline]
-    fn compute_bg_color(
+    pub(crate) fn compute_bg_color(
         &self,
         cell_style: &CellStyle,
         term_colors: &TermColors,
@@ -823,124 +213,6 @@ impl Renderer {
     }
 
     #[inline]
-    fn create_cursor_style(
-        &self,
-        square: &Square,
-        cell_style: &CellStyle,
-        cursor: &Cursor,
-        is_active: bool,
-        term_colors: &TermColors,
-    ) -> (SpanStyle, char) {
-        let flags = cell_style.flags;
-        let font_attrs = match (
-            flags.contains(StyleFlags::ITALIC),
-            flags.contains(StyleFlags::ITALIC) && flags.contains(StyleFlags::BOLD),
-            flags.contains(StyleFlags::BOLD),
-        ) {
-            (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
-            (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
-            (_, _, true) => (Stretch::NORMAL, Weight::BOLD, Style::Normal),
-            _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
-        };
-
-        let mut color = self.compute_color(&cell_style.fg, flags, term_colors);
-        let mut background_color = self.compute_bg_color(cell_style, term_colors);
-        // If IME is enabled we get the current content to cursor
-        let content = if cursor.is_ime_enabled {
-            cursor.content
-        } else if square.c() == '\0' {
-            ' '
-        } else {
-            square.c()
-        };
-
-        if flags.contains(StyleFlags::INVERSE) {
-            std::mem::swap(&mut background_color, &mut color);
-        }
-
-        let has_dynamic_background = self.dynamic_background.2
-            && background_color[0] == self.dynamic_background.0[0]
-            && background_color[1] == self.dynamic_background.0[1]
-            && background_color[2] == self.dynamic_background.0[2];
-        let background_color = if has_dynamic_background
-            && (cursor.state.content != CursorShape::Block && is_active)
-        {
-            None
-        } else {
-            Some(background_color)
-        };
-
-        // If IME is or cursor is block enabled, put background color
-        // when cursor is over the character
-        match (
-            cursor.is_ime_enabled,
-            (cursor.state.content == CursorShape::Block || !is_active),
-        ) {
-            (_, true) => {
-                color = self.named_colors.background.0;
-            }
-            (true, false) => {
-                color = self.named_colors.foreground;
-            }
-            (false, false) => {}
-        }
-
-        let mut style = SpanStyle {
-            color,
-            background_color,
-            font_attrs: font_attrs.into(),
-            ..SpanStyle::default()
-        };
-
-        let cursor_color = if !self.is_vi_mode_enabled {
-            term_colors[NamedColor::Cursor].unwrap_or(self.named_colors.cursor)
-        } else {
-            self.named_colors.vi_cursor
-        };
-
-        let (decoration, decoration_color) =
-            self.compute_decoration(cell_style, term_colors);
-        style.decoration = decoration;
-        style.decoration_color = decoration_color;
-
-        match cursor.state.content {
-            CursorShape::Underline => {
-                style.decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
-                    is_doubled: false,
-                    shape: UnderlineShape::Regular,
-                }));
-                style.decoration_color = Some(cursor_color);
-            }
-            CursorShape::Block => {
-                style.cursor = Some(SugarCursor {
-                    kind: CursorKind::Block,
-                    color: cursor_color,
-                    order: 0,
-                });
-            }
-            CursorShape::Beam => {
-                style.cursor = Some(SugarCursor {
-                    kind: CursorKind::Caret,
-                    color: cursor_color,
-                    order: 0,
-                });
-            }
-            CursorShape::Hidden => {}
-        }
-
-        if !is_active {
-            style.decoration = None;
-            style.cursor = Some(SugarCursor {
-                kind: CursorKind::HollowBlock,
-                color: cursor_color,
-                order: 0,
-            });
-        }
-
-        (style, content)
-    }
-
-    #[inline]
     pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
@@ -957,7 +229,8 @@ impl Renderer {
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
         focused_match: &Option<RangeInclusive<Pos>>,
-    ) -> Option<crate::context::renderable::WindowUpdate> {
+    ) -> (Option<crate::context::renderable::WindowUpdate>, bool) {
+        let mut any_panel_dirty = false;
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
         let grid_scaled_margin = grid.get_scaled_margin();
@@ -1007,19 +280,20 @@ impl Renderer {
 
             let force_full_damage = has_active_changed || self.is_game_mode_enabled;
 
+            let is_dirty = context.renderable_content.pending_update.is_dirty();
+
             // Check if we need to render
-            if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
-            {
+            if !is_dirty && !force_full_damage {
                 // No updates pending, skip rendering
                 continue;
             }
+            any_panel_dirty = true;
 
             // UI-side damage (scroll, selection, resize, etc.)
             let ui_terminal_damage = context
                 .renderable_content
                 .pending_update
                 .take_terminal_damage();
-            let _ui_damage = context.renderable_content.pending_update.take_ui_damage();
             context.renderable_content.pending_update.reset();
 
             // Compute snapshot at render time — extract PTY-side damage from the
@@ -1041,14 +315,26 @@ impl Renderer {
                             PendingUpdate::merge_terminal_damages(ui, pty)
                         }
                         (Some(d), None) | (None, Some(d)) => d,
-                        (None, None) => {
-                            drop(terminal);
-                            continue;
-                        }
+                        // UI-only damage (overlay hover, command-palette
+                        // input, etc.): cells didn't change, but the
+                        // panel still has to go through the render path
+                        // so UI overlays paint on top of a fresh frame.
+                        // Noop propagates to `RowsToRebuild::None` in
+                        // `screen::render`'s emit loop — grid keeps its
+                        // resident CPU bg/fg buffers, zero row work.
+                        (None, None) => TerminalDamage::Noop,
                     }
                 };
 
                 terminal.reset_damage();
+
+                // Hand the computed damage off to the grid
+                // emission path in `Screen::render`. `snapshot` is
+                // still used on the non-macOS rich-text path below;
+                // this just persists a copy on the context. Cheap
+                // (`TerminalDamage::Partial` is a `BTreeSet` of a
+                // few dozen `LineDamage` entries at most).
+                context.renderable_content.last_frame_damage = damage.clone();
 
                 let snapshot = TerminalSnapshot {
                     colors: terminal.colors,
@@ -1090,19 +376,22 @@ impl Renderer {
 
             // Recalculate image overlay positions every frame when placements
             // exist. Positions depend on display_offset and history_size which
-            // change on scroll and text output (like Ghostty's approach).
+            // change on scroll and text output (like approach).
             let has_overlays = !terminal_snapshot.kitty_placements.is_empty();
             let has_virtual = !terminal_snapshot.kitty_virtual_placements.is_empty();
             if has_overlays || has_virtual {
                 let line_height = sugarloaf.style().line_height;
-                let content = sugarloaf.content();
-                content.sel(context.rich_text_id);
-                content.clear_image_overlays();
                 let layout = context.dimension;
                 let cell_width = layout.dimension.width;
                 let cell_height = layout.dimension.height * line_height;
                 let origin_x = panel_rect[0] + grid_scaled_margin.left;
                 let origin_y = panel_rect[1] + grid_scaled_margin.top;
+
+                let overlays = sugarloaf
+                    .image_overlays
+                    .entry(context.rich_text_id)
+                    .or_default();
+                overlays.clear();
 
                 if has_overlays {
                     let history_size = terminal_snapshot.history_size as i64;
@@ -1112,12 +401,11 @@ impl Renderer {
                     for p in &terminal_snapshot.kitty_placements {
                         let screen_row = p.dest_row - (history_size - display_offset);
                         let image_bottom_row = screen_row + p.rows as i64;
-                        // Cull only if fully off-screen (like Ghostty)
+                        // Cull only if fully off-screen (like )
                         if image_bottom_row <= 0 || screen_row >= screen_lines {
                             continue;
                         }
-                        content
-                            .push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
+                        overlays.push(rio_backend::sugarloaf::GraphicOverlay {
                             image_id: p.image_id,
                             x: origin_x + p.dest_col as f32 * cell_width,
                             y: origin_y + screen_row as f32 * cell_height,
@@ -1132,7 +420,7 @@ impl Renderer {
 
                 if has_virtual {
                     Self::push_virtual_placeholder_overlays(
-                        content,
+                        overlays,
                         &terminal_snapshot,
                         origin_x,
                         origin_y,
@@ -1142,9 +430,7 @@ impl Renderer {
                 }
             } else if terminal_snapshot.kitty_graphics_dirty {
                 // Placements were removed — clear overlays
-                let content = sugarloaf.content();
-                content.sel(context.rich_text_id);
-                content.clear_image_overlays();
+                sugarloaf.clear_image_overlays_for(context.rich_text_id);
             }
 
             // Get hint matches from renderable content
@@ -1241,63 +527,16 @@ impl Renderer {
                 is_cursor_visible = true;
             }
 
-            match specific_lines {
-                None => {
-                    sugarloaf.content().sel(rich_text_id).clear();
-                    for (i, row) in terminal_snapshot.visible_rows.iter().enumerate() {
-                        let has_cursor = is_cursor_visible
-                            && context.renderable_content.cursor.state.pos.row == i;
-                        self.create_line(
-                            sugarloaf,
-                            row,
-                            &terminal_snapshot.style_set,
-                            &terminal_snapshot.extras_table,
-                            has_cursor,
-                            None,
-                            Line((i as i32) - terminal_snapshot.display_offset as i32),
-                            &context.renderable_content,
-                            hint_matches,
-                            focused_match,
-                            &terminal_snapshot.colors,
-                            is_active,
-                        );
-                    }
-                    sugarloaf.content().build();
-                    // let _duration = start.elapsed();
-                }
-                Some(lines) => {
-                    sugarloaf.content().sel(rich_text_id);
-                    for line in lines {
-                        let line = line.line;
-                        let has_cursor = is_cursor_visible
-                            && context.renderable_content.cursor.state.pos.row == line;
-                        sugarloaf.content().clear_line(line);
-                        if let Some(visible_row) =
-                            terminal_snapshot.visible_rows.get(line)
-                        {
-                            self.create_line(
-                                sugarloaf,
-                                visible_row,
-                                &terminal_snapshot.style_set,
-                                &terminal_snapshot.extras_table,
-                                has_cursor,
-                                Some(line),
-                                Line(
-                                    (line as i32)
-                                        - terminal_snapshot.display_offset as i32,
-                                ),
-                                &context.renderable_content,
-                                hint_matches,
-                                focused_match,
-                                &terminal_snapshot.colors,
-                                is_active,
-                            );
-                        }
-                    }
-
-                    // let _duration = start.elapsed();
-                }
-            }
+            // Grid renderer is the authoritative terminal text path on
+            // every platform now. The grid emits from terminal state
+            // directly and resolves its own cursor cells; the
+            // previously-computed damage / cursor visibility /
+            // hint-match info isn't used here.
+            let _ = specific_lines;
+            let _ = is_cursor_visible;
+            let _ = hint_matches;
+            let _ = focused_match;
+            let _ = rich_text_id;
         }
 
         let window_size = sugarloaf.window_size();
@@ -1322,11 +561,28 @@ impl Renderer {
                 if &active_key == key {
                     continue;
                 }
-                let panel_rect = grid_context.layout_rect;
-                let x = (panel_rect[0] + grid_scaled_margin.left) / scale_factor;
-                let y = (panel_rect[1] + grid_scaled_margin.top) / scale_factor;
-                let w = panel_rect[2] / scale_factor;
-                let h = panel_rect[3] / scale_factor;
+                // Match the grid renderer's actual paint region —
+                // `.round()`ed integer-pixel origin +
+                // `cols * round(cell_w)` × `rows * round(cell_h)`
+                // content size (same math as `GridUniforms.grid_padding`
+                // / `cell_size` in `screen/mod.rs:~3717`). Using raw
+                // `layout_rect` leaves a sub-pixel un-dimmed fringe at
+                // the right/bottom edges of inactive splits because
+                // taffy allocates fractional sizes while the grid
+                // snaps to whole cells.
+                let dim = grid_context.val.dimension;
+                let cell_w = dim.dimension.width.round().max(1.0);
+                let cell_h = dim.dimension.height.round().max(1.0);
+                let cols = dim.columns.max(1) as f32;
+                let rows = dim.lines.max(1) as f32;
+                let panel_left =
+                    (grid_context.layout_rect[0] + grid_scaled_margin.left).round();
+                let panel_top =
+                    (grid_context.layout_rect[1] + grid_scaled_margin.top).round();
+                let x = panel_left / scale_factor;
+                let y = panel_top / scale_factor;
+                let w = (cols * cell_w) / scale_factor;
+                let h = (rows * cell_h) / scale_factor;
                 sugarloaf.rect(None, x, y, w, h, dim_color, 0.0, 3);
             }
         }
@@ -1416,34 +672,43 @@ impl Renderer {
             }
         }
 
-        // Apply background color from current context if changed
+        // Derive the window bg color from the currently-active panel's
+        // OSC 11 state (sticky on `renderable_content.background`) on
+        // every frame, not just the frame where OSC arrived. Without
+        // this, switching from a panel that ran OSC 11 to one that
+        // didn't keeps sugarloaf's bg stuck at the OSC color — we
+        // want it to follow focus the way does (each surface's
+        // `terminal.colors.background` drives its own window chrome).
         let current_context = context_manager.current_grid_mut().current_mut();
-        let window_update = if let Some(bg_state) =
-            current_context.renderable_content.background.take()
-        {
-            use crate::context::renderable::BackgroundState;
-            match bg_state {
-                BackgroundState::Set(color) => {
-                    sugarloaf.set_background_color(Some(color));
-                }
-                BackgroundState::Reset => {
-                    sugarloaf.set_background_color(None);
-                }
+        let effective_bg = match &current_context.renderable_content.background {
+            Some(crate::context::renderable::BackgroundState::Set(color)) => *color,
+            // Explicit OSC 111 reset OR panel that never ran OSC 11 →
+            // fall back to the config / dynamic_background (honors
+            // window-opacity / background-image).
+            Some(crate::context::renderable::BackgroundState::Reset) | None => {
+                self.dynamic_background.1
             }
+        };
+
+        let window_update = if self.last_window_bg != Some(effective_bg) {
+            sugarloaf.set_background_color(Some(effective_bg));
+            self.last_window_bg = Some(effective_bg);
+            // Native-window chrome (`setBackgroundColor` on macOS,
+            // titlebar color on Windows) follows the same value.
             Some(crate::context::renderable::WindowUpdate::Background(
-                bg_state,
+                crate::context::renderable::BackgroundState::Set(effective_bg),
             ))
         } else {
             None
         };
 
-        window_update
+        (window_update, any_panel_dirty)
     }
 
     /// Check if the renderer needs continuous redraw (for animations)
     #[inline]
     pub fn needs_redraw(&mut self) -> bool {
-        if self.trail_cursor.is_animating() {
+        if self.trail_cursor_enabled && self.trail_cursor.is_animating() {
             return true;
         }
         if self.scrollbar.needs_redraw() {
@@ -1457,6 +722,7 @@ impl Renderer {
     }
 
     /// Find hint label at the specified position
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     fn find_hint_label_at_position<'a>(
         &self,
         renderable_content: &'a RenderableContent,
@@ -1472,20 +738,20 @@ impl Renderer {
     /// push one `GraphicOverlay` per row-run. Ports the four key behaviors
     /// from ghostty's `graphics_unicode.zig`:
     ///
-    ///   1. Per-row `kitty_virtual_placeholder` flag check skips rows
-    ///      with no placeholders (`page.zig:1953-1958`).
-    ///   2. Continuation rules — a cell with missing diacritics inherits
-    ///      from the previous cell on the row (`canAppend`,
-    ///      `graphics_unicode.zig:506-513`).
-    ///   3. Run aggregation — consecutive cells with same image / row /
-    ///      sequential column collapse into one Placement
-    ///      (`PlacementIterator.next`, `graphics_unicode.zig:36-99`).
-    ///   4. Per-run source rect with aspect-fit + centering — handles
-    ///      partial visibility (placement scrolled half off-screen) and
-    ///      cells that fall in the centering padding
-    ///      (`renderPlacement`, `graphics_unicode.zig:212-329`).
+    /// 1. Per-row `kitty_virtual_placeholder` flag check skips rows
+    ///    with no placeholders.
+    /// 2. Continuation rules — a cell with missing diacritics inherits
+    ///    from the previous cell on the row (`canAppend`,
+    ///    `graphics_unicode.zig:506-513`).
+    /// 3. Run aggregation — consecutive cells with same image / row /
+    ///    sequential column collapse into one Placement
+    ///    (`PlacementIterator.next`, `graphics_unicode.zig:36-99`).
+    /// 4. Per-run source rect with aspect-fit + centering — handles
+    ///    partial visibility (placement scrolled half off-screen) and
+    ///    cells that fall in the centering padding
+    ///    (`renderPlacement`, `graphics_unicode.zig:212-329`).
     fn push_virtual_placeholder_overlays(
-        content: &mut rio_backend::sugarloaf::Content,
+        overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
         snapshot: &TerminalSnapshot,
         origin_x: f32,
         origin_y: f32,
@@ -1516,7 +782,7 @@ impl Renderer {
                 if square.c() != PLACEHOLDER {
                     if let Some((p, start_col)) = run.take() {
                         flush_run(
-                            content,
+                            overlays,
                             snapshot,
                             p.complete(),
                             line_idx,
@@ -1551,7 +817,7 @@ impl Renderer {
                     _ => {
                         if let Some((p, start_col)) = run.take() {
                             flush_run(
-                                content,
+                                overlays,
                                 snapshot,
                                 p.complete(),
                                 line_idx,
@@ -1582,7 +848,7 @@ impl Renderer {
 
             if let Some((p, start_col)) = run {
                 flush_run(
-                    content,
+                    overlays,
                     snapshot,
                     p.complete(),
                     line_idx,
@@ -1604,7 +870,7 @@ impl Renderer {
         /// entirely in the aspect-fit centering padding.
         #[allow(clippy::too_many_arguments)]
         fn flush_run(
-            content: &mut rio_backend::sugarloaf::Content,
+            overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
             snapshot: &TerminalSnapshot,
             run: PlaceholderRun,
             screen_line: usize,
@@ -1645,7 +911,7 @@ impl Renderer {
                 None => return,
             };
 
-            content.push_image_overlay(rio_backend::sugarloaf::GraphicOverlay {
+            overlays.push(rio_backend::sugarloaf::GraphicOverlay {
                 image_id: run.image_id,
                 x: geom.x,
                 y: geom.y,
@@ -1655,260 +921,5 @@ impl Renderer {
                 source_rect: geom.source_rect,
             });
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rio_backend::crosswords::pos::{Column, Line, Pos};
-
-    #[test]
-    fn test_is_position_in_hint_matches() {
-        let matches = vec![
-            Pos::new(Line(0), Column(0))..=Pos::new(Line(0), Column(4)),
-            Pos::new(Line(1), Column(5))..=Pos::new(Line(1), Column(9)),
-            Pos::new(Line(5), Column(10))..=Pos::new(Line(5), Column(15)),
-        ];
-
-        // Test positions inside matches
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(0), Column(0))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(0), Column(2))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(0), Column(4))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(1), Column(5))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(1), Column(7))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(1), Column(9))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(5), Column(10))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(5), Column(15))
-        ));
-
-        // Test positions outside matches
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(0), Column(5))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(1), Column(4))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(1), Column(10))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(0))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(5), Column(9))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(5), Column(16))
-        ));
-    }
-
-    #[test]
-    fn test_empty_hint_matches() {
-        let matches: Vec<rio_backend::crosswords::search::Match> = vec![];
-
-        // Any position should return false for empty matches
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(0), Column(0))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(10), Column(20))
-        ));
-    }
-
-    #[test]
-    fn test_single_character_match() {
-        let matches = vec![Pos::new(Line(3), Column(7))..=Pos::new(Line(3), Column(7))];
-
-        // Test the exact position
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(3), Column(7))
-        ));
-
-        // Test adjacent positions
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(3), Column(6))
-        ));
-        assert!(!Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(3), Column(8))
-        ));
-    }
-
-    #[test]
-    fn test_overlapping_matches() {
-        // In practice, matches shouldn't overlap, but let's test the behavior
-        let matches = vec![
-            Pos::new(Line(2), Column(5))..=Pos::new(Line(2), Column(10)),
-            Pos::new(Line(2), Column(8))..=Pos::new(Line(2), Column(12)),
-        ];
-
-        // Test positions in the overlap
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(8))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(9))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(10))
-        ));
-
-        // Test positions in non-overlapping parts
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(5))
-        ));
-        assert!(Renderer::is_position_in_hint_matches(
-            &matches,
-            Pos::new(Line(2), Column(12))
-        ));
-    }
-
-    /// Helper: create a row and set specific characters.
-    /// All written cells get a non-default fg so they are NOT is_empty().
-    /// Unwritten cells (beyond chars.len()) remain default (is_empty() == true).
-    fn make_row(chars: &[char], cols: usize) -> Row<Square> {
-        let mut row = Row::<Square>::new(cols);
-        for (i, &ch) in chars.iter().enumerate() {
-            row[Column(i)].set_c(ch);
-        }
-        row
-    }
-
-    // PUA icon = U+F115 (Nerd Font file icon)
-    const ICON: char = '\u{F115}';
-
-    #[test]
-    fn test_pua_icon_then_nothing() {
-        // symbol→nothing: 2
-        let row = make_row(&[ICON], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
-    }
-
-    #[test]
-    fn test_pua_icon_followed_by_char() {
-        // symbol→character: 1
-        let row = make_row(&[ICON, 'a'], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
-    }
-
-    #[test]
-    fn test_pua_icon_followed_by_space() {
-        // symbol→space: 2
-        let row = make_row(&[ICON, ' ', 'a'], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 2.0);
-    }
-
-    #[test]
-    fn test_pua_two_icons() {
-        // symbol→symbol: 1, 1
-        let row = make_row(&[ICON, ICON], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
-        assert_eq!(pua_constraint_width(&row, 1, 10), 1.0);
-    }
-
-    #[test]
-    fn test_pua_icon_at_end_of_row() {
-        // symbol at end of row: 1
-        let row = make_row(&[' ', ' ', ICON], 3);
-        assert_eq!(pua_constraint_width(&row, 2, 3), 1.0);
-    }
-
-    #[test]
-    fn test_pua_icon_space_icon() {
-        // symbol→space→symbol: 2, 2
-        let row = make_row(&[ICON, ' ', ICON], 4);
-        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
-        assert_eq!(pua_constraint_width(&row, 2, 4), 2.0);
-    }
-
-    #[test]
-    fn test_pua_char_then_icon_then_nothing() {
-        // character→symbol→nothing: 2
-        let row = make_row(&['z', ICON], 4);
-        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
-    }
-
-    #[test]
-    fn test_pua_char_then_icon_then_space() {
-        // character→symbol→space: 2
-        let row = make_row(&['z', ICON, ' '], 4);
-        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
-    }
-
-    #[test]
-    fn test_pua_icon_followed_by_no_break_space() {
-        // symbol→no-break space (U+00A0): 1 (not a regular space)
-        let row = make_row(&[ICON, '\u{00A0}', 'z'], 10);
-        assert_eq!(pua_constraint_width(&row, 0, 10), 1.0);
-    }
-
-    // Powerline U+E0B0 is in PUA range but is a graphics element.
-    // Our is_private_user_area includes it, so it gets PUA treatment.
-    const POWERLINE: char = '\u{E0B0}';
-
-    #[test]
-    fn test_pua_icon_then_powerline() {
-        // symbol→powerline: 1 (next is not space/empty)
-        let row = make_row(&[ICON, POWERLINE], 4);
-        assert_eq!(pua_constraint_width(&row, 0, 4), 1.0);
-    }
-
-    #[test]
-    fn test_pua_powerline_then_icon() {
-        // powerline→symbol: 2 (powerline is a graphics element, excluded from prev check)
-        let row = make_row(&[POWERLINE, ICON], 4);
-        assert_eq!(pua_constraint_width(&row, 1, 4), 2.0);
-    }
-
-    #[test]
-    fn test_pua_powerline_then_nothing() {
-        // powerline→nothing: 2
-        let row = make_row(&[POWERLINE], 4);
-        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
-    }
-
-    #[test]
-    fn test_pua_powerline_then_space() {
-        // powerline→space: 2
-        let row = make_row(&[POWERLINE, ' ', 'z'], 4);
-        assert_eq!(pua_constraint_width(&row, 0, 4), 2.0);
     }
 }

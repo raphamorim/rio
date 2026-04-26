@@ -3,9 +3,21 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::context::next_rich_text_id;
 use rio_backend::error::{RioError, RioErrorLevel};
-use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
+use rio_backend::sugarloaf::text::DrawOpts;
+use rio_backend::sugarloaf::Sugarloaf;
+
+/// Convert `[f32; 4]` colour to `[u8; 4]` for the `Text` API (the
+/// vertex shader premultiplies, so pass non-premul RGBA).
+#[inline]
+fn color_u8(c: [f32; 4]) -> [u8; 4] {
+    [
+        (c[0].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[1].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[2].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[3].clamp(0.0, 1.0) * 255.0) as u8,
+    ]
+}
 
 // Layout
 const OVERLAY_WIDTH: f32 = 480.0;
@@ -54,11 +66,9 @@ pub enum AssistantOverlayAction {
 
 pub struct AssistantOverlay {
     error: Option<RioError>,
-    heading_text_id: Option<usize>,
-    body_text_ids: Vec<usize>,
-    link_text_id: Option<usize>,
-    close_text_id: Option<usize>,
     hovered_button: Option<AssistantOverlayAction>,
+    /// Latest rendered width of the docs-link button text — used by
+    /// `docs_button_rect` to size the hit target. Updated by `render`.
     link_button_width: f32,
 }
 
@@ -66,10 +76,6 @@ impl Default for AssistantOverlay {
     fn default() -> Self {
         Self {
             error: None,
-            heading_text_id: None,
-            body_text_ids: Vec::new(),
-            link_text_id: None,
-            close_text_id: None,
             hovered_button: None,
             link_button_width: 0.0,
         }
@@ -221,69 +227,13 @@ impl AssistantOverlay {
         false
     }
 
-    fn ensure_text_ids(&mut self, sugarloaf: &mut Sugarloaf) {
-        if self.heading_text_id.is_none() {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, HEADING_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.heading_text_id = Some(id);
-        }
-
-        let needed = self.body_line_count().min(MAX_VISIBLE_LINES);
-        while self.body_text_ids.len() < needed {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, BODY_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.body_text_ids.push(id);
-        }
-
-        if self.link_text_id.is_none() {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, LINK_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.link_text_id = Some(id);
-        }
-
-        if self.close_text_id.is_none() {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, BUTTON_FONT_SIZE);
-            sugarloaf.set_order(id, ORDER);
-            self.close_text_id = Some(id);
-        }
-    }
-
-    fn hide_all_text_ids(&self, sugarloaf: &mut Sugarloaf) {
-        if let Some(id) = self.heading_text_id {
-            sugarloaf.set_visibility(id, false);
-        }
-        for &id in &self.body_text_ids {
-            sugarloaf.set_visibility(id, false);
-        }
-        if let Some(id) = self.link_text_id {
-            sugarloaf.set_visibility(id, false);
-        }
-        if let Some(id) = self.close_text_id {
-            sugarloaf.set_visibility(id, false);
-        }
-    }
-
     pub fn render(&mut self, sugarloaf: &mut Sugarloaf, dimensions: (f32, f32, f32)) {
         if !self.is_active() {
-            self.hide_all_text_ids(sugarloaf);
+            // Immediate mode: not drawing == not visible.
             return;
         }
 
         let (window_width, window_height, scale_factor) = dimensions;
-
-        self.ensure_text_ids(sugarloaf);
 
         let (ox, oy, ow, oh) = self.overlay_rect(window_width, scale_factor);
 
@@ -321,85 +271,49 @@ impl AssistantOverlay {
         };
 
         // Heading
-        let heading_id = self.heading_text_id.unwrap();
         let heading_text = if is_error { "Error" } else { "Warning" };
-
-        let content = sugarloaf.content();
-        content
-            .sel(heading_id)
-            .clear()
-            .new_line()
-            .add_span(
-                heading_text,
-                SpanStyle {
-                    color: heading_color,
-                    ..SpanStyle::default()
-                },
-            )
-            .build();
-
         let text_x = ox + OVERLAY_PADDING;
         let heading_y = oy + OVERLAY_PADDING;
-        sugarloaf.set_position(heading_id, text_x, heading_y);
-        sugarloaf.set_visibility(heading_id, true);
+        let heading_opts = DrawOpts {
+            font_size: HEADING_FONT_SIZE,
+            color: color_u8(heading_color),
+            ..DrawOpts::default()
+        };
+        sugarloaf
+            .text_mut()
+            .draw(text_x, heading_y, heading_text, &heading_opts);
 
         // Body lines
         let body_y_start = heading_y + HEADING_HEIGHT;
         let report_text = error.report.to_string();
         let lines: Vec<&str> = report_text.lines().collect();
         let visible_count = lines.len().min(MAX_VISIBLE_LINES);
-
+        let body_opts = DrawOpts {
+            font_size: BODY_FONT_SIZE,
+            color: color_u8(TEXT_COLOR),
+            ..DrawOpts::default()
+        };
         for (i, line_text) in lines.iter().take(visible_count).enumerate() {
-            let body_id = self.body_text_ids[i];
-            let content = sugarloaf.content();
-            content
-                .sel(body_id)
-                .clear()
-                .new_line()
-                .add_span(
-                    line_text,
-                    SpanStyle {
-                        color: TEXT_COLOR,
-                        ..SpanStyle::default()
-                    },
-                )
-                .build();
-
             let line_y = body_y_start + (i as f32 * LINE_HEIGHT);
-            sugarloaf.set_position(body_id, text_x, line_y);
-            sugarloaf.set_visibility(body_id, true);
+            sugarloaf
+                .text_mut()
+                .draw(text_x, line_y, line_text, &body_opts);
         }
 
-        // Hide unused body text ids
-        for i in visible_count..self.body_text_ids.len() {
-            sugarloaf.set_visibility(self.body_text_ids[i], false);
-        }
-
-        // Docs link button — render text first to measure, then draw hover bg
-        let link_id = self.link_text_id.unwrap();
-        let content = sugarloaf.content();
-        content
-            .sel(link_id)
-            .clear()
-            .new_line()
-            .add_span(
-                DOCS_URL,
-                SpanStyle {
-                    color: LINK_COLOR,
-                    ..SpanStyle::default()
-                },
-            )
-            .build();
-
+        // Docs link button
         let line_count = visible_count;
         let link_area_y =
             oy + OVERLAY_PADDING + HEADING_HEIGHT + (line_count as f32 * LINE_HEIGHT);
         let link_x = ox + OVERLAY_PADDING;
         let link_y = link_area_y + (LINK_ROW_HEIGHT - LINK_FONT_SIZE) / 2.0;
-        sugarloaf.set_position(link_id, link_x, link_y);
-        sugarloaf.set_visibility(link_id, true);
-
-        let rendered_width = sugarloaf.get_text_rendered_width(&link_id);
+        let link_opts = DrawOpts {
+            font_size: LINK_FONT_SIZE,
+            color: color_u8(LINK_COLOR),
+            ..DrawOpts::default()
+        };
+        let rendered_width = sugarloaf
+            .text_mut()
+            .draw(link_x, link_y, DOCS_URL, &link_opts);
         self.link_button_width = rendered_width;
 
         let (dbx, dby, dbw, dbh) = self.docs_button_rect(ox, oy);
@@ -437,24 +351,15 @@ impl AssistantOverlay {
             );
         }
 
-        let close_id = self.close_text_id.unwrap();
-        let content = sugarloaf.content();
-        content
-            .sel(close_id)
-            .clear()
-            .new_line()
-            .add_span(
-                "\u{2022}",
-                SpanStyle {
-                    color: BUTTON_TEXT_COLOR,
-                    ..SpanStyle::default()
-                },
-            )
-            .build();
-
-        let label_x = bx + (bw - BUTTON_FONT_SIZE * 0.6) / 2.0;
+        let close_opts = DrawOpts {
+            font_size: BUTTON_FONT_SIZE,
+            color: color_u8(BUTTON_TEXT_COLOR),
+            ..DrawOpts::default()
+        };
+        let ui = sugarloaf.text_mut();
+        let label_w = ui.measure("\u{2022}", &close_opts);
+        let label_x = bx + (bw - label_w) / 2.0;
         let label_y = by + (bh - BUTTON_FONT_SIZE) / 2.0;
-        sugarloaf.set_position(close_id, label_x, label_y);
-        sugarloaf.set_visibility(close_id, true);
+        ui.draw(label_x, label_y, "\u{2022}", &close_opts);
     }
 }

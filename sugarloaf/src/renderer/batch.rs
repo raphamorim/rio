@@ -14,6 +14,7 @@ use crate::DrawableChar;
 use crate::UnderlineShape;
 use bytemuck::{Pod, Zeroable};
 
+#[allow(dead_code)]
 #[derive(Default, Clone, Copy)]
 pub struct RunUnderline {
     pub enabled: bool,
@@ -504,6 +505,7 @@ impl Batch {
     /// underline_style: 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
     /// thickness: The actual line thickness (passed in corner_radii.x)
     #[inline]
+    #[allow(dead_code)]
     fn underline(
         &mut self,
         rect: &Rect,
@@ -853,6 +855,7 @@ impl BatchManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn add_mask_rect_with_order(
         &mut self,
         rect: &Rect,
@@ -935,6 +938,7 @@ impl BatchManager {
     }
 
     /// Add an underline quad with GPU pattern rendering
+    #[allow(dead_code)]
     #[inline]
     pub fn underline(
         &mut self,
@@ -1067,6 +1071,7 @@ impl BatchManager {
         }
     }
 
+    #[allow(dead_code)]
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn draw_drawable_character(
@@ -4061,6 +4066,7 @@ impl BatchManager {
         }
     }
 
+    #[allow(dead_code)]
     #[inline]
     pub fn draw_underline(
         &mut self,

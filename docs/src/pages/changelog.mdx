@@ -5,6 +5,28 @@ language: 'en'
 
 <h1 style={{fontSize: "2.25rem", fontWeight: 800, letterSpacing: "-0.02em", background: "linear-gradient(-120deg, #fb43fe 30%, #00dbe5)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", borderBottom: "none", paddingBottom: "1rem", marginBottom: "2rem"}}>Changelog</h1>
 
+## 0.4.0
+
+- macos core text for searching and shaping.
+- yeslogic-fontconfig-sys and windows core apis for searching. swash keeps for shaping.
+- removed the extra ir for rendering so no more textruns, less memory and faster operations
+- vulkan native support.
+- no more font extras, rio will always find the glyph if the font is installed.
+- wgpu now is optional via feature flag, this feature flag is required if you use rio with retro arch shaders. This is a movement to make rio possible for official debian.
+- rio now only renders on Screen::render to ensure GPU is not stuck or overloaded during high render peaks.
+
+tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
+
+| Scenario                       | main                          | new-v4                          | Delta                    |
+|--------------------------------|-------------------------------|---------------------------------|--------------------------|
+| Idle frame                     | ~150 µs                       | ~100 µs                         | v4 ~33% faster           |
+| Typing, light redraw           | ~300 µs                       | ~200 µs                         | v4 ~33% faster           |
+| Shell output / row damage      | 1000–2000 µs                  | 100–300 µs                      | **v4 5–10× faster**      |
+| 25-row scroll frame            | 5500 µs (renderer=3448 µs)    | 1661 µs (emit=1424 µs)          | **v4 ~3× faster**        |
+| Trail animation tail (CPU work)| ~300 µs                       | ~200 µs                         | comparable, v4 slightly faster |
+| GPU exec time (both)           | ~700–1000 µs                  | ~700–1500 µs                    | comparable               |
+| First-frame setup              | 15 638 µs                     | 9 397 µs                        | v4 ~40% faster           |
+
 ## 0.3.11
 
 - Windows: native `MessageBoxW` close-confirmation dialog when `confirm-before-quit = true` (default), mirroring macOS's `applicationShouldTerminate` `NSAlert` in `rio-window/src/platform_impl/macos/app_delegate.rs`. Replaces rio's in-window GPU-rendered confirmation modal on Windows. New `EventLoopRunner.confirm_before_quit: Cell<bool>` set via the same public `EventLoop::set_confirm_before_quit` that macOS already uses (cfg gate widened to `any(target_os = "macos", target_os = "windows")`). The `WM_CLOSE` handler in `event_loop.rs` checks the flag and `vsync_state.window_count() <= 1` (only the *last* window prompts — matches macOS's app-wide quit semantics) and on confirm-No swallows the message so the window stays open. rioterm's `WindowEvent::CloseRequested` handler now follows the same fast path on Windows as on macOS — `routes.remove(&window_id)` + maybe-`exit()` — since the user already confirmed at the OS layer.

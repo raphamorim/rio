@@ -3,10 +3,10 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::font_introspector::Attributes;
 use crate::sugarloaf::primitives::is_private_user_area;
 use crate::SpanStyle;
 use rustc_hash::FxHashMap;
+use swash::Attributes;
 use unicode_width::UnicodeWidthChar;
 
 /// Unscaled horizontal advance for a glyph + the font's units-per-em,
@@ -94,12 +94,18 @@ impl FontCache {
 }
 
 /// Resolve a single glyph: read from `cache` if present, otherwise
-/// walk the fallback chain via `font_ctx` and store the result.
-/// `font_ctx` is borrowed by the caller so multiple resolutions can
-/// share one read-lock acquisition.
+/// walk the fallback chain via `font_lib` and store the result.
+///
+/// `font_lib.resolve_font_for_char` does the registered-font walk
+/// first; on a miss it falls back to platform cascade discovery
+/// (CoreText `CTFontCreateForString` on macOS, fontconfig
+/// `FcFontSort`+`FcCharSet` on Linux, font-kit `all_fonts` walk on
+/// Windows) and registers the discovered font under a new `font_id`.
+/// Subsequent queries for any codepoint that the discovered font
+/// covers then hit the registered-font fast path directly.
 pub(crate) fn resolve_with(
     cache: &mut FontCache,
-    font_ctx: &crate::font::FontLibraryData,
+    font_lib: &crate::font::FontLibrary,
     ch: char,
     attrs: Attributes,
 ) -> ResolvedGlyph {
@@ -112,12 +118,16 @@ pub(crate) fn resolve_with(
         ..Default::default()
     };
     let mut width = ch.width().unwrap_or(1) as f32;
-    let mut font_id = 0;
-    if let Some((fid, is_emoji)) = font_ctx.find_best_font_match(ch, &style) {
-        font_id = fid;
-        if is_emoji {
-            width = 2.0;
-        }
+
+    // Cross-platform: `resolve_font_for_char` does the fast-path
+    // registered-font walk first, then falls back to platform cascade
+    // discovery (CoreText on macOS, fontconfig on Linux, font-kit walk
+    // on Windows) and registers the discovered font on first miss so
+    // subsequent codepoints in the same script hit the fast path.
+    let (font_id, is_emoji) = font_lib.resolve_font_for_char(ch, &style);
+
+    if is_emoji {
+        width = 2.0;
     }
 
     let resolved = ResolvedGlyph {
@@ -134,17 +144,43 @@ pub(crate) fn resolve_with(
 /// under `font_id`. Returns `None` when the font data isn't available
 /// (font id unregistered or the SFNT bytes failed to parse); the
 /// caller is responsible for picking a rendering fallback.
+#[cfg(not(target_os = "macos"))]
 pub(crate) fn compute_advance(
     font_ctx: &crate::font::FontLibraryData,
     font_id: usize,
     ch: char,
 ) -> Option<AdvanceInfo> {
     let (data, offset, _key) = font_ctx.get_data(&font_id)?;
-    let font_ref = crate::font_introspector::FontRef::from_index(&data, offset as usize)?;
+    let font_ref = swash::FontRef::from_index(&data, offset as usize)?;
     let glyph_id = font_ref.charmap().map(ch as u32);
-    let metrics = crate::font_introspector::GlyphMetrics::from_font(&font_ref, &[]);
+    let metrics = font_ref.glyph_metrics(&[]);
     Some(AdvanceInfo {
         advance_units: metrics.advance_width(glyph_id),
         units_per_em: font_ref.metrics(&[]).units_per_em,
+    })
+}
+
+/// macOS variant: derive the advance from CoreText without ever touching
+/// the font's raw bytes. bytes-free font handling on
+/// mac.
+#[cfg(target_os = "macos")]
+pub(crate) fn compute_advance(
+    font_ctx: &crate::font::FontLibraryData,
+    font_id: usize,
+    ch: char,
+) -> Option<AdvanceInfo> {
+    let font = font_ctx.inner.get(&font_id)?;
+    let handle = if let Some(path) = font.path() {
+        crate::font::macos::FontHandle::from_path(path)
+    } else if let Some(bytes) = font.data() {
+        crate::font::macos::FontHandle::from_bytes(bytes.as_ref())
+    } else {
+        None
+    }?;
+    let (advance_units, units_per_em) =
+        crate::font::macos::advance_units_for_char(&handle, ch)?;
+    Some(AdvanceInfo {
+        advance_units,
+        units_per_em,
     })
 }

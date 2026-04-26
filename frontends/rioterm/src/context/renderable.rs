@@ -9,28 +9,9 @@ use rio_backend::selection::SelectionRange;
 use rustc_hash::FxHashMap;
 use std::time::Instant;
 
-/// UI-level damage tracking for non-terminal elements
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct UIDamage {
-    /// Island (tab bar with progress) needs redraw
-    pub island: bool,
-    /// Search bar needs redraw
-    pub search: bool,
-}
-
-impl UIDamage {
-    /// Merge two UI damages
-    pub fn merge(self, other: Self) -> Self {
-        Self {
-            island: self.island || other.island,
-            search: self.search || other.search,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum BackgroundState {
-    Set(wgpu::Color),
+    Set(rio_backend::sugarloaf::Color),
     Reset,
 }
 
@@ -71,6 +52,15 @@ pub struct RenderableContent {
     pub last_blink_toggle: Option<Instant>,
     pub pending_update: PendingUpdate,
     pub background: Option<BackgroundState>,
+    /// Damage extracted by `Renderer::run` for this frame. Consumed
+    /// by the macOS grid emission path in `Screen::render` to gate
+    /// per-row rebuilds.
+    ///
+    /// `Full` on construction so the first frame's emission rebuilds
+    /// everything — the grid's CPU+GPU buffers start zeroed and
+    /// need a full fill. Reset to `Noop` after the grid consumes it
+    /// so next frame only re-emits if damage actually arrived.
+    pub last_frame_damage: TerminalDamage,
 }
 
 impl RenderableContent {
@@ -88,6 +78,7 @@ impl RenderableContent {
             pending_update: PendingUpdate::default(),
             is_blinking_cursor_visible: false,
             background: None,
+            last_frame_damage: TerminalDamage::Full,
         }
     }
 
@@ -139,8 +130,6 @@ pub struct PendingUpdate {
     dirty: bool,
     /// Terminal content damage (lines, text)
     terminal_damage: Option<TerminalDamage>,
-    /// UI element damage (island, search bar, etc.)
-    ui_damage: UIDamage,
 }
 
 impl PendingUpdate {
@@ -150,7 +139,12 @@ impl PendingUpdate {
         self.dirty
     }
 
-    /// Mark as needing to check for damage on next render
+    /// Mark as needing to check for damage on next render. Use this
+    /// when UI overlays (command palette, assistant, search bar,
+    /// island) change but terminal cells haven't — the `dirty` flag
+    /// alone is enough to pass `Renderer::run`'s per-context gate,
+    /// and `(None, None) => TerminalDamage::Noop` in the inner damage
+    /// match keeps the panel in the render set with zero row work.
     pub fn set_dirty(&mut self) {
         self.dirty = true;
     }
@@ -164,26 +158,15 @@ impl PendingUpdate {
         });
     }
 
-    /// Mark UI elements as damaged
-    pub fn set_ui_damage(&mut self, damage: UIDamage) {
-        self.dirty = true;
-        self.ui_damage = self.ui_damage.merge(damage);
-    }
-
     /// Get and clear terminal damage
     pub fn take_terminal_damage(&mut self) -> Option<TerminalDamage> {
         self.terminal_damage.take()
     }
 
-    /// Get and clear UI damage
-    pub fn take_ui_damage(&mut self) -> UIDamage {
-        std::mem::take(&mut self.ui_damage)
-    }
-
     /// Reset the dirty flag after rendering
     pub fn reset(&mut self) {
         self.dirty = false;
-        // Note: damages are cleared by take_*_damage during render
+        // Note: terminal damage is cleared by take_terminal_damage during render
     }
 
     /// Merge two terminal damages into one

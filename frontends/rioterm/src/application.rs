@@ -301,12 +301,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             // Just mark dirty — damage will be extracted from
                             // the terminal when the renderer locks it.
                             ctx_item.val.renderable_content.pending_update.set_dirty();
-                            route.schedule_redraw(&mut self.scheduler, route_id);
+                            route.request_redraw();
                         }
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
+            RioEventType::Rio(RioEvent::UpdateGraphics {
+                route_id: _,
+                queues,
+            }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
@@ -331,7 +334,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     // Request a redraw to display the updated graphics
-                    route.schedule_redraw(&mut self.scheduler, route_id);
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::PrepareUpdateConfig) => {
@@ -505,7 +508,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::SelectionScrollTick) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route.window.screen.selection_scroll_tick();
-                    route.window.screen.render();
                     route.request_redraw();
                 }
             }
@@ -825,7 +827,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Background color is index 1 relative to NamedColor::Foreground
                     if index == NamedColor::Foreground as usize + 1 {
                         let grid = screen.context_manager.current_grid_mut();
-                        if let Some(context_item) = grid.get_mut(route_id.into()) {
+                        // The event carries a `route_id: usize` (global
+                        // counter). `ContextGrid::get_mut` is keyed on
+                        // taffy `NodeId` — a different identifier space,
+                        // so `get_mut(route_id.into())` effectively
+                        // never matches. Look the panel up by its
+                        // actual route id.
+                        if let Some(context_item) = grid.get_by_route_id(route_id) {
                             use crate::context::renderable::BackgroundState;
                             context_item.context_mut().renderable_content.background =
                                 Some(match color {
@@ -1120,7 +1128,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                         if route.window.screen.renderer.scrollbar.is_dragging() {
                             route.window.screen.handle_scrollbar_release();
-                            route.window.screen.render();
                             route.request_redraw();
                             return;
                         }
@@ -1212,7 +1219,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .assistant
                         .hover(mx, my, win_w, scale)
                     {
-                        route.window.screen.render();
                         route.request_redraw();
                     }
 
@@ -1244,7 +1250,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .command_palette
                         .hover(mx, my, win_w, scale)
                     {
-                        route.window.screen.render();
                         route.request_redraw();
                     }
                     route.window.winit_window.set_cursor(CursorIcon::Default);
@@ -1264,7 +1269,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .search
                         .hover(mx, my, win_w, scale)
                     {
-                        route.window.screen.render();
+                        // UI-only change (hover highlight). `set_dirty`
+                        // passes `Renderer::run`'s per-context gate;
+                        // the inner damage match hits
+                        // `(None, None) => TerminalDamage::Noop` so
+                        // no rows rebuild. The search overlay itself
+                        // is drawn unconditionally after the per-context
+                        // loop in `Renderer::run`.
+                        route
+                            .window
+                            .screen
+                            .ctx_mut()
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_dirty();
                         route.request_redraw();
                     }
                 }
@@ -1539,6 +1558,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .window
                     .screen
                     .process_key_event(&key_event, &mut self.router.clipboard);
+                // `process_key_event` used to call `self.render()` for
+                // local-only keystrokes (VI mode, search input, hint
+                // mode). Now it just marks `pending_update.set_dirty()`
+                // through `mark_dirty`. Request a redraw so the next
+                // vsync fires `RedrawRequested` — PTY-bound keystrokes
+                // also flow through here but their render is idempotent
+                // with the PTY-damage-driven redraw.
+                route.request_redraw();
 
                 if key_event.state == ElementState::Released
                     && self.config.hide_cursor_when_typing
@@ -1739,36 +1766,32 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
 
-                let island_needs_redraw = route
-                    .window
-                    .screen
-                    .renderer
-                    .island
-                    .as_ref()
-                    .is_some_and(|i| i.needs_rename_redraw());
-                if self.config.renderer.strategy.is_game()
-                    || route.path == RoutePath::Welcome
-                    || route.path == RoutePath::ConfirmQuit
-                    || route.window.screen.renderer.command_palette.is_enabled()
-                    || island_needs_redraw
-                {
+                // Game mode = unlocked framerate, so keep the event loop
+                // spinning. Every other case is vsync-paced: a
+                // `request_redraw` tells winit to deliver
+                // `RedrawRequested` at the next platform vsync, and the
+                // OS parks the thread until that event arrives. Busy-
+                // polling between vsyncs here would burn CPU without
+                // delivering more frames.
+                if self.config.renderer.strategy.is_game() {
                     route.request_redraw();
-                } else if route
-                    .window
-                    .screen
-                    .ctx()
-                    .current()
-                    .renderable_content
-                    .pending_update
-                    .is_dirty()
-                {
-                    route.schedule_redraw(
-                        &mut self.scheduler,
-                        route.window.screen.ctx().current_route(),
-                    );
+                    event_loop.set_control_flow(ControlFlow::Poll);
+                } else {
+                    if route.path == RoutePath::Welcome
+                        || route.path == RoutePath::ConfirmQuit
+                        || route
+                            .window
+                            .screen
+                            .ctx()
+                            .current()
+                            .renderable_content
+                            .pending_update
+                            .is_dirty()
+                    {
+                        route.request_redraw();
+                    }
+                    event_loop.set_control_flow(ControlFlow::Wait);
                 }
-
-                event_loop.set_control_flow(ControlFlow::Wait);
             }
             _ => {}
         }

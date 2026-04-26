@@ -3,13 +3,14 @@ pub mod primitives;
 pub mod state;
 
 use crate::components::core::image::Handle;
+#[cfg(feature = "wgpu")]
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::font_cache::{compute_advance, resolve_with, FontCache, ResolvedGlyph};
-use crate::font_introspector::Attributes;
 use crate::layout::{RootStyle, TextLayout};
 use crate::renderer::Renderer;
 use crate::sugarloaf::graphics::{GraphicDataEntry, Graphics};
+use swash::Attributes;
 
 use crate::context::Context;
 use crate::Content;
@@ -22,12 +23,22 @@ use raw_window_handle::{
 use state::SugarState;
 
 pub struct Sugarloaf<'a> {
-    pub ctx: Context<'a>,
+    // NOTE: field order is load-bearing for the Vulkan backend. Rust
+    // drops struct fields in declaration order, and any field that
+    // owns Vulkan handles (renderer, text, eventually grids) must drop
+    // BEFORE `ctx` — destroying handles after the device has been
+    // torn down would crash the driver. `ctx` is therefore last.
     renderer: Renderer,
     state: state::SugarState,
-    pub background_color: Option<wgpu::Color>,
+    /// Input colorspace configured at construction. Exposed via
+    /// `input_colorspace()` so the grid renderer can feed the same
+    /// value into its own uniform — keeps grid + quad-fill pipelines
+    /// producing byte-identical framebuffer colors.
+    colorspace: Colorspace,
+    pub background_color: Option<Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
+    #[cfg(feature = "wgpu")]
     filters_brush: Option<FiltersBrush>,
     /// Pixel data for standalone image textures, keyed by ImageId.
     pub image_data: rustc_hash::FxHashMap<u32, GraphicDataEntry>,
@@ -40,6 +51,20 @@ pub struct Sugarloaf<'a> {
     /// width (for the grid) and unscaled glyph advance (for
     /// proportional UI via `char_advance`).
     font_cache: FontCache,
+    /// Immediate-mode UI-text recorder. Overlays (tab titles, search
+    /// overlay, command palette, etc.) drive this instead of the
+    /// `Content`/`BuilderState` pipeline. See `sugarloaf::text` and
+    /// `memory/project_sugarloaf_content_drop.md`. Phase 1a: scaffold
+    /// only — holds no atlases or GPU state yet.
+    text: crate::text::Text,
+    /// Per-panel (rich_text_id) image overlays. Driven by the kitty
+    /// graphics frontend path; read by the renderer's image pass.
+    pub image_overlays:
+        rustc_hash::FxHashMap<usize, Vec<crate::sugarloaf::graphics::GraphicOverlay>>,
+    /// Owned context (device + swapchain + queue). Last so the device
+    /// outlives every Vulkan-handle-owning field above. See note at
+    /// the top of the struct.
+    pub ctx: Context<'a>,
 }
 
 #[derive(Debug)]
@@ -72,15 +97,84 @@ pub struct SugarloafWindow {
 }
 
 pub enum SugarloafBackend {
+    /// `wgpu` umbrella backend (Vulkan / Metal / DX12 / GL / WebGPU,
+    /// whichever wgpu picks). Only available when sugarloaf is built
+    /// with the `wgpu` feature; on Linux/macOS the native `Vulkan`
+    /// and `Metal` variants are preferred and wgpu can be omitted
+    /// entirely from the dep tree. Always available on Windows and
+    /// WASM (the native backends don't cover those yet).
+    #[cfg(feature = "wgpu")]
     Wgpu(wgpu::Backends),
     #[cfg(target_os = "macos")]
     Metal,
+    /// Native Vulkan via `ash`. Linux only for now (Windows would need a
+    /// `khr::win32_surface` branch in `context::vulkan::create_surface`).
+    /// Mirrors the Metal backend in scope: no librashader filters.
+    #[cfg(target_os = "linux")]
+    Vulkan,
     /// CPU rendering via tiny-skia + softbuffer.
     Cpu,
 }
 
+/// RGBA color in linear-light 0..1 space. Mirrors `wgpu::Color`'s
+/// shape so callers don't have to depend on `wgpu`. Sugarloaf's
+/// public API takes/returns this type; the wgpu render path
+/// converts at the boundary.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Color {
+    pub r: f64,
+    pub g: f64,
+    pub b: f64,
+    pub a: f64,
+}
+
+impl Color {
+    pub const TRANSPARENT: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    };
+    pub const BLACK: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const WHITE: Self = Self {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+}
+
+#[cfg(feature = "wgpu")]
+impl From<Color> for wgpu::Color {
+    fn from(c: Color) -> Self {
+        wgpu::Color {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: c.a,
+        }
+    }
+}
+
+#[cfg(feature = "wgpu")]
+impl From<wgpu::Color> for Color {
+    fn from(c: wgpu::Color) -> Self {
+        Color {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: c.a,
+        }
+    }
+}
+
 pub struct SugarloafRenderer {
-    pub power_preference: wgpu::PowerPreference,
     pub backend: SugarloafBackend,
     pub font_features: Option<Vec<String>>,
     pub colorspace: Colorspace,
@@ -106,18 +200,38 @@ impl Default for Colorspace {
 
 impl Default for SugarloafRenderer {
     fn default() -> SugarloafRenderer {
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", feature = "wgpu"))]
         let default_backend =
             SugarloafBackend::Wgpu(wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL);
 
-        #[cfg(not(any(target_arch = "wasm32", target_os = "macos")))]
+        // Linux defaults to the native Vulkan backend (ash). Mirrors the
+        // macOS default to native Metal — both skip the wgpu translation
+        // layer and the librashader filter chain. Other non-macOS desktop
+        // targets (Windows, BSDs) need the `wgpu` feature enabled and
+        // fall back to the wgpu umbrella backend.
+        #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+        let default_backend = SugarloafBackend::Vulkan;
+
+        #[cfg(all(
+            not(target_arch = "wasm32"),
+            not(target_os = "macos"),
+            not(target_os = "linux"),
+            feature = "wgpu",
+        ))]
         let default_backend = SugarloafBackend::Wgpu(wgpu::Backends::all());
+
+        #[cfg(all(
+            not(target_arch = "wasm32"),
+            not(target_os = "macos"),
+            not(target_os = "linux"),
+            not(feature = "wgpu"),
+        ))]
+        let default_backend = SugarloafBackend::Cpu;
 
         #[cfg(all(target_os = "macos", not(target_arch = "wasm32")))]
         let default_backend = SugarloafBackend::Metal;
 
         SugarloafRenderer {
-            power_preference: wgpu::PowerPreference::HighPerformance,
             backend: default_backend,
             font_features: None,
             colorspace: Colorspace::default(),
@@ -168,20 +282,42 @@ impl Sugarloaf<'_> {
 
         let font_cache = FontCache::new();
 
+        let mut text = crate::text::Text::new(font_library);
+        text.set_scale_factor(state.style.scale_factor);
+        if matches!(ctx.inner, crate::context::ContextType::Cpu(_)) {
+            text.init_cpu();
+        }
+
         let instance = Sugarloaf {
             state,
             ctx,
-            background_color: Some(wgpu::Color::BLACK),
+            colorspace,
+            background_color: Some(Color::BLACK),
             background_image: None,
             renderer,
             graphics: Graphics::default(),
+            #[cfg(feature = "wgpu")]
             filters_brush: None,
             image_data: rustc_hash::FxHashMap::default(),
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
             font_cache,
+            text,
+            image_overlays: rustc_hash::FxHashMap::default(),
         };
 
         Ok(instance)
+    }
+
+    /// Encoding for `GridUniforms.input_colorspace` — same mapping
+    /// the Metal quad pipeline uses:
+    ///   0 = sRGB, 1 = DisplayP3, 2 = Rec.2020.
+    #[inline]
+    pub fn input_colorspace(&self) -> u32 {
+        match self.colorspace {
+            Colorspace::Srgb => 0,
+            Colorspace::DisplayP3 => 1,
+            Colorspace::Rec2020 => 2,
+        }
     }
 
     #[inline]
@@ -218,8 +354,8 @@ impl Sugarloaf<'_> {
         if let Some(cached) = self.font_cache.get(&(ch, attrs)) {
             return *cached;
         }
-        let font_ctx = self.state.content.font_library().inner.read();
-        resolve_with(&mut self.font_cache, &font_ctx, ch, attrs)
+        let font_lib = self.state.content.font_library().clone();
+        resolve_with(&mut self.font_cache, &font_lib, ch, attrs)
     }
 
     /// Horizontal advance in pixels for a single char rendered with
@@ -278,6 +414,14 @@ impl Sugarloaf<'_> {
         self.state.content.font_library().family_names()
     }
 
+    /// Borrow the font library. Used by the grid emission path to
+    /// resolve per-codepoint fonts before rasterizing into the grid's
+    /// own atlas.
+    #[inline]
+    pub fn font_library(&self) -> &crate::font::FontLibrary {
+        self.state.content.font_library()
+    }
+
     /// Resolve a batch of glyph queries with a single FontLibrary
     /// read lock acquisition. Cache hits short-circuit; misses are
     /// walked under the lock and stored back in the cache. Returned
@@ -290,10 +434,10 @@ impl Sugarloaf<'_> {
         if queries.is_empty() {
             return Vec::new();
         }
-        let font_ctx = self.state.content.font_library().inner.read();
+        let font_lib = self.state.content.font_library().clone();
         let mut out = Vec::with_capacity(queries.len());
         for &(ch, attrs) in queries {
-            out.push(resolve_with(&mut self.font_cache, &font_ctx, ch, attrs));
+            out.push(resolve_with(&mut self.font_cache, &font_lib, ch, attrs));
         }
         out
     }
@@ -353,6 +497,11 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
+    /// Install librashader CRT/scanline filters. Only available with
+    /// the `wgpu` feature — librashader's runtime is wgpu-only
+    /// upstream, and the native Metal/Vulkan backends ignore filter
+    /// requests entirely.
+    #[cfg(feature = "wgpu")]
     pub fn update_filters(&mut self, filters: &[Filter]) {
         if filters.is_empty() {
             self.filters_brush = None;
@@ -369,7 +518,7 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn set_background_color(&mut self, color: Option<wgpu::Color>) -> &mut Self {
+    pub fn set_background_color(&mut self, color: Option<Color>) -> &mut Self {
         self.background_color = color;
         self
     }
@@ -477,6 +626,19 @@ impl Sugarloaf<'_> {
         self.state.content.get_text_by_id(id)
     }
 
+    /// Device-pixel font size for the given rich-text id. This is
+    /// `layout.font_size * scale_factor` — the size glyphs should be
+    /// rasterized at. Mirrors per-text zoom (set via
+    /// `set_text_font_size_action`) so each panel can carry its own
+    /// size. Returns None for non-text ids or missing ids.
+    #[inline]
+    pub fn text_scaled_font_size(&self, id: &usize) -> Option<f32> {
+        self.state
+            .content
+            .get_text_by_id(*id)
+            .map(|s| s.scaled_font_size)
+    }
+
     #[inline]
     pub fn build_text_by_id(&mut self, id: usize) {
         self.state.content().sel(id).build();
@@ -508,83 +670,6 @@ impl Sugarloaf<'_> {
                 let default_layout = TextLayout::from_default_layout(&self.state.style);
                 self.state.content.add_transient_text(&default_layout)
             }
-        }
-    }
-
-    /// Get mutable reference to text content by id (for cached text)
-    #[inline]
-    pub fn get_text_mut(
-        &mut self,
-        id: usize,
-    ) -> Option<&mut crate::layout::BuilderState> {
-        self.state.content.get_text_by_id_mut(id)
-    }
-
-    /// Get mutable reference to transient text by index
-    #[inline]
-    pub fn get_transient_text_mut(
-        &mut self,
-        index: usize,
-    ) -> Option<&mut crate::layout::BuilderState> {
-        self.state.content.get_transient_text_mut(index)
-    }
-
-    /// Set font size for transient text
-    #[inline]
-    pub fn set_transient_text_font_size(&mut self, index: usize, font_size: f32) {
-        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            if let Some(text_state) = content_state.as_text_mut() {
-                text_state.layout.font_size = font_size;
-                text_state.scaled_font_size = font_size * self.state.style.scale_factor;
-            }
-            content_state.render_data.needs_repaint = true;
-        }
-    }
-
-    /// Set position for transient text
-    #[inline]
-    pub fn set_transient_position(&mut self, index: usize, x: f32, y: f32) {
-        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            content_state.render_data.set_position(
-                x * self.state.style.scale_factor,
-                y * self.state.style.scale_factor,
-            );
-        }
-    }
-
-    /// Set visibility for transient text
-    #[inline]
-    pub fn set_transient_visibility(&mut self, index: usize, visible: bool) {
-        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            content_state.render_data.set_hidden(!visible);
-        }
-    }
-
-    /// Set whether to use grid cell size for glyph positioning (cached text)
-    /// - true: monospace grid alignment (default, for terminal)
-    /// - false: proportional text using actual glyph advances (for rich text)
-    #[inline]
-    pub fn set_use_grid_cell_size(&mut self, id: usize, use_grid: bool) {
-        if let Some(content_state) = self.state.content.states.get_mut(&id) {
-            content_state.render_data.use_grid_cell_size = use_grid;
-        }
-    }
-
-    /// Set the render order for a transient text element.
-    #[inline]
-    pub fn set_transient_order(&mut self, index: usize, order: u8) {
-        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            content_state.render_data.order = order;
-        }
-    }
-
-    /// Set whether to use grid cell size for glyph positioning (transient text)
-    /// - true: monospace grid alignment (default, for terminal)
-    /// - false: proportional text using actual glyph advances (for rich text)
-    #[inline]
-    pub fn set_transient_use_grid_cell_size(&mut self, index: usize, use_grid: bool) {
-        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            content_state.render_data.use_grid_cell_size = use_grid;
         }
     }
 
@@ -914,6 +999,39 @@ impl Sugarloaf<'_> {
         self.state.content.update_dimensions(id);
     }
 
+    /// Immediate-mode text recorder for UI overlays. The per-sugarloaf
+    /// `Text` instance. Overlays call `draw` / `measure` via this
+    /// handle; sugarloaf flushes the recorded instances at render
+    /// time (Phase 1c; currently a no-op).
+    #[inline]
+    pub fn text_mut(&mut self) -> &mut crate::text::Text {
+        &mut self.text
+    }
+
+    /// Register an image overlay anchored to `panel_id` (a
+    /// `rich_text_id`). Driven by the kitty graphics frontend; read
+    /// by the renderer's image pass.
+    #[inline]
+    pub fn push_image_overlay(
+        &mut self,
+        panel_id: usize,
+        overlay: crate::sugarloaf::graphics::GraphicOverlay,
+    ) {
+        self.image_overlays
+            .entry(panel_id)
+            .or_default()
+            .push(overlay);
+    }
+
+    /// Drop all overlays for `panel_id`. Called by the frontend when
+    /// placements are removed or the kitty graphics cache clears.
+    #[inline]
+    pub fn clear_image_overlays_for(&mut self, panel_id: usize) {
+        if let Some(v) = self.image_overlays.get_mut(&panel_id) {
+            v.clear();
+        }
+    }
+
     /// Get text dimensions. Returns None if id is not text
     /// Get the total rendered width of text content by summing glyph advances.
     /// Returns the width in logical (unscaled) pixels.
@@ -969,6 +1087,7 @@ impl Sugarloaf<'_> {
     pub fn rescale(&mut self, scale: f32) {
         self.ctx.set_scale(scale);
         self.state.compute_layout_rescale(scale);
+        self.text.set_scale_factor(scale);
     }
 
     #[inline]
@@ -977,34 +1096,78 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn reset(&mut self) {
         self.state.reset();
+        // Drop this frame's UI text instances — overlays re-record
+        // next frame (immediate mode).
+        self.text.clear();
+    }
+
+    /// Drop everything this frame's immediate-mode producers pushed
+    /// without submitting a draw. Callers use this when they
+    /// decided mid-frame to skip `render` / `render_with_grids`
+    /// (e.g. "no panel is dirty, nothing to present") — without
+    /// this, the `rect` / `quad` / `text_mut().draw` calls made
+    /// earlier in the frame stay queued in `comp.batches` /
+    /// `self.text` and stack into the next real present,
+    /// producing doubled overlays.
+    #[inline]
+    pub fn discard_frame(&mut self) {
+        self.renderer.discard_frame_batches();
+        self.state.reset();
+        self.text.clear();
     }
 
     #[inline]
     pub fn render(&mut self) {
+        self.render_with_grids(&mut []);
+    }
+
+    /// Render variant that takes terminal grid renderers. Each grid's
+    /// cell draws land inside the same render pass as sugarloaf's own
+    /// UI overlays, so grid cells composite under island / assistant /
+    /// etc. with a single drawable acquisition + present.
+    ///
+    /// Pass `&mut []` to skip (equivalent to `render()`). Phase 2 call
+    /// sites in rioterm build the slice with one entry per panel.
+    #[inline]
+    pub fn render_with_grids(
+        &mut self,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    ) {
         self.state.compute_dimensions();
         self.state.compute_updates(
             &mut self.renderer,
             &mut self.ctx,
             &mut self.graphics,
             &mut self.image_data,
+            &self.image_overlays,
         );
 
         match self.ctx.inner {
+            #[cfg(feature = "wgpu")]
             crate::context::ContextType::Wgpu(_) => {
-                self.render_wgpu();
+                self.render_wgpu(grids);
             }
             #[cfg(target_os = "macos")]
             crate::context::ContextType::Metal(_) => {
-                self.render_metal();
+                self.render_metal(grids);
+            }
+            #[cfg(target_os = "linux")]
+            crate::context::ContextType::Vulkan(_) => {
+                self.render_vulkan(grids);
             }
             crate::context::ContextType::Cpu(_) => {
-                self.render_cpu();
+                self.render_cpu(grids);
             }
+            #[cfg(not(feature = "wgpu"))]
+            crate::context::ContextType::_Phantom(_) => unreachable!(),
         }
     }
 
     #[inline]
-    pub fn render_cpu(&mut self) {
+    pub fn render_cpu(
+        &mut self,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    ) {
         let bg = self.background_color;
         let cpu_ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Cpu(c) => c,
@@ -1016,6 +1179,8 @@ impl Sugarloaf<'_> {
             &self.renderer,
             &mut self.cpu_cache,
             bg,
+            grids,
+            &self.text,
         );
 
         self.reset();
@@ -1027,7 +1192,10 @@ impl Sugarloaf<'_> {
     /// overflow loop can see them all (mirrors zed's `MetalRenderer::draw`).
     #[inline]
     #[cfg(target_os = "macos")]
-    pub fn render_metal(&mut self) {
+    pub fn render_metal(
+        &mut self,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    ) {
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Metal(metal) => metal,
             _ => return,
@@ -1036,13 +1204,140 @@ impl Sugarloaf<'_> {
         let bg_color = self
             .background_color
             .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32]);
-        self.renderer.render_metal(ctx, bg_color);
+        self.renderer
+            .render_metal(ctx, bg_color, grids, &mut self.text);
+
+        self.reset();
+    }
+
+    /// Drive a native Vulkan frame. Drives the entire frame from the
+    /// outside so grid passes, the optional bootstrap rect, and (later)
+    /// rich-text / images / UI text overlays all share one
+    /// dynamic-rendering pass and one swapchain present.
+    ///
+    /// Order of operations inside the pass:
+    ///   1. swapchain image barrier `UNDEFINED → COLOR_ATTACHMENT_OPTIMAL`
+    ///   2. `cmd_begin_rendering` with `LOAD_OP_CLEAR(bg)`
+    ///   3. set viewport + scissor
+    ///   4. per-panel `GridRenderer::render_vulkan` (Phase 3+)
+    ///   5. `VulkanRenderer::draw_bootstrap` (debug rect, gated by env)
+    ///   6. `cmd_end_rendering`
+    ///   7. swapchain image barrier `COLOR_ATTACHMENT_OPTIMAL → PRESENT_SRC_KHR`
+    ///   8. `present_frame` (queue submit + present)
+    #[inline]
+    #[cfg(target_os = "linux")]
+    pub fn render_vulkan(
+        &mut self,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    ) {
+        use crate::renderer::vulkan as vkr;
+
+        let ctx = match &mut self.ctx.inner {
+            crate::context::ContextType::Vulkan(v) => v,
+            _ => return,
+        };
+
+        let frame = match ctx.acquire_frame() {
+            Some(f) => f,
+            None => {
+                // Swapchain was recreated this turn — skip drawing,
+                // try again next frame.
+                self.reset();
+                return;
+            }
+        };
+
+        let bg = self
+            .background_color
+            .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32])
+            .unwrap_or([0.0, 0.0, 0.0, 1.0]);
+
+        let device = ctx.device().clone();
+        let cmd = frame.cmd_buffer;
+
+        // Pre-pass: per-panel grid atlas uploads + UI text overlay
+        // atlas uploads. MUST happen before `cmd_begin_rendering` —
+        // `vkCmdCopyBufferToImage` is invalid inside a render pass.
+        self.text.init_vulkan(ctx);
+        for (grid, _) in grids.iter_mut() {
+            grid.prepare_vulkan(ctx, cmd, frame.slot);
+        }
+        self.text.prepare_vulkan(ctx, cmd, frame.slot);
+
+        vkr::cmd_acquire_image_for_rendering(&device, cmd, frame.image);
+
+        let color_attachment = vkr::build_color_attachment(&frame, bg);
+        let color_attachments = [color_attachment];
+        let rendering_info = vkr::build_rendering_info(&frame, &color_attachments);
+
+        // Negative viewport height: Vulkan's NDC has y pointing DOWN
+        // (-1 = top, +1 = bottom), but `orthographic_projection` is
+        // written for the OpenGL/Metal convention (y up). Without the
+        // flip, the text vertex shader would map pixel-y=0 to NDC y=+1
+        // (bottom in Vulkan), and the whole grid would render
+        // upside-down with row 0 at the bottom. Negative height tells
+        // the rasterizer to invert y, making the matrix work
+        // unchanged. Requires Vulkan 1.1+ (core, no extension).
+        //
+        // The bg pipeline is unaffected — its fragment shader uses
+        // `gl_FragCoord`, which is always in framebuffer pixel
+        // coordinates with top-left origin regardless of viewport.
+        let viewport = ash::vk::Viewport {
+            x: 0.0,
+            y: frame.extent.height as f32,
+            width: frame.extent.width as f32,
+            height: -(frame.extent.height as f32),
+            min_depth: 0.0,
+            max_depth: 1.0,
+        };
+        let scissor = ash::vk::Rect2D {
+            offset: ash::vk::Offset2D { x: 0, y: 0 },
+            extent: frame.extent,
+        };
+        unsafe {
+            device.cmd_begin_rendering(cmd, &rendering_info);
+            device.cmd_set_viewport(cmd, 0, &[viewport]);
+            device.cmd_set_scissor(cmd, 0, &[scissor]);
+        }
+
+        // Per-panel grid passes — draw cell backgrounds + grid text
+        // underneath everything else.
+        for (grid, uniforms) in grids.iter_mut() {
+            grid.render_vulkan(ctx, cmd, frame.slot, uniforms);
+        }
+
+        // Rich-text quad pass — `Sugarloaf::quad()` / `rect()` calls
+        // (command palette background, search overlay panel,
+        // assistant frame, etc.). Drawn AFTER grid so panel chrome
+        // covers cells underneath, BEFORE the text overlay so labels
+        // sit on top.
+        self.renderer.render_vulkan(cmd, &frame);
+
+        // UI text overlay (tab titles, search overlay labels,
+        // command palette items, etc.). Drawn last so labels sit on
+        // top of the panel chrome.
+        self.text.render_vulkan(
+            cmd,
+            frame.slot,
+            [frame.extent.width as f32, frame.extent.height as f32],
+        );
+
+        unsafe {
+            device.cmd_end_rendering(cmd);
+        }
+        vkr::cmd_release_image_to_present(&device, cmd, frame.image);
+
+        ctx.present_frame(frame);
 
         self.reset();
     }
 
     #[inline]
-    pub fn render_wgpu(&mut self) {
+    #[cfg(feature = "wgpu")]
+    pub fn render_wgpu(
+        &mut self,
+        grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    ) {
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Wgpu(wgpu) => wgpu,
             _ => return,
@@ -1062,7 +1357,7 @@ impl Sugarloaf<'_> {
 
                 {
                     let load = if let Some(background_color) = self.background_color {
-                        wgpu::LoadOp::Clear(background_color)
+                        wgpu::LoadOp::Clear(background_color.into())
                     } else {
                         wgpu::LoadOp::Load
                     };
@@ -1085,7 +1380,28 @@ impl Sugarloaf<'_> {
                             multiview_mask: None,
                         });
 
+                    // Grid passes first — cell bg/text composite under
+                    // the rich-text UI overlays drawn below.
+                    for (grid, uniforms) in grids.iter_mut() {
+                        grid.render_wgpu(&mut rpass, uniforms);
+                    }
+
                     self.renderer.render(ctx, &mut rpass);
+
+                    // UI text pass (swash-backed). Lazy-init the
+                    // wgpu pipeline + atlases on the first frame.
+                    // The wgpu text backend is compiled only on
+                    // non-macOS; macOS uses Metal. If a wgpu context
+                    // is ever selected on macOS, text renders via
+                    // the Metal path from a different sugarloaf
+                    // call instead (today macOS always takes the
+                    // Metal branch).
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        self.text.init_wgpu(&ctx.device, &ctx.queue, ctx.format);
+                        self.text
+                            .render_wgpu(&mut rpass, [ctx.size.width, ctx.size.height]);
+                    }
                 }
 
                 if let Some(ref mut filters_brush) = self.filters_brush {

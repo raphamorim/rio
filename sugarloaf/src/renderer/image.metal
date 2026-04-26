@@ -11,11 +11,11 @@ struct Globals {
 };
 
 struct ImageInstanceInput {
-    // Screen position of the image top-left (physical pixels).
+ // Screen position of the image top-left (physical pixels).
     float2 dest_pos [[attribute(0)]];
-    // Size of the image on screen (physical pixels).
+ // Size of the image on screen (physical pixels).
     float2 dest_size [[attribute(1)]];
-    // Source rectangle: xy = origin, zw = size (normalized 0..1).
+ // Source rectangle: xy = origin, zw = size (normalized 0..1).
     float4 source_rect [[attribute(2)]];
 };
 
@@ -29,18 +29,18 @@ vertex ImageVertexOut image_vs_main(
     ImageInstanceInput instance [[stage_in]],
     constant Globals &globals [[buffer(1)]]
 ) {
-    // Triangle strip: 4 vertices → quad
-    //   0 → 1
-    //   |  /|
-    //   2 → 3
+ // Triangle strip: 4 vertices → quad
+ // 0 → 1
+ // | /|
+ // 2 → 3
     float2 corner;
     corner.x = float(vid == 1 || vid == 3);
     corner.y = float(vid == 2 || vid == 3);
 
-    // `source_rect` is `[u0, v0, u1, v1]` (origin, end), not (origin, size).
-    // `mix(a, b, t)` computes `a + (b-a)*t`, so corner=(0,0) → (u0,v0)
-    // and corner=(1,1) → (u1,v1). The previous `xy + zw * corner` form
-    // only worked when `xy == [0,0]` (the full-image default).
+ // `source_rect` is `[u0, v0, u1, v1]` (origin, end), not (origin, size).
+ // `mix(a, b, t)` computes `a + (b-a)*t`, so corner=(0,0) → (u0,v0)
+ // and corner=(1,1) → (u1,v1). The previous `xy + zw * corner` form
+ // only worked when `xy == [0,0]` (the full-image default).
     float2 tex_coord = mix(instance.source_rect.xy, instance.source_rect.zw, corner);
     float2 image_pos = instance.dest_pos + instance.dest_size * corner;
 
@@ -62,7 +62,7 @@ vertex ImageVertexOut image_vs_main(
 // matching ghostty's punchier emoji / sixel / kitty-graphics look.
 //
 // Rec.2020 still gets a matrix because its primaries diverge enough from
-// P3 that "treat as P3 directly" would clip badly. Ghostty has no
+// P3 that "treat as P3 directly" would clip badly. has no
 // Rec.2020 image path, so we own this decision.
 static inline float3 linear_to_srgb(float3 c) {
     float3 lo = c * 12.92;
@@ -84,14 +84,14 @@ fragment float4 image_fs_main(
     texture2d<float> image_texture [[texture(0)]],
     sampler image_sampler [[sampler(0)]]
 ) {
-    // Sample returns linear RGBA (HW sRGB-decoded); alpha is linear by
-    // convention, untouched by the format's transfer curve.
+ // Sample returns linear RGBA (HW sRGB-decoded); alpha is linear by
+ // convention, untouched by the format's transfer curve.
     float4 rgba = image_texture.sample(image_sampler, input.tex_coord);
     float3 lin = rgba.rgb;
     if (globals.input_colorspace == 2u) {
         lin = rec2020_to_p3(lin);
     }
     float3 enc = linear_to_srgb(lin);
-    // Premultiply alpha (pipeline blend factors are One / OneMinusSrcAlpha).
+ // Premultiply alpha (pipeline blend factors are One / OneMinusSrcAlpha).
     return float4(enc * rgba.a, rgba.a);
 }

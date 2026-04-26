@@ -157,9 +157,9 @@ float3 rec2020_to_p3(float3 linear_r2020) {
 // DisplayP3 — stores gamma-encoded values that the compositor can
 // display directly, and our alpha blending stays in gamma space
 // (matches ghostty `alpha-blending = native`).
-//   0 = sRGB      → sRGB → P3 matrix
-//   1 = DisplayP3 → identity (already P3)
-//   2 = Rec.2020  → Rec.2020 → P3 matrix
+// 0 = sRGB → sRGB → P3 matrix
+// 1 = DisplayP3 → identity (already P3)
+// 2 = Rec.2020 → Rec.2020 → P3 matrix
 float3 prepare_output_rgb(float3 srgb, uchar input_colorspace) {
     float3 lin = srgb_to_linear(srgb);
     if (input_colorspace == 0u) {
@@ -190,15 +190,15 @@ float pick_corner_radius(float2 center_to_point, float4 corner_radii) {
 // Signed distance field for a quad (rectangle)
 float quad_sdf(float2 corner_center_to_point, float corner_radius) {
     if (corner_radius == 0.0) {
-        // Fast path for sharp corners
+ // Fast path for sharp corners
         return max(corner_center_to_point.x, corner_center_to_point.y);
     } else {
-        // Signed distance of the point from a quad that is inset by corner_radius.
-        // It is negative inside this quad, and positive outside.
+ // Signed distance of the point from a quad that is inset by corner_radius.
+ // It is negative inside this quad, and positive outside.
         float signed_distance_to_inset_quad =
-            // 0 inside the inset quad, and positive outside.
+ // 0 inside the inset quad, and positive outside.
             length(max(float2(0.0), corner_center_to_point)) +
-            // 0 outside the inset quad, and negative inside.
+ // 0 outside the inset quad, and negative inside.
             min(0.0, max(corner_center_to_point.x, corner_center_to_point.y));
         return signed_distance_to_inset_quad - corner_radius;
     }
@@ -213,12 +213,12 @@ float fmod_pos(float a, float b) {
 
 // Calculate underline alpha for pattern rendering
 float underline_alpha(float x_pos, float y_pos, float rect_height, float thickness, int style) {
-    // style 1: regular solid line
+ // style 1: regular solid line
     if (style == 1) {
         return 1.0;
     }
 
-    // style 2: dashed (6px dash, 2px gap)
+ // style 2: dashed (6px dash, 2px gap)
     if (style == 2) {
         float antialias = 0.5;
         float dash_width = 6.0;
@@ -230,7 +230,7 @@ float underline_alpha(float x_pos, float y_pos, float rect_height, float thickne
         return min(start_aa, end_aa);
     }
 
-    // style 3: dotted (2px dot, 2px gap)
+ // style 3: dotted (2px dot, 2px gap)
     if (style == 3) {
         float antialias = 0.5;
         float dot_width = 2.0;
@@ -242,7 +242,7 @@ float underline_alpha(float x_pos, float y_pos, float rect_height, float thickne
         return min(start_aa, end_aa);
     }
 
-    // style 4: curly (sine wave) using SDF
+ // style 4: curly (sine wave) using SDF
     if (style == 4) {
         const float WAVE_FREQUENCY = 2.0;
         const float WAVE_HEIGHT_RATIO = 0.8;
@@ -283,8 +283,8 @@ fragment float4 fs_main(
 
     float4 out = input.f_color;
 
-    // Handle GPU-rendered underlines
-    // Underlines have: underline_style > 0, thickness in corner_radii.x
+ // Handle GPU-rendered underlines
+ // Underlines have: underline_style > 0, thickness in corner_radii.x
     if (input.underline_style > 0) {
         float width = input.rect_size.x;
         float rect_height = input.rect_size.y;
@@ -299,7 +299,7 @@ fragment float4 fs_main(
         );
     }
 
-    // Handle texture sampling for glyphs
+ // Handle texture sampling for glyphs
     if (input.color_layer > 0) {
         out = color_texture.sample(font_sampler, input.f_uv, level(0.0));
     }
@@ -309,11 +309,11 @@ fragment float4 fs_main(
         out = float4(out.xyz, input.f_color.a * mask_alpha);
     }
 
-    // Check if we have any rounding
+ // Check if we have any rounding
     bool has_corners = input.corner_radii.x != 0.0 || input.corner_radii.y != 0.0 ||
                        input.corner_radii.z != 0.0 || input.corner_radii.w != 0.0;
 
-    // Fast path: no rounding
+ // Fast path: no rounding
     if (!has_corners) {
         return float4(prepare_output_rgb(out.rgb, globals.input_colorspace), out.a);
     }
@@ -321,25 +321,25 @@ fragment float4 fs_main(
     float2 size = input.rect_size;
     float2 half_size = size / 2.0;
 
-    // Convert UV (0-1) to local position centered at rect center
+ // Convert UV (0-1) to local position centered at rect center
     float2 center_to_point = (input.f_uv - 0.5) * size;
 
-    // Antialiasing threshold
+ // Antialiasing threshold
     float antialias_threshold = 0.5;
 
-    // Pick the corner radius for this quadrant
+ // Pick the corner radius for this quadrant
     float corner_radius = pick_corner_radius(center_to_point, input.corner_radii);
 
-    // Vector from corner to point (mirrored to bottom-right quadrant)
+ // Vector from corner to point (mirrored to bottom-right quadrant)
     float2 corner_to_point = abs(center_to_point) - half_size;
 
-    // Vector from corner center (for rounded corner) to point
+ // Vector from corner center (for rounded corner) to point
     float2 corner_center_to_point = corner_to_point + corner_radius;
 
-    // Outer SDF: distance to the outer edge of the quad
+ // Outer SDF: distance to the outer edge of the quad
     float outer_sdf = quad_sdf(corner_center_to_point, corner_radius);
 
-    // If outside the quad, discard
+ // If outside the quad, discard
     if (outer_sdf >= antialias_threshold) {
         discard_fragment();
     }

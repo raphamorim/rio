@@ -131,8 +131,6 @@ pub struct SugarloafFonts {
     pub bold_italic: SugarloafFont,
     #[serde(default = "default_font_italic")]
     pub italic: SugarloafFont,
-    #[serde(default = "Vec::default")]
-    pub extras: Vec<SugarloafFont>,
     #[serde(default = "default_bool_true", rename = "use-drawable-chars")]
     pub use_drawable_chars: bool,
     #[serde(default = "Option::default", rename = "symbol-map")]
@@ -164,7 +162,6 @@ impl Default for SugarloafFonts {
             bold: default_font_bold(),
             bold_italic: default_font_bold_italic(),
             italic: default_font_italic(),
-            extras: vec![],
             use_drawable_chars: true,
             symbol_map: None,
             disable_warnings_not_found: false,

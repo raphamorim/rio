@@ -512,12 +512,12 @@ pub mod test {
 
     /// Regression: margins passed to calculate_mouse_position are already
     /// pre-scaled (multiplied by scale_factor in update_scaled_margin), but the
-    /// function multiplied them by scale_factor again.  With a 2× display and
+    /// function multiplied them by scale_factor again. With a 2× display and
     /// margin_y_top=72 (already 36*2), the double-scaling produces 144 instead
     /// of 72, shifting the row calculation by ~2 rows.
     ///
     /// Uses exact values observed on a Retina display:
-    ///   cell 16.41×33, margin (4, 72) pre-scaled, scale 2.0, 96×27 grid.
+    /// cell 16.41×33, margin (4, 72) pre-scaled, scale 2.0, 96×27 grid.
     #[test]
     fn test_row_not_double_scaled() {
         let display_offset = 0;
@@ -546,7 +546,7 @@ pub mod test {
             (cell_w, cell_h),
         );
         // (280 - 72) / 33 = 6.3 → row 6
-        // Bug: (280 - 144) / 33 = 4.1 → row 4  (margin double-scaled)
+        // Bug: (280 - 144) / 33 = 4.1 → row 4 (margin double-scaled)
         assert_eq!(pos.row, Line(6));
 
         // Row 22 spans y = [72 + 22*33, 72 + 23*33) = [798, 831).
@@ -569,7 +569,7 @@ pub mod test {
     }
 
     /// Same double-scaling issue on the X axis, but less visible with small
-    /// margins.  With margin_x_left=20 (pre-scaled) and scale=2.0 the error
+    /// margins. With margin_x_left=20 (pre-scaled) and scale=2.0 the error
     /// is 20 extra pixels — enough to shift a column.
     #[test]
     fn test_col_not_double_scaled() {
@@ -597,7 +597,7 @@ pub mod test {
             (cell_w, cell_h),
         );
         // (70 - 20) / 16.41 = 3.05 → col 3
-        // Bug: (70 - 40) / 16 = 1.87 → col 1  (margin double-scaled + int truncation)
+        // Bug: (70 - 40) / 16 = 1.87 → col 1 (margin double-scaled + int truncation)
         assert_eq!(pos.col, Column(3));
     }
 

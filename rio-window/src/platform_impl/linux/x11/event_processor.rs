@@ -11,8 +11,8 @@ use x11_dl::xinput2::{
 use x11_dl::xlib::{
     self, Display as XDisplay, Window as XWindow, XAnyEvent, XClientMessageEvent,
     XConfigureEvent, XDestroyWindowEvent, XEvent, XExposeEvent, XKeyEvent, XMapEvent,
-    XPropertyEvent, XReparentEvent, XSelectionEvent, XVisibilityEvent, XkbAnyEvent,
-    XkbStateRec,
+    XPropertyEvent, XReparentEvent, XSelectionEvent, XUnmapEvent, XVisibilityEvent,
+    XkbAnyEvent, XkbStateRec,
 };
 use x11rb::protocol::xinput;
 use x11rb::protocol::xkb::ID as XkbId;
@@ -169,6 +169,7 @@ impl EventProcessor {
             xlib::ConfigureNotify => self.configure_notify(xev.as_ref(), &mut callback),
             xlib::ReparentNotify => self.reparent_notify(xev.as_ref()),
             xlib::MapNotify => self.map_notify(xev.as_ref(), &mut callback),
+            xlib::UnmapNotify => self.unmap_notify(xev.as_ref(), &mut callback),
             xlib::DestroyNotify => self.destroy_notify(xev.as_ref(), &mut callback),
             xlib::PropertyNotify => self.property_notify(xev.as_ref(), &mut callback),
             xlib::VisibilityNotify => self.visibility_notify(xev.as_ref(), &mut callback),
@@ -373,7 +374,10 @@ impl EventProcessor {
             .map(|window| callback(&window));
 
         if deleted {
-            // Garbage collection
+            // Garbage collection — tear down the vsync timer first
+            // since it captures `window_id` and we don't want fired
+            // ticks landing in `vsync_channel` after the window's gone.
+            window_target.stop_refresh_loop(window_id);
             window_target.windows.borrow_mut().remove(&window_id);
         }
 
@@ -852,6 +856,41 @@ impl EventProcessor {
         };
 
         callback(&self.target, event);
+
+        // Window is mapped → flip the mapped bit and (re)evaluate
+        // the per-window vsync timer. We DON'T touch the obscured
+        // flag here — `update_refresh_loop` checks both, so a map
+        // while still obscured won't restart the timer (matches
+        // zed's `is_mapped && !FullyObscured` semantics).
+        self.with_window(window, |window| {
+            window
+                .is_mapped
+                .store(true, std::sync::atomic::Ordering::Release);
+        });
+        let wt = Self::window_target(&self.target);
+        wt.update_refresh_loop(WindowId(window as _));
+    }
+
+    fn unmap_notify<T: 'static, F>(&self, xev: &XUnmapEvent, _callback: F)
+    where
+        F: FnMut(&RootAEL, Event<T>),
+    {
+        let window = xev.window as xproto::Window;
+        // Window is unmapped → tear down the per-window vsync timer
+        // by flipping the mapped bit. We don't fire
+        // `WindowEvent::Occluded` here — that's reserved for
+        // `VisibilityNotify` per X11 semantics. We also leave
+        // `is_fully_obscured` untouched: when the window is mapped
+        // again, the next `VisibilityNotify` will report the real
+        // state (and `update_refresh_loop` keeps the timer torn down
+        // until then if the window comes back obscured).
+        self.with_window(window, |window| {
+            window
+                .is_mapped
+                .store(false, std::sync::atomic::Ordering::Release);
+        });
+        let wt = Self::window_target(&self.target);
+        wt.update_refresh_loop(WindowId(window as _));
     }
 
     fn destroy_notify<T: 'static, F>(&self, xev: &XDestroyWindowEvent, mut callback: F)
@@ -862,6 +901,11 @@ impl EventProcessor {
 
         let window = xev.window as xproto::Window;
         let window_id = mkwid(window);
+
+        // Tear down the per-window vsync timer BEFORE we drop the
+        // window from the map (the helper looks the window up there
+        // to find its `RefreshState`).
+        wt.stop_refresh_loop(WindowId(window as _));
 
         // In the event that the window's been destroyed without being dropped first, we
         // cleanup again here.
@@ -904,16 +948,25 @@ impl EventProcessor {
         F: FnMut(&RootAEL, Event<T>),
     {
         let xwindow = xev.window as xproto::Window;
+        let fully_obscured = xev.state == xlib::VisibilityFullyObscured;
 
         let event = Event::WindowEvent {
             window_id: mkwid(xwindow),
-            event: WindowEvent::Occluded(xev.state == xlib::VisibilityFullyObscured),
+            event: WindowEvent::Occluded(fully_obscured),
         };
         callback(&self.target, event);
 
         self.with_window(xwindow, |window| {
+            window
+                .is_fully_obscured
+                .store(fully_obscured, std::sync::atomic::Ordering::Release);
             window.visibility_notify();
         });
+
+        // Re-evaluate the per-window vsync timer — start it if newly
+        // visible, tear it down if newly fully-obscured.
+        let wt = Self::window_target(&self.target);
+        wt.update_refresh_loop(WindowId(xwindow as _));
     }
 
     fn expose<T: 'static, F>(&self, xev: &XExposeEvent, mut callback: F)
@@ -2028,6 +2081,15 @@ impl EventProcessor {
                     )
                 }
             }
+        }
+
+        // Mode/refresh-rate changes (CRTC_CHANGE, SCREEN_CHANGE) invalidate
+        // the cached per-window timer interval. Re-evaluate every window so
+        // a 60Hz→144Hz switch (or VRR mode flip) starts hitting frames at
+        // the new cadence instead of the old one.
+        let window_ids: Vec<WindowId> = wt.windows.borrow().keys().copied().collect();
+        for id in window_ids {
+            wt.refresh_rate_changed(id);
         }
     }
 

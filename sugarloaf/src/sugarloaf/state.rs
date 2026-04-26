@@ -34,12 +34,11 @@ impl SugarState {
 
     pub fn found_font_features(
         font_features: &Option<Vec<String>>,
-    ) -> Vec<crate::font_introspector::Setting<u16>> {
+    ) -> Vec<swash::Setting<u16>> {
         let mut found_font_features = vec![];
         if let Some(features) = font_features {
             for feature in features {
-                let setting: crate::font_introspector::Setting<u16> =
-                    (feature.as_str(), 1).into();
+                let setting: swash::Setting<u16> = (feature.as_str(), 1).into();
                 found_font_features.push(setting);
             }
         }
@@ -166,10 +165,14 @@ impl SugarState {
         context: &mut super::Context,
         graphics: &mut Graphics,
         image_data: &mut rustc_hash::FxHashMap<u32, super::graphics::GraphicDataEntry>,
+        image_overlays: &rustc_hash::FxHashMap<
+            usize,
+            Vec<super::graphics::GraphicOverlay>,
+        >,
     ) {
         // Shape transient texts before rendering
         self.content.build_transient_texts();
-        advance_brush.prepare(context, self, graphics, image_data);
+        advance_brush.prepare(context, self, graphics, image_data, image_overlays);
     }
 
     #[inline]

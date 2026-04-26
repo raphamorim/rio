@@ -6,7 +6,7 @@ use crate::mouse::Mouse;
 use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
-use rio_backend::sugarloaf::{layout::TextDimensions, Object, Rect, RichText, Sugarloaf};
+use rio_backend::sugarloaf::{layout::TextDimensions, Object, Rect, Sugarloaf};
 use rustc_hash::FxHashMap;
 
 use taffy::{
@@ -66,17 +66,23 @@ fn compute(
         return (MIN_COLS, MIN_LINES);
     }
 
-    // Calculate columns - divide by scaled character width
+    // Calculate columns - divide by the ROUNDED cell width.
+    // rounds `face_width` once in `font/Metrics.zig:265` (`cell_width =
+    // @round(face_width)`) and uses that integer everywhere — cols,
+    // grid shader, cursor hit-testing. Rio's grid renderer already
+    // does `.round()` on `cell_w` when building `GridUniforms`, so the
+    // column count has to use the same integer or the right edge of
+    // the grid floats `cols * (face_width - cell_width)` pixels short
+    // of the panel. Matches ; sacrifices at most 1 col vs
+    // fractional divide but keeps the render perfectly aligned.
+    let cell_width = dimensions.width.round().max(1.0);
     let visible_columns =
-        std::cmp::max((available_width / dimensions.width) as usize, MIN_COLS);
+        std::cmp::max((available_width / cell_width) as usize, MIN_COLS);
 
-    // note: TextDimensions.height already includes the line_height modifier
-    let char_height = dimensions.height;
-    if char_height <= 0.0 {
-        return (visible_columns, MIN_LINES);
-    }
-
-    let lines = (available_height / char_height).floor();
+    // Same treatment for rows: grid renders at `.round()`ed cell
+    // height, so cols-and-rows share the same integer snap.
+    let cell_height = dimensions.height.round().max(1.0);
+    let lines = (available_height / cell_height).floor();
     let visible_lines = std::cmp::max(lines as usize, MIN_LINES);
 
     (visible_columns, visible_lines)
@@ -119,26 +125,13 @@ pub struct ContextGrid<T: EventListener> {
 
 pub struct ContextGridItem<T: EventListener> {
     pub val: Context<T>,
-    rich_text_object: Object,
     pub layout_rect: [f32; 4],
 }
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
-        let rich_text_object = Object::RichText(RichText {
-            id: context.rich_text_id,
-            lines: None,
-            render_data: rio_backend::sugarloaf::RichTextRenderData {
-                position: [0.0, 0.0],
-                should_repaint: false,
-                should_remove: false,
-                hidden: false,
-            },
-        });
-
         Self {
             val: context,
-            rich_text_object,
             layout_rect: [0.0; 4],
         }
     }
@@ -153,12 +146,11 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
         &mut self.val
     }
 
-    /// Update the position in the rich text object
-    fn set_position(&mut self, position: [f32; 2]) {
-        if let Object::RichText(ref mut rich_text) = self.rich_text_object {
-            rich_text.render_data.position = position;
-        }
-    }
+    /// Previously stashed panel position into the rich-text object's
+    /// render_data; that object tree is gone with the Content drop.
+    /// The grid renderer reads panel positions directly from
+    /// `layout_rect`.
+    fn set_position(&mut self, _position: [f32; 2]) {}
 }
 
 impl<T: rio_backend::event::EventListener> ContextGrid<T> {
@@ -249,6 +241,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn get_mut(&mut self, key: NodeId) -> Option<&mut ContextGridItem<T>> {
         self.inner.get_mut(&key)
     }
@@ -948,6 +941,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     #[inline]
     pub fn contexts_mut(&mut self) -> &mut FxHashMap<NodeId, ContextGridItem<T>> {
         &mut self.inner
+    }
+
+    /// Immutable view into the panel map. Kept even though the
+    /// emission loop uses `contexts_mut` (it needs `&mut
+    /// renderable_content` to take damage) — this one is handy for
+    /// read-only cross-panel queries like the damage audit.
+    #[allow(dead_code)]
+    #[inline]
+    pub fn contexts(&self) -> &FxHashMap<NodeId, ContextGridItem<T>> {
+        &self.inner
     }
 
     /// Get contexts ordered by visual position (top-to-bottom, left-to-right)

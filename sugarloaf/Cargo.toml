@@ -4,8 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
+build = "build.rs"
 include = [
     "Cargo.toml",
+    "build.rs",
     "src/**/*.ttf",
     "src/**/*.otf",
     "src/**/*.wgsl",
@@ -15,6 +17,7 @@ include = [
     "src/components/filters/**/*.png",
     "src/**/*.rs",
     "src/**/*.metal",
+    "src/**/*.glsl",
 ]
 description = "Sugarloaf is Rio rendering engine, designed to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintained for Rio terminal purposes but feel free to use it."
 documentation = "https://docs.rs/crate/sugarloaf/latest"
@@ -34,7 +37,12 @@ targets = [
 ]
 
 [dependencies]
-wgpu = { workspace = true }
+# `wgpu` and the `librashader-*` filter chain are gated behind the
+# `wgpu` feature. Default-off on macOS + Linux (the native Metal /
+# Vulkan backends are preferred and skip the wgpu translation
+# layer). Windows + WASM enable it via target-specific deps in the
+# downstream crate (`frontends/rioterm/Cargo.toml`).
+wgpu = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -53,19 +61,21 @@ halfbrown = "0.3.0"
 half = "2.6.0"
 num-traits = "0.2.19"
 yazi = { version = "0.2.1", optional = true }
-zeno = { version = "0.3.3", optional = true }
+zeno = "0.3.3"
+swash = "0.2.7"
 futures = { workspace = true }
 tiny-skia = "0.12.0"
 wide = "1.2.0"
 
-librashader = { version = "0.10.0", default-features = false, features = ["runtime-wgpu", "stable", "presets"] }
-librashader-common = "0.10"
-librashader-presets = "0.10"
-librashader-preprocess = "0.10"
-librashader-pack = "0.10"
-librashader-reflect = { version = "0.10", features = ["stable", "wgsl"], default-features = false }
-librashader-runtime = "0.10"
-librashader-cache = "0.10"
+# librashader is wgpu-only — gate the entire filter chain together.
+librashader = { version = "0.10.0", default-features = false, features = ["runtime-wgpu", "stable", "presets"], optional = true }
+librashader-common = { version = "0.10", optional = true }
+librashader-presets = { version = "0.10", optional = true }
+librashader-preprocess = { version = "0.10", optional = true }
+librashader-pack = { version = "0.10", optional = true }
+librashader-reflect = { version = "0.10", features = ["stable", "wgsl"], default-features = false, optional = true }
+librashader-runtime = { version = "0.10", optional = true }
+librashader-cache = { version = "0.10", optional = true }
 thiserror = "2.0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -73,6 +83,8 @@ metal = "0.32.0"
 objc-rs = "0.2.8"
 core-graphics-types = "0.2.0"
 core-graphics = "0.24.0"
+core-text = "21.0.0"
+core-foundation = "0.10.1"
 block = "0.1.6"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -90,6 +102,26 @@ ttf-parser = { version = "0.25.1", default-features = false, features = ["std", 
 
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
 fontconfig-parser = { version = "0.5.8", default-features = false }
+# Direct fontconfig FFI for per-codepoint discovery (the missing
+# piece on Linux that macOS gets for free via CoreText). Already in
+# the dep tree as a transitive of font-kit; promoted to a direct
+# dep so we can call `FcFontSort` + `FcCharSet*` ourselves. Debian
+# ships this as `librust-yeslogic-fontconfig-sys-dev`.
+yeslogic-fontconfig-sys = "6"
+# Native Vulkan backend (mirrors the Metal backend in scope: no librashader
+# filters, owns its own swapchain + pipelines). Linux-only for now — Windows
+# would need khr::win32_surface added to context::vulkan, and macOS keeps
+# the native Metal path.
+ash = "0.38"
+
+# Windows uses font-kit's `SystemSource::all_fonts()` walk for codepoint
+# discovery (see `font/windows.rs`). Pure DirectWrite via `IDWriteFontFallback`
+# would be the moral twin of CoreText's `CTFontCreateForString`, but the
+# only Debian-packaged DirectWrite binding (winapi 0.3) is fading out and the
+# higher-level `windows` crate isn't in Debian at all. Ghostty itself
+# doesn't ship Windows discovery yet — the font-kit walk keeps Windows on
+# par with Linux's previous (no-cascade) state plus codepoint discovery
+# from the installed font set, which is the win we actually care about.
 
 [dev-dependencies]
 rio-window = { workspace = true }
@@ -99,8 +131,23 @@ criterion = { workspace = true }
 
 [features]
 default = ["scale", "render"]
-scale = ["yazi", "zeno"]
+scale = ["yazi"]
 render = ["scale", "zeno/eval"]
+# Pull in `wgpu` + the librashader filter chain. Required on Windows
+# and WASM (no native backend yet); optional on Linux + macOS where
+# the native Vulkan / Metal backends cover everything except the
+# librashader CRT/scanline filters.
+wgpu = [
+    "dep:wgpu",
+    "dep:librashader",
+    "dep:librashader-common",
+    "dep:librashader-presets",
+    "dep:librashader-preprocess",
+    "dep:librashader-pack",
+    "dep:librashader-reflect",
+    "dep:librashader-runtime",
+    "dep:librashader-cache",
+]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"

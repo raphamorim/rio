@@ -6,13 +6,24 @@
 // island.rs was originally retired from boo editor
 // which is licensed under MIT license.
 
-use crate::context::{next_rich_text_id, ContextManager};
-use crate::renderer::utils::add_span_with_fallback;
+use crate::context::ContextManager;
 use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
-use rio_backend::sugarloaf::{Attributes, SpanStyle, Sugarloaf};
+use rio_backend::sugarloaf::text::DrawOpts;
+use rio_backend::sugarloaf::{Attributes, Sugarloaf};
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::time::Instant;
+
+/// Convert `[f32; 4]` colour to `[u8; 4]` for the `Text` API.
+#[inline]
+fn color_u8(c: [f32; 4]) -> [u8; 4] {
+    [
+        (c[0].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[1].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[2].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[3].clamp(0.0, 1.0) * 255.0) as u8,
+    ]
+}
 
 /// Height of the tab bar in pixels
 pub const ISLAND_HEIGHT: f32 = 34.0;
@@ -123,17 +134,11 @@ const ISLAND_MARGIN_RIGHT: f32 = 8.0;
 #[cfg(target_os = "macos")]
 const ISLAND_MARGIN_LEFT_MACOS: f32 = 76.0;
 
-struct TabIslandData {
-    text_id: usize,
-    last_title: String,
-}
-
 pub struct Island {
     pub hide_if_single: bool,
     pub inactive_text_color: [f32; 4],
     pub active_text_color: [f32; 4],
     pub border_color: [f32; 4],
-    tab_data: FxHashMap<usize, TabIslandData>,
     /// Current progress bar state
     progress_state: Option<ProgressState>,
     /// Current progress value (0-100)
@@ -158,8 +163,6 @@ pub struct Island {
     tab_custom_titles: FxHashMap<usize, String>,
     /// Current rename input text while picker is open
     rename_input: String,
-    /// Rich text ID for the rename input
-    rename_text_id: Option<usize>,
     /// Caret blink timer
     rename_caret_time: Instant,
 }
@@ -176,7 +179,6 @@ impl Island {
             inactive_text_color,
             active_text_color,
             border_color,
-            tab_data: FxHashMap::default(),
             progress_state: None,
             progress_value: None,
             progress_started_at: None,
@@ -189,7 +191,6 @@ impl Island {
             tab_colors: FxHashMap::default(),
             tab_custom_titles: FxHashMap::default(),
             rename_input: String::new(),
-            rename_text_id: None,
             rename_caret_time: Instant::now(),
         }
     }
@@ -203,10 +204,6 @@ impl Island {
         self.inactive_text_color = inactive_text_color;
         self.active_text_color = active_text_color;
         self.border_color = border_color;
-        // Clear cached titles to force re-render with new colors
-        for tab_data in self.tab_data.values_mut() {
-            tab_data.last_title.clear();
-        }
     }
 
     /// Update the progress bar state from an OSC 9;4 report.
@@ -356,25 +353,11 @@ impl Island {
         let num_tabs = context_manager.len();
         let current_tab_index = context_manager.current_index();
 
-        // Always hide rename text first — render_color_picker will re-show if needed
-        if let Some(id) = self.rename_text_id {
-            sugarloaf.set_visibility(id, false);
-        }
-
-        // Hide tabs if only single tab and hide_if_single is enabled
+        // Immediate-mode: no cached ids to hide. If we early-return
+        // without drawing, the tabs just don't appear this frame.
         if self.hide_if_single && num_tabs == 1 {
-            // Hide all existing tab rich texts
-            for tab_data in self.tab_data.values() {
-                sugarloaf.set_visibility(tab_data.text_id, false);
-            }
-            // Still render the progress bar even when tabs are hidden
             self.render_progress_bar(sugarloaf, window_width, scale_factor);
             return;
-        }
-
-        // Hide all existing tab rich texts first
-        for tab_data in self.tab_data.values() {
-            sugarloaf.set_visibility(tab_data.text_id, false);
         }
 
         // Calculate left margin (macOS needs space for traffic light buttons)
@@ -420,48 +403,25 @@ impl Island {
             let max_text_width = (tab_width - TAB_PADDING_X * 2.0).max(0.0);
             let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
 
-            // Get or create tab data
-            let tab_data = self.tab_data.entry(tab_index).or_insert_with(|| {
-                // Text should be in front of everything (terminal at 0.0)
-                let text_id = next_rich_text_id();
-                let _ = sugarloaf.text(Some(text_id));
-                sugarloaf.set_use_grid_cell_size(text_id, false); // Proportional text for tabs
-                sugarloaf.set_text_font_size(&text_id, TITLE_FONT_SIZE);
-
-                TabIslandData {
-                    text_id,
-                    last_title: String::new(),
-                }
-            });
-
-            // Choose text color based on active state
             let text_color = if is_active {
                 self.active_text_color
             } else {
                 self.inactive_text_color
             };
 
-            // Update text with per-font spans for font fallback
-            let base_style = SpanStyle {
-                color: text_color,
-                ..SpanStyle::default()
+            let title_opts = DrawOpts {
+                font_size: TITLE_FONT_SIZE,
+                color: color_u8(text_color),
+                ..DrawOpts::default()
             };
 
-            sugarloaf.content().sel(tab_data.text_id).clear().new_line();
-            add_span_with_fallback(sugarloaf, &title, base_style);
-            sugarloaf.content().build();
-            tab_data.last_title = title.into_owned();
-
-            // Position text to measure, then re-center using actual rendered width
-            sugarloaf.set_position(tab_data.text_id, x_position, 0.0);
-            sugarloaf.set_visibility(tab_data.text_id, true);
-            let text_width = sugarloaf.get_text_rendered_width(&tab_data.text_id);
-
-            // Position text centered horizontally and vertically in the tab
+            // Measure → centre → draw. Immediate mode, no cached
+            // text_id bookkeeping.
+            let ui = sugarloaf.text_mut();
+            let text_width = ui.measure(&title, &title_opts);
             let text_x = x_position + (tab_width - text_width) / 2.0;
             let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
-            sugarloaf.set_position(tab_data.text_id, text_x, text_y);
-            sugarloaf.set_visibility(tab_data.text_id, true);
+            ui.draw(text_x, text_y, &title, &title_opts);
 
             // Draw tab background color if set
             if let Some(bg_color) = self.tab_colors.get(&tab_index) {
@@ -601,11 +561,6 @@ impl Island {
             }
         }
         true
-    }
-
-    /// Check if the picker needs continuous redraw (caret blink)
-    pub fn needs_rename_redraw(&self) -> bool {
-        self.color_picker_tab.is_some()
     }
 
     /// Check if a click hits a color swatch in the picker.
@@ -761,18 +716,6 @@ impl Island {
             10,
         );
 
-        // Ensure rename text ID exists
-        if self.rename_text_id.is_none() {
-            let id = next_rich_text_id();
-            let _ = sugarloaf.text(Some(id));
-            sugarloaf.set_use_grid_cell_size(id, false);
-            sugarloaf.set_text_font_size(&id, PICKER_INPUT_FONT_SIZE);
-            sugarloaf.set_order(id, 10);
-            self.rename_text_id = Some(id);
-        }
-
-        let text_id = self.rename_text_id.unwrap();
-
         let text_inset = 6.0;
         let text_x = input_x + text_inset;
         let max_text_width = input_width - text_inset * 2.0;
@@ -783,44 +726,28 @@ impl Island {
         } else {
             [0.93, 0.93, 0.93, 1.0]
         };
+        let rename_opts = DrawOpts {
+            font_size: PICKER_INPUT_FONT_SIZE,
+            color: color_u8(text_color),
+            ..DrawOpts::default()
+        };
 
-        // Determine visible text: trim from the front if it overflows
+        // Determine visible text: trim from the front if it overflows.
         let display_text: String = if self.rename_input.is_empty() {
             "Tab title...".to_string()
         } else {
-            // Try full string first, trim chars from front until it fits
-            let input = &self.rename_input;
+            let input = self.rename_input.as_str();
             let chars: Vec<char> = input.chars().collect();
+            let ui = sugarloaf.text_mut();
             let mut start = 0;
-
-            // Measure full text
-            let set_and_measure = |text: &str, sugarloaf: &mut Sugarloaf| {
-                let content = sugarloaf.content();
-                content
-                    .sel(text_id)
-                    .clear()
-                    .new_line()
-                    .add_span(
-                        text,
-                        SpanStyle {
-                            color: text_color,
-                            ..SpanStyle::default()
-                        },
-                    )
-                    .build();
-                sugarloaf.set_position(text_id, text_x, text_y);
-                sugarloaf.get_text_rendered_width(&text_id)
-            };
-
-            let full_width = set_and_measure(input, sugarloaf);
+            let full_width = ui.measure(input, &rename_opts);
             if full_width > max_text_width {
-                // Binary search for the right start index
                 let mut lo = 0;
                 let mut hi = chars.len();
                 while lo < hi {
                     let mid = (lo + hi) / 2;
                     let substr: String = chars[mid..].iter().collect();
-                    let w = set_and_measure(&substr, sugarloaf);
+                    let w = ui.measure(&substr, &rename_opts);
                     if w > max_text_width {
                         lo = mid + 1;
                     } else {
@@ -829,31 +756,17 @@ impl Island {
                 }
                 start = lo;
             }
-
             chars[start..].iter().collect()
         };
 
-        let content = sugarloaf.content();
-        content
-            .sel(text_id)
-            .clear()
-            .new_line()
-            .add_span(
-                &display_text,
-                SpanStyle {
-                    color: text_color,
-                    ..SpanStyle::default()
-                },
-            )
-            .build();
-
-        sugarloaf.set_position(text_id, text_x, text_y);
-        sugarloaf.set_visibility(text_id, true);
-
+        let rendered_width =
+            sugarloaf
+                .text_mut()
+                .draw(text_x, text_y, &display_text, &rename_opts);
         let rendered_width = if self.rename_input.is_empty() {
             0.0
         } else {
-            sugarloaf.get_text_rendered_width(&text_id)
+            rendered_width
         };
 
         // Blinking caret
@@ -1106,9 +1019,9 @@ mod tests {
     fn title_respects_budget_with_wide_chars() {
         // Mixed widths: 'W' = 2.0, others (including ellipsis) = 1.0.
         // Title "WxWxW", budget 4.0. Walk:
-        //   ix=0 W: before add, 0+1(suffix) ≤ 4 → truncate_ix=0; accum→2
-        //   ix=1 x: 2+1 ≤ 4 → truncate_ix=1; accum→3
-        //   ix=2 W: 3+1 ≤ 4 → truncate_ix=2; accum→5; 5>4 → cut.
+        // ix=0 W: before add, 0+1(suffix) ≤ 4 → truncate_ix=0; accum→2
+        // ix=1 x: 2+1 ≤ 4 → truncate_ix=1; accum→3
+        // ix=2 W: 3+1 ≤ 4 → truncate_ix=2; accum→5; 5>4 → cut.
         // Output: title[..2] + "…" = "Wx…", width 2+1+1 = 4 ≤ 4 ✓
         let widths = |c: char| if c == 'W' { 2.0 } else { 1.0 };
         let out = fit_title_with_widths("WxWxW", 4.0, widths);

@@ -290,11 +290,24 @@ pub fn render_cpu(
     ctx: &mut CpuContext,
     renderer: &Renderer,
     cache: &mut CpuCache,
-    background: Option<wgpu::Color>,
+    background: Option<crate::sugarloaf::Color>,
+    grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
+    text: &crate::text::Text,
 ) {
     let vertices = renderer.vertices();
+    let quad_instances = renderer.instances();
+    let text_instances = text.instances();
 
     // Frame skip.
+    //
+    // Hash includes the bg color, the overlay vertex stream, and each
+    // grid's uniforms + bg cells. Per-glyph fg state is hashed by
+    // length only — full fg-row hashing is too expensive on large
+    // panels (and a column of glyphs that swap colors will still
+    // change `cell_size` / `cursor_pos` / something downstream that's
+    // covered here). If you see stale text on the CPU backend after a
+    // pure-fg-color edit, expand this to hash bytemuck::cast_slice of
+    // each row.
     let frame_hash = {
         let mut h = rustc_hash::FxHasher::default();
         if let Some(c) = background {
@@ -307,6 +320,30 @@ pub fn render_cpu(
         }
         let bytes: &[u8] = bytemuck::cast_slice(vertices);
         h.write(bytes);
+        let inst_bytes: &[u8] = bytemuck::cast_slice(quad_instances);
+        h.write(inst_bytes);
+        for (grid, uniforms) in grids.iter() {
+            h.write(bytemuck::bytes_of(uniforms));
+            if let crate::grid::GridRenderer::Cpu(cpu_grid) = &**grid {
+                cpu_grid.hash_state(&mut h);
+            }
+        }
+        // Text instances change per frame for any UI overlay
+        // animation (search bar typing, command palette filter,
+        // tab title rename, etc.). Hash by length + bytes — same
+        // approach as the vertex stream.
+        h.write_usize(text_instances.len());
+        if !text_instances.is_empty() {
+            // Safety: TextInstance is repr(C) with all-primitive
+            // fields and explicit padding; cast as raw bytes.
+            let bytes = unsafe {
+                std::slice::from_raw_parts(
+                    text_instances.as_ptr() as *const u8,
+                    std::mem::size_of_val(text_instances),
+                )
+            };
+            h.write(bytes);
+        }
         h.finish()
     };
 
@@ -339,6 +376,39 @@ pub fn render_cpu(
         None => 0,
     };
     buffer.fill(bg_u32);
+
+    // Grid pass: paint each panel's terminal cells (bg + glyphs) into
+    // the buffer before overlay vertices, so UI overlays composite on
+    // top.
+    {
+        let buf_slice: &mut [u32] = &mut buffer;
+        for (grid, uniforms) in grids.iter() {
+            grid.render_cpu(buf_slice, ctx.width_px, ctx.height_px, uniforms);
+        }
+    }
+
+    // QuadInstance pass: split borders, panel rects, scrollbar, dim
+    // overlays — anything queued via `sugarloaf.rect/quad/rounded_rect`.
+    // Image / mask layers (subpixel text, image atlas) are not handled
+    // here; sub-pixel UI text already lives in `text.render_cpu`, and
+    // the grid path owns terminal glyphs.
+    if !quad_instances.is_empty() {
+        let buf_slice: &mut [u32] = &mut buffer;
+        for inst in quad_instances {
+            // Image / mask atlas layers — skip on CPU (handled by
+            // grid + text passes for the use cases that matter).
+            if inst.layers[0] != 0 || inst.layers[1] != 0 {
+                continue;
+            }
+            // Underline pattern shaders — TODO: implement on CPU.
+            // For now drop straight underlines to a flat fill (style
+            // == 1) and skip styled variants.
+            if inst.underline_style > 1 {
+                continue;
+            }
+            draw_quad_instance(buf_slice, buf_w, buf_h, inst);
+        }
+    }
 
     if !vertices.is_empty() {
         let images = renderer.image_cache();
@@ -419,6 +489,11 @@ pub fn render_cpu(
             flush_fill(buf_slice, buf_w, &p);
         }
     }
+
+    // UI text pass — tab labels, search, command palette, assistant,
+    // island, etc. Sits on top of grids + UI quads so labels never
+    // get hidden by panel borders or the cursor.
+    text.render_cpu(&mut buffer, ctx.width_px, ctx.height_px);
 
     if let Err(e) = buffer.present() {
         tracing::error!("softbuffer present failed: {e}");
@@ -604,6 +679,164 @@ fn draw_glyph(
         let src_tail = src_chunks.remainder();
         for (d, &s) in dst_tail.iter_mut().zip(src_tail) {
             *d = blend_over_swar(s, *d);
+        }
+    }
+}
+
+/// Rasterize one `QuadInstance` (rect / quad / rounded_rect /
+/// underline-style 1) into the softbuffer pixel buffer. Honors
+/// `clip_rect` (interpreted the same as the GPU shader: zero w/h
+/// means "no clip"). Rounded corners use a square-distance test
+/// against each corner center.
+fn draw_quad_instance(
+    buf: &mut [u32],
+    buf_w: i32,
+    buf_h: i32,
+    inst: &crate::renderer::batch::QuadInstance,
+) {
+    let r = (inst.color[0].clamp(0.0, 1.0) * 255.0) as u8;
+    let g = (inst.color[1].clamp(0.0, 1.0) * 255.0) as u8;
+    let b = (inst.color[2].clamp(0.0, 1.0) * 255.0) as u8;
+    let a = (inst.color[3].clamp(0.0, 1.0) * 255.0) as u8;
+    if a == 0 {
+        return;
+    }
+
+    let qx0 = inst.pos[0];
+    let qy0 = inst.pos[1];
+    let qx1 = qx0 + inst.size[0];
+    let qy1 = qy0 + inst.size[1];
+
+    let mut x0 = qx0.round() as i32;
+    let mut y0 = qy0.round() as i32;
+    let mut x1 = qx1.round() as i32;
+    let mut y1 = qy1.round() as i32;
+
+    // Apply clip_rect when w & h are both > 0 (matches the shader's
+    // convention that an all-zero clip means "unclipped").
+    let cw = inst.clip_rect[2];
+    let ch = inst.clip_rect[3];
+    if cw > 0.0 && ch > 0.0 {
+        let cx0 = inst.clip_rect[0].round() as i32;
+        let cy0 = inst.clip_rect[1].round() as i32;
+        let cx1 = (inst.clip_rect[0] + cw).round() as i32;
+        let cy1 = (inst.clip_rect[1] + ch).round() as i32;
+        if x0 < cx0 {
+            x0 = cx0;
+        }
+        if y0 < cy0 {
+            y0 = cy0;
+        }
+        if x1 > cx1 {
+            x1 = cx1;
+        }
+        if y1 > cy1 {
+            y1 = cy1;
+        }
+    }
+
+    if x0 < 0 {
+        x0 = 0;
+    }
+    if y0 < 0 {
+        y0 = 0;
+    }
+    if x1 > buf_w {
+        x1 = buf_w;
+    }
+    if y1 > buf_h {
+        y1 = buf_h;
+    }
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+
+    let any_radii = inst.corner_radii.iter().any(|&r| r > 0.0);
+    let stride = buf_w as usize;
+
+    if !any_radii {
+        // Solid fill — fast path.
+        if a == 255 {
+            let opaque = pack_opaque(r, g, b);
+            for y in y0..y1 {
+                let row_start = (y as usize) * stride + (x0 as usize);
+                let row_end = (y as usize) * stride + (x1 as usize);
+                buf[row_start..row_end].fill(opaque);
+            }
+        } else {
+            // Translucent — premultiply once, blend per pixel.
+            let pa = a as u32;
+            let pr = ((r as u32) * pa + 127) / 255;
+            let pg = ((g as u32) * pa + 127) / 255;
+            let pb = ((b as u32) * pa + 127) / 255;
+            let src_premul = ((a as u32) << 24) | (pr << 16) | (pg << 8) | pb;
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    let idx = (y as usize) * stride + (x as usize);
+                    buf[idx] = blend_over_swar(src_premul, buf[idx]);
+                }
+            }
+        }
+        return;
+    }
+
+    // Rounded corners. corner_radii = [tl, tr, br, bl]. For every
+    // pixel that falls inside a corner's bounding square but outside
+    // the radius circle, skip it. AA is single-step (no subpixel
+    // coverage) — fine for terminal-style 1px borders.
+    let r_tl = inst.corner_radii[0].max(0.0);
+    let r_tr = inst.corner_radii[1].max(0.0);
+    let r_br = inst.corner_radii[2].max(0.0);
+    let r_bl = inst.corner_radii[3].max(0.0);
+
+    let pa = a as u32;
+    let pr = ((r as u32) * pa + 127) / 255;
+    let pg = ((g as u32) * pa + 127) / 255;
+    let pb = ((b as u32) * pa + 127) / 255;
+    let src_premul = ((a as u32) << 24) | (pr << 16) | (pg << 8) | pb;
+
+    for y in y0..y1 {
+        let yc = y as f32 + 0.5 - qy0;
+        for x in x0..x1 {
+            let xc = x as f32 + 0.5 - qx0;
+            let mut keep = true;
+            // Top-left
+            if r_tl > 0.0 && xc < r_tl && yc < r_tl {
+                let dx = r_tl - xc;
+                let dy = r_tl - yc;
+                if dx * dx + dy * dy > r_tl * r_tl {
+                    keep = false;
+                }
+            }
+            // Top-right
+            let w = inst.size[0];
+            if keep && r_tr > 0.0 && xc > w - r_tr && yc < r_tr {
+                let dx = xc - (w - r_tr);
+                let dy = r_tr - yc;
+                if dx * dx + dy * dy > r_tr * r_tr {
+                    keep = false;
+                }
+            }
+            let h = inst.size[1];
+            if keep && r_br > 0.0 && xc > w - r_br && yc > h - r_br {
+                let dx = xc - (w - r_br);
+                let dy = yc - (h - r_br);
+                if dx * dx + dy * dy > r_br * r_br {
+                    keep = false;
+                }
+            }
+            if keep && r_bl > 0.0 && xc < r_bl && yc > h - r_bl {
+                let dx = r_bl - xc;
+                let dy = yc - (h - r_bl);
+                if dx * dx + dy * dy > r_bl * r_bl {
+                    keep = false;
+                }
+            }
+            if !keep {
+                continue;
+            }
+            let idx = (y as usize) * stride + (x as usize);
+            buf[idx] = blend_over_swar(src_premul, buf[idx]);
         }
     }
 }

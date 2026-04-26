@@ -853,7 +853,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "copa"
-version = "0.3.11"
+version = "0.4.0"
 dependencies = [
  "arrayvec",
  "criterion",
@@ -879,7 +879,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.3.11"
+version = "0.4.0"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -980,6 +980,18 @@ checksum = "c9d2790b5c08465d49f8dc05c8bcae9fea467855947db39b0f8145c091aaced5"
 dependencies = [
  "core-foundation 0.9.4",
  "core-graphics 0.23.2",
+ "foreign-types",
+ "libc",
+]
+
+[[package]]
+name = "core-text"
+version = "21.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a593227b66cbd4007b2a050dfdd9e1d1318311409c8d600dc82ba1b15ca9c130"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-graphics 0.24.0",
  "foreign-types",
  "libc",
 ]
@@ -1544,7 +1556,7 @@ dependencies = [
  "byteorder",
  "core-foundation 0.9.4",
  "core-graphics 0.23.2",
- "core-text",
+ "core-text 20.1.0",
  "dirs",
  "dwrote",
  "float-ord",
@@ -3956,6 +3968,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca45419789ae5a7899559e9512e58ca889e41f04f1f2445e9f4b290ceccd1d08"
 
 [[package]]
+name = "rapidhash"
+version = "4.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5e48930979c155e2f33aa36ab3119b5ee81332beb6482199a8ecd6029b80b59"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4095,7 +4116,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.3.11"
+version = "0.4.0"
 dependencies = [
  "base64",
  "bitflags 2.11.0",
@@ -4133,7 +4154,7 @@ dependencies = [
 
 [[package]]
 name = "rio-grapheme-width"
-version = "0.3.11"
+version = "0.4.0"
 dependencies = [
  "phf",
  "ucd-trie",
@@ -4141,7 +4162,7 @@ dependencies = [
 
 [[package]]
 name = "rio-notifier"
-version = "0.3.11"
+version = "0.4.0"
 dependencies = [
  "block2 0.5.1",
  "objc-rs 0.3.1",
@@ -4154,7 +4175,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.3.11"
+version = "0.4.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4162,7 +4183,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.3.11"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -4216,7 +4237,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.3.11"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "bitflags 2.11.0",
@@ -4236,6 +4257,7 @@ dependencies = [
  "onig",
  "parking_lot",
  "pretty_assertions",
+ "rapidhash",
  "raw-window-handle",
  "regex",
  "rio-backend",
@@ -4244,6 +4266,7 @@ dependencies = [
  "rustc-hash 2.1.2",
  "serde",
  "smallvec",
+ "sugarloaf",
  "taffy",
  "teletypewriter",
  "tinyvec",
@@ -4744,15 +4767,18 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "sugarloaf"
-version = "0.3.11"
+version = "0.4.0"
 dependencies = [
  "approx",
+ "ash",
  "block",
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
+ "core-foundation 0.10.1",
  "core-graphics 0.24.0",
  "core-graphics-types 0.2.0",
+ "core-text 21.0.0",
  "criterion",
  "dashmap",
  "deflate",
@@ -4787,6 +4813,7 @@ dependencies = [
  "skrifa",
  "smallvec",
  "softbuffer",
+ "swash",
  "thiserror 2.0.18",
  "tiny-skia 0.12.0",
  "tracing",
@@ -4802,6 +4829,7 @@ dependencies = [
  "wide",
  "wyhash",
  "yazi",
+ "yeslogic-fontconfig-sys",
  "zeno",
 ]
 
@@ -4810,6 +4838,17 @@ name = "svg_fmt"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0193cc4331cfd2f3d2011ef287590868599a2f33c3e69bc22c1a3d3acf9e02fb"
+
+[[package]]
+name = "swash"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "842f3cd369c2ba38966204f983eaa5e54a8e84a7d7159ed36ade2b6c335aae64"
+dependencies = [
+ "skrifa",
+ "yazi",
+ "zeno",
+]
 
 [[package]]
 name = "syn"
@@ -4853,7 +4892,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "teletypewriter"
-version = "0.3.11"
+version = "0.4.0"
 dependencies = [
  "corcovado",
  "dirs",

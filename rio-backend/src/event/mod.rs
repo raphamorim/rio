@@ -47,9 +47,10 @@ pub enum ClickState {
 }
 
 /// Terminal damage information for efficient rendering
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum TerminalDamage {
     /// Nothing changed — skip rendering entirely
+    #[default]
     Noop,
     /// The entire terminal needs to be redrawn
     Full,

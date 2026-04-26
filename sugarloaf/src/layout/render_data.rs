@@ -11,15 +11,14 @@
 
 //! RenderData.
 use super::glyph::*;
-#[cfg(test)]
-use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
-use crate::font_introspector::shape::Shaper;
-use crate::font_introspector::Metrics;
 use crate::layout::content::{CachedRun, ShapingCache, SpanStyleDecoration};
 use crate::layout::SpanStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
 use std::hash::Hasher;
+#[cfg(not(target_os = "macos"))]
+use swash::shape::Shaper;
+use swash::Metrics;
 use wyhash::WyHash;
 
 /// Compute a cache key from glyph IDs, font_id and size.
@@ -86,6 +85,7 @@ impl RenderData {
 }
 
 impl RenderData {
+    #[cfg(not(target_os = "macos"))]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn push_run(
         &mut self,
@@ -159,6 +159,90 @@ impl RenderData {
         self.runs.push(run_data);
     }
 
+    /// macOS equivalent of `push_run`: consumes a pre-shaped slice from
+    /// CoreText instead of running the swash `Shaper` callback.
+    ///
+    /// Packing / cache-fill / `RunData` layout are byte-identical to the
+    /// swash path, so the cache-hit path (`push_cached_run`) and downstream
+    /// composition don't care which shaper produced the glyphs.
+    ///
+    /// `metrics` comes from [`crate::font::macos::font_metrics`] — CoreText
+    /// native ascent/descent/leading/underline, plus strikeout derived from
+    /// x-height (CT has no strikeout API).
+    #[cfg(target_os = "macos")]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn push_run_macos(
+        &mut self,
+        style: SpanStyle,
+        size: f32,
+        line: u32,
+        shaped: &[crate::font::macos::ShapedGlyph],
+        metrics: &crate::font::macos::FontMetrics,
+        shaping_cache: &mut ShapingCache,
+    ) {
+        let mut glyphs = Vec::with_capacity(shaped.len());
+        let mut detailed_glyphs = Vec::new();
+        let mut advance = 0.0f32;
+
+        for g in shaped {
+            advance += g.advance;
+            const MAX_SIMPLE_ADVANCE: u32 = 0x7FFF;
+            if g.x == 0.0 && g.y == 0.0 {
+                let packed_advance = (g.advance * 64.0) as u32;
+                if packed_advance <= MAX_SIMPLE_ADVANCE {
+                    glyphs.push(GlyphData {
+                        data: g.id as u32 | (packed_advance << 16),
+                        size: g.cluster,
+                    });
+                    continue;
+                }
+            }
+            let detail_index = detailed_glyphs.len() as u32;
+            detailed_glyphs.push(Glyph {
+                id: g.id,
+                x: g.x,
+                y: g.y,
+                advance: g.advance,
+                span: g.cluster as usize,
+            });
+            glyphs.push(GlyphData {
+                data: GLYPH_DETAILED | detail_index,
+                size: g.cluster,
+            });
+        }
+
+        if let Some(graphic) = style.media {
+            self.graphics.insert(graphic.id);
+        }
+
+        let cache_key = compute_cache_key(&glyphs, style.font_id, size);
+
+        shaping_cache.finish_with_run(CachedRun {
+            glyphs: glyphs.clone(),
+            detailed_glyphs: detailed_glyphs.clone(),
+            advance,
+            cache_key,
+        });
+
+        let run_data = RunData {
+            span: style,
+            line,
+            size,
+            detailed_glyphs,
+            glyphs,
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+            leading: metrics.leading,
+            underline_offset: metrics.underline_offset,
+            strikeout_offset: metrics.strikeout_offset,
+            strikeout_size: metrics.strikeout_thickness,
+            x_height: metrics.x_height,
+            advance,
+            cache_key,
+        };
+        self.runs.push(run_data);
+    }
+
     /// Push a pre-packed cached run — no repacking, no hashing.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn push_cached_run(
@@ -193,46 +277,45 @@ impl RenderData {
         self.runs.push(run_data);
     }
 
+    /// Test helper: pack a flat list of shaped glyphs into a `RunData`
+    /// as if `push_run` had been called, without going through swash's
+    /// `Shaper`. `glyphs_in` is cluster-flattened — cluster boundaries
+    /// don't affect the pack math (advance just sums across all glyphs)
+    /// so the signature takes a single slice.
     #[cfg(test)]
     pub(super) fn push_run_without_shaper(
         &mut self,
         style: SpanStyle,
         size: f32,
         line: u32,
-        glyph_clusters: &Vec<OwnedGlyphCluster>,
+        glyphs_in: &[swash::shape::cluster::Glyph],
         metrics: &Metrics,
     ) -> bool {
-        // In case is a new line,
-        // then needs to recompute the span index again
         let mut advance = 0.;
         let mut glyphs = vec![];
         let mut detailed_glyphs = vec![];
 
-        for c in glyph_clusters {
-            let mut cluster_advance = 0.;
-            for glyph in &c.glyphs {
-                cluster_advance += glyph.advance;
-                const MAX_SIMPLE_ADVANCE: u32 = 0x7FFF;
-                if glyph.x == 0. && glyph.y == 0. {
-                    let packed_advance = (glyph.advance * 64.) as u32;
-                    if packed_advance <= MAX_SIMPLE_ADVANCE {
-                        // Simple glyph
-                        glyphs.push(GlyphData {
-                            data: glyph.id as u32 | (packed_advance << 16),
-                            size: glyph.data,
-                        });
-                        continue;
-                    }
+        for glyph in glyphs_in {
+            advance += glyph.advance;
+            const MAX_SIMPLE_ADVANCE: u32 = 0x7FFF;
+            if glyph.x == 0. && glyph.y == 0. {
+                let packed_advance = (glyph.advance * 64.) as u32;
+                if packed_advance <= MAX_SIMPLE_ADVANCE {
+                    // Simple glyph
+                    glyphs.push(GlyphData {
+                        data: glyph.id as u32 | (packed_advance << 16),
+                        size: glyph.data,
+                    });
+                    continue;
                 }
-                // Complex glyph
-                let detail_index = detailed_glyphs.len() as u32;
-                detailed_glyphs.push(Glyph::new(glyph));
-                glyphs.push(GlyphData {
-                    data: GLYPH_DETAILED | detail_index,
-                    size: glyph.data,
-                });
             }
-            advance += cluster_advance;
+            // Complex glyph
+            let detail_index = detailed_glyphs.len() as u32;
+            detailed_glyphs.push(Glyph::new(glyph));
+            glyphs.push(GlyphData {
+                data: GLYPH_DETAILED | detail_index,
+                size: glyph.data,
+            });
         }
         if let Some(graphic) = style.media {
             self.graphics.insert(graphic.id);

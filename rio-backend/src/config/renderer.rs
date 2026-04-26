@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+// `Filter` is wgpu-only (librashader runtime is wgpu-only upstream).
+// Gated together with the `wgpu` feature.
+#[cfg(feature = "wgpu")]
 use sugarloaf::Filter;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Renderer {
-    #[serde(default = "Performance::default")]
-    pub performance: Performance,
     #[serde(default = "Backend::default", skip_serializing)]
     pub backend: Backend,
     #[serde(default = "bool::default", rename = "disable-unfocused-render")]
@@ -16,6 +17,7 @@ pub struct Renderer {
     )]
     pub disable_occluded_render: bool,
     #[serde(default = "Vec::default")]
+    #[cfg(feature = "wgpu")]
     pub filters: Vec<Filter>,
     #[serde(default = "RendererStategy::default")]
     pub strategy: RendererStategy,
@@ -60,35 +62,13 @@ impl RendererStategy {
 impl Default for Renderer {
     fn default() -> Renderer {
         Renderer {
-            performance: Performance::default(),
             backend: Backend::default(),
             disable_unfocused_render: false,
             disable_occluded_render: default_disable_occluded_render(),
+            #[cfg(feature = "wgpu")]
             filters: Vec::default(),
             strategy: RendererStategy::Events,
             use_cpu: default_use_cpu(),
-        }
-    }
-}
-
-#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
-pub enum Performance {
-    #[default]
-    #[serde(alias = "high")]
-    High,
-    #[serde(alias = "low")]
-    Low,
-}
-
-impl Display for Performance {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Performance::High => {
-                write!(f, "High")
-            }
-            Performance::Low => {
-                write!(f, "Low")
-            }
         }
     }
 }

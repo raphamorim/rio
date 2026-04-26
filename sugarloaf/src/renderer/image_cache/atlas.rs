@@ -1,3 +1,6 @@
+// `grow_to` is reserved for atlas-resize on the rich-text path.
+#![allow(dead_code)]
+
 /// Improved shelf-based atlas allocator for better space utilization
 #[derive(Clone)]
 pub struct AtlasAllocator {
@@ -143,6 +146,17 @@ impl AtlasAllocator {
     #[allow(dead_code)]
     pub fn dimensions(&self) -> (u16, u16) {
         (self.width, self.height)
+    }
+
+    /// Grow the atlas's free region to new dimensions. Existing shelf
+    /// coordinates (both x and y) stay valid because they're in the
+    /// top-left of the old region; the new area is appended on the
+    /// right and bottom. Caller is responsible for growing the backing
+    /// texture in lock-step.
+    pub fn grow_to(&mut self, new_width: u16, new_height: u16) {
+        debug_assert!(new_width >= self.width && new_height >= self.height);
+        self.width = new_width;
+        self.height = new_height;
     }
 
     /// Deallocates a rectangle (simplified - in practice this is complex)
