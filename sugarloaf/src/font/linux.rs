@@ -200,7 +200,7 @@ unsafe fn pattern_path_and_index(pattern: *mut fc::FcPattern) -> Option<(PathBuf
         if res != fc::FcResultMatch || file_ptr.is_null() {
             return None;
         }
-        let path_str = CStr::from_ptr(file_ptr as *const i8)
+        let path_str = CStr::from_ptr(file_ptr as *const std::ffi::c_char)
             .to_str()
             .ok()?
             .to_string();
