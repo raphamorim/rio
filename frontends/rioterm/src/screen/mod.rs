@@ -2598,6 +2598,104 @@ impl Screen<'_> {
             .is_some()
     }
 
+    #[inline]
+    pub fn handle_context_menu_click(&mut self, clipboard: &mut Clipboard) -> bool {
+        use crate::renderer::context_menu::ContextMenuAction;
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let window_size = self.sugarloaf.window_size();
+        let mouse_x = self.mouse.x as f32;
+        let mouse_y = self.mouse.y as f32;
+
+        if self.renderer.context_menu.is_enabled() {
+            match self.renderer.context_menu.hit_test(
+                mouse_x,
+                mouse_y,
+                window_size.width,
+                window_size.height,
+                scale_factor,
+            ) {
+                Ok(Some(indice)) => {
+                    let acao = self.renderer.context_menu.get_action(indice);
+                    self.renderer.context_menu.hide();
+                    if let Some(acao) = acao {
+                        match acao {
+                            ContextMenuAction::Copy => {
+                                self.copy_selection(ClipboardType::Clipboard, clipboard);
+                            }
+                            ContextMenuAction::Paste => {
+                                let conteudo = clipboard.get(ClipboardType::Clipboard);
+                                self.paste(&conteudo, true);
+                            }
+                            ContextMenuAction::SelectAll => {
+                                let ponto_inicio = Pos::new(
+                                    Line(-(self.display_offset() as i32)),
+                                    Column(0),
+                                );
+                                self.start_selection(
+                                    SelectionType::Lines,
+                                    ponto_inicio,
+                                    Side::Left,
+                                    clipboard,
+                                );
+                                let mut terminal =
+                                    self.context_manager.current_mut().terminal.lock();
+                                let ultima_linha =
+                                    terminal.grid.screen_lines() as i32 - 1;
+                                let ultima_coluna = terminal.grid.columns() - 1;
+                                if let Some(sel) = terminal.selection.as_mut() {
+                                    sel.update(
+                                        Pos::new(
+                                            Line(ultima_linha),
+                                            Column(ultima_coluna),
+                                        ),
+                                        Side::Right,
+                                    );
+                                }
+                                drop(terminal);
+                            }
+                            ContextMenuAction::SplitDown => {
+                                self.split_down();
+                            }
+                            ContextMenuAction::SplitRight => {
+                                self.split_right();
+                            }
+                            ContextMenuAction::NewTab => {
+                                self.create_tab(clipboard);
+                            }
+                            ContextMenuAction::CloseTab => {
+                                self.close_tab(clipboard);
+                            }
+                        }
+                    }
+                    self.render();
+                    true
+                }
+                Ok(None) => true,
+                Err(()) => {
+                    self.renderer.context_menu.hide();
+                    self.render();
+                    true
+                }
+            }
+        } else {
+            let has_selection = self
+                .context_manager
+                .current()
+                .terminal
+                .lock()
+                .selection
+                .is_some();
+            let lx = mouse_x / scale_factor;
+            let ly = mouse_y / scale_factor;
+            self.renderer
+                .context_menu
+                .show(lx, ly, &mut self.sugarloaf, has_selection);
+            self.render();
+            true
+        }
+    }
+
     pub fn handle_island_click(
         &mut self,
         window: &rio_window::window::Window,

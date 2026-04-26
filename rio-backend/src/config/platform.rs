@@ -107,6 +107,18 @@ pub struct PlatformNavigation {
         rename = "unfocused-split-fill"
     )]
     pub unfocused_split_fill: Option<crate::config::colors::ColorArray>,
+    /// Override por plataforma de [`Navigation::destacar_pane_ativo`].
+    /// `None` indica que o valor global deve ser usado.
+    #[serde(default = "Option::default", rename = "highlight-active-split")]
+    pub destacar_pane_ativo: Option<bool>,
+    /// Override por plataforma de [`Navigation::cor_borda_pane_ativo`].
+    /// `None` indica que o valor global deve ser usado.
+    #[serde(
+        default = "Option::default",
+        deserialize_with = "crate::config::colors::deserialize_to_arr_opt",
+        rename = "active-split-color"
+    )]
+    pub cor_borda_pane_ativo: Option<crate::config::colors::ColorArray>,
 }
 
 /// Platform-specific renderer config with optional fields for selective override

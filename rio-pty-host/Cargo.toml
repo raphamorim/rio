@@ -1,0 +1,16 @@
+[package]
+name = "rio-pty-host"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+# Binário independente, NÃO publicado em crates.io
+publish = false
+
+[[bin]]
+name = "rio-pty-host"
+path = "src/main.rs"
+
+[dependencies]
+libc = { workspace = true }
+thiserror = { workspace = true }
+

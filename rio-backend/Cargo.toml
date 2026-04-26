@@ -52,6 +52,7 @@ lazy_static = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
 
+
 [features]
 default = ["wayland", "x11"]
 x11 = [
