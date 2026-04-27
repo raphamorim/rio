@@ -3983,17 +3983,33 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         // Lazily allocate the registry — idle terminals that never see
         // Glyph Protocol traffic stay at `None` and pay nothing per
-        // frame.
+        // frame. The first allocation fires `GlyphProtocolInstalled`
+        // so the frontend can wire the registry into the font library
+        // exactly once per session.
+        let was_uninitialised = self.glyph_registry.is_none();
         let registry = self.glyph_registry.get_or_insert_with(GlyphRegistry::new);
 
-        match registry.register(cp, stored, upm) {
+        let result = match registry.register(cp, stored, upm) {
             Ok(_evicted) => Ok(()),
             Err(RegisterRejection::OutOfNamespace) => {
                 // Unreachable given the is_pua check above, but the
                 // registry double-checks so the defence exists.
                 Err(RegisterError::OutOfNamespace)
             }
+        };
+
+        if was_uninitialised && result.is_ok() {
+            let registry = registry.clone();
+            self.event_proxy.send_event(
+                RioEvent::GlyphProtocolInstalled {
+                    route_id: self.route_id,
+                    registry,
+                },
+                self.window_id,
+            );
         }
+
+        result
     }
 
     fn glyph_clear(&mut self, cp: Option<u32>) {

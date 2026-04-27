@@ -429,8 +429,44 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::GlyphProtocolInstalled {
+                route_id,
+                registry,
+            }) => {
+                if let Some(route) = self.router.routes.get(&window_id) {
+                    route
+                        .window
+                        .screen
+                        .sugarloaf
+                        .font_library()
+                        .install_glyph_registry(route_id, registry);
+                }
+            }
+            RioEventType::Rio(RioEvent::GlyphProtocolRemoved(route_id)) => {
+                if let Some(route) = self.router.routes.get(&window_id) {
+                    route
+                        .window
+                        .screen
+                        .sugarloaf
+                        .font_library()
+                        .remove_glyph_registry(route_id);
+                }
+            }
             RioEventType::Rio(RioEvent::CloseTerminal(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Drop this context's Glyph Protocol registry from
+                    // the font library before closing — the route_id
+                    // is monotonic and never reused, so a leftover
+                    // entry can't alias a new context, but cleaning
+                    // up keeps the map size bounded over a window's
+                    // lifetime of split/tab churn.
+                    route
+                        .window
+                        .screen
+                        .sugarloaf
+                        .font_library()
+                        .remove_glyph_registry(route_id);
+
                     if route
                         .window
                         .screen

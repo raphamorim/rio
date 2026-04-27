@@ -878,7 +878,6 @@ mod tests {
         ));
     }
 
-
     /// Build a colour-payload container from component byte slices.
     /// Lays out exactly as documented on [`ColrContainer`].
     fn build_container(glyphs: &[&[u8]], colr: &[u8], cpal: &[u8]) -> Vec<u8> {

@@ -496,7 +496,6 @@ mod tests {
         assert!(r2.contains(0xE0A0));
     }
 
-
     #[test]
     fn register_stores_colrv0_payload() {
         let r = GlyphRegistry::new();

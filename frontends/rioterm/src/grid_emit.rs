@@ -990,7 +990,14 @@ struct RunCacheEntry {
 }
 
 pub struct GridGlyphRasterizer {
-    font_resolve: FxHashMap<(char, u8), (u32, bool)>,
+    /// Cache of `(char, style_flags, route_id) → (font_id, is_emoji)`
+    /// resolutions. The route_id is part of the key because Glyph
+    /// Protocol registrations are per-pane: the same PUA codepoint
+    /// can resolve to `CUSTOM_GLYPH_FONT_ID` in one pane and to a
+    /// system font in another. Non-PUA characters resolve identically
+    /// across panes; the duplication is cheap (a few bytes per
+    /// (char, route) pair) compared to the cost of mis-rendering.
+    font_resolve: FxHashMap<(char, u8, usize), (u32, bool)>,
     ascent_cache: FxHashMap<(u32, u16), i16>,
     /// `(should_embolden, should_italicize)` per font_id. Read from
     /// `FontData` synthesis flags; matches the rich-text rasterizer's
@@ -1072,6 +1079,7 @@ impl GridGlyphRasterizer {
         ch: char,
         style_flags: u8,
         font_library: &FontLibrary,
+        route_id: usize,
     ) -> (u32, bool) {
         // Kitty Unicode placeholder cells (U+10EEEE) are rendered as
         // image-overlay slices, not text. Resolve them to the primary
@@ -1084,8 +1092,9 @@ impl GridGlyphRasterizer {
 
         // ASCII printable + regular style → always primary font, never
         // emoji. Skips the FxHashMap lookup that dominates this fn's
-        // cost on terminal-typical content.
-        // `font/Group.zig` indexForCodepoint ASCII fast path.
+        // cost on terminal-typical content. ASCII codepoints can never
+        // be Glyph-Protocol-registered (PUA-only restriction), so the
+        // route_id is irrelevant on this fast path.
         //
         // Bold / italic ASCII still goes through the cache because
         // the bold and italic font IDs are dynamic (depend on which
@@ -1096,15 +1105,16 @@ impl GridGlyphRasterizer {
 
         *self
             .font_resolve
-            .entry((ch, style_flags))
+            .entry((ch, style_flags, route_id))
             .or_insert_with(|| {
                 let span_style = span_style_for_flags(style_flags);
                 #[cfg(target_os = "macos")]
-                let (id, emoji) = font_library.resolve_font_for_char(ch, &span_style);
+                let (id, emoji) =
+                    font_library.resolve_font_for_char(ch, &span_style, Some(route_id));
                 #[cfg(not(target_os = "macos"))]
                 let (id, emoji) = {
                     let lib = font_library.inner.read();
-                    lib.find_best_font_match(ch, &span_style)
+                    lib.find_best_font_match(ch, &span_style, Some(route_id))
                         .unwrap_or((0, false))
                 };
                 (id as u32, emoji)
@@ -1335,6 +1345,7 @@ pub fn build_row_fg(
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
     font_library: &FontLibrary,
+    route_id: usize,
     fg_scratch: &mut Vec<CellText>,
 ) {
     fg_scratch.clear();
@@ -1354,13 +1365,14 @@ pub fn build_row_fg(
     let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
     let needs_per_cell_check = has_sel || has_color_hints;
 
-    // Glyph Protocol registry — cloned once per row so the per-cell
-    // custom-glyph helper avoids re-acquiring the FontLibrary read
-    // lock on every registered cell. Arc clone is cheap; `None` when
-    // no program in this session has used the protocol.
-    let glyph_registry: Option<
-        rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry,
-    > = font_library.inner.read().glyph_registry.clone();
+    // Glyph Protocol registry for *this pane*. One Arc clone per row;
+    // the per-cell custom-glyph helper then uses the local handle so
+    // it never re-acquires the FontLibrary read lock. Arc clone is
+    // cheap; `None` when no program in this pane's session has used
+    // the protocol. With multiple panes, each pane consults its own
+    // registry by route_id, so two panes can register conflicting
+    // glyphs at the same codepoint without interfering.
+    let glyph_registry = font_library.glyph_registry_for(route_id);
 
     // Phase 1: underline pass. Emit before glyphs so grayscale quads
     // draw under the characters.
@@ -1393,7 +1405,7 @@ pub fn build_row_fg(
         let run_style_flags =
             (style_set.get(sq.style_id()).flags.bits() & SHAPING_FLAG_MASK) as u8;
         let (font_id, is_emoji) =
-            rasterizer.resolve_font(ch, run_style_flags, font_library);
+            rasterizer.resolve_font(ch, run_style_flags, font_library, route_id);
 
         // Glyph Protocol short-circuit: registered codepoints render
         // directly from the registry without shaping, run-extension,
@@ -1525,7 +1537,8 @@ pub fn build_row_fg(
             if style2_flags != run_style_flags {
                 break;
             }
-            let (font_id2, _) = rasterizer.resolve_font(ch2, style2_flags, font_library);
+            let (font_id2, _) =
+                rasterizer.resolve_font(ch2, style2_flags, font_library, route_id);
             if font_id2 != font_id {
                 break;
             }

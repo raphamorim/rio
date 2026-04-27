@@ -422,18 +422,6 @@ impl Sugarloaf<'_> {
         self.state.content.font_library()
     }
 
-    /// Attach a per-terminal Glyph Protocol registry. Pass-through to
-    /// [`FontLibrary::attach_glyph_registry`]. Idempotent: callers
-    /// invoke this every frame; cloning the Arc is cheap and we
-    /// over-write the slot rather than tracking attach state.
-    #[inline]
-    pub fn attach_glyph_registry(
-        &self,
-        registry: crate::font::glyph_registry::GlyphRegistry,
-    ) {
-        self.font_library().attach_glyph_registry(registry);
-    }
-
     /// Resolve a batch of glyph queries with a single FontLibrary
     /// read lock acquisition. Cache hits short-circuit; misses are
     /// walked under the lock and stored back in the cache. Returned
