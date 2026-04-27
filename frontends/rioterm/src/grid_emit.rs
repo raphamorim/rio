@@ -323,6 +323,13 @@ enum DecorationStyle {
 /// `font.sprite_index` idea.
 const DECORATION_FONT_ID_BASE: u32 = 0xFFFF_FF00;
 
+/// Sentinel font_id for Glyph Protocol registrations. Pulled directly
+/// in u32 form from `sugarloaf::font::glyph_registry`; lands above the
+/// cursor/decoration ranges and never collides with a real font index.
+/// The atlas `glyph_id` for a registered cell is
+/// `pack_atlas_glyph_id(codepoint, version)`.
+use rio_backend::sugarloaf::font::glyph_registry::CUSTOM_GLYPH_FONT_ID_U32;
+
 /// Sentinel font_id base for cursor sprites. Distinct from the
 /// decoration range so the two never collide in the atlas
 /// hash-key space.
@@ -1347,6 +1354,14 @@ pub fn build_row_fg(
     let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
     let needs_per_cell_check = has_sel || has_color_hints;
 
+    // Glyph Protocol registry — cloned once per row so the per-cell
+    // custom-glyph helper avoids re-acquiring the FontLibrary read
+    // lock on every registered cell. Arc clone is cheap; `None` when
+    // no program in this session has used the protocol.
+    let glyph_registry: Option<
+        rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry,
+    > = font_library.inner.read().glyph_registry.clone();
+
     // Phase 1: underline pass. Emit before glyphs so grayscale quads
     // draw under the characters.
     emit_underlines(
@@ -1379,6 +1394,93 @@ pub fn build_row_fg(
             (style_set.get(sq.style_id()).flags.bits() & SHAPING_FLAG_MASK) as u8;
         let (font_id, is_emoji) =
             rasterizer.resolve_font(ch, run_style_flags, font_library);
+
+        // Glyph Protocol short-circuit: registered codepoints render
+        // directly from the registry without shaping, run-extension,
+        // or per-platform shaper plumbing. Each registered cell is
+        // its own one-cell run.
+        if font_id == CUSTOM_GLYPH_FONT_ID_U32 {
+            // The font cascade reported a custom glyph but the row
+            // already cloned `glyph_registry` as None — registry was
+            // detached between font resolution and this branch (rare,
+            // but harmless: render nothing).
+            let Some(registry) = glyph_registry.as_ref() else {
+                x += 1;
+                continue;
+            };
+
+            // Borrow the primary font's ascent at this size if the
+            // run-shaper has populated it; otherwise approximate at
+            // 80% of the glyph size. The approximation only fires
+            // when no regular text has been laid out at this size yet
+            // — once the user types real text the cache fills and
+            // subsequent registered cells use the precise ascent.
+            let ascent_px = rasterizer
+                .ascent_cache
+                .get(&(
+                    rio_backend::sugarloaf::font::FONT_ID_REGULAR as u32,
+                    size_bucket,
+                ))
+                .copied()
+                .unwrap_or_else(|| (size_u16 as i16).saturating_mul(4) / 5);
+
+            // fg colour, mirroring the regular emit loop's
+            // selection / hint precedence.
+            let color = if !needs_per_cell_check {
+                cell_fg(sq, style_set, renderer, term_colors)
+            } else {
+                let is_sel = cell_in_row_sel(row_sel, x as u16);
+                let hint_tag = if is_sel {
+                    None
+                } else {
+                    cell_in_row_hints(row_hints, x as u16)
+                };
+                if is_sel {
+                    cell_fg_selected(sq, style_set, renderer, term_colors)
+                } else if let Some(tag) = hint_tag {
+                    cell_fg_hinted(tag, renderer)
+                } else {
+                    cell_fg(sq, style_set, renderer, term_colors)
+                }
+            };
+
+            if let Some((_, slot, is_color)) = ensure_custom_glyph_by_codepoint(
+                grid,
+                registry,
+                ch as u32,
+                size_bucket,
+                size_u16,
+                cell_h,
+                ascent_px,
+                color,
+            ) {
+                if slot.w != 0 && slot.h != 0 {
+                    // Colour atlas entries are pre-painted (palette
+                    // applied during COLR rasterisation), so the
+                    // shader multiplies by white. Mono entries take
+                    // the per-cell fg colour the run loop computed
+                    // above.
+                    let (atlas, color) = if is_color {
+                        (CellText::ATLAS_COLOR, [255, 255, 255, 255])
+                    } else {
+                        (CellText::ATLAS_GRAYSCALE, color)
+                    };
+                    fg_scratch.push(CellText {
+                        glyph_pos: [slot.x as u32, slot.y as u32],
+                        glyph_size: [slot.w as u32, slot.h as u32],
+                        bearings: [slot.bearing_x, slot.bearing_y],
+                        grid_pos: [x as u16, y],
+                        color,
+                        atlas,
+                        bools: 0,
+                        _pad: [0, 0],
+                    });
+                }
+            }
+            x += 1;
+            continue;
+        }
+
         let run_start = x;
 
         // Kitty Unicode placeholder shapes as a space — the cell
@@ -1838,6 +1940,87 @@ fn ensure_glyph_by_id(
         grid.insert_glyph(key, raster)?
     };
     Some((key, slot, is_color))
+}
+
+/// Look up or rasterise a Glyph Protocol registration into the grid
+/// atlas. The atlas key combines the codepoint with the registration's
+/// `version` (bumped on every register/clear) so re-registering the
+/// same codepoint never serves a stale rasterisation. Each unique
+/// (codepoint × version × pixel size) combination owns one atlas slot;
+/// previous-version slots become unreachable and the atlas LRU evicts
+/// them in due course.
+///
+/// `ascent_px` matches the primary font's ascent at the same size
+/// bucket — Glyph Protocol payloads have no font-of-their-own, so we
+/// align registered glyphs to the surrounding text baseline. A more
+/// faithful rendering would walk the registered outline's bbox to
+/// compute per-glyph bearings, but for icon-style PUA glyphs the
+/// primary-font baseline produces the expected appearance.
+///
+/// `registry` is the active terminal's glyph registry, cloned once
+/// per row by `build_row_fg`. Passing it in (instead of going through
+/// the `FontLibrary` write lock) keeps the per-cell hot loop allocation
+/// and lock free.
+///
+/// Returns `None` when the registration was cleared between font
+/// resolution and render, or when rasterisation produces no pixels
+/// (zero-area outline, malformed COLR, etc.).
+#[allow(clippy::too_many_arguments)]
+fn ensure_custom_glyph_by_codepoint(
+    grid: &mut GridRenderer,
+    registry: &rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry,
+    codepoint: u32,
+    size_bucket: u16,
+    size_u16: u16,
+    cell_h: f32,
+    ascent_px: i16,
+    foreground_rgba: [u8; 4],
+) -> Option<(GlyphKey, AtlasSlot, bool)> {
+    use rio_backend::sugarloaf::font::glyph_registry::pack_atlas_glyph_id;
+
+    // Fetch first so we know the registration's version. The lookup
+    // happens under the registry's RwLock read; the entry's payload is
+    // cloned out so the lock drops before we hit tiny-skia.
+    let entry = registry.get(codepoint)?;
+    let key = GlyphKey {
+        font_id: CUSTOM_GLYPH_FONT_ID_U32,
+        glyph_id: pack_atlas_glyph_id(codepoint, entry.version),
+        size_bucket,
+    };
+    if let Some(slot) = grid.lookup_glyph(key) {
+        return Some((key, slot, false));
+    }
+    if let Some(slot) = grid.lookup_glyph_color(key) {
+        return Some((key, slot, true));
+    }
+
+    let raster = rio_backend::sugarloaf::glyph_protocol::rasterize_payload(
+        &entry.payload,
+        entry.upm,
+        size_u16,
+        foreground_rgba,
+    )?;
+
+    let bearing_y = {
+        let cell_h_i16 = cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
+        cell_h_i16
+            .saturating_sub(ascent_px)
+            .saturating_add(raster.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
+    };
+    let raster_in = RasterizedGlyph {
+        width: raster.width,
+        height: raster.height,
+        bearing_x: raster.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+        bearing_y,
+        bytes: &raster.data,
+    };
+
+    let slot = if raster.is_color {
+        grid.insert_glyph_color(key, raster_in)?
+    } else {
+        grid.insert_glyph(key, raster_in)?
+    };
+    Some((key, slot, raster.is_color))
 }
 
 /// Platform-agnostic raw-glyph struct. Both backends populate this

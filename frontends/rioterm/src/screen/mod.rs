@@ -3460,6 +3460,24 @@ impl Screen<'_> {
             }
         }
 
+        // Attach the active terminal's glyph-protocol registry to the
+        // shared font library before the renderer walks the grid.
+        // Most terminals never emit Glyph Protocol APCs, so the
+        // registry stays `None` and we skip the attach entirely —
+        // zero cost on the hot render path. When a program in this
+        // session has registered, the registry is Arc-shared so
+        // cloning it for the attach is O(1).
+        if let Some(registry) = self
+            .context_manager
+            .current()
+            .terminal
+            .lock()
+            .glyph_registry
+            .clone()
+        {
+            self.sugarloaf.attach_glyph_registry(registry);
+        }
+
         let (window_update, any_panel_dirty) = self.renderer.run(
             &mut self.sugarloaf,
             &mut self.context_manager,

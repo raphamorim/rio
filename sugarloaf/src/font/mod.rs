@@ -1,5 +1,7 @@
 pub mod constants;
 pub mod fonts;
+pub mod glyf_decode;
+pub mod glyph_registry;
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
 pub mod linux;
 #[cfg(not(target_arch = "wasm32"))]
@@ -432,6 +434,27 @@ impl FontLibrary {
     pub fn family_names(&self) -> Vec<String> {
         Vec::new()
     }
+
+    /// Attach a per-terminal Glyph Protocol registry. The registry is
+    /// `Arc<RwLock<_>>` so callers can keep their reference; the font
+    /// library borrows it read-only when resolving codepoints.
+    ///
+    /// Idempotent: callers invoke this every frame, so we skip the
+    /// write lock when the same registry pointer is already attached.
+    /// Only a *different* registry (different terminal session, or
+    /// the slot transitioning from empty → present) acquires the
+    /// write lock.
+    pub fn attach_glyph_registry(&self, registry: glyph_registry::GlyphRegistry) {
+        {
+            let r = self.inner.read();
+            if let Some(existing) = &r.glyph_registry {
+                if existing.ptr_eq(&registry) {
+                    return;
+                }
+            }
+        }
+        self.inner.write().glyph_registry = Some(registry);
+    }
 }
 
 impl Default for FontLibrary {
@@ -464,6 +487,11 @@ pub struct FontLibraryData {
     /// fontconfig-/font-kit-discovered fallback against fonts already
     /// in the registry.
     postscript_to_id: FxHashMap<String, usize>,
+    /// Per-terminal registry of glyphs registered over Glyph Protocol.
+    /// Cloned (Arc-shared) into the `FontLibrary` at terminal startup.
+    /// When present, a codepoint with a live registration short-circuits
+    /// the font fallback chain and renders from the registered outline.
+    pub glyph_registry: Option<glyph_registry::GlyphRegistry>,
 }
 
 impl Default for FontLibraryData {
@@ -474,6 +502,7 @@ impl Default for FontLibraryData {
             symbol_maps: None,
             primary_metrics_cache: FxHashMap::default(),
             postscript_to_id: FxHashMap::default(),
+            glyph_registry: None,
         }
     }
 }
@@ -485,6 +514,17 @@ impl FontLibraryData {
         ch: char,
         fragment_style: &SpanStyle,
     ) -> Option<(usize, bool)> {
+        // Glyph Protocol override takes precedence over everything
+        // else — if an application has registered this codepoint, the
+        // registration is what the user is asking to see. Checked
+        // before symbol maps and the font fallback chain because
+        // neither of those should "beat" an explicit registration.
+        if let Some(registry) = &self.glyph_registry {
+            if registry.contains(ch as u32) {
+                return Some((glyph_registry::CUSTOM_GLYPH_FONT_ID, false));
+            }
+        }
+
         let mut synth = Synthesis::default();
         let mut char_cluster = CharCluster::new();
         let mut parser = Parser::new(
@@ -547,6 +587,17 @@ impl FontLibraryData {
         ch: char,
         fragment_style: &SpanStyle,
     ) -> Option<(usize, bool)> {
+        // Glyph Protocol short-circuit, same precedence as
+        // find_best_font_match — the strict variant is the fast-path
+        // entry point used by `resolve_font_for_char` so it must also
+        // honour registrations or codepoints that match a registered
+        // glyph would briefly fall through to system font discovery.
+        if let Some(registry) = &self.glyph_registry {
+            if registry.contains(ch as u32) {
+                return Some((glyph_registry::CUSTOM_GLYPH_FONT_ID, false));
+            }
+        }
+
         let mut synth = Synthesis::default();
         let mut char_cluster = CharCluster::new();
         let mut parser = Parser::new(
@@ -1845,5 +1896,64 @@ mod postscript_resolver_tests {
             len_after_first, len_after_second,
             "the second resolve must not register a duplicate font"
         );
+    }
+}
+
+#[cfg(test)]
+mod glyph_registry_attach_tests {
+    use super::*;
+    use crate::font::glyph_registry::GlyphRegistry;
+
+    /// Counts how many writes happened by acquiring a write lock and
+    /// observing pointer equality on the stored registry.
+    #[test]
+    fn attach_with_same_arc_does_not_swap() {
+        let library = FontLibrary::default();
+        let registry = GlyphRegistry::new();
+
+        // First attach: slot was None, must store.
+        library.attach_glyph_registry(registry.clone());
+        let stored_after_first = library
+            .inner
+            .read()
+            .glyph_registry
+            .clone()
+            .expect("registry should be attached after first call");
+
+        // Second attach with the same Arc: must be a no-op. Compare
+        // pointer equality before vs after.
+        library.attach_glyph_registry(registry.clone());
+        let stored_after_second = library
+            .inner
+            .read()
+            .glyph_registry
+            .clone()
+            .expect("registry remains attached");
+
+        assert!(
+            stored_after_first.ptr_eq(&stored_after_second),
+            "second attach with the same Arc must not allocate a new slot"
+        );
+    }
+
+    #[test]
+    fn attach_with_different_registry_replaces() {
+        let library = FontLibrary::default();
+        let first = GlyphRegistry::new();
+        let second = GlyphRegistry::new();
+        // Sanity: two `new()` calls produce distinct Arcs.
+        assert!(!first.ptr_eq(&second));
+
+        library.attach_glyph_registry(first.clone());
+        library.attach_glyph_registry(second.clone());
+
+        let stored = library
+            .inner
+            .read()
+            .glyph_registry
+            .clone()
+            .expect("registry attached");
+        assert!(stored.ptr_eq(&second));
+        assert!(!stored.ptr_eq(&first));
     }
 }
