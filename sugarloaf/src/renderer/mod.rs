@@ -1399,12 +1399,15 @@ impl Renderer {
                     );
                     ImageTexture::Metal(mtl_tex)
                 }
-                // `_Phantom` and any future-added variants. Placed
-                // LAST so platform arms (Metal/Wgpu/Vulkan) match
-                // first; an earlier `_ => continue` was the cause of
-                // image overlays silently dropping.
-                #[allow(unreachable_patterns)]
-                _ => continue,
+                // `_Phantom` is the lifetime-placeholder variant that
+                // only exists when wgpu is feature-gated out. Naming
+                // it explicitly (instead of `_ => continue`) forces
+                // the compiler to flag any future variant added to
+                // `ContextType` — a previous wildcard arm shadowed
+                // the platform arms above and silently dropped every
+                // kitty image upload on macOS+no-wgpu builds.
+                #[cfg(not(feature = "wgpu"))]
+                crate::context::ContextType::_Phantom(_) => continue,
             };
 
             self.image_textures.insert(
