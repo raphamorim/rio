@@ -480,11 +480,13 @@ pub trait Handler {
     /// the session (`None`).
     fn glyph_clear(&mut self, _cp: Option<u32>) {}
 
-    /// Classify a codepoint's current renderability: `system`,
-    /// `glossary`, `both`, or `free`. See spec §5.2.
-    fn glyph_query(&mut self, _cp: u32) -> glyph_protocol::QueryStatus {
-        glyph_protocol::QueryStatus::Free
-    }
+    /// Forward a `q` (query) request to the frontend so it can
+    /// classify the codepoint as `Free` / `System` / `Glossary` /
+    /// `Both` (spec §5.2). Asynchronous because the System / Both
+    /// bits require FontLibrary access that lives outside the
+    /// terminal-backend layer; the frontend formats the reply and
+    /// writes it back to the originating pane's PTY directly.
+    fn glyph_query(&mut self, _cp: u32) {}
 
     /// Get mutable access to the kitty graphics chunking state
     /// Used by the APC handler to accumulate chunked image transmissions
@@ -930,9 +932,11 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                 self.handler.glyph_protocol_response(resp);
             }
             Ok(glyph_protocol::GlyphCommand::Query { cp }) => {
-                let status = self.handler.glyph_query(cp);
-                let resp = glyph_protocol::format_query_response(cp, status);
-                self.handler.glyph_protocol_response(resp);
+                // Fire-and-forget: the handler emits a frontend-bound
+                // event with `route_id + cp`. The frontend computes
+                // System / Glossary coverage and writes the formatted
+                // reply back to the originating pane's PTY directly.
+                self.handler.glyph_query(cp);
             }
             Ok(glyph_protocol::GlyphCommand::Register { cp, payload, reply }) => {
                 match self.handler.glyph_register(cp, payload) {

@@ -452,6 +452,34 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .remove_glyph_registry(route_id);
                 }
             }
+            RioEventType::Rio(RioEvent::GlyphProtocolQuery { route_id, cp }) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    use rio_backend::ansi::glyph_protocol::{
+                        format_query_response, QueryStatus,
+                    };
+                    let library = route.window.screen.sugarloaf.font_library();
+                    let in_glossary = library
+                        .glyph_registry_for(route_id)
+                        .is_some_and(|r| r.contains(cp));
+                    let in_system = library.covers_codepoint(cp);
+                    let status = match (in_glossary, in_system) {
+                        (true, true) => QueryStatus::Both,
+                        (true, false) => QueryStatus::Glossary,
+                        (false, true) => QueryStatus::System,
+                        (false, false) => QueryStatus::Free,
+                    };
+                    let resp = format_query_response(cp, status);
+                    if let Some(item) = route
+                        .window
+                        .screen
+                        .context_manager
+                        .current_grid_mut()
+                        .get_by_route_id(route_id)
+                    {
+                        item.context_mut().messenger.send_bytes(resp.into_bytes());
+                    }
+                }
+            }
             RioEventType::Rio(RioEvent::CloseTerminal(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route

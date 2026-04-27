@@ -4023,21 +4023,19 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
     }
 
-    fn glyph_query(&mut self, cp: u32) -> crate::ansi::glyph_protocol::QueryStatus {
-        use crate::ansi::glyph_protocol::QueryStatus;
-        // The terminal layer only knows about the glossary; it cannot
-        // consult the font fallback chain from here. Report the
-        // glossary bit correctly; leave the system bit at zero until
-        // a font-probe callback is threaded through the renderer.
-        //
-        // TODO(glyph-protocol): add system-font probe so `Both` and
-        // `System` can be reported accurately.
-        let registered = self.glyph_registry.as_ref().is_some_and(|r| r.contains(cp));
-        if registered {
-            QueryStatus::Glossary
-        } else {
-            QueryStatus::Free
-        }
+    fn glyph_query(&mut self, cp: u32) {
+        // Defer to the frontend: only it has access to both the per-
+        // route registry and the FontLibrary, so only it can compute
+        // the System / Glossary / Both bits accurately. The frontend
+        // formats the reply and writes it back to this pane's PTY
+        // asynchronously.
+        self.event_proxy.send_event(
+            RioEvent::GlyphProtocolQuery {
+                route_id: self.route_id,
+                cp,
+            },
+            self.window_id,
+        );
     }
 
     #[inline]
@@ -4399,7 +4397,7 @@ mod tests {
     }
 
     #[test]
-    fn glyph_protocol_register_populates_registry_and_query_reports_glossary() {
+    fn glyph_protocol_register_populates_registry() {
         let mut cw = make_crosswords();
 
         let glyf = minimal_glyf_bytes();
@@ -4408,13 +4406,6 @@ mod tests {
         assert!(res.is_ok());
         assert!(cw.glyph_registry.is_some());
         assert!(registry_contains(&cw, 0xE0A0));
-
-        let status = Handler::glyph_query(&mut cw, 0xE0A0);
-        assert_eq!(status, crate::ansi::glyph_protocol::QueryStatus::Glossary);
-
-        // An unregistered codepoint reports `Free` (no system probe yet).
-        let status = Handler::glyph_query(&mut cw, 0xE0A1);
-        assert_eq!(status, crate::ansi::glyph_protocol::QueryStatus::Free);
     }
 
     #[test]

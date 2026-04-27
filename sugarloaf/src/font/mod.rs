@@ -473,6 +473,22 @@ impl FontLibrary {
     ) -> Option<glyph_registry::GlyphRegistry> {
         self.inner.read().glyph_registries.get(&route_id).cloned()
     }
+
+    /// Does any *already-loaded* font in the library cover this
+    /// codepoint? Used by Glyph Protocol's `q` verb to report system
+    /// coverage alongside session-glossary coverage. Stays in the
+    /// fast path — the strict variant doesn't fire platform cascade
+    /// discovery, so a query never perturbs library state. Returns
+    /// `false` for invalid codepoints (>= 0x110000 or surrogates).
+    pub fn covers_codepoint(&self, cp: u32) -> bool {
+        let Some(ch) = char::from_u32(cp) else {
+            return false;
+        };
+        self.inner
+            .read()
+            .find_best_font_match_strict(ch, &SpanStyle::default(), None)
+            .is_some_and(|(font_id, _)| font_id != glyph_registry::CUSTOM_GLYPH_FONT_ID)
+    }
 }
 
 impl Default for FontLibrary {

@@ -91,6 +91,17 @@ pub enum RioEvent {
     /// A pane was closed; drop its glyph registry from the font
     /// library so the map doesn't leak entries.
     GlyphProtocolRemoved(usize),
+    /// A `q` (query) request arrived from the PTY in `route_id`. The
+    /// frontend computes the four-state status — System and/or
+    /// Glossary coverage — by consulting both `FontLibrary` (system
+    /// fonts) and the per-route glyph registry, then writes the
+    /// formatted reply back to the same pane's PTY. Asynchronous
+    /// because the dispatcher (in rio-backend) doesn't have access
+    /// to the FontLibrary; the frontend does.
+    GlyphProtocolQuery {
+        route_id: usize,
+        cp: u32,
+    },
     Paste,
     Copy(String),
     UpdateFontSize(u8),
@@ -236,6 +247,9 @@ impl Debug for RioEvent {
             }
             RioEvent::GlyphProtocolRemoved(route_id) => {
                 write!(f, "GlyphProtocolRemoved route {route_id}")
+            }
+            RioEvent::GlyphProtocolQuery { route_id, cp } => {
+                write!(f, "GlyphProtocolQuery route {route_id} cp {cp:#x}")
             }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
