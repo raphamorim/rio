@@ -1876,7 +1876,7 @@ mod postscript_resolver_tests {
         // U+6C34 ('水') — not in CascadiaMono. Library has no fallback
         // registered, so the pre-resolve walk returns None and the
         // discovery path has to fire.
-        let (font_id, _is_emoji) = lib.resolve_font_for_char('\u{6C34}', &style);
+        let (font_id, _is_emoji) = lib.resolve_font_for_char('\u{6C34}', &style, None);
 
         assert_ne!(
             font_id, 0,
@@ -1913,9 +1913,9 @@ mod postscript_resolver_tests {
 
         // Both codepoints should cascade to the same system CJK font on
         // any stock macOS install.
-        let (id_a, _) = lib.resolve_font_for_char('\u{6C34}', &style);
+        let (id_a, _) = lib.resolve_font_for_char('\u{6C34}', &style, None);
         let len_after_first = lib.inner.read().inner.len();
-        let (id_b, _) = lib.resolve_font_for_char('\u{6728}', &style);
+        let (id_b, _) = lib.resolve_font_for_char('\u{6728}', &style, None);
         let len_after_second = lib.inner.read().inner.len();
 
         assert_eq!(
@@ -1930,60 +1930,63 @@ mod postscript_resolver_tests {
 }
 
 #[cfg(test)]
-mod glyph_registry_attach_tests {
+mod glyph_registry_install_tests {
     use super::*;
     use crate::font::glyph_registry::GlyphRegistry;
 
-    /// Counts how many writes happened by acquiring a write lock and
-    /// observing pointer equality on the stored registry.
     #[test]
-    fn attach_with_same_arc_does_not_swap() {
+    fn install_then_lookup_returns_same_arc() {
         let library = FontLibrary::default();
         let registry = GlyphRegistry::new();
+        library.install_glyph_registry(42, registry.clone());
 
-        // First attach: slot was None, must store.
-        library.attach_glyph_registry(registry.clone());
-        let stored_after_first = library
-            .inner
-            .read()
-            .glyph_registry
-            .clone()
-            .expect("registry should be attached after first call");
-
-        // Second attach with the same Arc: must be a no-op. Compare
-        // pointer equality before vs after.
-        library.attach_glyph_registry(registry.clone());
-        let stored_after_second = library
-            .inner
-            .read()
-            .glyph_registry
-            .clone()
-            .expect("registry remains attached");
-
-        assert!(
-            stored_after_first.ptr_eq(&stored_after_second),
-            "second attach with the same Arc must not allocate a new slot"
-        );
+        let fetched = library
+            .glyph_registry_for(42)
+            .expect("entry installed at 42");
+        assert!(fetched.ptr_eq(&registry));
     }
 
     #[test]
-    fn attach_with_different_registry_replaces() {
+    fn lookup_returns_none_for_unknown_route() {
+        let library = FontLibrary::default();
+        assert!(library.glyph_registry_for(999).is_none());
+    }
+
+    #[test]
+    fn install_overwrites_same_route() {
         let library = FontLibrary::default();
         let first = GlyphRegistry::new();
         let second = GlyphRegistry::new();
-        // Sanity: two `new()` calls produce distinct Arcs.
         assert!(!first.ptr_eq(&second));
 
-        library.attach_glyph_registry(first.clone());
-        library.attach_glyph_registry(second.clone());
+        library.install_glyph_registry(7, first.clone());
+        library.install_glyph_registry(7, second.clone());
 
-        let stored = library
-            .inner
-            .read()
-            .glyph_registry
-            .clone()
-            .expect("registry attached");
-        assert!(stored.ptr_eq(&second));
-        assert!(!stored.ptr_eq(&first));
+        let fetched = library.glyph_registry_for(7).expect("entry at 7");
+        assert!(fetched.ptr_eq(&second));
+        assert!(!fetched.ptr_eq(&first));
+    }
+
+    #[test]
+    fn remove_drops_the_entry() {
+        let library = FontLibrary::default();
+        let registry = GlyphRegistry::new();
+        library.install_glyph_registry(3, registry);
+        assert!(library.glyph_registry_for(3).is_some());
+
+        library.remove_glyph_registry(3);
+        assert!(library.glyph_registry_for(3).is_none());
+    }
+
+    #[test]
+    fn distinct_routes_hold_distinct_registries() {
+        let library = FontLibrary::default();
+        let a = GlyphRegistry::new();
+        let b = GlyphRegistry::new();
+        library.install_glyph_registry(1, a.clone());
+        library.install_glyph_registry(2, b.clone());
+
+        assert!(library.glyph_registry_for(1).unwrap().ptr_eq(&a));
+        assert!(library.glyph_registry_for(2).unwrap().ptr_eq(&b));
     }
 }

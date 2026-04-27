@@ -454,12 +454,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::CloseTerminal(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    // Drop this context's Glyph Protocol registry from
-                    // the font library before closing — the route_id
-                    // is monotonic and never reused, so a leftover
-                    // entry can't alias a new context, but cleaning
-                    // up keeps the map size bounded over a window's
-                    // lifetime of split/tab churn.
                     route
                         .window
                         .screen
