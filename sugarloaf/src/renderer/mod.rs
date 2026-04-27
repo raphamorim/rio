@@ -1325,9 +1325,6 @@ impl Renderer {
                 crate::context::ContextType::Cpu(_) => unreachable!(),
                 #[cfg(target_os = "linux")]
                 crate::context::ContextType::Vulkan(_) => unreachable!(),
-                #[cfg(not(feature = "wgpu"))]
-                #[allow(unreachable_patterns)]
-                _ => continue,
                 #[cfg(feature = "wgpu")]
                 crate::context::ContextType::Wgpu(ctx) => {
                     let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
@@ -1402,6 +1399,12 @@ impl Renderer {
                     );
                     ImageTexture::Metal(mtl_tex)
                 }
+                // `_Phantom` and any future-added variants. Placed
+                // LAST so platform arms (Metal/Wgpu/Vulkan) match
+                // first; an earlier `_ => continue` was the cause of
+                // image overlays silently dropping.
+                #[allow(unreachable_patterns)]
+                _ => continue,
             };
 
             self.image_textures.insert(
