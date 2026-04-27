@@ -878,7 +878,6 @@ mod tests {
         ));
     }
 
-    // ----- colrv0 / colrv1 container ----------------------------------
 
     /// Build a colour-payload container from component byte slices.
     /// Lays out exactly as documented on [`ColrContainer`].
