@@ -1066,6 +1066,15 @@ impl GridGlyphRasterizer {
         style_flags: u8,
         font_library: &FontLibrary,
     ) -> (u32, bool) {
+        // Kitty Unicode placeholder cells (U+10EEEE) are rendered as
+        // image-overlay slices, not text. Resolve them to the primary
+        // font as if they were a space, so the run shapes them as an
+        // invisible space glyph instead of falling back to a notdef
+        // tofu box. Mirrors ghostty's `font/shaper/run.zig:328-335`.
+        if ch == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+            return (rio_backend::sugarloaf::font::FONT_ID_REGULAR as u32, false);
+        }
+
         // ASCII printable + regular style → always primary font, never
         // emoji. Skips the FxHashMap lookup that dominates this fn's
         // cost on terminal-typical content.
@@ -1372,6 +1381,17 @@ pub fn build_row_fg(
             rasterizer.resolve_font(ch, run_style_flags, font_library);
         let run_start = x;
 
+        // Kitty Unicode placeholder shapes as a space — the cell
+        // joins the run, the shaper emits an invisible space glyph
+        // (no notdef tofu), and the kitty image overlay is drawn on
+        // top to fill the cell. Mirrors ghostty's
+        // `font/shaper/run.zig:264-267`.
+        let shape_ch = if ch == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+            ' '
+        } else {
+            ch
+        };
+
         #[cfg(target_os = "macos")]
         {
             rasterizer.run_utf16_scratch.clear();
@@ -1382,12 +1402,12 @@ pub fn build_row_fg(
             let mut buf = [0u16; 2];
             rasterizer
                 .run_utf16_scratch
-                .extend_from_slice(ch.encode_utf16(&mut buf));
+                .extend_from_slice(shape_ch.encode_utf16(&mut buf));
         }
         #[cfg(not(target_os = "macos"))]
         {
             rasterizer.run_str_scratch.clear();
-            rasterizer.run_str_scratch.push(ch);
+            rasterizer.run_str_scratch.push(shape_ch);
         }
 
         // Extend the run while (font_id, style_flags) match.
@@ -1407,6 +1427,13 @@ pub fn build_row_fg(
             if font_id2 != font_id {
                 break;
             }
+            // Same placeholder→space substitution as the run-start
+            // path above.
+            let shape_ch2 = if ch2 == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+                ' '
+            } else {
+                ch2
+            };
             #[cfg(target_os = "macos")]
             {
                 rasterizer
@@ -1415,11 +1442,11 @@ pub fn build_row_fg(
                 let mut buf = [0u16; 2];
                 rasterizer
                     .run_utf16_scratch
-                    .extend_from_slice(ch2.encode_utf16(&mut buf));
+                    .extend_from_slice(shape_ch2.encode_utf16(&mut buf));
             }
             #[cfg(not(target_os = "macos"))]
             {
-                rasterizer.run_str_scratch.push(ch2);
+                rasterizer.run_str_scratch.push(shape_ch2);
             }
             end += 1;
         }
