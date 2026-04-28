@@ -1325,9 +1325,6 @@ impl Renderer {
                 crate::context::ContextType::Cpu(_) => unreachable!(),
                 #[cfg(target_os = "linux")]
                 crate::context::ContextType::Vulkan(_) => unreachable!(),
-                #[cfg(not(feature = "wgpu"))]
-                #[allow(unreachable_patterns)]
-                _ => continue,
                 #[cfg(feature = "wgpu")]
                 crate::context::ContextType::Wgpu(ctx) => {
                     let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
@@ -1402,6 +1399,15 @@ impl Renderer {
                     );
                     ImageTexture::Metal(mtl_tex)
                 }
+                // `_Phantom` is the lifetime-placeholder variant that
+                // only exists when wgpu is feature-gated out. Naming
+                // it explicitly (instead of `_ => continue`) forces
+                // the compiler to flag any future variant added to
+                // `ContextType` — a previous wildcard arm shadowed
+                // the platform arms above and silently dropped every
+                // kitty image upload on macOS+no-wgpu builds.
+                #[cfg(not(feature = "wgpu"))]
+                crate::context::ContextType::_Phantom(_) => continue,
             };
 
             self.image_textures.insert(
