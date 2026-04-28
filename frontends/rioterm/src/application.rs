@@ -1362,13 +1362,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
 
-                // Check if mouse is over island and set cursor to default
+                // Check if mouse is over island and set cursor to default.
+                // Skip guard when island is hidden (hide_if_single + single tab).
                 use crate::renderer::island::ISLAND_HEIGHT;
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
                 let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
-                if route.window.screen.renderer.navigation.is_enabled()
-                    && y <= island_height_px
-                {
+                let num_tabs = route.window.screen.ctx().len();
+                let nav = &route.window.screen.renderer.navigation;
+                let island_is_visible =
+                    nav.is_enabled() && !(nav.hide_if_single && num_tabs <= 1);
+                if island_is_visible && y <= island_height_px {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
                 }
