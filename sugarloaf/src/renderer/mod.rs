@@ -2396,9 +2396,7 @@ impl Renderer {
                     // No completion handler will fire to release the
                     // swap-chain permit we acquired above — release
                     // it here so the next frame can run.
-                    crate::grid::metal::release_frame_permit(
-                        &self.metal_frame_permits,
-                    );
+                    crate::grid::metal::release_frame_permit(&self.metal_frame_permits);
                     return;
                 }
                 tracing::info!(
