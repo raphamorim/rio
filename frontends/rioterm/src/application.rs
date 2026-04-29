@@ -1194,8 +1194,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 let layout = route.window.screen.sugarloaf.window_size();
 
-                let x = x.clamp(0.0, (layout.width as i32 - 1).into()) as usize;
-                let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
+                // Keep f64 precision all the way to the cell-grid
+                // divide. The old `as usize` cast here dropped
+                // subpixel info from HiDPI events.
+                let x = x.clamp(0.0, (layout.width as i32 - 1) as f64);
+                let y = y.clamp(0.0, (layout.height as i32 - 1) as f64);
 
                 // Snapshot the old mouse position before updating coordinates
                 // so we can detect whether the cursor moved to a new cell.
@@ -1291,7 +1294,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // Check if mouse is over island and set cursor to default
                 use crate::renderer::island::ISLAND_HEIGHT;
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
-                let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
+                let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
                 if route.window.screen.renderer.navigation.is_enabled()
                     && y <= island_height_px
                 {

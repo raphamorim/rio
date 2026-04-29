@@ -1060,6 +1060,26 @@ impl Sugarloaf<'_> {
         }
     }
 
+    /// Canonical [`CellMetrics`] for `id`, mirroring
+    /// [`get_text_dimensions`]'s mark-for-repaint side effect.
+    /// Use alongside `get_text_dimensions` when constructing a
+    /// `ContextDimension` so the layout / GPU / mouse pipeline all
+    /// see the same `u32` cell stride.
+    #[inline]
+    pub fn get_text_cell_metrics(
+        &mut self,
+        id: &usize,
+    ) -> Option<crate::layout::CellMetrics> {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            if let Some(content_state) = self.state.content.states.get_mut(id) {
+                content_state.render_data.needs_repaint = true;
+            }
+            Some(self.state.get_state_layout(id).cell)
+        } else {
+            None
+        }
+    }
+
     #[inline]
     pub fn clear(&mut self) {
         self.state.clean_screen();

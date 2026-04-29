@@ -380,10 +380,12 @@ impl Renderer {
             let has_overlays = !terminal_snapshot.kitty_placements.is_empty();
             let has_virtual = !terminal_snapshot.kitty_virtual_placements.is_empty();
             if has_overlays || has_virtual {
-                let line_height = sugarloaf.style().line_height;
                 let layout = context.dimension;
-                let cell_width = layout.dimension.width;
-                let cell_height = layout.dimension.height * line_height;
+                // Canonical integer cell stride — line_height already
+                // baked into `cell.cell_height`. Same value the GPU
+                // grid uniform paints with.
+                let cell_width = layout.cell.cell_width as f32;
+                let cell_height = layout.cell.cell_height as f32;
                 let origin_x = panel_rect[0] + grid_scaled_margin.left;
                 let origin_y = panel_rect[1] + grid_scaled_margin.top;
 
@@ -571,8 +573,8 @@ impl Renderer {
                 // taffy allocates fractional sizes while the grid
                 // snaps to whole cells.
                 let dim = grid_context.val.dimension;
-                let cell_w = dim.dimension.width.round().max(1.0);
-                let cell_h = dim.dimension.height.round().max(1.0);
+                let cell_w = dim.cell.cell_width as f32;
+                let cell_h = dim.cell.cell_height as f32;
                 let cols = dim.columns.max(1) as f32;
                 let rows = dim.lines.max(1) as f32;
                 let panel_left =

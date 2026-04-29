@@ -519,8 +519,10 @@ impl Content {
         let mut builder_state = BuilderState::from_layout(rich_text_layout);
 
         // Immediately calculate dimensions for a representative character
-        builder_state.layout.dimensions =
+        let (dims, cell) =
             self.calculate_character_cell_dimensions(rich_text_layout);
+        builder_state.layout.dimensions = dims;
+        builder_state.layout.cell = cell;
 
         if let Some(content_state) = self.states.get_mut(&id) {
             content_state.data = ContentData::Text(builder_state);
@@ -532,119 +534,126 @@ impl Content {
         }
     }
 
-    /// Calculate character cell dimensions
+    /// Calculate character cell dimensions and the canonical
+    /// [`CellMetrics`] used by the renderer + mouse + layout.
+    ///
+    /// Integer cell width / height / baseline are produced by
+    /// `.round()`-ing the unrounded `face_*` values once at this
+    /// layer. All downstream consumers read those integers —
+    /// there's no second rounding stage anywhere in the pipeline,
+    /// so the renderer's painted stride and the mouse hit-test
+    /// divide by the same value.
+    ///
+    /// `line_height` (the user's config multiplier) is applied to
+    /// `face_height` here, so callers must NOT re-apply it.
     fn calculate_character_cell_dimensions(
         &self,
         layout: &TextLayout,
-    ) -> crate::layout::TextDimensions {
+    ) -> (crate::layout::TextDimensions, crate::layout::CellMetrics) {
         let font_size = layout.font_size;
+        let scale_f64 = layout.dimensions.scale as f64;
+        let line_height_mod = layout.line_height as f64;
 
-        // macOS: read metrics + space-glyph advance straight from the
-        // primary CTFont. This is the last byte-dependent path that
-        // mattered on mac — using CTFont here means `FONT_DATA_CACHE`
-        // never holds the primary font either.
-        #[cfg(target_os = "macos")]
-        if let Some(handle) = self.fonts.ct_font(0) {
-            let metrics = crate::font::macos::font_metrics(&handle, font_size);
-            // Cell width = max advance across all printable ASCII,
-            // queried on a CTFont clone at the real render size (not
-            // the 1pt base — that returns bogus 1.0-per-glyph
-            // advances on some fonts). Mirrors
-            //. Progressive fallbacks:
-            // 1. max-ASCII at this size (right answer on every
-            // real font we've seen)
-            // 2. advance of space (pre-existing behaviour; may
-            // return None)
-            // 3. `font_size` itself (the em — last-resort, wider
-            // than any real monospace advance)
-            let char_width = crate::font::macos::max_ascii_advance_px(&handle, font_size)
-                .or_else(|| {
-                    crate::font::macos::advance_units_for_char(&handle, ' ')
-                        .map(|(units, upem)| units * font_size / upem as f32)
-                })
-                .unwrap_or(font_size);
-            let line_height =
-                (metrics.ascent + metrics.descent + metrics.leading) * layout.line_height;
-            let scale = layout.dimensions.scale;
-            return crate::layout::TextDimensions {
-                width: char_width * scale,
-                height: (line_height * scale).ceil(),
-                scale,
-            };
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        if let Some(font_library_data) = self.fonts.inner.try_read() {
-            let font_id = 0; // FONT_ID_REGULAR
-
-            // Get font data to create swash FontRef
-            if let Some((font_data, offset, _key)) = font_library_data.get_data(&font_id)
+        // (char_width, ascent, descent, leading) in pixels at the
+        // *logical* font size (i.e. before `scale` is applied).
+        let raw: Option<(f64, f64, f64, f64)> = {
+            #[cfg(target_os = "macos")]
             {
-                // Create swash FontRef directly from font data
-                if let Some(font_ref) =
-                    swash::FontRef::from_index(&font_data, offset as usize)
-                {
-                    // Get metrics using swash
-                    let font_metrics = font_ref.metrics(&[]);
-
-                    // Calculate character cell width using space character
-                    let glyph_id = font_ref.charmap().map(' ' as u32);
-                    let char_width = {
-                        // Get advance width for space character using GlyphMetrics
-                        let glyph_metrics = font_ref.glyph_metrics(&[]);
-                        let advance = glyph_metrics.advance_width(glyph_id);
-
-                        // Scale to font size
-                        let units_per_em = font_metrics.units_per_em as f32;
-                        let scale_factor = font_size / units_per_em;
-
-                        if advance > 0.0 {
-                            advance * scale_factor
-                        } else {
-                            // Fallback: approximate monospace character width
-                            font_size
-                        }
-                    };
-
-                    // Calculate line height using scaled metrics
-                    let units_per_em = font_metrics.units_per_em as f32;
-                    let scale_factor = font_size / units_per_em;
-                    let ascent = font_metrics.ascent * scale_factor;
-                    let descent = font_metrics.descent.abs() * scale_factor;
-                    let leading = font_metrics.leading * scale_factor;
-                    let line_height = (ascent + descent + leading) * layout.line_height;
-
-                    // Scale to physical pixels to match what the brush returns.
-                    // physical scale — the renderer uses that ceiled value.
-                    let char_width_physical = char_width * layout.dimensions.scale;
-                    let line_height_physical =
-                        (line_height * layout.dimensions.scale).ceil();
-
-                    // Return dimensions in physical pixels (matching brush behavior)
-                    let result = crate::layout::TextDimensions {
-                        width: char_width_physical,
-                        height: line_height_physical,
-                        scale: layout.dimensions.scale,
-                    };
-
-                    // println!(" -> Returning dimensions (physical): width={}, height={}, scale={}",
-                    // result.width, result.height, result.scale);
-
-                    return result;
-                }
+                self.fonts.ct_font(0).map(|handle| {
+                    let m = crate::font::macos::font_metrics(&handle, font_size);
+                    // Cell width = max advance across printable ASCII at
+                    // the real render size. Same progressive fallback as
+                    // before — final fallback is `font_size` (the em).
+                    let cw =
+                        crate::font::macos::max_ascii_advance_px(&handle, font_size)
+                            .or_else(|| {
+                                crate::font::macos::advance_units_for_char(
+                                    &handle, ' ',
+                                )
+                                .map(|(units, upem)| {
+                                    units * font_size / upem as f32
+                                })
+                            })
+                            .unwrap_or(font_size);
+                    (
+                        cw as f64,
+                        m.ascent as f64,
+                        m.descent as f64,
+                        m.leading as f64,
+                    )
+                })
             }
-        }
+            #[cfg(not(target_os = "macos"))]
+            {
+                self.fonts.inner.try_read().and_then(|lib| {
+                    let id = 0;
+                    let (data, offset, _key) = lib.get_data(&id)?;
+                    let font_ref =
+                        swash::FontRef::from_index(&data, offset as usize)?;
+                    let m = font_ref.metrics(&[]);
+                    let upem = m.units_per_em as f32;
+                    let s = font_size / upem;
+                    let glyph = font_ref.charmap().map(' ' as u32);
+                    let advance =
+                        font_ref.glyph_metrics(&[]).advance_width(glyph);
+                    let cw = if advance > 0.0 { advance * s } else { font_size };
+                    Some((
+                        cw as f64,
+                        (m.ascent * s) as f64,
+                        (m.descent.abs() * s) as f64,
+                        (m.leading * s) as f64,
+                    ))
+                })
+            }
+        };
 
-        // Fallback to reasonable defaults if font metrics unavailable
-        // Return in physical pixels to match brush behavior
-        let fallback_width = layout.font_size;
-        let fallback_height = layout.font_size * layout.line_height;
+        let (face_width, face_height, descent_phys, leading_phys) =
+            if let Some((cw, ascent, descent, leading)) = raw {
+                let face_width = cw * scale_f64;
+                let face_height =
+                    (ascent + descent + leading) * line_height_mod * scale_f64;
+                (
+                    face_width,
+                    face_height,
+                    descent * line_height_mod * scale_f64,
+                    leading * line_height_mod * scale_f64,
+                )
+            } else {
+                // Last-resort fallback: square em cell at the configured
+                // line_height. No baseline information, so cell_baseline
+                // ends up 0.
+                let fw = font_size as f64 * scale_f64;
+                let fh = font_size as f64 * line_height_mod * scale_f64;
+                (fw, fh, 0.0, 0.0)
+            };
 
-        crate::layout::TextDimensions {
-            width: fallback_width * layout.dimensions.scale,
-            height: fallback_height * layout.dimensions.scale,
+        let cell_width = face_width.round().max(1.0) as u32;
+        let cell_height = face_height.round().max(1.0) as u32;
+        // Pixels from the bottom of the cell to the text baseline.
+        // Same formula as `font::metrics::Metrics::calc`: descent +
+        // half the line_gap (so the line gap is split evenly above
+        // and below the glyph). All in physical pixels.
+        let cell_baseline = (descent_phys + leading_phys * 0.5).round().max(0.0) as u32;
+
+        let dims = crate::layout::TextDimensions {
+            // Legacy fields kept for back-compat with sugarloaf-side
+            // consumers that still read TextDimensions. Now snapped
+            // to the same integer cell stride (was: `.ceil()` on
+            // height, raw on width — produced drift at high column
+            // indexes when paired with the mouse path's unrounded
+            // divide).
+            width: cell_width as f32,
+            height: cell_height as f32,
             scale: layout.dimensions.scale,
-        }
+        };
+        let cell = crate::layout::CellMetrics {
+            cell_width,
+            cell_height,
+            cell_baseline,
+            face_width,
+            face_height,
+        };
+        (dims, cell)
     }
 
     #[inline]
@@ -666,8 +675,9 @@ impl Content {
     #[inline]
     pub fn add_transient_text(&mut self, layout: &TextLayout) -> usize {
         let mut builder_state = BuilderState::from_layout(layout);
-        builder_state.layout.dimensions =
-            self.calculate_character_cell_dimensions(layout);
+        let (dims, cell) = self.calculate_character_cell_dimensions(layout);
+        builder_state.layout.dimensions = dims;
+        builder_state.layout.cell = cell;
 
         let mut content_state = ContentState::new(ContentData::Text(builder_state));
         content_state.render_data.transient = true;
@@ -740,10 +750,12 @@ impl Content {
             return;
         };
 
-        let new_dimension = self.calculate_character_cell_dimensions(&layout);
+        let (new_dimension, new_cell) =
+            self.calculate_character_cell_dimensions(&layout);
 
         if let Some(text_state) = self.get_state_mut(state_id) {
             text_state.layout.dimensions = new_dimension;
+            text_state.layout.cell = new_cell;
         }
     }
 
