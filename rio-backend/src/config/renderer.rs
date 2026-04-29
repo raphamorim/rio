@@ -75,50 +75,31 @@ impl Default for Renderer {
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 pub enum Backend {
-    // Leave Sugarloaf/WGPU to decide
-    #[serde(alias = "automatic")]
-    #[cfg_attr(not(target_os = "macos"), default)]
-    Automatic,
-    // Supported on Linux/Android, the web through webassembly via WebGL, and Windows and macOS/iOS via ANGLE
-    #[serde(alias = "gl")]
-    GL,
-    // Supported on Windows, Linux/Android, and macOS/iOS via Vulkan Portability (with the Vulkan feature enabled)
-    #[serde(alias = "vulkan")]
-    Vulkan,
-    // Supported on Windows 10
-    #[serde(alias = "dx12")]
-    DX12,
-    // Supported on macOS/iOS
-    #[serde(alias = "wgpumetal")]
-    WgpuMetal,
+    /// Native Metal (macOS only).
     #[cfg(target_os = "macos")]
     #[cfg_attr(target_os = "macos", default)]
     #[serde(alias = "metal")]
     Metal,
+    /// Native Vulkan on Linux; wgpu Vulkan elsewhere (requires the
+    /// `wgpu` feature).
+    #[cfg_attr(target_os = "linux", default)]
+    #[serde(alias = "vulkan")]
+    Vulkan,
+    /// wgpu umbrella backend — wgpu picks the best available native
+    /// API (Metal / Vulkan / DX12 / GL / WebGPU). Requires the `wgpu`
+    /// feature.
+    #[cfg_attr(not(any(target_os = "macos", target_os = "linux")), default)]
+    #[serde(alias = "webgpu", alias = "wgpu")]
+    Webgpu,
 }
 
 impl Display for Backend {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Backend::Automatic => {
-                write!(f, "Automatic")
-            }
             #[cfg(target_os = "macos")]
-            Backend::Metal => {
-                write!(f, "Metal")
-            }
-            Backend::WgpuMetal => {
-                write!(f, "Metal")
-            }
-            Backend::Vulkan => {
-                write!(f, "Vulkan")
-            }
-            Backend::GL => {
-                write!(f, "GL")
-            }
-            Backend::DX12 => {
-                write!(f, "DX12")
-            }
+            Backend::Metal => write!(f, "Metal"),
+            Backend::Vulkan => write!(f, "Vulkan"),
+            Backend::Webgpu => write!(f, "Webgpu"),
         }
     }
 }

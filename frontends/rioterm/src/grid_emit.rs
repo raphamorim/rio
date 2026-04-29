@@ -1932,9 +1932,14 @@ fn rasterize_glyph_native(
         Source::Outline,
     ];
     let mut image = GlyphImage::new();
+    let embolden_amount = if synthetic_bold {
+        (size_u16 as f32 / 14.0).max(1.0)
+    } else {
+        0.0
+    };
     let ok = Render::new(sources)
         .format(Format::Alpha)
-        .embolden(if synthetic_bold { 0.5 } else { 0.0 })
+        .embolden(embolden_amount)
         .transform(if synthetic_italic {
             Some(Transform::skew(
                 Angle::from_degrees(14.0),
