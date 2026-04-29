@@ -1,7 +1,4 @@
-.PHONY: docs
-
 BUILD_MISC_DIR = misc
-DOCS_DIR = docs
 TARGET = rio
 TARGET_DIR = target/release
 TARGET_DIR_DEBIAN = target/debian
@@ -16,12 +13,6 @@ APP_EXTRAS_DIR = $(TARGET_DIR_OSX)/$(APP_NAME)/Contents/Resources
 TERMINFO = $(BUILD_MISC_DIR)/rio.terminfo
 
 all: install run
-
-docs:
-	cd $(DOCS_DIR) && npm start
-
-docs-build:
-	cd $(DOCS_DIR) && npm ci && npm run build
 
 run:
 	cargo run -p rioterm --release

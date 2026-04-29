@@ -42,15 +42,15 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 
 > Demo with split and CRT on MacOS
 
-![Demo Rio 0.2.0 on MacOS](docs/static/assets/posts/0.2.0/demo-rio.png)
+![Demo Rio 0.2.0 on MacOS](https://rioterm.com/assets/posts/0.2.0/demo-rio.png)
 
 > Demo with blurred background on Linux
 
-![Demo blurred background](docs/static/assets/demos/demos-nixos-blur.png)
+![Demo blurred background](https://rioterm.com/assets/demos/demos-nixos-blur.png)
 
 > Demo of Rio running on a Steam Deck
 
-![Demo of Rio running on a Steam Deck](docs/static/assets/demos/demo-flatpak-steamdeck.jpg)
+![Demo of Rio running on a Steam Deck](https://rioterm.com/assets/demos/demo-flatpak-steamdeck.jpg)
 
 ## Minimal stable rust version
 
