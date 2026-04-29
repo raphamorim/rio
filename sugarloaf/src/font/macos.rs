@@ -30,9 +30,9 @@ use core_text::{
     font_collection,
     font_descriptor::{
         self, kCTFontBoldTrait, kCTFontFamilyNameAttribute, kCTFontItalicTrait,
-        kCTFontOrientationDefault, kCTFontStyleNameAttribute, kCTFontSymbolicTrait,
-        kCTFontTraitsAttribute, kCTFontVariationAttribute, CTFontDescriptor,
-        CTFontDescriptorCopyAttribute, CTFontDescriptorRef,
+        kCTFontMonoSpaceTrait, kCTFontOrientationDefault, kCTFontStyleNameAttribute,
+        kCTFontSymbolicTrait, kCTFontTraitsAttribute, kCTFontVariationAttribute,
+        CTFontDescriptor, CTFontDescriptorCopyAttribute, CTFontDescriptorRef,
     },
     font_manager,
     line::CTLine,
@@ -588,7 +588,7 @@ fn score_candidate(
     let traits = font.symbolic_traits();
     let mut is_bold = (traits & kCTFontBoldTrait) != 0;
     let mut is_italic = (traits & kCTFontItalicTrait) != 0;
-    let monospace = (traits & (1u32 << 10)) != 0;
+    let monospace = (traits & kCTFontMonoSpaceTrait) != 0;
 
     apply_head_table_traits(&font, &mut is_bold, &mut is_italic);
     apply_os2_table_traits(&font, &mut is_bold, &mut is_italic);
@@ -622,12 +622,8 @@ fn score_candidate(
     )
 }
 
-const fn four_cc(b: &[u8; 4]) -> u32 {
-    ((b[0] as u32) << 24) | ((b[1] as u32) << 16) | ((b[2] as u32) << 8) | (b[3] as u32)
-}
-
 fn apply_head_table_traits(font: &CTFont, is_bold: &mut bool, is_italic: &mut bool) {
-    let Some(data) = font.get_font_table(four_cc(b"head")) else {
+    let Some(data) = font.get_font_table(u32::from_be_bytes(*b"head")) else {
         return;
     };
     let bytes = data.bytes();
@@ -644,7 +640,7 @@ fn apply_head_table_traits(font: &CTFont, is_bold: &mut bool, is_italic: &mut bo
 }
 
 fn apply_os2_table_traits(font: &CTFont, is_bold: &mut bool, is_italic: &mut bool) {
-    let Some(data) = font.get_font_table(four_cc(b"OS/2")) else {
+    let Some(data) = font.get_font_table(u32::from_be_bytes(*b"OS/2")) else {
         return;
     };
     let bytes = data.bytes();
@@ -688,9 +684,9 @@ fn apply_variation_overrides(
 
     let id_key = unsafe { kCTFontVariationAxisIdentifierKeyFFI };
 
-    const WGHT_TAG: i64 = four_cc(b"wght") as i64;
-    const ITAL_TAG: i64 = four_cc(b"ital") as i64;
-    const SLNT_TAG: i64 = four_cc(b"slnt") as i64;
+    const WGHT_TAG: i64 = u32::from_be_bytes(*b"wght") as i64;
+    const ITAL_TAG: i64 = u32::from_be_bytes(*b"ital") as i64;
+    const SLNT_TAG: i64 = u32::from_be_bytes(*b"slnt") as i64;
 
     let mut ital_seen = false;
     for axis in axes.iter() {
