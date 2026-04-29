@@ -440,19 +440,19 @@ impl WgpuGridRenderer {
         self.atlas_color.insert(key, glyph)
     }
 
-    /// Record bg pass + text pass against the caller's `render_pass`.
-    pub fn render<'pass>(
-        &'pass mut self,
-        render_pass: &mut wgpu::RenderPass<'pass>,
+    /// Record the cell-bg pass. Uploads the uniform buffer (cheap; the
+    /// bg path always runs first per frame so this is the right place
+    /// for it) and the bg cell storage buffer if it changed since the
+    /// last flush. Pair with `render_text`, with any
+    /// `kitty_below_text` images composited in between.
+    pub fn render_bg(
+        &mut self,
+        render_pass: &mut wgpu::RenderPass<'_>,
         uniforms: &GridUniforms,
     ) {
-        // Uniforms always upload (cheap, and cursor/min_contrast can
-        // change without a row write).
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
 
-        // Skip re-uploading bg cells when no row changed — the GPU
-        // copy is already correct from the previous frame.
         if self.bg_dirty {
             self.queue.write_buffer(
                 &self.bg_buffers[0],
@@ -462,12 +462,19 @@ impl WgpuGridRenderer {
             self.bg_dirty = false;
         }
 
-        // ---------- bg pass ----------
         render_pass.set_pipeline(&self.bg_pipeline);
         render_pass.set_bind_group(0, &self.bg_bind_group, &[]);
         render_pass.draw(0..3, 0..1);
+    }
 
-        // ---------- text pass ----------
+    /// Record the cell-text pass. Lazily flushes per-row CPU vecs to
+    /// `fg_buffers[0]` only when `fg_dirty` — saves ~(rows × cols ×
+    /// 32 B) of memcpy on Noop/CursorOnly damage frames.
+    pub fn render_text(
+        &mut self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        _uniforms: &GridUniforms,
+    ) {
         if self.fg_dirty {
             self.fg_staging.clear();
             for row in &self.fg_rows {
@@ -497,7 +504,6 @@ impl WgpuGridRenderer {
         render_pass.set_bind_group(0, &self.text_uniform_bg, &[]);
         render_pass.set_bind_group(1, &self.text_atlas_bg, &[]);
         render_pass.set_vertex_buffer(0, self.fg_buffers[0].slice(..));
-        // 4 vertices per instance → triangle strip quad.
         render_pass.draw(0..4, 0..instance_count as u32);
     }
 }

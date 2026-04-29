@@ -1301,9 +1301,12 @@ impl Sugarloaf<'_> {
         }
 
         // Per-panel grid passes — draw cell backgrounds + grid text
-        // underneath everything else.
+        // underneath everything else. Vulkan doesn't yet interleave
+        // kitty image layers around the bg/text split — same as the
+        // wgpu path; follow-up.
         for (grid, uniforms) in grids.iter_mut() {
-            grid.render_vulkan(ctx, cmd, frame.slot, uniforms);
+            grid.render_bg_vulkan(ctx, cmd, frame.slot, uniforms);
+            grid.render_text_vulkan(ctx, cmd, frame.slot, uniforms);
         }
 
         // Rich-text quad pass — `Sugarloaf::quad()` / `rect()` calls
@@ -1381,9 +1384,20 @@ impl Sugarloaf<'_> {
                         });
 
                     // Grid passes first — cell bg/text composite under
-                    // the rich-text UI overlays drawn below.
+                    // the rich-text UI overlays drawn below. Wgpu
+                    // doesn't yet interleave kitty image layers with
+                    // the grid bg/text split (BrushRenderer::render
+                    // owns kitty image draws inline), so for now the
+                    // bg+text passes run back-to-back per panel — same
+                    // visual result as the prior single render call
+                    // and unchanged from ghostty's wgpu builds.
+                    // Re-ordering kitty layers around the bg/text
+                    // split would require pulling image draws out of
+                    // BrushRenderer::render — Metal already does that;
+                    // wgpu follow-up.
                     for (grid, uniforms) in grids.iter_mut() {
-                        grid.render_wgpu(&mut rpass, uniforms);
+                        grid.render_bg_wgpu(&mut rpass, uniforms);
+                        grid.render_text_wgpu(&mut rpass, uniforms);
                     }
 
                     self.renderer.render(ctx, &mut rpass);
