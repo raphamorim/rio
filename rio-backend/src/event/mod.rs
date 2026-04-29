@@ -115,27 +115,40 @@ pub enum RioEvent {
 
     /// Request to write the contents of the clipboard to the PTY.
     ///
-    /// The attached function is a formatter which will correctly transform the clipboard content
-    /// into the expected escape sequence format.
+    /// `route_id` identifies the panel that emitted the request so
+    /// the bytes land on the originating PTY rather than whichever
+    /// panel happens to be focused. The attached function is a
+    /// formatter which transforms the clipboard content into the
+    /// expected escape-sequence form.
     ClipboardLoad(
+        usize,
         ClipboardType,
         Arc<dyn Fn(&str) -> String + Sync + Send + 'static>,
     ),
 
     /// Request to write the RGB value of a color to the PTY.
     ///
-    /// The attached function is a formatter which will correctly transform the RGB color into the
-    /// expected escape sequence format.
+    /// `route_id` identifies the panel that emitted the request so
+    /// the reply lands on the originating PTY. The attached function
+    /// is a formatter which transforms the RGB color into the
+    /// expected escape-sequence form.
     ColorRequest(
+        usize,
         usize,
         Arc<dyn Fn(ColorRgb) -> String + Sync + Send + 'static>,
     ),
 
-    /// Write some text to the PTY.
-    PtyWrite(String),
+    /// Write some text to the PTY identified by `route_id`. Routing
+    /// by panel (rather than the focused context) is required so
+    /// CSI / OSC reply bytes land on the shell that asked for them
+    /// even if the user focuses a different split mid-flight.
+    PtyWrite(usize, String),
 
-    /// Request to write the text area size.
-    TextAreaSizeRequest(Arc<dyn Fn(WinsizeBuilder) -> String + Sync + Send + 'static>),
+    /// Request to write the text area size to the PTY of `route_id`.
+    TextAreaSizeRequest(
+        usize,
+        Arc<dyn Fn(WinsizeBuilder) -> String + Sync + Send + 'static>,
+    ),
 
     /// Cursor blinking state has changed.
     CursorBlinkingChange,
@@ -187,10 +200,18 @@ impl Debug for RioEvent {
             RioEvent::ClipboardStore(ty, text) => {
                 write!(f, "ClipboardStore({ty:?}, {text})")
             }
-            RioEvent::ClipboardLoad(ty, _) => write!(f, "ClipboardLoad({ty:?})"),
-            RioEvent::TextAreaSizeRequest(_) => write!(f, "TextAreaSizeRequest"),
-            RioEvent::ColorRequest(index, _) => write!(f, "ColorRequest({index})"),
-            RioEvent::PtyWrite(text) => write!(f, "PtyWrite({text})"),
+            RioEvent::ClipboardLoad(route_id, ty, _) => {
+                write!(f, "ClipboardLoad(route={route_id}, {ty:?})")
+            }
+            RioEvent::TextAreaSizeRequest(route_id, _) => {
+                write!(f, "TextAreaSizeRequest(route={route_id})")
+            }
+            RioEvent::ColorRequest(route_id, index, _) => {
+                write!(f, "ColorRequest(route={route_id}, idx={index})")
+            }
+            RioEvent::PtyWrite(route_id, text) => {
+                write!(f, "PtyWrite(route={route_id}, {text})")
+            }
             RioEvent::Title(title) => write!(f, "Title({title})"),
             RioEvent::TitleWithSubtitle(title, subtitle) => {
                 write!(f, "TitleWithSubtitle({title}, {subtitle})")

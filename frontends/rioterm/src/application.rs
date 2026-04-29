@@ -603,20 +603,28 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     drop(terminal);
                 }
             }
-            RioEventType::Rio(RioEvent::ClipboardLoad(clipboard_type, format)) => {
+            RioEventType::Rio(RioEvent::ClipboardLoad(
+                route_id,
+                clipboard_type,
+                format,
+            )) => {
                 let Router {
                     routes, clipboard, ..
                 } = &mut self.router;
                 if let Some(route) = routes.get_mut(&window_id) {
                     if route.window.is_focused {
                         let text = format(clipboard.get(clipboard_type).as_str());
-                        route
+                        // Route the paste back to the panel that asked for it
+                        // (OSC 52 reply), not whichever panel happens to be
+                        // focused now.
+                        if let Some(item) = route
                             .window
                             .screen
-                            .ctx_mut()
-                            .current_mut()
-                            .messenger
-                            .send_bytes(text.into_bytes());
+                            .context_manager
+                            .get_by_route_id(route_id)
+                        {
+                            item.val.messenger.send_bytes(text.into_bytes());
+                        }
                     }
                 }
             }
@@ -630,41 +638,55 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::PtyWrite(text)) => {
+            RioEventType::Rio(RioEvent::PtyWrite(route_id, text)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    route
-                        .window
-                        .screen
-                        .ctx_mut()
-                        .current_mut()
-                        .messenger
-                        .send_bytes(text.into_bytes());
-                }
-            }
-            RioEventType::Rio(RioEvent::TextAreaSizeRequest(format)) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let dimension =
-                        route.window.screen.context_manager.current().dimension;
-                    let text =
-                        format(crate::renderer::utils::terminal_dimensions(&dimension));
-                    route
-                        .window
-                        .screen
-                        .ctx_mut()
-                        .current_mut()
-                        .messenger
-                        .send_bytes(text.into_bytes());
-                }
-            }
-            RioEventType::Rio(RioEvent::ColorRequest(index, format)) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let terminal = route
+                    // Route reply bytes (CSI / OSC responses) back to the
+                    // PTY of the panel that emitted them, not whichever
+                    // panel happens to be focused.
+                    if let Some(item) = route
                         .window
                         .screen
                         .context_manager
-                        .current()
-                        .terminal
-                        .lock();
+                        .get_by_route_id(route_id)
+                    {
+                        item.val.messenger.send_bytes(text.into_bytes());
+                    }
+                }
+            }
+            RioEventType::Rio(RioEvent::TextAreaSizeRequest(route_id, format)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    if let Some(item) = route
+                        .window
+                        .screen
+                        .context_manager
+                        .get_by_route_id(route_id)
+                    {
+                        let dimension = item.val.dimension;
+                        let text = format(crate::renderer::utils::terminal_dimensions(
+                            &dimension,
+                        ));
+                        item.val.messenger.send_bytes(text.into_bytes());
+                    }
+                }
+            }
+            RioEventType::Rio(RioEvent::ColorRequest(route_id, index, format)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Read the originating panel's terminal colors and
+                    // route the reply back to that same panel — color
+                    // theme overrides via OSC 4 / OSC 10-19 are
+                    // per-context, so reading from `current()` would
+                    // mis-report when the user has focused a different
+                    // split mid-flight.
+                    let renderer_color = route.window.screen.renderer.colors[index];
+                    let Some(item) = route
+                        .window
+                        .screen
+                        .context_manager
+                        .get_by_route_id(route_id)
+                    else {
+                        return;
+                    };
+                    let terminal = item.val.terminal.lock();
                     let color: ColorRgb = match terminal.colors()[index] {
                         Some(color) => ColorRgb::from_color_arr(color),
                         // Ignore cursor color requests unless it was changed.
@@ -673,20 +695,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         {
                             return
                         }
-                        None => ColorRgb::from_color_arr(
-                            route.window.screen.renderer.colors[index],
-                        ),
+                        None => ColorRgb::from_color_arr(renderer_color),
                     };
-
                     drop(terminal);
 
-                    route
-                        .window
-                        .screen
-                        .ctx_mut()
-                        .current_mut()
-                        .messenger
-                        .send_bytes(format(color).into_bytes());
+                    item.val.messenger.send_bytes(format(color).into_bytes());
                 }
             }
             RioEventType::Rio(RioEvent::CreateWindow) => {
