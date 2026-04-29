@@ -95,23 +95,24 @@ pub fn lookup_for_font_match(
     spec: Option<LookupAttrs>,
 ) -> Option<(usize, bool)> {
     let mut search_result = None;
-    let mut font_synth = Synthesis::default();
 
     let fonts_len: usize = library.inner.len();
     for font_id in 0..fonts_len {
-        let mut is_emoji = false;
+        // Skip alias slots — their charmap is identical to the
+        // owning entry which we already walk under its own id.
+        let font = match library.inner.get(&font_id) {
+            Some(FontEntry::Owned(d)) => d,
+            Some(FontEntry::Alias(_)) | None => continue,
+        };
+        let is_emoji = font.is_emoji;
+        let font_synth = font.synth;
 
-        if let Some(font) = library.inner.get(&font_id) {
-            is_emoji = font.is_emoji;
-            font_synth = font.synth;
-
-            if let Some(spec) = spec {
-                if spec.italic && !font.is_italic() && !font.should_italicize {
-                    continue;
-                }
-                if spec.bold && !font.is_bold() && !font.should_embolden {
-                    continue;
-                }
+        if let Some(spec) = spec {
+            if spec.italic && !font.is_italic() && !font.should_italicize {
+                continue;
+            }
+            if spec.bold && !font.is_bold() && !font.should_embolden {
+                continue;
             }
         }
 
@@ -120,15 +121,13 @@ pub fn lookup_for_font_match(
             // Ask the CTFont directly whether it carries a glyph for each
             // codepoint. Avoids the `get_data` byte load — the fallback
             // walk no longer touches the font file(s) at all.
-            let handle_opt = library.inner.get(&font_id).and_then(|font| {
-                if let Some(path) = &font.path {
-                    crate::font::macos::FontHandle::from_path(path)
-                } else if let Some(bytes) = &font.data {
-                    crate::font::macos::FontHandle::from_bytes(bytes.as_ref())
-                } else {
-                    None
-                }
-            });
+            let handle_opt = if let Some(path) = &font.path {
+                crate::font::macos::FontHandle::from_path(path)
+            } else if let Some(bytes) = &font.data {
+                crate::font::macos::FontHandle::from_bytes(bytes.as_ref())
+            } else {
+                None
+            };
             if let Some(handle) = handle_opt {
                 let status = cluster.map(|ch| {
                     // Non-zero u16 == "has glyph"; swash's cluster.map only
@@ -215,8 +214,7 @@ impl FontLibrary {
     pub fn ct_font(&self, font_id: usize) -> Option<crate::font::macos::FontHandle> {
         self.inner
             .read()
-            .inner
-            .get(&font_id)
+            .try_get(&font_id)
             .and_then(|f| f.handle().cloned())
     }
 
@@ -286,8 +284,7 @@ impl FontLibrary {
         let mut lib = self.inner.write();
         if let Some(existing) = lib.font_id_for_postscript_name(&ps_name) {
             let is_emoji = lib
-                .inner
-                .get(&existing)
+                .try_get(&existing)
                 .map(|fd| fd.is_emoji)
                 .unwrap_or(false);
             return Some((existing, is_emoji));
@@ -350,8 +347,7 @@ impl FontLibrary {
         let mut lib = self.inner.write();
         if let Some(existing) = lib.font_id_for_postscript_name(&ps_name) {
             let is_emoji = lib
-                .inner
-                .get(&existing)
+                .try_get(&existing)
                 .map(|fd| fd.is_emoji)
                 .unwrap_or(false);
             return Some((existing, is_emoji));
@@ -376,8 +372,7 @@ impl FontLibrary {
         let lib = self.inner.read();
         let existing = lib.font_id_for_postscript_name(ps_name)?;
         let is_emoji = lib
-            .inner
-            .get(&existing)
+            .try_get(&existing)
             .map(|fd| fd.is_emoji)
             .unwrap_or(false);
         Some((existing, is_emoji))
@@ -395,7 +390,7 @@ impl FontLibrary {
     ))]
     fn primary_family_name(&self) -> Option<String> {
         let lib = self.inner.read();
-        let primary = lib.inner.get(&FONT_ID_REGULAR)?;
+        let primary = lib.try_get(&FONT_ID_REGULAR)?;
         primary
             .postscript_name()
             .map(|s| s.to_string())
@@ -505,9 +500,36 @@ pub struct SymbolMap {
     pub range: Range<char>,
 }
 
+/// Per-slot entry in the font library. `Owned` holds an actual
+/// `FontData`; `Alias` redirects to another id whose `Owned` entry
+/// the slot should reuse. Mirrors Ghostty's `EntryOrAlias` so that a
+/// missing italic/bold variant doesn't have to clone the regular
+/// face — the `metrics_cache`, `path`, `postscript_name`, etc. all
+/// stay single-instance.
+#[derive(Clone)]
+pub enum FontEntry {
+    Owned(FontData),
+    /// Single-hop indirection. `insert_alias` collapses any
+    /// alias-of-alias at insert time so resolution is always one
+    /// hop.
+    Alias(usize),
+}
+
+impl FontEntry {
+    /// `&FontData` only when this entry is owned. Alias slots resolve
+    /// through `FontLibraryData::get`/`try_get`/`get_mut` instead.
+    #[inline]
+    pub fn as_owned(&self) -> Option<&FontData> {
+        match self {
+            FontEntry::Owned(d) => Some(d),
+            FontEntry::Alias(_) => None,
+        }
+    }
+}
+
 pub struct FontLibraryData {
     // Standard is fallback for everything, it is also the inner number 0
-    pub inner: FxHashMap<usize, FontData>,
+    pub inner: FxHashMap<usize, FontEntry>,
     pub symbol_maps: Option<Vec<SymbolMap>>,
     pub hinting: bool,
     // Cache primary font metrics for consistent cell dimensions (consistent metrics approach)
@@ -675,7 +697,29 @@ impl FontLibraryData {
                 .entry(ps_name.to_string())
                 .or_insert(id);
         }
-        self.inner.insert(id, font_data);
+        self.inner.insert(id, FontEntry::Owned(font_data));
+    }
+
+    /// Register a new id that aliases an existing slot. Used when a
+    /// bold/italic/bold-italic variant isn't available so the slot can
+    /// reuse the regular face without cloning. Any alias-of-alias is
+    /// collapsed at insert time so `resolve_id` is always single-hop.
+    #[inline]
+    pub fn insert_alias(&mut self, target: usize) {
+        let id = self.inner.len();
+        let target = self.resolve_id(target);
+        self.inner.insert(id, FontEntry::Alias(target));
+    }
+
+    /// Follow an alias one hop. Aliases always point at an `Owned`
+    /// entry (enforced by `insert_alias`), so a single resolution is
+    /// enough.
+    #[inline]
+    pub fn resolve_id(&self, font_id: usize) -> usize {
+        match self.inner.get(&font_id) {
+            Some(FontEntry::Alias(target)) => *target,
+            _ => font_id,
+        }
     }
 
     /// Rio `font_id` registered for the given PostScript name, or
@@ -688,11 +732,26 @@ impl FontLibraryData {
 
     #[inline]
     pub fn get(&self, font_id: &usize) -> &FontData {
-        &self.inner[font_id]
+        let id = self.resolve_id(*font_id);
+        match &self.inner[&id] {
+            FontEntry::Owned(d) => d,
+            FontEntry::Alias(_) => {
+                unreachable!("alias must resolve to Owned in single hop")
+            }
+        }
+    }
+
+    /// Like [`get`](Self::get) but returns `None` instead of panicking
+    /// when the id is unknown. Use when the call site can't guarantee
+    /// the slot is populated.
+    #[inline]
+    pub fn try_get(&self, font_id: &usize) -> Option<&FontData> {
+        let id = self.resolve_id(*font_id);
+        self.inner.get(&id).and_then(FontEntry::as_owned)
     }
 
     pub fn get_data(&self, font_id: &usize) -> Option<(SharedData, u32, CacheKey)> {
-        if let Some(font) = self.inner.get(font_id) {
+        if let Some(font) = self.try_get(font_id) {
             if let Some(data) = &font.data {
                 return Some((data.clone(), font.offset, font.key));
             } else if let Some(path) = &font.path {
@@ -708,7 +767,11 @@ impl FontLibraryData {
 
     #[inline]
     pub fn get_mut(&mut self, font_id: &usize) -> Option<&mut FontData> {
-        self.inner.get_mut(font_id)
+        let id = self.resolve_id(*font_id);
+        match self.inner.get_mut(&id)? {
+            FontEntry::Owned(d) => Some(d),
+            FontEntry::Alias(_) => None,
+        }
     }
 
     /// Get font metrics for rich text rendering (consistent metrics approach)
@@ -740,20 +803,24 @@ impl FontLibraryData {
             if let Some(cached) = self.primary_metrics_cache.get(&size_key) {
                 *cached
             } else {
-                let primary_font = self.inner.get_mut(&FONT_ID_REGULAR)?;
+                let primary_font = self.get_mut(&FONT_ID_REGULAR)?;
                 let primary_metrics = primary_font.get_metrics(font_size, None)?;
                 self.primary_metrics_cache.insert(size_key, primary_metrics);
                 primary_metrics
             };
 
-        match font_id {
-            &FONT_ID_REGULAR => {
+        // Resolve aliases up front: a slot aliased to regular shares the
+        // owned entry, so it must take the primary branch (its metrics
+        // ARE the primary's).
+        let resolved = self.resolve_id(*font_id);
+        match resolved {
+            FONT_ID_REGULAR => {
                 // Primary font uses its own metrics
                 Some(primary_metrics.for_rich_text())
             }
             _ => {
                 // Secondary fonts use primary font's cell dimensions
-                let font = self.inner.get_mut(font_id)?;
+                let font = self.get_mut(&resolved)?;
                 font.get_rich_text_metrics(font_size, Some(&primary_metrics))
             }
         }
@@ -828,11 +895,7 @@ impl FontLibraryData {
             (Slot::BoldItalic, spec.bold_italic, true),
         ] {
             if slot_spec.style.is_disabled() {
-                let reg = self.inner.get(&regular_index).cloned();
-                match reg {
-                    Some(data) => self.insert(data),
-                    None => self.insert(load_fallback_from_memory(Slot::Regular)),
-                }
+                self.insert_alias(regular_index);
                 continue;
             }
 
@@ -841,11 +904,19 @@ impl FontLibraryData {
                     self.insert(data);
                 }
                 FindResult::NotFound(spec) => {
+                    // Family-level misses are already reported by the
+                    // regular slot. A per-slot miss here means the
+                    // family resolved but the requested style/weight
+                    // didn't — log-only, no UI warning. Alias to the
+                    // regular slot so the position stays populated
+                    // without cloning the face.
                     if !spec.is_default_family() {
-                        fonts_not_fount.push(spec);
-                    } else {
-                        self.insert(load_fallback_from_memory(slot));
+                        warn!(
+                            "Font family '{}' has no {:?} variant; falling back to regular",
+                            spec.family, slot
+                        );
                     }
+                    self.insert_alias(regular_index);
                 }
             }
         }
@@ -861,7 +932,7 @@ impl FontLibraryData {
         // `FONT_DATA_CACHE`.
         #[cfg(target_os = "macos")]
         {
-            let primary_handle = self.inner.get(&FONT_ID_REGULAR).and_then(|f| {
+            let primary_handle = self.try_get(&FONT_ID_REGULAR).and_then(|f| {
                 if let Some(path) = &f.path {
                     crate::font::macos::FontHandle::from_path(path)
                 } else if let Some(bytes) = &f.data {
@@ -1696,6 +1767,70 @@ fn load_fallback_from_memory(slot: Slot) -> FontData {
     };
 
     FontData::from_static_slice(font_to_load).unwrap()
+}
+
+#[cfg(test)]
+mod alias_tests {
+    use super::*;
+
+    /// `insert_alias` registers a new id that resolves back to the
+    /// target's `FontData` through `get`/`try_get`. Slot 0 is owned;
+    /// slot 1 (the alias) returns the same face without a clone.
+    #[test]
+    fn insert_alias_resolves_to_target() {
+        let mut lib = FontLibraryData::default();
+        lib.insert(
+            FontData::from_static_slice(constants::FONT_CASCADIAMONO_NF_REGULAR)
+                .expect("load regular"),
+        );
+        lib.insert_alias(0);
+
+        assert_eq!(lib.len(), 2, "alias takes a slot");
+        assert_eq!(lib.resolve_id(1), 0, "alias resolves to its target");
+        let owned_key = lib.get(&0).key;
+        let aliased_key = lib.get(&1).key;
+        assert_eq!(
+            owned_key, aliased_key,
+            "aliased slot must surface the target FontData"
+        );
+    }
+
+    /// Alias-of-alias is collapsed at insert time so resolution stays
+    /// single-hop. Used to keep the lookup cost bounded — chasing
+    /// arbitrary chains would slow the per-codepoint walk.
+    #[test]
+    fn alias_of_alias_collapses_to_root() {
+        let mut lib = FontLibraryData::default();
+        lib.insert(
+            FontData::from_static_slice(constants::FONT_CASCADIAMONO_NF_REGULAR)
+                .expect("load regular"),
+        );
+        lib.insert_alias(0);
+        lib.insert_alias(1);
+        assert_eq!(
+            lib.resolve_id(2),
+            0,
+            "alias pointing at an alias must collapse to the owning id"
+        );
+        assert!(matches!(lib.inner.get(&2), Some(FontEntry::Alias(0))));
+    }
+
+    /// Aliases share the target's `metrics_cache`, so requesting
+    /// metrics through the alias returns the same numbers as the
+    /// target without populating a duplicate cache.
+    #[test]
+    fn alias_shares_metrics_with_target() {
+        let mut lib = FontLibraryData::default();
+        lib.insert(
+            FontData::from_static_slice(constants::FONT_CASCADIAMONO_NF_REGULAR)
+                .expect("load regular"),
+        );
+        lib.insert_alias(0);
+
+        let from_regular = lib.get_font_metrics(&0, 14.0).expect("regular metrics");
+        let from_alias = lib.get_font_metrics(&1, 14.0).expect("alias metrics");
+        assert_eq!(from_regular, from_alias);
+    }
 }
 
 #[allow(dead_code)]
