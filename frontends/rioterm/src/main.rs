@@ -144,6 +144,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         AttachConsole(ATTACH_PARENT_PROCESS);
     }
 
+    #[cfg(target_os = "macos")]
+    platform::macos::disable_autofill_heuristic_controller();
+
     // Load command line options.
     let args = cli::Cli::parse();
 
