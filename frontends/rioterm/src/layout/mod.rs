@@ -78,10 +78,8 @@ fn compute(
     let cell_w = cell.cell_width as f32;
     let cell_h = cell.cell_height as f32;
     let visible_columns = std::cmp::max((available_width / cell_w) as usize, MIN_COLS);
-    let visible_lines = std::cmp::max(
-        (available_height / cell_h).floor() as usize,
-        MIN_LINES,
-    );
+    let visible_lines =
+        std::cmp::max((available_height / cell_h).floor() as usize, MIN_LINES);
 
     (visible_columns, visible_lines)
 }

@@ -37,6 +37,12 @@ pub struct Mouse {
     pub on_border: bool,
     /// Raw (unclamped) cursor Y in physical pixels, for selection scroll.
     pub raw_y: f64,
+    /// Last cell (line, column) the cursor was over. `None` until the
+    /// first `CursorMoved` event arrives. Used by the input dispatcher
+    /// to skip hint / OSC-8 / hyperlink work when the cursor moves
+    /// within the same cell — replaces the old pixel-equality check
+    /// that fired on every subpixel HiDPI jitter.
+    pub last_cell: Option<Pos>,
 }
 
 impl Default for Mouse {
@@ -57,6 +63,7 @@ impl Default for Mouse {
             x: 0.0,
             y: 0.0,
             raw_y: 0.0,
+            last_cell: None,
         }
     }
 }
@@ -177,32 +184,67 @@ pub mod test {
 
         // x=8 → 8/9 = 0 → col 0
         assert_eq!(
-            calculate_mouse_position(&mk_mouse(8.0, 0.0), 0, (cols, lines), 0.0, 0.0, cell)
-                .col,
+            calculate_mouse_position(
+                &mk_mouse(8.0, 0.0),
+                0,
+                (cols, lines),
+                0.0,
+                0.0,
+                cell
+            )
+            .col,
             Column(0),
         );
         // x=8.99 → still col 0 (subpixel precision preserved)
         assert_eq!(
-            calculate_mouse_position(&mk_mouse(8.99, 0.0), 0, (cols, lines), 0.0, 0.0, cell)
-                .col,
+            calculate_mouse_position(
+                &mk_mouse(8.99, 0.0),
+                0,
+                (cols, lines),
+                0.0,
+                0.0,
+                cell
+            )
+            .col,
             Column(0),
         );
         // x=9 → boundary → col 1
         assert_eq!(
-            calculate_mouse_position(&mk_mouse(9.0, 0.0), 0, (cols, lines), 0.0, 0.0, cell)
-                .col,
+            calculate_mouse_position(
+                &mk_mouse(9.0, 0.0),
+                0,
+                (cols, lines),
+                0.0,
+                0.0,
+                cell
+            )
+            .col,
             Column(1),
         );
         // x=17.5 → 17.5/9 = 1.94 → col 1
         assert_eq!(
-            calculate_mouse_position(&mk_mouse(17.5, 0.0), 0, (cols, lines), 0.0, 0.0, cell)
-                .col,
+            calculate_mouse_position(
+                &mk_mouse(17.5, 0.0),
+                0,
+                (cols, lines),
+                0.0,
+                0.0,
+                cell
+            )
+            .col,
             Column(1),
         );
         // x=18 → col 2
         assert_eq!(
-            calculate_mouse_position(&mk_mouse(18.0, 0.0), 0, (cols, lines), 0.0, 0.0, cell)
-                .col,
+            calculate_mouse_position(
+                &mk_mouse(18.0, 0.0),
+                0,
+                (cols, lines),
+                0.0,
+                0.0,
+                cell
+            )
+            .col,
             Column(2),
         );
     }
@@ -218,26 +260,54 @@ pub mod test {
 
         // Click before margin → col 0.
         assert_eq!(
-            calculate_mouse_position(&mk_mouse(5.0, 0.0), 0, (cols, lines), margin_x, 0.0, cell)
-                .col,
+            calculate_mouse_position(
+                &mk_mouse(5.0, 0.0),
+                0,
+                (cols, lines),
+                margin_x,
+                0.0,
+                cell
+            )
+            .col,
             Column(0),
         );
         // x=10 → col 0 (start of cell 0).
         assert_eq!(
-            calculate_mouse_position(&mk_mouse(10.0, 0.0), 0, (cols, lines), margin_x, 0.0, cell)
-                .col,
+            calculate_mouse_position(
+                &mk_mouse(10.0, 0.0),
+                0,
+                (cols, lines),
+                margin_x,
+                0.0,
+                cell
+            )
+            .col,
             Column(0),
         );
         // x=18.99 → still col 0.
         assert_eq!(
-            calculate_mouse_position(&mk_mouse(18.99, 0.0), 0, (cols, lines), margin_x, 0.0, cell)
-                .col,
+            calculate_mouse_position(
+                &mk_mouse(18.99, 0.0),
+                0,
+                (cols, lines),
+                margin_x,
+                0.0,
+                cell
+            )
+            .col,
             Column(0),
         );
         // x=19 → col 1.
         assert_eq!(
-            calculate_mouse_position(&mk_mouse(19.0, 0.0), 0, (cols, lines), margin_x, 0.0, cell)
-                .col,
+            calculate_mouse_position(
+                &mk_mouse(19.0, 0.0),
+                0,
+                (cols, lines),
+                margin_x,
+                0.0,
+                cell
+            )
+            .col,
             Column(1),
         );
     }
