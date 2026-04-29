@@ -72,7 +72,12 @@ impl Default for TextDimensions {
 ///   `face_height` already has the user's `line_height` multiplier
 ///   baked in; consumers MUST NOT re-apply it.
 /// - `cell_baseline` is pixels from the **bottom** of the cell to
-///   the text baseline.
+///   the text baseline. Centered in the rounded cell so the glyph
+///   doesn't drift up/down by half a pixel after rounding.
+/// - `face_y = cell_baseline - face_baseline` — offset between the
+///   actual (rounded) baseline and the unrounded face baseline.
+///   Used by underline / strikethrough position conversion when
+///   moving from baseline-relative to cell-top-relative coords.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct CellMetrics {
     pub cell_width: u32,
@@ -80,6 +85,7 @@ pub struct CellMetrics {
     pub cell_baseline: u32,
     pub face_width: f64,
     pub face_height: f64,
+    pub face_y: f64,
 }
 
 impl Default for CellMetrics {
@@ -90,6 +96,7 @@ impl Default for CellMetrics {
             cell_baseline: 4,
             face_width: 8.0,
             face_height: 16.0,
+            face_y: 0.0,
         }
     }
 }

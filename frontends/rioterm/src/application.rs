@@ -1200,11 +1200,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let x = x.clamp(0.0, (layout.width as i32 - 1) as f64);
                 let y = y.clamp(0.0, (layout.height as i32 - 1) as f64);
 
-                // Snapshot the old mouse position before updating coordinates
-                // so we can detect whether the cursor moved to a new cell.
-                let old_x = route.window.screen.mouse.x;
-                let old_y = route.window.screen.mouse.y;
-
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
                 route.window.screen.mouse.raw_y = position.y;
@@ -1408,16 +1403,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let display_offset = route.window.screen.display_offset();
                 let point = route.window.screen.mouse_position(display_offset);
 
-                // Detect cell change by comparing pixel positions against cell
-                // dimensions, avoiding a second mouse_position() call.
-                let square_changed = x != old_x || y != old_y;
+                // Compare *cell* coordinates, not pixel coordinates, so
+                // subpixel HiDPI jitter inside the same cell doesn't
+                // re-fire hint / OSC-8 / hyperlink work every event.
+                let prev_cell = route.window.screen.mouse.last_cell;
+                let cell_changed = prev_cell != Some(point);
+                route.window.screen.mouse.last_cell = Some(point);
 
                 let inside_text_area = route.window.screen.contains_point(x, y);
                 let square_side = route.window.screen.side_by_pos(x);
 
-                // If the mouse hasn't changed cells, do nothing.
+                // If the cursor hasn't changed cells, do nothing.
                 // Force update when transitioning off a border so the cursor resets.
-                if !square_changed
+                if !cell_changed
                     && !was_on_border
                     && route.window.screen.mouse.square_side == square_side
                     && route.window.screen.mouse.inside_text_area == inside_text_area
@@ -1470,8 +1468,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if is_selecting {
                     route.window.screen.update_selection(point, square_side);
                     route.window.screen.context_manager.request_render();
-                } else if square_changed
-                    && route.window.screen.has_mouse_motion_and_drag()
+                } else if cell_changed && route.window.screen.has_mouse_motion_and_drag()
                 {
                     if lmb_pressed {
                         route.window.screen.mouse_report(32, ElementState::Pressed);

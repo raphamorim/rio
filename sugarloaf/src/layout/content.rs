@@ -388,10 +388,11 @@ pub struct SpanStyle {
     /// Does NOT affect positioning/advance — only compositor scaling.
     pub pua_constraint: Option<f32>,
     /// Optional per-glyph Nerd Font constraint (size / alignment /
-    /// padding) ported from ghostty's patcher table. When set, the
-    /// compositor uses ghostty's constrain() math to lay the glyph out
-    /// instead of the generic cell-centered fit. Only populated by the
-    /// renderer for codepoints with a table entry (`get_constraint`).
+    /// padding) sourced from the Nerd Fonts patcher table. When set,
+    /// the compositor lays the glyph out using the constraint math
+    /// in `nerd_font_attributes` instead of the generic cell-centered
+    /// fit. Only populated by the renderer for codepoints with a
+    /// table entry (`get_constraint`).
     pub nerd_font_constraint: Option<crate::font::nerd_font_attributes::Constraint>,
 }
 
@@ -428,6 +429,48 @@ pub struct Content {
     pub transient_texts: Vec<ContentState>,
     shaping_cache: ShapingCache,
     selector: Option<usize>,
+}
+
+/// Compute the canonical [`CellMetrics`] from face metrics already
+/// scaled to physical pixels. Pure function so the formula is
+/// testable without standing up a `Content`.
+///
+/// Inputs:
+/// - `face_width / face_height`: unrounded cell dims in physical px
+///   (`face_height` already has the user's `line_height` multiplier
+///   applied).
+/// - `descent_phys / leading_phys`: descent and line gap in physical
+///   px, also multiplied by `line_height`. Descent is a *positive*
+///   magnitude (swash convention).
+///
+/// Centering invariant: if `face_height` is `33.4` and rounds to
+/// `33`, the baseline shifts up by `0.2` so the glyph stays
+/// centered in the rounded cell — matches the half-rounding-delta
+/// adjustment used elsewhere for vertical pixel-snapping.
+#[inline]
+pub(crate) fn canonical_cell_metrics(
+    face_width: f64,
+    face_height: f64,
+    descent_phys: f64,
+    leading_phys: f64,
+) -> crate::layout::CellMetrics {
+    let cell_width = face_width.round().max(1.0) as u32;
+    let cell_height = face_height.round().max(1.0) as u32;
+    // Unrounded baseline: line_gap split evenly above and below the
+    // glyph, descent below. Sign-flipped from Zig's negative-descent
+    // convention since swash reports descent as positive.
+    let face_baseline = leading_phys * 0.5 + descent_phys;
+    let baseline_centered = face_baseline - (cell_height as f64 - face_height) * 0.5;
+    let cell_baseline = baseline_centered.round().max(0.0) as u32;
+    let face_y = cell_baseline as f64 - face_baseline;
+    crate::layout::CellMetrics {
+        cell_width,
+        cell_height,
+        cell_baseline,
+        face_width,
+        face_height,
+        face_y,
+    }
 }
 
 impl Content {
@@ -519,8 +562,7 @@ impl Content {
         let mut builder_state = BuilderState::from_layout(rich_text_layout);
 
         // Immediately calculate dimensions for a representative character
-        let (dims, cell) =
-            self.calculate_character_cell_dimensions(rich_text_layout);
+        let (dims, cell) = self.calculate_character_cell_dimensions(rich_text_layout);
         builder_state.layout.dimensions = dims;
         builder_state.layout.cell = cell;
 
@@ -564,17 +606,12 @@ impl Content {
                     // Cell width = max advance across printable ASCII at
                     // the real render size. Same progressive fallback as
                     // before — final fallback is `font_size` (the em).
-                    let cw =
-                        crate::font::macos::max_ascii_advance_px(&handle, font_size)
-                            .or_else(|| {
-                                crate::font::macos::advance_units_for_char(
-                                    &handle, ' ',
-                                )
-                                .map(|(units, upem)| {
-                                    units * font_size / upem as f32
-                                })
-                            })
-                            .unwrap_or(font_size);
+                    let cw = crate::font::macos::max_ascii_advance_px(&handle, font_size)
+                        .or_else(|| {
+                            crate::font::macos::advance_units_for_char(&handle, ' ')
+                                .map(|(units, upem)| units * font_size / upem as f32)
+                        })
+                        .unwrap_or(font_size);
                     (
                         cw as f64,
                         m.ascent as f64,
@@ -588,15 +625,17 @@ impl Content {
                 self.fonts.inner.try_read().and_then(|lib| {
                     let id = 0;
                     let (data, offset, _key) = lib.get_data(&id)?;
-                    let font_ref =
-                        swash::FontRef::from_index(&data, offset as usize)?;
+                    let font_ref = swash::FontRef::from_index(&data, offset as usize)?;
                     let m = font_ref.metrics(&[]);
                     let upem = m.units_per_em as f32;
                     let s = font_size / upem;
                     let glyph = font_ref.charmap().map(' ' as u32);
-                    let advance =
-                        font_ref.glyph_metrics(&[]).advance_width(glyph);
-                    let cw = if advance > 0.0 { advance * s } else { font_size };
+                    let advance = font_ref.glyph_metrics(&[]).advance_width(glyph);
+                    let cw = if advance > 0.0 {
+                        advance * s
+                    } else {
+                        font_size
+                    };
                     Some((
                         cw as f64,
                         (m.ascent * s) as f64,
@@ -627,13 +666,8 @@ impl Content {
                 (fw, fh, 0.0, 0.0)
             };
 
-        let cell_width = face_width.round().max(1.0) as u32;
-        let cell_height = face_height.round().max(1.0) as u32;
-        // Pixels from the bottom of the cell to the text baseline.
-        // Same formula as `font::metrics::Metrics::calc`: descent +
-        // half the line_gap (so the line gap is split evenly above
-        // and below the glyph). All in physical pixels.
-        let cell_baseline = (descent_phys + leading_phys * 0.5).round().max(0.0) as u32;
+        let cell =
+            canonical_cell_metrics(face_width, face_height, descent_phys, leading_phys);
 
         let dims = crate::layout::TextDimensions {
             // Legacy fields kept for back-compat with sugarloaf-side
@@ -642,16 +676,9 @@ impl Content {
             // height, raw on width — produced drift at high column
             // indexes when paired with the mouse path's unrounded
             // divide).
-            width: cell_width as f32,
-            height: cell_height as f32,
+            width: cell.cell_width as f32,
+            height: cell.cell_height as f32,
             scale: layout.dimensions.scale,
-        };
-        let cell = crate::layout::CellMetrics {
-            cell_width,
-            cell_height,
-            cell_baseline,
-            face_width,
-            face_height,
         };
         (dims, cell)
     }
@@ -750,8 +777,7 @@ impl Content {
             return;
         };
 
-        let (new_dimension, new_cell) =
-            self.calculate_character_cell_dimensions(&layout);
+        let (new_dimension, new_cell) = self.calculate_character_cell_dimensions(&layout);
 
         if let Some(text_state) = self.get_state_mut(state_id) {
             text_state.layout.dimensions = new_dimension;
@@ -1512,6 +1538,72 @@ impl ShapingCache {
 mod tests {
     use super::*;
     use swash::shape::cluster::Glyph;
+
+    /// Pixel-perfect when face dimensions are already integer:
+    /// rounding is a no-op so cell == face and the centering
+    /// adjustment vanishes.
+    #[test]
+    fn canonical_cell_metrics_no_rounding_delta() {
+        let cell = canonical_cell_metrics(16.0, 33.0, 4.0, 2.0);
+        assert_eq!(cell.cell_width, 16);
+        assert_eq!(cell.cell_height, 33);
+        // baseline = leading*0.5 + descent = 1 + 4 = 5
+        assert_eq!(cell.cell_baseline, 5);
+        assert_eq!(cell.face_y, 0.0);
+    }
+
+    /// Centering: face_height = 32.4 rounds DOWN to 32, so the
+    /// baseline must shift by half the rounding delta (≈ +0.2)
+    /// so the glyph stays vertically centered in the rounded cell.
+    #[test]
+    fn canonical_cell_metrics_centers_after_round_down() {
+        let cell = canonical_cell_metrics(16.0, 32.4, 4.0, 2.0);
+        assert_eq!(cell.cell_height, 32);
+        // face_baseline = 1 + 4 = 5
+        // baseline_centered = 5 - (32 - 32.4) / 2 = 5 + 0.2 = 5.2 → round 5
+        assert_eq!(cell.cell_baseline, 5);
+        // face_y = 5 - 5 = 0  (cell_baseline rounds back to face_baseline here)
+        assert!((cell.face_y - 0.0).abs() < 1e-9);
+    }
+
+    /// Centering: face_height = 32.6 rounds UP to 33, baseline
+    /// shifts by ~ -0.3 (so the glyph drops slightly to stay
+    /// centered in the now-taller rounded cell).
+    #[test]
+    fn canonical_cell_metrics_centers_after_round_up() {
+        let cell = canonical_cell_metrics(16.0, 32.6, 4.0, 2.0);
+        assert_eq!(cell.cell_height, 33);
+        // face_baseline = 5
+        // baseline_centered = 5 - (33 - 32.6) / 2 = 5 - 0.2 = 4.8 → round 5
+        assert_eq!(cell.cell_baseline, 5);
+    }
+
+    /// Invariants: 0 ≤ cell_baseline ≤ cell_height.
+    /// Holds across a sweep of face dimensions, including small
+    /// fonts where descent + half_gap might be larger than the
+    /// rounding delta.
+    #[test]
+    fn canonical_cell_metrics_baseline_within_cell() {
+        for face_h in [12.0, 13.4, 18.7, 24.0, 33.0, 49.5, 66.0] {
+            let cell = canonical_cell_metrics(8.0, face_h, 3.0, 1.0);
+            assert!(
+                cell.cell_baseline <= cell.cell_height,
+                "baseline {} > cell_height {} at face_h={}",
+                cell.cell_baseline,
+                cell.cell_height,
+                face_h
+            );
+        }
+    }
+
+    /// `face_width.round().max(1.0)` clamps degenerate sub-pixel
+    /// widths so the divide path in `compute()` doesn't get a
+    /// zero stride.
+    #[test]
+    fn canonical_cell_metrics_clamps_width_floor() {
+        let cell = canonical_cell_metrics(0.3, 16.0, 4.0, 2.0);
+        assert_eq!(cell.cell_width, 1);
+    }
 
     fn create_test_glyph(id: u16, x: f32, y: f32, advance: f32) -> Glyph {
         Glyph {

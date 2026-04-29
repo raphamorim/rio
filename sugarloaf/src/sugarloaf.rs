@@ -1408,13 +1408,12 @@ impl Sugarloaf<'_> {
                     // doesn't yet interleave kitty image layers with
                     // the grid bg/text split (BrushRenderer::render
                     // owns kitty image draws inline), so for now the
-                    // bg+text passes run back-to-back per panel — same
-                    // visual result as the prior single render call
-                    // and unchanged from ghostty's wgpu builds.
-                    // Re-ordering kitty layers around the bg/text
-                    // split would require pulling image draws out of
-                    // BrushRenderer::render — Metal already does that;
-                    // wgpu follow-up.
+                    // bg+text passes run back-to-back per panel —
+                    // same visual result as the prior single render
+                    // call. Re-ordering kitty layers around the
+                    // bg/text split would require pulling image
+                    // draws out of BrushRenderer::render — Metal
+                    // already does that; wgpu follow-up.
                     for (grid, uniforms) in grids.iter_mut() {
                         grid.render_bg_wgpu(&mut rpass, uniforms);
                         grid.render_text_wgpu(&mut rpass, uniforms);

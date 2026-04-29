@@ -3503,9 +3503,7 @@ impl Screen<'_> {
         // - `damage == Partial(lines)`:
         // rebuild only those rows.
         // Unchanged rows keep their CellBg + CellText resident in
-        // the grid's CPU state, which is re-uploaded verbatim. Same
-        // pattern as `.partial` path at
-        // `ghostty/src/renderer/generic.zig:2431-2440`.
+        // the grid's CPU state, which is re-uploaded verbatim.
         {
             struct PanelFrame {
                 route_id: usize,
@@ -3561,9 +3559,7 @@ impl Screen<'_> {
                 /// Search-hint matches for this panel. `None` when
                 /// search is inactive. Consumed alongside `selection`
                 /// inside `build_row_bg` / `build_row_fg` to apply
-                /// `search_match_background` / `_foreground`. Mirrors
-                /// `row_data.highlights` at
-                /// `ghostty/src/renderer/generic.zig:1317`.
+                /// `search_match_background` / `_foreground`.
                 hint_matches: Option<Vec<rio_backend::crosswords::search::Match>>,
                 /// Currently-focused search match (↑/↓ navigation).
                 /// Rendered with `search_focused_match_background` /
@@ -3598,17 +3594,14 @@ impl Screen<'_> {
             {
                 let ctx = &mut item.val;
                 let dim = ctx.dimension;
-                // Snap to integer pixel cells. `dim.dimension.width`
-                // comes from `char_width * scale` (fractional);
-                // `dim.dimension.height` is already `.ceil()`'d in
-                // sugarloaf's layout. Mixed fractional widths drift
-                // the bg fragment's `floor((pixel - padding) /
-                // cell_size)` across cell boundaries — adjacent
-                // columns end up 7 vs 8 px wide → visible seams.
-                // Rounding both to the same integer stride the cell
-                // grid is actually drawn on removes the drift.
                 // Canonical integer cell stride — single source of
-                // truth for paint, layout and mouse hit-test.
+                // truth for paint, layout, and mouse hit-test. The
+                // bg fragment shader does
+                // `floor((pixel - padding) / cell_size)` and the text
+                // vertex multiplies `grid_pos * cell_size`, so both
+                // sides must agree on the same integer stride or
+                // adjacent columns drift to 7 vs 8 px wide and seams
+                // show up.
                 let cell_w = dim.cell.cell_width as f32;
                 let cell_h = dim.cell.cell_height as f32;
                 // Per-panel font size (zoom is per-rich-text, not root).
@@ -3908,12 +3901,10 @@ impl Screen<'_> {
                 // window scaled_margin + the panel's layout rect
                 // offset inside the root container. Snap to integer
                 // pixels so `cell_size * grid_pos + grid_padding`
-                // always lands on pixel boundaries — same approach
-                // as `@floatFromInt(blank.top)` at
-                // `ghostty/src/renderer/generic.zig:1976-1981`.
-                // Without this, a fractional margin (e.g. Taffy
-                // layout computing 10.5px offsets) shifts the whole
-                // grid half a pixel and the bg fragment's
+                // always lands on pixel boundaries. Without this, a
+                // fractional margin (e.g. Taffy layout computing
+                // 10.5px offsets) shifts the whole grid half a pixel
+                // and the bg fragment's
                 // `floor((pixel - padding) / cell_size)` disagrees
                 // with the text vertex's `cell_size * grid_pos`
                 // about where cell boundaries are → visible seams.

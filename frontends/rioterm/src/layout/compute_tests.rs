@@ -13,6 +13,7 @@ fn cell_for(dims: TextDimensions) -> rio_backend::sugarloaf::layout::CellMetrics
         cell_baseline: 0,
         face_width: dims.width as f64,
         face_height: dims.height as f64,
+        face_y: 0.0,
     }
 }
 
@@ -267,7 +268,14 @@ fn test_context_dimension_build() {
         height: 33.0,
         scale: 2.0,
     };
-    let cd = ContextDimension::build(1650.0, 825.0, dims, cell_for(dims), 1.0, Margin::all(0.0));
+    let cd = ContextDimension::build(
+        1650.0,
+        825.0,
+        dims,
+        cell_for(dims),
+        1.0,
+        Margin::all(0.0),
+    );
     assert_eq!(cd.columns, 103);
     assert_eq!(cd.lines, 25);
 }
@@ -279,7 +287,14 @@ fn test_context_dimension_update_width() {
         height: 33.0,
         scale: 2.0,
     };
-    let mut cd = ContextDimension::build(1600.0, 825.0, dims, cell_for(dims), 1.0, Margin::all(0.0));
+    let mut cd = ContextDimension::build(
+        1600.0,
+        825.0,
+        dims,
+        cell_for(dims),
+        1.0,
+        Margin::all(0.0),
+    );
     assert_eq!(cd.columns, 100);
 
     cd.update_width(800.0);
@@ -294,7 +309,14 @@ fn test_context_dimension_update_height() {
         height: 33.0,
         scale: 2.0,
     };
-    let mut cd = ContextDimension::build(1600.0, 825.0, dims, cell_for(dims), 1.0, Margin::all(0.0));
+    let mut cd = ContextDimension::build(
+        1600.0,
+        825.0,
+        dims,
+        cell_for(dims),
+        1.0,
+        Margin::all(0.0),
+    );
     assert_eq!(cd.lines, 25);
 
     cd.update_height(660.0);
@@ -309,7 +331,14 @@ fn test_context_dimension_update_dimensions() {
         height: 33.0,
         scale: 1.0,
     };
-    let mut cd = ContextDimension::build(1600.0, 825.0, dims, cell_for(dims), 1.0, Margin::all(0.0));
+    let mut cd = ContextDimension::build(
+        1600.0,
+        825.0,
+        dims,
+        cell_for(dims),
+        1.0,
+        Margin::all(0.0),
+    );
     assert_eq!(cd.lines, 25);
 
     let new_dims = TextDimensions {
