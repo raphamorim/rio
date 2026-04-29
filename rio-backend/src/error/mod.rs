@@ -70,19 +70,7 @@ impl std::fmt::Display for RioErrorType {
             RioErrorType::FontsNotFound(fonts) => {
                 let mut font_str = String::from("");
                 for font in fonts.iter() {
-                    let style = match &font.style {
-                        crate::sugarloaf::font::fonts::FontStyle::Default => {
-                            String::from("default style")
-                        }
-                        crate::sugarloaf::font::fonts::FontStyle::Disabled => {
-                            String::from("disabled")
-                        }
-                        crate::sugarloaf::font::fonts::FontStyle::Named(s) => {
-                            format!("style \"{s}\"")
-                        }
-                    };
-                    font_str +=
-                        format!("\n• \"{}\" using {}", font.family, style).as_str();
+                    font_str += format!("\n• \"{}\"", font.family).as_str();
                 }
 
                 write!(f, "Font(s) not found:\n{font_str}")
