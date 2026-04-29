@@ -1530,6 +1530,7 @@ fn find_font(
                                 font_data_arc,
                                 path.to_path_buf(),
                                 evictable,
+                                slot,
                                 &font_spec,
                             ) {
                                 Ok(d) => {
@@ -1560,6 +1561,7 @@ fn find_font(
                             font_data,
                             std::path::PathBuf::from(&family),
                             evictable,
+                            slot,
                             &font_spec,
                         ) {
                             Ok(d) => {
