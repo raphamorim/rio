@@ -8,36 +8,9 @@ use std::{env, slice, str};
 
 use libc::{setlocale, LC_ALL, LC_CTYPE};
 use objc::runtime::{Class, Object};
-use objc::{class, msg_send, sel, sel_impl};
+use objc::{msg_send, sel, sel_impl};
 use tracing::debug;
 const FALLBACK_LOCALE: &str = "UTF-8";
-
-// macOS 26 (Tahoe) installs a global NSAutoFillHeuristicController that
-// hooks an NSEvent local monitor for every key/mouse/scroll event and runs
-// a debounced callback through the text-input system. The chain interacts
-// pathologically with custom NSTextInputClient implementations (which all
-// terminals have for IME), making scrolling progressively laggier and
-// freezing the window. SMS-code/credentials autofill makes no sense in a
-// terminal anyway. Match Ghostty's PR #8625 by registering a default that
-// disables the controller before AppKit reads it. Must run before NSApp
-// initialization. Harmless on older macOS versions — the key is just
-// unknown there.
-pub fn disable_autofill_heuristic_controller() {
-    unsafe {
-        let key_cstr = CString::new("NSAutoFillHeuristicControllerEnabled").unwrap();
-        let key: *mut Object =
-            msg_send![class!(NSString), stringWithUTF8String: key_cstr.as_ptr()];
-        let value: *mut Object = msg_send![class!(NSNumber), numberWithBool: false];
-        let dict: *mut Object = msg_send![
-            class!(NSDictionary),
-            dictionaryWithObject: value
-            forKey: key
-        ];
-        let user_defaults: *mut Object =
-            msg_send![class!(NSUserDefaults), standardUserDefaults];
-        let _: () = msg_send![user_defaults, registerDefaults: dict];
-    }
-}
 
 pub fn set_locale_environment() {
     let env_locale_c = CString::new("").unwrap();
