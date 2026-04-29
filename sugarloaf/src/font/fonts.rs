@@ -1,48 +1,98 @@
 use crate::font::DEFAULT_FONT_FAMILY;
-use serde::{Deserialize, Serialize};
+use serde::de::{self, Deserializer, Visitor};
+use serde::{Deserialize, Serialize, Serializer};
+use std::fmt;
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub enum SugarloafFontStyle {
+/// Per-slot font style override. Mirrors Ghostty's `FontStyle` enum:
+///   - `Default`: let font discovery pick the face implied by the slot
+///     (regular / bold / italic / bold+italic traits).
+///   - `Disabled`: skip this slot entirely; the regular face is reused
+///     when the terminal asks for this style. Spelled `false` in TOML.
+///   - `Named(String)`: match a specific style name from the family,
+///     e.g. `"Light"`, `"Medium"`, `"Heavy"`. CoreText / fontconfig
+///     resolves this against the face's style/PostScript name.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum FontStyle {
     #[default]
-    #[serde(alias = "normal")]
-    Normal,
-    #[serde(alias = "italic")]
-    Italic,
+    Default,
+    Disabled,
+    Named(String),
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub enum SugarloafFontWidth {
-    UltraCondensed,
-    ExtraCondensed,
-    Condensed,
-    SemiCondensed,
-    #[default]
-    Normal,
-    SemiExpanded,
-    Expanded,
-    ExtraExpanded,
-    UltraExpanded,
+impl FontStyle {
+    #[inline]
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            FontStyle::Named(s) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn is_disabled(&self) -> bool {
+        matches!(self, FontStyle::Disabled)
+    }
+}
+
+impl Serialize for FontStyle {
+    fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        match self {
+            FontStyle::Default => ser.serialize_str("default"),
+            FontStyle::Disabled => ser.serialize_bool(false),
+            FontStyle::Named(s) => ser.serialize_str(s),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for FontStyle {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = FontStyle;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("\"default\", false, or a font style name string")
+            }
+            fn visit_bool<E: de::Error>(self, v: bool) -> Result<FontStyle, E> {
+                if v {
+                    Err(E::custom(
+                        "font style cannot be `true`; use \"default\" or a name",
+                    ))
+                } else {
+                    Ok(FontStyle::Disabled)
+                }
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<FontStyle, E> {
+                Ok(match v {
+                    "default" => FontStyle::Default,
+                    "false" => FontStyle::Disabled,
+                    other => FontStyle::Named(other.to_string()),
+                })
+            }
+            fn visit_string<E: de::Error>(self, v: String) -> Result<FontStyle, E> {
+                Ok(match v.as_str() {
+                    "default" => FontStyle::Default,
+                    "false" => FontStyle::Disabled,
+                    _ => FontStyle::Named(v),
+                })
+            }
+        }
+        de.deserialize_any(V)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SugarloafFont {
     #[serde(default = "default_font_family")]
     pub family: String,
-    #[serde(default = "Option::default")]
-    pub weight: Option<u16>,
-    #[serde(default = "SugarloafFontStyle::default")]
-    pub style: SugarloafFontStyle,
-    #[serde(default = "Option::default")]
-    pub width: Option<SugarloafFontWidth>,
+    #[serde(default)]
+    pub style: FontStyle,
 }
 
 impl Default for SugarloafFont {
     fn default() -> Self {
         Self {
             family: default_font_family(),
-            weight: None,
-            style: SugarloafFontStyle::Normal,
-            width: None,
+            style: FontStyle::Default,
         }
     }
 }
@@ -78,39 +128,19 @@ fn default_font_family() -> String {
 }
 
 pub fn default_font_regular() -> SugarloafFont {
-    SugarloafFont {
-        family: default_font_family(),
-        weight: Some(400),
-        style: SugarloafFontStyle::Normal,
-        width: None,
-    }
+    SugarloafFont::default()
 }
 
 pub fn default_font_bold() -> SugarloafFont {
-    SugarloafFont {
-        family: default_font_family(),
-        weight: Some(800),
-        style: SugarloafFontStyle::Normal,
-        width: None,
-    }
+    SugarloafFont::default()
 }
 
 pub fn default_font_italic() -> SugarloafFont {
-    SugarloafFont {
-        family: default_font_family(),
-        weight: Some(300),
-        style: SugarloafFontStyle::Italic,
-        width: None,
-    }
+    SugarloafFont::default()
 }
 
 pub fn default_font_bold_italic() -> SugarloafFont {
-    SugarloafFont {
-        family: default_font_family(),
-        weight: Some(800),
-        style: SugarloafFontStyle::Italic,
-        width: None,
-    }
+    SugarloafFont::default()
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
