@@ -62,11 +62,7 @@ impl<'de> Deserialize<'de> for FontStyle {
                 }
             }
             fn visit_str<E: de::Error>(self, v: &str) -> Result<FontStyle, E> {
-                Ok(match v {
-                    "default" => FontStyle::Default,
-                    "false" => FontStyle::Disabled,
-                    other => FontStyle::Named(other.to_string()),
-                })
+                self.visit_string(v.to_string())
             }
             fn visit_string<E: de::Error>(self, v: String) -> Result<FontStyle, E> {
                 Ok(match v.as_str() {
@@ -127,22 +123,6 @@ fn default_font_family() -> String {
     DEFAULT_FONT_FAMILY.to_string()
 }
 
-pub fn default_font_regular() -> SugarloafFont {
-    SugarloafFont::default()
-}
-
-pub fn default_font_bold() -> SugarloafFont {
-    SugarloafFont::default()
-}
-
-pub fn default_font_italic() -> SugarloafFont {
-    SugarloafFont::default()
-}
-
-pub fn default_font_bold_italic() -> SugarloafFont {
-    SugarloafFont::default()
-}
-
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SugarloafFonts {
     #[serde(default = "default_font_size")]
@@ -153,13 +133,13 @@ pub struct SugarloafFonts {
     pub features: Option<Vec<String>>,
     #[serde(default = "Option::default")]
     pub family: Option<String>,
-    #[serde(default = "default_font_regular")]
+    #[serde(default)]
     pub regular: SugarloafFont,
-    #[serde(default = "default_font_bold")]
+    #[serde(default)]
     pub bold: SugarloafFont,
-    #[serde(default = "default_font_bold_italic", rename = "bold-italic")]
+    #[serde(default, rename = "bold-italic")]
     pub bold_italic: SugarloafFont,
-    #[serde(default = "default_font_italic")]
+    #[serde(default)]
     pub italic: SugarloafFont,
     #[serde(default = "default_bool_true", rename = "use-drawable-chars")]
     pub use_drawable_chars: bool,
@@ -188,10 +168,10 @@ impl Default for SugarloafFonts {
             hinting: true,
             size: default_font_size(),
             family: None,
-            regular: default_font_regular(),
-            bold: default_font_bold(),
-            bold_italic: default_font_bold_italic(),
-            italic: default_font_italic(),
+            regular: SugarloafFont::default(),
+            bold: SugarloafFont::default(),
+            bold_italic: SugarloafFont::default(),
+            italic: SugarloafFont::default(),
             use_drawable_chars: true,
             symbol_map: None,
             disable_warnings_not_found: false,

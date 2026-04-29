@@ -59,25 +59,6 @@ impl Slot {
     }
 }
 
-/// Cross-platform shim: non-macOS threads `&loader::Database` through to
-/// `find_font`; macOS drops it since CoreText handles matching directly and
-/// we never build a Database there. The macro lets call sites stay uniform
-/// (`try_find_font!(&db, spec, slot, evict)`) even though `db` doesn't exist
-/// on macOS — macOS expansion simply discards that token.
-#[cfg(target_os = "macos")]
-macro_rules! try_find_font {
-    ($_db:expr, $spec:expr, $slot:expr, $evictable:expr) => {{
-        find_font($spec, $slot, $evictable)
-    }};
-}
-
-#[cfg(not(target_os = "macos"))]
-macro_rules! try_find_font {
-    ($db:expr, $spec:expr, $slot:expr, $evictable:expr) => {{
-        find_font($db, $spec, $slot, $evictable)
-    }};
-}
-
 // Type alias for the font data cache to improve readability
 type FontDataCache = Arc<DashMap<PathBuf, SharedData>>;
 
@@ -99,11 +80,17 @@ pub fn clear_font_data_cache() {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LookupAttrs {
+    pub italic: bool,
+    pub bold: bool,
+}
+
 pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
     synth: &mut Synthesis,
     library: &FontLibraryData,
-    spec_font_attr_opt: Option<&(swash::Style, bool)>,
+    spec: Option<LookupAttrs>,
 ) -> Option<(usize, bool)> {
     let mut search_result = None;
     let mut font_synth = Synthesis::default();
@@ -116,20 +103,11 @@ pub fn lookup_for_font_match(
             is_emoji = font.is_emoji;
             font_synth = font.synth;
 
-            // In this case, the font does match however
-            // we need to check if is indeed a match
-            if let Some(spec_font_attr) = spec_font_attr_opt {
-                let style_is_different = font.style != spec_font_attr.0;
-                let is_italic = spec_font_attr.0 == Style::Italic;
-                if style_is_different && is_italic && !font.should_italicize {
+            if let Some(spec) = spec {
+                if spec.italic && !font.is_italic() && !font.should_italicize {
                     continue;
                 }
-
-                // In case bold is required
-                // It follows spec on Bold (>=700)
-                // https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-weight
-                let weight_is_different = spec_font_attr.1 && font.weight < Weight(700);
-                if weight_is_different && !font.should_embolden {
+                if spec.bold && !font.is_bold() && !font.should_embolden {
                     continue;
                 }
             }
@@ -189,9 +167,7 @@ pub fn lookup_for_font_match(
         }
     }
 
-    // In case no font_id is found and exists a font spec requirement
-    // then drop requirement and try to find something that can match.
-    if search_result.is_none() && spec_font_attr_opt.is_some() {
+    if search_result.is_none() && spec.is_some() {
         return lookup_for_font_match(cluster, synth, library, None);
     }
 
@@ -532,25 +508,13 @@ impl FontLibraryData {
             }
         }
 
-        let is_italic = fragment_style.font_attrs.style() == Style::Italic;
-        let is_bold = fragment_style.font_attrs.weight() == Weight::BOLD;
+        let italic = fragment_style.font_attrs.style() == Style::Italic;
+        let bold = fragment_style.font_attrs.weight() == Weight::BOLD;
+        let spec = (italic || bold).then_some(LookupAttrs { italic, bold });
 
-        let spec_font_attr = if is_bold && is_italic {
-            Some((Style::Italic, true))
-        } else if is_bold {
-            Some((Style::Normal, true))
-        } else if is_italic {
-            Some((Style::Italic, false))
-        } else {
-            None
-        };
-
-        if let Some(result) = lookup_for_font_match(
-            &mut char_cluster,
-            &mut synth,
-            self,
-            spec_font_attr.as_ref(),
-        ) {
+        if let Some(result) =
+            lookup_for_font_match(&mut char_cluster, &mut synth, self, spec)
+        {
             return Some(result);
         }
 
@@ -593,25 +557,11 @@ impl FontLibraryData {
             }
         }
 
-        let is_italic = fragment_style.font_attrs.style() == Style::Italic;
-        let is_bold = fragment_style.font_attrs.weight() == Weight::BOLD;
+        let italic = fragment_style.font_attrs.style() == Style::Italic;
+        let bold = fragment_style.font_attrs.weight() == Weight::BOLD;
+        let spec = (italic || bold).then_some(LookupAttrs { italic, bold });
 
-        let spec_font_attr = if is_bold && is_italic {
-            Some((Style::Italic, true))
-        } else if is_bold {
-            Some((Style::Normal, true))
-        } else if is_italic {
-            Some((Style::Italic, false))
-        } else {
-            None
-        };
-
-        lookup_for_font_match(
-            &mut char_cluster,
-            &mut synth,
-            self,
-            spec_font_attr.as_ref(),
-        )
+        lookup_for_font_match(&mut char_cluster, &mut synth, self, spec)
     }
 
     #[inline]
@@ -752,8 +702,17 @@ impl FontLibraryData {
             db.load_fonts_dir(dir);
         }
 
+        #[cfg(target_os = "macos")]
+        let resolve = |spec: SugarloafFont, slot: Slot, evictable: bool| {
+            find_font(spec, slot, evictable)
+        };
+        #[cfg(not(target_os = "macos"))]
+        let resolve = |spec: SugarloafFont, slot: Slot, evictable: bool| {
+            find_font(&db, spec, slot, evictable)
+        };
+
         let regular_index = self.len();
-        match try_find_font!(&db, spec.regular, Slot::Regular, false) {
+        match resolve(spec.regular, Slot::Regular, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -780,7 +739,7 @@ impl FontLibraryData {
                 continue;
             }
 
-            match try_find_font!(&db, slot_spec, slot, evictable) {
+            match resolve(slot_spec, slot, evictable) {
                 FindResult::Found(data) => {
                     self.insert(data);
                 }
@@ -844,14 +803,13 @@ impl FontLibraryData {
         if let Some(symbol_map) = spec.symbol_map {
             let mut symbol_maps = Vec::default();
             for extra_font_from_symbol_map in symbol_map {
-                match try_find_font!(
-                    &db,
+                match resolve(
                     SugarloafFont {
                         family: extra_font_from_symbol_map.font_family,
                         ..SugarloafFont::default()
                     },
                     Slot::Regular,
-                    true
+                    true,
                 ) {
                     FindResult::Found(data) => {
                         if let Some(start) =
@@ -1017,6 +975,16 @@ impl PartialEq for FontData {
 }
 
 impl FontData {
+    #[inline]
+    pub fn is_bold(&self) -> bool {
+        self.weight >= Weight(700)
+    }
+
+    #[inline]
+    pub fn is_italic(&self) -> bool {
+        self.style == Style::Italic
+    }
+
     /// Get font data reference
     pub fn data(&self) -> &Option<SharedData> {
         &self.data
@@ -1159,16 +1127,16 @@ impl FontData {
             .ok_or_else(|| format!("Failed to load font from path: {:?}", path))?;
         let (offset, key) = (font.offset, font.key);
 
-        // Return our struct with the original file data and copies of the
-        // offset and key from the font reference
         let attributes = font.attributes();
         let style = attributes.style();
         let weight = attributes.weight();
 
-        let synth_allowed = !matches!(font_spec.style, FontStyle::Named(_));
-        let should_italicize =
-            synth_allowed && slot.is_italic() && style != Style::Italic;
-        let should_embolden = synth_allowed && slot.is_bold() && weight < Weight(600);
+        let (should_embolden, should_italicize) = synth_decisions(
+            slot,
+            font_spec,
+            weight >= Weight(700),
+            style == Style::Italic,
+        );
 
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
@@ -1264,9 +1232,8 @@ impl FontData {
         };
         let weight = swash::Weight(attrs.weight);
 
-        let synth_allowed = !matches!(font_spec.style, FontStyle::Named(_));
-        let should_italicize = synth_allowed && slot.is_italic() && !attrs.is_italic;
-        let should_embolden = synth_allowed && slot.is_bold() && !attrs.is_bold;
+        let (should_embolden, should_italicize) =
+            synth_decisions(slot, font_spec, attrs.is_bold, attrs.is_italic);
 
         let postscript_name = Some(handle.postscript_name());
         Ok(Self {
@@ -1460,6 +1427,23 @@ use tracing::{info, warn};
 enum FindResult {
     Found(FontData),
     NotFound(SugarloafFont),
+}
+
+/// Whether to apply faux-bold / faux-italic on top of the matched face.
+/// Synth fires only when the slot's bold/italic intent isn't already
+/// satisfied by the matched face, and never when the user pinned an
+/// explicit `style = "..."` Named override (an exact face was asked for).
+#[inline]
+fn synth_decisions(
+    slot: Slot,
+    font_spec: &SugarloafFont,
+    matched_is_bold: bool,
+    matched_is_italic: bool,
+) -> (bool, bool) {
+    let allowed = !matches!(font_spec.style, FontStyle::Named(_));
+    let embolden = allowed && slot.is_bold() && !matched_is_bold;
+    let italicize = allowed && slot.is_italic() && !matched_is_italic;
+    (embolden, italicize)
 }
 
 #[cfg(target_os = "macos")]
