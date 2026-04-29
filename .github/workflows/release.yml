@@ -45,10 +45,10 @@ jobs:
       KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
       MACOS_NOTARY_KEYCHAIN_PROFILE: ${{ secrets.MACOS_NOTARY_KEYCHAIN_PROFILE }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: dist/${{ matrix.cache-subdir }}
           key: goreleaser-${{ matrix.os }}-${{ github.sha }}
@@ -96,13 +96,13 @@ jobs:
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >>$GITHUB_ENV
 
       - if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.cache-check.outputs.cache-hit != 'true'
-        uses: goreleaser/goreleaser-action@v6.3.0
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser-pro
           version: nightly
           args: release --clean --split ${{ matrix._ids }} --skip=winget
       - if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v'))) && steps.cache-check.outputs.cache-hit != 'true'
-        uses: goreleaser/goreleaser-action@v6.3.0
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser-pro
           version: nightly
@@ -113,20 +113,20 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           key: goreleaser-macos-latest-${{ github.sha }}
           path: dist/darwin
           fail-on-cache-miss: true
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           key: goreleaser-windows-latest-${{ github.sha }}
           path: dist/windows
           fail-on-cache-miss: true
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           key: goreleaser-ubuntu-22.04-arm-${{ github.sha }}
           path: dist/linux
@@ -137,12 +137,12 @@ jobs:
           mv dist/linux dist/linux-arm64
           # update paths in artifacts.json (dist/linux -> dist/linux-arm64)
           sed -i 's/dist\/linux/dist\/linux-arm64/g' dist/linux-arm64/artifacts.json
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           key: goreleaser-ubuntu-22.04-${{ github.sha }}
           path: dist/linux
           fail-on-cache-miss: true
-      - uses: goreleaser/goreleaser-action@v6.3.0
+      - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser-pro
           version: nightly
