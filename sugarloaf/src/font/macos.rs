@@ -555,19 +555,10 @@ pub fn find_font_path(
 
     let desired_styles = derive_desired_styles(bold, italic, style_name);
 
-    let mut best: Option<(u64, CTFontDescriptor)> = None;
-    for d in candidates.iter() {
-        let score = score_candidate(&d, bold, italic, &desired_styles);
-        let take = match &best {
-            None => true,
-            Some((b, _)) => score > *b,
-        };
-        if take {
-            best = Some((score, d.clone()));
-        }
-    }
-
-    best.and_then(|(_, d)| d.font_path())
+    candidates
+        .iter()
+        .max_by_key(|d| score_candidate(d, bold, italic, &desired_styles))
+        .and_then(|d| d.font_path())
 }
 
 fn derive_desired_styles(
@@ -592,7 +583,7 @@ fn score_candidate(
     want_bold: bool,
     want_italic: bool,
     desired_styles: &[String],
-) -> u64 {
+) -> (bool, bool, bool, bool, u8, u16) {
     let font = ct_font::new_from_descriptor(desc, 12.0);
     let traits = font.symbolic_traits();
     let mut is_bold = (traits & kCTFontBoldTrait) != 0;
@@ -621,38 +612,22 @@ fn score_candidate(
 
     let glyph_count = (font.glyph_count() as u64).min(u16::MAX as u64) as u16;
 
-    pack_score(ScoredCandidate {
-        glyph_count,
-        fuzzy_style,
-        bold: is_bold == want_bold,
-        italic: is_italic == want_italic,
-        exact_style,
+    (
         monospace,
-    })
+        exact_style,
+        is_italic == want_italic,
+        is_bold == want_bold,
+        fuzzy_style,
+        glyph_count,
+    )
 }
 
-struct ScoredCandidate {
-    glyph_count: u16,
-    fuzzy_style: u8,
-    bold: bool,
-    italic: bool,
-    exact_style: bool,
-    monospace: bool,
-}
-
-fn pack_score(s: ScoredCandidate) -> u64 {
-    (s.monospace as u64) << 27
-        | (s.exact_style as u64) << 26
-        | (s.italic as u64) << 25
-        | (s.bold as u64) << 24
-        | (s.fuzzy_style as u64) << 16
-        | (s.glyph_count as u64)
+const fn four_cc(b: &[u8; 4]) -> u32 {
+    ((b[0] as u32) << 24) | ((b[1] as u32) << 16) | ((b[2] as u32) << 8) | (b[3] as u32)
 }
 
 fn apply_head_table_traits(font: &CTFont, is_bold: &mut bool, is_italic: &mut bool) {
-    const HEAD_TAG: u32 =
-        (b'h' as u32) << 24 | (b'e' as u32) << 16 | (b'a' as u32) << 8 | (b'd' as u32);
-    let Some(data) = font.get_font_table(HEAD_TAG) else {
+    let Some(data) = font.get_font_table(four_cc(b"head")) else {
         return;
     };
     let bytes = data.bytes();
@@ -669,9 +644,7 @@ fn apply_head_table_traits(font: &CTFont, is_bold: &mut bool, is_italic: &mut bo
 }
 
 fn apply_os2_table_traits(font: &CTFont, is_bold: &mut bool, is_italic: &mut bool) {
-    const OS2_TAG: u32 =
-        (b'O' as u32) << 24 | (b'S' as u32) << 16 | (b'/' as u32) << 8 | (b'2' as u32);
-    let Some(data) = font.get_font_table(OS2_TAG) else {
+    let Some(data) = font.get_font_table(four_cc(b"OS/2")) else {
         return;
     };
     let bytes = data.bytes();
@@ -715,12 +688,9 @@ fn apply_variation_overrides(
 
     let id_key = unsafe { kCTFontVariationAxisIdentifierKeyFFI };
 
-    const WGHT_TAG: i64 =
-        (b'w' as i64) << 24 | (b'g' as i64) << 16 | (b'h' as i64) << 8 | (b't' as i64);
-    const ITAL_TAG: i64 =
-        (b'i' as i64) << 24 | (b't' as i64) << 16 | (b'a' as i64) << 8 | (b'l' as i64);
-    const SLNT_TAG: i64 =
-        (b's' as i64) << 24 | (b'l' as i64) << 16 | (b'n' as i64) << 8 | (b't' as i64);
+    const WGHT_TAG: i64 = four_cc(b"wght") as i64;
+    const ITAL_TAG: i64 = four_cc(b"ital") as i64;
+    const SLNT_TAG: i64 = four_cc(b"slnt") as i64;
 
     let mut ital_seen = false;
     for axis in axes.iter() {
