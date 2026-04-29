@@ -340,7 +340,9 @@ impl CpuGridRenderer {
     /// caller's `0x00RRGGBB` u32 buffer. Mirrors the bg + text passes
     /// of `grid.metal`'s shaders, in the same draw order so glyphs
     /// composite correctly over their cell backgrounds.
-    pub fn render(
+    /// Paint the cell-bg pass into `buf`. Pair with `render_text`,
+    /// with any `kitty_below_text` images composited in between.
+    pub fn render_bg(
         &self,
         buf: &mut [u32],
         buf_w: u32,
@@ -357,7 +359,6 @@ impl CpuGridRenderer {
         if cols == 0 || rows == 0 {
             return;
         }
-        // grid_padding = (top, right, bottom, left) — same as the shader.
         let pad_top = uniforms.grid_padding[0];
         let pad_left = uniforms.grid_padding[3];
 
@@ -366,11 +367,8 @@ impl CpuGridRenderer {
         let cursor_x = uniforms.cursor_pos[0];
         let cursor_y = uniforms.cursor_pos[1];
         let cursor_bg_active = uniforms.cursor_bg_color[3] > 0.0;
-        let cursor_fg_active = uniforms.cursor_color[3] > 0.0;
         let cursor_bg = normalize_color(uniforms.cursor_bg_color);
-        let cursor_fg = normalize_color(uniforms.cursor_color);
 
-        // ---------- bg pass ----------
         let buf_cols = self.cols as usize;
         let row_count = (rows as usize).min(self.rows as usize);
         let col_count = (cols as usize).min(self.cols as usize);
@@ -392,8 +390,38 @@ impl CpuGridRenderer {
                 fill_rect(buf, buf_w_i, buf_h_i, x0, y0, x1, y1, rgba);
             }
         }
+    }
 
-        // ---------- text pass ----------
+    /// Paint the cell-text pass into `buf`. Walks `fg_rows` and blits
+    /// each glyph's atlas slot at the cell origin computed from
+    /// `grid_pos + bearings`.
+    pub fn render_text(
+        &self,
+        buf: &mut [u32],
+        buf_w: u32,
+        buf_h: u32,
+        uniforms: &GridUniforms,
+    ) {
+        let cell_w = uniforms.cell_size[0];
+        let cell_h = uniforms.cell_size[1];
+        if cell_w <= 0.0 || cell_h <= 0.0 {
+            return;
+        }
+        let cols = uniforms.grid_size[0];
+        let rows = uniforms.grid_size[1];
+        if cols == 0 || rows == 0 {
+            return;
+        }
+        let pad_top = uniforms.grid_padding[0];
+        let pad_left = uniforms.grid_padding[3];
+
+        let buf_w_i = buf_w as i32;
+        let buf_h_i = buf_h as i32;
+        let cursor_x = uniforms.cursor_pos[0];
+        let cursor_y = uniforms.cursor_pos[1];
+        let cursor_fg_active = uniforms.cursor_color[3] > 0.0;
+        let cursor_fg = normalize_color(uniforms.cursor_color);
+
         let mask = self.atlas_grayscale.pixels();
         let mask_side = self.atlas_grayscale.side as usize;
         let color_atlas = self.atlas_color.pixels();
@@ -407,11 +435,8 @@ impl CpuGridRenderer {
                     continue;
                 }
 
-                // Cell origin in pixels (matches grid.metal:258 + 275-276).
                 let cell_pos_x = (glyph.grid_pos[0] as f32) * cell_w + pad_left;
                 let cell_pos_y = (glyph.grid_pos[1] as f32) * cell_h + pad_top;
-                // Glyph origin (matches grid.metal:267-271). bearings.y is
-                // measured from the cell bottom, so flip into top-down space.
                 let glyph_x = (cell_pos_x + glyph.bearings[0] as f32) as i32;
                 let glyph_y = (cell_pos_y + cell_h - glyph.bearings[1] as f32) as i32;
 

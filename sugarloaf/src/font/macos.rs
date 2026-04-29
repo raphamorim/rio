@@ -29,9 +29,10 @@ use core_text::{
     font::{CTFont, CTFontRef},
     font_collection,
     font_descriptor::{
-        self, kCTFontFamilyNameAttribute, kCTFontOrientationDefault, kCTFontSlantTrait,
-        kCTFontTraitsAttribute, kCTFontWeightTrait, kCTFontWidthTrait, CTFontDescriptor,
-        CTFontDescriptorCreateMatchingFontDescriptor, CTFontDescriptorRef,
+        self, kCTFontBoldTrait, kCTFontFamilyNameAttribute, kCTFontItalicTrait,
+        kCTFontMonoSpaceTrait, kCTFontOrientationDefault, kCTFontStyleNameAttribute,
+        kCTFontSymbolicTrait, kCTFontTraitsAttribute, kCTFontVariationAttribute,
+        CTFontDescriptor, CTFontDescriptorCopyAttribute, CTFontDescriptorRef,
     },
     font_manager,
     line::CTLine,
@@ -505,106 +506,225 @@ pub fn rasterize_glyph(
     })
 }
 
-/// Stretch axis, used to build a CoreText width trait when resolving a font.
-/// Mirrors CSS `font-stretch` values. `Normal` is the no-op default.
-#[derive(Clone, Copy, Debug, Default)]
-pub enum Stretch {
-    UltraCondensed,
-    ExtraCondensed,
-    Condensed,
-    SemiCondensed,
-    #[default]
-    Normal,
-    SemiExpanded,
-    Expanded,
-    ExtraExpanded,
-    UltraExpanded,
-}
-
-impl Stretch {
-    /// Map to CoreText's normalized width trait (-1.0 = narrowest, 1.0 = widest).
-    fn as_ct_width(self) -> f64 {
-        match self {
-            Self::UltraCondensed => -1.0,
-            Self::ExtraCondensed => -0.75,
-            Self::Condensed => -0.5,
-            Self::SemiCondensed => -0.25,
-            Self::Normal => 0.0,
-            Self::SemiExpanded => 0.25,
-            Self::Expanded => 0.5,
-            Self::ExtraExpanded => 0.75,
-            Self::UltraExpanded => 1.0,
-        }
-    }
-}
-
-/// Map CSS-style font weight (100–900) to CoreText's normalized weight trait
-/// (-1.0 thin .. 0.0 regular .. 1.0 black). Values picked from the mapping
-/// CoreText itself uses internally, rounded to the nearest standard step.
-fn css_weight_to_ct(weight: u16) -> f64 {
-    match weight {
-        0..=149 => -0.8,
-        150..=249 => -0.6,
-        250..=349 => -0.4,
-        350..=449 => 0.0,
-        450..=549 => 0.23,
-        550..=649 => 0.3,
-        650..=749 => 0.4,
-        750..=849 => 0.56,
-        _ => 0.62,
-    }
-}
-
-/// Resolve a font spec to a file path via CoreText descriptor matching.
-///
-/// Build a descriptor with family + weight + slant + width, let CoreText do
-/// the match, extract the URL. No CSS-spec matching code on our side —
-/// CoreText handles proximity scoring and "closest match" rules natively.
-/// Returns `None` if CoreText can't find anything, or the resolved
-/// descriptor has no URL (e.g. system-supplied font without a backing file,
-/// which shouldn't happen for user-installable fonts).
 pub fn find_font_path(
     family: &str,
-    weight: u16,
+    bold: bool,
     italic: bool,
-    stretch: Stretch,
+    style_name: Option<&str>,
 ) -> Option<PathBuf> {
-    let family_cf = CFString::new(family);
-    let ct_weight = css_weight_to_ct(weight);
-    let ct_slant: f64 = if italic { 1.0 } else { 0.0 };
-    let ct_width = stretch.as_ct_width();
+    use core_foundation::array::CFArray;
 
-    let weight_key = unsafe { CFString::wrap_under_get_rule(kCTFontWeightTrait) };
-    let slant_key = unsafe { CFString::wrap_under_get_rule(kCTFontSlantTrait) };
-    let width_key = unsafe { CFString::wrap_under_get_rule(kCTFontWidthTrait) };
-    let traits: CFDictionary<CFString, CFType> = CFDictionary::from_CFType_pairs(&[
-        (weight_key, CFNumber::from(ct_weight).as_CFType()),
-        (slant_key, CFNumber::from(ct_slant).as_CFType()),
-        (width_key, CFNumber::from(ct_width).as_CFType()),
-    ]);
+    let family_cf = CFString::new(family);
 
     let family_key = unsafe { CFString::wrap_under_get_rule(kCTFontFamilyNameAttribute) };
-    let traits_attr_key =
-        unsafe { CFString::wrap_under_get_rule(kCTFontTraitsAttribute) };
-    let attrs: CFDictionary<CFString, CFType> = CFDictionary::from_CFType_pairs(&[
-        (family_key, family_cf.as_CFType()),
-        (traits_attr_key, traits.as_CFType()),
-    ]);
+    let mut pairs: Vec<(CFString, CFType)> = vec![(family_key, family_cf.as_CFType())];
 
+    let mut symbolic: u32 = 0;
+    if style_name.is_none() {
+        if bold {
+            symbolic |= kCTFontBoldTrait;
+        }
+        if italic {
+            symbolic |= kCTFontItalicTrait;
+        }
+    }
+
+    if symbolic != 0 {
+        let symbolic_key = unsafe { CFString::wrap_under_get_rule(kCTFontSymbolicTrait) };
+        let traits: CFDictionary<CFString, CFType> =
+            CFDictionary::from_CFType_pairs(&[(
+                symbolic_key,
+                CFNumber::from(symbolic as i64).as_CFType(),
+            )]);
+        let traits_attr_key =
+            unsafe { CFString::wrap_under_get_rule(kCTFontTraitsAttribute) };
+        pairs.push((traits_attr_key, traits.as_CFType()));
+    }
+
+    if let Some(name) = style_name {
+        let style_key =
+            unsafe { CFString::wrap_under_get_rule(kCTFontStyleNameAttribute) };
+        pairs.push((style_key, CFString::new(name).as_CFType()));
+    }
+    let attrs: CFDictionary<CFString, CFType> = CFDictionary::from_CFType_pairs(&pairs);
     let desc = font_descriptor::new_from_attributes(&attrs);
 
-    let matched = unsafe {
-        let raw = CTFontDescriptorCreateMatchingFontDescriptor(
-            desc.as_concrete_TypeRef(),
-            std::ptr::null(),
-        );
-        if raw.is_null() {
-            return None;
+    let descs_arr = CFArray::from_CFTypes(&[desc]);
+    let collection = font_collection::new_from_descriptors(&descs_arr);
+    let candidates = collection.get_descriptors()?;
+
+    let desired_styles = derive_desired_styles(bold, italic, style_name);
+
+    candidates
+        .iter()
+        .max_by_key(|d| score_candidate(d, bold, italic, &desired_styles))
+        .and_then(|d| d.font_path())
+}
+
+fn derive_desired_styles(
+    bold: bool,
+    italic: bool,
+    style_name: Option<&str>,
+) -> Vec<String> {
+    if let Some(user) = style_name {
+        return vec![user.to_string()];
+    }
+    let primary = match (bold, italic) {
+        (true, true) => "Bold Italic",
+        (true, false) => "Bold",
+        (false, true) => "Italic",
+        (false, false) => "Regular",
+    };
+    vec![primary.to_string()]
+}
+
+fn score_candidate(
+    desc: &CTFontDescriptor,
+    want_bold: bool,
+    want_italic: bool,
+    desired_styles: &[String],
+) -> (bool, bool, bool, bool, u8, u16) {
+    let font = ct_font::new_from_descriptor(desc, 12.0);
+    let traits = font.symbolic_traits();
+    let mut is_bold = (traits & kCTFontBoldTrait) != 0;
+    let mut is_italic = (traits & kCTFontItalicTrait) != 0;
+    let monospace = (traits & kCTFontMonoSpaceTrait) != 0;
+
+    apply_head_table_traits(&font, &mut is_bold, &mut is_italic);
+    apply_os2_table_traits(&font, &mut is_bold, &mut is_italic);
+    apply_variation_overrides(desc, &font, &mut is_bold, &mut is_italic);
+
+    let style_str = desc.style_name();
+    let style_lower = style_str.to_ascii_lowercase();
+
+    let exact_style = desired_styles
+        .first()
+        .map(|s| s.eq_ignore_ascii_case(&style_str))
+        .unwrap_or(false);
+
+    let mut diff: usize = style_str.len().min(255);
+    for s in desired_styles {
+        if style_lower.contains(&s.to_ascii_lowercase()) {
+            diff = diff.saturating_sub(s.len());
         }
-        CTFontDescriptor::wrap_under_create_rule(raw)
+    }
+    let fuzzy_style = (255usize.saturating_sub(diff)).min(255) as u8;
+
+    let glyph_count = (font.glyph_count() as u64).min(u16::MAX as u64) as u16;
+
+    (
+        monospace,
+        exact_style,
+        is_italic == want_italic,
+        is_bold == want_bold,
+        fuzzy_style,
+        glyph_count,
+    )
+}
+
+fn apply_head_table_traits(font: &CTFont, is_bold: &mut bool, is_italic: &mut bool) {
+    let Some(data) = font.get_font_table(u32::from_be_bytes(*b"head")) else {
+        return;
+    };
+    let bytes = data.bytes();
+    if bytes.len() < 46 {
+        return;
+    }
+    let mac_style = u16::from_be_bytes([bytes[44], bytes[45]]);
+    if mac_style & 0x0001 != 0 {
+        *is_bold = true;
+    }
+    if mac_style & 0x0002 != 0 {
+        *is_italic = true;
+    }
+}
+
+fn apply_os2_table_traits(font: &CTFont, is_bold: &mut bool, is_italic: &mut bool) {
+    let Some(data) = font.get_font_table(u32::from_be_bytes(*b"OS/2")) else {
+        return;
+    };
+    let bytes = data.bytes();
+    if bytes.len() < 64 {
+        return;
+    }
+    let fs_selection = u16::from_be_bytes([bytes[62], bytes[63]]);
+    if fs_selection & 0x0001 != 0 {
+        *is_italic = true;
+    }
+    if fs_selection & 0x0020 != 0 {
+        *is_bold = true;
+    }
+}
+
+fn apply_variation_overrides(
+    desc: &CTFontDescriptor,
+    font: &CTFont,
+    is_bold: &mut bool,
+    is_italic: &mut bool,
+) {
+    use core_foundation::base::CFType;
+    use core_foundation::dictionary::CFDictionary as CFDict;
+    use core_foundation::number::CFNumber;
+
+    let var_value = unsafe {
+        CTFontDescriptorCopyAttribute(
+            desc.as_concrete_TypeRef(),
+            kCTFontVariationAttribute,
+        )
+    };
+    if var_value.is_null() {
+        return;
+    }
+    let values_untyped: CFDict<CFType, CFType> =
+        unsafe { CFDict::wrap_under_create_rule(var_value as _) };
+
+    let Some(axes) = font.get_variation_axes() else {
+        return;
     };
 
-    matched.font_path()
+    let id_key = unsafe { kCTFontVariationAxisIdentifierKeyFFI };
+
+    const WGHT_TAG: i64 = u32::from_be_bytes(*b"wght") as i64;
+    const ITAL_TAG: i64 = u32::from_be_bytes(*b"ital") as i64;
+    const SLNT_TAG: i64 = u32::from_be_bytes(*b"slnt") as i64;
+
+    let mut ital_seen = false;
+    for axis in axes.iter() {
+        let Some(id_item) = axis.find(id_key) else {
+            continue;
+        };
+        let Some(id_num) = id_item.downcast::<CFNumber>() else {
+            continue;
+        };
+        let Some(tag) = id_num.to_i64() else {
+            continue;
+        };
+
+        let id_as_key: CFType = id_num.as_CFType();
+        let val: f64 = match values_untyped.find(&id_as_key) {
+            Some(v) => match v.downcast::<CFNumber>() {
+                Some(n) => n.to_f64().unwrap_or(0.0),
+                None => continue,
+            },
+            None => continue,
+        };
+
+        match tag {
+            WGHT_TAG => *is_bold = val > 600.0,
+            ITAL_TAG => {
+                *is_italic = val > 0.5;
+                ital_seen = true;
+            }
+            SLNT_TAG if !ital_seen => *is_italic = val <= -5.0,
+            _ => {}
+        }
+    }
+}
+
+#[link(name = "CoreText", kind = "framework")]
+extern "C" {
+    #[link_name = "kCTFontVariationAxisIdentifierKey"]
+    static kCTFontVariationAxisIdentifierKeyFFI: core_foundation::string::CFStringRef;
 }
 
 /// System default cascade (fallback) font file paths for `handle`'s font.
@@ -841,27 +961,23 @@ pub fn max_ascii_advance_px(handle: &FontHandle, size_px: f32) -> Option<f32> {
 #[derive(Debug, Clone, Copy)]
 pub struct FontAttributes {
     pub weight: u16,
+    pub is_bold: bool,
     pub is_italic: bool,
     pub is_monospace: bool,
     pub is_color: bool,
 }
 
-/// Read `(weight, italic, monospace, color)` traits from a CTFont.
-///
-/// `core-text`'s `TraitAccessors` / `SymbolicTraitAccessors` traits are
-/// private to the crate, so rather than fight the SDK we read symbolic
-/// traits as a raw `u32` bitfield (constants from Apple's CoreText.h).
-/// Weight is left at the CSS default (`400`) — Rio only uses the weight
-/// on fallback fonts to decide whether to synthesize bold, and cascade /
-/// discovered fonts are overwhelmingly weight-neutral regulars anyway.
 pub fn font_attributes(handle: &FontHandle) -> FontAttributes {
     const K_CTFONT_TRAIT_ITALIC: u32 = 1 << 0;
+    const K_CTFONT_TRAIT_BOLD: u32 = 1 << 1;
     const K_CTFONT_TRAIT_MONOSPACE: u32 = 1 << 10;
     const K_CTFONT_TRAIT_COLOR_GLYPHS: u32 = 1 << 13;
 
     let traits: u32 = handle.base_font.symbolic_traits();
+    let is_bold = (traits & K_CTFONT_TRAIT_BOLD) != 0;
     FontAttributes {
-        weight: 400,
+        weight: if is_bold { 700 } else { 400 },
+        is_bold,
         is_italic: (traits & K_CTFONT_TRAIT_ITALIC) != 0,
         is_monospace: (traits & K_CTFONT_TRAIT_MONOSPACE) != 0,
         is_color: (traits & K_CTFONT_TRAIT_COLOR_GLYPHS) != 0,
@@ -1525,8 +1641,8 @@ mod tests {
     #[test]
     fn find_font_path_resolves_system_family() {
         // Menlo ships on every macOS install since 10.6.
-        let path = find_font_path("Menlo", 400, false, Stretch::Normal)
-            .expect("Menlo should resolve");
+        let path =
+            find_font_path("Menlo", false, false, None).expect("Menlo should resolve");
         assert!(path.exists(), "resolved path should exist: {path:?}");
         assert!(
             path.extension()

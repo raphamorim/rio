@@ -758,14 +758,27 @@ pub struct ImageInstance {
     pub source_rect: [f32; 4],
 }
 
-/// Which layer to render the image in (relative to text).
+/// Which layer to render the image in. Mirrors ghostty's
+/// three-bucket split (`renderer/image.zig:94-97`,
+/// `renderer/generic.zig:1647-1695`):
+///
+/// - `BelowBg`   — `z < BG_LIMIT`. Drawn before the cell-bg pass; sits
+///   underneath everything terminal-related.
+/// - `BelowText` — `BG_LIMIT ≤ z < 0`. Drawn between cell-bg and
+///   cell-text passes — the kitty default for "image with text on top".
+/// - `AboveText` — `z >= 0`. Drawn after the cell-text pass; sits on
+///   top of all glyphs.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ImageLayer {
-    /// z < 0: rendered before the text pipeline.
+    BelowBg,
     BelowText,
-    /// z >= 0: rendered after the text pipeline.
     AboveText,
 }
+
+/// Threshold separating `BelowBg` from `BelowText`. Matches ghostty's
+/// `bg_limit = std.math.minInt(i32) / 2` at
+/// `renderer/image.zig:377`.
+const IMAGE_BG_LIMIT: i32 = i32::MIN / 2;
 
 /// A single image draw command for the image pipeline.
 struct ImageDraw {
@@ -797,6 +810,17 @@ pub struct Renderer {
     /// Dedicated GPU texture for the background image, sized to the
     /// image dimensions instead of going through the glyph atlas.
     background_image_texture: Option<ImageTextureEntry>,
+    /// Metal swap-chain state. One semaphore + one frame index for
+    /// the whole renderer regardless of how many split-pane grids
+    /// exist — mirrors ghostty's `SwapChain` at
+    /// `renderer/generic.zig:247`. Each render acquires one permit,
+    /// advances the index, hands the index to every grid's
+    /// `render_bg_metal` / `render_text_metal`, and releases the
+    /// permit from the command-buffer completion handler.
+    #[cfg(target_os = "macos")]
+    metal_frame_permits: crate::grid::metal::FramePermits,
+    #[cfg(target_os = "macos")]
+    metal_frame_index: usize,
 }
 
 /// Upload `pixels` to a fresh GPU texture using whatever backend `context`
@@ -954,6 +978,10 @@ impl Renderer {
             image_draws: Vec::new(),
             background_image_dirty: None,
             background_image_texture: None,
+            #[cfg(target_os = "macos")]
+            metal_frame_permits: crate::grid::metal::new_frame_permits(),
+            #[cfg(target_os = "macos")]
+            metal_frame_index: 0,
         }
     }
 
@@ -1399,12 +1427,15 @@ impl Renderer {
                     );
                     ImageTexture::Metal(mtl_tex)
                 }
-                // `_Phantom` and any future-added variants. Placed
-                // LAST so platform arms (Metal/Wgpu/Vulkan) match
-                // first; an earlier `_ => continue` was the cause of
-                // image overlays silently dropping.
-                #[allow(unreachable_patterns)]
-                _ => continue,
+                // `_Phantom` is the lifetime-placeholder variant that
+                // only exists when wgpu is feature-gated out. Naming
+                // it explicitly (instead of `_ => continue`) forces
+                // the compiler to flag any future variant added to
+                // `ContextType` — a previous wildcard arm shadowed
+                // the platform arms above and silently dropped every
+                // kitty image upload on macOS+no-wgpu builds.
+                #[cfg(not(feature = "wgpu"))]
+                crate::context::ContextType::_Phantom(_) => continue,
             };
 
             self.image_textures.insert(
@@ -1429,7 +1460,9 @@ impl Renderer {
                     dest_size: [overlay.width, overlay.height],
                     source_rect: overlay.source_rect,
                 },
-                layer: if overlay.z_index < 0 {
+                layer: if overlay.z_index < IMAGE_BG_LIMIT {
+                    ImageLayer::BelowBg
+                } else if overlay.z_index < 0 {
                     ImageLayer::BelowText
                 } else {
                     ImageLayer::AboveText
@@ -2167,6 +2200,17 @@ impl Renderer {
             }
         };
 
+        // Acquire one swap-chain permit for the whole renderer.
+        // Blocks if 3 frames are already in flight — backpressure
+        // that keeps the CPU from outrunning the GPU. Mirrors
+        // ghostty's `SwapChain.nextFrame` at
+        // `renderer/generic.zig:295`. Single Arc, single permit, no
+        // matter how many split-pane grids the renderer is driving.
+        crate::grid::metal::acquire_frame_permit(&self.metal_frame_permits);
+        self.metal_frame_index =
+            (self.metal_frame_index + 1) % crate::grid::metal::FRAMES_IN_FLIGHT_PUB;
+        let frame = self.metal_frame_index;
+
         loop {
             let instance_buffer =
                 brush.instance_buffer_pool.lock().acquire(&context.device);
@@ -2235,17 +2279,31 @@ impl Renderer {
                 ) {
                     return false;
                 }
-                // Terminal grid passes — drawn after the window bg
-                // fill but before rich-text UI overlays, so each
-                // panel's cells composite over the window bg and
-                // under the tab-bar / assistant / search overlays.
                 true
             })();
-            if ok {
-                for (grid, uniforms) in grids.iter_mut() {
-                    grid.render_metal(render_encoder, uniforms);
-                }
-            }
+            // Three-bucket image z-ordering — mirrors ghostty's
+            // `renderer/generic.zig:1640-1695`:
+            //
+            //   bg fill / image (already drawn above)
+            //   ↓
+            //   kitty z < BG_LIMIT  (BelowBg)
+            //   ↓
+            //   grid bg pass (per panel)
+            //   ↓
+            //   kitty BG_LIMIT ≤ z < 0  (BelowText)
+            //   ↓
+            //   grid text pass (per panel)
+            //   ↓
+            //   kitty z >= 0  (AboveText)
+            //   ↓
+            //   rich-text UI overlays (brush.render)
+            //   ↓
+            //   UI text pass (labels)
+            //
+            // The two grid passes run inside a single iteration loop
+            // per panel — for multi-panel layouts the bg/text
+            // ordering is per-grid (one panel's text doesn't paint
+            // over another panel's bg image, and vice versa).
             let ok = ok
                 && (|| {
                     if has_images
@@ -2254,7 +2312,41 @@ impl Renderer {
                             &self.image_textures,
                             brush,
                             render_encoder,
+                            ImageLayer::BelowBg,
+                            &instance_buffer,
+                            &mut instance_offset,
+                            &globals,
+                        )
+                    {
+                        return false;
+                    }
+                    for (grid, uniforms) in grids.iter_mut() {
+                        grid.render_bg_metal(render_encoder, frame, uniforms);
+                    }
+                    if has_images
+                        && !Self::draw_images_metal(
+                            &self.image_draws,
+                            &self.image_textures,
+                            brush,
+                            render_encoder,
                             ImageLayer::BelowText,
+                            &instance_buffer,
+                            &mut instance_offset,
+                            &globals,
+                        )
+                    {
+                        return false;
+                    }
+                    for (grid, uniforms) in grids.iter_mut() {
+                        grid.render_text_metal(render_encoder, frame, uniforms);
+                    }
+                    if has_images
+                        && !Self::draw_images_metal(
+                            &self.image_draws,
+                            &self.image_textures,
+                            brush,
+                            render_encoder,
+                            ImageLayer::AboveText,
                             &instance_buffer,
                             &mut instance_offset,
                             &globals,
@@ -2272,20 +2364,6 @@ impl Renderer {
                         &instance_buffer,
                         &mut instance_offset,
                     ) {
-                        return false;
-                    }
-                    if has_images
-                        && !Self::draw_images_metal(
-                            &self.image_draws,
-                            &self.image_textures,
-                            brush,
-                            render_encoder,
-                            ImageLayer::AboveText,
-                            &instance_buffer,
-                            &mut instance_offset,
-                            &globals,
-                        )
-                    {
                         return false;
                     }
                     // UI text pass. Lazy-init on the first frame with
@@ -2315,6 +2393,10 @@ impl Renderer {
                          dropping frame",
                         prev
                     );
+                    // No completion handler will fire to release the
+                    // swap-chain permit we acquired above — release
+                    // it here so the next frame can run.
+                    crate::grid::metal::release_frame_permit(&self.metal_frame_permits);
                     return;
                 }
                 tracing::info!(
@@ -2327,15 +2409,20 @@ impl Renderer {
 
             render_encoder.end_encoding();
 
-            // Completion handler returns the buffer to the pool on GPU
-            // finish. The block fires on a Metal-internal thread; we
-            // hop into the pool's mutex to release.
+            // Completion handler returns the buffer to the pool +
+            // releases the swap-chain permit on GPU finish. The block
+            // fires on a Metal-internal thread; the `FramePermits`
+            // Arc inside the closure hops into its condvar to wake
+            // any frame waiting on `acquire_frame_permit`. One Arc
+            // clone per render — no per-grid duplication.
             let pool = brush.instance_buffer_pool.clone();
             let buffer_cell = StdCell::new(Some(instance_buffer));
+            let permits = self.metal_frame_permits.clone();
             let block = ConcreteBlock::new(move |_cb: &metal::CommandBufferRef| {
                 if let Some(b) = buffer_cell.take() {
                     pool.lock().release(b);
                 }
+                crate::grid::metal::release_frame_permit(&permits);
             })
             .copy();
             command_buffer.add_completed_handler(&block);

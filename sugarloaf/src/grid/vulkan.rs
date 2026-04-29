@@ -612,14 +612,15 @@ impl VulkanGridRenderer {
         self.flush_pending_uploads(ctx, cmd, frame_slot);
     }
 
-    /// Record the bg + text passes into `cmd`. Caller has already
-    /// opened the dynamic-rendering pass and set viewport/scissor.
-    /// `frame_slot` is the in-flight slot whose `in_flight` fence has
-    /// been waited on. Atlas uploads must already have been flushed
-    /// via `prepare()` before the pass opened.
-    pub fn render(
+    /// Record the cell-bg pass into `cmd`. Uploads bg cells +
+    /// uniforms for `frame_slot` first, then issues the fullscreen
+    /// triangle. Caller must have opened the dynamic-rendering pass +
+    /// set viewport/scissor + flushed atlas uploads via `prepare()`.
+    /// Pair with `render_text`, with any `kitty_below_text` images
+    /// composited in between.
+    pub fn render_bg(
         &mut self,
-        ctx: &VulkanContext,
+        _ctx: &VulkanContext,
         cmd: vk::CommandBuffer,
         frame_slot: usize,
         uniforms: &GridUniforms,
@@ -627,7 +628,6 @@ impl VulkanGridRenderer {
         debug_assert!(frame_slot < FRAMES_IN_FLIGHT);
         let slot = frame_slot;
 
-        // ----- bg cells + uniforms upload -----
         if self.bg_dirty[slot] {
             unsafe {
                 let dst = self.bg_buffers[slot].as_mut_ptr() as *mut CellBg;
@@ -644,7 +644,6 @@ impl VulkanGridRenderer {
             std::ptr::write(dst, *uniforms);
         }
 
-        // ----- bg pass (1 fullscreen triangle, fragment does cell lookup) -----
         unsafe {
             self.device.cmd_bind_pipeline(
                 cmd,
@@ -661,8 +660,22 @@ impl VulkanGridRenderer {
             );
             self.device.cmd_draw(cmd, 3, 1, 0, 0);
         }
+    }
 
-        // ----- text pass (instanced quads, one per glyph) -----
+    /// Record the cell-text pass into `cmd`. One instanced quad per
+    /// `CellText`. Lazily flushes per-row CPU vecs into the per-slot
+    /// fg buffer only when `fg_dirty[slot]` — no concat + memcpy on
+    /// Noop/CursorOnly damage frames.
+    pub fn render_text(
+        &mut self,
+        ctx: &VulkanContext,
+        cmd: vk::CommandBuffer,
+        frame_slot: usize,
+        _uniforms: &GridUniforms,
+    ) {
+        debug_assert!(frame_slot < FRAMES_IN_FLIGHT);
+        let slot = frame_slot;
+
         if self.fg_dirty[slot] {
             self.fg_staging.clear();
             for row in &self.fg_rows {

@@ -377,13 +377,16 @@ pub fn render_cpu(
     };
     buffer.fill(bg_u32);
 
-    // Grid pass: paint each panel's terminal cells (bg + glyphs) into
-    // the buffer before overlay vertices, so UI overlays composite on
-    // top.
+    // Grid passes: paint each panel's terminal cells (bg + glyphs)
+    // into the buffer before overlay vertices, so UI overlays
+    // composite on top. CPU backend doesn't handle kitty image layers
+    // (no image-overlay support on softbuffer), so the bg/text split
+    // here just runs back-to-back per panel.
     {
         let buf_slice: &mut [u32] = &mut buffer;
         for (grid, uniforms) in grids.iter() {
-            grid.render_cpu(buf_slice, ctx.width_px, ctx.height_px, uniforms);
+            grid.render_bg_cpu(buf_slice, ctx.width_px, ctx.height_px, uniforms);
+            grid.render_text_cpu(buf_slice, ctx.width_px, ctx.height_px, uniforms);
         }
     }
 

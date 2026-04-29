@@ -23,16 +23,65 @@ use metal::{
     RenderPipelineDescriptor, RenderPipelineState, Texture, TextureDescriptor,
     VertexDescriptor,
 };
+use parking_lot::{Condvar, Mutex};
 use rustc_hash::FxHashMap;
+use std::sync::Arc;
 
 use super::atlas::{AtlasSlot, GlyphKey, RasterizedGlyph};
 use super::cell::{CellBg, CellText, GridUniforms};
 use crate::context::metal::MetalContext;
 use crate::renderer::image_cache::atlas::AtlasAllocator;
 
-/// Reserved for Phase 1c's completion-handler-gated triple buffering.
-/// Currently only slot 0 is used.
+/// Number of GPU buffer slots cycled through frame-by-frame so the
+/// CPU can populate frame N+1 while the GPU is still drawing N. Sized
+/// to match Metal `swap_chain_count` at
+/// `ghostty/src/renderer/Metal.zig:37`.
 const FRAMES_IN_FLIGHT: usize = 3;
+
+/// Number of in-flight frames the swap chain owns. Re-export here
+/// so the Renderer-level swap chain (which advances frame_index +
+/// owns the permit pool) can size itself off the same constant the
+/// per-grid buffer arrays use.
+pub const FRAMES_IN_FLIGHT_PUB: usize = FRAMES_IN_FLIGHT;
+
+/// Cross-thread semaphore — `FRAMES_IN_FLIGHT_PUB` permits,
+/// decremented on render-start, restored in the command-buffer
+/// completion handler. Mirrors ghostty's `frame_sema` at
+/// `renderer/generic.zig:261` (`std.Thread.Semaphore` →
+/// `dispatch_semaphore_t` on Darwin). We use parking_lot's
+/// Mutex+Condvar instead of dispatch_semaphore because the rest of
+/// sugarloaf already pulls parking_lot in and the behavior is
+/// identical for a counting semaphore.
+///
+/// One pool is shared across all grids on a `Renderer`, so a render
+/// only acquires one permit even with N split panels.
+pub type FramePermits = Arc<(Mutex<usize>, Condvar)>;
+
+/// Construct a permit pool with `FRAMES_IN_FLIGHT` initial permits.
+pub fn new_frame_permits() -> FramePermits {
+    Arc::new((Mutex::new(FRAMES_IN_FLIGHT), Condvar::new()))
+}
+
+/// Block until a permit is available, then take one. Called once per
+/// frame at render start.
+pub fn acquire_frame_permit(p: &FramePermits) {
+    let (m, c) = &**p;
+    let mut g = m.lock();
+    while *g == 0 {
+        c.wait(&mut g);
+    }
+    *g -= 1;
+}
+
+/// Release a permit, signaling any frame waiting on
+/// `acquire_frame_permit`. Called from the command-buffer completion
+/// handler — i.e. on a Metal-internal thread, not the main thread.
+pub fn release_frame_permit(p: &FramePermits) {
+    let (m, c) = &**p;
+    let mut g = m.lock();
+    *g += 1;
+    c.notify_one();
+}
 
 /// Extra slots appended to the per-row fg storage for cursor glyphs.
 /// `rows + 2` layout (block cursor at slot 0,
@@ -250,57 +299,60 @@ pub struct MetalGridRenderer {
     cols: u32,
     rows: u32,
 
-    /// `cols * rows` CellBg entries. Triple-buffered storage is
-    /// allocated for Phase 1c; only `bg_buffers[0]` is active in
-    /// Phase 1a.
+    /// CPU-side shadow of the per-cell bg buffer. `write_row` /
+    /// `clear_row` mutate this directly; `render_bg` flushes it into
+    /// the active frame slot's GPU buffer when the slot is dirty.
+    /// Decoupling the writes from the GPU buffer is what makes
+    /// triple-buffering safe — the CPU can mutate `bg_cpu` while the
+    /// GPU is still reading from a previous slot.
+    bg_cpu: Vec<CellBg>,
+
+    /// One GPU `CellBg` buffer per in-flight frame slot. The slot
+    /// active for a given frame is selected by `next_frame()` and
+    /// stored in `self.frame`.
     bg_buffers: [Buffer; FRAMES_IN_FLIGHT],
 
-    /// Per-row FG glyph storage. Slot 0 = block cursor cells,
-    /// 1..=rows = content rows, last = non-block cursor cells. Unused
-    /// in Phase 1a (Phase 1c turns this on alongside the text shader).
-    #[allow(dead_code)]
+    /// Per-slot dirty flag. Any `write_row` / `clear_row` sets all
+    /// `FRAMES_IN_FLIGHT` flags so each slot re-flushes from `bg_cpu`
+    /// when it next becomes the active frame; the slot's flag is
+    /// cleared after the per-slot flush in `render_bg`.
+    bg_dirty: [bool; FRAMES_IN_FLIGHT],
+
+    /// Per-row FG glyph storage (CPU-side, single copy across all
+    /// frame slots). Slot 0 = block cursor cells, 1..=rows = content
+    /// rows, last = non-block cursor cells.
     fg_rows: Vec<Vec<CellText>>,
 
-    /// GPU buffer that holds the concatenation of all `fg_rows`.
-    /// Reserved for Phase 1c.
-    #[allow(dead_code)]
+    /// One per-instance `CellText` vertex buffer per in-flight frame
+    /// slot. Re-uploaded from `fg_rows` on the slot's first frame
+    /// after a write.
     fg_buffers: [Buffer; FRAMES_IN_FLIGHT],
-    #[allow(dead_code)]
     fg_capacity: [usize; FRAMES_IN_FLIGHT],
-
-    /// Ring index — Phase 1a always reads/writes 0.
-    #[allow(dead_code)]
-    frame: usize,
 
     /// Compiled bg render pipeline. Binds:
     /// buffer(0): `GridUniforms` (via `set_vertex_bytes` /
     /// `set_fragment_bytes`)
-    /// buffer(1): `bg_buffers[0]`
+    /// buffer(1): `bg_buffers[frame]`
     bg_pipeline: RenderPipelineState,
 
     /// Compiled text render pipeline. Binds:
     /// buffer(0): per-instance `CellText` vertex buffer
     /// buffer(1): `GridUniforms`
     /// texture(0): `atlas_grayscale`
-    /// texture(1): `atlas_color` (reused = atlas_grayscale for now)
+    /// texture(1): `atlas_color`
     text_pipeline: RenderPipelineState,
 
     /// Staging buffer for the concatenated fg instances. Rebuilt each
     /// frame by flattening `fg_rows` into a contiguous slice.
     fg_staging: Vec<CellText>,
 
-    /// Instance count that's live on the GPU in `fg_buffers[0]` from
-    /// the previous render. When no row has been touched since, the
-    /// GPU copy is already correct and we skip the concat + upload,
-    /// reissuing the same `draw_primitives_instanced` call against
-    /// the resident data. Invalidated by `write_row` / `clear_row` /
-    /// `resize`.
-    fg_live_count: u32,
+    /// Per-slot live instance count from the most recent flush.
+    fg_live_count: [u32; FRAMES_IN_FLIGHT],
 
-    /// `true` when `fg_rows` holds writes not yet flushed to
-    /// `fg_buffers`. Set by any row-level write, cleared after a
-    /// successful flush in `render`.
-    fg_dirty: bool,
+    /// Per-slot dirty flag for the fg path. Any row-level write sets
+    /// all flags; the slot's flag is cleared by `render_text` after a
+    /// successful flush.
+    fg_dirty: [bool; FRAMES_IN_FLIGHT],
 
     /// Grayscale (R8) glyph atlas — outline mask bitmaps from the
     /// monochrome rasterizer path.
@@ -337,21 +389,25 @@ impl MetalGridRenderer {
         let atlas_grayscale = MetalGlyphAtlas::new_grayscale(&device);
         let atlas_color = MetalGlyphAtlas::new_color(&device);
 
+        let bg_cpu_len = (cols as usize) * (rows as usize);
+        let bg_cpu = vec![CellBg::TRANSPARENT; bg_cpu_len];
+
         Self {
             device,
             command_queue,
             cols,
             rows,
+            bg_cpu,
             bg_buffers,
+            bg_dirty: [true; FRAMES_IN_FLIGHT],
             fg_rows: init_fg_rows(rows),
             fg_buffers,
             fg_capacity,
-            frame: 0,
             bg_pipeline,
             text_pipeline,
             fg_staging: Vec::new(),
-            fg_live_count: 0,
-            fg_dirty: true,
+            fg_live_count: [0; FRAMES_IN_FLIGHT],
+            fg_dirty: [true; FRAMES_IN_FLIGHT],
             atlas_grayscale,
             atlas_color,
             needs_full_rebuild: true,
@@ -420,6 +476,7 @@ impl MetalGridRenderer {
         }
         self.cols = cols;
         self.rows = rows;
+        self.bg_cpu = vec![CellBg::TRANSPARENT; (cols as usize) * (rows as usize)];
         self.bg_buffers =
             std::array::from_fn(|_| alloc_bg_buffer(&self.device, cols, rows));
         self.fg_rows = init_fg_rows(rows);
@@ -428,20 +485,24 @@ impl MetalGridRenderer {
             std::array::from_fn(|_| alloc_fg_buffer(&self.device, initial_fg_capacity));
         self.fg_capacity = [initial_fg_capacity; FRAMES_IN_FLIGHT];
         // Fresh buffers = zero contents; emission path must rewrite
-        // every row on the next frame even if no damage came in.
+        // every row on the next frame even if no damage came in. All
+        // 3 in-flight slots are now stale so each one needs a flush
+        // when it next becomes the active frame.
         self.needs_full_rebuild = true;
-        self.fg_dirty = true;
-        self.fg_live_count = 0;
+        self.bg_dirty = [true; FRAMES_IN_FLIGHT];
+        self.fg_dirty = [true; FRAMES_IN_FLIGHT];
+        self.fg_live_count = [0; FRAMES_IN_FLIGHT];
     }
 
     pub fn write_row(&mut self, row: u32, bg: &[CellBg], fg: &[CellText]) {
-        // FG: stash in the CPU-side per-row vec. Phase 1c will
-        // concatenate these into a GPU buffer at render time.
+        // FG: stash in the CPU-side per-row vec. All in-flight slots
+        // need re-flushing — set every dirty flag so each slot
+        // re-uploads when it becomes the active frame.
         let idx = (row as usize) + 1;
         if let Some(slot) = self.fg_rows.get_mut(idx) {
             slot.clear();
             slot.extend_from_slice(fg);
-            self.fg_dirty = true;
+            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
         }
 
         if row >= self.rows {
@@ -449,23 +510,19 @@ impl MetalGridRenderer {
         }
         let row_start = (row as usize) * (self.cols as usize);
         let row_len = (self.cols as usize).min(bg.len());
-        let buf = &self.bg_buffers[0];
-        unsafe {
-            let ptr = buf.contents() as *mut CellBg;
-            let dst =
-                std::slice::from_raw_parts_mut(ptr.add(row_start), self.cols as usize);
-            dst[..row_len].copy_from_slice(&bg[..row_len]);
-            for slot in &mut dst[row_len..] {
-                *slot = CellBg::TRANSPARENT;
-            }
+        let dst = &mut self.bg_cpu[row_start..row_start + self.cols as usize];
+        dst[..row_len].copy_from_slice(&bg[..row_len]);
+        for slot in &mut dst[row_len..] {
+            *slot = CellBg::TRANSPARENT;
         }
+        self.bg_dirty = [true; FRAMES_IN_FLIGHT];
     }
 
     pub fn clear_row(&mut self, row: u32) {
         let idx = (row as usize) + 1;
         if let Some(slot) = self.fg_rows.get_mut(idx) {
             if !slot.is_empty() {
-                self.fg_dirty = true;
+                self.fg_dirty = [true; FRAMES_IN_FLIGHT];
             }
             slot.clear();
         }
@@ -473,14 +530,13 @@ impl MetalGridRenderer {
             return;
         }
         let row_start = (row as usize) * (self.cols as usize);
-        let buf = &self.bg_buffers[0];
-        unsafe {
-            let ptr = buf.contents() as *mut CellBg;
-            let dst =
-                std::slice::from_raw_parts_mut(ptr.add(row_start), self.cols as usize);
-            for slot in dst {
-                *slot = CellBg::TRANSPARENT;
-            }
+        let dst = &mut self.bg_cpu[row_start..row_start + self.cols as usize];
+        let needs_flush = dst.iter().any(|c| *c != CellBg::TRANSPARENT);
+        for slot in dst {
+            *slot = CellBg::TRANSPARENT;
+        }
+        if needs_flush {
+            self.bg_dirty = [true; FRAMES_IN_FLIGHT];
         }
     }
 
@@ -495,7 +551,7 @@ impl MetalGridRenderer {
             }
             slot.clear();
             slot.extend_from_slice(cells);
-            self.fg_dirty = true;
+            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
         }
     }
 
@@ -512,7 +568,7 @@ impl MetalGridRenderer {
             }
             slot.clear();
             slot.extend_from_slice(cells);
-            self.fg_dirty = true;
+            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
         }
     }
 
@@ -538,20 +594,39 @@ impl MetalGridRenderer {
             }
         }
         if changed {
-            self.fg_dirty = true;
+            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
         }
     }
 
-    /// Record both grid passes against the caller's `encoder`. The
-    /// caller owns the command buffer, drawable, and render pass
-    /// descriptor. Draw order:
-    ///
-    /// 1. bg pass — fullscreen triangle, per-fragment cell lookup.
-    /// 2. text pass — one instanced quad per `CellText` in `fg_rows`.
-    pub fn render(&mut self, encoder: &RenderCommandEncoderRef, uniforms: &GridUniforms) {
-        let uniforms_bytes = bytemuck::bytes_of(uniforms);
+    /// Record the cell-bg pass against the caller's `encoder`. Drawn
+    /// as a fullscreen triangle; the fragment shader resolves each
+    /// pixel back to its owning cell and reads the per-cell color
+    /// from `bg_buffers[frame]`. Caller owns command buffer +
+    /// drawable + pass descriptor; `frame` comes from the Renderer's
+    /// shared swap chain (acquired via `acquire_frame_permit` once
+    /// per render). Pair with `render_text` after compositing any
+    /// `kitty_below_text` images in between (matches
+    /// `renderer/generic.zig:1654-1668`).
+    pub fn render_bg(
+        &mut self,
+        encoder: &RenderCommandEncoderRef,
+        frame: usize,
+        uniforms: &GridUniforms,
+    ) {
+        // Flush the CPU shadow into this slot's GPU buffer if it
+        // hasn't been flushed since the last `write_row`. Each slot
+        // tracks its own dirty bit so all 3 in-flight slots stay
+        // consistent without re-uploading on every frame.
+        if self.bg_dirty[frame] {
+            let bytes = bytemuck::cast_slice::<CellBg, u8>(&self.bg_cpu);
+            unsafe {
+                let dst = self.bg_buffers[frame].contents() as *mut u8;
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst, bytes.len());
+            }
+            self.bg_dirty[frame] = false;
+        }
 
-        // ---------- bg pass ----------
+        let uniforms_bytes = bytemuck::bytes_of(uniforms);
         encoder.set_render_pipeline_state(&self.bg_pipeline);
         encoder.set_vertex_bytes(
             0,
@@ -563,17 +638,23 @@ impl MetalGridRenderer {
             uniforms_bytes.len() as u64,
             uniforms_bytes.as_ptr() as *const std::ffi::c_void,
         );
-        encoder.set_fragment_buffer(1, Some(&self.bg_buffers[0]), 0);
+        encoder.set_fragment_buffer(1, Some(&self.bg_buffers[frame]), 0);
         encoder.draw_primitives(MTLPrimitiveType::Triangle, 0, 3);
+    }
 
-        // ---------- text pass ----------
-        // When no row has been written since the last flush, `fg_buffers[0]`
-        // already holds the exact same instances the GPU needs — skip the
-        // concat + memcpy and just re-bind + re-draw. On a Noop/CursorOnly
-        // damage frame (blink tick, scrollbar fade, etc.) this is the
-        // whole difference between ~0 µs and ~(rows × cols × 32 B) of
-        // wasted CPU work per frame.
-        if self.fg_dirty {
+    /// Record the cell-text pass. One instanced quad per `CellText`
+    /// in `fg_rows`. Lazily flushes the per-row CPU vecs into
+    /// `fg_buffers[frame]` only when the slot is dirty — on a
+    /// Noop/CursorOnly damage frame (blink tick, scrollbar fade,
+    /// etc.) this is the whole difference between ~0 µs and ~(rows ×
+    /// cols × 32 B) of wasted CPU work per frame.
+    pub fn render_text(
+        &mut self,
+        encoder: &RenderCommandEncoderRef,
+        frame: usize,
+        uniforms: &GridUniforms,
+    ) {
+        if self.fg_dirty[frame] {
             // Flatten per-row fg_rows into the staging vec. Order matters
             // for z: slot 0 (block cursor) first, content rows next,
             // non-block-cursor slot last — same approach's ordering.
@@ -582,34 +663,32 @@ impl MetalGridRenderer {
                 self.fg_staging.extend_from_slice(row);
             }
 
-            // Grow the GPU buffer if the staging vec outran current capacity.
-            if self.fg_staging.len() > self.fg_capacity[0] {
+            if self.fg_staging.len() > self.fg_capacity[frame] {
                 let new_cap = self.fg_staging.len().next_power_of_two();
-                self.fg_buffers[0] = alloc_fg_buffer(&self.device, new_cap);
-                self.fg_capacity[0] = new_cap;
+                self.fg_buffers[frame] = alloc_fg_buffer(&self.device, new_cap);
+                self.fg_capacity[frame] = new_cap;
             }
 
             // Upload staging → GPU buffer. Shared storage mode means the
             // CPU pointer is the GPU pointer.
             let fg_bytes = bytemuck::cast_slice::<CellText, u8>(&self.fg_staging);
             unsafe {
-                let dst = self.fg_buffers[0].contents() as *mut u8;
+                let dst = self.fg_buffers[frame].contents() as *mut u8;
                 std::ptr::copy_nonoverlapping(fg_bytes.as_ptr(), dst, fg_bytes.len());
             }
 
-            self.fg_live_count = self.fg_staging.len() as u32;
-            self.fg_dirty = false;
+            self.fg_live_count[frame] = self.fg_staging.len() as u32;
+            self.fg_dirty[frame] = false;
         }
 
-        let instance_count = self.fg_live_count as usize;
+        let instance_count = self.fg_live_count[frame] as usize;
         if instance_count == 0 {
             return;
         }
 
+        let uniforms_bytes = bytemuck::bytes_of(uniforms);
         encoder.set_render_pipeline_state(&self.text_pipeline);
-        // buffer(0): per-instance vertex data.
-        encoder.set_vertex_buffer(0, Some(&self.fg_buffers[0]), 0);
-        // buffer(1): uniforms (pushed inline).
+        encoder.set_vertex_buffer(0, Some(&self.fg_buffers[frame]), 0);
         encoder.set_vertex_bytes(
             1,
             uniforms_bytes.len() as u64,
@@ -618,7 +697,6 @@ impl MetalGridRenderer {
         encoder.set_fragment_texture(0, Some(&self.atlas_grayscale.texture));
         encoder.set_fragment_texture(1, Some(&self.atlas_color.texture));
 
-        // Four-vertex triangle strip per instance (the quad).
         encoder.draw_primitives_instanced(
             MTLPrimitiveType::TriangleStrip,
             0,

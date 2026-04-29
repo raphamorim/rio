@@ -1257,9 +1257,14 @@ fn rasterize_swash_glyph(
         Source::ColorBitmap(StrikeWith::BestFit),
         Source::Outline,
     ];
+    let embolden_amount = if synthetic_bold {
+        (size_px / 14.0).max(1.0)
+    } else {
+        0.0
+    };
     let rendered = Render::new(sources)
         .format(Format::Alpha)
-        .embolden(if synthetic_bold { 0.5 } else { 0.0 })
+        .embolden(embolden_amount)
         .transform(if synthetic_italic {
             Some(Transform::skew(
                 Angle::from_degrees(14.0),

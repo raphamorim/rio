@@ -180,41 +180,62 @@ impl GridRenderer {
         }
     }
 
-    /// Record grid draw calls against a caller-supplied render pass /
-    /// encoder. The caller owns the command buffer + drawable + pass
-    /// descriptor so the grid composes with sugarloaf's UI overlays
-    /// (island, assistant, etc.) in a single render pass.
-    ///
-    /// Phase 1a: Metal draws the bg pass; Wgpu is still a no-op.
+    /// Record the cell-bg pass for this grid. `frame` is the swap
+    /// chain slot index acquired from the Renderer's shared
+    /// `FramePermits` pool — the grid uses it to pick the right
+    /// per-slot GPU buffer. Caller composites `kitty_below_text`
+    /// images between this call and `render_text_*` to match
+    /// `renderer/generic.zig:1654-1668` ordering.
     #[cfg(target_os = "macos")]
-    pub fn render_metal(
+    pub fn render_bg_metal(
         &mut self,
         encoder: &::metal::RenderCommandEncoderRef,
+        frame: usize,
         uniforms: &GridUniforms,
     ) {
         if let GridRenderer::Metal(r) = self {
-            r.render(encoder, uniforms);
+            r.render_bg(encoder, frame, uniforms);
         }
     }
 
-    /// Wgpu counterpart of `render_metal`. Phase 1b will record a bg
-    /// pass against the caller's `wgpu::RenderPass`.
+    /// Record the cell-text pass for this grid. Caller composites
+    /// `kitty_above_text` images after this call.
+    #[cfg(target_os = "macos")]
+    pub fn render_text_metal(
+        &mut self,
+        encoder: &::metal::RenderCommandEncoderRef,
+        frame: usize,
+        uniforms: &GridUniforms,
+    ) {
+        if let GridRenderer::Metal(r) = self {
+            r.render_text(encoder, frame, uniforms);
+        }
+    }
+
+    /// Wgpu cell-bg pass. Pair with `render_text_wgpu`.
     #[cfg(feature = "wgpu")]
-    pub fn render_wgpu<'pass>(
-        &'pass mut self,
-        render_pass: &mut wgpu::RenderPass<'pass>,
+    pub fn render_bg_wgpu(
+        &mut self,
+        render_pass: &mut wgpu::RenderPass<'_>,
         uniforms: &GridUniforms,
     ) {
         if let GridRenderer::Wgpu(r) = self {
-            r.render(render_pass, uniforms);
+            r.render_bg(render_pass, uniforms);
         }
     }
 
-    /// Vulkan counterpart of `render_metal`. Records draws into
-    /// `cmd_buffer`, which the caller (`Sugarloaf::render_vulkan`)
-    /// has already wrapped in `cmd_begin_rendering` against the
-    /// swapchain image. No-op when this renderer isn't a Vulkan
-    /// variant — same shape as `render_wgpu` / `render_metal`.
+    /// Wgpu cell-text pass.
+    #[cfg(feature = "wgpu")]
+    pub fn render_text_wgpu(
+        &mut self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        uniforms: &GridUniforms,
+    ) {
+        if let GridRenderer::Wgpu(r) = self {
+            r.render_text(render_pass, uniforms);
+        }
+    }
+
     /// Pre-pass hook: flush atlas uploads before the caller opens
     /// dynamic rendering. Must be called BEFORE `cmd_begin_rendering`
     /// because `vkCmdCopyBufferToImage` is forbidden inside a render
@@ -233,8 +254,9 @@ impl GridRenderer {
         }
     }
 
+    /// Vulkan cell-bg pass.
     #[cfg(target_os = "linux")]
-    pub fn render_vulkan(
+    pub fn render_bg_vulkan(
         &mut self,
         ctx: &crate::context::vulkan::VulkanContext,
         cmd_buffer: ash::vk::CommandBuffer,
@@ -242,15 +264,28 @@ impl GridRenderer {
         uniforms: &GridUniforms,
     ) {
         if let GridRenderer::Vulkan(r) = self {
-            r.render(ctx, cmd_buffer, frame_slot, uniforms);
+            r.render_bg(ctx, cmd_buffer, frame_slot, uniforms);
         }
     }
 
-    /// Software counterpart of `render_metal` / `render_vulkan` /
-    /// `render_wgpu`. Paints the grid into the caller-supplied
-    /// `0x00RRGGBB` u32 buffer (typically softbuffer's `buffer_mut`).
-    /// No-op for non-CPU variants.
-    pub fn render_cpu(
+    /// Vulkan cell-text pass.
+    #[cfg(target_os = "linux")]
+    pub fn render_text_vulkan(
+        &mut self,
+        ctx: &crate::context::vulkan::VulkanContext,
+        cmd_buffer: ash::vk::CommandBuffer,
+        frame_slot: usize,
+        uniforms: &GridUniforms,
+    ) {
+        if let GridRenderer::Vulkan(r) = self {
+            r.render_text(ctx, cmd_buffer, frame_slot, uniforms);
+        }
+    }
+
+    /// Software cell-bg pass. Paints the grid bg into the
+    /// caller-supplied `0x00RRGGBB` u32 buffer (typically
+    /// softbuffer's `buffer_mut`). No-op for non-CPU variants.
+    pub fn render_bg_cpu(
         &self,
         buf: &mut [u32],
         buf_w: u32,
@@ -258,7 +293,20 @@ impl GridRenderer {
         uniforms: &GridUniforms,
     ) {
         if let GridRenderer::Cpu(r) = self {
-            r.render(buf, buf_w, buf_h, uniforms);
+            r.render_bg(buf, buf_w, buf_h, uniforms);
+        }
+    }
+
+    /// Software cell-text pass.
+    pub fn render_text_cpu(
+        &self,
+        buf: &mut [u32],
+        buf_w: u32,
+        buf_h: u32,
+        uniforms: &GridUniforms,
+    ) {
+        if let GridRenderer::Cpu(r) = self {
+            r.render_text(buf, buf_w, buf_h, uniforms);
         }
     }
 

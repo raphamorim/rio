@@ -1174,7 +1174,7 @@ mod tests {
             r#"
             [renderer]
             performance = "Low"
-            backend = "GL"
+            backend = "Webgpu"
 
             [developer]
             enable-fps-counter = true
@@ -1182,7 +1182,7 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.backend, renderer::Backend::GL);
+        assert_eq!(result.renderer.backend, renderer::Backend::Webgpu);
         // Developer
         assert_eq!(result.developer.log_level, String::from("INFO"));
         assert!(result.developer.enable_fps_counter);
