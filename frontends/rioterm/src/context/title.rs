@@ -287,6 +287,13 @@ pub mod test {
                 width: 18.,
                 height: 9.,
             },
+            rio_backend::sugarloaf::layout::CellMetrics {
+                cell_width: 18,
+                cell_height: 9,
+                cell_baseline: 0,
+                face_width: 18.0,
+                face_height: 9.0,
+            },
             1.0,
             Margin::default(),
         );
@@ -337,6 +344,13 @@ pub mod test {
                 scale: 2.,
                 width: 18.,
                 height: 9.,
+            },
+            rio_backend::sugarloaf::layout::CellMetrics {
+                cell_width: 18,
+                cell_height: 9,
+                cell_baseline: 0,
+                face_width: 18.0,
+                face_height: 9.0,
             },
             1.0,
             Margin::default(),

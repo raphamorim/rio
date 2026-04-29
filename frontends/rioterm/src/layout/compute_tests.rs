@@ -3,6 +3,19 @@ use super::*;
 // This file tests compute function on different layouts.
 // I've added some real scenarios so I can make sure it doesn't go off again.
 
+/// Build a `CellMetrics` whose integer cell stride matches the given
+/// `TextDimensions`. Used by tests that construct dimensions
+/// directly without going through sugarloaf's font path.
+fn cell_for(dims: TextDimensions) -> rio_backend::sugarloaf::layout::CellMetrics {
+    rio_backend::sugarloaf::layout::CellMetrics {
+        cell_width: dims.width.round().max(1.0) as u32,
+        cell_height: dims.height.round().max(1.0) as u32,
+        cell_baseline: 0,
+        face_width: dims.width as f64,
+        face_height: dims.height as f64,
+    }
+}
+
 /// note: Computes the renderer's actual per-line height in physical pixels.
 ///
 /// The renderer gets metrics from Metrics::for_rich_text() which packs
@@ -54,10 +67,11 @@ fn assert_rows_fit(
     let (cols, rows) = compute(
         panel_width,
         panel_height,
-        dimensions,
-        line_height_mod,
+        cell_for(dimensions),
         Margin::all(0.0),
+        scale,
     );
+    let _ = line_height_mod; // line_height already baked into `dimensions.height`.
 
     let actual_line_height =
         renderer_line_height(ascent, descent, leading, line_height_mod, scale);
@@ -167,7 +181,7 @@ fn test_compute_returns_min_for_zero_dimensions() {
         height: 32.0,
         scale: 2.0,
     };
-    let (cols, rows) = compute(0.0, 0.0, dims, 1.0, Margin::all(0.0));
+    let (cols, rows) = compute(0.0, 0.0, cell_for(dims), Margin::all(0.0), 2.0);
     assert_eq!(cols, MIN_COLS);
     assert_eq!(rows, MIN_LINES);
 }
@@ -179,7 +193,7 @@ fn test_compute_returns_min_for_negative_dimensions() {
         height: 32.0,
         scale: 2.0,
     };
-    let (cols, rows) = compute(-100.0, -100.0, dims, 1.0, Margin::all(0.0));
+    let (cols, rows) = compute(-100.0, -100.0, cell_for(dims), Margin::all(0.0), 2.0);
     assert_eq!(cols, MIN_COLS);
     assert_eq!(rows, MIN_LINES);
 }
@@ -191,7 +205,7 @@ fn test_compute_returns_min_for_zero_scale() {
         height: 32.0,
         scale: 0.0,
     };
-    let (cols, rows) = compute(1600.0, 900.0, dims, 1.0, Margin::all(0.0));
+    let (cols, rows) = compute(1600.0, 900.0, cell_for(dims), Margin::all(0.0), 0.0);
     assert_eq!(cols, MIN_COLS);
     assert_eq!(rows, MIN_LINES);
 }
@@ -203,7 +217,7 @@ fn test_compute_basic_grid() {
         height: 33.0,
         scale: 2.0,
     };
-    let (cols, rows) = compute(1600.0, 825.0, dims, 1.0, Margin::all(0.0));
+    let (cols, rows) = compute(1600.0, 825.0, cell_for(dims), Margin::all(0.0), 2.0);
     assert_eq!(cols, 100);
     assert_eq!(rows, 25);
 }
@@ -216,7 +230,7 @@ fn test_compute_floors_fractional_rows() {
         height: 33.0,
         scale: 1.0,
     };
-    let (_, rows) = compute(1600.0, 840.0, dims, 1.0, Margin::all(0.0));
+    let (_, rows) = compute(1600.0, 840.0, cell_for(dims), Margin::all(0.0), 1.0);
     assert_eq!(rows, 25);
 }
 
@@ -228,7 +242,7 @@ fn test_compute_respects_margins() {
         scale: 2.0,
     };
     let margin = Margin::new(0.0, 10.0, 0.0, 10.0);
-    let (cols, _) = compute(1600.0, 800.0, dims, 1.0, margin);
+    let (cols, _) = compute(1600.0, 800.0, cell_for(dims), margin, 2.0);
     // available = 1600 - 10*2 - 10*2 = 1560, cols = 1560/16 = 97
     assert_eq!(cols, 97);
 }
@@ -241,7 +255,7 @@ fn test_compute_margin_exceeds_size() {
         scale: 2.0,
     };
     let margin = Margin::new(0.0, 0.0, 0.0, 1000.0);
-    let (cols, rows) = compute(100.0, 800.0, dims, 1.0, margin);
+    let (cols, rows) = compute(100.0, 800.0, cell_for(dims), margin, 2.0);
     assert_eq!(cols, MIN_COLS);
     assert_eq!(rows, MIN_LINES);
 }
@@ -253,7 +267,7 @@ fn test_context_dimension_build() {
         height: 33.0,
         scale: 2.0,
     };
-    let cd = ContextDimension::build(1650.0, 825.0, dims, 1.0, Margin::all(0.0));
+    let cd = ContextDimension::build(1650.0, 825.0, dims, cell_for(dims), 1.0, Margin::all(0.0));
     assert_eq!(cd.columns, 103);
     assert_eq!(cd.lines, 25);
 }
@@ -265,7 +279,7 @@ fn test_context_dimension_update_width() {
         height: 33.0,
         scale: 2.0,
     };
-    let mut cd = ContextDimension::build(1600.0, 825.0, dims, 1.0, Margin::all(0.0));
+    let mut cd = ContextDimension::build(1600.0, 825.0, dims, cell_for(dims), 1.0, Margin::all(0.0));
     assert_eq!(cd.columns, 100);
 
     cd.update_width(800.0);
@@ -280,7 +294,7 @@ fn test_context_dimension_update_height() {
         height: 33.0,
         scale: 2.0,
     };
-    let mut cd = ContextDimension::build(1600.0, 825.0, dims, 1.0, Margin::all(0.0));
+    let mut cd = ContextDimension::build(1600.0, 825.0, dims, cell_for(dims), 1.0, Margin::all(0.0));
     assert_eq!(cd.lines, 25);
 
     cd.update_height(660.0);
@@ -295,7 +309,7 @@ fn test_context_dimension_update_dimensions() {
         height: 33.0,
         scale: 1.0,
     };
-    let mut cd = ContextDimension::build(1600.0, 825.0, dims, 1.0, Margin::all(0.0));
+    let mut cd = ContextDimension::build(1600.0, 825.0, dims, cell_for(dims), 1.0, Margin::all(0.0));
     assert_eq!(cd.lines, 25);
 
     let new_dims = TextDimensions {
@@ -303,7 +317,7 @@ fn test_context_dimension_update_dimensions() {
         height: 66.0,
         scale: 1.0,
     };
-    cd.update_dimensions(new_dims);
+    cd.update_dimensions(new_dims, cell_for(new_dims));
     assert_eq!(cd.lines, 12); // 825/66 = 12.5 → 12
 }
 
