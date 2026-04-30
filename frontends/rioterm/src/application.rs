@@ -1654,6 +1654,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         if route.window.screen.context_manager.current().ime.preedit()
                             != preedit.as_ref()
                         {
+                            // Force a full terminal repaint so the
+                            // preedit overlay's cells re-emit on the
+                            // next frame. Without this the grid keeps
+                            // its previous CPU buffers and the overlay
+                            // wouldn't refresh until something else
+                            // damages the row.
+                            route
+                                .window
+                                .screen
+                                .context_manager
+                                .current_mut()
+                                .renderable_content
+                                .pending_update
+                                .set_terminal_damage(
+                                    rio_backend::event::TerminalDamage::Full,
+                                );
                             route
                                 .window
                                 .screen

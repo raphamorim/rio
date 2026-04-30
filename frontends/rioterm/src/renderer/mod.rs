@@ -2,6 +2,7 @@ pub mod assistant;
 pub mod command_palette;
 pub mod custom_cursor;
 pub mod island;
+pub mod preedit;
 pub mod scrollbar;
 pub mod search;
 pub mod trail_cursor;
@@ -478,8 +479,25 @@ impl Renderer {
             // Get hint matches from renderable content
             let hint_matches = context.renderable_content.hint_matches.as_deref();
 
+            // Capture the cursor position the user most recently saw —
+            // before overwriting it with the fresh snapshot — so a live
+            // IME composition can anchor against it. Without this, a
+            // composition started just after Home/Ctrl-A or right after
+            // a commit would briefly snap to the previous line end
+            // while the PTY echo catches up.
+            let previous_cursor_pos = context.renderable_content.cursor.state.pos;
+
             // Update cursor state from snapshot
             context.renderable_content.cursor.state = terminal_snapshot.cursor.clone();
+
+            // While a preedit is active, pin the cursor to the anchor
+            // so the overlay and the terminal cursor stay together
+            // even if the snapshot cursor is momentarily out of sync
+            // with the screen.
+            if context.ime.preedit().is_some() {
+                let anchor = context.ime.preedit_anchor_or_init(previous_cursor_pos);
+                context.renderable_content.cursor.state.pos = anchor;
+            }
 
             let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
 
