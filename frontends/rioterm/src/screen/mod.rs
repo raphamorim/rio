@@ -3928,6 +3928,12 @@ impl Screen<'_> {
                 )>,
                 hint_labels: Option<Vec<crate::context::renderable::HintLabel>>,
                 label_style_base: Option<u16>,
+                /// Active IME preedit overlay anchored at the cursor
+                /// position the user last saw. `None` when no
+                /// composition is active. The row-emit pass paints
+                /// the composition cells as a wezterm-style block and
+                /// breaks it with a caret beam at the IME cursor.
+                preedit_overlay: Option<crate::renderer::preedit::PreeditOverlay>,
             }
 
             let (active_key, scaled_margin) = {
@@ -4043,6 +4049,25 @@ impl Screen<'_> {
                 let cursor_color = term_colors
                     [rio_backend::config::colors::NamedColor::Cursor as usize]
                     .unwrap_or(self.renderer.named_colors.cursor);
+                // Cursor cell precomputed once — the cursor-block
+                // uniforms and the IME preedit overlay both anchor from
+                // these values so they can never disagree mid-frame.
+                let cursor_col = cursor.state.pos.col.0 as u16;
+                let cursor_row = cursor.state.pos.row.0.max(0) as u16;
+                // Build the IME preedit overlay against the live
+                // cursor position. `cursor.state.pos` is screen-relative
+                // (Line within 0..screen_lines).
+                let preedit_overlay = ctx.ime.preedit().and_then(|preedit| {
+                    let cols_usize = dim.columns.max(1) as usize;
+                    let rows_usize = dim.lines.max(1) as usize;
+                    let start_row =
+                        (cursor_row as usize).min(rows_usize.saturating_sub(1));
+                    let start_col =
+                        (cursor_col as usize).min(cols_usize.saturating_sub(1));
+                    crate::renderer::preedit::PreeditOverlay::new(
+                        preedit, start_row, start_col, cols_usize, rows_usize,
+                    )
+                });
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
@@ -4055,8 +4080,8 @@ impl Screen<'_> {
                     style_table,
                     extras,
                     term_colors,
-                    cursor_col: cursor.state.pos.col.0 as u16,
-                    cursor_row: cursor.state.pos.row.0 as u16,
+                    cursor_col,
+                    cursor_row,
                     cursor_visible: cursor.state.is_visible(),
                     cursor_shape,
                     cursor_blinking,
@@ -4072,6 +4097,7 @@ impl Screen<'_> {
                     hovered_hyperlink,
                     hint_labels,
                     label_style_base,
+                    preedit_overlay,
                 });
             }
 
@@ -4199,6 +4225,20 @@ impl Screen<'_> {
                             }
                             _ => row,
                         };
+                        // Only thread the overlay through to the emit pass
+                        // for rows that actually carry preedit cells or the
+                        // IME caret. The two emit functions hit a hot loop
+                        // per cell, so the per-row "any preedit?" bit shaves
+                        // one pointer chase off non-IME frames.
+                        let preedit_row = p.preedit_overlay.as_ref().and_then(|o| {
+                            let any = o.has_any_in_row(y);
+                            let caret = o.ime_cursor_in_row(y).is_some();
+                            if any || caret {
+                                Some(crate::grid_emit::PreeditRow { overlay: o, row: y })
+                            } else {
+                                None
+                            }
+                        });
                         crate::grid_emit::build_row_bg(
                             row,
                             cols,
@@ -4207,6 +4247,7 @@ impl Screen<'_> {
                             &p.term_colors,
                             row_sel,
                             &hint_scratch,
+                            preedit_row.as_ref(),
                             &mut bg_scratch,
                         );
                         let cursor_col_for_row = if p.cursor_visible
@@ -4232,6 +4273,7 @@ impl Screen<'_> {
                             p.cell_h,
                             row_sel,
                             &hint_scratch,
+                            preedit_row.as_ref(),
                             &font_library,
                             p.route_id,
                             cursor_col_for_row,

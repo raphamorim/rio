@@ -4,6 +4,7 @@ pub mod confirm_quit;
 pub mod custom_cursor;
 pub mod helpers;
 pub mod island;
+pub mod preedit;
 pub mod scrollbar;
 pub mod search;
 pub mod trail_cursor;
