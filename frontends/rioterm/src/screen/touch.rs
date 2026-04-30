@@ -144,8 +144,8 @@ fn on_touch_motion(
                 let layout = route.window.screen.sugarloaf.window_size();
 
                 // Start simulated mouse input.
-                let x = start_location.x.clamp(0.0, layout.width.into()) as usize;
-                let y = start_location.y.clamp(0.0, layout.height.into()) as usize;
+                let x = start_location.x.clamp(0.0, layout.width.into());
+                let y = start_location.y.clamp(0.0, layout.height.into());
 
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
@@ -197,8 +197,8 @@ fn on_touch_motion(
         }
         TouchPurpose::Select(_) => {
             let layout = route.window.screen.sugarloaf.window_size();
-            let x = touch.location.x.clamp(0.0, layout.width.into()) as usize;
-            let y = touch.location.y.clamp(0.0, layout.height.into()) as usize;
+            let x = touch.location.x.clamp(0.0, layout.width.into());
+            let y = touch.location.y.clamp(0.0, layout.height.into());
             route.window.screen.mouse.x = x;
             route.window.screen.mouse.y = y;
             tracing::info!("select motion");
@@ -224,8 +224,8 @@ fn on_touch_end(
 
             let layout = route.window.screen.sugarloaf.window_size();
 
-            let x = start_location.x.clamp(0.0, layout.width.into()) as usize;
-            let y = start_location.y.clamp(0.0, layout.height.into()) as usize;
+            let x = start_location.x.clamp(0.0, layout.width.into());
+            let y = start_location.y.clamp(0.0, layout.height.into());
 
             route.window.screen.mouse.x = x;
             route.window.screen.mouse.y = y;

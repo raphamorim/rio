@@ -243,6 +243,9 @@ impl Screen<'_> {
             sugarloaf
                 .get_text_dimensions(&rich_text_id)
                 .unwrap_or_default(),
+            sugarloaf
+                .get_text_cell_metrics(&rich_text_id)
+                .unwrap_or_default(),
             config.line_height,
             margin,
         );
@@ -399,7 +402,9 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (context, margin) = current_grid.current_context_with_computed_dimension();
         let context_dimension = context.dimension;
-        let style = self.sugarloaf.style();
+        // Canonical integer cell stride — `cell.cell_height` already
+        // has line_height baked in by sugarloaf, do NOT re-multiply.
+        // Single source of truth shared with the GPU grid uniform.
         calculate_mouse_position(
             &self.mouse,
             display_offset,
@@ -407,8 +412,8 @@ impl Screen<'_> {
             margin.left,
             margin.top,
             (
-                context_dimension.dimension.width,
-                context_dimension.dimension.height * style.line_height,
+                context_dimension.cell.cell_width,
+                context_dimension.cell.cell_height,
             ),
         )
     }
@@ -2214,10 +2219,11 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (context, margin) = current_grid.current_context_with_computed_dimension();
         let layout = context.dimension;
-        // All values in physical pixels — margin is pre-scaled, cell
-        // dimensions are in physical pixels, position.y is physical.
-        let cell_height =
-            (layout.dimension.height * self.sugarloaf.style().line_height) as f64;
+        // Canonical integer cell stride. line_height is already
+        // baked into `cell.cell_height`; the previous code
+        // multiplied by line_height again, breaking the
+        // edge-of-viewport detection at line_height ≠ 1.0.
+        let cell_height = layout.cell.cell_height as f64;
         let text_area_top = margin.top as f64;
         let text_area_bottom = text_area_top + layout.lines as f64 * cell_height;
         let window_height = self.sugarloaf.window_size().height as f64;
@@ -2256,21 +2262,25 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn contains_point(&self, x: usize, y: usize) -> bool {
+    pub fn contains_point(&self, x: f64, y: f64) -> bool {
         let current_grid = self.context_manager.current_grid();
         let (context, margin) = current_grid.current_context_with_computed_dimension();
         let layout = context.dimension;
-        // Margin is already pre-scaled (physical pixels), same as x/y.
-        let cell_width = layout.dimension.width;
-        let cell_height = layout.dimension.height * self.sugarloaf.style().line_height;
-        x > margin.left as usize
-            && x <= (margin.left + layout.columns as f32 * cell_width) as usize
-            && y > margin.top as usize
-            && y <= (margin.top + layout.lines as f32 * cell_height) as usize
+        // Canonical integer stride — same as the GPU paints with.
+        // line_height is already baked into `cell.cell_height`; do
+        // NOT multiply again here.
+        let cell_w = layout.cell.cell_width as f64;
+        let cell_h = layout.cell.cell_height as f64;
+        let left = margin.left as f64;
+        let top = margin.top as f64;
+        x > left
+            && x <= left + layout.columns as f64 * cell_w
+            && y > top
+            && y <= top + layout.lines as f64 * cell_h
     }
 
     #[inline]
-    pub fn side_by_pos(&self, x: usize) -> Side {
+    pub fn side_by_pos(&self, x: f64) -> Side {
         let current_grid = self.context_manager.current_grid();
         let (_, margin) = current_grid.current_context_with_computed_dimension();
         let current_context = self.context_manager.current();
@@ -2279,7 +2289,7 @@ impl Screen<'_> {
         crate::mouse::calculate_side_by_pos(
             x,
             margin.left,
-            layout.dimension.width,
+            layout.cell.cell_width,
             layout.width,
         )
     }
@@ -2575,7 +2585,7 @@ impl Screen<'_> {
 
         use crate::renderer::island::ISLAND_HEIGHT;
         let scale_factor = self.sugarloaf.scale_factor();
-        let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
+        let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
 
         let window_width = self.sugarloaf.window_size().width;
         let num_tabs = self.context_manager.len();
@@ -3446,9 +3456,10 @@ impl Screen<'_> {
 
             if let Some(current_item) = current_grid.current_item() {
                 let layout = current_item.val.dimension;
-                let cell_width = layout.dimension.width;
-                let line_height = self.sugarloaf.style().line_height;
-                let cell_height = layout.dimension.height * line_height;
+                // Canonical integer stride — same value the GPU
+                // shader uses; line_height is already baked in.
+                let cell_width = layout.cell.cell_width as f32;
+                let cell_height = layout.cell.cell_height as f32;
                 let scale_factor = self.sugarloaf.scale_factor();
 
                 let panel_rect = current_item.layout_rect;
@@ -3492,9 +3503,7 @@ impl Screen<'_> {
         // - `damage == Partial(lines)`:
         // rebuild only those rows.
         // Unchanged rows keep their CellBg + CellText resident in
-        // the grid's CPU state, which is re-uploaded verbatim. Same
-        // pattern as `.partial` path at
-        // `ghostty/src/renderer/generic.zig:2431-2440`.
+        // the grid's CPU state, which is re-uploaded verbatim.
         {
             struct PanelFrame {
                 route_id: usize,
@@ -3550,9 +3559,7 @@ impl Screen<'_> {
                 /// Search-hint matches for this panel. `None` when
                 /// search is inactive. Consumed alongside `selection`
                 /// inside `build_row_bg` / `build_row_fg` to apply
-                /// `search_match_background` / `_foreground`. Mirrors
-                /// `row_data.highlights` at
-                /// `ghostty/src/renderer/generic.zig:1317`.
+                /// `search_match_background` / `_foreground`.
                 hint_matches: Option<Vec<rio_backend::crosswords::search::Match>>,
                 /// Currently-focused search match (↑/↓ navigation).
                 /// Rendered with `search_focused_match_background` /
@@ -3587,17 +3594,16 @@ impl Screen<'_> {
             {
                 let ctx = &mut item.val;
                 let dim = ctx.dimension;
-                // Snap to integer pixel cells. `dim.dimension.width`
-                // comes from `char_width * scale` (fractional);
-                // `dim.dimension.height` is already `.ceil()`'d in
-                // sugarloaf's layout. Mixed fractional widths drift
-                // the bg fragment's `floor((pixel - padding) /
-                // cell_size)` across cell boundaries — adjacent
-                // columns end up 7 vs 8 px wide → visible seams.
-                // Rounding both to the same integer stride the cell
-                // grid is actually drawn on removes the drift.
-                let cell_w = dim.dimension.width.round().max(1.0);
-                let cell_h = dim.dimension.height.round().max(1.0);
+                // Canonical integer cell stride — single source of
+                // truth for paint, layout, and mouse hit-test. The
+                // bg fragment shader does
+                // `floor((pixel - padding) / cell_size)` and the text
+                // vertex multiplies `grid_pos * cell_size`, so both
+                // sides must agree on the same integer stride or
+                // adjacent columns drift to 7 vs 8 px wide and seams
+                // show up.
+                let cell_w = dim.cell.cell_width as f32;
+                let cell_h = dim.cell.cell_height as f32;
                 // Per-panel font size (zoom is per-rich-text, not root).
                 // Falls back to root × scale if the text id can't be
                 // found — shouldn't happen post-init but keeps the emit
@@ -3896,12 +3902,10 @@ impl Screen<'_> {
                 // window scaled_margin + the panel's layout rect
                 // offset inside the root container. Snap to integer
                 // pixels so `cell_size * grid_pos + grid_padding`
-                // always lands on pixel boundaries — same approach
-                // as `@floatFromInt(blank.top)` at
-                // `ghostty/src/renderer/generic.zig:1976-1981`.
-                // Without this, a fractional margin (e.g. Taffy
-                // layout computing 10.5px offsets) shifts the whole
-                // grid half a pixel and the bg fragment's
+                // always lands on pixel boundaries. Without this, a
+                // fractional margin (e.g. Taffy layout computing
+                // 10.5px offsets) shifts the whole grid half a pixel
+                // and the bg fragment's
                 // `floor((pixel - padding) / cell_size)` disagrees
                 // with the text vertex's `cell_size * grid_pos`
                 // about where cell boundaries are → visible seams.
@@ -4029,10 +4033,10 @@ impl Screen<'_> {
         let cursor_pos = terminal.grid.cursor.pos;
         drop(terminal);
 
-        // Calculate pixel position of cursor
-        let cell_width = layout.dimension.width;
-        let line_height = self.sugarloaf.style().line_height;
-        let cell_height = layout.dimension.height * line_height;
+        // Calculate pixel position of cursor — canonical integer
+        // stride (line_height already baked into cell_height).
+        let cell_width = layout.cell.cell_width as f32;
+        let cell_height = layout.cell.cell_height as f32;
 
         // Validate dimensions before calculation
         if cell_width <= 0.0 || cell_height <= 0.0 {
