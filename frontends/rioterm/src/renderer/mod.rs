@@ -529,7 +529,22 @@ impl Renderer {
                 context.renderable_content.history_size = terminal.history_size();
                 context.renderable_content.lines_evicted = terminal.lines_evicted();
                 context.renderable_content.blinking_cursor = terminal.blinking_cursor;
+                // Capture the cursor position the user most recently
+                // saw — before overwriting it with the fresh snapshot —
+                // so a live IME composition can anchor against it.
+                // Without this, a composition started just after
+                // Home/Ctrl-A or right after a commit would briefly snap
+                // to the previous line end while the PTY echo catches up.
+                let previous_cursor_pos = context.renderable_content.cursor.state.pos;
                 context.renderable_content.cursor.state = terminal.cursor();
+                // While a preedit is active, pin the cursor to the anchor
+                // so the overlay and the terminal cursor stay together
+                // even if the snapshot cursor is momentarily out of sync
+                // with the screen.
+                if context.ime.preedit().is_some() {
+                    let anchor = context.ime.preedit_anchor_or_init(previous_cursor_pos);
+                    context.renderable_content.cursor.state.pos = anchor;
+                }
                 if terminal.graphics.kitty_graphics_dirty {
                     context.renderable_content.kitty_virtual_placements =
                         terminal.graphics.kitty_virtual_placements.clone();
