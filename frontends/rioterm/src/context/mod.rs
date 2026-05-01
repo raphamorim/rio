@@ -22,7 +22,7 @@ use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::event::WindowId;
 use rio_backend::selection::SelectionRange;
-use rio_backend::sugarloaf::{font::SugarloafFont, Object, Sugarloaf, SugarloafErrors};
+use rio_backend::sugarloaf::{font::SugarloafFont, Rect, Sugarloaf, SugarloafErrors};
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -790,7 +790,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     /// Get panel borders for the current grid (returns empty vec if single panel)
     #[inline]
-    pub fn get_panel_borders(&self) -> Vec<Object> {
+    pub fn get_panel_borders(&self) -> Vec<Rect> {
         self.contexts[self.current_index].get_panel_borders()
     }
 

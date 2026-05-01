@@ -6,7 +6,7 @@ use crate::mouse::Mouse;
 use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
-use rio_backend::sugarloaf::{layout::TextDimensions, Object, Rect, Sugarloaf};
+use rio_backend::sugarloaf::{layout::TextDimensions, Rect, Sugarloaf};
 use rustc_hash::FxHashMap;
 
 use taffy::{
@@ -85,8 +85,8 @@ fn compute(
 }
 
 #[inline]
-fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Object {
-    Object::Rect(Rect::new(position[0], position[1], size[0], size[1], color))
+fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Rect {
+    Rect::new(position[0], position[1], size[0], size[1], color)
 }
 
 /// Separator configuration for split panels
@@ -415,7 +415,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Get separator lines between adjacent panels for rendering.
-    pub fn get_panel_borders(&self) -> Vec<rio_backend::sugarloaf::Object> {
+    pub fn get_panel_borders(&self) -> Vec<Rect> {
         if !self.should_draw_borders() {
             return vec![];
         }
@@ -916,20 +916,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 crate::renderer::utils::terminal_dimensions(&item.val.dimension);
             let _ = item.val.messenger.send_resize(winsize);
 
-            // Update position via sugarloaf (handles scaling)
-            sugarloaf.set_position(item.val.rich_text_id, x, y);
-
-            // Set clipping bounds for multi-panel text overflow prevention
-            if is_multi_panel {
-                let bounds_x = abs_x + self.scaled_margin.left;
-                let bounds_y = abs_y + self.scaled_margin.top;
-                sugarloaf.set_bounds(
-                    item.val.rich_text_id,
-                    Some([bounds_x, bounds_y, width, height]),
-                );
-            } else {
-                sugarloaf.set_bounds(item.val.rich_text_id, None);
-            }
+            // Panel position / clipping bounds are tracked rio-side
+            // now; the grid pass reads `panel_rect` from the renderer's
+            // own per-panel iteration. Sugarloaf no longer carries
+            // panel metadata.
+            let _ = (x, y, abs_x, abs_y, width, height, is_multi_panel);
         }
         true
     }
@@ -1167,6 +1158,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 current_context_dimension.dimension,
                 current_context_dimension.cell,
                 current_context_dimension.line_height,
+                current_context_dimension.font_size,
                 unscaled_margin,
             )
         } else {
@@ -1186,13 +1178,22 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
+        // Per-panel cell metrics are recomputed locally now — sugarloaf
+        // is consulted only for the font library it owns. Each panel's
+        // `dimension.font_size` / `line_height` / `dimension.scale`
+        // drive the result, so panels with per-panel zoom keep
+        // independent cell strides.
         for context in self.inner.values_mut() {
-            if let Some(layout) = sugarloaf.get_text_layout(&context.val.rich_text_id) {
-                context
-                    .val
-                    .dimension
-                    .update_dimensions(layout.dimensions, layout.cell);
+            let dim = &mut context.val.dimension;
+            if dim.font_size <= 0.0 {
+                continue;
             }
+            let (text_dims, cell) = sugarloaf.compute_cell_metrics(
+                dim.font_size,
+                dim.line_height,
+                dim.dimension.scale,
+            );
+            dim.update_dimensions(text_dims, cell);
         }
 
         // Always apply Taffy layout for consistent positioning
@@ -1283,9 +1284,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Remove from inner map
         self.inner.remove(&to_remove);
 
-        // Cleanup rich text from sugarloaf
+        // Drop image overlays for the removed panel — sugarloaf has
+        // no other panel state to clean up post-Content removal.
         if let Some(id) = rich_text_id {
-            sugarloaf.remove_content(id);
+            sugarloaf.clear_image_overlays_for(id);
         }
 
         // Update root if necessary
@@ -1544,17 +1546,29 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         false
     }
 
+    /// Hide the panel set by clearing per-panel image overlays. The
+    /// `visible=true` case is a no-op — the next `Renderer::run` will
+    /// repopulate overlays naturally for whichever tab/group is
+    /// active. (Naming preserved for callers; the function used to
+    /// drive sugarloaf's content visibility flag, which is gone.)
     #[inline]
-    pub fn set_all_rich_text_visibility(&self, sugarloaf: &mut Sugarloaf, hidden: bool) {
+    pub fn set_all_rich_text_visibility(&self, sugarloaf: &mut Sugarloaf, visible: bool) {
+        if visible {
+            return;
+        }
         for item in self.inner.values() {
-            sugarloaf.set_visibility(item.val.rich_text_id, hidden);
+            sugarloaf.clear_image_overlays_for(item.val.rich_text_id);
         }
     }
 
+    /// Drop image overlays for every panel in the grid. Used on tab
+    /// teardown — the panels themselves go away with the
+    /// `ContextManager`; only the kitty graphics state needs an
+    /// explicit cleanup signal.
     #[inline]
     pub fn remove_all_rich_text(&self, sugarloaf: &mut Sugarloaf) {
         for item in self.inner.values() {
-            sugarloaf.remove_content(item.val.rich_text_id);
+            sugarloaf.clear_image_overlays_for(item.val.rich_text_id);
         }
     }
 }
@@ -1568,6 +1582,17 @@ pub struct ContextDimension {
     pub dimension: TextDimensions,
     pub margin: Margin,
     pub line_height: f32,
+    /// Logical-point font size for this panel. Per-panel zoom updates
+    /// here; the global `RootStyle.font_size` is the default that new
+    /// panels inherit at create time.
+    pub font_size: f32,
+    /// Font size at panel creation (or last `update_config`). Drives
+    /// the "reset font size" action so zoom in/out always returns to
+    /// the user's configured size.
+    pub original_font_size: f32,
+    /// `font_size * scale_factor` — physical-pixel size used by the
+    /// grid emit path to drive glyph rasterization.
+    pub scaled_font_size: f32,
     /// Canonical cell metrics — single source of truth shared by the
     /// GPU grid uniform, col/row count math, and mouse hit testing.
     /// Rounded `u32` cell width / height / baseline plus unrounded
@@ -1584,6 +1609,9 @@ impl Default for ContextDimension {
             columns: MIN_COLS,
             lines: MIN_LINES,
             line_height: 1.,
+            font_size: 0.,
+            original_font_size: 0.,
+            scaled_font_size: 0.,
             dimension: TextDimensions::default(),
             margin: Margin::default(),
             cell: rio_backend::sugarloaf::layout::CellMetrics::default(),
@@ -1598,6 +1626,7 @@ impl ContextDimension {
         dimension: TextDimensions,
         cell: rio_backend::sugarloaf::layout::CellMetrics,
         line_height: f32,
+        font_size: f32,
         margin: Margin,
     ) -> Self {
         let (columns, lines) = compute(width, height, cell, margin, dimension.scale);
@@ -1609,6 +1638,9 @@ impl ContextDimension {
             dimension,
             margin,
             line_height,
+            font_size,
+            original_font_size: font_size,
+            scaled_font_size: font_size * dimension.scale,
             cell,
         }
     }
@@ -1632,6 +1664,61 @@ impl ContextDimension {
     }
 
     #[inline]
+    pub fn update_font_size(&mut self, font_size: f32) {
+        self.font_size = font_size;
+        self.scaled_font_size = font_size * self.dimension.scale;
+        // Caller is responsible for re-running `compute_cell_metrics`
+        // and feeding the result back via `update_dimensions` —
+        // `font_size` alone doesn't change the cell stride, the
+        // recomputed metrics do.
+    }
+
+    /// Re-baseline the font size — both current and "original".
+    /// Called from `update_config` so a config edit becomes the new
+    /// reset target. Per-panel zoom (`change_font_size`) uses
+    /// `update_font_size` instead so the original stays put.
+    #[inline]
+    pub fn rebaseline_font_size(&mut self, font_size: f32) {
+        self.font_size = font_size;
+        self.original_font_size = font_size;
+        self.scaled_font_size = font_size * self.dimension.scale;
+    }
+
+    /// Increment the panel's font size by 1 logical point. Returns
+    /// `true` if the size changed (i.e. wasn't already at the upper
+    /// clamp). Caller must follow with `compute_cell_metrics` +
+    /// `update_dimensions` to refresh the cell stride.
+    #[inline]
+    pub fn increase_font_size(&mut self) -> bool {
+        if self.font_size < 100.0 {
+            self.update_font_size(self.font_size + 1.0);
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    pub fn decrease_font_size(&mut self) -> bool {
+        if self.font_size > 6.0 {
+            self.update_font_size(self.font_size - 1.0);
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    pub fn reset_font_size(&mut self) -> bool {
+        if (self.font_size - self.original_font_size).abs() > f32::EPSILON {
+            self.update_font_size(self.original_font_size);
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
     pub fn update_dimensions(
         &mut self,
         dimensions: TextDimensions,
@@ -1639,6 +1726,7 @@ impl ContextDimension {
     ) {
         self.dimension = dimensions;
         self.cell = cell;
+        self.scaled_font_size = self.font_size * dimensions.scale;
         self.update();
     }
 

@@ -630,48 +630,17 @@ impl Renderer {
             );
         }
 
-        // Render panel borders (on top of terminal content)
+        // Render panel borders (on top of terminal content). Borders
+        // are flat rects today — the previous `Object` enum
+        // (Rect / Quad / RichText) was only ever populated with the
+        // Rect variant, so the dispatch is direct now.
         let grid_scaled_margin = context_manager.get_current_grid_scaled_margin();
-        for border_object in context_manager.get_panel_borders() {
-            match border_object {
-                rio_backend::sugarloaf::Object::Quad(quad) => {
-                    // Convert from physical pixels to logical coordinates
-                    let x = (quad.x + grid_scaled_margin.left) / scale_factor;
-                    let y = (quad.y + grid_scaled_margin.top) / scale_factor;
-                    let width = quad.width / scale_factor;
-                    let height = quad.height / scale_factor;
-
-                    let corner_radii = [
-                        quad.corner_radii.top_left / scale_factor,
-                        quad.corner_radii.top_right / scale_factor,
-                        quad.corner_radii.bottom_right / scale_factor,
-                        quad.corner_radii.bottom_left / scale_factor,
-                    ];
-
-                    // Render quad with rounded corners
-                    sugarloaf.quad(
-                        None,
-                        x,
-                        y,
-                        width,
-                        height,
-                        quad.background_color,
-                        corner_radii,
-                        0.0,
-                        1, // Higher order renders on top
-                    );
-                }
-                rio_backend::sugarloaf::Object::Rect(rect) => {
-                    // Simple rectangle (no rounded corners or borders)
-                    let x = (rect.x + grid_scaled_margin.left) / scale_factor;
-                    let y = (rect.y + grid_scaled_margin.top) / scale_factor;
-                    let width = rect.width / scale_factor;
-                    let height = rect.height / scale_factor;
-
-                    sugarloaf.rect(None, x, y, width, height, rect.color, 0.0, 1);
-                }
-                _ => {}
-            }
+        for rect in context_manager.get_panel_borders() {
+            let x = (rect.x + grid_scaled_margin.left) / scale_factor;
+            let y = (rect.y + grid_scaled_margin.top) / scale_factor;
+            let width = rect.width / scale_factor;
+            let height = rect.height / scale_factor;
+            sugarloaf.rect(None, x, y, width, height, rect.color, 0.0, 1);
         }
 
         // Derive the window bg color from the currently-active panel's
