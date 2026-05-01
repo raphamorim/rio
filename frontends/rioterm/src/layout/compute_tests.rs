@@ -274,6 +274,7 @@ fn test_context_dimension_build() {
         dims,
         cell_for(dims),
         1.0,
+        14.0,
         Margin::all(0.0),
     );
     assert_eq!(cd.columns, 103);
@@ -293,6 +294,7 @@ fn test_context_dimension_update_width() {
         dims,
         cell_for(dims),
         1.0,
+        14.0,
         Margin::all(0.0),
     );
     assert_eq!(cd.columns, 100);
@@ -315,6 +317,7 @@ fn test_context_dimension_update_height() {
         dims,
         cell_for(dims),
         1.0,
+        14.0,
         Margin::all(0.0),
     );
     assert_eq!(cd.lines, 25);
@@ -337,6 +340,7 @@ fn test_context_dimension_update_dimensions() {
         dims,
         cell_for(dims),
         1.0,
+        14.0,
         Margin::all(0.0),
     );
     assert_eq!(cd.lines, 25);

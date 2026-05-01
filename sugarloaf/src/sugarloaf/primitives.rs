@@ -114,63 +114,6 @@ impl Default for ImageProperties {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RichTextLinesRange {
-    pub start: usize,
-    pub end: usize,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RichTextRenderData {
-    pub position: [f32; 2],
-    pub should_repaint: bool,
-    pub should_remove: bool,
-    pub hidden: bool,
-}
-
-impl Default for RichTextRenderData {
-    fn default() -> Self {
-        Self {
-            position: [0.0, 0.0],
-            should_repaint: false,
-            should_remove: false,
-            hidden: false,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RichText {
-    pub id: usize,
-    pub lines: Option<RichTextLinesRange>,
-    pub render_data: RichTextRenderData,
-}
-
-impl RichText {
-    pub fn new(id: usize) -> Self {
-        Self {
-            id,
-            lines: None,
-            render_data: RichTextRenderData::default(),
-        }
-    }
-
-    pub fn with_position(mut self, x: f32, y: f32) -> Self {
-        self.render_data.position = [x, y];
-        self
-    }
-
-    pub fn with_lines(mut self, start: usize, end: usize) -> Self {
-        self.lines = Some(RichTextLinesRange { start, end });
-        self
-    }
-
-    pub fn hidden(mut self, hidden: bool) -> Self {
-        self.render_data.hidden = hidden;
-        self
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,
@@ -220,13 +163,6 @@ impl Quad {
             corner_radii,
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Object {
-    Rect(Rect),
-    Quad(Quad),
-    RichText(RichText),
 }
 
 #[inline]

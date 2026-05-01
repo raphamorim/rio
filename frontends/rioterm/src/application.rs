@@ -1510,12 +1510,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match delta {
                     MouseScrollDelta::LineDelta(columns, lines) => {
-                        let current_id = route.window.screen.ctx().current().rich_text_id;
-                        if let Some(layout) =
-                            route.window.screen.sugarloaf.get_text_layout(&current_id)
-                        {
-                            let new_scroll_px_x = columns * layout.font_size;
-                            let new_scroll_px_y = lines * layout.font_size;
+                        let font_size =
+                            route.window.screen.ctx().current().dimension.font_size;
+                        if font_size > 0.0 {
+                            let new_scroll_px_x = columns * font_size;
+                            let new_scroll_px_y = lines * font_size;
                             route
                                 .window
                                 .screen

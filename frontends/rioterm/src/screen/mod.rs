@@ -218,10 +218,11 @@ impl Screen<'_> {
             scrollback_history_limit: config.scrollback_history_limit,
         };
 
-        // Create rich text with initial position accounting for island
+        // Allocate a rich_text_id for the new panel. Sugarloaf no
+        // longer tracks per-id panel metadata — position/bounds live
+        // on `ContextDimension` via rio's layout system; the id is
+        // still useful as a key for image_overlays + grid renderers.
         let rich_text_id = next_rich_text_id();
-        let _ = sugarloaf.text(Some(rich_text_id));
-        sugarloaf.set_position(rich_text_id, config.margin.left, padding_y_top);
 
         // Create unscaled margin for ContextDimension (compute() will scale it)
         let margin = Margin::new(
@@ -237,16 +238,18 @@ impl Screen<'_> {
             padding_y_bottom * scale as f32,
             config.margin.left * scale as f32,
         );
+        let (text_dimensions, cell_metrics) = sugarloaf.compute_cell_metrics(
+            config.fonts.size,
+            config.line_height,
+            scale as f32,
+        );
         let context_dimension = ContextDimension::build(
             size.width as f32,
             size.height as f32,
-            sugarloaf
-                .get_text_dimensions(&rich_text_id)
-                .unwrap_or_default(),
-            sugarloaf
-                .get_text_cell_metrics(&rich_text_id)
-                .unwrap_or_default(),
+            text_dimensions,
+            cell_metrics,
             config.line_height,
+            config.fonts.size,
             margin,
         );
 
@@ -474,15 +477,17 @@ impl Screen<'_> {
                 config.margin.left * scale,
             ));
 
-            // Update font size and line height BEFORE update_dimensions
+            // Update per-panel font size and line height BEFORE
+            // update_dimensions — the recompute reads from these
+            // fields. `rebaseline_font_size` also re-anchors the
+            // "reset" target so the next change_font_size(Reset)
+            // returns to the new config size.
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
-                self.sugarloaf
-                    .set_text_font_size(&current_context.rich_text_id, config.fonts.size);
-                self.sugarloaf.set_text_line_height(
-                    &current_context.rich_text_id,
-                    current_context.dimension.line_height,
-                );
+                current_context
+                    .dimension
+                    .rebaseline_font_size(config.fonts.size);
+                current_context.dimension.line_height = config.line_height;
             }
 
             context_grid.update_dimensions(&mut self.sugarloaf);
@@ -525,16 +530,15 @@ impl Screen<'_> {
 
     #[inline]
     pub fn change_font_size(&mut self, action: FontSizeAction) {
-        let action: u8 = match action {
-            FontSizeAction::Increase => 2,
-            FontSizeAction::Decrease => 1,
-            FontSizeAction::Reset => 0,
+        let dim = &mut self.context_manager.current_mut().dimension;
+        let changed = match action {
+            FontSizeAction::Increase => dim.increase_font_size(),
+            FontSizeAction::Decrease => dim.decrease_font_size(),
+            FontSizeAction::Reset => dim.reset_font_size(),
         };
-
-        self.sugarloaf.set_text_font_size_action(
-            &self.context_manager.current().rich_text_id,
-            action,
-        );
+        if !changed {
+            return;
+        }
 
         self.context_manager
             .current_grid_mut()
@@ -1383,13 +1387,12 @@ impl Screen<'_> {
     }
 
     pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
-        // Create rich text with initial position accounting for island
-        let padding_y_top = self.renderer.margin.top
+        // Allocate panel id; position lands on `ContextDimension`
+        // through the Taffy layout pass (`apply_taffy_layout`).
+        let _ = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let _ = config.margin.left;
         let rich_text_id = next_rich_text_id();
-        let _ = self.sugarloaf.text(Some(rich_text_id));
-        self.sugarloaf
-            .set_position(rich_text_id, config.margin.left, padding_y_top);
         self.context_manager.split_from_config(
             rich_text_id,
             false,
@@ -1401,16 +1404,7 @@ impl Screen<'_> {
     }
 
     pub fn split_right(&mut self) {
-        // Create rich text with initial position accounting for island
-        let current_grid = self.context_manager.current_grid();
-        let (_context, margin) = current_grid.current_context_with_computed_dimension();
-        let padding_x = margin.left;
-        let padding_y_top = self.renderer.margin.top
-            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
-        let _ = self.sugarloaf.text(Some(rich_text_id));
-        self.sugarloaf
-            .set_position(rich_text_id, padding_x, padding_y_top);
         self.context_manager
             .split(rich_text_id, false, &mut self.sugarloaf);
 
@@ -1418,16 +1412,7 @@ impl Screen<'_> {
     }
 
     pub fn split_down(&mut self) {
-        // Create rich text with initial position accounting for island
-        let current_grid = self.context_manager.current_grid();
-        let (_context, margin) = current_grid.current_context_with_computed_dimension();
-        let padding_x = margin.left;
-        let padding_y_top = self.renderer.margin.top
-            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
-        let _ = self.sugarloaf.text(Some(rich_text_id));
-        self.sugarloaf
-            .set_position(rich_text_id, padding_x, padding_y_top);
         self.context_manager
             .split(rich_text_id, true, &mut self.sugarloaf);
 
@@ -1489,15 +1474,12 @@ impl Screen<'_> {
         self.context_manager.contexts_mut()[old_index]
             .update_dimensions(&mut self.sugarloaf);
 
-        // Use the base scaled_margin for the new tab position, not the
-        // split-panel-aware margin, because the new tab is full-window.
-        let padding_x = self.context_manager.current_grid().scaled_margin.left;
-        let padding_y_top = self.renderer.margin.top
+        // Allocate panel id; the layout pass handles positioning via
+        // `ContextDimension` once the new tab's grid is built.
+        let _ = self.context_manager.current_grid().scaled_margin.left;
+        let _ = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
-        let _ = self.sugarloaf.text(Some(rich_text_id));
-        self.sugarloaf
-            .set_position(rich_text_id, padding_x, padding_y_top);
         self.context_manager.add_context(redirect, rich_text_id);
         let new_index = self.context_manager.current_index();
         self.context_manager.switch_context_visibility(
@@ -1560,13 +1542,11 @@ impl Screen<'_> {
         if previous_margin.top != padding_y_top
             || previous_margin.bottom != padding_y_bottom
         {
-            if let Some(layout) = self
-                .sugarloaf
-                .get_text_layout(&self.context_manager.current().rich_text_id)
-            {
+            let current_dim = self.context_manager.current().dimension;
+            if current_dim.font_size > 0.0 {
                 let s = self.sugarloaf.style_mut();
-                s.font_size = layout.font_size;
-                s.line_height = layout.line_height;
+                s.font_size = current_dim.font_size;
+                s.line_height = current_dim.line_height;
 
                 let scale = self.sugarloaf.scale_factor();
                 let d = self.context_manager.current_grid_mut();
@@ -3106,15 +3086,9 @@ impl Screen<'_> {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        let layout = match self
-            .sugarloaf
-            .get_text_layout(&self.context_manager.current().rich_text_id)
-        {
-            Some(l) => l,
-            None => return,
-        };
-        let width = layout.dimensions.width as f64;
-        let height = layout.dimensions.height as f64;
+        let dim = self.context_manager.current().dimension.dimension;
+        let width = dim.width as f64;
+        let height = dim.height as f64;
         let mode = self.get_mode();
 
         const MOUSE_WHEEL_UP: u8 = 64;
@@ -3159,9 +3133,7 @@ impl Screen<'_> {
             let line_cmd = if new_scroll_y_px > 0. { b'A' } else { b'B' };
             let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
 
-            let lines = (self.mouse.accumulated_scroll.y
-                / (layout.dimensions.height) as f64)
-                .abs() as usize;
+            let lines = (self.mouse.accumulated_scroll.y / height).abs() as usize;
 
             let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
 
@@ -3185,8 +3157,7 @@ impl Screen<'_> {
         } else {
             self.mouse.accumulated_scroll.y +=
                 (new_scroll_y_px * self.mouse.multiplier) / self.mouse.divider;
-            let lines = (self.mouse.accumulated_scroll.y
-                / layout.dimensions.height as f64) as i32;
+            let lines = (self.mouse.accumulated_scroll.y / height) as i32;
 
             if lines != 0 {
                 let current = self.context_manager.current_mut();
@@ -3604,17 +3575,16 @@ impl Screen<'_> {
                 // show up.
                 let cell_w = dim.cell.cell_width as f32;
                 let cell_h = dim.cell.cell_height as f32;
-                // Per-panel font size (zoom is per-rich-text, not root).
-                // Falls back to root × scale if the text id can't be
-                // found — shouldn't happen post-init but keeps the emit
-                // loop from dividing by zero.
-                let font_px = self
-                    .sugarloaf
-                    .text_scaled_font_size(&ctx.rich_text_id)
-                    .unwrap_or_else(|| {
-                        let s = self.sugarloaf.style();
-                        s.font_size * s.scale_factor
-                    });
+                // Per-panel font size lives on `ContextDimension` since
+                // the panel-state migration; sugarloaf is no longer
+                // consulted. Per-panel zoom mutates
+                // `dim.scaled_font_size` directly.
+                let font_px = if dim.scaled_font_size > 0.0 {
+                    dim.scaled_font_size
+                } else {
+                    let s = self.sugarloaf.style();
+                    s.font_size * s.scale_factor
+                };
                 let (visible_rows, style_set, term_colors, display_offset) = {
                     let terminal = ctx.terminal.lock();
                     (
