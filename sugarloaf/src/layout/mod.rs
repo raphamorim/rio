@@ -59,12 +59,61 @@ impl Default for TextDimensions {
     }
 }
 
+/// Canonical cell metrics in physical pixels. Rounded `u32` cell
+/// width / height / baseline are the single source of truth for the
+/// GPU grid uniform, the col/row count math, and mouse hit testing.
+/// The unrounded `f64` `face_width / face_height` are retained for
+/// downstream subpixel math (image positioning, baseline-relative
+/// offsets).
+///
+/// Important invariants:
+/// - `cell_width = round(face_width)` (half-away-from-zero)
+/// - `cell_height = round(face_height)` (half-away-from-zero) —
+///   `face_height` already has the user's `line_height` multiplier
+///   baked in; consumers MUST NOT re-apply it.
+/// - `cell_baseline` is pixels from the **bottom** of the cell to
+///   the text baseline. Centered in the rounded cell so the glyph
+///   doesn't drift up/down by half a pixel after rounding.
+/// - `face_y = cell_baseline - face_baseline` — offset between the
+///   actual (rounded) baseline and the unrounded face baseline.
+///   Used by underline / strikethrough position conversion when
+///   moving from baseline-relative to cell-top-relative coords.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct CellMetrics {
+    pub cell_width: u32,
+    pub cell_height: u32,
+    pub cell_baseline: u32,
+    pub face_width: f64,
+    pub face_height: f64,
+    pub face_y: f64,
+}
+
+impl Default for CellMetrics {
+    fn default() -> Self {
+        Self {
+            cell_width: 8,
+            cell_height: 16,
+            cell_baseline: 4,
+            face_width: 8.0,
+            face_height: 16.0,
+            face_y: 0.0,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct TextLayout {
     pub line_height: f32,
     pub font_size: f32,
     pub original_font_size: f32,
     pub dimensions: TextDimensions,
+    /// Canonical cell metrics. Single source of truth for the
+    /// integer cell stride and baseline. Consumers should prefer
+    /// this over `dimensions` for any cell-coordinate math (renderer
+    /// grid uniform, layout col/row count, mouse hit testing) —
+    /// `dimensions` is kept for legacy callers that read the raw f32
+    /// width/height.
+    pub cell: CellMetrics,
 }
 
 impl TextLayout {
@@ -85,6 +134,7 @@ impl TextLayout {
                 scale: default_layout.scale_factor,
                 ..TextDimensions::default()
             },
+            cell: CellMetrics::default(),
         }
     }
 }
@@ -96,6 +146,7 @@ impl Default for TextLayout {
             font_size: 0.0,
             original_font_size: 0.0,
             dimensions: TextDimensions::default(),
+            cell: CellMetrics::default(),
         }
     }
 }

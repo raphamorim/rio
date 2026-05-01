@@ -47,17 +47,21 @@ pub struct ResizeState {
 fn compute(
     width: f32,
     height: f32,
-    dimensions: TextDimensions,
-    line_height: f32,
+    cell: rio_backend::sugarloaf::layout::CellMetrics,
     margin: Margin,
+    scale: f32,
 ) -> (usize, usize) {
     // Ensure we have positive dimensions
-    if width <= 0.0 || height <= 0.0 || dimensions.scale <= 0.0 || line_height <= 0.0 {
+    if width <= 0.0
+        || height <= 0.0
+        || scale <= 0.0
+        || cell.cell_width == 0
+        || cell.cell_height == 0
+    {
         return (MIN_COLS, MIN_LINES);
     }
 
     // Calculate available space accounting for margins (scale margins to physical pixels)
-    let scale = dimensions.scale;
     let available_width = width - (margin.left * scale) - (margin.right * scale);
     let available_height = height - (margin.top * scale) - (margin.bottom * scale);
 
@@ -66,24 +70,16 @@ fn compute(
         return (MIN_COLS, MIN_LINES);
     }
 
-    // Calculate columns - divide by the ROUNDED cell width.
-    // rounds `face_width` once in `font/Metrics.zig:265` (`cell_width =
-    // @round(face_width)`) and uses that integer everywhere — cols,
-    // grid shader, cursor hit-testing. Rio's grid renderer already
-    // does `.round()` on `cell_w` when building `GridUniforms`, so the
-    // column count has to use the same integer or the right edge of
-    // the grid floats `cols * (face_width - cell_width)` pixels short
-    // of the panel. Matches ; sacrifices at most 1 col vs
-    // fractional divide but keeps the render perfectly aligned.
-    let cell_width = dimensions.width.round().max(1.0);
-    let visible_columns =
-        std::cmp::max((available_width / cell_width) as usize, MIN_COLS);
-
-    // Same treatment for rows: grid renders at `.round()`ed cell
-    // height, so cols-and-rows share the same integer snap.
-    let cell_height = dimensions.height.round().max(1.0);
-    let lines = (available_height / cell_height).floor();
-    let visible_lines = std::cmp::max(lines as usize, MIN_LINES);
+    // Cols/rows divide by the canonical integer cell stride
+    // (`Metrics.cell_width / cell_height`). Same value the grid
+    // shader uses for `cell_size` and the mouse-hit-test divides by;
+    // single source of truth so the right/bottom edges of the grid
+    // stay aligned with the painted cells.
+    let cell_w = cell.cell_width as f32;
+    let cell_h = cell.cell_height as f32;
+    let visible_columns = std::cmp::max((available_width / cell_w) as usize, MIN_COLS);
+    let visible_lines =
+        std::cmp::max((available_height / cell_h).floor() as usize, MIN_LINES);
 
     (visible_columns, visible_lines)
 }
@@ -1169,6 +1165,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 self.width,
                 self.height,
                 current_context_dimension.dimension,
+                current_context_dimension.cell,
                 current_context_dimension.line_height,
                 unscaled_margin,
             )
@@ -1191,7 +1188,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
         for context in self.inner.values_mut() {
             if let Some(layout) = sugarloaf.get_text_layout(&context.val.rich_text_id) {
-                context.val.dimension.update_dimensions(layout.dimensions);
+                context
+                    .val
+                    .dimension
+                    .update_dimensions(layout.dimensions, layout.cell);
             }
         }
 
@@ -1568,6 +1568,12 @@ pub struct ContextDimension {
     pub dimension: TextDimensions,
     pub margin: Margin,
     pub line_height: f32,
+    /// Canonical cell metrics — single source of truth shared by the
+    /// GPU grid uniform, col/row count math, and mouse hit testing.
+    /// Rounded `u32` cell width / height / baseline plus unrounded
+    /// `f64` face dimensions for downstream subpixel math. Avoids
+    /// drift between painted cell stride and click→cell mapping.
+    pub cell: rio_backend::sugarloaf::layout::CellMetrics,
 }
 
 impl Default for ContextDimension {
@@ -1580,6 +1586,7 @@ impl Default for ContextDimension {
             line_height: 1.,
             dimension: TextDimensions::default(),
             margin: Margin::default(),
+            cell: rio_backend::sugarloaf::layout::CellMetrics::default(),
         }
     }
 }
@@ -1589,10 +1596,11 @@ impl ContextDimension {
         width: f32,
         height: f32,
         dimension: TextDimensions,
+        cell: rio_backend::sugarloaf::layout::CellMetrics,
         line_height: f32,
         margin: Margin,
     ) -> Self {
-        let (columns, lines) = compute(width, height, dimension, line_height, margin);
+        let (columns, lines) = compute(width, height, cell, margin, dimension.scale);
         Self {
             width,
             height,
@@ -1601,6 +1609,7 @@ impl ContextDimension {
             dimension,
             margin,
             line_height,
+            cell,
         }
     }
 
@@ -1623,8 +1632,13 @@ impl ContextDimension {
     }
 
     #[inline]
-    pub fn update_dimensions(&mut self, dimensions: TextDimensions) {
+    pub fn update_dimensions(
+        &mut self,
+        dimensions: TextDimensions,
+        cell: rio_backend::sugarloaf::layout::CellMetrics,
+    ) {
         self.dimension = dimensions;
+        self.cell = cell;
         self.update();
     }
 
@@ -1633,9 +1647,9 @@ impl ContextDimension {
         let (columns, lines) = compute(
             self.width,
             self.height,
-            self.dimension,
-            self.line_height,
+            self.cell,
             self.margin,
+            self.dimension.scale,
         );
 
         self.columns = columns;

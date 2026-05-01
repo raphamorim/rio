@@ -97,7 +97,7 @@
   <key>CFBundleShortVersionString</key>
   <string>{{.Version}}</string>
   <key>CFBundleVersion</key>
-  <string>20230528.115631</string>
+  <string>{{.Version}}.{{.Now.Format "20060102150405"}}</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

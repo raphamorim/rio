@@ -169,7 +169,7 @@ pub(crate) fn compute_advance(
     font_id: usize,
     ch: char,
 ) -> Option<AdvanceInfo> {
-    let font = font_ctx.inner.get(&font_id)?;
+    let font = font_ctx.try_get(&font_id)?;
     let handle = if let Some(path) = font.path() {
         crate::font::macos::FontHandle::from_path(path)
     } else if let Some(bytes) = font.data() {

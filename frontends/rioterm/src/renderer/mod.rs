@@ -412,10 +412,12 @@ impl Renderer {
             let has_overlays = !terminal_snapshot.kitty_placements.is_empty();
             let has_virtual = !terminal_snapshot.kitty_virtual_placements.is_empty();
             if has_overlays || has_virtual {
-                let line_height = sugarloaf.style().line_height;
                 let layout = context.dimension;
-                let cell_width = layout.dimension.width;
-                let cell_height = layout.dimension.height * line_height;
+                // Canonical integer cell stride — line_height already
+                // baked into `cell.cell_height`. Same value the GPU
+                // grid uniform paints with.
+                let cell_width = layout.cell.cell_width as f32;
+                let cell_height = layout.cell.cell_height as f32;
                 let origin_x = panel_rect[0] + grid_scaled_margin.left;
                 let origin_y = panel_rect[1] + grid_scaled_margin.top;
 
@@ -603,8 +605,8 @@ impl Renderer {
                 // taffy allocates fractional sizes while the grid
                 // snaps to whole cells.
                 let dim = grid_context.val.dimension;
-                let cell_w = dim.dimension.width.round().max(1.0);
-                let cell_h = dim.dimension.height.round().max(1.0);
+                let cell_w = dim.cell.cell_width as f32;
+                let cell_h = dim.cell.cell_height as f32;
                 let cols = dim.columns.max(1) as f32;
                 let rows = dim.lines.max(1) as f32;
                 let panel_left =
@@ -772,14 +774,13 @@ impl Renderer {
     }
 
     /// Scan visible rows for kitty Unicode-placeholder cells (U+10EEEE) and
-    /// push one `GraphicOverlay` per row-run. Ports the four key behaviors
-    /// from ghostty's `graphics_unicode.zig`:
+    /// push one `GraphicOverlay` per row-run. Implements four key behaviors
+    /// of the Kitty graphics Unicode-placeholder protocol:
     ///
     /// 1. Per-row `kitty_virtual_placeholder` flag check skips rows
     ///    with no placeholders.
     /// 2. Continuation rules — a cell with missing diacritics inherits
-    ///    from the previous cell on the row (`canAppend`,
-    ///    `graphics_unicode.zig:506-513`).
+    ///    from the previous cell on the row (`canAppend`).
     /// 3. Run aggregation — consecutive cells with same image / row /
     ///    sequential column collapse into one Placement
     ///    (`PlacementIterator.next`, `graphics_unicode.zig:36-99`).
@@ -799,7 +800,9 @@ impl Renderer {
             IncompletePlacement, PlaceholderRun, PLACEHOLDER,
         };
 
-        // Below text — matches ghostty's default for virtual placements.
+        // Below text by default for virtual placements — apps that
+        // want them above the glyphs set z-index explicitly via the
+        // graphics protocol.
         const VIRTUAL_Z_INDEX: i32 = -1;
 
         for (line_idx, row) in snapshot.visible_rows.iter().enumerate() {
@@ -867,11 +870,9 @@ impl Renderer {
                             );
                         }
                         // Default missing row/col on the FIRST cell of a
-                        // run — matches ghostty's
-                        // `graphics_unicode.zig:84-86`. Without this,
-                        // a subsequent cell with `Some(col)` couldn't
-                        // sequentially extend a run started by a cell
-                        // with `None`.
+                        // run. Without this, a subsequent cell with
+                        // `Some(col)` couldn't sequentially extend a
+                        // run started by a cell with `None`.
                         if cell.row.is_none() {
                             cell.row = Some(0);
                         }
