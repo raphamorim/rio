@@ -2214,6 +2214,14 @@ impl WindowExtMacOS for WindowDelegate {
         self.view().option_as_alt()
     }
 
+    fn set_forward_to_ime_modifier_mask(&self, mask: crate::keyboard::ModifiersState) {
+        self.view().set_forward_to_ime_modifier_mask(mask);
+    }
+
+    fn forward_to_ime_modifier_mask(&self) -> crate::keyboard::ModifiersState {
+        self.view().forward_to_ime_modifier_mask()
+    }
+
     fn set_unified_titlebar(&self, unified_titlebar: bool) {
         let window = self.window();
         if unified_titlebar {

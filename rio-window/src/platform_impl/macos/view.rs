@@ -138,6 +138,13 @@ pub struct ViewState {
     /// True if we're currently processing a key event
     in_key_event: Cell<bool>,
 
+    /// Characters of the currently-processed key event, as reported by
+    /// `NSEvent`. Tuple of (characters, charactersIgnoringModifiers).
+    /// Used by `insertText:` to distinguish IME direct commits (e.g. SKK
+    /// hiragana mode) from raw keyboard pass-through (where the IME echoes
+    /// the same characters).
+    current_key_event_chars: RefCell<Option<(String, String)>>,
+
     marked_text: RefCell<Retained<NSMutableAttributedString>>,
     accepts_first_mouse: bool,
 
@@ -146,6 +153,11 @@ pub struct ViewState {
 
     /// The state of the `Option` as `Alt`.
     option_as_alt: Cell<OptionAsAlt>,
+
+    /// Modifier mask deciding when a key event is forwarded to the IME.
+    /// A key event is forwarded when no modifier is pressed, or when the
+    /// pressed modifiers intersect this mask.
+    forward_to_ime_modifier_mask: Cell<ModifiersState>,
 }
 
 declare_class!(
@@ -421,23 +433,55 @@ declare_class!(
             let has_marked_text = unsafe { self.hasMarkedText() };
             let is_in_key_event = self.ivars().in_key_event.get();
 
+            // Detect IME direct commits (e.g. SKK hiragana mode) that bypass
+            // preedit: an `insertText:` whose payload differs from the raw
+            // NSEvent characters is something the IME synthesised, not a
+            // pass-through of the pressed key.
+            let is_ime_direct_commit = is_in_key_event
+                && self
+                    .ivars()
+                    .current_key_event_chars
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|(chars, chars_unmod)| {
+                        string != chars.as_str() && string != chars_unmod.as_str()
+                    });
+
             if self.is_ime_enabled() {
                 if has_marked_text && !is_control {
                     // Clear preedit and commit the text (normal IME flow)
                     self.queue_event(WindowEvent::Ime(Ime::Preedit(String::new(), None)));
                     self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
                     self.ivars().ime_state.set(ImeState::Committed);
-                } else if !is_control && !string.is_empty() && !is_in_key_event {
-                    // Direct input not from keyboard (e.g., emoji picker)
+                } else if !is_control
+                    && !string.is_empty()
+                    && (!is_in_key_event || is_ime_direct_commit)
+                {
+                    // Direct input not from keyboard (e.g., emoji picker) or
+                    // an IME committing without preedit (e.g., SKK).
                     self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
                     self.ivars().ime_state.set(ImeState::Committed);
+                } else if is_in_key_event && !is_ime_direct_commit {
+                    // The IME passed the raw key through unchanged (typical
+                    // when the active input source is ASCII-only or the IME
+                    // is in a passthrough mode, e.g. SKK ASCII/eisuu mode).
+                    // Treat this as "IME did not consume the key" so the key
+                    // event is forwarded to the application.
+                    self.ivars().forward_key_to_app.set(true);
                 }
-            } else if !is_control && !string.is_empty() && !is_in_key_event {
+            } else if !is_control
+                && !string.is_empty()
+                && (!is_in_key_event || is_ime_direct_commit)
+            {
                 // IME is disabled but we got non-keyboard input (e.g., emoji picker)
-                // Temporarily enable IME for this input
+                // or an IME-style direct commit. Temporarily enable IME for
+                // this input.
                 self.queue_event(WindowEvent::Ime(Ime::Enabled));
                 self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
                 self.ivars().ime_state.set(ImeState::Committed);
+            } else if is_in_key_event && !is_ime_direct_commit {
+                // IME disabled and the IME echoed the raw key — forward it.
+                self.ivars().forward_key_to_app.set(true);
             }
         }
 
@@ -490,13 +534,32 @@ declare_class!(
             self.ivars().forward_key_to_app.set(false);
             let event = replace_event(event, self.option_as_alt());
 
+            // Snapshot the NSEvent characters so `insertText:` can tell IME
+            // direct commits (e.g. SKK hiragana mode) from raw key pass-through.
+            let chars = unsafe { event.characters() }
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            let chars_unmod = unsafe { event.charactersIgnoringModifiers() }
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            *self.ivars().current_key_event_chars.borrow_mut() =
+                Some((chars, chars_unmod));
+
             // The `interpretKeyEvents` function might call
             // `setMarkedText`, `insertText`, and `doCommandBySelector`.
             // It's important that we call this before queuing the KeyboardInput, because
             // we must send the `KeyboardInput` event during IME if it triggered
             // `doCommandBySelector`. (doCommandBySelector means that the keyboard input
             // is not handled by IME and should be handled by the application)
-            if self.ivars().ime_allowed.get() {
+            //
+            // The IME is bypassed when modifiers are pressed that do not intersect the
+            // configured `forward_to_ime_modifier_mask`. Events with no modifiers are
+            // always forwarded.
+            let mods = event_mods(&event).state();
+            let mask = self.ivars().forward_to_ime_modifier_mask.get();
+            let forward_to_ime = mods.is_empty() || mods.intersects(mask);
+            let routed_to_ime = self.ivars().ime_allowed.get() && forward_to_ime;
+            if routed_to_ime {
                 let events_for_nsview = NSArray::from_slice(&[&*event]);
                 unsafe { self.interpretKeyEvents(&events_for_nsview) };
 
@@ -520,7 +583,20 @@ declare_class!(
                 _ => old_ime_state != self.ivars().ime_state.get(),
             };
 
-            if !had_ime_input || self.ivars().forward_key_to_app.get() {
+            // When the event was routed through the IME, only forward it to
+            // the application if `doCommandBySelector:` explicitly asked us to
+            // (`forward_key_to_app`). Otherwise the IME is assumed to have
+            // consumed the key — even when it produced no NSTextInputClient
+            // callbacks (e.g. SKK switching input mode via
+            // `IMKTextInput.selectMode()` on Ctrl+J or `q`). When the event
+            // was *not* routed to the IME, fall back to the historical
+            // behavior of forwarding it as long as no preedit/commit happened.
+            let should_forward_key = if routed_to_ime {
+                self.ivars().forward_key_to_app.get()
+            } else {
+                !had_ime_input
+            };
+            if should_forward_key {
                 let key_event = create_key_event(&event, true, unsafe { event.isARepeat() }, None);
                 self.queue_event(WindowEvent::KeyboardInput {
                     device_id: DEVICE_ID,
@@ -531,6 +607,7 @@ declare_class!(
 
             // Clear the flag after processing
             self.ivars().in_key_event.set(false);
+            *self.ivars().current_key_event_chars.borrow_mut() = None;
         }
 
         #[method(keyUp:)]
@@ -855,6 +932,8 @@ impl WinitView {
             accepts_first_mouse,
             _ns_window: WeakId::new(&window.retain()),
             option_as_alt: Cell::new(option_as_alt),
+            forward_to_ime_modifier_mask: Cell::new(ModifiersState::all()),
+            current_key_event_chars: RefCell::new(None),
         });
         let this: Retained<Self> = unsafe { msg_send_id![super(this), init] };
 
@@ -1020,6 +1099,14 @@ impl WinitView {
 
     pub(super) fn option_as_alt(&self) -> OptionAsAlt {
         self.ivars().option_as_alt.get()
+    }
+
+    pub(super) fn set_forward_to_ime_modifier_mask(&self, value: ModifiersState) {
+        self.ivars().forward_to_ime_modifier_mask.set(value)
+    }
+
+    pub(super) fn forward_to_ime_modifier_mask(&self) -> ModifiersState {
+        self.ivars().forward_to_ime_modifier_mask.get()
     }
 
     /// Update modifiers if `event` has something different

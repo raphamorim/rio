@@ -187,6 +187,7 @@ pub fn configure_window(winit_window: &Window, config: &Config) {
         // OnlyRight - The right `Option` key is treated as `Alt`.
         // Both - Both `Option` keys are treated as `Alt`.
         // None - No special handling is applied for `Option` key.
+        use rio_window::keyboard::ModifiersState;
         use rio_window::platform::macos::{OptionAsAlt, WindowExtMacOS};
 
         match config.option_as_alt.to_lowercase().as_str() {
@@ -195,6 +196,20 @@ pub fn configure_window(winit_window: &Window, config: &Config) {
             "right" => winit_window.set_option_as_alt(OptionAsAlt::OnlyRight),
             _ => {}
         }
+
+        let mut mask = ModifiersState::empty();
+        for name in &config.keyboard.forward_to_ime_modifier_mask {
+            match name.to_lowercase().as_str() {
+                "shift" => mask |= ModifiersState::SHIFT,
+                "ctrl" | "control" => mask |= ModifiersState::CONTROL,
+                "alt" | "option" => mask |= ModifiersState::ALT,
+                "super" | "cmd" | "command" => mask |= ModifiersState::SUPER,
+                other => tracing::warn!(
+                    "ignoring unknown forward-to-ime-modifier-mask value: {other:?}"
+                ),
+            }
+        }
+        winit_window.set_forward_to_ime_modifier_mask(mask);
     }
 
     let is_transparent = config.window.opacity < 1.;
