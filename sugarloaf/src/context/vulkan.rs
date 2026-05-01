@@ -23,6 +23,72 @@ use raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
 use std::ffi::{c_char, CStr};
+use std::sync::Arc;
+
+/// Reference-counted owner of the raw Vulkan handles whose destruction
+/// must be sequenced last. Held as `Arc<VkShared>` by every struct
+/// (VulkanContext, VulkanGridRenderer, VulkanRenderer, VulkanBuffer,
+/// VulkanImage, VulkanImageTexture, the text overlay's Vulkan state)
+/// that would otherwise call into the device from its own `Drop`.
+///
+/// `vkDestroyDevice` runs only when the last `Arc` clone is dropped,
+/// so per-resource Drop order across `Sugarloaf` and `Screen.grids`
+/// stops being load-bearing — the field-declaration trick that worked
+/// for `VulkanRenderer`-inside-`Sugarloaf` (single parent) cannot
+/// extend to `VulkanGridRenderer`-inside-`Screen.grids` (a sibling
+/// of the parent that owns the device), which is the bug behind
+/// raphamorim/rio#1568.
+///
+/// Mirrors `wgpu_hal::vulkan::DeviceShared`. `raw` is named for the
+/// underlying `ash::Device` to match wgpu-hal's convention; `Deref`
+/// dispatches `shared.method(...)` calls straight to the device's
+/// dispatch table, so consumers don't have to write `shared.raw.method()`.
+pub struct VkShared {
+    // Declaration order = drop order. Vulkan rules:
+    //   * `vkDestroyDevice` requires the parent `Instance` to still be
+    //     alive (we look up the destroy entry point through it).
+    //   * `vkDestroyInstance` requires the loaded `libvulkan` symbols
+    //     (the `Entry`) to still be loaded.
+    pub raw: Device,
+    pub instance: Instance,
+    pub physical_device: vk::PhysicalDevice,
+    _entry: Entry,
+}
+
+// `ash::Device` / `ash::Instance` / `ash::Entry` are dispatch tables
+// with no interior mutability; the underlying Vulkan handles are
+// thread-safe per spec (external synchronisation is per-object, not
+// per-device). `vk::PhysicalDevice` is a plain handle. So `VkShared`
+// is safe to share across threads via `Arc`.
+unsafe impl Send for VkShared {}
+unsafe impl Sync for VkShared {}
+
+impl Drop for VkShared {
+    fn drop(&mut self) {
+        unsafe {
+            // Defensive: the last clone of `VkShared` should normally
+            // be `VulkanContext`, which already idled in its own
+            // `Drop`. If a leaf resource (buffer, image, grid
+            // renderer) outlives the context — possible because the
+            // grid renderers live in `Screen.grids` while
+            // `VulkanContext` lives in `Screen.sugarloaf` — this is
+            // the only `device_wait_idle` we get. Cheap on an idle
+            // queue.
+            let _ = self.raw.device_wait_idle();
+            self.raw.destroy_device(None);
+            self.instance.destroy_instance(None);
+            // `_entry` drops here, unloading `libvulkan`.
+        }
+    }
+}
+
+impl std::ops::Deref for VkShared {
+    type Target = Device;
+    #[inline]
+    fn deref(&self) -> &Device {
+        &self.raw
+    }
+}
 
 /// How many frames the CPU is allowed to pipeline ahead of the GPU.
 /// Three matches the Metal backend (`MetalLayer::set_maximum_drawable_count(3)`
@@ -75,8 +141,17 @@ pub struct VulkanContext {
     // pool, pipeline creation) don't have to re-probe the family.
     #[allow(dead_code)]
     queue_family_index: u32,
-    device: Device,
-    physical_device: vk::PhysicalDevice,
+
+    /// Reference-counted owner of `device`, `instance`, `physical_device`,
+    /// and the loader (`Entry`). Cloned into every per-resource struct
+    /// (`VulkanBuffer`, `VulkanImage`, `VulkanGridRenderer`,
+    /// `VulkanRenderer`, `VulkanImageTexture`, the text overlay's
+    /// Vulkan state) so `vkDestroyDevice` runs only after the last
+    /// dependent resource is dropped. Replaces the previous bare
+    /// `device.clone()` cloning, which was unsafe across struct
+    /// boundaries (raphamorim/rio#1568). `Deref` to `ash::Device`
+    /// keeps call sites unchanged: `self.shared.cmd_bind_pipeline(...)`.
+    shared: Arc<VkShared>,
 
     /// Pipeline cache shared by every `create_graphics_pipelines`
     /// call. Loaded from `~/.cache/rio/sugarloaf-vulkan.cache` (best
@@ -93,8 +168,6 @@ pub struct VulkanContext {
     /// `instance` (declaration order) so the messenger handle is
     /// destroyed while the instance is still alive.
     _debug_messenger: Option<DebugMessenger>,
-    instance: Instance,
-    _entry: Entry,
 }
 
 /// Owns one `vk::DebugUtilsMessengerEXT` and its loader. Destroyed
@@ -202,6 +275,13 @@ impl VulkanContext {
         );
         log_memory_heap_choice(&instance, physical_device);
 
+        let shared = Arc::new(VkShared {
+            raw: device,
+            instance,
+            physical_device,
+            _entry: entry,
+        });
+
         VulkanContext {
             size,
             scale,
@@ -219,14 +299,11 @@ impl VulkanContext {
             swapchain_loader,
             queue,
             queue_family_index,
-            device,
-            physical_device,
+            shared,
             pipeline_cache,
             surface,
             surface_loader,
             _debug_messenger,
-            instance,
-            _entry: entry,
         }
     }
 
@@ -255,21 +332,21 @@ impl VulkanContext {
         // This is a resize, not a per-frame operation, so the stall is
         // acceptable (wgpu does the same thing).
         unsafe {
-            let _ = self.device.device_wait_idle();
+            let _ = self.shared.device_wait_idle();
         }
 
         for &view in &self.swapchain_views {
-            unsafe { self.device.destroy_image_view(view, None) };
+            unsafe { self.shared.destroy_image_view(view, None) };
         }
         self.swapchain_views.clear();
         self.swapchain_images.clear();
 
         let old = self.swapchain;
         let (swapchain, format, color_space, extent, images, views) = create_swapchain(
-            &self.device,
+            &self.shared.raw,
             &self.surface_loader,
             &self.swapchain_loader,
-            self.physical_device,
+            self.shared.physical_device,
             self.surface,
             width,
             height,
@@ -295,7 +372,7 @@ impl VulkanContext {
         let sync = &self.frames[slot];
 
         unsafe {
-            self.device
+            self.shared
                 .wait_for_fences(&[sync.in_flight], true, u64::MAX)
                 .expect("wait_for_fences");
         }
@@ -326,13 +403,13 @@ impl VulkanContext {
         // before acquire_next_image would leave us deadlocked if the
         // acquire returned OUT_OF_DATE and we bailed out.
         unsafe {
-            self.device
+            self.shared
                 .reset_fences(&[sync.in_flight])
                 .expect("reset_fences");
-            self.device
+            self.shared
                 .reset_command_pool(sync.cmd_pool, vk::CommandPoolResetFlags::empty())
                 .expect("reset_command_pool");
-            self.device
+            self.shared
                 .begin_command_buffer(
                     sync.cmd_buffer,
                     &vk::CommandBufferBeginInfo::default()
@@ -356,7 +433,7 @@ impl VulkanContext {
     pub fn present_frame(&mut self, frame: VulkanFrame) {
         let sync = &self.frames[frame.slot];
         unsafe {
-            self.device
+            self.shared
                 .end_command_buffer(sync.cmd_buffer)
                 .expect("end_command_buffer");
 
@@ -369,7 +446,7 @@ impl VulkanContext {
                 .wait_dst_stage_mask(&wait_stages)
                 .command_buffers(&cmd_buffers)
                 .signal_semaphores(&signal_semaphores);
-            self.device
+            self.shared
                 .queue_submit(self.queue, &[submit], sync.in_flight)
                 .expect("queue_submit");
 
@@ -401,7 +478,22 @@ impl VulkanContext {
     /// Expose the underlying device so the renderer can record commands.
     #[inline]
     pub fn device(&self) -> &Device {
-        &self.device
+        &self.shared.raw
+    }
+
+    /// Reference-counted handle to the device + instance + entry. Each
+    /// per-resource type (`VulkanBuffer`, `VulkanImage`,
+    /// `VulkanGridRenderer`, `VulkanRenderer`, `VulkanImageTexture`,
+    /// `TextVulkanState`) clones this and stores it directly so its
+    /// own `Drop` can call `destroy_*` on a device that is guaranteed
+    /// to still be alive — `vkDestroyDevice` runs only when the last
+    /// `Arc` is dropped. The previous design (each leaf cloning the
+    /// raw `ash::Device` dispatch table) crashed when the parent
+    /// `VulkanContext` happened to drop first; see
+    /// raphamorim/rio#1568.
+    #[inline]
+    pub fn shared(&self) -> &Arc<VkShared> {
+        &self.shared
     }
 
     /// Color attachment format the swapchain was created with. Real
@@ -421,12 +513,12 @@ impl VulkanContext {
     /// `resize` which only has `&mut self`).
     #[inline]
     pub fn instance(&self) -> &Instance {
-        &self.instance
+        &self.shared.instance
     }
 
     #[inline]
     pub fn physical_device(&self) -> vk::PhysicalDevice {
-        self.physical_device
+        self.shared.physical_device
     }
 
     /// Pipeline cache shared by every renderer's
@@ -453,7 +545,7 @@ impl VulkanContext {
                 .queue_family_index(self.queue_family_index)
                 .flags(vk::CommandPoolCreateFlags::TRANSIENT);
             let pool = self
-                .device
+                .shared
                 .create_command_pool(&pool_info, None)
                 .expect("create_command_pool(oneshot)");
 
@@ -462,37 +554,37 @@ impl VulkanContext {
                 .level(vk::CommandBufferLevel::PRIMARY)
                 .command_buffer_count(1);
             let cmd = self
-                .device
+                .shared
                 .allocate_command_buffers(&alloc)
                 .expect("allocate_command_buffers(oneshot)")[0];
 
             let begin = vk::CommandBufferBeginInfo::default()
                 .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-            self.device
+            self.shared
                 .begin_command_buffer(cmd, &begin)
                 .expect("begin_command_buffer(oneshot)");
 
             record(cmd);
 
-            self.device
+            self.shared
                 .end_command_buffer(cmd)
                 .expect("end_command_buffer(oneshot)");
 
             let fence = self
-                .device
+                .shared
                 .create_fence(&vk::FenceCreateInfo::default(), None)
                 .expect("create_fence(oneshot)");
             let cmds = [cmd];
             let submit = vk::SubmitInfo::default().command_buffers(&cmds);
-            self.device
+            self.shared
                 .queue_submit(self.queue, &[submit], fence)
                 .expect("queue_submit(oneshot)");
-            self.device
+            self.shared
                 .wait_for_fences(&[fence], true, u64::MAX)
                 .expect("wait_for_fences(oneshot)");
 
-            self.device.destroy_fence(fence, None);
-            self.device.destroy_command_pool(pool, None);
+            self.shared.destroy_fence(fence, None);
+            self.shared.destroy_command_pool(pool, None);
         }
     }
 
@@ -533,15 +625,15 @@ impl VulkanContext {
             .usage(usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
         let buffer = unsafe {
-            self.device
+            self.shared
                 .create_buffer(&buffer_info, None)
                 .expect("create_buffer")
         };
 
-        let req = unsafe { self.device.get_buffer_memory_requirements(buffer) };
+        let req = unsafe { self.shared.get_buffer_memory_requirements(buffer) };
         let mem_type = find_memory_type(
-            &self.instance,
-            self.physical_device,
+            &self.shared.instance,
+            self.shared.physical_device,
             req.memory_type_bits,
             vk::MemoryPropertyFlags::HOST_VISIBLE
                 | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -552,12 +644,12 @@ impl VulkanContext {
             .allocation_size(req.size)
             .memory_type_index(mem_type);
         let memory = unsafe {
-            self.device
+            self.shared
                 .allocate_memory(&alloc_info, None)
                 .expect("allocate_memory")
         };
         unsafe {
-            self.device
+            self.shared
                 .bind_buffer_memory(buffer, memory, 0)
                 .expect("bind_buffer_memory");
         }
@@ -565,13 +657,13 @@ impl VulkanContext {
         // HOST_COHERENT means we never have to flush; mapping stays
         // valid until `vkUnmapMemory`, which we only do at Drop.
         let mapped = unsafe {
-            self.device
+            self.shared
                 .map_memory(memory, 0, vk::WHOLE_SIZE, vk::MemoryMapFlags::empty())
                 .expect("map_memory") as *mut u8
         };
 
         VulkanBuffer {
-            device: self.device.clone(),
+            shared: self.shared.clone(),
             buffer,
             memory,
             mapped,
@@ -584,7 +676,11 @@ impl VulkanContext {
 /// (raw pointer; caller owns the layout / bounds checks). The buffer
 /// destroys itself + frees its backing memory on drop.
 pub struct VulkanBuffer {
-    device: Device,
+    /// Shared device handle. The Arc keeps the underlying
+    /// `vkDestroyDevice` from running until *every* `VulkanBuffer`
+    /// (and other resource) is dropped, regardless of the order in
+    /// which their parents drop. See `VkShared`.
+    shared: Arc<VkShared>,
     buffer: vk::Buffer,
     memory: vk::DeviceMemory,
     mapped: *mut u8,
@@ -592,9 +688,10 @@ pub struct VulkanBuffer {
 }
 
 // `vk::Buffer`, `vk::DeviceMemory`, and the mapped pointer are all
-// values the driver hands out per-allocation; ash::Device is itself
-// Send+Sync. Buffers are never shared across threads in sugarloaf, but
-// `Send` lets them sit inside `Sugarloaf` (which is not `!Send`).
+// values the driver hands out per-allocation; `Arc<VkShared>` is
+// Send+Sync (see the `unsafe impl` on `VkShared`). Buffers are never
+// shared across threads in sugarloaf, but `Send` lets them sit inside
+// `Sugarloaf` (which is not `!Send`).
 unsafe impl Send for VulkanBuffer {}
 unsafe impl Sync for VulkanBuffer {}
 
@@ -626,23 +723,21 @@ impl Drop for VulkanBuffer {
             // `vkFreeMemory` on a non-mapped allocation is safe; we
             // unmap first only because some validation layers warn
             // about freeing memory that's still mapped.
-            self.device.unmap_memory(self.memory);
-            self.device.destroy_buffer(self.buffer, None);
-            self.device.free_memory(self.memory, None);
+            self.shared.unmap_memory(self.memory);
+            self.shared.destroy_buffer(self.buffer, None);
+            self.shared.free_memory(self.memory, None);
         }
     }
 }
 
 /// Free-function variant of [`VulkanContext::allocate_host_visible_buffer`]
-/// for callers that hold cached `(device, instance, physical_device)`
-/// rather than a live `&VulkanContext` borrow. The grid / text /
-/// image renderers stash those handles at construction time so they
-/// can allocate from inside their own `resize` paths (which only have
-/// `&mut self`, not the parent context).
+/// for callers that hold a cached `Arc<VkShared>` rather than a live
+/// `&VulkanContext` borrow. The grid / text / image renderers stash
+/// the shared handle at construction time so they can allocate from
+/// inside their own `resize` paths (which only have `&mut self`, not
+/// the parent context).
 pub fn allocate_host_visible_buffer_raw(
-    device: &Device,
-    instance: &Instance,
-    physical_device: vk::PhysicalDevice,
+    shared: &Arc<VkShared>,
     size: u64,
     usage: vk::BufferUsageFlags,
 ) -> VulkanBuffer {
@@ -652,14 +747,14 @@ pub fn allocate_host_visible_buffer_raw(
         .usage(usage)
         .sharing_mode(vk::SharingMode::EXCLUSIVE);
     let buffer = unsafe {
-        device
+        shared
             .create_buffer(&buffer_info, None)
             .expect("create_buffer")
     };
-    let req = unsafe { device.get_buffer_memory_requirements(buffer) };
+    let req = unsafe { shared.get_buffer_memory_requirements(buffer) };
     let mem_type = find_memory_type(
-        instance,
-        physical_device,
+        &shared.instance,
+        shared.physical_device,
         req.memory_type_bits,
         vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
     )
@@ -668,22 +763,22 @@ pub fn allocate_host_visible_buffer_raw(
         .allocation_size(req.size)
         .memory_type_index(mem_type);
     let memory = unsafe {
-        device
+        shared
             .allocate_memory(&alloc_info, None)
             .expect("allocate_memory")
     };
     unsafe {
-        device
+        shared
             .bind_buffer_memory(buffer, memory, 0)
             .expect("bind_buffer_memory");
     }
     let mapped = unsafe {
-        device
+        shared
             .map_memory(memory, 0, vk::WHOLE_SIZE, vk::MemoryMapFlags::empty())
             .expect("map_memory") as *mut u8
     };
     VulkanBuffer {
-        device: device.clone(),
+        shared: shared.clone(),
         buffer,
         memory,
         mapped,
@@ -800,15 +895,15 @@ impl VulkanContext {
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .initial_layout(vk::ImageLayout::UNDEFINED);
         let image = unsafe {
-            self.device
+            self.shared
                 .create_image(&image_info, None)
                 .expect("create_image")
         };
 
-        let req = unsafe { self.device.get_image_memory_requirements(image) };
+        let req = unsafe { self.shared.get_image_memory_requirements(image) };
         let mem_type = find_memory_type(
-            &self.instance,
-            self.physical_device,
+            &self.shared.instance,
+            self.shared.physical_device,
             req.memory_type_bits,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         )
@@ -818,12 +913,12 @@ impl VulkanContext {
             .allocation_size(req.size)
             .memory_type_index(mem_type);
         let memory = unsafe {
-            self.device
+            self.shared
                 .allocate_memory(&alloc_info, None)
                 .expect("allocate_memory(image)")
         };
         unsafe {
-            self.device
+            self.shared
                 .bind_image_memory(image, memory, 0)
                 .expect("bind_image_memory");
         }
@@ -842,13 +937,13 @@ impl VulkanContext {
                     .layer_count(1),
             );
         let view = unsafe {
-            self.device
+            self.shared
                 .create_image_view(&view_info, None)
                 .expect("create_image_view")
         };
 
         VulkanImage {
-            device: self.device.clone(),
+            shared: self.shared.clone(),
             image,
             view,
             memory,
@@ -864,7 +959,8 @@ impl VulkanContext {
 /// — the first command that uses it must barrier-transition to a
 /// usable layout (`TRANSFER_DST_OPTIMAL` for the initial upload).
 pub struct VulkanImage {
-    device: Device,
+    /// Shared device handle. See `VkShared`.
+    shared: Arc<VkShared>,
     image: vk::Image,
     view: vk::ImageView,
     memory: vk::DeviceMemory,
@@ -891,9 +987,9 @@ impl VulkanImage {
 impl Drop for VulkanImage {
     fn drop(&mut self) {
         unsafe {
-            self.device.destroy_image_view(self.view, None);
-            self.device.destroy_image(self.image, None);
-            self.device.free_memory(self.memory, None);
+            self.shared.destroy_image_view(self.view, None);
+            self.shared.destroy_image(self.image, None);
+            self.shared.free_memory(self.memory, None);
         }
     }
 }
@@ -901,30 +997,38 @@ impl Drop for VulkanImage {
 impl Drop for VulkanContext {
     fn drop(&mut self) {
         unsafe {
-            let _ = self.device.device_wait_idle();
+            // Idle the queue before tearing down anything that might
+            // still be in flight (swapchain image views, sync prims).
+            // `vkDestroyDevice` itself happens later, when the last
+            // `Arc<VkShared>` clone drops — see `VkShared::drop`.
+            let _ = self.shared.device_wait_idle();
 
             // Best-effort: serialize the pipeline cache to disk
             // before destroying it. Failure (no XDG_CACHE_HOME, no
             // write perms, etc) is logged but not fatal.
-            save_pipeline_cache(&self.device, self.pipeline_cache);
-            self.device
+            save_pipeline_cache(&self.shared.raw, self.pipeline_cache);
+            self.shared
                 .destroy_pipeline_cache(self.pipeline_cache, None);
 
             for frame in &self.frames {
-                self.device.destroy_semaphore(frame.image_available, None);
-                self.device.destroy_semaphore(frame.render_finished, None);
-                self.device.destroy_fence(frame.in_flight, None);
-                self.device.destroy_command_pool(frame.cmd_pool, None);
+                self.shared.destroy_semaphore(frame.image_available, None);
+                self.shared.destroy_semaphore(frame.render_finished, None);
+                self.shared.destroy_fence(frame.in_flight, None);
+                self.shared.destroy_command_pool(frame.cmd_pool, None);
             }
 
             for &view in &self.swapchain_views {
-                self.device.destroy_image_view(view, None);
+                self.shared.destroy_image_view(view, None);
             }
             self.swapchain_loader
                 .destroy_swapchain(self.swapchain, None);
-            self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
-            self.instance.destroy_instance(None);
+            // `_debug_messenger` (declared after this Drop's body
+            // unwind path completes) drops before `shared` (declared
+            // before it), so the messenger handle is destroyed while
+            // the instance is still alive. `vkDestroyDevice` and
+            // `vkDestroyInstance` run in `VkShared::drop` once the
+            // last `Arc<VkShared>` clone is gone.
         }
     }
 }
