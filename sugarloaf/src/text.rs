@@ -466,7 +466,10 @@ impl Text {
             };
             // wght axis tag as a swash u32 Tag — 'w','g','h','t' big-endian.
             const WGHT_TAG: swash::Tag = u32::from_be_bytes(*b"wght");
-            let wght_var = wght.map(|v| Setting { tag: WGHT_TAG, value: v });
+            let wght_var = wght.map(|v| Setting {
+                tag: WGHT_TAG,
+                value: v,
+            });
             let var_slice: &[Setting<f32>] = match wght_var {
                 Some(ref s) => std::slice::from_ref(s),
                 None => &[],
@@ -1281,7 +1284,10 @@ fn rasterize_swash_glyph(
     // wght axis tag — variable-font fallback faces use this to pick the
     // right outlines (regular vs. bold) from a single source file.
     const WGHT_TAG: swash::Tag = u32::from_be_bytes(*b"wght");
-    let wght_var = wght_variation.map(|v| Setting { tag: WGHT_TAG, value: v });
+    let wght_var = wght_variation.map(|v| Setting {
+        tag: WGHT_TAG,
+        value: v,
+    });
     let var_slice: &[Setting<f32>] = match wght_var {
         Some(ref s) => std::slice::from_ref(s),
         None => &[],

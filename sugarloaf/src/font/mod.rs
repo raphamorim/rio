@@ -1393,9 +1393,7 @@ impl FontData {
             // font_metrics / rasterize_glyph all pull the right outlines
             // without per-call setup.
             match (base, wght) {
-                (Some(h), Some(v)) => {
-                    Some(h.clone().with_wght_variation(v).unwrap_or(h))
-                }
+                (Some(h), Some(v)) => Some(h.clone().with_wght_variation(v).unwrap_or(h)),
                 (h, _) => h,
             }
         };
@@ -1721,9 +1719,7 @@ fn find_font(
 /// the same upright variable file, italic and bold-italic load the same
 /// italic variable file, and the bold slots set the `wght` axis to 700.
 fn load_fallback_from_memory(slot: Slot) -> FontData {
-    use constants::{
-        FONT_CASCADIA_CODE_NF, FONT_CASCADIA_CODE_NF_ITALIC, WGHT_BOLD,
-    };
+    use constants::{FONT_CASCADIA_CODE_NF, FONT_CASCADIA_CODE_NF_ITALIC, WGHT_BOLD};
 
     let (data, wght) = match slot {
         Slot::Regular => (FONT_CASCADIA_CODE_NF, None),
@@ -1796,7 +1792,10 @@ mod alias_tests {
         assert!(!regular.is_bold(), "regular slot must not be bold");
         assert!(bold.is_bold(), "bold slot must report is_bold");
         assert!(!italic.is_bold(), "italic slot must not be bold");
-        assert!(bold_italic.is_bold(), "bold-italic slot must report is_bold");
+        assert!(
+            bold_italic.is_bold(),
+            "bold-italic slot must report is_bold"
+        );
 
         assert!(!regular.is_italic(), "regular slot must not be italic");
         assert!(!bold.is_italic(), "bold slot must not be italic");
@@ -1894,10 +1893,9 @@ mod postscript_resolver_tests {
     fn insert_populates_postscript_lookup() {
         // Read the PS name straight from the handle so the test doesn't
         // hardcode a value that changes if the bundled font is updated.
-        let handle = crate::font::macos::FontHandle::from_static_bytes(
-            FONT_CASCADIA_CODE_NF,
-        )
-        .expect("parse CascadiaMono");
+        let handle =
+            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF)
+                .expect("parse CascadiaMono");
         let ps_name = handle.postscript_name();
 
         let mut lib = FontLibraryData::default();
@@ -1924,19 +1922,14 @@ mod postscript_resolver_tests {
     /// id, so first-wins is the correct policy.
     #[test]
     fn duplicate_insert_keeps_first_id() {
-        let handle = crate::font::macos::FontHandle::from_static_bytes(
-            FONT_CASCADIA_CODE_NF,
-        )
-        .expect("parse CascadiaMono");
+        let handle =
+            crate::font::macos::FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF)
+                .expect("parse CascadiaMono");
         let ps_name = handle.postscript_name();
 
         let mut lib = FontLibraryData::default();
-        lib.insert(
-            FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load a"),
-        );
-        lib.insert(
-            FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load b"),
-        );
+        lib.insert(FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load a"));
+        lib.insert(FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load b"));
         assert_eq!(
             lib.font_id_for_postscript_name(&ps_name),
             Some(0),
@@ -1955,9 +1948,7 @@ mod postscript_resolver_tests {
         use std::sync::Arc;
 
         let mut data = FontLibraryData::default();
-        data.insert(
-            FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load"),
-        );
+        data.insert(FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load"));
         let lib = FontLibrary {
             inner: Arc::new(parking_lot::RwLock::new(data)),
         };
@@ -1994,9 +1985,7 @@ mod postscript_resolver_tests {
         use std::sync::Arc;
 
         let mut data = FontLibraryData::default();
-        data.insert(
-            FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load"),
-        );
+        data.insert(FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load"));
         let lib = FontLibrary {
             inner: Arc::new(parking_lot::RwLock::new(data)),
         };
