@@ -20,9 +20,10 @@
 //! flag enabled.
 
 use ash::vk;
+use std::sync::Arc;
 
 use crate::context::vulkan::{
-    allocate_host_visible_buffer_raw, VulkanBuffer, VulkanContext, VulkanFrame,
+    allocate_host_visible_buffer_raw, VkShared, VulkanBuffer, VulkanContext, VulkanFrame,
     VulkanImage, FRAMES_IN_FLIGHT,
 };
 use crate::renderer::batch::{QuadInstance, Vertex};
@@ -62,16 +63,16 @@ pub struct VulkanRenderer {
     bootstrap_pipeline: vk::Pipeline,
     bootstrap_layout: vk::PipelineLayout,
     bootstrap_visible: bool,
-    /// Cloned from `VulkanContext::device()` so `Drop` can destroy our
-    /// pipelines even after the parent context has dropped its borrow.
-    /// `ash::Device` is `Clone` (just a wrapper around fn pointers + a
-    /// `vk::Device` handle); cloning does not create a new logical
-    /// device.
-    device: ash::Device,
-    /// Cached for buffer (re)allocation in `render_quads` (which only
-    /// has `&mut self`, no `&VulkanContext`).
-    instance: ash::Instance,
-    physical_device: vk::PhysicalDevice,
+    /// Shared device handle. The Arc keeps `vkDestroyDevice` from
+    /// running until every per-resource holder (buffers, images,
+    /// other renderers, atlases, the per-panel grid renderers in
+    /// `Screen.grids`) is dropped, so this renderer's `Drop` can
+    /// safely tear down pipelines regardless of struct field-order
+    /// elsewhere — fixes the cross-struct ordering trap behind
+    /// raphamorim/rio#1568. Also lets `render_quads` allocate from
+    /// `&mut self` without needing a live `&VulkanContext` borrow.
+    /// See `VkShared`.
+    shared: Arc<VkShared>,
     /// Set once at construction from the configured `Colorspace`.
     /// Mirrors `MetalRenderer::input_colorspace`. Value is `0 = sRGB`,
     /// `1 = DisplayP3`, `2 = Rec.2020`.
@@ -134,9 +135,8 @@ pub struct VulkanRenderer {
 
 impl VulkanRenderer {
     pub fn new(ctx: &VulkanContext, colorspace: crate::sugarloaf::Colorspace) -> Self {
-        let device = ctx.device().clone();
-        let instance = ctx.instance().clone();
-        let physical_device = ctx.physical_device();
+        let shared = ctx.shared().clone();
+        let device = &shared.raw;
         let color_format = ctx.swapchain_format();
         let input_colorspace = match colorspace {
             crate::sugarloaf::Colorspace::Srgb => 0u32,
@@ -276,9 +276,7 @@ impl VulkanRenderer {
             bootstrap_pipeline,
             bootstrap_layout,
             bootstrap_visible,
-            device,
-            instance,
-            physical_device,
+            shared,
             input_colorspace,
             quad_pipeline,
             quad_pipeline_layout,
@@ -347,9 +345,7 @@ impl VulkanRenderer {
         if vertex_count > self.geometry_vertex_capacity[slot] {
             let new_cap = vertex_count.next_power_of_two().max(256);
             self.geometry_vertex_buffers[slot] = Some(allocate_host_visible_buffer_raw(
-                &self.device,
-                &self.instance,
-                self.physical_device,
+                &self.shared,
                 (new_cap * std::mem::size_of::<Vertex>()) as u64,
                 vk::BufferUsageFlags::VERTEX_BUFFER,
             ));
@@ -365,12 +361,12 @@ impl VulkanRenderer {
         }
 
         unsafe {
-            self.device.cmd_bind_pipeline(
+            self.shared.cmd_bind_pipeline(
                 cmd,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.geometry_pipeline,
             );
-            self.device.cmd_bind_descriptor_sets(
+            self.shared.cmd_bind_descriptor_sets(
                 cmd,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.quad_pipeline_layout,
@@ -378,12 +374,12 @@ impl VulkanRenderer {
                 &[self.quad_descriptor_sets[slot]],
                 &[],
             );
-            self.device
+            self.shared
                 .cmd_bind_vertex_buffers(cmd, 0, &[vertex_buf.handle()], &[0]);
             // Caller-provided vertices are TRIANGLE_LIST — the emit
             // path tessellates polygons / arcs / lines into
             // triangles before pushing.
-            self.device.cmd_draw(cmd, vertex_count as u32, 1, 0, 0);
+            self.shared.cmd_draw(cmd, vertex_count as u32, 1, 0, 0);
         }
     }
 
@@ -431,9 +427,7 @@ impl VulkanRenderer {
         if count > self.image_instance_capacity[slot] {
             let new_cap = count.next_power_of_two().max(16);
             self.image_instance_buffers[slot] = Some(allocate_host_visible_buffer_raw(
-                &self.device,
-                &self.instance,
-                self.physical_device,
+                &self.shared,
                 (new_cap * stride) as u64,
                 vk::BufferUsageFlags::VERTEX_BUFFER,
             ));
@@ -449,13 +443,13 @@ impl VulkanRenderer {
         }
 
         unsafe {
-            self.device.cmd_bind_pipeline(
+            self.shared.cmd_bind_pipeline(
                 cmd,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.image_pipeline,
             );
             // Set 0 (uniform) is constant across draws — bind once.
-            self.device.cmd_bind_descriptor_sets(
+            self.shared.cmd_bind_descriptor_sets(
                 cmd,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.image_pipeline_layout,
@@ -465,7 +459,7 @@ impl VulkanRenderer {
             );
             for (i, (texture_set, _inst)) in draws.iter().enumerate() {
                 // Set 1 (texture) changes per-draw — rebind.
-                self.device.cmd_bind_descriptor_sets(
+                self.shared.cmd_bind_descriptor_sets(
                     cmd,
                     vk::PipelineBindPoint::GRAPHICS,
                     self.image_pipeline_layout,
@@ -474,14 +468,14 @@ impl VulkanRenderer {
                     &[],
                 );
                 let byte_offset = (i * stride) as u64;
-                self.device.cmd_bind_vertex_buffers(
+                self.shared.cmd_bind_vertex_buffers(
                     cmd,
                     0,
                     &[buf.handle()],
                     &[byte_offset],
                 );
                 let _ = needed_bytes; // shut up unused warning
-                self.device.cmd_draw(cmd, 4, 1, 0, 0);
+                self.shared.cmd_draw(cmd, 4, 1, 0, 0);
             }
         }
     }
@@ -526,12 +520,12 @@ impl VulkanRenderer {
         }
 
         unsafe {
-            self.device.cmd_bind_pipeline(
+            self.shared.cmd_bind_pipeline(
                 cmd,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.image_pipeline,
             );
-            self.device.cmd_bind_descriptor_sets(
+            self.shared.cmd_bind_descriptor_sets(
                 cmd,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.image_pipeline_layout,
@@ -542,13 +536,13 @@ impl VulkanRenderer {
                 ],
                 &[],
             );
-            self.device.cmd_bind_vertex_buffers(
+            self.shared.cmd_bind_vertex_buffers(
                 cmd,
                 0,
                 &[self.image_bg_vertex_buffers[slot].handle()],
                 &[0],
             );
-            self.device.cmd_draw(cmd, 4, 1, 0, 0);
+            self.shared.cmd_draw(cmd, 4, 1, 0, 0);
         }
     }
 
@@ -586,9 +580,7 @@ impl VulkanRenderer {
         if instance_count > self.quad_instance_capacity[slot] {
             let new_cap = instance_count.next_power_of_two().max(256);
             self.quad_instance_buffers[slot] = Some(allocate_host_visible_buffer_raw(
-                &self.device,
-                &self.instance,
-                self.physical_device,
+                &self.shared,
                 (new_cap * std::mem::size_of::<QuadInstance>()) as u64,
                 vk::BufferUsageFlags::VERTEX_BUFFER,
             ));
@@ -604,12 +596,12 @@ impl VulkanRenderer {
         }
 
         unsafe {
-            self.device.cmd_bind_pipeline(
+            self.shared.cmd_bind_pipeline(
                 cmd,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.quad_pipeline,
             );
-            self.device.cmd_bind_descriptor_sets(
+            self.shared.cmd_bind_descriptor_sets(
                 cmd,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.quad_pipeline_layout,
@@ -617,10 +609,10 @@ impl VulkanRenderer {
                 &[self.quad_descriptor_sets[slot]],
                 &[],
             );
-            self.device
+            self.shared
                 .cmd_bind_vertex_buffers(cmd, 0, &[instance_buf.handle()], &[0]);
             // 4 vertices per instance (TRIANGLE_STRIP quad).
-            self.device.cmd_draw(cmd, 4, instance_count as u32, 0, 0);
+            self.shared.cmd_draw(cmd, 4, instance_count as u32, 0, 0);
         }
     }
 
@@ -642,13 +634,13 @@ impl VulkanRenderer {
             return;
         }
         unsafe {
-            self.device.cmd_bind_pipeline(
+            self.shared.cmd_bind_pipeline(
                 cmd,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.bootstrap_pipeline,
             );
             let color: [f32; 4] = [1.0, 0.0, 1.0, 1.0];
-            self.device.cmd_push_constants(
+            self.shared.cmd_push_constants(
                 cmd,
                 self.bootstrap_layout,
                 vk::ShaderStageFlags::FRAGMENT,
@@ -657,7 +649,7 @@ impl VulkanRenderer {
             );
             // Triangle strip, 4 vertices — `clear.vert.glsl`
             // generates a centered rect in NDC.
-            self.device.cmd_draw(cmd, 4, 1, 0, 0);
+            self.shared.cmd_draw(cmd, 4, 1, 0, 0);
         }
     }
 }
@@ -755,38 +747,39 @@ pub fn build_color_attachment(
 impl Drop for VulkanRenderer {
     fn drop(&mut self) {
         unsafe {
-            // Idle the device before tearing down pipelines. The parent
-            // `VulkanContext::Drop` also waits, but `Sugarloaf`'s field
-            // declaration order has us dropping first — and an outstanding
-            // submit using this pipeline would crash the driver if we
-            // destroyed it under the GPU's nose.
-            let _ = self.device.device_wait_idle();
+            // Idle the queue before tearing down pipelines. The
+            // shared `Arc<VkShared>` keeps the underlying device
+            // alive across this Drop — `vkDestroyDevice` runs only
+            // when the last clone goes (in `VkShared::drop`), so
+            // ordering relative to `VulkanContext::drop` is no
+            // longer load-bearing.
+            let _ = self.shared.device_wait_idle();
 
-            self.device.destroy_pipeline(self.image_pipeline, None);
-            self.device
+            self.shared.destroy_pipeline(self.image_pipeline, None);
+            self.shared
                 .destroy_pipeline_layout(self.image_pipeline_layout, None);
-            self.device.destroy_sampler(self.image_sampler, None);
-            self.device
+            self.shared.destroy_sampler(self.image_sampler, None);
+            self.shared
                 .destroy_descriptor_pool(self.image_uniform_descriptor_pool, None);
-            self.device.destroy_descriptor_set_layout(
+            self.shared.destroy_descriptor_set_layout(
                 self.image_uniform_descriptor_set_layout,
                 None,
             );
-            self.device.destroy_descriptor_set_layout(
+            self.shared.destroy_descriptor_set_layout(
                 self.image_texture_descriptor_set_layout,
                 None,
             );
 
-            self.device.destroy_pipeline(self.geometry_pipeline, None);
-            self.device.destroy_pipeline(self.quad_pipeline, None);
-            self.device
+            self.shared.destroy_pipeline(self.geometry_pipeline, None);
+            self.shared.destroy_pipeline(self.quad_pipeline, None);
+            self.shared
                 .destroy_pipeline_layout(self.quad_pipeline_layout, None);
-            self.device
+            self.shared
                 .destroy_descriptor_pool(self.quad_descriptor_pool, None);
-            self.device
+            self.shared
                 .destroy_descriptor_set_layout(self.quad_descriptor_set_layout, None);
-            self.device.destroy_pipeline(self.bootstrap_pipeline, None);
-            self.device
+            self.shared.destroy_pipeline(self.bootstrap_pipeline, None);
+            self.shared
                 .destroy_pipeline_layout(self.bootstrap_layout, None);
             // Buffers (uniform, instance) drop themselves via VulkanBuffer.
         }
@@ -1345,7 +1338,8 @@ pub struct VulkanImageTexture {
     pub image: VulkanImage,
     descriptor_pool: vk::DescriptorPool,
     pub descriptor_set: vk::DescriptorSet,
-    device: ash::Device,
+    /// Shared device handle. See `VkShared`.
+    shared: Arc<VkShared>,
 }
 
 impl VulkanImageTexture {
@@ -1365,7 +1359,8 @@ impl VulkanImageTexture {
         descriptor_set_layout: vk::DescriptorSetLayout,
         sampler: vk::Sampler,
     ) -> Self {
-        let device = ctx.device().clone();
+        let shared = ctx.shared().clone();
+        let device = &shared.raw;
 
         // `R8G8B8A8_SRGB` (vs `R8G8B8A8_UNORM`) tells the GPU to
         // sRGB-decode bytes at sample time. With bilinear filtering
@@ -1506,7 +1501,7 @@ impl VulkanImageTexture {
             image,
             descriptor_pool,
             descriptor_set,
-            device,
+            shared,
         }
     }
 }
@@ -1516,7 +1511,7 @@ impl Drop for VulkanImageTexture {
         unsafe {
             // Pool destruction frees the descriptor set; image drops
             // itself.
-            self.device
+            self.shared
                 .destroy_descriptor_pool(self.descriptor_pool, None);
         }
     }
