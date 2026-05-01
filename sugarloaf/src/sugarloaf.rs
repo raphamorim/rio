@@ -1060,6 +1060,26 @@ impl Sugarloaf<'_> {
         }
     }
 
+    /// Canonical [`CellMetrics`] for `id`, mirroring
+    /// [`get_text_dimensions`]'s mark-for-repaint side effect.
+    /// Use alongside `get_text_dimensions` when constructing a
+    /// `ContextDimension` so the layout / GPU / mouse pipeline all
+    /// see the same `u32` cell stride.
+    #[inline]
+    pub fn get_text_cell_metrics(
+        &mut self,
+        id: &usize,
+    ) -> Option<crate::layout::CellMetrics> {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            if let Some(content_state) = self.state.content.states.get_mut(id) {
+                content_state.render_data.needs_repaint = true;
+            }
+            Some(self.state.get_state_layout(id).cell)
+        } else {
+            None
+        }
+    }
+
     #[inline]
     pub fn clear(&mut self) {
         self.state.clean_screen();
@@ -1301,9 +1321,12 @@ impl Sugarloaf<'_> {
         }
 
         // Per-panel grid passes — draw cell backgrounds + grid text
-        // underneath everything else.
+        // underneath everything else. Vulkan doesn't yet interleave
+        // kitty image layers around the bg/text split — same as the
+        // wgpu path; follow-up.
         for (grid, uniforms) in grids.iter_mut() {
-            grid.render_vulkan(ctx, cmd, frame.slot, uniforms);
+            grid.render_bg_vulkan(ctx, cmd, frame.slot, uniforms);
+            grid.render_text_vulkan(ctx, cmd, frame.slot, uniforms);
         }
 
         // Rich-text quad pass — `Sugarloaf::quad()` / `rect()` calls
@@ -1381,9 +1404,19 @@ impl Sugarloaf<'_> {
                         });
 
                     // Grid passes first — cell bg/text composite under
-                    // the rich-text UI overlays drawn below.
+                    // the rich-text UI overlays drawn below. Wgpu
+                    // doesn't yet interleave kitty image layers with
+                    // the grid bg/text split (BrushRenderer::render
+                    // owns kitty image draws inline), so for now the
+                    // bg+text passes run back-to-back per panel —
+                    // same visual result as the prior single render
+                    // call. Re-ordering kitty layers around the
+                    // bg/text split would require pulling image
+                    // draws out of BrushRenderer::render — Metal
+                    // already does that; wgpu follow-up.
                     for (grid, uniforms) in grids.iter_mut() {
-                        grid.render_wgpu(&mut rpass, uniforms);
+                        grid.render_bg_wgpu(&mut rpass, uniforms);
+                        grid.render_text_wgpu(&mut rpass, uniforms);
                     }
 
                     self.renderer.render(ctx, &mut rpass);

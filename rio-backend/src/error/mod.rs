@@ -70,17 +70,7 @@ impl std::fmt::Display for RioErrorType {
             RioErrorType::FontsNotFound(fonts) => {
                 let mut font_str = String::from("");
                 for font in fonts.iter() {
-                    let weight = if font.weight.is_none() {
-                        String::from("any weight")
-                    } else {
-                        format!("{} weight", font.weight.unwrap())
-                    };
-
-                    let style = format!("{:?} style", font.style);
-
-                    font_str +=
-                        format!("\n• \"{}\" using {:?} {:?}", font.family, weight, style)
-                            .as_str();
+                    font_str += format!("\n• \"{}\"", font.family).as_str();
                 }
 
                 write!(f, "Font(s) not found:\n{font_str}")

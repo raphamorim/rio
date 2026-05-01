@@ -29,11 +29,20 @@ pub struct Mouse {
     pub accumulated_scroll: AccumulatedScroll,
     pub square_side: Side,
     pub inside_text_area: bool,
-    pub x: usize,
-    pub y: usize,
+    /// Cursor X in physical pixels. `f64` so subpixel precision from
+    /// the OS event survives all the way to the cell-grid divide.
+    pub x: f64,
+    /// Cursor Y in physical pixels.
+    pub y: f64,
     pub on_border: bool,
     /// Raw (unclamped) cursor Y in physical pixels, for selection scroll.
     pub raw_y: f64,
+    /// Last cell (line, column) the cursor was over. `None` until the
+    /// first `CursorMoved` event arrives. Used by the input dispatcher
+    /// to skip hint / OSC-8 / hyperlink work when the cursor moves
+    /// within the same cell — replaces the old pixel-equality check
+    /// that fired on every subpixel HiDPI jitter.
+    pub last_cell: Option<Pos>,
 }
 
 impl Default for Mouse {
@@ -51,9 +60,10 @@ impl Default for Mouse {
             inside_text_area: Default::default(),
             on_border: false,
             accumulated_scroll: AccumulatedScroll::default(),
-            x: Default::default(),
-            y: Default::default(),
+            x: 0.0,
+            y: 0.0,
             raw_y: 0.0,
+            last_cell: None,
         }
     }
 }
@@ -74,6 +84,15 @@ impl Mouse {
     }
 }
 
+/// Map a physical-pixel cursor position to a terminal grid `Pos`.
+///
+/// Pixel coords stay `f64` until the final integer truncation, and
+/// the divide uses the canonical `u32` `cell_width / cell_height`
+/// (the same integers the GPU shader paints with — no drift between
+/// painted cell stride and click→cell mapping).
+///
+/// `margin_x_left / margin_y_top` are already pre-scaled (physical
+/// pixels), do not multiply by `scale_factor` here.
 #[inline]
 pub fn calculate_mouse_position(
     mouse: &Mouse,
@@ -81,59 +100,63 @@ pub fn calculate_mouse_position(
     columns_rows: (usize, usize),
     margin_x_left: f32,
     margin_y_top: f32,
-    cell_dimension: (f32, f32),
+    cell: (u32, u32),
 ) -> Pos {
-    // In case sugarloaf hasn't obtained the dimensions
-    if cell_dimension.0 == 0.0 || cell_dimension.1 == 0.0 {
+    let (cell_w, cell_h) = (cell.0 as f64, cell.1 as f64);
+    if cell_w == 0.0 || cell_h == 0.0 {
         return Pos::default();
     }
 
-    let cell_width = cell_dimension.0;
-    let cell_height = cell_dimension.1;
-    // Margins are already pre-scaled (multiplied by scale_factor in
-    // update_scaled_margin), so use them directly — do not scale again.
-    let margin_x = margin_x_left as usize;
-    let margin_y = margin_y_top as usize;
+    let margin_x = margin_x_left as f64;
+    let margin_y = margin_y_top as f64;
 
-    let col = if (margin_x + cell_width as usize) > mouse.x {
-        Column(0)
-    } else {
-        let col = ((mouse.x - margin_x) as f32 / cell_width) as usize;
-        std::cmp::min(Column(col), Column(columns_rows.0 - 1))
-    };
+    // f64 throughout. Negative-clamp via `.max(0.0)` so clicks in
+    // the margin map to col/row 0 rather than wrapping or
+    // overflowing on the cast.
+    let x_in_grid = (mouse.x - margin_x).max(0.0);
+    let y_in_grid = (mouse.y - margin_y).max(0.0);
+    let col_idx = (x_in_grid / cell_w) as usize;
+    let row_idx = (y_in_grid / cell_h) as usize;
 
-    let row = mouse.y.saturating_sub(margin_y) as f32 / cell_height;
-    let calc_row = std::cmp::min(row as usize, columns_rows.1 - 1);
-    let row = Line(calc_row as i32) - (display_offset);
+    let col = std::cmp::min(Column(col_idx), Column(columns_rows.0 - 1));
+    let row = std::cmp::min(row_idx, columns_rows.1 - 1);
+    let row = Line(row as i32) - display_offset;
 
     Pos::new(row, col)
 }
 
 /// Determine which side of a cell the mouse x-position falls on.
 ///
-/// `margin_x` is already pre-scaled (physical pixels).
-/// `cell_width` is the float cell width.
-/// `grid_width` is the total width of the grid area (physical pixels).
+/// `margin_x` is pre-scaled (physical pixels). `cell_width` is the
+/// canonical `u32` cell width (same value the renderer paints with).
+/// `grid_width` is the total width of the grid area in physical
+/// pixels.
 ///
-/// Uses a 60% threshold (matching ghostty) rather than the 50% midpoint rio
-/// inherited from alacritty. Clicks land on a cell until the cursor is past
-/// 60% across it, and a drag must cross 60% of the next cell before it's
-/// included — this reduces accidental half-cell snapping at the midpoint.
+/// 60% threshold rather than the 50% midpoint inherited from
+/// alacritty: clicks land on a cell until the cursor is past 60%
+/// across it, and a drag must cross 60% of the next cell before
+/// it's included — reduces accidental half-cell snapping at the
+/// midpoint.
 #[inline]
 pub fn calculate_side_by_pos(
-    x: usize,
+    x: f64,
     margin_x: f32,
-    cell_width: f32,
+    cell_width: u32,
     grid_width: f32,
 ) -> Side {
-    let x_in_grid = (x as f32 - margin_x).max(0.0);
-    let cell_x = x_in_grid % cell_width;
-    let threshold = cell_width * 0.6;
+    let cell_w = cell_width as f64;
+    let margin = margin_x as f64;
+    let grid_w = grid_width as f64;
 
-    let additional_padding = (grid_width - margin_x) % cell_width;
-    let end_of_grid = grid_width - margin_x - additional_padding;
+    let x_in_grid = (x - margin).max(0.0);
+    let cell_x = x_in_grid % cell_w;
+    let threshold = cell_w * 0.6;
 
-    if cell_x >= threshold || x as f32 >= end_of_grid {
+    let usable = (grid_w - margin).max(0.0);
+    let additional_padding = usable % cell_w;
+    let end_of_grid = margin + usable - additional_padding;
+
+    if cell_x >= threshold || x >= end_of_grid {
         Side::Right
     } else {
         Side::Left
@@ -144,633 +167,341 @@ pub fn calculate_side_by_pos(
 pub mod test {
     use super::*;
 
-    /// Cell boundaries with width=9.4 and no margin: 0, 9.4, 18.8, 28.2, ...
-    #[test]
-    fn test_pos_calc_moving_mouse_x_with_scale_1() {
-        let display_offset = 0;
-
-        let columns = 10;
-        let lines = 5;
-        let margin_x_left = 0.0;
-        let margin_y_top = 0.0;
-        let cell_dimension_width = 9.4;
-        let cell_dimension_height = 18.0;
-
-        // x=8 → 8/9.4 = 0.85 → col 0
-        let mouse = Mouse {
-            x: 8,
+    fn mk_mouse(x: f64, y: f64) -> Mouse {
+        Mouse {
+            x,
+            y,
             ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        // x=9 → 9/9.4 = 0.96 → col 0 (still within first cell)
-        let mouse = Mouse {
-            x: 9,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        // x=10 → 10/9.4 = 1.06 → col 1
-        let mouse = Mouse {
-            x: 10,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(1)));
-
-        // x=17 → 17/9.4 = 1.81 → col 1
-        let mouse = Mouse {
-            x: 17,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(1)));
-
-        // x=19 → 19/9.4 = 2.02 → col 2
-        let mouse = Mouse {
-            x: 19,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(2)));
+        }
     }
 
-    /// Same as scale_1 — scale_factor doesn't affect column math when margins
-    /// are already pre-scaled (and here margin is 0).
+    /// Canonical stride: cell width = 9 (u32). Boundaries at 0, 9, 18, 27.
     #[test]
-    fn test_pos_calc_moving_mouse_x_with_scale_2() {
-        let display_offset = 0;
-
-        let columns = 10;
+    fn pos_calc_basic_no_margin() {
+        let cols = 10;
         let lines = 5;
-        let margin_x_left = 0.0; // already scaled
-        let margin_y_top = 0.0;
-        let cell_dimension_width = 9.4;
-        let cell_dimension_height = 18.0;
+        let cell = (9u32, 18u32);
 
-        let mouse = Mouse {
-            x: 8,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+        // x=8 → 8/9 = 0 → col 0
+        assert_eq!(
+            calculate_mouse_position(
+                &mk_mouse(8.0, 0.0),
+                0,
+                (cols, lines),
+                0.0,
+                0.0,
+                cell
+            )
+            .col,
+            Column(0),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        // x=9 → 9/9.4 = 0.96 → col 0
-        let mouse = Mouse {
-            x: 9,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+        // x=8.99 → still col 0 (subpixel precision preserved)
+        assert_eq!(
+            calculate_mouse_position(
+                &mk_mouse(8.99, 0.0),
+                0,
+                (cols, lines),
+                0.0,
+                0.0,
+                cell
+            )
+            .col,
+            Column(0),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        // x=10 → 10/9.4 = 1.06 → col 1
-        let mouse = Mouse {
-            x: 10,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+        // x=9 → boundary → col 1
+        assert_eq!(
+            calculate_mouse_position(
+                &mk_mouse(9.0, 0.0),
+                0,
+                (cols, lines),
+                0.0,
+                0.0,
+                cell
+            )
+            .col,
+            Column(1),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(1)));
-
-        let mouse = Mouse {
-            x: 17,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+        // x=17.5 → 17.5/9 = 1.94 → col 1
+        assert_eq!(
+            calculate_mouse_position(
+                &mk_mouse(17.5, 0.0),
+                0,
+                (cols, lines),
+                0.0,
+                0.0,
+                cell
+            )
+            .col,
+            Column(1),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(1)));
-
-        let mouse = Mouse {
-            x: 19,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+        // x=18 → col 2
+        assert_eq!(
+            calculate_mouse_position(
+                &mk_mouse(18.0, 0.0),
+                0,
+                (cols, lines),
+                0.0,
+                0.0,
+                cell
+            )
+            .col,
+            Column(2),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(2)));
     }
 
-    /// With pre-scaled margin=10, cell boundaries at: 10, 19.4, 28.8, 38.2, ...
+    /// Pre-scaled margin: clicks before the margin clamp to col 0.
+    /// Boundaries at 10, 19, 28, 37, ... (cell width 9 with margin 10).
     #[test]
-    fn test_pos_calc_moving_mouse_x_with_scale_1_with_margin_10() {
-        let display_offset = 0;
-
-        let columns = 10;
+    fn pos_calc_with_prescaled_margin() {
+        let cols = 10;
         let lines = 5;
-        let margin_x_left = 10.0; // already scaled (10 * 1.0)
-        let margin_y_top = 0.0;
-        let cell_dimension_width = 9.4;
-        let cell_dimension_height = 18.0;
+        let cell = (9u32, 18u32);
+        let margin_x = 10.0_f32;
 
-        // x=8 → before margin → col 0
-        let mouse = Mouse {
-            x: 8,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+        // Click before margin → col 0.
+        assert_eq!(
+            calculate_mouse_position(
+                &mk_mouse(5.0, 0.0),
+                0,
+                (cols, lines),
+                margin_x,
+                0.0,
+                cell
+            )
+            .col,
+            Column(0),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        // x=9 → before margin → col 0
-        let mouse = Mouse {
-            x: 9,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+        // x=10 → col 0 (start of cell 0).
+        assert_eq!(
+            calculate_mouse_position(
+                &mk_mouse(10.0, 0.0),
+                0,
+                (cols, lines),
+                margin_x,
+                0.0,
+                cell
+            )
+            .col,
+            Column(0),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        // x=18 → (18-10)/9.4 = 0.85 → col 0
-        let mouse = Mouse {
-            x: 18,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+        // x=18.99 → still col 0.
+        assert_eq!(
+            calculate_mouse_position(
+                &mk_mouse(18.99, 0.0),
+                0,
+                (cols, lines),
+                margin_x,
+                0.0,
+                cell
+            )
+            .col,
+            Column(0),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        // x=20 → (20-10)/9.4 = 1.06 → col 1
-        let mouse = Mouse {
-            x: 20,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+        // x=19 → col 1.
+        assert_eq!(
+            calculate_mouse_position(
+                &mk_mouse(19.0, 0.0),
+                0,
+                (cols, lines),
+                margin_x,
+                0.0,
+                cell
+            )
+            .col,
+            Column(1),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(1)));
-
-        // x=28 → (28-10)/9.4 = 1.91 → col 1
-        let mouse = Mouse {
-            x: 28,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(1)));
-
-        // x=29 → (29-10)/9.4 = 2.02 → col 2
-        let mouse = Mouse {
-            x: 29,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(2)));
-
-        // x=38 → (38-10)/9.4 = 2.98 → col 2
-        let mouse = Mouse {
-            x: 38,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(2)));
-
-        // x=39 → (39-10)/9.4 = 3.08 → col 3
-        let mouse = Mouse {
-            x: 39,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(3)));
     }
 
-    /// Margin=20 is already pre-scaled (e.g. config 10.0 * scale 2.0).
-    /// Cell boundaries at: 20, 29.4, 38.8, ...
+    /// Regression for the actual mouse-positioning bug: with the
+    /// renderer painting at canonical `u32` stride `cell.cell_width`,
+    /// a click on the visual middle of a high-index column must map
+    /// to that same column index. The old code passed unrounded
+    /// `f32` cell_width to the divide, causing accumulating drift
+    /// (≈0.41px per col → wrong by 3 columns at col 100 with width
+    /// 16.41).
     #[test]
-    fn test_pos_calc_moving_mouse_x_with_scale_2_with_margin_10() {
-        let display_offset = 0;
+    fn pos_calc_no_drift_at_high_column_index() {
+        let cols = 200;
+        let lines = 50;
+        // u32 stride — the same value the GPU shader paints with.
+        let cell = (16u32, 33u32);
 
-        let columns = 10;
-        let lines = 5;
-        let margin_x_left = 20.0; // already scaled (10 * 2.0)
-        let margin_y_top = 0.0;
-        let cell_dimension_width = 9.4;
-        let cell_dimension_height = 18.0;
-
-        // x=9 → before margin → col 0
-        let mouse = Mouse {
-            x: 9,
-            ..Default::default()
-        };
+        // Painted col 100 occupies pixels [1600, 1616). Click in the middle.
         let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+            &mk_mouse(1608.0, 100.0),
+            0,
+            (cols, lines),
+            0.0,
+            0.0,
+            cell,
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
+        assert_eq!(pos.col, Column(100));
 
-        // x=28 → (28-20)/9.4 = 0.85 → col 0
-        let mouse = Mouse {
-            x: 28,
-            ..Default::default()
-        };
+        // Painted col 150 at pixels [2400, 2416). Click left edge.
         let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
+            &mk_mouse(2400.0, 100.0),
+            0,
+            (cols, lines),
+            0.0,
+            0.0,
+            cell,
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        // x=30 → (30-20)/9.4 = 1.06 → col 1
-        let mouse = Mouse {
-            x: 30,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(1)));
+        assert_eq!(pos.col, Column(150));
     }
 
-    /// Regression: margins passed to calculate_mouse_position are already
-    /// pre-scaled (multiplied by scale_factor in update_scaled_margin), but the
-    /// function multiplied them by scale_factor again. With a 2× display and
-    /// margin_y_top=72 (already 36*2), the double-scaling produces 144 instead
-    /// of 72, shifting the row calculation by ~2 rows.
-    ///
-    /// Uses exact values observed on a Retina display:
-    /// cell 16.41×33, margin (4, 72) pre-scaled, scale 2.0, 96×27 grid.
+    /// Subpixel mouse precision survives the divide. With cell=16
+    /// and HiDPI delivering `1608.5` from the OS, the f64 path gives
+    /// col 100; if we'd cast `mouse.x` to `usize` early (the old
+    /// behavior) we'd see `1608 / 16 = 100` too, but at the boundary
+    /// (e.g. `1599.9 → col 99` not `col 100`) precision matters.
     #[test]
-    fn test_row_not_double_scaled() {
-        let display_offset = 0;
+    fn pos_calc_subpixel_precision_preserved() {
+        let cell = (16u32, 33u32);
+        let cols = 200;
+        let lines = 50;
 
-        let columns = 96;
+        // 1599.9 should map to col 99 (cell 99 at [1584,1600)).
+        let pos = calculate_mouse_position(
+            &mk_mouse(1599.9, 100.0),
+            0,
+            (cols, lines),
+            0.0,
+            0.0,
+            cell,
+        );
+        assert_eq!(pos.col, Column(99));
+
+        // 1600.1 should map to col 100.
+        let pos = calculate_mouse_position(
+            &mk_mouse(1600.1, 100.0),
+            0,
+            (cols, lines),
+            0.0,
+            0.0,
+            cell,
+        );
+        assert_eq!(pos.col, Column(100));
+    }
+
+    /// Y axis: pre-scaled margin must not be re-scaled. Row stride
+    /// is the canonical `cell.1` (already includes line_height).
+    #[test]
+    fn pos_calc_row_with_prescaled_margin() {
+        let cols = 96;
         let lines = 27;
-        // These margins are ALREADY scaled (config margin * scale_factor).
-        let margin_x_left = 4.0; // e.g. config 2.0 * scale 2.0
-        let margin_y_top = 72.0; // e.g. config 36.0 * scale 2.0
-        let cell_w = 16.41;
-        let cell_h = 33.0;
+        let margin_y = 72.0_f32;
+        let cell = (16u32, 33u32);
 
-        // Row 0 starts at y = margin_y_top = 72.
-        // Row 6 spans y = [72 + 6*33, 72 + 7*33) = [270, 303).
-        let mouse = Mouse {
-            x: 100,
-            y: 280,
-            ..Default::default()
-        };
+        // Row 0 begins at y = 72. Row 6 spans [72+198, 72+231) = [270, 303).
         let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_w, cell_h),
+            &mk_mouse(100.0, 280.0),
+            0,
+            (cols, lines),
+            0.0,
+            margin_y,
+            cell,
         );
-        // (280 - 72) / 33 = 6.3 → row 6
-        // Bug: (280 - 144) / 33 = 4.1 → row 4 (margin double-scaled)
         assert_eq!(pos.row, Line(6));
 
-        // Row 22 spans y = [72 + 22*33, 72 + 23*33) = [798, 831).
-        let mouse = Mouse {
-            x: 100,
-            y: 820,
-            ..Default::default()
-        };
+        // Row 22 spans [72 + 22*33, 72 + 23*33) = [798, 831).
         let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_w, cell_h),
+            &mk_mouse(100.0, 820.0),
+            0,
+            (cols, lines),
+            0.0,
+            margin_y,
+            cell,
         );
-        // (820 - 72) / 33 = 22.7 → row 22
-        // Bug: (820 - 144) / 33 = 20.5 → row 20
         assert_eq!(pos.row, Line(22));
     }
 
-    /// Same double-scaling issue on the X axis, but less visible with small
-    /// margins. With margin_x_left=20 (pre-scaled) and scale=2.0 the error
-    /// is 20 extra pixels — enough to shift a column.
+    /// Display offset shifts the reported row by the scrollback
+    /// position so callers get a viewport-relative `Line` index.
     #[test]
-    fn test_col_not_double_scaled() {
-        let display_offset = 0;
-
-        let columns = 96;
+    fn pos_calc_display_offset_shifts_row() {
+        let cell = (16u32, 33u32);
+        let cols = 96;
         let lines = 27;
-        let margin_x_left = 20.0; // already scaled
-        let margin_y_top = 72.0;
-        let cell_w = 16.41;
-        let cell_h = 33.0;
 
-        // Col 3 starts at x = 20 + 3*16.41 = 69.23.
-        let mouse = Mouse {
-            x: 70,
-            y: 200,
-            ..Default::default()
-        };
+        // Row index 5 from top, display_offset 10 → Line(5) - 10 = Line(-5).
         let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_w, cell_h),
+            &mk_mouse(100.0, 5.0 * 33.0 + 1.0),
+            10,
+            (cols, lines),
+            0.0,
+            0.0,
+            cell,
         );
-        // (70 - 20) / 16.41 = 3.05 → col 3
-        // Bug: (70 - 40) / 16 = 1.87 → col 1 (margin double-scaled + int truncation)
-        assert_eq!(pos.col, Column(3));
+        assert_eq!(pos.row, Line(-5));
     }
 
-    /// Cell width=12.6, margin=10 (pre-scaled). Boundaries: 10, 22.6, 35.2, 47.8, ...
+    /// 60% threshold: cell_x < 0.6*cell_w → Left, otherwise Right.
+    /// Boundary lands on subpixel position.
     #[test]
-    fn test_pos_calc_font_size_12_6_moving_mouse_x_with_scale_1_with_margin_10() {
-        let display_offset = 0;
+    fn side_by_pos_60_percent_threshold() {
+        let cell = 16u32;
+        let margin_x = 0.0_f32;
+        let grid_w = 16.0 * 200.0;
 
-        let columns = 10;
-        let lines = 5;
-        let margin_x_left = 10.0;
-        let margin_y_top = 0.0;
-        let cell_dimension_width = 12.6;
-        let cell_dimension_height = 18.0;
-
-        // x=10 → (10-10)/12.6 = 0 → col 0
-        let mouse = Mouse {
-            x: 10,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        // x=22 → (22-10)/12.6 = 0.95 → col 0
-        let mouse = Mouse {
-            x: 22,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
-
-        // x=23 → (23-10)/12.6 = 1.03 → col 1
-        let mouse = Mouse {
-            x: 23,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(1)));
-
-        // x=35 → (35-10)/12.6 = 1.98 → col 1
-        let mouse = Mouse {
-            x: 35,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(1)));
-
-        // x=36 → (36-10)/12.6 = 2.06 → col 2
-        let mouse = Mouse {
-            x: 36,
-            ..Default::default()
-        };
-        let pos = calculate_mouse_position(
-            &mouse,
-            display_offset,
-            (columns, lines),
-            margin_x_left,
-            margin_y_top,
-            (cell_dimension_width, cell_dimension_height),
-        );
-        assert_eq!(pos, Pos::new(Line(0), Column(2)));
-    }
-
-    /// With cell_width=16.41 the 60% threshold sits at 9.846, so Left
-    /// spans [0, 9.846) and Right spans [9.846, 16.41). Using float math
-    /// avoids truncation that would shift the boundary.
-    #[test]
-    fn test_side_by_pos_float_precision() {
-        let cell_width = 16.41_f32;
-        let margin_x = 8.0; // pre-scaled
-        let grid_width = 8.0 + 96.0 * cell_width;
-
-        // pixel 16 → cell_x = 8.0 < threshold 9.846 → Left
+        // cell_x = 9.59 < 9.6 → Left.
         assert_eq!(
-            calculate_side_by_pos(16, margin_x, cell_width, grid_width),
+            calculate_side_by_pos(9.59, margin_x, cell, grid_w),
             Side::Left,
         );
-
-        // pixel 17 → cell_x = 9.0 < threshold 9.846 → still Left (was Right at 50%)
+        // cell_x ≥ 9.6 → Right. Use 9.61 to dodge f64 rep of 9.6.
         assert_eq!(
-            calculate_side_by_pos(17, margin_x, cell_width, grid_width),
-            Side::Left,
-        );
-
-        // pixel 18 → cell_x = 10.0 >= threshold 9.846 → Right
-        assert_eq!(
-            calculate_side_by_pos(18, margin_x, cell_width, grid_width),
+            calculate_side_by_pos(9.61, margin_x, cell, grid_w),
             Side::Right,
         );
     }
 
-    /// Regression: integer truncation of cell_width (16.41 → 16) caused
-    /// the modulo to drift at higher pixel positions, making the side
-    /// detection wrong for cells far from the left edge.
+    /// Regression: side detection had drift at high columns when the
+    /// f32 divide was off by half a pixel per cell. With u32 stride
+    /// the modulo stays exact at any column.
     #[test]
-    fn test_side_by_pos_no_drift_at_high_columns() {
-        let cell_width = 16.41_f32;
-        let margin_x = 8.0;
-        let grid_width = 8.0 + 96.0 * cell_width;
+    fn side_by_pos_no_drift_at_high_columns() {
+        let cell = 16u32;
+        let margin_x = 0.0_f32;
+        let grid_w = 16.0 * 200.0;
 
-        // Column 76 starts at margin + 76 * 16.41 = 8 + 1247.16 = 1255.16
-        // Left side: pixel 1256 → cell_x = 1248 % 16.41 ≈ 0.66 → Left
+        // Col 100 = pixel [1600, 1616). Left side: cell_x = 0..9.6.
         assert_eq!(
-            calculate_side_by_pos(1256, margin_x, cell_width, grid_width),
+            calculate_side_by_pos(1600.0, margin_x, cell, grid_w),
             Side::Left,
         );
-
-        // Pixel 1266 → cell_x = 1258 % 16.41 ≈ 10.48 >= 9.846 → Right
         assert_eq!(
-            calculate_side_by_pos(1266, margin_x, cell_width, grid_width),
+            calculate_side_by_pos(1609.5, margin_x, cell, grid_w),
+            Side::Left,
+        );
+        // ≥ 9.6 → Right. Use 9.61 to dodge f64 representation of 9.6.
+        assert_eq!(
+            calculate_side_by_pos(1609.61, margin_x, cell, grid_w),
             Side::Right,
         );
     }
 
-    /// Margin must not be double-scaled in side calculation.
+    /// Margin pre-scaled, must not be re-scaled in the side
+    /// calculation. Pixel before margin clamps to Left.
     #[test]
-    fn test_side_by_pos_prescaled_margin() {
-        let cell_width = 16.0;
-        let margin_x = 40.0; // already scaled (e.g. 20 * 2.0)
-        let grid_width = 40.0 + 80.0 * 16.0;
+    fn side_by_pos_prescaled_margin() {
+        let cell = 16u32;
+        let margin_x = 40.0_f32;
+        let grid_w = 40.0 + 80.0 * 16.0;
 
-        // Pixel 41: just past margin, left side of cell 0
-        // cell_x = (41 - 40) % 16 = 1.0, threshold = 9.6 → Left
+        // Before margin → Left.
         assert_eq!(
-            calculate_side_by_pos(41, margin_x, cell_width, grid_width),
+            calculate_side_by_pos(30.0, margin_x, cell, grid_w),
             Side::Left,
         );
-
-        // Pixel 50: past the 60% threshold of cell 0
-        // cell_x = (50 - 40) % 16 = 10.0, threshold = 9.6 → Right
+        // x=49: cell_x = 9 < 9.6 → Left.
         assert_eq!(
-            calculate_side_by_pos(50, margin_x, cell_width, grid_width),
+            calculate_side_by_pos(49.0, margin_x, cell, grid_w),
+            Side::Left,
+        );
+        // x=49.61 → cell_x ≥ 9.6 → Right (49.6 hits f64 rep edge).
+        assert_eq!(
+            calculate_side_by_pos(49.61, margin_x, cell, grid_w),
             Side::Right,
-        );
-
-        // Pixel 49: cell_x = 9.0 < threshold 9.6 → Left (was Right at 50%)
-        assert_eq!(
-            calculate_side_by_pos(49, margin_x, cell_width, grid_width),
-            Side::Left,
-        );
-
-        // Pixel 30: before margin → clamped to 0, Left
-        assert_eq!(
-            calculate_side_by_pos(30, margin_x, cell_width, grid_width),
-            Side::Left,
         );
     }
 }

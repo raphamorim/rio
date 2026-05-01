@@ -1375,11 +1375,18 @@ pub fn build_row_fg(
 
         // Open a run at x.
         let ch = sq.c();
+        let run_start_style_id = sq.style_id();
         let run_style_flags =
-            (style_set.get(sq.style_id()).flags.bits() & SHAPING_FLAG_MASK) as u8;
+            (style_set.get(run_start_style_id).flags.bits() & SHAPING_FLAG_MASK) as u8;
         let (font_id, is_emoji) =
             rasterizer.resolve_font(ch, run_style_flags, font_library);
         let run_start = x;
+        // Sticky style_id — typical syntax-highlighted output has long
+        // stretches of cells sharing one style_id. While it stays equal
+        // we know shape flags match too, so skip the StyleSet vec read
+        // + bits/mask/compare. Mirrors ghostty `font/shaper/run.zig:140`
+        // (`if (prev_cell.style_id == cell.style_id) break :style;`).
+        let mut prev_style_id = run_start_style_id;
 
         // Kitty Unicode placeholder shapes as a space — the cell
         // joins the run, the shaper emits an invisible space glyph
@@ -1417,13 +1424,17 @@ pub fn build_row_fg(
             if is_run_breaker(sq2) {
                 break;
             }
-            let ch2 = sq2.c();
-            let style2_flags =
-                (style_set.get(sq2.style_id()).flags.bits() & SHAPING_FLAG_MASK) as u8;
-            if style2_flags != run_style_flags {
-                break;
+            let style2_id = sq2.style_id();
+            if style2_id != prev_style_id {
+                let f = (style_set.get(style2_id).flags.bits() & SHAPING_FLAG_MASK) as u8;
+                if f != run_style_flags {
+                    break;
+                }
+                prev_style_id = style2_id;
             }
-            let (font_id2, _) = rasterizer.resolve_font(ch2, style2_flags, font_library);
+            let ch2 = sq2.c();
+            let (font_id2, _) =
+                rasterizer.resolve_font(ch2, run_style_flags, font_library);
             if font_id2 != font_id {
                 break;
             }
@@ -1921,9 +1932,14 @@ fn rasterize_glyph_native(
         Source::Outline,
     ];
     let mut image = GlyphImage::new();
+    let embolden_amount = if synthetic_bold {
+        (size_u16 as f32 / 14.0).max(1.0)
+    } else {
+        0.0
+    };
     let ok = Render::new(sources)
         .format(Format::Alpha)
-        .embolden(if synthetic_bold { 0.5 } else { 0.0 })
+        .embolden(embolden_amount)
         .transform(if synthetic_italic {
             Some(Transform::skew(
                 Angle::from_degrees(14.0),

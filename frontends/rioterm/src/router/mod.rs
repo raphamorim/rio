@@ -789,9 +789,8 @@ fn compute_window_size_from_grid(
                 + panel.margin.left
                 + panel.margin.right)
                 * scale;
-            let raw = (columns as f32 * dim.dimension.width).ceil() as u32
-                + margin as u32
-                + panel_edge as u32;
+            let raw =
+                columns as u32 * dim.cell.cell_width + margin as u32 + panel_edge as u32;
             raw.next_multiple_of(scale_u32)
         }
         _ => window_size.width,
@@ -805,9 +804,8 @@ fn compute_window_size_from_grid(
                 + panel.margin.top
                 + panel.margin.bottom)
                 * scale;
-            let raw = (rows as f32 * dim.dimension.height).ceil() as u32
-                + margin as u32
-                + panel_edge as u32;
+            let raw =
+                rows as u32 * dim.cell.cell_height + margin as u32 + panel_edge as u32;
             raw.next_multiple_of(scale_u32)
         }
         _ => window_size.height,
@@ -836,6 +834,17 @@ mod grid_size_tests {
                 width,
                 height,
                 scale,
+            },
+            // Canonical cell stride matches the dims so router math
+            // (`cols * cell_width`) lines up with what the test
+            // labels imply.
+            cell: rio_backend::sugarloaf::layout::CellMetrics {
+                cell_width: width.round().max(1.0) as u32,
+                cell_height: height.round().max(1.0) as u32,
+                cell_baseline: 0,
+                face_width: width as f64,
+                face_height: height as f64,
+                face_y: 0.0,
             },
             margin,
             ..Default::default()
@@ -922,8 +931,9 @@ mod grid_size_tests {
     #[test]
     fn rounds_up_on_hidpi() {
         let dim = make_dim(16.41, 33.0, 2.0, Margin::all(0.0));
-        // 80 * 16.41 = 1312.8 → ceil = 1313, next_multiple_of(2) = 1314
-        // 24 * 33.0 = 792, next_multiple_of(2) = 792
+        // Canonical cell stride: round(16.41) = 16, round(33.0) = 33.
+        // 80 * 16 = 1280, next_multiple_of(2) = 1280
+        // 24 * 33 = 792,  next_multiple_of(2) = 792
         assert_eq!(
             compute_window_size_from_grid(
                 Some(80),
@@ -932,7 +942,7 @@ mod grid_size_tests {
                 &dim,
                 win(1000, 600)
             ),
-            (1314, 792)
+            (1280, 792)
         );
     }
 
