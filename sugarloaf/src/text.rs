@@ -476,11 +476,15 @@ impl Text {
             };
 
             // Ascent — via swash metrics scaled to device-px size.
+            // `metrics` wants normalized variation coords (`&[i16]`),
+            // not `&[Setting<f32>]`. Variations barely affect vertical
+            // metrics in practice, so pass `&[]` here — same pattern
+            // every other `metrics()` call in the crate uses.
             let ascent_px = *self
                 .ascent_cache
                 .entry((font_id, size_bucket))
                 .or_insert_with(|| {
-                    let m = font_ref.metrics(var_slice).scale(size_u16 as f32);
+                    let m = font_ref.metrics(&[]).scale(size_u16 as f32);
                     m.ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
                 });
 
