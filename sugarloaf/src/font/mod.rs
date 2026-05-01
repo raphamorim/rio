@@ -807,19 +807,27 @@ impl FontLibraryData {
                     self.insert(data);
                 }
                 FindResult::NotFound(spec) => {
-                    // Family-level misses are already reported by the
-                    // regular slot. A per-slot miss here means the
-                    // family resolved but the requested style/weight
-                    // didn't — log-only, no UI warning. Alias to the
-                    // regular slot so the position stays populated
-                    // without cloning the face.
-                    if !spec.is_default_family() {
+                    if spec.is_default_family() {
+                        // Default family: the user didn't ask for a custom
+                        // family, so load the bundled Cascadia Code variant
+                        // for this slot rather than aliasing back to the
+                        // regular face. Aliasing leaves bold/italic
+                        // attributes invisible in the lookup walk and
+                        // forces a cascade-discovery fallback at shape
+                        // time — which can resolve bold to a system font
+                        // with mismatched metrics.
+                        self.insert(load_fallback_from_memory(slot));
+                    } else {
+                        // Family resolved but the requested style/weight
+                        // didn't — log-only, no UI warning. Alias to the
+                        // regular slot so the position stays populated
+                        // without cloning the face.
                         warn!(
                             "Font family '{}' has no {:?} variant; falling back to regular",
                             spec.family, slot
                         );
+                        self.insert_alias(regular_index);
                     }
-                    self.insert_alias(regular_index);
                 }
             }
         }
@@ -920,7 +928,7 @@ impl FontLibraryData {
 
     #[cfg(target_arch = "wasm32")]
     pub fn load(&mut self, _font_spec: SugarloafFonts) -> Vec<SugarloafFont> {
-        self.insert(FontData::from_slice(FONT_CASCADIAMONO_NF_REGULAR).unwrap());
+        self.insert(FontData::from_slice(FONT_CASCADIA_CODE_NF).unwrap());
 
         vec![]
     }
@@ -1017,6 +1025,12 @@ pub struct FontData {
     pub synth: Synthesis,
     pub should_embolden: bool,
     pub should_italicize: bool,
+    /// `wght` axis value to apply when this `FontData` is backed by a
+    /// variable font (currently set only for the bundled Cascadia Code
+    /// fallback faces). On macOS the value is baked into `handle` via
+    /// `CTFontCreateCopyWithAttributes`; on Linux/Windows it's applied
+    /// to swash's shaper/scaler at render time.
+    pub wght_variation: Option<f32>,
     pub is_emoji: bool,
     // Cached metrics per font size (per-font caching)
     metrics_cache: FxHashMap<u32, Metrics>,
@@ -1221,6 +1235,7 @@ impl FontData {
             offset,
             should_italicize,
             should_embolden,
+            wght_variation: None,
             key,
             synth,
             style,
@@ -1279,6 +1294,7 @@ impl FontData {
             synth: Synthesis::default(),
             should_embolden: false,
             should_italicize: false,
+            wght_variation: None,
             is_emoji: attrs.is_color,
             metrics_cache: FxHashMap::default(),
             handle: Some(handle),
@@ -1318,6 +1334,7 @@ impl FontData {
             synth: Synthesis::default(),
             should_embolden,
             should_italicize,
+            wght_variation: None,
             is_emoji: attrs.is_color,
             metrics_cache: FxHashMap::default(),
             handle: Some(handle),
@@ -1336,18 +1353,52 @@ impl FontData {
     pub fn from_static_slice(
         data: &'static [u8],
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::from_static_slice_with_wght(data, None)
+    }
+
+    /// Like [`from_static_slice`] but optionally bakes a `wght` axis
+    /// value into the loaded face. Mirrors ghostty's `Face.setVariations`
+    /// pattern: load the same variable-font bytes for every weight slot,
+    /// then set the `wght` axis post-construction so the rasterizer pulls
+    /// the right outlines (regular vs. bold) from a single source file.
+    ///
+    /// `wght = None` leaves the font at its default instance. Pass
+    /// `Some(700.0)` for the bold slot, etc.
+    pub fn from_static_slice_with_wght(
+        data: &'static [u8],
+        wght: Option<f32>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let font = FontRef::from_index(data, 0).unwrap();
         let (offset, key) = (font.offset, font.key);
         let attributes = font.attributes();
         let style = attributes.style();
-        let weight = attributes.weight();
+        // The default instance of a variable font reports the regular
+        // weight (e.g. 400). When the caller asks for a specific `wght`
+        // value we override the reported weight so `is_bold()` and the
+        // bold-spec lookup walk match the slot's intent.
+        let weight = match wght {
+            Some(v) => swash::Weight(v.round().clamp(0.0, u16::MAX as f32) as u16),
+            None => attributes.weight(),
+        };
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
         let is_emoji = has_color_tables(&font);
         let postscript_name = parse_postscript_name(data);
 
         #[cfg(target_os = "macos")]
-        let handle = crate::font::macos::FontHandle::from_static_bytes(data);
+        let handle = {
+            let base = crate::font::macos::FontHandle::from_static_bytes(data);
+            // Bake the `wght` variation into the CTFont via
+            // `CTFontCreateCopyWithAttributes` so shape_text /
+            // font_metrics / rasterize_glyph all pull the right outlines
+            // without per-call setup.
+            match (base, wght) {
+                (Some(h), Some(v)) => {
+                    Some(h.clone().with_wght_variation(v).unwrap_or(h))
+                }
+                (h, _) => h,
+            }
+        };
 
         Ok(Self {
             data: Some(SharedData::from_static(data)),
@@ -1357,6 +1408,7 @@ impl FontData {
             style,
             should_embolden: false,
             should_italicize: false,
+            wght_variation: wght,
             weight,
             stretch,
             path: None,
@@ -1392,6 +1444,7 @@ impl FontData {
             style,
             should_embolden: false,
             should_italicize: false,
+            wght_variation: None,
             weight,
             stretch,
             path: None,
@@ -1445,6 +1498,7 @@ impl FontData {
             offset,
             should_italicize: false,
             should_embolden: false,
+            wght_variation: None,
             key,
             synth,
             style,
@@ -1661,15 +1715,24 @@ fn find_font(
     FindResult::NotFound(font_spec)
 }
 
+/// Load a bundled fallback face for `slot` from the embedded Cascadia Code
+/// variable font. Mirrors ghostty's `SharedGridSet` setup (see
+/// `ghostty/src/font/SharedGridSet.zig:264-317`): regular and bold load
+/// the same upright variable file, italic and bold-italic load the same
+/// italic variable file, and the bold slots set the `wght` axis to 700.
 fn load_fallback_from_memory(slot: Slot) -> FontData {
-    let font_to_load = match slot {
-        Slot::Regular => constants::FONT_CASCADIAMONO_NF_REGULAR,
-        Slot::Bold => constants::FONT_CASCADIAMONO_BOLD,
-        Slot::Italic => constants::FONT_CASCADIAMONO_ITALIC,
-        Slot::BoldItalic => constants::FONT_CASCADIAMONO_BOLD_ITALIC,
+    use constants::{
+        FONT_CASCADIA_CODE_NF, FONT_CASCADIA_CODE_NF_ITALIC, WGHT_BOLD,
     };
 
-    FontData::from_static_slice(font_to_load).unwrap()
+    let (data, wght) = match slot {
+        Slot::Regular => (FONT_CASCADIA_CODE_NF, None),
+        Slot::Bold => (FONT_CASCADIA_CODE_NF, Some(WGHT_BOLD)),
+        Slot::Italic => (FONT_CASCADIA_CODE_NF_ITALIC, None),
+        Slot::BoldItalic => (FONT_CASCADIA_CODE_NF_ITALIC, Some(WGHT_BOLD)),
+    };
+
+    FontData::from_static_slice_with_wght(data, wght).unwrap()
 }
 
 #[cfg(test)]
@@ -1683,7 +1746,7 @@ mod alias_tests {
     fn insert_alias_resolves_to_target() {
         let mut lib = FontLibraryData::default();
         lib.insert(
-            FontData::from_static_slice(constants::FONT_CASCADIAMONO_NF_REGULAR)
+            FontData::from_static_slice(constants::FONT_CASCADIA_CODE_NF)
                 .expect("load regular"),
         );
         lib.insert_alias(0);
@@ -1705,7 +1768,7 @@ mod alias_tests {
     fn alias_of_alias_collapses_to_root() {
         let mut lib = FontLibraryData::default();
         lib.insert(
-            FontData::from_static_slice(constants::FONT_CASCADIAMONO_NF_REGULAR)
+            FontData::from_static_slice(constants::FONT_CASCADIA_CODE_NF)
                 .expect("load regular"),
         );
         lib.insert_alias(0);
@@ -1718,6 +1781,37 @@ mod alias_tests {
         assert!(matches!(lib.inner.get(&2), Some(FontEntry::Alias(0))));
     }
 
+    /// Default-family fallback loading produces an actual bold face
+    /// (not an alias) when the regular slot uses the bundled Cascadia
+    /// Code variable font. Guards against the alias-everywhere
+    /// regression introduced in commit `e82299705f` that left the
+    /// embedded bold slot unloaded with default config.
+    #[test]
+    fn fallback_bold_slot_reports_is_bold() {
+        let regular = load_fallback_from_memory(Slot::Regular);
+        let bold = load_fallback_from_memory(Slot::Bold);
+        let italic = load_fallback_from_memory(Slot::Italic);
+        let bold_italic = load_fallback_from_memory(Slot::BoldItalic);
+
+        assert!(!regular.is_bold(), "regular slot must not be bold");
+        assert!(bold.is_bold(), "bold slot must report is_bold");
+        assert!(!italic.is_bold(), "italic slot must not be bold");
+        assert!(bold_italic.is_bold(), "bold-italic slot must report is_bold");
+
+        assert!(!regular.is_italic(), "regular slot must not be italic");
+        assert!(!bold.is_italic(), "bold slot must not be italic");
+        assert!(italic.is_italic(), "italic slot must report is_italic");
+        assert!(
+            bold_italic.is_italic(),
+            "bold-italic slot must report is_italic"
+        );
+
+        assert_eq!(bold.wght_variation, Some(constants::WGHT_BOLD));
+        assert_eq!(bold_italic.wght_variation, Some(constants::WGHT_BOLD));
+        assert_eq!(regular.wght_variation, None);
+        assert_eq!(italic.wght_variation, None);
+    }
+
     /// Aliases share the target's `metrics_cache`, so requesting
     /// metrics through the alias returns the same numbers as the
     /// target without populating a duplicate cache.
@@ -1725,7 +1819,7 @@ mod alias_tests {
     fn alias_shares_metrics_with_target() {
         let mut lib = FontLibraryData::default();
         lib.insert(
-            FontData::from_static_slice(constants::FONT_CASCADIAMONO_NF_REGULAR)
+            FontData::from_static_slice(constants::FONT_CASCADIA_CODE_NF)
                 .expect("load regular"),
         );
         lib.insert_alias(0);
@@ -1801,13 +1895,13 @@ mod postscript_resolver_tests {
         // Read the PS name straight from the handle so the test doesn't
         // hardcode a value that changes if the bundled font is updated.
         let handle = crate::font::macos::FontHandle::from_static_bytes(
-            FONT_CASCADIAMONO_NF_REGULAR,
+            FONT_CASCADIA_CODE_NF,
         )
         .expect("parse CascadiaMono");
         let ps_name = handle.postscript_name();
 
         let mut lib = FontLibraryData::default();
-        let font_data = FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR)
+        let font_data = FontData::from_static_slice(FONT_CASCADIA_CODE_NF)
             .expect("load CascadiaMono");
         lib.insert(font_data);
 
@@ -1831,17 +1925,17 @@ mod postscript_resolver_tests {
     #[test]
     fn duplicate_insert_keeps_first_id() {
         let handle = crate::font::macos::FontHandle::from_static_bytes(
-            FONT_CASCADIAMONO_NF_REGULAR,
+            FONT_CASCADIA_CODE_NF,
         )
         .expect("parse CascadiaMono");
         let ps_name = handle.postscript_name();
 
         let mut lib = FontLibraryData::default();
         lib.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load a"),
+            FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load a"),
         );
         lib.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load b"),
+            FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load b"),
         );
         assert_eq!(
             lib.font_id_for_postscript_name(&ps_name),
@@ -1862,7 +1956,7 @@ mod postscript_resolver_tests {
 
         let mut data = FontLibraryData::default();
         data.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load"),
+            FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load"),
         );
         let lib = FontLibrary {
             inner: Arc::new(parking_lot::RwLock::new(data)),
@@ -1901,7 +1995,7 @@ mod postscript_resolver_tests {
 
         let mut data = FontLibraryData::default();
         data.insert(
-            FontData::from_static_slice(FONT_CASCADIAMONO_NF_REGULAR).expect("load"),
+            FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load"),
         );
         let lib = FontLibrary {
             inner: Arc::new(parking_lot::RwLock::new(data)),

@@ -297,6 +297,51 @@ impl FontHandle {
     pub fn postscript_name(&self) -> String {
         self.base_font.postscript_name()
     }
+
+    /// Return a derived `FontHandle` with the `wght` variation axis pinned
+    /// to `value`. Used to bake the bold weight into Rio's bold/bold-italic
+    /// fallback slots from a single variable-font file (matches ghostty's
+    /// `Face.setVariations` flow in `face/coretext.zig:225-254`).
+    ///
+    /// The returned CTFont references the same underlying font data — only
+    /// the descriptor's variation attributes change. Returns `None` if
+    /// CoreText refuses to construct the derived descriptor or font.
+    pub fn with_wght_variation(self, value: f32) -> Option<Self> {
+        use core_foundation::base::TCFType;
+        use core_foundation::dictionary::CFDictionary;
+        use core_foundation::number::CFNumber;
+        use core_foundation::string::CFString;
+
+        // The wght axis identifier in CoreText is the four-byte tag
+        // 'w','g','h','t' as a CFNumber. Match Cascadia's axis registration.
+        const WGHT_TAG: i64 = u32::from_be_bytes(*b"wght") as i64;
+
+        let id_num = CFNumber::from(WGHT_TAG);
+        let val_num = CFNumber::from(value as f64);
+        let variation: CFDictionary<CFType, CFType> = CFDictionary::from_CFType_pairs(
+            &[(id_num.as_CFType(), val_num.as_CFType())],
+        );
+        let var_attr_key =
+            unsafe { CFString::wrap_under_get_rule(kCTFontVariationAttribute) };
+        let attrs: CFDictionary<CFString, CFType> = CFDictionary::from_CFType_pairs(&[
+            (var_attr_key, variation.as_CFType()),
+        ]);
+        let desc = font_descriptor::new_from_attributes(&attrs);
+
+        let derived_ref = unsafe {
+            CTFontCreateCopyWithAttributes(
+                self.base_font.as_concrete_TypeRef(),
+                0.0,
+                std::ptr::null(),
+                desc.as_concrete_TypeRef(),
+            )
+        };
+        if derived_ref.is_null() {
+            return None;
+        }
+        let derived = unsafe { CTFont::wrap_under_create_rule(derived_ref) };
+        Some(Self { base_font: derived })
+    }
 }
 
 /// Output of a single glyph rasterization. Mirrors the fields of
@@ -1398,7 +1443,7 @@ pub fn shape_text_utf16(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::font::constants::FONT_CASCADIAMONO_NF_REGULAR;
+    use crate::font::constants::FONT_CASCADIA_CODE_NF;
     use core_foundation::base::CFIndex;
 
     fn glyph_id_for_char(handle: &FontHandle, size: f64, ch: char) -> u16 {
@@ -1424,7 +1469,7 @@ mod tests {
     #[test]
     fn shapes_ascii_monospace() {
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load font");
         let glyphs = shape_text(&handle, "Hello", 18.0);
 
         assert_eq!(glyphs.len(), 5, "one glyph per ASCII char");
@@ -1459,7 +1504,7 @@ mod tests {
         // CascadiaMono carries a well-formed OS/2 table, so we should get
         // real values — not the x-height/2 fallback.
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load font");
         let m = font_metrics(&handle, 24.0);
 
         assert!(m.strikeout_thickness > 0.0, "thickness should be positive");
@@ -1485,7 +1530,7 @@ mod tests {
         // path swapped indices for the slow-path output it'd still compile,
         // but the cluster values would be wrong for multi-byte text.
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load font");
         let glyphs = shape_text(&handle, "abcde", 18.0);
         for (i, g) in glyphs.iter().enumerate() {
             assert_eq!(g.cluster, i as u32);
@@ -1497,7 +1542,7 @@ mod tests {
         // Mixed BMP non-ASCII: 'é' is 2 bytes in UTF-8, 1 code unit in UTF-16.
         // Byte offsets should jump accordingly.
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load font");
         let glyphs = shape_text(&handle, "aébc", 18.0);
         // Expected clusters: a=0, é=1, b=3 (after 2-byte é), c=4.
         assert_eq!(glyphs.len(), 4);
@@ -1510,7 +1555,7 @@ mod tests {
     #[test]
     fn shapes_empty_input() {
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load font");
         assert!(shape_text(&handle, "", 18.0).is_empty());
     }
 
@@ -1520,7 +1565,7 @@ mod tests {
         // returns a font (usually the primary itself). The result must not be
         // null — Rio's lazy-discovery path relies on that.
         let primary =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load primary");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load primary");
         let result = discover_fallback(&primary, 'A');
         assert!(
             result.is_some(),
@@ -1535,7 +1580,7 @@ mod tests {
         // back. The test asserts non-null and, to avoid being flaky on
         // different macOS versions, does not hardcode the PS name.
         let primary =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load primary");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load primary");
         let fallback = discover_fallback(&primary, '\u{6C34}')
             .expect("CoreText should cascade to a CJK font for 水");
         // The discovered font must cover the codepoint — the whole
@@ -1564,7 +1609,7 @@ mod tests {
         // single-font fragment), but we still exercise the multi-run
         // path here because it's the cheapest invariant to regress on.
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load font");
         // "A水B" — the CJK "water" ideograph is not in CascadiaMono, so
         // CoreText will cascade into a system CJK font for the middle
         // glyph, splitting the line across 3 CTRuns.
@@ -1609,7 +1654,7 @@ mod tests {
         // CTFontDescriptor → CTFont → rasterize. Verifies the FFI is wired
         // correctly and the ref-don't-copy CFData is accepted by
         // CTFontManagerCreateFontDescriptorFromData.
-        let handle = FontHandle::from_static_bytes(FONT_CASCADIAMONO_NF_REGULAR)
+        let handle = FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF)
             .expect("static bytes should parse");
         let size = 18.0;
         let gid = glyph_id_for_char(&handle, size as f64, 'M');
@@ -1623,7 +1668,7 @@ mod tests {
     #[test]
     fn rasterizes_an_inked_glyph() {
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load font");
         let size = 24.0;
         let gid = glyph_id_for_char(&handle, size as f64, 'A');
         let g = rasterize_glyph(&handle, gid, size, false, false, false)
@@ -1657,7 +1702,7 @@ mod tests {
         // This test is a regression guard — if `cascade_list_for_languages`
         // ever returns empty for a legit font, dynamic fallback stops working.
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load font");
         let paths = default_cascade_list(&handle);
         assert!(
             !paths.is_empty(),
@@ -1674,8 +1719,8 @@ mod tests {
     fn from_bytes_index_zero_matches_from_bytes() {
         // For a plain TTF the single font is at index 0; both loaders
         // should land on equivalent CTFonts.
-        let a = FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("a");
-        let b = FontHandle::from_bytes_index(FONT_CASCADIAMONO_NF_REGULAR, 0).expect("b");
+        let a = FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("a");
+        let b = FontHandle::from_bytes_index(FONT_CASCADIA_CODE_NF, 0).expect("b");
         // Compare via a shape probe — identical glyph ids means same face.
         let gid_a = glyph_id_for_char(&a, 18.0, 'A');
         let gid_b = glyph_id_for_char(&b, 18.0, 'A');
@@ -1684,7 +1729,7 @@ mod tests {
 
     #[test]
     fn from_bytes_index_out_of_range_returns_none() {
-        let h = FontHandle::from_bytes_index(FONT_CASCADIAMONO_NF_REGULAR, 99);
+        let h = FontHandle::from_bytes_index(FONT_CASCADIA_CODE_NF, 99);
         assert!(h.is_none(), "index 99 on a single-font TTF should fail");
     }
 
@@ -1705,7 +1750,7 @@ mod tests {
     #[test]
     fn zero_ink_glyph_yields_empty_bitmap() {
         let handle =
-            FontHandle::from_bytes(FONT_CASCADIAMONO_NF_REGULAR).expect("load font");
+            FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).expect("load font");
         let size = 24.0;
         let gid = glyph_id_for_char(&handle, size as f64, ' ');
         let g = rasterize_glyph(&handle, gid, size, false, false, false)
