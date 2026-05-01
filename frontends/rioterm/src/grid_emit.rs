@@ -1740,6 +1740,7 @@ pub fn build_row_fg(
                 glyph_id,
                 size_bucket,
                 size_u16,
+                cell_w,
                 cell_h,
                 ascent_px,
                 is_emoji,
@@ -1959,6 +1960,18 @@ fn emit_strikethroughs(
 /// Look up or rasterize-and-insert a glyph into the grid atlas by
 /// `glyph_id`. Platform-agnostic entry point; cfg branches inside to
 /// call the CT or swash rasterizer.
+///
+/// Two placement modes:
+/// - **Text** (non-emoji): glyph rasterized at the text point size,
+///   placed on the primary font's baseline via `cell_h - ascent + top`.
+/// - **Emoji**: glyph rasterized at a size chosen from cell metrics
+///   (`min(2*cell_w, cell_h)`) so the bitmap fills its 2-cell slot,
+///   then centered horizontally in `2*cell_w` and vertically in
+///   `cell_h`. The emoji font's own bbox/ascent is irrelevant — its
+///   metrics don't compose with the primary font's baseline, so cell-
+///   centered placement (matches the symbol-centering rationale in
+///   `compositor.rs` for PUA constraint glyphs) is the only metric-
+///   independent answer.
 #[allow(clippy::too_many_arguments)]
 fn ensure_glyph_by_id(
     rasterizer: &mut GridGlyphRasterizer,
@@ -1967,16 +1980,30 @@ fn ensure_glyph_by_id(
     glyph_id: u16,
     size_bucket: u16,
     size_u16: u16,
+    cell_w: f32,
     cell_h: f32,
     ascent_px: i16,
     is_emoji: bool,
     synthetic_italic: bool,
     synthetic_bold: bool,
 ) -> Option<(GlyphKey, AtlasSlot, bool)> {
+    // Emoji rasterizes at a cell-derived size, not the text size, so
+    // its atlas bucket has to differ — otherwise resizing-induced text-
+    // size changes that fall in the same `size_bucket` would alias the
+    // cached emoji bitmap.
+    let (raster_size_u16, raster_size_bucket) = if is_emoji {
+        let target = (2.0 * cell_w).min(cell_h).max(1.0);
+        let s = target.round().clamp(1.0, u16::MAX as f32) as u16;
+        let b = (target * 4.0).round().clamp(0.0, u16::MAX as f32) as u16;
+        (s, b)
+    } else {
+        (size_u16, size_bucket)
+    };
+
     let key = GlyphKey {
         font_id,
         glyph_id: glyph_id as u32,
-        size_bucket,
+        size_bucket: raster_size_bucket,
     };
     if let Some(slot) = grid.lookup_glyph(key) {
         return Some((key, slot, false));
@@ -1990,25 +2017,38 @@ fn ensure_glyph_by_id(
         rasterizer,
         font_id,
         glyph_id,
-        size_u16,
+        raster_size_u16,
         is_emoji,
         synthetic_bold,
         synthetic_italic,
     )?;
     let is_color = raw.is_color;
 
-    // Convert CG-convention `left`/`top` into grid-convention
-    // `bearing_y` = `cell_h - ascent + top`. See the long comment in
-    // the original macOS rasterizer for the geometry.
-    let bearing_y = {
+    let (bearing_x, bearing_y) = if is_emoji {
+        // Center the rasterized bitmap within the 2-cell slot.
+        // `bearing_y` is "bitmap top measured from cell bottom" — see
+        // `grid.metal:265-269` (`offset.y = cell_size.y - bearing_y`).
+        let slot_w = (2.0 * cell_w).round() as i32;
+        let slot_h = cell_h.round() as i32;
+        let bx = ((slot_w - raw.width as i32) / 2).clamp(i16::MIN as i32, i16::MAX as i32)
+            as i16;
+        let by = ((slot_h + raw.height as i32) / 2)
+            .clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        (bx, by)
+    } else {
+        // Convert CG-convention `left`/`top` into grid-convention
+        // `bearing_y` = `cell_h - ascent + top`.
         let top_i16 = raw.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
         let cell_h_i16 = cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
-        cell_h_i16.saturating_sub(ascent_px).saturating_add(top_i16)
+        let by = cell_h_i16.saturating_sub(ascent_px).saturating_add(top_i16);
+        let bx = raw.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        (bx, by)
     };
+
     let raster = RasterizedGlyph {
         width: raw.width.min(u16::MAX as u32) as u16,
         height: raw.height.min(u16::MAX as u32) as u16,
-        bearing_x: raw.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+        bearing_x,
         bearing_y,
         bytes: &raw.bytes,
     };
