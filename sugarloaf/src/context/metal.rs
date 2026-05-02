@@ -119,6 +119,13 @@ impl MetalContext {
         } else {
             tracing::warn!("Failed to create Display P3 CGColorSpace");
         }
+        // Default to opaque so the macOS compositor can take its
+        // fast path on windows without configured transparency.
+        // Mirrors ghostty's NSWindow.isOpaque default
+        // (`macos/.../TerminalWindow.swift:482-505`). The host (rio)
+        // flips this to `false` via `Sugarloaf::set_window_opaque`
+        // when `config.window.opacity < 1` or background blur is on.
+        layer.set_opaque(true);
         layer.set_presents_with_transaction(false);
 
         // Use CGSize from core_graphics_types
@@ -173,6 +180,16 @@ impl MetalContext {
     #[inline]
     pub fn set_scale(&mut self, scale: f32) {
         self.scale = scale;
+    }
+
+    /// Toggle the CAMetalLayer's opaque flag. `true` (default) lets the
+    /// macOS compositor take its opaque-window fast path; `false` is
+    /// required for `window.opacity < 1` or background blur to render
+    /// translucent. Cheap (one Cocoa property write); safe to call
+    /// every config reload.
+    #[inline]
+    pub fn set_layer_opaque(&self, opaque: bool) {
+        self.layer.set_opaque(opaque);
     }
 
     #[inline]

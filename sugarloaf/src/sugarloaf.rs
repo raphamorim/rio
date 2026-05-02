@@ -508,6 +508,25 @@ impl Sugarloaf<'_> {
         self
     }
 
+    /// Mark the window's render surface opaque (`true`, default — fast
+    /// macOS compositor path) or non-opaque (`false`, required for
+    /// `window.opacity < 1` and macOS-glass background blur). Mirrors
+    /// ghostty's conditional `NSWindow.isOpaque` toggle in
+    /// `macos/.../TerminalWindow.swift`. Safe to call every config
+    /// reload; underlying call is a single Cocoa property write on
+    /// macOS, no-op on other backends until they grow their own
+    /// transparency story.
+    #[inline]
+    pub fn set_window_opaque(&self, opaque: bool) {
+        match &self.ctx.inner {
+            #[cfg(target_os = "macos")]
+            crate::context::ContextType::Metal(ctx) => ctx.set_layer_opaque(opaque),
+            _ => {
+                let _ = opaque;
+            }
+        }
+    }
+
     /// Try to load and install a window background image. Returns `Err`
     /// with a human-readable message on failure (file missing, decode
     /// failed, decoded image is empty, etc.) so callers can surface the

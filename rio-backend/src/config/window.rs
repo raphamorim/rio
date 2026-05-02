@@ -86,6 +86,18 @@ pub struct Window {
     pub mode: WindowMode,
     #[serde(default = "default_opacity")]
     pub opacity: f32,
+    /// Apply `window.opacity` to cells that paint an explicit
+    /// background color too, not just to the window's default
+    /// background. Off by default (matches ghostty's
+    /// `background-opacity-cells = false`): cells with an SGR-set
+    /// background stay fully opaque so syntax-highlighted regions and
+    /// status-line painted by tmux/Neovim keep their contrast. Flip
+    /// to `true` to make TUIs see-through too.
+    ///
+    /// On the wire: kebab-case `opacity-cells` under `[window]`.
+    /// Mirrors `background-opacity-cells` in ghostty 1.2.0.
+    #[serde(rename = "opacity-cells", default = "bool::default")]
+    pub opacity_cells: bool,
     #[serde(default = "bool::default")]
     pub blur: bool,
     #[serde(rename = "background-image", skip_serializing)]
@@ -126,6 +138,7 @@ impl Default for Window {
             height: default_window_height(),
             mode: WindowMode::default(),
             opacity: default_opacity(),
+            opacity_cells: false,
             background_image: None,
             decorations: Decorations::default(),
             blur: false,

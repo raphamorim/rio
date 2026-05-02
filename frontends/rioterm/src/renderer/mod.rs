@@ -60,6 +60,12 @@ pub struct Renderer {
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], rio_backend::sugarloaf::Color, bool),
+    /// `window.opacity-cells` — apply window opacity to cells with an
+    /// SGR-set background too. Off by default; mirrors ghostty's
+    /// `background-opacity-cells`. `cell_bg_alpha` is the precomputed
+    /// `(window.opacity * 255) as u8` to avoid a multiply per cell.
+    pub opacity_cells: bool,
+    pub cell_bg_alpha: u8,
     pub custom_mouse_cursor: bool,
     pub trail_cursor_enabled: bool,
     pub trail_cursor: trail_cursor::TrailCursor,
@@ -115,6 +121,8 @@ impl Renderer {
             },
             named_colors,
             dynamic_background,
+            opacity_cells: config.window.opacity_cells,
+            cell_bg_alpha: (config.window.opacity.clamp(0.0, 1.0) * 255.0).round() as u8,
             search: search::SearchOverlay::default(),
             assistant: assistant::AssistantOverlay::default(),
             scrollbar: scrollbar::Scrollbar::new(config.enable_scroll_bar),
