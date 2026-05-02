@@ -739,7 +739,7 @@ impl Renderer {
     }
 
     /// Find hint label at the specified position
-    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    #[allow(dead_code)]
     fn find_hint_label_at_position<'a>(
         &self,
         renderable_content: &'a RenderableContent,
