@@ -15,6 +15,11 @@ use crate::renderer::image_cache::ImageCache;
 use crate::Graphics;
 use compositor::{Compositor, Rect, Vertex};
 use rustc_hash::FxHashMap;
+// Only the macOS Metal path and the wgpu path use bare `mem::` (they
+// thread `mem::size_of::<Vertex>()` etc. into pipeline strides). The
+// Linux+no-wgpu Vulkan path uses `std::mem::` qualified directly and
+// doesn't need the import.
+#[cfg(any(target_os = "macos", feature = "wgpu"))]
 use std::mem;
 #[cfg(target_os = "macos")]
 use std::sync::Arc;
@@ -827,6 +832,10 @@ pub struct Renderer {
 /// is bound to. Mirrors the per-image upload in `render_graphic_overlays`,
 /// but produces a standalone `ImageTextureEntry` sized exactly to the image
 /// instead of consuming a slot in the glyph atlas.
+// Linux+no-wgpu: every match arm diverges (Cpu/Vulkan return early, Phantom
+// is unreachable!()), so `gpu` is uninhabited and the trailing `Some(...)`
+// is statically unreachable.
+#[allow(unused_variables, unreachable_code)]
 fn upload_background_image_texture(
     context: &mut crate::context::Context,
     pixels: &BackgroundImagePixels,
@@ -1129,6 +1138,11 @@ impl Renderer {
     }
 
     /// Render image overlays using per-image GPU textures.
+    // Linux+no-wgpu: the kitty-upload match's wgpu/metal arms are
+    // cfg'd out; remaining arms (Cpu unreachable!, Vulkan unreachable!,
+    // Phantom continue) all diverge so `gpu` is uninhabited and the
+    // trailing `image_textures.insert(...)` is statically unreachable.
+    #[allow(unused_variables, unreachable_code)]
     #[inline]
     #[allow(clippy::too_many_arguments)]
     fn render_graphic_overlays(
@@ -2346,6 +2360,11 @@ impl Renderer {
     /// Glyph atlas sampling through this pipeline isn't ported —
     /// grid text + UI text overlay each own dedicated atlas
     /// pipelines, so the rich-text path doesn't need it.
+    // `if let ImageTexture::Vulkan(...)` is irrefutable on Linux+no-wgpu
+    // because that's the only variant compiled in (Wgpu / Metal arms
+    // are cfg'd out). Keeping the `if let` form so the same code stays
+    // valid when wgpu support is enabled.
+    #[allow(irrefutable_let_patterns)]
     #[cfg(target_os = "linux")]
     pub fn render_vulkan(
         &mut self,

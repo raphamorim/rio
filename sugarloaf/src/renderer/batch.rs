@@ -586,6 +586,10 @@ impl Batch {
 }
 
 /// Draw command emitted by the batch system.
+// Fields are read by the wgpu/metal recorders; on Linux+no-wgpu only
+// the Vulkan recorder runs and it reads them via `Debug` formatting in
+// trace logs but not via field access — silence dead_code there.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum DrawCmd {
     /// Instanced quad draw (one instance per quad, 4 verts from vertex_id).
