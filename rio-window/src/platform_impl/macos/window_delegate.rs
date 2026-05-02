@@ -871,7 +871,11 @@ impl WindowDelegate {
                 .expect("glass installed but its contentView is nil");
             unsafe { Retained::cast(inner) }
         } else {
-            unsafe { Retained::cast(self.window().contentView().unwrap()) }
+            let cv = self
+                .window()
+                .contentView()
+                .expect("WinitWindow has no contentView");
+            unsafe { Retained::cast(cv) }
         }
     }
 
@@ -1022,33 +1026,44 @@ impl WindowDelegate {
             _ => return,
         };
 
-        let mut slot = self.ivars().glass_effect.borrow_mut();
-        if slot.is_none() {
-            // First install. Order matters for retain counts:
-            // grab the current contentView (`+1` retain via the
-            // Retained<NSView> return type) BEFORE swapping.
-            // `window.setContentView(glass)` will detach + release
-            // the old contentView; the Retained we hold keeps it
-            // alive across the gap until `glass.setContentView`
-            // re-parents it.
+        // Decide whether we need to perform a fresh install. Probe
+        // with a short borrow that drops at the end of the
+        // expression so we don't hold any RefCell across the
+        // AppKit calls below — `setContentView` can re-enter the
+        // delegate via subview lifecycle callbacks, and a held
+        // borrow_mut would turn that into a `BorrowMutError` panic.
+        let need_install = self.ivars().glass_effect.borrow().is_none();
+
+        if need_install {
             let glass = match GlassEffect::new() {
                 Some(g) => g,
                 None => return,
             };
             let window = self.window();
-            if let Some(view) = window.contentView() {
-                window.setContentView(Some(glass.as_ns_view()));
-                glass.set_content_view(&view);
-            } else {
-                // No contentView at all — install the glass empty;
-                // the regular `setContentView` flow will fill it
-                // later. Defensive; shouldn't fire in practice.
-                window.setContentView(Some(glass.as_ns_view()));
-            }
-            *slot = Some(glass);
+            // Bail rather than installing an empty glass: with no
+            // WinitView to host, `view()` would later panic when
+            // anything tries to read the inner view. Shouldn't fire
+            // — `setContentView` runs at window creation before
+            // `set_blur`.
+            let Some(view) = window.contentView() else {
+                tracing::warn!("set_blur(glass) with no contentView; skipping install");
+                return;
+            };
+            // Order matters for retain counts: the Retained<NSView>
+            // we hold via `view` keeps WinitView alive across the
+            // swap. `window.setContentView(glass)` detaches the
+            // old contentView; `glass.setContentView(&view)`
+            // re-parents it under the glass.
+            window.setContentView(Some(glass.as_ns_view()));
+            glass.set_content_view(&view);
+            // Stash. Short borrow_mut, no AppKit call inside.
+            *self.ivars().glass_effect.borrow_mut() = Some(glass);
         }
 
-        if let Some(glass) = slot.as_ref() {
+        // Apply config under a fresh, scoped borrow. Reads from
+        // other ivars (`background_color`, `glass_opacity`) are
+        // separate RefCells, so they don't conflict with this one.
+        if let Some(glass) = self.ivars().glass_effect.borrow().as_ref() {
             glass.set_style(style);
             // Tint = bg × opacity. Without the opacity multiply the
             // tint colour swallows the blur entirely on
@@ -1096,18 +1111,21 @@ impl WindowDelegate {
     /// out of the glass and reinstate it as the window's contentView,
     /// then drop the glass. No-op if glass isn't installed.
     fn uninstall_glass(&self) {
-        let mut slot = self.ivars().glass_effect.borrow_mut();
-        if let Some(glass) = slot.take() {
-            let window = self.window();
-            if let Some(view) = glass.content_view() {
-                // Same retain ordering as install: hold the inner
-                // view via `Retained` across the swap, then let glass
-                // drop and release.
-                window.setContentView(Some(&view));
-            }
-            // glass drops here; AppKit releases the NSGlassEffectView.
-            drop(glass);
+        // Move the glass out under a short borrow_mut so no RefCell
+        // borrow is held across the AppKit `setContentView` call
+        // below — same re-entrancy concern as `install_or_update_glass`.
+        let glass = self.ivars().glass_effect.borrow_mut().take();
+        let Some(glass) = glass else { return };
+
+        let window = self.window();
+        if let Some(view) = glass.content_view() {
+            // Same retain ordering as install: hold the inner
+            // view via `Retained` across the swap, then let glass
+            // drop and release.
+            window.setContentView(Some(&view));
         }
+        // glass drops here; AppKit releases the NSGlassEffectView.
+        drop(glass);
     }
 
     pub fn set_visible(&self, visible: bool) {
