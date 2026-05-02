@@ -109,13 +109,45 @@ impl VulkanGlyphAtlas {
             format,
             vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
         );
+
+        // One-shot UNDEFINED → SHADER_READ_ONLY_OPTIMAL transition so the
+        // atlas matches the layout declared in its descriptor write
+        // (`SHADER_READ_ONLY_OPTIMAL`) from the moment it's bound.
+        // Without this the validation layer flags
+        // `vkQueueSubmit() expects ... SHADER_READ_ONLY_OPTIMAL — current
+        // layout is UNDEFINED` even when the text pipeline does no actual
+        // sampling (the descriptor binding alone is enough for validation
+        // to assume a read may happen). On real drivers it's UB; in
+        // practice it shows up as an empty / black first frame after
+        // a70b774 because the GPU may discard the draw entirely.
+        let img_handle = image.handle();
+        ctx.submit_oneshot(|cmd| unsafe {
+            let to_read = vk::ImageMemoryBarrier2::default()
+                .src_stage_mask(vk::PipelineStageFlags2::TOP_OF_PIPE)
+                .src_access_mask(vk::AccessFlags2::empty())
+                .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+                .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(img_handle)
+                .subresource_range(color_subresource_range());
+            let barriers = [to_read];
+            let dep = vk::DependencyInfo::default().image_memory_barriers(&barriers);
+            ctx.shared().raw.cmd_pipeline_barrier2(cmd, &dep);
+        });
+
         Self {
             image,
             allocator: AtlasAllocator::new(ATLAS_SIZE, ATLAS_SIZE),
             slots: FxHashMap::default(),
             bytes_per_pixel,
             pending: Vec::new(),
-            initialized: false,
+            // Atlas is already in SHADER_READ_ONLY_OPTIMAL — `flush_uploads`
+            // can use its initialized branch (SHADER_READ → TRANSFER_DST →
+            // SHADER_READ) from the very first upload.
+            initialized: true,
             staging: std::array::from_fn(|_| None),
             staging_capacity: [0; FRAMES_IN_FLIGHT],
         }
