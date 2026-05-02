@@ -1353,11 +1353,17 @@ fn create_device(
 
     let device_extensions = [khr::swapchain::NAME.as_ptr()];
 
-    // Enable dynamic rendering up front — it's Vulkan 1.3 core. We're
-    // not using it yet in the clear-only path, but enabling it here
-    // avoids having to recreate the device when pipelines land.
-    let mut vk13_features =
-        vk::PhysicalDeviceVulkan13Features::default().dynamic_rendering(true);
+    // Enable dynamic_rendering and synchronization2 — both are Vulkan
+    // 1.3 core. `synchronization2` is required for `vkCmdPipelineBarrier2`,
+    // which the swapchain layout transitions
+    // (UNDEFINED → COLOR_ATTACHMENT_OPTIMAL and COLOR_ATTACHMENT_OPTIMAL
+    // → PRESENT_SRC_KHR) and atlas image transitions go through. Without
+    // the feature enabled, the v2 barrier calls are silently ignored,
+    // the swapchain image stays in UNDEFINED layout, and the compositor
+    // discards the present — visible as "first frame and stops."
+    let mut vk13_features = vk::PhysicalDeviceVulkan13Features::default()
+        .dynamic_rendering(true)
+        .synchronization2(true);
 
     let queue_infos = [queue_info];
     let create_info = vk::DeviceCreateInfo::default()
