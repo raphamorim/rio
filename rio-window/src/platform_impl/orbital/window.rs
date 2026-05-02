@@ -289,7 +289,7 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_blur(&self, _blur: bool) {}
+    pub fn set_blur(&self, _blur: crate::window::BlurStyle) {}
 
     #[inline]
     pub fn set_visible(&self, visible: bool) {

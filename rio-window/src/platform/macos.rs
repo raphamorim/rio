@@ -119,6 +119,16 @@ pub trait WindowExtMacOS {
     /// The position is specified as (x, y) coordinates in points from the top-left corner.
     /// Pass None to reset to the default position.
     fn set_traffic_light_position(&self, position: Option<(f64, f64)>);
+
+    /// Push the configured `window.opacity` into the liquid-glass
+    /// tint computation. Effective only when
+    /// [`crate::window::BlurStyle::MacosGlassRegular`] /
+    /// [`crate::window::BlurStyle::MacosGlassClear`] is active and
+    /// `NSGlassEffectView` is available at runtime (macOS 26+).
+    /// Otherwise stored for the next time glass installs. Mirrors
+    /// the `tintColor = bg.withAlphaComponent(opacity)` step in
+    /// AppKit-native glass setups.
+    fn set_glass_opacity(&self, opacity: f64);
 }
 
 impl WindowExtMacOS for Window {
@@ -148,6 +158,12 @@ impl WindowExtMacOS for Window {
     fn set_background_color(&self, r: f64, g: f64, b: f64, a: f64) {
         self.window
             .maybe_queue_on_main(move |w| w.set_background_color(r, g, b, a))
+    }
+
+    #[inline]
+    fn set_glass_opacity(&self, opacity: f64) {
+        self.window
+            .maybe_queue_on_main(move |w| w.set_glass_opacity(opacity))
     }
 
     #[inline]

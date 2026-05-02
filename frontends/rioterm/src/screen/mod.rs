@@ -101,15 +101,15 @@ pub struct ScreenWindowProperties {
 }
 
 /// Whether the render surface should run in macOS compositor's
-/// opaque-window fast path. Mirrors ghostty's NSWindow.isOpaque
-/// decision (`macos/.../TerminalWindow.swift:482-505`): only flip to
-/// non-opaque when the user actually configured transparency
-/// (`window.opacity < 1`) or a translucent background effect
-/// (`window.blur`). Default = opaque so the steady-state look-and-feel
-/// for the common case stays as fast as Terminal.app.
+/// opaque-window fast path. Non-opaque iff the user actually
+/// configured transparency (`window.opacity < 1`) or a glass
+/// background effect — system blur on its own is not enough, since
+/// without `opacity < 1` there's nothing transparent for the blur to
+/// read through, so we keep the fast path for that case. Default =
+/// opaque.
 #[inline]
 fn window_should_be_opaque(config: &rio_backend::config::Config) -> bool {
-    config.window.opacity >= 1.0 && !config.window.blur
+    config.window.opacity >= 1.0 && !config.window.blur.is_glass()
 }
 
 impl Screen<'_> {
@@ -285,9 +285,9 @@ impl Screen<'_> {
             sugarloaf_errors,
         )?;
 
-        // Match ghostty: window is opaque (compositor fast path) unless
-        // the user actually configured transparency. The render surface
-        // can hold per-pixel alpha either way — see `cell_bg` in
+        // Window is opaque (compositor fast path) unless the user
+        // actually configured transparency. The render surface can
+        // hold per-pixel alpha either way — see `cell_bg` in
         // `grid_emit.rs` — but flipping the layer to non-opaque is
         // what makes the OS treat those alpha bits as see-through.
         sugarloaf.set_window_opaque(window_should_be_opaque(config));

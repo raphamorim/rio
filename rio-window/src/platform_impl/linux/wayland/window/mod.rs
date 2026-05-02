@@ -124,7 +124,9 @@ impl Window {
         // Set transparency hint.
         window_state.set_transparent(attributes.transparent);
 
-        window_state.set_blur(attributes.blur);
+        // KWin's blur protocol is binary on/off — glass styles don't
+        // exist outside macOS, so any non-Off value maps to "blur on".
+        window_state.set_blur(attributes.blur.is_enabled());
 
         // Set the decorations hint.
         window_state.set_decorate(attributes.decorations);
@@ -427,8 +429,11 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_blur(&self, blur: bool) {
-        self.window_state.lock().unwrap().set_blur(blur);
+    pub fn set_blur(&self, blur: crate::window::BlurStyle) {
+        self.window_state
+            .lock()
+            .unwrap()
+            .set_blur(blur.is_enabled());
     }
 
     #[inline]

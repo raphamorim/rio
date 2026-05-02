@@ -510,12 +510,10 @@ impl Sugarloaf<'_> {
 
     /// Mark the window's render surface opaque (`true`, default — fast
     /// macOS compositor path) or non-opaque (`false`, required for
-    /// `window.opacity < 1` and macOS-glass background blur). Mirrors
-    /// ghostty's conditional `NSWindow.isOpaque` toggle in
-    /// `macos/.../TerminalWindow.swift`. Safe to call every config
-    /// reload; underlying call is a single Cocoa property write on
-    /// macOS, no-op on other backends until they grow their own
-    /// transparency story.
+    /// `window.opacity < 1` and macOS-glass background blur). Safe to
+    /// call every config reload; underlying call is a single Cocoa
+    /// property write on macOS, no-op on other backends until they
+    /// grow their own transparency story.
     #[inline]
     pub fn set_window_opaque(&self, opaque: bool) {
         match &self.ctx.inner {
