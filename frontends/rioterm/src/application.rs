@@ -1708,9 +1708,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::RedrawRequested => {
-                // let start = std::time::Instant::now();
-                route.window.winit_window.pre_present_notify();
-
                 route.begin_render();
 
                 match route.path {

@@ -368,6 +368,16 @@ impl VulkanContext {
     /// buffer. Returns `None` if the swapchain needed recreation (caller
     /// should skip this frame).
     pub fn acquire_frame(&mut self) -> Option<VulkanFrame> {
+        // Honor a recreate request observed on the previous tick
+        // (suboptimal acquire, suboptimal present, or OUT_OF_DATE on
+        // present). Mirrors wgpu/Metal/wgpu-via-zed practice: keep
+        // the flag close to the platform-frame entry point so no
+        // tick draws against a swapchain the compositor has already
+        // declared stale.
+        if self.needs_recreate {
+            self.recreate_swapchain(self.size.width as u32, self.size.height as u32);
+        }
+
         let slot = self.frame_index;
         let sync = &self.frames[slot];
 
