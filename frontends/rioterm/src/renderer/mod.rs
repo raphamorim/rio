@@ -105,12 +105,11 @@ impl Renderer {
         // `Renderer::run` so a runtime bg change doesn't reset
         // transparency to 1.0. Glass styles force alpha = 0 so the
         // NSGlassEffectView underneath the metal layer can provide
-        // the actual translucent bg.
+        // the actual translucent bg — `window_bg_alpha` returns 0 in
+        // that case, so the glass and `opacity < 1` paths share one
+        // assignment.
         let target_bg_alpha = window_bg_alpha(config);
-        if config.window.blur.is_glass() {
-            dynamic_background.1.a = 0.0;
-            dynamic_background.2 = true;
-        } else if config.window.opacity < 1. {
+        if config.window.blur.is_glass() || config.window.opacity < 1. {
             dynamic_background.1.a = target_bg_alpha as f64;
             dynamic_background.2 = true;
         } else if config.window.background_image.is_some() {
