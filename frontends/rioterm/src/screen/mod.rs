@@ -100,6 +100,18 @@ pub struct ScreenWindowProperties {
     pub window_id: rio_window::window::WindowId,
 }
 
+/// Whether the render surface should run in macOS compositor's
+/// opaque-window fast path. Mirrors ghostty's NSWindow.isOpaque
+/// decision (`macos/.../TerminalWindow.swift:482-505`): only flip to
+/// non-opaque when the user actually configured transparency
+/// (`window.opacity < 1`) or a translucent background effect
+/// (`window.blur`). Default = opaque so the steady-state look-and-feel
+/// for the common case stays as fast as Terminal.app.
+#[inline]
+fn window_should_be_opaque(config: &rio_backend::config::Config) -> bool {
+    config.window.opacity >= 1.0 && !config.window.blur
+}
+
 impl Screen<'_> {
     pub fn new<'screen>(
         window_properties: ScreenWindowProperties,
@@ -272,6 +284,13 @@ impl Screen<'_> {
             scaled_margin,
             sugarloaf_errors,
         )?;
+
+        // Match ghostty: window is opaque (compositor fast path) unless
+        // the user actually configured transparency. The render surface
+        // can hold per-pixel alpha either way — see `cell_bg` in
+        // `grid_emit.rs` — but flipping the layer to non-opaque is
+        // what makes the OS treat those alpha bits as see-through.
+        sugarloaf.set_window_opaque(window_should_be_opaque(config));
 
         sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
 
@@ -510,6 +529,11 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
+
+        // Re-evaluate the opaque flag — toggling `window.opacity` /
+        // `window.blur` at runtime should flip the compositor mode.
+        self.sugarloaf
+            .set_window_opaque(window_should_be_opaque(config));
 
         self.sugarloaf
             .set_background_color(Some(self.renderer.dynamic_background.1));
