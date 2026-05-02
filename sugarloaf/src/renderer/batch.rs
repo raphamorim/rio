@@ -54,25 +54,6 @@ pub struct Vertex {
     pub clip_rect: [f32; 4],
 }
 
-impl Vertex {
-    /// Vertex size in bytes:
-    /// pos[3] + color[4] + uv[2] + layers[2] + corner_radii[4] + rect_size[2] + underline_style + clip_rect[4]
-    /// = 12 + 16 + 8 + 8 + 16 + 8 + 4 + 16 = 88 bytes
-    pub const SIZE: usize = 88;
-
-    /// Convert vertex to bytes for caching
-    #[inline]
-    pub fn to_bytes(self) -> [u8; Self::SIZE] {
-        bytemuck::cast(self)
-    }
-
-    /// Create vertex from bytes
-    #[inline]
-    pub fn from_bytes(bytes: &[u8; Self::SIZE]) -> Self {
-        bytemuck::cast(*bytes)
-    }
-}
-
 /// Rectangle with floating point coordinates.
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Rect {

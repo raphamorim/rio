@@ -1369,8 +1369,13 @@ impl Renderer {
                 None => continue,
             };
             let tex = match &img.gpu {
-                #[cfg(target_os = "macos")]
                 ImageTexture::Metal(tex) => tex,
+                // The Wgpu variant only exists when the `wgpu` feature
+                // is enabled — without it, this match is exhaustive
+                // and the wildcard would be a clippy
+                // `unreachable_patterns`. Vulkan is gated to Linux,
+                // so it never reaches this Metal-only function.
+                #[cfg(feature = "wgpu")]
                 _ => continue,
             };
 
@@ -1425,6 +1430,8 @@ impl Renderer {
         };
         let tex = match &entry.gpu {
             ImageTexture::Metal(tex) => tex,
+            // See `draw_images_metal` for why the Wgpu arm is feature-gated.
+            #[cfg(feature = "wgpu")]
             _ => return true,
         };
 
