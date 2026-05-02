@@ -17,7 +17,9 @@ use rio_window::{
     dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::WindowAttributes,
 };
 use std::error::Error;
-use sugarloaf::{layout::RootStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize};
+use sugarloaf::{
+    layout::RootStyle, Color, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
+};
 
 fn main() {
     let width = 400.0;
@@ -84,15 +86,12 @@ impl ApplicationHandler for Application {
         )
         .expect("Sugarloaf instance should be created");
 
-        sugarloaf.set_background_color(Some(
-            wgpu::Color {
-                r: 0.1,
-                g: 0.1,
-                b: 0.1,
-                a: 1.0,
-            }
-            .into(),
-        ));
+        sugarloaf.set_background_color(Some(Color {
+            r: 0.1,
+            g: 0.1,
+            b: 0.1,
+            a: 1.0,
+        }));
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);

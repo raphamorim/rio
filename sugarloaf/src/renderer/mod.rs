@@ -1012,7 +1012,7 @@ impl Renderer {
     pub fn prepare(
         &mut self,
         context: &mut crate::context::Context,
-        state: &crate::sugarloaf::state::SugarState,
+        _state: &crate::sugarloaf::state::SugarState,
         _graphics: &mut Graphics,
         image_data: &mut rustc_hash::FxHashMap<
             u32,
@@ -1027,165 +1027,20 @@ impl Renderer {
         self.vertices.clear();
         self.draw_cmds.clear();
 
-        // Iterate over all content states and render visible ones.
-        // The Text arm is gone — rich-text emission replaced by
-        // `sugarloaf::text` (UI) and `grid_emit::build_row_fg`
-        // (terminal). The remaining arms are shape primitives the
-        // frontend still drives through `sugarloaf.rect()` etc.
-        for content_state in state.content.states.values() {
-            // Skip if marked for removal or hidden
-            if content_state.render_data.should_remove || content_state.render_data.hidden
-            {
-                continue;
-            }
+        // The per-id `Content.states` walk is gone — non-Text content
+        // arms (Rect/RoundedRect/Line/Triangle/Polygon/Arc/Image) had
+        // no rio caller passing `Some(id)`, so the Content registry
+        // never accumulated them. Immediate-mode primitives flow
+        // through `Renderer::rect/quad/...` straight into
+        // `comp.batches`; rich-text emission is handled by the grid
+        // pass and `sugarloaf::text`.
 
-            // Set clip_rect for this content element's bounds
-            self.comp.batches.clip_rect =
-                content_state.render_data.bounds.unwrap_or([0.0; 4]);
-
-            match &content_state.data {
-                crate::layout::ContentData::Text(_) => {
-                    // Rich-text Text content is inert — the builder
-                    // state is kept for panel font-size / dimensions
-                    // bookkeeping but no glyphs are emitted from it.
-                }
-                crate::layout::ContentData::Rect {
-                    x,
-                    y,
-                    width,
-                    height,
-                    color,
-                    depth,
-                } => {
-                    self.comp.batches.rect(
-                        &Rect::new(*x, *y, *width, *height),
-                        *depth,
-                        color,
-                        0,
-                    );
-                }
-                crate::layout::ContentData::RoundedRect {
-                    x,
-                    y,
-                    width,
-                    height,
-                    color,
-                    depth,
-                    border_radius,
-                } => {
-                    self.comp.batches.rounded_rect(
-                        &Rect::new(*x, *y, *width, *height),
-                        *depth,
-                        color,
-                        *border_radius,
-                        0,
-                    );
-                }
-                crate::layout::ContentData::Line {
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    width,
-                    color,
-                    depth,
-                } => {
-                    self.comp
-                        .batches
-                        .add_line(*x1, *y1, *x2, *y2, *width, *depth, *color);
-                }
-                crate::layout::ContentData::Triangle {
-                    points,
-                    color,
-                    depth,
-                } => {
-                    self.comp.batches.add_triangle(
-                        points[0].0,
-                        points[0].1,
-                        points[1].0,
-                        points[1].1,
-                        points[2].0,
-                        points[2].1,
-                        *depth,
-                        *color,
-                    );
-                }
-                crate::layout::ContentData::Polygon {
-                    points,
-                    color,
-                    depth,
-                } => {
-                    self.comp
-                        .batches
-                        .add_polygon(points.as_slice(), *depth, *color);
-                }
-                crate::layout::ContentData::Arc {
-                    center_x,
-                    center_y,
-                    radius,
-                    start_angle,
-                    end_angle,
-                    stroke_width,
-                    color,
-                    depth,
-                } => {
-                    self.comp.batches.add_arc(
-                        *center_x,
-                        *center_y,
-                        *radius,
-                        *start_angle,
-                        *end_angle,
-                        *stroke_width,
-                        *depth,
-                        color,
-                    );
-                }
-                crate::layout::ContentData::Image {
-                    x,
-                    y,
-                    width,
-                    height,
-                    color,
-                    coords,
-                    depth,
-                    atlas_layer,
-                } => {
-                    self.comp.batches.add_image_rect(
-                        &Rect::new(*x, *y, *width, *height),
-                        *depth,
-                        color,
-                        coords,
-                        *atlas_layer,
-                    );
-                }
-            }
-        }
-
-        // Transient texts gone — previously rendered one-shot rich
-        // text overlays (welcome screen / dialog); migrated to
-        // `sugarloaf::text` immediate-mode primitive.
-
-        // Reset clip_rect after rendering all content
-        self.comp.batches.clip_rect = [0.0; 4];
-
-        // Image overlays come from the per-panel `image_overlays` map
-        // on `Sugarloaf`. Visibility filter: skip hidden panels so
-        // inactive-tab overlays don't bleed through. We still consult
-        // `state.content.states[id].render_data.hidden` for that —
-        // panel visibility bookkeeping lives in Content for now while
-        // the rest of the rich-text pipeline is being torn down.
-        let overlays: Vec<_> = image_overlays
-            .iter()
-            .filter(|(id, _)| {
-                state
-                    .content
-                    .states
-                    .get(id)
-                    .map(|cs| !cs.render_data.hidden)
-                    .unwrap_or(true)
-            })
-            .flat_map(|(_, v)| v.iter())
-            .collect();
+        // Image overlays: rio is responsible for not leaving stale
+        // overlays for hidden panels (callers `clear_image_overlays_for`
+        // on hide / panel removal). The renderer just drains whatever
+        // `image_overlays` currently holds.
+        let overlays: Vec<_> =
+            image_overlays.iter().flat_map(|(_, v)| v.iter()).collect();
         if !overlays.is_empty() {
             self.render_graphic_overlays(context, image_data, &overlays);
         } else {

@@ -296,6 +296,7 @@ pub mod test {
                 face_y: 0.0,
             },
             1.0,
+            14.0,
             Margin::default(),
         );
 
@@ -355,6 +356,7 @@ pub mod test {
                 face_y: 0.0,
             },
             1.0,
+            14.0,
             Margin::default(),
         );
 

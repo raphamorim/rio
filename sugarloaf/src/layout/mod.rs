@@ -7,22 +7,12 @@
 // nav and span_style were originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-pub mod content;
-pub mod content_data;
-mod glyph;
-mod render_data;
-pub mod rich_text_render_data;
+pub mod span;
 
-pub use glyph::Glyph;
-pub use render_data::RenderData;
-pub use rich_text_render_data::RichTextRenderData;
-
-pub use content::{
-    BuilderLine, BuilderState, BuilderStateUpdate, Content, FragmentData, ShapingCache,
-    SpanStyle, SpanStyleDecoration, UnderlineInfo, UnderlineShape,
+pub use span::{
+    FontSettingCache, FontSettingKey, SpanStyle, SpanStyleDecoration, UnderlineInfo,
+    UnderlineShape, EMPTY_FONT_SETTINGS,
 };
-pub use content_data::{ContentData, ContentRenderData, ContentState};
-pub use render_data::Run;
 
 /// Index of a span in sequential order of submission to a paragraph content.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Default, Debug)]
@@ -213,4 +203,129 @@ impl RootStyle {
             line_height,
         }
     }
+}
+
+/// Pure helper: compute canonical [`CellMetrics`] from already-scaled
+/// face dimensions. Used by [`compute_cell_metrics`] and is the same
+/// formula the previous `Content::set_text` ran inline.
+///
+/// Centering invariant: if `face_height` is `33.4` and rounds to
+/// `33`, the baseline shifts up by `0.2` so the glyph stays centered
+/// in the rounded cell — matches the half-rounding-delta adjustment
+/// used elsewhere for vertical pixel-snapping.
+#[inline]
+pub fn canonical_cell_metrics(
+    face_width: f64,
+    face_height: f64,
+    descent_phys: f64,
+    leading_phys: f64,
+) -> CellMetrics {
+    let cell_width = face_width.round().max(1.0) as u32;
+    let cell_height = face_height.round().max(1.0) as u32;
+    let face_baseline = leading_phys * 0.5 + descent_phys;
+    let baseline_centered = face_baseline - (cell_height as f64 - face_height) * 0.5;
+    let cell_baseline = baseline_centered.round().max(0.0) as u32;
+    let face_y = cell_baseline as f64 - face_baseline;
+    CellMetrics {
+        cell_width,
+        cell_height,
+        cell_baseline,
+        face_width,
+        face_height,
+        face_y,
+    }
+}
+
+/// Compute the canonical [`CellMetrics`] for a `(font_size,
+/// line_height, scale_factor)` triple using `font_library`'s primary
+/// font. Pure function — no per-id state, no caching, no
+/// side effects. Callers (rioterm's `ContextDimension`, future panel
+/// owners) recompute on font / size / scale change and store the
+/// result themselves.
+///
+/// `line_height` is the user's config multiplier; it's applied to
+/// `face_height` here, so callers MUST NOT re-apply it.
+///
+/// Mirrors `Content::calculate_character_cell_dimensions`'s formula
+/// exactly so dimensions stay byte-identical across the migration.
+/// Once `Content` is deleted that helper goes with it.
+#[inline]
+pub fn compute_cell_metrics(
+    font_library: &crate::font::FontLibrary,
+    font_size: f32,
+    line_height: f32,
+    scale_factor: f32,
+) -> (TextDimensions, CellMetrics) {
+    let scale_f64 = scale_factor as f64;
+    let line_height_mod = line_height as f64;
+
+    let raw: Option<(f64, f64, f64, f64)> = {
+        #[cfg(target_os = "macos")]
+        {
+            font_library.ct_font(0).map(|handle| {
+                let m = crate::font::macos::font_metrics(&handle, font_size);
+                let cw = crate::font::macos::max_ascii_advance_px(&handle, font_size)
+                    .or_else(|| {
+                        crate::font::macos::advance_units_for_char(&handle, ' ')
+                            .map(|(units, upem)| units * font_size / upem as f32)
+                    })
+                    .unwrap_or(font_size);
+                (
+                    cw as f64,
+                    m.ascent as f64,
+                    m.descent as f64,
+                    m.leading as f64,
+                )
+            })
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            font_library.inner.try_read().and_then(|lib| {
+                let id = 0;
+                let (data, offset, _key) = lib.get_data(&id)?;
+                let font_ref = swash::FontRef::from_index(&data, offset as usize)?;
+                let m = font_ref.metrics(&[]);
+                let upem = m.units_per_em as f32;
+                let s = font_size / upem;
+                let glyph = font_ref.charmap().map(' ' as u32);
+                let advance = font_ref.glyph_metrics(&[]).advance_width(glyph);
+                let cw = if advance > 0.0 {
+                    advance * s
+                } else {
+                    font_size
+                };
+                Some((
+                    cw as f64,
+                    (m.ascent * s) as f64,
+                    (m.descent.abs() * s) as f64,
+                    (m.leading * s) as f64,
+                ))
+            })
+        }
+    };
+
+    let (face_width, face_height, descent_phys, leading_phys) =
+        if let Some((cw, ascent, descent, leading)) = raw {
+            let face_width = cw * scale_f64;
+            let face_height = (ascent + descent + leading) * line_height_mod * scale_f64;
+            (
+                face_width,
+                face_height,
+                descent * line_height_mod * scale_f64,
+                leading * line_height_mod * scale_f64,
+            )
+        } else {
+            let fw = font_size as f64 * scale_f64;
+            let fh = font_size as f64 * line_height_mod * scale_f64;
+            (fw, fh, 0.0, 0.0)
+        };
+
+    let cell =
+        canonical_cell_metrics(face_width, face_height, descent_phys, leading_phys);
+    let dims = TextDimensions {
+        width: cell.cell_width as f32,
+        height: cell.cell_height as f32,
+        scale: scale_factor,
+    };
+    (dims, cell)
 }
