@@ -1,6 +1,43 @@
 //! The [`Window`] struct and associated types.
 use std::fmt;
 
+/// Background blur / liquid-glass style for a window.
+///
+/// `Off` and `System` are the legacy bool states (`false` / `true`)
+/// preserved for backward compatibility. The macOS variants request
+/// the `NSGlassEffectView`-backed liquid-glass effect introduced in
+/// macOS 26 (Tahoe). Platforms that don't support a requested style
+/// degrade to `System` and emit a `tracing::warn` rather than failing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BlurStyle {
+    #[default]
+    Off,
+    /// Native system blur — CGS backdrop on macOS, KWin blur on
+    /// Wayland, DWM acrylic on Windows.
+    System,
+    /// macOS 26+: liquid glass with the `regular` style (some opacity).
+    MacosGlassRegular,
+    /// macOS 26+: liquid glass with the `clear` style (highly transparent).
+    MacosGlassClear,
+}
+
+impl BlurStyle {
+    /// True for any non-`Off` variant.
+    #[inline]
+    pub fn is_enabled(self) -> bool {
+        !matches!(self, BlurStyle::Off)
+    }
+
+    /// True for the macOS liquid-glass variants.
+    #[inline]
+    pub fn is_glass(self) -> bool {
+        matches!(
+            self,
+            BlurStyle::MacosGlassRegular | BlurStyle::MacosGlassClear
+        )
+    }
+}
+
 use crate::dpi::{PhysicalPosition, PhysicalSize, Position, Size};
 use crate::error::{ExternalError, NotSupportedError};
 use crate::monitor::{MonitorHandle, VideoModeHandle};
@@ -115,7 +152,7 @@ pub struct WindowAttributes {
     pub maximized: bool,
     pub visible: bool,
     pub transparent: bool,
-    pub blur: bool,
+    pub blur: BlurStyle,
     pub decorations: bool,
     pub window_icon: Option<Icon>,
     pub preferred_theme: Option<Theme>,
@@ -146,7 +183,7 @@ impl Default for WindowAttributes {
             fullscreen: None,
             visible: true,
             transparent: false,
-            blur: false,
+            blur: BlurStyle::default(),
             decorations: true,
             window_level: Default::default(),
             window_icon: None,
@@ -327,13 +364,11 @@ impl WindowAttributes {
         self
     }
 
-    /// Sets whether the background of the window should be blurred by the system.
+    /// Sets the window's background blur / liquid-glass style.
     ///
-    /// The default is `false`.
-    ///
-    /// See [`Window::set_blur`] for details.
+    /// The default is [`BlurStyle::Off`]. See [`Window::set_blur`].
     #[inline]
-    pub fn with_blur(mut self, blur: bool) -> Self {
+    pub fn with_blur(mut self, blur: BlurStyle) -> Self {
         self.blur = blur;
         self
     }
@@ -955,15 +990,21 @@ impl Window {
 
     /// Change the window blur state.
     ///
-    /// If `true`, this will make the transparent window background blurry.
+    /// Apply a [`BlurStyle`] to the window background.
     ///
     /// ## Platform-specific
     ///
-    /// - **Android / iOS / X11 / Web / Windows:** Unsupported.
-    /// - **Wayland:** Only works with org_kde_kwin_blur_manager protocol.
+    /// - **Android / iOS / X11 / Web:** Unsupported.
+    /// - **Wayland:** `System` works with `org_kde_kwin_blur_manager`;
+    ///   glass values fall back to `System`.
+    /// - **Windows:** `System` uses the DWM acrylic backdrop; glass
+    ///   values fall back to `System`.
+    /// - **macOS:** `System` uses the CGS backdrop blur. Glass
+    ///   variants use `NSGlassEffectView` on macOS 26+ and fall back
+    ///   to `System` with a warning on earlier versions.
     #[inline]
-    pub fn set_blur(&self, blur: bool) {
-        let _span = tracing::debug_span!("rio_window::Window::set_blur", blur).entered();
+    pub fn set_blur(&self, blur: BlurStyle) {
+        let _span = tracing::debug_span!("rio_window::Window::set_blur", ?blur).entered();
         self.window.maybe_queue_on_main(move |w| w.set_blur(blur))
     }
 

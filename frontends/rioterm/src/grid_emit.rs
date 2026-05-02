@@ -838,8 +838,7 @@ fn decoration_color(
 }
 
 /// Per-cell background color including the alpha-routing logic that
-/// makes window opacity actually visible. Mirrors ghostty's
-/// `rebuildRow` bg path (`generic.zig:2902-2937`):
+/// makes window opacity actually visible:
 ///
 /// - Cells with an **explicit** bg (BgRgb / BgPalette inline encoding,
 ///   or a non-default `style.bg`) → `alpha = 255`. Stays opaque so
@@ -854,9 +853,8 @@ fn decoration_color(
 ///   carries `window.opacity` via `dynamic_background.1.a`) shows
 ///   through. This is what gives the user a translucent window.
 /// - INVERSE flag → fg/bg swap promotes the cell to "has explicit bg"
-///   so it stays opaque (matches ghostty's `style.flags.inverse` arm).
-///   INVERSE bypasses `opacity-cells` to keep cursor / inverted-text
-///   readable.
+///   so it stays opaque. INVERSE bypasses `opacity-cells` to keep
+///   cursor / inverted-text readable.
 ///
 /// Selection / hint highlights are applied at the `build_row_bg` slow
 /// path with their own (always opaque) bg colors, so they don't go
@@ -868,10 +866,10 @@ pub fn cell_bg(
     term_colors: &TermColors,
 ) -> [u8; 4] {
     // Alpha for cells that paint an explicit bg. Default = fully
-    // opaque (matches ghostty default, keeps TUI contrast). With
-    // `window.opacity-cells = true` and a transparent window, we
-    // multiply by the window opacity so the explicit-bg cells stay
-    // proportionally translucent. INVERSE always uses 255.
+    // opaque (keeps TUI contrast). With `window.opacity-cells = true`
+    // and a transparent window, we multiply by the window opacity so
+    // the explicit-bg cells stay proportionally translucent. INVERSE
+    // always uses 255.
     let explicit_bg_alpha = if renderer.opacity_cells {
         renderer.cell_bg_alpha
     } else {
@@ -892,10 +890,10 @@ pub fn cell_bg(
         ContentTag::Codepoint => {
             let style = style_set.get(sq.style_id());
             let inverse = style.flags.contains(StyleFlags::INVERSE);
-            // "Default bg" mirrors ghostty's `bg_style == null` check:
-            // the cell carries the terminal-default bg sentinel, no
-            // SGR override. INVERSE flips fg/bg, which always produces
-            // a non-default effective bg, so treat as explicit.
+            // "Default bg": the cell carries the terminal-default bg
+            // sentinel with no SGR override. INVERSE flips fg/bg,
+            // which always produces a non-default effective bg, so
+            // treat as explicit.
             let has_default_bg =
                 !inverse && matches!(style.bg, AnsiColor::Named(NamedColor::Background));
             if has_default_bg {

@@ -1381,7 +1381,7 @@ mod tests {
         assert_eq!(result.window.width, 800);
         assert_eq!(result.window.height, 600);
         assert_eq!(result.window.opacity, 0.75);
-        assert!(result.window.blur);
+        assert!(result.window.blur.is_enabled());
     }
 
     #[test]
@@ -1519,7 +1519,7 @@ mod tests {
 
         // Window: opacity and blur overridden, others preserved
         assert_eq!(result.window.opacity, 1.0);
-        assert!(result.window.blur);
+        assert!(result.window.blur.is_enabled());
         assert_eq!(result.window.width, 1024);
         assert_eq!(result.window.height, 768);
 

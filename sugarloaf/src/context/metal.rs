@@ -120,11 +120,10 @@ impl MetalContext {
             tracing::warn!("Failed to create Display P3 CGColorSpace");
         }
         // Default to opaque so the macOS compositor can take its
-        // fast path on windows without configured transparency.
-        // Mirrors ghostty's NSWindow.isOpaque default
-        // (`macos/.../TerminalWindow.swift:482-505`). The host (rio)
-        // flips this to `false` via `Sugarloaf::set_window_opaque`
-        // when `config.window.opacity < 1` or background blur is on.
+        // fast path on windows without configured transparency. The
+        // host (rio) flips this to `false` via
+        // `Sugarloaf::set_window_opaque` when `config.window.opacity
+        // < 1` or a background blur style is on.
         layer.set_opaque(true);
         layer.set_presents_with_transaction(false);
 

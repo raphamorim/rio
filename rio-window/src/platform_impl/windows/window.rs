@@ -163,13 +163,15 @@ impl Window {
         });
     }
 
-    pub fn set_blur(&self, blur: bool) {
-        // Maps the cross-platform `blur` flag to the Windows 11
-        // Acrylic backdrop (`DWMSBT_TRANSIENTWINDOW`). On Windows 10
-        // / pre-22H2 builds `DwmSetWindowAttribute` returns
-        // `E_INVALIDARG` and the backdrop silently does nothing —
-        // matches the no-op behaviour of the previous stub.
-        self.set_system_backdrop(if blur {
+    pub fn set_blur(&self, blur: crate::window::BlurStyle) {
+        // Maps the cross-platform blur style to the Windows 11
+        // Acrylic backdrop (`DWMSBT_TRANSIENTWINDOW`). DWM has no
+        // liquid-glass equivalent, so any non-`Off` style maps the
+        // same way. On Windows 10 / pre-22H2 builds
+        // `DwmSetWindowAttribute` returns `E_INVALIDARG` and the
+        // backdrop silently does nothing — matches the no-op behaviour
+        // of the previous stub.
+        self.set_system_backdrop(if blur.is_enabled() {
             BackdropType::TransientWindow
         } else {
             BackdropType::None
@@ -1439,8 +1441,8 @@ impl InitData<'_> {
         }
 
         win.set_system_backdrop(self.attributes.platform_specific.backdrop_type);
-        if self.attributes.blur {
-            win.set_blur(true);
+        if self.attributes.blur.is_enabled() {
+            win.set_blur(self.attributes.blur);
         }
 
         if let Some(color) = self.attributes.platform_specific.border_color {
