@@ -62,6 +62,9 @@
   </screenshots>
 
   <releases>
+    <release version="0.4.1" date="2026-05-02">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.4.1</url>
+    </release>
     <release version="0.3.8" date="2026-04-13">
       <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.3.8</url>
     </release>
