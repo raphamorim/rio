@@ -152,16 +152,36 @@ impl Screen<'_> {
         let backend = if config.renderer.use_cpu {
             SugarloafBackend::Cpu
         } else {
+            // `feature = "wgpu"` here gates rioterm's own dep feature,
+            // which is OFF in the default `cargo build` profile. On
+            // Windows the wgpu code is still compiled into sugarloaf +
+            // rio-backend via the target-specific dependency override
+            // (`[target.'cfg(windows)'.dependencies.sugarloaf] features
+            // = ["wgpu"]`), so we can — and must — take the wgpu code
+            // path on Windows even when rioterm's own `wgpu` feature
+            // isn't on. Without this OS override, default Windows
+            // builds silently fall back to the CPU rasterizer, which
+            // doesn't write per-pixel alpha and therefore renders the
+            // entire window fully transparent under the
+            // `with_transparent(true)` + `DwmEnableBlurBehindWindow`
+            // path that `window.opacity < 1` engages.
             match config.renderer.backend {
                 // `Backend::Vulkan` from the user config means the
                 // native ash backend on Linux. Other OSes fall through
-                // to the wgpu Vulkan path when the `wgpu` feature is
-                // on; otherwise we degrade to CPU rasterizer.
+                // to the wgpu Vulkan path when wgpu is available;
+                // otherwise we degrade to CPU rasterizer.
                 #[cfg(target_os = "linux")]
                 Backend::Vulkan => SugarloafBackend::Vulkan,
-                #[cfg(all(not(target_os = "linux"), feature = "wgpu"))]
+                #[cfg(all(
+                    not(target_os = "linux"),
+                    any(feature = "wgpu", target_os = "windows")
+                ))]
                 Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
-                #[cfg(all(not(target_os = "linux"), not(feature = "wgpu")))]
+                #[cfg(all(
+                    not(target_os = "linux"),
+                    not(feature = "wgpu"),
+                    not(target_os = "windows")
+                ))]
                 Backend::Vulkan => SugarloafBackend::Cpu,
                 #[cfg(target_os = "macos")]
                 Backend::Metal => SugarloafBackend::Metal,
@@ -169,9 +189,12 @@ impl Screen<'_> {
                 Backend::Webgpu => SugarloafBackend::Wgpu(
                     wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
                 ),
-                #[cfg(all(feature = "wgpu", not(target_arch = "wasm32")))]
+                #[cfg(all(
+                    any(feature = "wgpu", target_os = "windows"),
+                    not(target_arch = "wasm32")
+                ))]
                 Backend::Webgpu => SugarloafBackend::Wgpu(wgpu::Backends::all()),
-                #[cfg(not(feature = "wgpu"))]
+                #[cfg(all(not(feature = "wgpu"), not(target_os = "windows")))]
                 Backend::Webgpu => SugarloafBackend::Cpu,
             }
         };
@@ -195,7 +218,7 @@ impl Screen<'_> {
             }
         };
 
-        #[cfg(feature = "wgpu")]
+        #[cfg(any(feature = "wgpu", target_os = "windows"))]
         sugarloaf.update_filters(config.renderer.filters.as_slice());
 
         let mut renderer = Renderer::new(config);
