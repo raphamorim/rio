@@ -23,6 +23,7 @@
   libxcb,
   withWayland ? !stdenv.isDarwin,
   wayland,
+  shaderc,
   ...
 }: let
   readTOML = f: builtins.fromTOML (builtins.readFile f);
@@ -76,6 +77,7 @@ in
       [
         rustPlatform.bindgenHook
         ncurses
+        shaderc
       ]
       ++ lib.optionals stdenv.isLinux [
         cmake
