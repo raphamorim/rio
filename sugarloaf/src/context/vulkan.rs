@@ -1415,12 +1415,6 @@ fn create_swapchain(
             .get_physical_device_surface_formats(physical_device, surface)
             .expect("get_physical_device_surface_formats")
     };
-    let present_modes = unsafe {
-        surface_loader
-            .get_physical_device_surface_present_modes(physical_device, surface)
-            .expect("get_physical_device_surface_present_modes")
-    };
-
     // Prefer BGRA8_UNORM (linear) so blending stays in gamma space — the
     // same choice Metal makes (`MTLPixelFormat::BGRA8Unorm` + DisplayP3
     // tag). Fragment shaders will emit sRGB-encoded output. If the
@@ -1435,14 +1429,11 @@ fn create_swapchain(
         .copied()
         .unwrap_or(formats[0]);
 
-    // Present mode: Mailbox for low-latency "triple buffered", FIFO as a
-    // guaranteed fallback. We don't expose a config knob yet — same
-    // story as Metal's hard-coded `maximumDrawableCount = 3`.
-    let present_mode = if present_modes.contains(&vk::PresentModeKHR::MAILBOX) {
-        vk::PresentModeKHR::MAILBOX
-    } else {
-        vk::PresentModeKHR::FIFO
-    };
+    // FIFO. Spec-guaranteed and vsync-throttled at present time, so the
+    // renderer can't outrun the display. MAILBOX on X11 (Mesa DRI3/Present)
+    // runs a driver-side polling thread and discards rendered frames, which
+    // pegged Xorg under sustained input.
+    let present_mode = vk::PresentModeKHR::FIFO;
 
     let extent = if caps.current_extent.width != u32::MAX {
         caps.current_extent
