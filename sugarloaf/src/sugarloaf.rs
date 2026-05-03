@@ -7,14 +7,12 @@ use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::font_cache::{compute_advance, resolve_with, FontCache, ResolvedGlyph};
-use crate::layout::{RootStyle, TextLayout};
+use crate::layout::RootStyle;
 use crate::renderer::Renderer;
 use crate::sugarloaf::graphics::{GraphicDataEntry, Graphics};
 use swash::Attributes;
 
 use crate::context::Context;
-use crate::Content;
-use crate::TextDimensions;
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
@@ -354,7 +352,7 @@ impl Sugarloaf<'_> {
         if let Some(cached) = self.font_cache.get(&(ch, attrs)) {
             return *cached;
         }
-        let font_lib = self.state.content.font_library().clone();
+        let font_lib = self.state.fonts.clone();
         resolve_with(&mut self.font_cache, &font_lib, ch, attrs)
     }
 
@@ -391,7 +389,7 @@ impl Sugarloaf<'_> {
         }
 
         let computed = {
-            let font_ctx = self.state.content.font_library().inner.read();
+            let font_ctx = self.state.fonts.inner.read();
             compute_advance(&font_ctx, resolved.font_id, ch)
         };
         // Cache both hits AND misses — misses become a zero-advance
@@ -411,7 +409,7 @@ impl Sugarloaf<'_> {
     /// set changes rarely, and the one-off cost of walking the library
     /// is fine for a human-triggered lookup.
     pub fn font_family_names(&self) -> Vec<String> {
-        self.state.content.font_library().family_names()
+        self.state.fonts.family_names()
     }
 
     /// Borrow the font library. Used by the grid emission path to
@@ -419,7 +417,28 @@ impl Sugarloaf<'_> {
     /// own atlas.
     #[inline]
     pub fn font_library(&self) -> &crate::font::FontLibrary {
-        self.state.content.font_library()
+        &self.state.fonts
+    }
+
+    /// Stateless cell-metrics computation. Callers (rioterm's
+    /// `ContextDimension`) recompute on font / size / scale change
+    /// and store the result themselves — sugarloaf no longer keeps
+    /// per-panel dimensions. Returns `(TextDimensions, CellMetrics)`
+    /// for `font_size` (in logical points) at `line_height` and
+    /// `scale_factor`.
+    #[inline]
+    pub fn compute_cell_metrics(
+        &self,
+        font_size: f32,
+        line_height: f32,
+        scale_factor: f32,
+    ) -> (crate::layout::TextDimensions, crate::layout::CellMetrics) {
+        crate::layout::compute_cell_metrics(
+            &self.state.fonts,
+            font_size,
+            line_height,
+            scale_factor,
+        )
     }
 
     /// Resolve a batch of glyph queries with a single FontLibrary
@@ -434,7 +453,7 @@ impl Sugarloaf<'_> {
         if queries.is_empty() {
             return Vec::new();
         }
-        let font_lib = self.state.content.font_library().clone();
+        let font_lib = self.state.fonts.clone();
         let mut out = Vec::with_capacity(queries.len());
         for &(ch, attrs) in queries {
             out.push(resolve_with(&mut self.font_cache, &font_lib, ch, attrs));
@@ -462,40 +481,6 @@ impl Sugarloaf<'_> {
         &mut self.state.style
     }
 
-    /// Update text font size based on action (0=reset, 1=decrease, 2=increase)
-    /// Returns true if the operation was applied, false if id is not text
-    #[inline]
-    pub fn set_text_font_size_action(&mut self, id: &usize, operation: u8) -> bool {
-        if self.state.content.get_text_by_id(*id).is_some() {
-            self.state.update_text_style(id, operation);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Set font size for text content. Returns true if applied, false if id is not text
-    #[inline]
-    pub fn set_text_font_size(&mut self, id: &usize, font_size: f32) -> bool {
-        if self.state.content.get_text_by_id(*id).is_some() {
-            self.state.set_text_font_size(id, font_size);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Set line height for text content. Returns true if applied, false if id is not text
-    #[inline]
-    pub fn set_text_line_height(&mut self, id: &usize, line_height: f32) -> bool {
-        if self.state.content.get_text_by_id(*id).is_some() {
-            self.state.set_text_line_height(id, line_height);
-            true
-        } else {
-            false
-        }
-    }
-
     #[inline]
     /// Install librashader CRT/scanline filters. Only available with
     /// the `wgpu` feature — librashader's runtime is wgpu-only
@@ -521,6 +506,23 @@ impl Sugarloaf<'_> {
     pub fn set_background_color(&mut self, color: Option<Color>) -> &mut Self {
         self.background_color = color;
         self
+    }
+
+    /// Mark the window's render surface opaque (`true`, default — fast
+    /// macOS compositor path) or non-opaque (`false`, required for
+    /// `window.opacity < 1` and macOS-glass background blur). Safe to
+    /// call every config reload; underlying call is a single Cocoa
+    /// property write on macOS, no-op on other backends until they
+    /// grow their own transparency story.
+    #[inline]
+    pub fn set_window_opaque(&self, opaque: bool) {
+        match &self.ctx.inner {
+            #[cfg(target_os = "macos")]
+            crate::context::ContextType::Metal(ctx) => ctx.set_layer_opaque(opaque),
+            _ => {
+                let _ = opaque;
+            }
+        }
     }
 
     /// Try to load and install a window background image. Returns `Err`
@@ -592,101 +594,6 @@ impl Sugarloaf<'_> {
         self.background_image = None;
     }
 
-    /// Remove content by ID (any type)
-    #[inline]
-    pub fn remove_content(&mut self, id: usize) {
-        self.state.content.remove_state(&id);
-    }
-
-    /// Clear text content (resets to empty). Returns true if applied, false if id is not text
-    #[inline]
-    pub fn clear_text(&mut self, id: &usize) -> bool {
-        if self.state.content.get_text_by_id(*id).is_some() {
-            self.state.clear_text(id);
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn content(&mut self) -> &mut Content {
-        self.state.content()
-    }
-
-    #[inline]
-    pub fn get_text_by_id_mut(
-        &mut self,
-        id: usize,
-    ) -> Option<&mut crate::layout::BuilderState> {
-        self.state.content.get_text_by_id_mut(id)
-    }
-
-    #[inline]
-    pub fn get_text_by_id(&mut self, id: usize) -> Option<&crate::layout::BuilderState> {
-        self.state.content.get_text_by_id(id)
-    }
-
-    /// Device-pixel font size for the given rich-text id. This is
-    /// `layout.font_size * scale_factor` — the size glyphs should be
-    /// rasterized at. Mirrors per-text zoom (set via
-    /// `set_text_font_size_action`) so each panel can carry its own
-    /// size. Returns None for non-text ids or missing ids.
-    #[inline]
-    pub fn text_scaled_font_size(&self, id: &usize) -> Option<f32> {
-        self.state
-            .content
-            .get_text_by_id(*id)
-            .map(|s| s.scaled_font_size)
-    }
-
-    #[inline]
-    pub fn build_text_by_id(&mut self, id: usize) {
-        self.state.content().sel(id).build();
-    }
-
-    #[inline]
-    pub fn build_text_by_id_line_number(&mut self, text_id: usize, line_number: usize) {
-        self.state.content().sel(text_id).build_line(line_number);
-    }
-
-    /// Create or get text content.
-    /// - `id: Some(n)` - cached with id n, persistent across renders
-    /// - `id: None` - transient text, cleared after rendering. Returns index into transient vec.
-    #[inline]
-    pub fn text(&mut self, id: Option<usize>) -> usize {
-        match id {
-            Some(text_id) => {
-                // Check if text already exists
-                if self.state.content.get_text_by_id(text_id).is_none() {
-                    // Create new text with default layout
-                    let default_layout =
-                        TextLayout::from_default_layout(&self.state.style);
-                    self.state.content.set_text(text_id, &default_layout);
-                }
-                text_id
-            }
-            None => {
-                // Create transient text
-                let default_layout = TextLayout::from_default_layout(&self.state.style);
-                self.state.content.add_transient_text(&default_layout)
-            }
-        }
-    }
-
-    /// Get the next available ID for cached content.
-    /// Returns the highest key + 1 (wrapping on overflow).
-    /// Useful for dynamically allocating IDs without hardcoded constants.
-    #[inline]
-    pub fn get_next_id(&self) -> usize {
-        self.state
-            .content
-            .states
-            .keys()
-            .max()
-            .map(|max_id| max_id.wrapping_add(1))
-            .unwrap_or(0)
-    }
-
     /// Add a rectangle to content system
     /// - `id: None` - not cached, rendered immediately
     /// - `id: Some(n)` - cached with id n, overwrites existing content
@@ -695,7 +602,7 @@ impl Sugarloaf<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn rect(
         &mut self,
-        id: Option<usize>,
+        _id: Option<usize>,
         x: f32,
         y: f32,
         width: f32,
@@ -708,39 +615,26 @@ impl Sugarloaf<'_> {
         let scaled_y = y * self.state.style.scale_factor;
         let scaled_width = width * self.state.style.scale_factor;
         let scaled_height = height * self.state.style.scale_factor;
-
-        if let Some(content_id) = id {
-            self.state.content.set_rect(
-                content_id,
-                scaled_x,
-                scaled_y,
-                scaled_width,
-                scaled_height,
-                color,
-                depth,
-            );
-        } else {
-            self.renderer.rect(
-                scaled_x,
-                scaled_y,
-                scaled_width,
-                scaled_height,
-                color,
-                depth,
-                order,
-            );
-        }
+        // The `Some(id)` cached arm has no rio caller — every
+        // ephemeral rect goes through `Renderer.batches`. Argument
+        // kept for API stability with the other primitive helpers.
+        self.renderer.rect(
+            scaled_x,
+            scaled_y,
+            scaled_width,
+            scaled_height,
+            color,
+            depth,
+            order,
+        );
     }
 
-    /// Add a rounded rectangle to content system
-    /// - `id: None` - not cached, rendered immediately
-    /// - `id: Some(n)` - cached with id n, overwrites existing content
-    /// - `order` - draw order (higher values render on top)
+    /// Add a rounded rectangle. Always immediate-mode now — see `rect`.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn rounded_rect(
         &mut self,
-        id: Option<usize>,
+        _id: Option<usize>,
         x: f32,
         y: f32,
         width: f32,
@@ -755,30 +649,16 @@ impl Sugarloaf<'_> {
         let scaled_width = width * self.state.style.scale_factor;
         let scaled_height = height * self.state.style.scale_factor;
         let scaled_border_radius = border_radius * self.state.style.scale_factor;
-
-        if let Some(content_id) = id {
-            self.state.content.set_rounded_rect(
-                content_id,
-                scaled_x,
-                scaled_y,
-                scaled_width,
-                scaled_height,
-                color,
-                depth,
-                scaled_border_radius,
-            );
-        } else {
-            self.renderer.rounded_rect(
-                scaled_x,
-                scaled_y,
-                scaled_width,
-                scaled_height,
-                color,
-                depth,
-                scaled_border_radius,
-                order,
-            );
-        }
+        self.renderer.rounded_rect(
+            scaled_x,
+            scaled_y,
+            scaled_width,
+            scaled_height,
+            color,
+            depth,
+            scaled_border_radius,
+            order,
+        );
     }
 
     /// Add a quad with per-corner radii and per-edge border widths
@@ -823,14 +703,12 @@ impl Sugarloaf<'_> {
         );
     }
 
-    /// Add an image rectangle to content system
-    /// - `id: None` - not cached, rendered immediately
-    /// - `id: Some(n)` - cached with id n, overwrites existing content
+    /// Add an image rectangle. Always immediate-mode now — see `rect`.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn image_rect(
         &mut self,
-        id: Option<usize>,
+        _id: Option<usize>,
         x: f32,
         y: f32,
         width: f32,
@@ -845,30 +723,16 @@ impl Sugarloaf<'_> {
         let scaled_width = width * self.state.style.scale_factor;
         let scaled_height = height * self.state.style.scale_factor;
 
-        if let Some(content_id) = id {
-            self.state.content.set_image(
-                content_id,
-                scaled_x,
-                scaled_y,
-                scaled_width,
-                scaled_height,
-                color,
-                coords,
-                depth,
-                atlas_layer,
-            );
-        } else {
-            self.renderer.add_image_rect(
-                scaled_x,
-                scaled_y,
-                scaled_width,
-                scaled_height,
-                color,
-                coords,
-                depth,
-                atlas_layer,
-            );
-        }
+        self.renderer.add_image_rect(
+            scaled_x,
+            scaled_y,
+            scaled_width,
+            scaled_height,
+            color,
+            coords,
+            depth,
+            atlas_layer,
+        );
     }
 
     /// Draw an anti-aliased polygon from a list of points.
@@ -956,49 +820,6 @@ impl Sugarloaf<'_> {
         );
     }
 
-    /// Show content at a specific position (any type)
-    #[inline]
-    pub fn set_position(&mut self, id: usize, x: f32, y: f32) {
-        self.state.set_content_position(id, x, y);
-    }
-
-    /// Set clipping bounds for content (physical pixels: [x, y, width, height])
-    #[inline]
-    pub fn set_bounds(&mut self, id: usize, bounds: Option<[f32; 4]>) {
-        self.state.set_content_bounds(id, bounds);
-    }
-
-    /// Set content visibility (any type)
-    #[inline]
-    pub fn set_visibility(&mut self, id: usize, visible: bool) {
-        self.state.set_content_hidden(id, !visible);
-    }
-
-    /// Set content depth for z-ordering
-    #[inline]
-    pub fn set_depth(&mut self, id: usize, depth: f32) {
-        self.state.set_content_depth(id, depth);
-    }
-
-    /// Set content draw order (higher = drawn later = on top)
-    #[inline]
-    pub fn set_order(&mut self, id: usize, order: u8) {
-        self.state.set_content_order(id, order);
-    }
-
-    /// Get text layout. Returns None if id is not text
-    #[inline]
-    pub fn get_text_layout(&self, id: &usize) -> Option<TextLayout> {
-        self.state.content.get_text_by_id(*id)?;
-        Some(self.state.get_state_layout(id))
-    }
-
-    /// Force update dimensions for text content
-    #[inline]
-    pub fn force_update_dimensions(&mut self, id: &usize) {
-        self.state.content.update_dimensions(id);
-    }
-
     /// Immediate-mode text recorder for UI overlays. The per-sugarloaf
     /// `Text` instance. Overlays call `draw` / `measure` via this
     /// handle; sugarloaf flushes the recorded instances at render
@@ -1029,54 +850,6 @@ impl Sugarloaf<'_> {
     pub fn clear_image_overlays_for(&mut self, panel_id: usize) {
         if let Some(v) = self.image_overlays.get_mut(&panel_id) {
             v.clear();
-        }
-    }
-
-    /// Get text dimensions. Returns None if id is not text
-    /// Get the total rendered width of text content by summing glyph advances.
-    /// Returns the width in logical (unscaled) pixels.
-    #[inline]
-    pub fn get_text_rendered_width(&self, id: &usize) -> f32 {
-        if let Some(builder_state) = self.state.content.get_text_by_id(*id) {
-            let scale = self.state.style.scale_factor;
-            let mut total: f32 = 0.0;
-            for line in &builder_state.lines {
-                for run in &line.render_data.runs {
-                    total += run.advance;
-                }
-            }
-            total / scale
-        } else {
-            0.0
-        }
-    }
-
-    #[inline]
-    pub fn get_text_dimensions(&mut self, id: &usize) -> Option<TextDimensions> {
-        if self.state.content.get_text_by_id(*id).is_some() {
-            Some(self.state.get_text_dimensions(id))
-        } else {
-            None
-        }
-    }
-
-    /// Canonical [`CellMetrics`] for `id`, mirroring
-    /// [`get_text_dimensions`]'s mark-for-repaint side effect.
-    /// Use alongside `get_text_dimensions` when constructing a
-    /// `ContextDimension` so the layout / GPU / mouse pipeline all
-    /// see the same `u32` cell stride.
-    #[inline]
-    pub fn get_text_cell_metrics(
-        &mut self,
-        id: &usize,
-    ) -> Option<crate::layout::CellMetrics> {
-        if self.state.content.get_text_by_id(*id).is_some() {
-            if let Some(content_state) = self.state.content.states.get_mut(id) {
-                content_state.render_data.needs_repaint = true;
-            }
-            Some(self.state.get_state_layout(id).cell)
-        } else {
-            None
         }
     }
 

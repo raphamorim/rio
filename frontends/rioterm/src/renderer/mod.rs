@@ -28,6 +28,24 @@ use rio_backend::sugarloaf::Sugarloaf;
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 
+/// The window-bg clear alpha that flows into sugarloaf's
+/// `set_background_color`. Stored on the renderer and re-applied on
+/// every `effective_bg` write so OSC 11 changes don't reset
+/// transparency to 1.0.
+///
+/// - Glass blur styles force `0.0` so the macOS-26 `NSGlassEffectView`
+///   under the metal layer is what shows through.
+/// - Otherwise it's the configured `window.opacity`, clamped to
+///   `[0, 1]`.
+#[inline]
+fn window_bg_alpha(config: &Config) -> f32 {
+    if config.window.blur.is_glass() {
+        0.0
+    } else {
+        config.window.opacity.clamp(0.0, 1.0)
+    }
+}
+
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
@@ -60,6 +78,16 @@ pub struct Renderer {
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], rio_backend::sugarloaf::Color, bool),
+    /// `window.opacity-cells` — apply window opacity to cells with an
+    /// SGR-set background too. Off by default. `cell_bg_alpha` is the
+    /// precomputed `(window.opacity * 255) as u8` to avoid a multiply
+    /// per cell.
+    pub opacity_cells: bool,
+    pub cell_bg_alpha: u8,
+    /// Target alpha for the window-bg clear (`0..=1`). 0 in glass
+    /// mode, otherwise `window.opacity`. Re-applied to `effective_bg`
+    /// every frame so OSC 11 doesn't undo the user's transparency.
+    pub window_bg_alpha: f32,
     pub custom_mouse_cursor: bool,
     pub trail_cursor_enabled: bool,
     pub trail_cursor: trail_cursor::TrailCursor,
@@ -72,8 +100,17 @@ impl Renderer {
 
         let mut dynamic_background =
             (named_colors.background.0, named_colors.background.1, false);
-        if config.window.opacity < 1. {
-            dynamic_background.1.a = config.window.opacity as f64;
+        // Window-bg target alpha. Cached here at init and re-applied
+        // to every OSC-11-driven `effective_bg` refresh in
+        // `Renderer::run` so a runtime bg change doesn't reset
+        // transparency to 1.0. Glass styles force alpha = 0 so the
+        // NSGlassEffectView underneath the metal layer can provide
+        // the actual translucent bg — `window_bg_alpha` returns 0 in
+        // that case, so the glass and `opacity < 1` paths share one
+        // assignment.
+        let target_bg_alpha = window_bg_alpha(config);
+        if config.window.blur.is_glass() || config.window.opacity < 1. {
+            dynamic_background.1.a = target_bg_alpha as f64;
             dynamic_background.2 = true;
         } else if config.window.background_image.is_some() {
             dynamic_background.1 = rio_backend::sugarloaf::Color::TRANSPARENT;
@@ -115,6 +152,9 @@ impl Renderer {
             },
             named_colors,
             dynamic_background,
+            opacity_cells: config.window.opacity_cells,
+            cell_bg_alpha: (config.window.opacity.clamp(0.0, 1.0) * 255.0).round() as u8,
+            window_bg_alpha: target_bg_alpha,
             search: search::SearchOverlay::default(),
             assistant: assistant::AssistantOverlay::default(),
             scrollbar: scrollbar::Scrollbar::new(config.enable_scroll_bar),
@@ -630,48 +670,17 @@ impl Renderer {
             );
         }
 
-        // Render panel borders (on top of terminal content)
+        // Render panel borders (on top of terminal content). Borders
+        // are flat rects today — the previous `Object` enum
+        // (Rect / Quad / RichText) was only ever populated with the
+        // Rect variant, so the dispatch is direct now.
         let grid_scaled_margin = context_manager.get_current_grid_scaled_margin();
-        for border_object in context_manager.get_panel_borders() {
-            match border_object {
-                rio_backend::sugarloaf::Object::Quad(quad) => {
-                    // Convert from physical pixels to logical coordinates
-                    let x = (quad.x + grid_scaled_margin.left) / scale_factor;
-                    let y = (quad.y + grid_scaled_margin.top) / scale_factor;
-                    let width = quad.width / scale_factor;
-                    let height = quad.height / scale_factor;
-
-                    let corner_radii = [
-                        quad.corner_radii.top_left / scale_factor,
-                        quad.corner_radii.top_right / scale_factor,
-                        quad.corner_radii.bottom_right / scale_factor,
-                        quad.corner_radii.bottom_left / scale_factor,
-                    ];
-
-                    // Render quad with rounded corners
-                    sugarloaf.quad(
-                        None,
-                        x,
-                        y,
-                        width,
-                        height,
-                        quad.background_color,
-                        corner_radii,
-                        0.0,
-                        1, // Higher order renders on top
-                    );
-                }
-                rio_backend::sugarloaf::Object::Rect(rect) => {
-                    // Simple rectangle (no rounded corners or borders)
-                    let x = (rect.x + grid_scaled_margin.left) / scale_factor;
-                    let y = (rect.y + grid_scaled_margin.top) / scale_factor;
-                    let width = rect.width / scale_factor;
-                    let height = rect.height / scale_factor;
-
-                    sugarloaf.rect(None, x, y, width, height, rect.color, 0.0, 1);
-                }
-                _ => {}
-            }
+        for rect in context_manager.get_panel_borders() {
+            let x = (rect.x + grid_scaled_margin.left) / scale_factor;
+            let y = (rect.y + grid_scaled_margin.top) / scale_factor;
+            let width = rect.width / scale_factor;
+            let height = rect.height / scale_factor;
+            sugarloaf.rect(None, x, y, width, height, rect.color, 0.0, 1);
         }
 
         // Derive the window bg color from the currently-active panel's
@@ -682,7 +691,7 @@ impl Renderer {
         // want it to follow focus the way does (each surface's
         // `terminal.colors.background` drives its own window chrome).
         let current_context = context_manager.current_grid_mut().current_mut();
-        let effective_bg = match &current_context.renderable_content.background {
+        let mut effective_bg = match &current_context.renderable_content.background {
             Some(crate::context::renderable::BackgroundState::Set(color)) => *color,
             // Explicit OSC 111 reset OR panel that never ran OSC 11 →
             // fall back to the config / dynamic_background (honors
@@ -691,6 +700,12 @@ impl Renderer {
                 self.dynamic_background.1
             }
         };
+        // Re-apply the configured window-bg alpha. Without this, an
+        // OSC 11 sequence that sets a new bg color resets the alpha
+        // to 1.0 and the window goes opaque even when
+        // `window.opacity < 1`. Glass mode forces alpha 0 so the
+        // backdrop view shows through.
+        effective_bg.a = self.window_bg_alpha as f64;
 
         let window_update = if self.last_window_bg != Some(effective_bg) {
             sugarloaf.set_background_color(Some(effective_bg));
@@ -724,7 +739,7 @@ impl Renderer {
     }
 
     /// Find hint label at the specified position
-    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    #[allow(dead_code)]
     fn find_hint_label_at_position<'a>(
         &self,
         renderable_content: &'a RenderableContent,

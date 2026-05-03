@@ -23,6 +23,7 @@
 //! `font::shaper::run::RunIterator`.
 
 use rio_backend::config::colors::term::TermColors;
+use rio_backend::config::colors::{AnsiColor, NamedColor};
 use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::{Column, Line, Pos};
 use rio_backend::crosswords::search::Match;
@@ -843,30 +844,85 @@ fn decoration_color(
     }
 }
 
+/// Per-cell background color including the alpha-routing logic that
+/// makes window opacity actually visible:
+///
+/// - Cells with an **explicit** bg (BgRgb / BgPalette inline encoding,
+///   or a non-default `style.bg`) → `alpha = 255`. Stays opaque so
+///   syntax-highlighted regions, TUI panels, etc. don't bleed through.
+///   With `window.opacity-cells = true`, the per-frame opacity gets
+///   applied here too — for users who want their Neovim / tmux UI to
+///   share the window translucency.
+/// - Cells with the **terminal default** bg (`style.bg ==
+///   AnsiColor::Named(NamedColor::Background)` and no INVERSE) →
+///   `alpha = 0`. The grid bg pass blends premultiplied-over so writing
+///   `(0,0,0,0)` is a no-op — the drawable's clear color (which
+///   carries `window.opacity` via `dynamic_background.1.a`) shows
+///   through. This is what gives the user a translucent window.
+/// - INVERSE flag → fg/bg swap promotes the cell to "has explicit bg"
+///   so it stays opaque. INVERSE bypasses `opacity-cells` to keep
+///   cursor / inverted-text readable.
+///
+/// Selection / hint highlights are applied at the `build_row_bg` slow
+/// path with their own (always opaque) bg colors, so they don't go
+/// through this function.
 pub fn cell_bg(
     sq: Square,
     style_set: &StyleSet,
     renderer: &Renderer,
     term_colors: &TermColors,
 ) -> [u8; 4] {
-    let color = match sq.content_tag() {
+    // Alpha for cells that paint an explicit bg. Default = fully
+    // opaque (keeps TUI contrast). With `window.opacity-cells = true`
+    // and a transparent window, we multiply by the window opacity so
+    // the explicit-bg cells stay proportionally translucent. INVERSE
+    // always uses 255.
+    let explicit_bg_alpha = if renderer.opacity_cells {
+        renderer.cell_bg_alpha
+    } else {
+        255
+    };
+
+    match sq.content_tag() {
         ContentTag::BgRgb => {
             let (r, g, b) = sq.bg_rgb();
-            return [r, g, b, 255];
+            [r, g, b, explicit_bg_alpha]
         }
         ContentTag::BgPalette => {
             let idx = sq.bg_palette_index() as usize;
-            renderer.color(idx, term_colors)
+            let color = renderer.color(idx, term_colors);
+            let [r, g, b, _] = normalized_to_u8(color);
+            [r, g, b, explicit_bg_alpha]
         }
         ContentTag::Codepoint => {
-            let mut style = style_set.get(sq.style_id());
-            if style.flags.contains(StyleFlags::INVERSE) {
-                std::mem::swap(&mut style.fg, &mut style.bg);
+            let style = style_set.get(sq.style_id());
+            let inverse = style.flags.contains(StyleFlags::INVERSE);
+            // "Default bg": the cell carries the terminal-default bg
+            // sentinel with no SGR override. INVERSE flips fg/bg,
+            // which always produces a non-default effective bg, so
+            // treat as explicit.
+            let has_default_bg =
+                !inverse && matches!(style.bg, AnsiColor::Named(NamedColor::Background));
+            if has_default_bg {
+                // Skip painting → the translucent clear (or opaque
+                // global bg, for non-transparent windows) shows
+                // through unchanged. Premultiplied blending makes
+                // (0,0,0,0) a no-op.
+                return [0, 0, 0, 0];
             }
-            renderer.compute_bg_color(&style, term_colors)
+            // Resolve the explicit bg (with INVERSE swap applied).
+            let mut resolved = style;
+            if inverse {
+                std::mem::swap(&mut resolved.fg, &mut resolved.bg);
+            }
+            let color = renderer.compute_bg_color(&resolved, term_colors);
+            let [r, g, b, _] = normalized_to_u8(color);
+            // INVERSE always opaque — keep cursor / inverted text
+            // readable regardless of the opacity-cells flag.
+            let alpha = if inverse { 255 } else { explicit_bg_alpha };
+            [r, g, b, alpha]
         }
-    };
-    normalized_to_u8(color)
+    }
 }
 
 #[inline]

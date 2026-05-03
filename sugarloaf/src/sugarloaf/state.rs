@@ -3,15 +3,23 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+//! Sugarloaf-side global state — font handle, root style, and a
+//! single visual-bell overlay slot. The previous version owned the
+//! `Content` registry that tracked per-panel layout; that bookkeeping
+//! moved to rio's `ContextDimension` (see
+//! `memory/project_sugarloaf_content_drop.md`). This module is now
+//! mostly a thin holder.
+
 use crate::font::FontLibrary;
-use crate::layout::{RootStyle, TextLayout};
+use crate::layout::RootStyle;
 use crate::renderer::Renderer;
 use crate::Graphics;
-use crate::{Content, TextDimensions};
 
 pub struct SugarState {
     pub style: RootStyle,
-    pub content: Content,
+    /// Live font handle. Cloned (Arc-shallow) into per-frame contexts.
+    /// Replaces the previous indirection through `Content`.
+    pub fonts: FontLibrary,
     pub visual_bell_overlay: Option<crate::sugarloaf::primitives::Rect>,
 }
 
@@ -19,145 +27,34 @@ impl SugarState {
     pub fn new(
         style: RootStyle,
         font_library: &FontLibrary,
-        font_features: &Option<Vec<String>>,
+        _font_features: &Option<Vec<String>>,
     ) -> SugarState {
-        let found_font_features = SugarState::found_font_features(font_features);
-        let mut content = Content::new(font_library);
-        content.set_font_features(found_font_features);
-
+        // Font features used to be threaded through the rich-text
+        // shaper; with that pipeline gone they're no longer applied
+        // here. Grid-side shaping (`grid_emit`) and UI text shaping
+        // (`sugarloaf::text`) handle features inline at shape time.
         SugarState {
-            content,
+            fonts: font_library.clone(),
             style,
             visual_bell_overlay: None,
         }
     }
 
+    /// Compatibility shim used by the per-frame `compute_updates` —
+    /// the old shaper kept font-feature settings here. Kept as a
+    /// helper that returns an empty list so call sites don't need a
+    /// rewrite while the rest of the pipeline is being torn down.
     pub fn found_font_features(
-        font_features: &Option<Vec<String>>,
+        _font_features: &Option<Vec<String>>,
     ) -> Vec<swash::Setting<u16>> {
-        let mut found_font_features = vec![];
-        if let Some(features) = font_features {
-            for feature in features {
-                let setting: swash::Setting<u16> = (feature.as_str(), 1).into();
-                found_font_features.push(setting);
-            }
-        }
-
-        found_font_features
+        Vec::new()
     }
 
-    #[inline]
-    pub fn contains_rich_text(&self, text_id: &usize) -> bool {
-        self.content.get_text_by_id(*text_id).is_some()
-    }
-
-    #[inline]
-    pub fn contains_id(&self, id: &usize) -> bool {
-        self.content.states.contains_key(id)
-    }
-
-    #[inline]
-    pub fn new_layer(&mut self) {}
-
-    #[inline]
-    pub fn content(&mut self) -> &mut Content {
-        &mut self.content
-    }
-
-    #[inline]
-    pub fn get_state_layout(&self, id: &usize) -> TextLayout {
-        if let Some(state) = self.content.get_state(id) {
-            state.layout
-        } else {
-            TextLayout::from_default_layout(&self.style)
-        }
-    }
-
-    #[inline]
-    pub fn get_text_dimensions(&mut self, id: &usize) -> TextDimensions {
-        // Mark for repaint
-        if let Some(content_state) = self.content.states.get_mut(id) {
-            content_state.render_data.needs_repaint = true;
-        }
-
-        if let Some(text_state) = self.content.get_state(id) {
-            let layout = &text_state.layout;
-            TextDimensions {
-                scale: layout.dimensions.scale,
-                width: layout.dimensions.width,
-                height: layout.dimensions.height,
-            }
-        } else {
-            TextDimensions::default()
-        }
-    }
-
-    #[inline]
-    pub fn clean_screen(&mut self) {
-        // Mark all states for removal - they'll be re-added by route screen functions
-        for (_, content_state) in self.content.states.iter_mut() {
-            content_state.render_data.mark_for_removal();
-        }
-    }
-
-    #[inline]
-    pub fn update_text_style(&mut self, text_id: &usize, operation: u8) {
-        if let Some(text_state) = self.content.get_state_mut(text_id) {
-            let should_update = match operation {
-                0 => text_state.reset_font_size(),
-                2 => text_state.increase_font_size(),
-                1 => text_state.decrease_font_size(),
-                _ => false,
-            };
-
-            if should_update {
-                text_state.layout.dimensions.height = 0.0;
-                text_state.layout.dimensions.width = 0.0;
-            }
-        }
-
-        // Mark for repaint
-        if let Some(content_state) = self.content.states.get_mut(text_id) {
-            content_state.render_data.needs_repaint = true;
-        }
-
-        self.compute_dimensions();
-    }
-
-    #[inline]
-    pub fn compute_dimensions(&mut self) {
-        // Collect text IDs that need repaint
-        let ids_to_repaint: Vec<usize> = self
-            .content
-            .states
-            .iter()
-            .filter_map(|(id, content_state)| {
-                // Only process text content that needs repaint
-                if content_state.render_data.needs_repaint && content_state.is_text() {
-                    Some(*id)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if ids_to_repaint.is_empty() {
-            return;
-        }
-
-        // Process each text ID
-        for text_id in &ids_to_repaint {
-            self.content.update_dimensions(text_id);
-        }
-
-        // Clear repaint flags after processing
-        for id in ids_to_repaint {
-            if let Some(content_state) = self.content.states.get_mut(&id) {
-                content_state.render_data.clear_repaint_flag();
-            }
-        }
-    }
-
+    /// Drive the per-frame `Renderer::prepare` step. The legacy
+    /// transient-text shaping pass is gone; `advance_brush.prepare`
+    /// remains because it still emits per-frame quads / clears the
+    /// instance buffers that the immediate-mode `rect/quad/...`
+    /// helpers fill.
     #[inline]
     pub fn compute_updates(
         &mut self,
@@ -170,90 +67,39 @@ impl SugarState {
             Vec<super::graphics::GraphicOverlay>,
         >,
     ) {
-        // Shape transient texts before rendering
-        self.content.build_transient_texts();
         advance_brush.prepare(context, self, graphics, image_data, image_overlays);
     }
 
+    /// `compute_dimensions` used to walk per-id Content states and
+    /// recompute cell metrics on the `needs_repaint` flag. Per-panel
+    /// dimensions live on rio's `ContextDimension` now and rio drives
+    /// the recompute through `Sugarloaf::compute_cell_metrics`. This
+    /// is preserved as a no-op stub so existing render-loop call
+    /// sites stay shape-compatible until they're audited.
     #[inline]
-    pub fn reset(&mut self) {
-        // Remove states marked for removal
-        let mut to_remove = Vec::new();
-        for (id, content_state) in &self.content.states {
-            if content_state.render_data.should_remove {
-                to_remove.push(*id);
-            }
-        }
+    pub fn compute_dimensions(&mut self) {}
 
-        for id in to_remove {
-            self.content.remove_state(&id);
-        }
-
-        // Clear all transient texts (they get recreated each frame)
-        self.content.clear_transient_texts();
-
-        self.content.mark_states_clean();
-    }
-
+    /// Pre-frame cleanup hook. Was responsible for purging Content
+    /// states marked for removal. With Content gone, sugarloaf has no
+    /// per-id state of its own to GC; the only remaining sweep
+    /// (per-frame text instances) lives on `crate::text::Text`.
     #[inline]
-    pub fn clear_text(&mut self, id: &usize) {
-        self.content.clear_state(id);
-    }
+    pub fn reset(&mut self) {}
 
+    /// Was responsible for marking every panel-text state for
+    /// removal so the next frame's `reset` would drop them. Without
+    /// Content there's nothing to mark — kept as a no-op so the
+    /// `Sugarloaf::clear` path doesn't change shape.
     #[inline]
-    pub fn set_content_position(&mut self, id: usize, x: f32, y: f32) {
-        if let Some(content_state) = self.content.states.get_mut(&id) {
-            content_state
-                .render_data
-                .set_position(x * self.style.scale_factor, y * self.style.scale_factor);
-        }
-    }
+    pub fn clean_screen(&mut self) {}
 
+    /// Refresh `RootStyle.scale_factor`. Per-panel `dimension` /
+    /// `scaled_font_size` updates happen on rio's `ContextDimension`
+    /// — this only touches sugarloaf's global default that new panels
+    /// inherit from.
     #[inline]
-    pub fn set_content_visibility_and_position(
-        &mut self,
-        id: usize,
-        x: f32,
-        y: f32,
-        hidden: bool,
-    ) {
-        if let Some(content_state) = self.content.states.get_mut(&id) {
-            content_state
-                .render_data
-                .set_position(x * self.style.scale_factor, y * self.style.scale_factor);
-            content_state.render_data.set_hidden(hidden);
-            content_state.render_data.should_remove = false;
-        }
-    }
-
-    #[inline]
-    pub fn set_content_bounds(&mut self, id: usize, bounds: Option<[f32; 4]>) {
-        if let Some(content_state) = self.content.states.get_mut(&id) {
-            content_state.render_data.set_bounds(bounds);
-        }
-    }
-
-    #[inline]
-    pub fn set_content_hidden(&mut self, id: usize, hidden: bool) {
-        if let Some(content_state) = self.content.states.get_mut(&id) {
-            content_state.render_data.set_hidden(hidden);
-        }
-    }
-
-    #[inline]
-    pub fn set_content_depth(&mut self, id: usize, depth: f32) {
-        if let Some(content_state) = self.content.states.get_mut(&id) {
-            content_state.render_data.depth = depth;
-            content_state.render_data.needs_repaint = true;
-        }
-    }
-
-    #[inline]
-    pub fn set_content_order(&mut self, id: usize, order: u8) {
-        if let Some(content_state) = self.content.states.get_mut(&id) {
-            content_state.render_data.order = order;
-            content_state.render_data.needs_repaint = true;
-        }
+    pub fn compute_layout_rescale(&mut self, scale: f32) {
+        self.style.scale_factor = scale;
     }
 
     pub fn set_visual_bell_overlay(
@@ -263,51 +109,15 @@ impl SugarState {
         self.visual_bell_overlay = overlay;
     }
 
+    /// Was a no-op even before Content was removed; kept for the
+    /// `Sugarloaf::update_font` call site until that path is
+    /// simplified to skip routing through state.
     #[inline]
     pub fn set_fonts(
         &mut self,
-        _font_library: &FontLibrary,
+        font_library: &FontLibrary,
         _advance_brush: &mut Renderer,
     ) {
-        // Simplified - fonts are handled elsewhere in the unified system
-    }
-
-    #[inline]
-    pub fn set_text_font_size_based_on_action(&mut self, text_id: &usize, operation: u8) {
-        self.update_text_style(text_id, operation);
-    }
-
-    #[inline]
-    pub fn set_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
-        if let Some(content_state) = self.content.states.get_mut(rt_id) {
-            if let Some(text_state) = content_state.as_text_mut() {
-                text_state.layout.font_size = font_size;
-                text_state.scaled_font_size = font_size * self.style.scale_factor;
-            }
-            content_state.render_data.needs_repaint = true;
-        }
-        self.compute_dimensions();
-    }
-
-    #[inline]
-    pub fn set_text_line_height(&mut self, _rt_id: &usize, _line_height: f32) {
-        // Simplified - line height changes handled elsewhere
-    }
-
-    #[inline]
-    pub fn compute_layout_rescale(&mut self, scale: f32) {
-        self.style.scale_factor = scale;
-
-        // Re-scale all text content with the new scale factor
-        for content_state in self.content.states.values_mut() {
-            if let Some(text_state) = content_state.as_text_mut() {
-                text_state.rescale(scale);
-                text_state.layout.dimensions.height = 0.0;
-                text_state.layout.dimensions.width = 0.0;
-            }
-            content_state.render_data.needs_repaint = true;
-        }
-
-        self.compute_dimensions();
+        self.fonts = font_library.clone();
     }
 }

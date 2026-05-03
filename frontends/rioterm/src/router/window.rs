@@ -38,7 +38,7 @@ pub fn create_window_builder(
         .with_resizable(true)
         .with_decorations(true)
         .with_transparent(config.window.opacity < 1.)
-        .with_blur(config.window.blur)
+        .with_blur(config.window.blur.into())
         .with_window_icon(Some(icon));
 
     match config.window.decorations {
@@ -244,5 +244,15 @@ pub fn configure_window(winit_window: &Window, config: &Config) {
         winit_window.set_title(title);
     }
 
-    winit_window.set_blur(config.window.blur);
+    // macOS-only: stash the opacity value before set_blur so the
+    // initial glass install reads the correct tint. No-op on macOS <
+    // 26 / non-macOS — only matters when liquid-glass actually
+    // engages.
+    #[cfg(target_os = "macos")]
+    {
+        use rio_window::platform::macos::WindowExtMacOS;
+        winit_window.set_glass_opacity(config.window.opacity as f64);
+    }
+
+    winit_window.set_blur(config.window.blur.into());
 }

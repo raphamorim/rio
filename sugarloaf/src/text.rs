@@ -94,6 +94,11 @@ struct ShapedRun {
     size_bucket: u16,
     synthetic_bold: bool,
     synthetic_italic: bool,
+    /// `wght` axis value to apply when rasterizing this run's glyphs
+    /// (variable-font fallback faces only). On macOS the variation is
+    /// already baked into the CTFont handle, so this stays unused.
+    #[cfg(not(target_os = "macos"))]
+    wght_variation: Option<f32>,
     ascent_px: i16,
     glyphs: Vec<ShapedGlyph>,
 }
@@ -155,9 +160,11 @@ struct TextCpuState {
 
 #[cfg(target_os = "linux")]
 struct TextVulkanState {
-    device: ash::Device,
-    instance: ash::Instance,
-    physical_device: ash::vk::PhysicalDevice,
+    /// Shared device handle. See `crate::context::vulkan::VkShared`
+    /// — the Arc keeps `vkDestroyDevice` from running until every
+    /// per-resource holder (this state, atlases, buffers, the
+    /// per-panel grid renderers in `Screen.grids`) is dropped.
+    shared: std::sync::Arc<crate::context::vulkan::VkShared>,
     /// Independent atlases owned by the UI text overlay — separate
     /// from each `VulkanGridRenderer`'s atlases so an overlay glyph
     /// doesn't have to compete for grid atlas space (and vice versa).
@@ -209,6 +216,13 @@ pub struct Text {
     /// rasterizer's use of the same fields).
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
 
+    /// `font_id → wght axis value` for variable-font fallback faces.
+    /// On macOS the variation is baked into the CTFont handle directly,
+    /// so this cache is only consulted on the swash path. `None` (cache
+    /// miss or stored `None`) means "use the default instance".
+    #[cfg(not(target_os = "macos"))]
+    wght_variation_cache: FxHashMap<u32, Option<f32>>,
+
     /// `(font_id, size_bucket) → ascent_px`. Used to compute
     /// `bearing_y` at rasterize time.
     ascent_cache: FxHashMap<(u32, u16), i16>,
@@ -247,6 +261,8 @@ impl Text {
             font_library: font_library.clone(),
             font_resolve: FxHashMap::default(),
             synthesis_cache: FxHashMap::default(),
+            #[cfg(not(target_os = "macos"))]
+            wght_variation_cache: FxHashMap::default(),
             ascent_cache: FxHashMap::default(),
             shape_cache: FxHashMap::default(),
             #[cfg(target_os = "macos")]
@@ -421,8 +437,9 @@ impl Text {
         };
 
         #[cfg(not(target_os = "macos"))]
-        let (glyphs, ascent_px) = {
+        let (glyphs, ascent_px, wght_variation) = {
             use swash::FontRef;
+            use swash::Setting;
 
             // Pull (or cache) the font bytes + offset + key once per
             // font_id to avoid the RwLock read-lock per shape.
@@ -438,7 +455,32 @@ impl Text {
                 key: font_entry.2,
             };
 
+            // `wght` axis value to apply to the face (variable-font
+            // fallback slots only — `None` for normal fonts).
+            let wght = match self.wght_variation_cache.entry(font_id) {
+                std::collections::hash_map::Entry::Occupied(e) => *e.get(),
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    let lib = self.font_library.inner.read();
+                    let v = lib.get(&(font_id as usize)).wght_variation;
+                    *e.insert(v)
+                }
+            };
+            // wght axis tag as a swash u32 Tag — 'w','g','h','t' big-endian.
+            const WGHT_TAG: swash::Tag = u32::from_be_bytes(*b"wght");
+            let wght_var = wght.map(|v| Setting {
+                tag: WGHT_TAG,
+                value: v,
+            });
+            let var_slice: &[Setting<f32>] = match wght_var {
+                Some(ref s) => std::slice::from_ref(s),
+                None => &[],
+            };
+
             // Ascent — via swash metrics scaled to device-px size.
+            // `metrics` wants normalized variation coords (`&[i16]`),
+            // not `&[Setting<f32>]`. Variations barely affect vertical
+            // metrics in practice, so pass `&[]` here — same pattern
+            // every other `metrics()` call in the crate uses.
             let ascent_px = *self
                 .ascent_cache
                 .entry((font_id, size_bucket))
@@ -453,6 +495,7 @@ impl Text {
                 .shape_ctx
                 .builder(font_ref)
                 .size(size_u16 as f32)
+                .variations(var_slice.iter().copied())
                 .build();
             shaper.add_str(text);
             let mut glyphs: Vec<ShapedGlyph> = Vec::new();
@@ -468,7 +511,7 @@ impl Text {
                     });
                 }
             });
-            (glyphs, ascent_px)
+            (glyphs, ascent_px, wght)
         };
 
         let run = ShapedRun {
@@ -477,6 +520,8 @@ impl Text {
             size_bucket,
             synthetic_bold,
             synthetic_italic,
+            #[cfg(not(target_os = "macos"))]
+            wght_variation,
             ascent_px,
             glyphs,
         };
@@ -642,6 +687,7 @@ impl Text {
                     run.synthetic_bold,
                     run.synthetic_italic,
                     self.font_library.inner.read().hinting,
+                    run.wght_variation,
                 )?;
                 let is_color = raw.is_color;
                 let raster = crate::grid::RasterizedGlyph {
@@ -691,6 +737,7 @@ impl Text {
                     run.synthetic_bold,
                     run.synthetic_italic,
                     self.font_library.inner.read().hinting,
+                    run.wght_variation,
                 )?;
                 let is_color = raw.is_color;
 
@@ -785,6 +832,7 @@ impl Text {
                 run.synthetic_bold,
                 run.synthetic_italic,
                 self.font_library.inner.read().hinting,
+                run.wght_variation,
             )?;
             (
                 raw.width,
@@ -1103,20 +1151,10 @@ impl Text {
         let Some(state) = self.vulkan.as_mut() else {
             return;
         };
-        state.atlas_grayscale.flush_uploads(
-            &state.device,
-            &state.instance,
-            state.physical_device,
-            cmd,
-            slot,
-        );
-        state.atlas_color.flush_uploads(
-            &state.device,
-            &state.instance,
-            state.physical_device,
-            cmd,
-            slot,
-        );
+        state
+            .atlas_grayscale
+            .flush_uploads(&state.shared, cmd, slot);
+        state.atlas_color.flush_uploads(&state.shared, cmd, slot);
     }
 
     /// Record the UI text pass into `cmd`. Caller has already opened
@@ -1151,9 +1189,7 @@ impl Text {
             let new_cap = instance_count.next_power_of_two().max(256);
             state.instance_buffers[slot] =
                 Some(crate::context::vulkan::allocate_host_visible_buffer_raw(
-                    &state.device,
-                    &state.instance,
-                    state.physical_device,
+                    &state.shared,
                     (new_cap * std::mem::size_of::<TextInstance>()) as u64,
                     ash::vk::BufferUsageFlags::VERTEX_BUFFER,
                 ));
@@ -1169,12 +1205,12 @@ impl Text {
         }
 
         unsafe {
-            state.device.cmd_bind_pipeline(
+            state.shared.cmd_bind_pipeline(
                 cmd,
                 ash::vk::PipelineBindPoint::GRAPHICS,
                 state.pipeline,
             );
-            state.device.cmd_bind_descriptor_sets(
+            state.shared.cmd_bind_descriptor_sets(
                 cmd,
                 ash::vk::PipelineBindPoint::GRAPHICS,
                 state.pipeline_layout,
@@ -1186,9 +1222,9 @@ impl Text {
                 &[],
             );
             state
-                .device
+                .shared
                 .cmd_bind_vertex_buffers(cmd, 0, &[instance_buf.handle()], &[0]);
-            state.device.cmd_draw(cmd, 4, instance_count as u32, 0, 0);
+            state.shared.cmd_draw(cmd, 4, instance_count as u32, 0, 0);
         }
     }
 }
@@ -1235,13 +1271,14 @@ fn rasterize_swash_glyph(
     synthetic_bold: bool,
     synthetic_italic: bool,
     hint: bool,
+    wght_variation: Option<f32>,
 ) -> Option<SwashRawGlyph> {
     use swash::scale::{
         image::{Content, Image as GlyphImage},
         Render, Source, StrikeWith,
     };
     use swash::zeno::{Angle, Format, Transform};
-    use swash::FontRef;
+    use swash::{FontRef, Setting};
 
     let font_ref = FontRef {
         data: font_entry.0.as_ref(),
@@ -1249,7 +1286,24 @@ fn rasterize_swash_glyph(
         key: font_entry.2,
     };
 
-    let mut scaler = scale_ctx.builder(font_ref).hint(hint).size(size_px).build();
+    // wght axis tag — variable-font fallback faces use this to pick the
+    // right outlines (regular vs. bold) from a single source file.
+    const WGHT_TAG: swash::Tag = u32::from_be_bytes(*b"wght");
+    let wght_var = wght_variation.map(|v| Setting {
+        tag: WGHT_TAG,
+        value: v,
+    });
+    let var_slice: &[Setting<f32>] = match wght_var {
+        Some(ref s) => std::slice::from_ref(s),
+        None => &[],
+    };
+
+    let mut scaler = scale_ctx
+        .builder(font_ref)
+        .hint(hint)
+        .size(size_px)
+        .variations(var_slice.iter().copied())
+        .build();
 
     let mut image = GlyphImage::new();
     let sources: &[Source] = &[
@@ -1571,13 +1625,12 @@ fn build_text_vulkan_state(
     use crate::context::vulkan::FRAMES_IN_FLIGHT;
     use ash::vk;
 
-    let device = ctx.device().clone();
-    let instance = ctx.instance().clone();
-    let physical_device = ctx.physical_device();
+    let shared = ctx.shared().clone();
+    let device = &shared.raw;
 
     let atlas_grayscale = crate::grid::vulkan::VulkanGlyphAtlas::new_grayscale(ctx);
     let atlas_color = crate::grid::vulkan::VulkanGlyphAtlas::new_color(ctx);
-    let sampler = create_text_sampler(&device);
+    let sampler = create_text_sampler(device);
 
     let uniform_buffers = std::array::from_fn(|_| {
         ctx.allocate_host_visible_buffer(16, vk::BufferUsageFlags::UNIFORM_BUFFER)
@@ -1708,16 +1761,14 @@ fn build_text_vulkan_state(
             .expect("create_pipeline_layout(ui_text)")
     };
     let pipeline = build_ui_text_pipeline_vulkan(
-        &device,
+        device,
         ctx.pipeline_cache(),
         pipeline_layout,
         ctx.swapchain_format(),
     );
 
     TextVulkanState {
-        device,
-        instance,
-        physical_device,
+        shared,
         atlas_grayscale,
         atlas_color,
         sampler,
@@ -1901,17 +1952,22 @@ fn load_shader_module_vulkan(
 impl Drop for TextVulkanState {
     fn drop(&mut self) {
         unsafe {
-            let _ = self.device.device_wait_idle();
-            self.device.destroy_pipeline(self.pipeline, None);
-            self.device
+            // Idle before tearing down. The shared `Arc<VkShared>`
+            // keeps the underlying device alive across this Drop —
+            // `vkDestroyDevice` runs only when the last clone goes,
+            // so ordering relative to other holders (`VulkanContext`,
+            // grid renderers, etc.) is no longer load-bearing.
+            let _ = self.shared.device_wait_idle();
+            self.shared.destroy_pipeline(self.pipeline, None);
+            self.shared
                 .destroy_pipeline_layout(self.pipeline_layout, None);
-            self.device
+            self.shared
                 .destroy_descriptor_pool(self.descriptor_pool, None);
-            self.device
+            self.shared
                 .destroy_descriptor_set_layout(self.atlas_descriptor_set_layout, None);
-            self.device
+            self.shared
                 .destroy_descriptor_set_layout(self.uniform_descriptor_set_layout, None);
-            self.device.destroy_sampler(self.sampler, None);
+            self.shared.destroy_sampler(self.sampler, None);
             // Buffers + atlas images drop themselves.
         }
     }

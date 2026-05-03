@@ -41,8 +41,7 @@ pub use crate::sugarloaf::{
     },
     primitives::{
         contains_braille_dot, drawable_character, is_private_user_area, Corners,
-        CursorKind, DrawableChar, ImageProperties, Object, Quad, Rect, RichText,
-        RichTextLinesRange, RichTextRenderData, SugarCursor,
+        CursorKind, DrawableChar, ImageProperties, Quad, Rect, SugarCursor,
     },
     Color, Colorspace, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,
@@ -51,6 +50,5 @@ pub use crate::sugarloaf::{
 #[cfg(feature = "wgpu")]
 pub use components::filters::Filter;
 pub use layout::{
-    Content, RichTextConfig, SpanStyle, SpanStyleDecoration, TextDimensions,
-    UnderlineInfo, UnderlineShape,
+    SpanStyle, SpanStyleDecoration, TextDimensions, UnderlineInfo, UnderlineShape,
 };

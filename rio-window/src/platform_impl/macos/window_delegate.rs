@@ -142,6 +142,17 @@ pub(crate) struct State {
     // Position of traffic light buttons (close, minimize, maximize)
     // Specified as (x, y) coordinates from top-left corner
     traffic_light_position: Cell<Option<(f64, f64)>>,
+    // Liquid-glass effect, populated only when `BlurStyle::MacosGlass*`
+    // is active AND `NSGlassEffectView` is available at runtime
+    // (macOS 26+). When present, the host window's contentView is the
+    // glass and `WinitView` is hosted inside it as `glass.contentView`.
+    glass_effect: RefCell<Option<super::glass::GlassEffect>>,
+    // Opacity multiplier baked into the glass tint colour
+    // (`tintColor = bg.withAlphaComponent(opacity)`). Stored
+    // separately because the rio-window `set_blur` API takes a
+    // `BlurStyle` only — opacity is plumbed through
+    // `set_glass_opacity`.
+    glass_opacity: Cell<f64>,
 }
 
 declare_class!(
@@ -773,6 +784,8 @@ impl WindowDelegate {
             traffic_light_position: Cell::new(
                 attrs.platform_specific.traffic_light_position,
             ),
+            glass_effect: RefCell::new(None),
+            glass_opacity: Cell::new(1.0),
         });
         let delegate: Retained<WindowDelegate> =
             unsafe { msg_send_id![super(delegate), init] };
@@ -794,7 +807,7 @@ impl WindowDelegate {
             )
         };
 
-        if attrs.blur {
+        if attrs.blur.is_enabled() {
             delegate.set_blur(attrs.blur);
         }
 
@@ -843,8 +856,27 @@ impl WindowDelegate {
 
     #[track_caller]
     pub(super) fn view(&self) -> Retained<WinitView> {
-        // SAFETY: The view inside WinitWindow is always `WinitView`
-        unsafe { Retained::cast(self.window().contentView().unwrap()) }
+        // In glass mode the host window's contentView is an
+        // `NSGlassEffectView` and `WinitView` lives one level deeper
+        // as the glass's contentView. Drill through when glass is
+        // installed; otherwise the contentView is `WinitView`
+        // directly.
+        // SAFETY: The view inside WinitWindow is always `WinitView`,
+        // either as contentView (no glass) or as glass.contentView
+        // (glass installed). Both paths are populated by
+        // `WindowDelegate::new` / `install_or_update_glass`.
+        if let Some(glass) = self.ivars().glass_effect.borrow().as_ref() {
+            let inner = glass
+                .content_view()
+                .expect("glass installed but its contentView is nil");
+            unsafe { Retained::cast(inner) }
+        } else {
+            let cv = self
+                .window()
+                .contentView()
+                .expect("WinitWindow has no contentView");
+            unsafe { Retained::cast(cv) }
+        }
     }
 
     #[track_caller]
@@ -933,10 +965,41 @@ impl WindowDelegate {
         }
     }
 
-    pub fn set_blur(&self, blur: bool) {
-        // NOTE: in general we want to specify the blur radius, but the choice of 80
-        // should be a reasonable default.
-        let radius = if blur { 80 } else { 0 };
+    pub fn set_blur(&self, blur: crate::window::BlurStyle) {
+        use crate::window::BlurStyle;
+
+        match blur {
+            BlurStyle::Off => {
+                self.uninstall_glass();
+                self.set_cgs_blur_radius(0);
+            }
+            BlurStyle::System => {
+                self.uninstall_glass();
+                self.set_cgs_blur_radius(80);
+            }
+            BlurStyle::MacosGlassRegular | BlurStyle::MacosGlassClear => {
+                if super::glass::GlassEffect::class_available() {
+                    // CGS blur off — the glass view paints the
+                    // backdrop itself, layering CGS on top doubles
+                    // the effect.
+                    self.set_cgs_blur_radius(0);
+                    self.install_or_update_glass(blur);
+                } else {
+                    tracing::warn!(
+                        requested = ?blur,
+                        "macOS liquid-glass requires NSGlassEffectView (macOS 26+). \
+                         Falling back to the standard system backdrop blur."
+                    );
+                    self.uninstall_glass();
+                    self.set_cgs_blur_radius(80);
+                }
+            }
+        }
+    }
+
+    /// CGS private-API knob — the legacy `window.blur = true` path.
+    /// Radius 80 matches upstream winit; 0 disables.
+    fn set_cgs_blur_radius(&self, radius: i64) {
         let window_number = unsafe { self.window().windowNumber() };
         unsafe {
             ffi::CGSSetWindowBackgroundBlurRadius(
@@ -945,6 +1008,124 @@ impl WindowDelegate {
                 radius,
             );
         }
+    }
+
+    /// Install (first call) or update (subsequent calls) the
+    /// liquid-glass effect. View hierarchy moves from
+    /// `window.contentView = WinitView`
+    /// to
+    /// `window.contentView = NSGlassEffectView`,
+    /// `glass.contentView = WinitView`.
+    fn install_or_update_glass(&self, blur: crate::window::BlurStyle) {
+        use super::glass::{GlassEffect, GlassStyle};
+        use crate::window::BlurStyle;
+
+        let style = match blur {
+            BlurStyle::MacosGlassRegular => GlassStyle::Regular,
+            BlurStyle::MacosGlassClear => GlassStyle::Clear,
+            _ => return,
+        };
+
+        // Decide whether we need to perform a fresh install. Probe
+        // with a short borrow that drops at the end of the
+        // expression so we don't hold any RefCell across the
+        // AppKit calls below — `setContentView` can re-enter the
+        // delegate via subview lifecycle callbacks, and a held
+        // borrow_mut would turn that into a `BorrowMutError` panic.
+        let need_install = self.ivars().glass_effect.borrow().is_none();
+
+        if need_install {
+            let glass = match GlassEffect::new() {
+                Some(g) => g,
+                None => return,
+            };
+            let window = self.window();
+            // Bail rather than installing an empty glass: with no
+            // WinitView to host, `view()` would later panic when
+            // anything tries to read the inner view. Shouldn't fire
+            // — `setContentView` runs at window creation before
+            // `set_blur`.
+            let Some(view) = window.contentView() else {
+                tracing::warn!("set_blur(glass) with no contentView; skipping install");
+                return;
+            };
+            // Order matters for retain counts: the Retained<NSView>
+            // we hold via `view` keeps WinitView alive across the
+            // swap. `window.setContentView(glass)` detaches the
+            // old contentView; `glass.setContentView(&view)`
+            // re-parents it under the glass.
+            window.setContentView(Some(glass.as_ns_view()));
+            glass.set_content_view(&view);
+            // Stash. Short borrow_mut, no AppKit call inside.
+            *self.ivars().glass_effect.borrow_mut() = Some(glass);
+        }
+
+        // Apply config under a fresh, scoped borrow. Reads from
+        // other ivars (`background_color`, `glass_opacity`) are
+        // separate RefCells, so they don't conflict with this one.
+        if let Some(glass) = self.ivars().glass_effect.borrow().as_ref() {
+            glass.set_style(style);
+            // Tint = bg × opacity. Without the opacity multiply the
+            // tint colour swallows the blur entirely on
+            // `macos-glass-clear`.
+            glass.set_tint_color_with_opacity(
+                &self.ivars().background_color.borrow(),
+                self.ivars().glass_opacity.get(),
+            );
+            // Match the host window's rounded corners so glass
+            // doesn't paint past them. `_cornerRadius` is a private
+            // selector — gated on `respondsToSelector:` so it
+            // degrades gracefully if Apple ever removes / renames it.
+            if let Some(radius) = self.window_corner_radius() {
+                glass.set_corner_radius(radius);
+            }
+        }
+    }
+
+    /// Query the host `NSWindow`'s rounded-corner radius via the
+    /// private `_cornerRadius` selector. Returns `None` when the
+    /// selector isn't available so the caller can fall back to
+    /// square corners.
+    fn window_corner_radius(&self) -> Option<f64> {
+        use objc2::msg_send;
+        use objc2::sel;
+        let window = self.window();
+        // SAFETY: `respondsToSelector:` is a stable NSObject method;
+        // when it returns true, `_cornerRadius` is documented (in
+        // NSThemeFrame headers, leaked via private headers) to
+        // return a CGFloat. Both calls are gated, so a future SDK
+        // that removes `_cornerRadius` falls through to `None`.
+        unsafe {
+            let responds: bool =
+                msg_send![window, respondsToSelector: sel!(_cornerRadius)];
+            if responds {
+                let radius: f64 = msg_send![window, _cornerRadius];
+                Some(radius)
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Reverse of `install_or_update_glass`: pull `WinitView` back
+    /// out of the glass and reinstate it as the window's contentView,
+    /// then drop the glass. No-op if glass isn't installed.
+    fn uninstall_glass(&self) {
+        // Move the glass out under a short borrow_mut so no RefCell
+        // borrow is held across the AppKit `setContentView` call
+        // below — same re-entrancy concern as `install_or_update_glass`.
+        let glass = self.ivars().glass_effect.borrow_mut().take();
+        let Some(glass) = glass else { return };
+
+        let window = self.window();
+        if let Some(view) = glass.content_view() {
+            // Same retain ordering as install: hold the inner
+            // view via `Retained` across the swap, then let glass
+            // drop and release.
+            window.setContentView(Some(&view));
+        }
+        // glass drops here; AppKit releases the NSGlassEffectView.
+        drop(glass);
     }
 
     pub fn set_visible(&self, visible: bool) {
@@ -2067,6 +2248,23 @@ impl WindowExtMacOS for WindowDelegate {
     fn set_traffic_light_position(&self, position: Option<(f64, f64)>) {
         self.ivars().traffic_light_position.set(position);
         self.move_traffic_light();
+    }
+
+    fn set_glass_opacity(&self, opacity: f64) {
+        let clamped = opacity.clamp(0.0, 1.0);
+        if (self.ivars().glass_opacity.get() - clamped).abs() < f64::EPSILON {
+            return;
+        }
+        self.ivars().glass_opacity.set(clamped);
+        // If glass is currently installed, re-apply the tint so the
+        // visible alpha tracks the new opacity without waiting for a
+        // full set_blur cycle.
+        if let Some(glass) = self.ivars().glass_effect.borrow().as_ref() {
+            glass.set_tint_color_with_opacity(
+                &self.ivars().background_color.borrow(),
+                clamped,
+            );
+        }
     }
 }
 

@@ -41,27 +41,30 @@
   <screenshots>
     <screenshot type="default">
       <caption>Terminal view running fastfetch</caption>
-      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/default.png</image>
+      <image>https://rioterm.com/assets/appstream/default.png</image>
     </screenshot>
     <screenshot>
       <caption>Split panel showing parallel workflows</caption>
-      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/split-panels.png</image>
+      <image>https://rioterm.com/assets/appstream/split-panels.png</image>
     </screenshot>
     <screenshot>
       <caption>Transparency support with adjustable opacity</caption>
-      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/transparency.png</image>
+      <image>https://rioterm.com/assets/appstream/transparency.png</image>
     </screenshot>
     <screenshot>
       <caption>Rendering ligatures with a supported font</caption>
-      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/ligatures.png</image>
+      <image>https://rioterm.com/assets/appstream/ligatures.png</image>
     </screenshot>
     <screenshot>
       <caption>Image display using Sixel protocol</caption>
-      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/sixel.png</image>
+      <image>https://rioterm.com/assets/appstream/sixel.png</image>
     </screenshot>
   </screenshots>
 
   <releases>
+    <release version="0.4.1" date="2026-05-02">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.4.1</url>
+    </release>
     <release version="0.3.8" date="2026-04-13">
       <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.3.8</url>
     </release>
