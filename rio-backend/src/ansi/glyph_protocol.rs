@@ -78,7 +78,7 @@ pub enum GlyphCommand {
 /// Upper bound on the number of glyph outlines carried in a single
 /// colour payload. Keeps the glossary's decode cost bounded and sits
 /// well within the 16-bit GlyphId namespace used by COLR.
-pub const MAX_COLR_GLYPHS: u16 = 1024;
+const MAX_COLR_GLYPHS: u16 = 1024;
 
 /// Payload shipped with an `r` (register) request.
 ///
@@ -343,6 +343,19 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
             reply,
         });
     }
+    // Empty payload is never a valid registration: a `glyf` outline
+    // needs at least the simple-glyph header bytes, and a colr
+    // container needs the `n_glyphs` u16 plus per-glyph data. An
+    // empty body usually means the trailing `;<base64>` segment was
+    // omitted altogether (e.g. `r;cp=E000;` with no payload), which
+    // would otherwise silently register an empty glyph for the slot.
+    if raw.is_empty() {
+        return Err(ParseError::RegisterFailed {
+            cp,
+            reason: RegisterError::MalformedPayload,
+            reply,
+        });
+    }
 
     let payload = match fmt {
         b"glyf" => GlyphPayload::Glyf { glyf: raw, upm },
@@ -577,22 +590,25 @@ impl<'a> Params<'a> {
 /// the protocol is implemented but no payload format is accepted — a
 /// degenerate state reserved for future negotiation, never produced by
 /// this build.
-pub fn format_support_response(fmt_bits: u8) -> String {
+pub(crate) fn format_support_response(fmt_bits: u8) -> String {
     format!("\x1b_25a1;s;fmt={}\x1b\\", fmt_bits)
 }
 
-/// Format the reply to `q;cp=<hex>`.
+/// Format the reply to `q;cp=<hex>`. Public because the frontend
+/// (`rioterm::application`) is the one that has access to both
+/// `FontLibrary` and the per-route registry needed to compute the
+/// status; it formats the reply itself and writes it back to the PTY.
 pub fn format_query_response(cp: u32, status: QueryStatus) -> String {
     format!("\x1b_25a1;q;cp={:x};status={}\x1b\\", cp, status.as_u8())
 }
 
 /// Format a successful register reply.
-pub fn format_register_ok(cp: u32) -> String {
+pub(crate) fn format_register_ok(cp: u32) -> String {
     format!("\x1b_25a1;r;cp={:x};status=0\x1b\\", cp)
 }
 
 /// Format a register error reply.
-pub fn format_register_error(cp: u32, reason: RegisterError) -> String {
+pub(crate) fn format_register_error(cp: u32, reason: RegisterError) -> String {
     format!(
         "\x1b_25a1;r;cp={:x};status=1;reason={}\x1b\\",
         cp,
@@ -602,7 +618,7 @@ pub fn format_register_error(cp: u32, reason: RegisterError) -> String {
 
 /// Format the reply to a clear request. `cp` is echoed back when the
 /// request scoped to a single slot, omitted for "clear all".
-pub fn format_clear_ok(cp: Option<u32>) -> String {
+pub(crate) fn format_clear_ok(cp: Option<u32>) -> String {
     match cp {
         Some(cp) => format!("\x1b_25a1;c;cp={:x};status=0\x1b\\", cp),
         None => String::from("\x1b_25a1;c;status=0\x1b\\"),
@@ -610,7 +626,7 @@ pub fn format_clear_ok(cp: Option<u32>) -> String {
 }
 
 /// Format a clear error reply (currently only `out_of_namespace`).
-pub fn format_clear_error_out_of_namespace() -> String {
+pub(crate) fn format_clear_error_out_of_namespace() -> String {
     String::from("\x1b_25a1;c;status=1;reason=out_of_namespace\x1b\\")
 }
 
@@ -805,6 +821,78 @@ mod tests {
             parse(body.as_bytes()),
             Err(ParseError::Malformed(_))
         ));
+    }
+
+    #[test]
+    fn register_rejects_empty_payload() {
+        // Trailing `;` followed by an empty base64 segment. Without the
+        // post-decode empty check this would silently produce a
+        // `Glyf{glyf: vec![]}` registration that the renderer would
+        // later interpret as zero-byte garbage.
+        let body = b"25a1;r;cp=E0A0;upm=1000;";
+        assert!(matches!(
+            parse(body),
+            Err(ParseError::RegisterFailed {
+                cp: 0xE0A0,
+                reason: RegisterError::MalformedPayload,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn register_rejects_missing_payload_separator() {
+        // No `;` between control params and the would-be payload: the
+        // last-`;` split treats the whole tail as control, leaving the
+        // payload section empty. Same MalformedPayload as the trailing-
+        // semicolon case above.
+        let body = b"25a1;r;cp=E0A0";
+        assert!(matches!(
+            parse(body),
+            Err(ParseError::RegisterFailed {
+                cp: 0xE0A0,
+                reason: RegisterError::MalformedPayload,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn register_rejects_cp_above_unicode_max() {
+        // 6-hex-digit cps that overflow the 0x10FFFF Unicode ceiling
+        // must fail at hex parse time, not silently wrap. `parse_hex_cp`
+        // surfaces this as a generic `Malformed` since we no longer
+        // know which `cp` to attach to a `RegisterFailed`.
+        let payload = b64(b"x");
+        let body = format!("25a1;r;cp=110000;upm=1000;{}", payload);
+        assert!(matches!(
+            parse(body.as_bytes()),
+            Err(ParseError::Malformed(_))
+        ));
+
+        let body = format!("25a1;r;cp=FFFFFF;upm=1000;{}", payload);
+        assert!(matches!(
+            parse(body.as_bytes()),
+            Err(ParseError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn register_rejects_empty_cp_value() {
+        // `cp=` with no value: `parse_hex_cp` returns None on the empty
+        // slice, surfacing as Malformed("register cp invalid hex").
+        let payload = b64(b"x");
+        let body = format!("25a1;r;cp=;upm=1000;{}", payload);
+        assert!(matches!(
+            parse(body.as_bytes()),
+            Err(ParseError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn query_rejects_cp_above_unicode_max() {
+        let body = b"25a1;q;cp=110000";
+        assert!(matches!(parse(body), Err(ParseError::Malformed(_))));
     }
 
     #[test]

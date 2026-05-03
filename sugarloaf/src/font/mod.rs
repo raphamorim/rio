@@ -460,6 +460,7 @@ impl FontLibrary {
     /// Read-side access for the renderer: clone the Arc handle for the
     /// pane currently being drawn. Returns `None` when no program in
     /// that session has touched Glyph Protocol.
+    #[inline]
     pub fn glyph_registry_for(
         &self,
         route_id: usize,
@@ -548,7 +549,7 @@ pub struct FontLibraryData {
     /// stale entry can never alias a new context. Empty for windows
     /// that have never seen a Glyph Protocol APC, so most callers
     /// pay nothing.
-    pub glyph_registries: FxHashMap<usize, glyph_registry::GlyphRegistry>,
+    glyph_registries: FxHashMap<usize, glyph_registry::GlyphRegistry>,
 }
 
 impl Default for FontLibraryData {

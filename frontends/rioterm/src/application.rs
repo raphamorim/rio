@@ -442,16 +442,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .install_glyph_registry(route_id, registry);
                 }
             }
-            RioEventType::Rio(RioEvent::GlyphProtocolRemoved(route_id)) => {
-                if let Some(route) = self.router.routes.get(&window_id) {
-                    route
-                        .window
-                        .screen
-                        .sugarloaf
-                        .font_library()
-                        .remove_glyph_registry(route_id);
-                }
-            }
             RioEventType::Rio(RioEvent::GlyphProtocolQuery { route_id, cp }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     use rio_backend::ansi::glyph_protocol::{

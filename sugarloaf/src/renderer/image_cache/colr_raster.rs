@@ -192,20 +192,29 @@ pub(super) fn rasterize(
     // like Nabla that carry geometry on the base glyph. Pad 1 px each
     // side so anti-aliased layer edges that drift slightly past the
     // declared bbox (common in hand-authored fonts) aren't clipped.
-    let (x_min, _y_min, x_max, y_max) = match colr.clip_box(GlyphId(base_gid), &[]) {
-        Some(cb) => (
-            cb.x_min.floor() as i16,
-            cb.y_min.floor() as i16,
-            cb.x_max.ceil() as i16,
-            cb.y_max.ceil() as i16,
-        ),
-        None => glyf_bbox(glyphs.get(base_gid as usize)?)?,
-    };
+    //
+    // Widened to i32 immediately because a saturated ClipBox (e.g.
+    // `x_min = i16::MIN`, `x_max = i16::MAX`) would overflow on the
+    // `x_max - x_min` subtraction below if kept as i16 — wrapping in
+    // release and panicking in debug.
+    let (x_min, y_min, x_max, y_max): (i32, i32, i32, i32) =
+        match colr.clip_box(GlyphId(base_gid), &[]) {
+            Some(cb) => (
+                cb.x_min.floor() as i32,
+                cb.y_min.floor() as i32,
+                cb.x_max.ceil() as i32,
+                cb.y_max.ceil() as i32,
+            ),
+            None => {
+                let (a, b, c, d) = glyf_bbox(glyphs.get(base_gid as usize)?)?;
+                (a as i32, b as i32, c as i32, d as i32)
+            }
+        };
     let scale = pixel_size as f32 / upm as f32;
 
     let pad = 1.0_f32;
     let pix_w = (((x_max - x_min) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
-    let pix_h = (((y_max - (_y_min)) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
+    let pix_h = (((y_max - y_min) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
 
     let base_pixmap = Pixmap::new(pix_w, pix_h)?;
 

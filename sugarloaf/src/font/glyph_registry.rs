@@ -95,9 +95,16 @@ impl StoredPayload {
 
 /// A single registered glyph. The raw payload is retained so the
 /// renderer can re-rasterize at any cell size without re-transmitting.
+///
+/// `payload` is held behind an `Arc` so [`GlyphRegistry::get`] — and
+/// every render-path lookup that goes through it — clones a refcount
+/// bump rather than the underlying bytes. A single `ColrV1` payload
+/// can carry up to 1024 inner outlines plus the COLR/CPAL tables
+/// (megabytes worst-case); without this indirection every atlas miss
+/// for that codepoint at a new size bucket would memcpy the lot.
 #[derive(Debug, Clone)]
 pub struct RegisteredGlyph {
-    pub payload: StoredPayload,
+    pub payload: Arc<StoredPayload>,
     pub upm: u16,
     /// Stable render-side index in `0..GLOSSARY_CAPACITY`. The
     /// renderer's glyph-id field is u16, so the slot id fits directly.
@@ -190,6 +197,8 @@ impl GlyphRegistry {
         if !is_pua(cp) {
             return Err(RegisterRejection::OutOfNamespace);
         }
+        // Wrap once; subsequent `get` clones share this Arc.
+        let payload = Arc::new(payload);
         let mut inner = self.inner.write();
 
         // Allocate a fresh `version` regardless of whether this is an
@@ -511,15 +520,15 @@ mod tests {
             1024,
         )
         .unwrap();
-        match r.get(0xE0A0).unwrap().payload {
+        match &*r.get(0xE0A0).unwrap().payload {
             StoredPayload::ColrV0 {
                 glyphs,
                 colr: c,
                 cpal: p,
             } => {
                 assert_eq!(glyphs.len(), 2);
-                assert_eq!(c, colr);
-                assert_eq!(p, cpal);
+                assert_eq!(c, &colr);
+                assert_eq!(p, &cpal);
             }
             other => panic!("expected ColrV0, got {:?}", other),
         }
@@ -539,7 +548,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            r.get(0x100000).unwrap().payload,
+            &*r.get(0x100000).unwrap().payload,
             StoredPayload::ColrV1 { .. }
         ));
     }
@@ -564,6 +573,6 @@ mod tests {
         .unwrap();
         let g = r.get(0xE0A0).unwrap();
         assert_eq!(g.index, idx);
-        assert!(matches!(g.payload, StoredPayload::ColrV0 { .. }));
+        assert!(matches!(&*g.payload, StoredPayload::ColrV0 { .. }));
     }
 }

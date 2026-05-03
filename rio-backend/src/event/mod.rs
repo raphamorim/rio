@@ -88,9 +88,6 @@ pub enum RioEvent {
         route_id: usize,
         registry: sugarloaf::font::glyph_registry::GlyphRegistry,
     },
-    /// A pane was closed; drop its glyph registry from the font
-    /// library so the map doesn't leak entries.
-    GlyphProtocolRemoved(usize),
     /// A `q` (query) request arrived from the PTY in `route_id`. The
     /// frontend computes the four-state status — System and/or
     /// Glossary coverage — by consulting both `FontLibrary` (system
@@ -265,9 +262,6 @@ impl Debug for RioEvent {
             }
             RioEvent::GlyphProtocolInstalled { route_id, .. } => {
                 write!(f, "GlyphProtocolInstalled route {route_id}")
-            }
-            RioEvent::GlyphProtocolRemoved(route_id) => {
-                write!(f, "GlyphProtocolRemoved route {route_id}")
             }
             RioEvent::GlyphProtocolQuery { route_id, cp } => {
                 write!(f, "GlyphProtocolQuery route {route_id} cp {cp:#x}")
