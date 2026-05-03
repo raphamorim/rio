@@ -3930,7 +3930,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn glyph_protocol_response(&mut self, response: String) {
         self.event_proxy
-            .send_event(RioEvent::PtyWrite(response), self.window_id);
+            .send_event(RioEvent::PtyWrite(self.route_id, response), self.window_id);
     }
 
     fn glyph_register(
