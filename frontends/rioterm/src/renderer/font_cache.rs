@@ -132,8 +132,12 @@ impl FontCache {
                         };
 
                         let mut width = ch.width().unwrap_or(1) as f32;
+                        // No route context here — this cache is for
+                        // layout width measurement, not pane rendering.
+                        // PUA codepoints fall through to the regular
+                        // font lookup, which returns a sensible width.
                         if let Some((font_id, is_emoji)) =
-                            font_ctx.find_best_font_match(ch, &style)
+                            font_ctx.find_best_font_match(ch, &style, None)
                         {
                             if is_emoji {
                                 width = 2.0;

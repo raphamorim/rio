@@ -7,6 +7,7 @@
 
 pub(crate) mod atlas;
 mod cache;
+pub mod colr_raster;
 
 use std::sync::Arc;
 

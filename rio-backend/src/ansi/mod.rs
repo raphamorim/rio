@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod charset;
 pub mod control;
+pub mod glyph_protocol;
 pub mod graphics;
 pub mod iterm2_image_protocol;
 pub mod kitty_graphics_protocol;

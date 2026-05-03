@@ -77,6 +77,28 @@ pub enum RioEvent {
         route_id: usize,
         queues: UpdateQueues,
     },
+    /// A pane's Glyph Protocol registry just became live (first
+    /// `register` after session start, or first register following
+    /// a clear-all). Frontend installs it into the font library so
+    /// subsequent renders consult it. Fires at most once per
+    /// (route_id × registry-arc) pair; the registry is Arc-shared,
+    /// so further `register`/`clear` mutations made through the
+    /// existing handle are visible without re-firing.
+    GlyphProtocolInstalled {
+        route_id: usize,
+        registry: sugarloaf::font::glyph_registry::GlyphRegistry,
+    },
+    /// A `q` (query) request arrived from the PTY in `route_id`. The
+    /// frontend computes the four-state status — System and/or
+    /// Glossary coverage — by consulting both `FontLibrary` (system
+    /// fonts) and the per-route glyph registry, then writes the
+    /// formatted reply back to the same pane's PTY. Asynchronous
+    /// because the dispatcher (in rio-backend) doesn't have access
+    /// to the FontLibrary; the frontend does.
+    GlyphProtocolQuery {
+        route_id: usize,
+        cp: u32,
+    },
     Paste,
     Copy(String),
     UpdateFontSize(u8),
@@ -237,6 +259,12 @@ impl Debug for RioEvent {
             RioEvent::RenderRoute(route) => write!(f, "Render route {route}"),
             RioEvent::TerminalDamaged(route_id) => {
                 write!(f, "TerminalDamaged route {route_id}")
+            }
+            RioEvent::GlyphProtocolInstalled { route_id, .. } => {
+                write!(f, "GlyphProtocolInstalled route {route_id}")
+            }
+            RioEvent::GlyphProtocolQuery { route_id, cp } => {
+                write!(f, "GlyphProtocolQuery route {route_id} cp {cp:#x}")
             }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),

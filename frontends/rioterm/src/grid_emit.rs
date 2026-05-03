@@ -324,6 +324,13 @@ enum DecorationStyle {
 /// `font.sprite_index` idea.
 const DECORATION_FONT_ID_BASE: u32 = 0xFFFF_FF00;
 
+/// Sentinel font_id for Glyph Protocol registrations. Pulled directly
+/// in u32 form from `sugarloaf::font::glyph_registry`; lands above the
+/// cursor/decoration ranges and never collides with a real font index.
+/// The atlas `glyph_id` for a registered cell is
+/// `pack_atlas_glyph_id(codepoint, version)`.
+use rio_backend::sugarloaf::font::glyph_registry::CUSTOM_GLYPH_FONT_ID_U32;
+
 /// Sentinel font_id base for cursor sprites. Distinct from the
 /// decoration range so the two never collide in the atlas
 /// hash-key space.
@@ -1039,7 +1046,14 @@ struct RunCacheEntry {
 }
 
 pub struct GridGlyphRasterizer {
-    font_resolve: FxHashMap<(char, u8), (u32, bool)>,
+    /// Cache of `(char, style_flags, route_id) → (font_id, is_emoji)`
+    /// resolutions. The route_id is part of the key because Glyph
+    /// Protocol registrations are per-pane: the same PUA codepoint
+    /// can resolve to `CUSTOM_GLYPH_FONT_ID` in one pane and to a
+    /// system font in another. Non-PUA characters resolve identically
+    /// across panes; the duplication is cheap (a few bytes per
+    /// (char, route) pair) compared to the cost of mis-rendering.
+    font_resolve: FxHashMap<(char, u8, usize), (u32, bool)>,
     ascent_cache: FxHashMap<(u32, u16), i16>,
     /// `(should_embolden, should_italicize)` per font_id. Read from
     /// `FontData` synthesis flags; matches the rich-text rasterizer's
@@ -1121,6 +1135,7 @@ impl GridGlyphRasterizer {
         ch: char,
         style_flags: u8,
         font_library: &FontLibrary,
+        route_id: usize,
     ) -> (u32, bool) {
         // Kitty Unicode placeholder cells (U+10EEEE) are rendered as
         // image-overlay slices, not text. Resolve them to the primary
@@ -1133,8 +1148,9 @@ impl GridGlyphRasterizer {
 
         // ASCII printable + regular style → always primary font, never
         // emoji. Skips the FxHashMap lookup that dominates this fn's
-        // cost on terminal-typical content.
-        // `font/Group.zig` indexForCodepoint ASCII fast path.
+        // cost on terminal-typical content. ASCII codepoints can never
+        // be Glyph-Protocol-registered (PUA-only restriction), so the
+        // route_id is irrelevant on this fast path.
         //
         // Bold / italic ASCII still goes through the cache because
         // the bold and italic font IDs are dynamic (depend on which
@@ -1145,15 +1161,16 @@ impl GridGlyphRasterizer {
 
         *self
             .font_resolve
-            .entry((ch, style_flags))
+            .entry((ch, style_flags, route_id))
             .or_insert_with(|| {
                 let span_style = span_style_for_flags(style_flags);
                 #[cfg(target_os = "macos")]
-                let (id, emoji) = font_library.resolve_font_for_char(ch, &span_style);
+                let (id, emoji) =
+                    font_library.resolve_font_for_char(ch, &span_style, Some(route_id));
                 #[cfg(not(target_os = "macos"))]
                 let (id, emoji) = {
                     let lib = font_library.inner.read();
-                    lib.find_best_font_match(ch, &span_style)
+                    lib.find_best_font_match(ch, &span_style, Some(route_id))
                         .unwrap_or((0, false))
                 };
                 (id as u32, emoji)
@@ -1384,6 +1401,7 @@ pub fn build_row_fg(
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
     font_library: &FontLibrary,
+    route_id: usize,
     fg_scratch: &mut Vec<CellText>,
 ) {
     fg_scratch.clear();
@@ -1402,6 +1420,15 @@ pub fn build_row_fg(
     let has_sel = row_sel.is_some();
     let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
     let needs_per_cell_check = has_sel || has_color_hints;
+
+    // Glyph Protocol registry for *this pane*. One Arc clone per row;
+    // the per-cell custom-glyph helper then uses the local handle so
+    // it never re-acquires the FontLibrary read lock. Arc clone is
+    // cheap; `None` when no program in this pane's session has used
+    // the protocol. With multiple panes, each pane consults its own
+    // registry by route_id, so two panes can register conflicting
+    // glyphs at the same codepoint without interfering.
+    let glyph_registry = font_library.glyph_registry_for(route_id);
 
     // Phase 1: underline pass. Emit before glyphs so grayscale quads
     // draw under the characters.
@@ -1435,7 +1462,94 @@ pub fn build_row_fg(
         let run_style_flags =
             (style_set.get(run_start_style_id).flags.bits() & SHAPING_FLAG_MASK) as u8;
         let (font_id, is_emoji) =
-            rasterizer.resolve_font(ch, run_style_flags, font_library);
+            rasterizer.resolve_font(ch, run_style_flags, font_library, route_id);
+
+        // Glyph Protocol short-circuit: registered codepoints render
+        // directly from the registry without shaping, run-extension,
+        // or per-platform shaper plumbing. Each registered cell is
+        // its own one-cell run.
+        if font_id == CUSTOM_GLYPH_FONT_ID_U32 {
+            // The font cascade reported a custom glyph but the row
+            // already cloned `glyph_registry` as None — registry was
+            // detached between font resolution and this branch (rare,
+            // but harmless: render nothing).
+            let Some(registry) = glyph_registry.as_ref() else {
+                x += 1;
+                continue;
+            };
+
+            // Borrow the primary font's ascent at this size if the
+            // run-shaper has populated it; otherwise approximate at
+            // 80% of the glyph size. The approximation only fires
+            // when no regular text has been laid out at this size yet
+            // — once the user types real text the cache fills and
+            // subsequent registered cells use the precise ascent.
+            let ascent_px = rasterizer
+                .ascent_cache
+                .get(&(
+                    rio_backend::sugarloaf::font::FONT_ID_REGULAR as u32,
+                    size_bucket,
+                ))
+                .copied()
+                .unwrap_or_else(|| (size_u16 as i16).saturating_mul(4) / 5);
+
+            // fg colour, mirroring the regular emit loop's
+            // selection / hint precedence.
+            let color = if !needs_per_cell_check {
+                cell_fg(sq, style_set, renderer, term_colors)
+            } else {
+                let is_sel = cell_in_row_sel(row_sel, x as u16);
+                let hint_tag = if is_sel {
+                    None
+                } else {
+                    cell_in_row_hints(row_hints, x as u16)
+                };
+                if is_sel {
+                    cell_fg_selected(sq, style_set, renderer, term_colors)
+                } else if let Some(tag) = hint_tag {
+                    cell_fg_hinted(tag, renderer)
+                } else {
+                    cell_fg(sq, style_set, renderer, term_colors)
+                }
+            };
+
+            if let Some((_, slot, is_color)) = ensure_custom_glyph_by_codepoint(
+                grid,
+                registry,
+                ch as u32,
+                size_bucket,
+                size_u16,
+                cell_h,
+                ascent_px,
+                color,
+            ) {
+                if slot.w != 0 && slot.h != 0 {
+                    // Colour atlas entries are pre-painted (palette
+                    // applied during COLR rasterisation), so the
+                    // shader multiplies by white. Mono entries take
+                    // the per-cell fg colour the run loop computed
+                    // above.
+                    let (atlas, color) = if is_color {
+                        (CellText::ATLAS_COLOR, [255, 255, 255, 255])
+                    } else {
+                        (CellText::ATLAS_GRAYSCALE, color)
+                    };
+                    fg_scratch.push(CellText {
+                        glyph_pos: [slot.x as u32, slot.y as u32],
+                        glyph_size: [slot.w as u32, slot.h as u32],
+                        bearings: [slot.bearing_x, slot.bearing_y],
+                        grid_pos: [x as u16, y],
+                        color,
+                        atlas,
+                        bools: 0,
+                        _pad: [0, 0],
+                    });
+                }
+            }
+            x += 1;
+            continue;
+        }
+
         let run_start = x;
         // Sticky style_id — typical syntax-highlighted output has long
         // stretches of cells sharing one style_id. While it stays equal
@@ -1490,7 +1604,7 @@ pub fn build_row_fg(
             }
             let ch2 = sq2.c();
             let (font_id2, _) =
-                rasterizer.resolve_font(ch2, run_style_flags, font_library);
+                rasterizer.resolve_font(ch2, run_style_flags, font_library, route_id);
             if font_id2 != font_id {
                 break;
             }
@@ -1905,6 +2019,87 @@ fn ensure_glyph_by_id(
         grid.insert_glyph(key, raster)?
     };
     Some((key, slot, is_color))
+}
+
+/// Look up or rasterise a Glyph Protocol registration into the grid
+/// atlas. The atlas key combines the codepoint with the registration's
+/// `version` (bumped on every register/clear) so re-registering the
+/// same codepoint never serves a stale rasterisation. Each unique
+/// (codepoint × version × pixel size) combination owns one atlas slot;
+/// previous-version slots become unreachable and the atlas LRU evicts
+/// them in due course.
+///
+/// `ascent_px` matches the primary font's ascent at the same size
+/// bucket — Glyph Protocol payloads have no font-of-their-own, so we
+/// align registered glyphs to the surrounding text baseline. A more
+/// faithful rendering would walk the registered outline's bbox to
+/// compute per-glyph bearings, but for icon-style PUA glyphs the
+/// primary-font baseline produces the expected appearance.
+///
+/// `registry` is the active terminal's glyph registry, cloned once
+/// per row by `build_row_fg`. Passing it in (instead of going through
+/// the `FontLibrary` write lock) keeps the per-cell hot loop allocation
+/// and lock free.
+///
+/// Returns `None` when the registration was cleared between font
+/// resolution and render, or when rasterisation produces no pixels
+/// (zero-area outline, malformed COLR, etc.).
+#[allow(clippy::too_many_arguments)]
+fn ensure_custom_glyph_by_codepoint(
+    grid: &mut GridRenderer,
+    registry: &rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry,
+    codepoint: u32,
+    size_bucket: u16,
+    size_u16: u16,
+    cell_h: f32,
+    ascent_px: i16,
+    foreground_rgba: [u8; 4],
+) -> Option<(GlyphKey, AtlasSlot, bool)> {
+    use rio_backend::sugarloaf::font::glyph_registry::pack_atlas_glyph_id;
+
+    // Fetch first so we know the registration's version. The lookup
+    // happens under the registry's RwLock read; the entry's payload is
+    // cloned out so the lock drops before we hit tiny-skia.
+    let entry = registry.get(codepoint)?;
+    let key = GlyphKey {
+        font_id: CUSTOM_GLYPH_FONT_ID_U32,
+        glyph_id: pack_atlas_glyph_id(codepoint, entry.version),
+        size_bucket,
+    };
+    if let Some(slot) = grid.lookup_glyph(key) {
+        return Some((key, slot, false));
+    }
+    if let Some(slot) = grid.lookup_glyph_color(key) {
+        return Some((key, slot, true));
+    }
+
+    let raster = rio_backend::sugarloaf::glyph_protocol::rasterize_payload(
+        &entry.payload,
+        entry.upm,
+        size_u16,
+        foreground_rgba,
+    )?;
+
+    let bearing_y = {
+        let cell_h_i16 = cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
+        cell_h_i16
+            .saturating_sub(ascent_px)
+            .saturating_add(raster.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
+    };
+    let raster_in = RasterizedGlyph {
+        width: raster.width,
+        height: raster.height,
+        bearing_x: raster.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+        bearing_y,
+        bytes: &raster.data,
+    };
+
+    let slot = if raster.is_color {
+        grid.insert_glyph_color(key, raster_in)?
+    } else {
+        grid.insert_glyph(key, raster_in)?
+    };
+    Some((key, slot, raster.is_color))
 }
 
 /// Platform-agnostic raw-glyph struct. Both backends populate this
