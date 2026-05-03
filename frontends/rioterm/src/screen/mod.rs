@@ -3822,6 +3822,7 @@ impl Screen<'_> {
                         row_sel,
                         &hint_scratch,
                         &font_library,
+                        p.route_id,
                         &mut fg_scratch,
                     );
                     grid.write_row(y as u32, &bg_scratch, &fg_scratch);

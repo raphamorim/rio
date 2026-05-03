@@ -373,12 +373,13 @@ impl Text {
                 };
                 ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
                 #[cfg(target_os = "macos")]
-                let resolved = self.font_library.resolve_font_for_char(first_ch, &ss);
+                let resolved =
+                    self.font_library.resolve_font_for_char(first_ch, &ss, None);
 
                 #[cfg(not(target_os = "macos"))]
                 let resolved = {
                     let lib = self.font_library.inner.read();
-                    lib.find_best_font_match(first_ch, &ss)
+                    lib.find_best_font_match(first_ch, &ss, None)
                         .unwrap_or((0, false))
                 };
                 let v = (resolved.0 as u32, resolved.1);
