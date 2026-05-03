@@ -497,8 +497,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             event_loop.exit();
                         }
                     } else {
-                        let size = route.window.screen.context_manager.len();
-                        route.window.screen.resize_top_or_bottom_line(size);
+                        let screen = &mut route.window.screen;
+                        let size = screen.context_manager.len();
+                        screen.resize_top_or_bottom_line(size);
+                        screen.mark_dirty();
                     }
                 }
             }
