@@ -2,7 +2,7 @@
 
 **Author:** Raphael Amorim
 **Year:** 2026
-**Last updated:** 2026-04-23
+**Last updated:** 2026-05-03
 
 **See also:**
 - Blog post introducing the protocol and its rationale:
@@ -108,7 +108,10 @@ ESC _ 25a1 ; <verb> [ ; key=value ]* [ ; <payload> ] ESC \
 
 Parameter keys use lowercase ASCII. Values are lowercase hex for
 codepoints, decimal for integers, base64 for binary payloads, and
-decimal u8 values for the `status` field of every response.
+lowercase ASCII names for enums (single value, or comma-separated
+for lists). The `status` field's shape is verb-specific: `r` and
+`c` return a `u8` (`0` = success, nonzero paired with `reason=`);
+`q` returns a comma-separated coverage list (§5.2).
 
 ### 3.3 Verbs
 
@@ -119,23 +122,33 @@ decimal u8 values for the `status` field of every response.
 | `r`  | Register a glyph for a PUA codepoint. |
 | `c`  | Clear one slot or every slot in this session's glossary. |
 
-The `s` verb takes no parameters and returns a decimal `u8`
-bitfield under the `fmt` key:
+The `s` verb takes no parameters. The reply lists the terminal's
+supported payload formats in the `fmt` key as a comma-separated
+list of lowercase ASCII names, with no surrounding whitespace:
 
-| Bit | `fmt=` value | Format name |
-|-----|--------------|-------------|
-| 0   | 1            | `glyf` (monochrome simple-glyph; §8). |
-| 1   | 2            | `colrv0` (layered flat colour; §8.6). |
-| 2   | 4            | `colrv1` (OpenType paint graph; §8.7). |
+```
+ESC _ 25a1 ; s ; fmt=glyf,colrv0,colrv1 ESC \
+```
 
-Further bits are reserved. Clients treat unknown bits as
-unsupported and ignore them. A terminal that advertises only
-`fmt=1` (monochrome) and receives an `r` with `fmt=colrv0` /
-`fmt=colrv1` MUST reject the registration (`reason=malformed_payload`
-is acceptable for parser-level rejection). Clients SHOULD check
-the `s` reply before emitting colour registrations so they can
-fall back to a monochrome `fmt=glyf` without making a doomed
-round-trip.
+Format names defined in v1.8:
+
+| Name     | Format                                                   |
+|----------|----------------------------------------------------------|
+| `glyf`   | Monochrome simple-glyph (§8).                            |
+| `colrv0` | Layered flat colour, OpenType `COLR` v0 + `CPAL` (§8.6). |
+| `colrv1` | OpenType paint graph, `COLR` v1 (§8.7).                  |
+
+Order is not significant; clients MUST treat the value as a set.
+An empty `fmt=` value means the terminal recognises Glyph Protocol
+but currently advertises no payload formats — every `r` will be
+rejected. Clients MUST ignore names they do not recognise rather
+than failing the reply, so future format names are forward-
+compatible. A terminal that advertises only `fmt=glyf` and
+receives an `r` with `fmt=colrv0` / `fmt=colrv1` MUST reject the
+registration (`reason=malformed_payload` is acceptable for
+parser-level rejection). Clients SHOULD check the `s` reply
+before emitting colour registrations so they can fall back to a
+monochrome `fmt=glyf` without making a doomed round-trip.
 
 ## 4. Glossary namespace
 
@@ -180,21 +193,23 @@ Parameters:
 ### 5.2 Response
 
 ```
-ESC _ 25a1 ; q ; cp=<hex> ; status=<u8> ESC \
+ESC _ 25a1 ; q ; cp=<hex> ; status=<list> ESC \
 ```
 
-`status` is a decimal u8 encoding a two-bit field:
+`status` is a comma-separated list of coverage names — the set of
+sources that can render `cp` in this session. Order is not
+significant; clients MUST treat the value as a set.
 
-| Value | State       | Meaning |
-|-------|-------------|---------|
-| `0`   | `free`      | No font in the fallback chain renders `cp`, and the glossary has no registration for it. The cell will render as tofu. |
-| `1`   | `system`    | Some font in the fallback chain renders `cp`. No glossary registration (or `cp` is outside PUA). |
-| `2`   | `glossary`  | `cp` is in PUA and has a live registration in this session. No system font covers it. |
-| `3`   | `both`      | `cp` is in PUA, has a live registration, AND a system font also covers it. The registration shadows the system font at render time. |
+| `status=` value     | Meaning |
+|---------------------|---------|
+| (empty)             | No font in the fallback chain renders `cp`, and the glossary has no registration for it. The cell will render as tofu. |
+| `system`            | Some font in the fallback chain renders `cp`. No glossary registration (or `cp` is outside PUA). |
+| `glossary`          | `cp` is in PUA and has a live registration in this session. No system font covers it. |
+| `system,glossary`   | `cp` is in PUA, has a live registration, AND a system font also covers it. The registration shadows the system font at render time. |
 
-Bit 0 = system coverage, bit 1 = glossary coverage.
-
-For non-PUA codepoints only `0` and `1` are possible.
+For non-PUA codepoints only the empty value and `status=system`
+are possible. Clients MUST ignore unknown coverage names so
+future sources are forward-compatible.
 
 ## 6. Register (`r`)
 
@@ -651,15 +666,15 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
 
 1. Recognizes the `25a1` identifier in APC sequences.
 2. Implements the `s`, `q`, `r`, and `c` verbs with the semantics
-   defined in this specification, and advertises every accepted
-   payload format via the `fmt=` bitfield in the `s` reply.
+   defined in this specification, and lists every accepted payload
+   format by name in the `fmt=` value of the `s` reply.
 3. Restricts register/clear `cp` to the three PUA ranges; rejects
    anything else with `reason=out_of_namespace`.
 4. Holds at most 1024 simultaneous registrations per session and
    evicts in FIFO order when full.
 5. Accepts the `glyf` simple-glyph subset defined in §8.2. The
    `colrv0` and `colrv1` formats are OPTIONAL; terminals that
-   accept them MUST set the corresponding bit in the `s` reply.
+   accept them MUST list the corresponding name in the `s` reply.
 6. Renders registered `glyf` glyphs in the current foreground
    color; renders `colrv0`/`colrv1` glyphs using the COLR paint
    graph, resolving palette index `0xFFFF` to the current
@@ -725,8 +740,8 @@ def q(cp: int) -> None:
 # Does the user already have Nerd Fonts installed?
 q(0xE0A0)
 # Expected reply parsed from the PTY:
-#   status=1 → system font covers it; don't register, just emit cp
-#   status=0 → nothing covers it; register and emit
+#   status=system → system font covers it; don't register, just emit cp
+#   status=       → empty list (nothing covers it); register and emit
 ```
 
 ## Appendix C. Implementation notes
@@ -792,3 +807,5 @@ rather than serving a stale bitmap.
 | 2026-04-21 | v1.5    | Added `cp=auto` to the `r` verb: the terminal allocates a free PUA codepoint (SHOULD come from PUA-B) and echoes it in the success reply so the client can emit it. Added `reason=auto_unsupported` and `reason=glossary_exhausted` error codes. `cp=auto` forces a success reply regardless of `reply=0|2` because the allocated codepoint is only carried in the reply. |
 | 2026-04-23 | v1.6    | Removed `cp=auto` from the `r` verb (introduced in v1.5). Auto-allocation forced a stateful round-trip reply the client depended on to learn its codepoint, which recording tools like `asciinema` and `tee` cannot capture or replay — making `cp=auto` output impossible to reproduce from a transcript. Clients must pick their own PUA codepoint. The `auto_unsupported` and `glossary_exhausted` error codes are withdrawn. |
 | 2026-04-23 | v1.7    | Added a sizing and placement model to the `r` verb: `aw` / `lh` (authored extent in upm units), `width` (Unicode/wcwidth width, `1` or `2`, authoritative), `size` (`height`/`advance`/`contain`/`cover`/`stretch`), `align` (`<h>,<v>` positioning after scale, with `v=baseline` for character-like glyphs), and `pad` (fractional insets from the render span). Pinned the coordinate convention: Y-up, `y=0` at baseline, `lh` measured descender-to-ascender (OpenType). Scale groups are intentionally omitted — coordinated sets align via matching parameters and outline geometry. |
+| 2026-05-03 | v1.8    | Replaced the `s` reply's `u8` bitfield with a comma-separated list of format names (e.g. `fmt=glyf,colrv0,colrv1`). Names extend without bit-collision worries and stay readable in transcripts; an empty `fmt=` means the terminal advertises no payload formats. Unknown names MUST be ignored by clients, so future formats are forward-compatible. |
+| 2026-05-03 | v1.9    | Replaced the `q` reply's `u8` two-bit `status` field with a comma-separated list of coverage names: `status=system`, `status=glossary`, `status=system,glossary`, or empty for "free". Same motivation as v1.8 for the `s` reply. The `r` and `c` replies still use `status=<u8>` for success/failure since that's a closed boolean, not an extensible set. |
