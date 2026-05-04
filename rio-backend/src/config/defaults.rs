@@ -148,6 +148,16 @@ pub fn default_ime_cursor_positioning() -> bool {
     true
 }
 
+#[inline]
+pub fn default_forward_to_ime_modifier_mask() -> Vec<String> {
+    vec![
+        String::from("shift"),
+        String::from("ctrl"),
+        String::from("alt"),
+        String::from("super"),
+    ]
+}
+
 pub fn default_config_file_content() -> String {
     String::from(
         "# See the full configuration reference: https://rioterm.com/docs/config\n",

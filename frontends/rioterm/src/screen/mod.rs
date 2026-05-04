@@ -226,7 +226,7 @@ impl Screen<'_> {
             split_active_color: config.colors.split_active,
             panel: config.panel,
             title: config.title.clone(),
-            keyboard: config.keyboard,
+            keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
         };
 
@@ -528,7 +528,7 @@ impl Screen<'_> {
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
         // Update keyboard config in context manager
-        self.context_manager.config.keyboard = config.keyboard;
+        self.context_manager.config.keyboard = config.keyboard.clone();
 
         // Re-evaluate the opaque flag — toggling `window.opacity` /
         // `window.blur` at runtime should flip the compositor mode.
