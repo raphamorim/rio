@@ -501,6 +501,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         let size = screen.context_manager.len();
                         screen.resize_top_or_bottom_line(size);
                         screen.mark_dirty();
+                        route.request_redraw();
                     }
                 }
             }
