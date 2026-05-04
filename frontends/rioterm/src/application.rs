@@ -497,8 +497,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             event_loop.exit();
                         }
                     } else {
-                        let size = route.window.screen.context_manager.len();
-                        route.window.screen.resize_top_or_bottom_line(size);
+                        let screen = &mut route.window.screen;
+                        let size = screen.context_manager.len();
+                        screen.resize_top_or_bottom_line(size);
+                        #[cfg(not(target_os = "macos"))]
+                        if size == 1 {
+                            screen
+                                .context_manager
+                                .current_grid_mut()
+                                .update_dimensions(&mut screen.sugarloaf);
+                        }
+                        screen.mark_dirty();
                     }
                 }
             }
