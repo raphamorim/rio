@@ -1089,12 +1089,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
             let current = self.current();
             let cursor = current.cursor_from_ref();
-            let mut dimension = current.dimension;
-
-            // If current has splits then shouldn't use that dimension
-            if self.current_grid().len() > 1 {
-                dimension = self.current_grid().grid_dimension();
-            }
+            let dimension = self.current_grid().grid_dimension();
 
             match ContextManager::create_context(
                 (&cursor, current.renderable_content.has_blinking_enabled),
@@ -1191,6 +1186,18 @@ pub fn process_open_url(
 pub mod test {
     use super::*;
     use crate::event::VoidListener;
+    use rio_backend::sugarloaf::layout::{CellMetrics, TextDimensions};
+
+    fn test_cell_metrics(width: u32, height: u32) -> CellMetrics {
+        CellMetrics {
+            cell_width: width,
+            cell_height: height,
+            cell_baseline: 0,
+            face_width: width as f64,
+            face_height: height as f64,
+            face_y: 0.0,
+        }
+    }
 
     #[test]
     fn test_capacity() {
@@ -1246,6 +1253,68 @@ pub mod test {
 
         assert_eq!(context_manager.len(), 3);
         assert_eq!(context_manager.capacity, 3);
+    }
+
+    #[test]
+    fn test_add_context_keeps_window_sized_grid_after_laid_out_tab() {
+        let window_id: WindowId = WindowId::from(0);
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+
+        let window_width = 1000.0;
+        let window_height = 800.0;
+        let initial_margin = Margin::new(2.0, 8.0, 4.0, 8.0);
+        let margin = Margin::new(34.0, 8.0, 4.0, 8.0);
+        let text_dimensions = TextDimensions {
+            width: 10.0,
+            height: 20.0,
+            scale: 1.0,
+        };
+        let cell = test_cell_metrics(10, 20);
+
+        {
+            let grid = &mut context_manager.contexts[0];
+            grid.width = window_width;
+            grid.height = window_height;
+            grid.update_scaled_margin(initial_margin);
+            grid.calculate_positions();
+            let initial_panel_height = grid.current_item().unwrap().layout_rect[3];
+
+            grid.update_scaled_margin(margin);
+            grid.calculate_positions();
+            let updated_panel_height = grid.current_item().unwrap().layout_rect[3];
+            assert!(
+                (initial_panel_height
+                    - updated_panel_height
+                    - (margin.top - initial_margin.top))
+                    .abs()
+                    < f32::EPSILON
+            );
+        }
+
+        // After a layout pass, a single tab's ContextDimension stores the
+        // terminal content area. Opening another tab must not treat this as
+        // the outer window size and subtract margins a second time.
+        context_manager.current_mut().dimension = ContextDimension::build(
+            window_width - margin.left - margin.right,
+            window_height - margin.top - margin.bottom,
+            text_dimensions,
+            cell,
+            1.0,
+            14.0,
+            Margin::all(0.0),
+        );
+
+        context_manager.add_context(true, 0);
+
+        let current_grid = context_manager.current_grid();
+        assert_eq!(current_grid.width, window_width);
+        assert_eq!(current_grid.height, window_height);
+        assert_eq!(context_manager.current().dimension.width, window_width);
+        assert_eq!(context_manager.current().dimension.height, window_height);
+        assert_eq!(context_manager.current().dimension.margin, margin);
+        assert_eq!(context_manager.current().dimension.columns, 98);
+        assert_eq!(context_manager.current().dimension.lines, 38);
     }
 
     #[test]
