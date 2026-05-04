@@ -339,7 +339,7 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_blur(&self, blur: bool) {
+    pub fn set_blur(&self, blur: crate::window::BlurStyle) {
         x11_or_wayland!(match self; Window(w) => w.set_blur(blur));
     }
 

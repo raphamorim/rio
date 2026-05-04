@@ -1,3 +1,4 @@
+use crate::ansi::glyph_protocol;
 use crate::ansi::iterm2_image_protocol;
 use crate::ansi::kitty_graphics_protocol;
 use crate::ansi::CursorShape;
@@ -458,6 +459,35 @@ pub trait Handler {
     /// Send a kitty graphics protocol response
     fn kitty_graphics_response(&mut self, _response: String) {}
 
+    /// Send a Glyph Protocol response (query reply, register ack, etc.).
+    fn glyph_protocol_response(&mut self, _response: String) {}
+
+    /// Register a custom glyph at a client-chosen PUA codepoint. The
+    /// parser has already verified `cp` is in PUA and the container
+    /// size is within bounds. The `payload` carries format-specific
+    /// data: monochrome `glyf`, or a `colrv0`/`colrv1` colour
+    /// container. `Err(reason)` causes the dispatcher to emit an error
+    /// response.
+    fn glyph_register(
+        &mut self,
+        _cp: u32,
+        _payload: glyph_protocol::GlyphPayload,
+    ) -> Result<(), glyph_protocol::RegisterError> {
+        Ok(())
+    }
+
+    /// Clear one registration (`Some(cp)`) or every registration in
+    /// the session (`None`).
+    fn glyph_clear(&mut self, _cp: Option<u32>) {}
+
+    /// Forward a `q` (query) request to the frontend so it can
+    /// classify the codepoint as `Free` / `System` / `Glossary` /
+    /// `Both` (spec §5.2). Asynchronous because the System / Both
+    /// bits require FontLibrary access that lives outside the
+    /// terminal-backend layer; the frontend formats the reply and
+    /// writes it back to the originating pane's PTY directly.
+    fn glyph_query(&mut self, _cp: u32) {}
+
     /// Get mutable access to the kitty graphics chunking state
     /// Used by the APC handler to accumulate chunked image transmissions
     ///
@@ -775,6 +805,19 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
             String::from_utf8_lossy(&data[..data.len().min(50)])
         );
 
+        // Check if this is a Glyph Protocol APC (starts with "25a1").
+        // Glyph Protocol is checked before Kitty so its fixed-string
+        // prefix short-circuits quickly; the two prefixes are disjoint.
+        if data.starts_with(glyph_protocol::GLYPH_PROTOCOL_PREFIX) {
+            // Copy the body off the shared apc_state buffer so that
+            // dispatch_glyph_protocol can take `&mut self` (the handler
+            // trait methods need it). Glyph Protocol payloads are
+            // bounded by MAX_PAYLOAD_BYTES, so this is cheap.
+            let body = data.to_vec();
+            self.dispatch_glyph_protocol(&body);
+            return;
+        }
+
         // Check if this is a Kitty graphics protocol APC (starts with 'G')
         if data.first() == Some(&b'G') {
             debug!("[process_apc_buffer] Kitty graphics APC detected");
@@ -875,6 +918,66 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                 "[process_apc_buffer] Unknown APC sequence: {}",
                 String::from_utf8_lossy(&buffer[..buffer.len().min(20)])
             );
+        }
+    }
+
+    /// Parse and dispatch a Glyph Protocol APC. `data` starts with the
+    /// `25a1` identifier and excludes the APC introducer / terminator.
+    fn dispatch_glyph_protocol(&mut self, data: &[u8]) {
+        match glyph_protocol::parse(data) {
+            Ok(glyph_protocol::GlyphCommand::Support) => {
+                let resp = glyph_protocol::format_support_response(
+                    glyph_protocol::SUPPORTED_FORMATS,
+                );
+                self.handler.glyph_protocol_response(resp);
+            }
+            Ok(glyph_protocol::GlyphCommand::Query { cp }) => {
+                // Fire-and-forget: the handler emits a frontend-bound
+                // event with `route_id + cp`. The frontend computes
+                // System / Glossary coverage and writes the formatted
+                // reply back to the originating pane's PTY directly.
+                self.handler.glyph_query(cp);
+            }
+            Ok(glyph_protocol::GlyphCommand::Register { cp, payload, reply }) => {
+                match self.handler.glyph_register(cp, payload) {
+                    Ok(()) => {
+                        if reply.emit_success() {
+                            let resp = glyph_protocol::format_register_ok(cp);
+                            self.handler.glyph_protocol_response(resp);
+                        }
+                    }
+                    Err(reason) => {
+                        if reply.emit_error() {
+                            let resp = glyph_protocol::format_register_error(cp, reason);
+                            self.handler.glyph_protocol_response(resp);
+                        }
+                    }
+                }
+            }
+            Ok(glyph_protocol::GlyphCommand::Clear { cp }) => {
+                self.handler.glyph_clear(cp);
+                let resp = glyph_protocol::format_clear_ok(cp);
+                self.handler.glyph_protocol_response(resp);
+            }
+            Err(glyph_protocol::ParseError::NotGlyphProtocol) => {
+                // Shouldn't happen — the prefix check in process_apc_buffer
+                // already confirmed the identifier. Fall through silently
+                // rather than warn, since a future dispatcher reorder
+                // could make this reachable.
+            }
+            Err(glyph_protocol::ParseError::RegisterFailed { cp, reason, reply }) => {
+                if reply.emit_error() {
+                    let resp = glyph_protocol::format_register_error(cp, reason);
+                    self.handler.glyph_protocol_response(resp);
+                }
+            }
+            Err(glyph_protocol::ParseError::ClearOutOfNamespace) => {
+                let resp = glyph_protocol::format_clear_error_out_of_namespace();
+                self.handler.glyph_protocol_response(resp);
+            }
+            Err(glyph_protocol::ParseError::Malformed(why)) => {
+                warn!("[glyph_protocol] malformed APC: {why}");
+            }
         }
     }
 }

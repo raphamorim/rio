@@ -1,5 +1,7 @@
 pub mod constants;
 pub mod fonts;
+pub mod glyf_decode;
+pub mod glyph_registry;
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
 pub mod linux;
 #[cfg(not(target_arch = "wasm32"))]
@@ -243,14 +245,15 @@ impl FontLibrary {
         &self,
         ch: char,
         fragment_style: &SpanStyle,
+        route_id: Option<usize>,
     ) -> (usize, bool) {
         // Fast path: codepoint is covered by an already-registered
         // font. No locks upgraded, no FFI call. Shared across all
         // platforms — only the cascade-discovery slow path differs.
-        if let Some(found) = self
-            .inner
-            .read()
-            .find_best_font_match_strict(ch, fragment_style)
+        if let Some(found) =
+            self.inner
+                .read()
+                .find_best_font_match_strict(ch, fragment_style, route_id)
         {
             return found;
         }
@@ -425,6 +428,61 @@ impl FontLibrary {
     pub fn family_names(&self) -> Vec<String> {
         Vec::new()
     }
+
+    /// Install a Glyph Protocol registry under `route_id`. Called once
+    /// per terminal session at context creation; the route_id is the
+    /// monotonic counter from `ROUTE_ID_COUNTER`, never reused, so the
+    /// installed entry's lifetime ends only when the session is
+    /// explicitly removed via [`Self::remove_glyph_registry`].
+    ///
+    /// Re-installing the same `route_id` overwrites the previous
+    /// registry. The registry itself is Arc-shared, so subsequent
+    /// `register`/`clear` mutations made through the same handle are
+    /// visible to the renderer without re-installing.
+    pub fn install_glyph_registry(
+        &self,
+        route_id: usize,
+        registry: glyph_registry::GlyphRegistry,
+    ) {
+        self.inner
+            .write()
+            .glyph_registries
+            .insert(route_id, registry);
+    }
+
+    /// Drop the registry for `route_id`. Called when a terminal
+    /// session is closed. No-op if there's no entry; safe to call
+    /// even from sessions that never used Glyph Protocol.
+    pub fn remove_glyph_registry(&self, route_id: usize) {
+        self.inner.write().glyph_registries.remove(&route_id);
+    }
+
+    /// Read-side access for the renderer: clone the Arc handle for the
+    /// pane currently being drawn. Returns `None` when no program in
+    /// that session has touched Glyph Protocol.
+    #[inline]
+    pub fn glyph_registry_for(
+        &self,
+        route_id: usize,
+    ) -> Option<glyph_registry::GlyphRegistry> {
+        self.inner.read().glyph_registries.get(&route_id).cloned()
+    }
+
+    /// Does any *already-loaded* font in the library cover this
+    /// codepoint? Used by Glyph Protocol's `q` verb to report system
+    /// coverage alongside session-glossary coverage. Stays in the
+    /// fast path — the strict variant doesn't fire platform cascade
+    /// discovery, so a query never perturbs library state. Returns
+    /// `false` for invalid codepoints (>= 0x110000 or surrogates).
+    pub fn covers_codepoint(&self, cp: u32) -> bool {
+        let Some(ch) = char::from_u32(cp) else {
+            return false;
+        };
+        self.inner
+            .read()
+            .find_best_font_match_strict(ch, &SpanStyle::default(), None)
+            .is_some_and(|(font_id, _)| font_id != glyph_registry::CUSTOM_GLYPH_FONT_ID)
+    }
 }
 
 impl Default for FontLibrary {
@@ -484,6 +542,14 @@ pub struct FontLibraryData {
     /// fontconfig-/font-kit-discovered fallback against fonts already
     /// in the registry.
     postscript_to_id: FxHashMap<String, usize>,
+    /// Per-route Glyph Protocol registries, keyed by `route_id` (the
+    /// process-wide monotonic counter from `ROUTE_ID_COUNTER`). Each
+    /// terminal session installs its registry on context creation
+    /// and removes it on close; route_ids are never reused so a
+    /// stale entry can never alias a new context. Empty for windows
+    /// that have never seen a Glyph Protocol APC, so most callers
+    /// pay nothing.
+    glyph_registries: FxHashMap<usize, glyph_registry::GlyphRegistry>,
 }
 
 impl Default for FontLibraryData {
@@ -494,6 +560,7 @@ impl Default for FontLibraryData {
             symbol_maps: None,
             primary_metrics_cache: FxHashMap::default(),
             postscript_to_id: FxHashMap::default(),
+            glyph_registries: FxHashMap::default(),
         }
     }
 }
@@ -504,7 +571,24 @@ impl FontLibraryData {
         &self,
         ch: char,
         fragment_style: &SpanStyle,
+        route_id: Option<usize>,
     ) -> Option<(usize, bool)> {
+        // Glyph Protocol override takes precedence over everything
+        // else — if an application has registered this codepoint in
+        // *this pane's* registry, the registration is what the user
+        // is asking to see. Each pane consults its own registry via
+        // route_id, so two panes can host different programs with
+        // overlapping PUA registrations without interfering. Checked
+        // before symbol maps and the font fallback chain because
+        // neither of those should "beat" an explicit registration.
+        if let Some(route_id) = route_id {
+            if let Some(registry) = self.glyph_registries.get(&route_id) {
+                if registry.contains(ch as u32) {
+                    return Some((glyph_registry::CUSTOM_GLYPH_FONT_ID, false));
+                }
+            }
+        }
+
         let mut synth = Synthesis::default();
         let mut char_cluster = CharCluster::new();
         let mut parser = Parser::new(
@@ -554,7 +638,21 @@ impl FontLibraryData {
         &self,
         ch: char,
         fragment_style: &SpanStyle,
+        route_id: Option<usize>,
     ) -> Option<(usize, bool)> {
+        // Glyph Protocol short-circuit, same precedence as
+        // find_best_font_match — the strict variant is the fast-path
+        // entry point used by `resolve_font_for_char` so it must also
+        // honour registrations or codepoints that match a registered
+        // glyph would briefly fall through to system font discovery.
+        if let Some(route_id) = route_id {
+            if let Some(registry) = self.glyph_registries.get(&route_id) {
+                if registry.contains(ch as u32) {
+                    return Some((glyph_registry::CUSTOM_GLYPH_FONT_ID, false));
+                }
+            }
+        }
+
         let mut synth = Synthesis::default();
         let mut char_cluster = CharCluster::new();
         let mut parser = Parser::new(
@@ -1958,7 +2056,7 @@ mod postscript_resolver_tests {
         // U+6C34 ('水') — not in CascadiaMono. Library has no fallback
         // registered, so the pre-resolve walk returns None and the
         // discovery path has to fire.
-        let (font_id, _is_emoji) = lib.resolve_font_for_char('\u{6C34}', &style);
+        let (font_id, _is_emoji) = lib.resolve_font_for_char('\u{6C34}', &style, None);
 
         assert_ne!(
             font_id, 0,
@@ -1993,9 +2091,9 @@ mod postscript_resolver_tests {
 
         // Both codepoints should cascade to the same system CJK font on
         // any stock macOS install.
-        let (id_a, _) = lib.resolve_font_for_char('\u{6C34}', &style);
+        let (id_a, _) = lib.resolve_font_for_char('\u{6C34}', &style, None);
         let len_after_first = lib.inner.read().inner.len();
-        let (id_b, _) = lib.resolve_font_for_char('\u{6728}', &style);
+        let (id_b, _) = lib.resolve_font_for_char('\u{6728}', &style, None);
         let len_after_second = lib.inner.read().inner.len();
 
         assert_eq!(
@@ -2006,5 +2104,67 @@ mod postscript_resolver_tests {
             len_after_first, len_after_second,
             "the second resolve must not register a duplicate font"
         );
+    }
+}
+
+#[cfg(test)]
+mod glyph_registry_install_tests {
+    use super::*;
+    use crate::font::glyph_registry::GlyphRegistry;
+
+    #[test]
+    fn install_then_lookup_returns_same_arc() {
+        let library = FontLibrary::default();
+        let registry = GlyphRegistry::new();
+        library.install_glyph_registry(42, registry.clone());
+
+        let fetched = library
+            .glyph_registry_for(42)
+            .expect("entry installed at 42");
+        assert!(fetched.ptr_eq(&registry));
+    }
+
+    #[test]
+    fn lookup_returns_none_for_unknown_route() {
+        let library = FontLibrary::default();
+        assert!(library.glyph_registry_for(999).is_none());
+    }
+
+    #[test]
+    fn install_overwrites_same_route() {
+        let library = FontLibrary::default();
+        let first = GlyphRegistry::new();
+        let second = GlyphRegistry::new();
+        assert!(!first.ptr_eq(&second));
+
+        library.install_glyph_registry(7, first.clone());
+        library.install_glyph_registry(7, second.clone());
+
+        let fetched = library.glyph_registry_for(7).expect("entry at 7");
+        assert!(fetched.ptr_eq(&second));
+        assert!(!fetched.ptr_eq(&first));
+    }
+
+    #[test]
+    fn remove_drops_the_entry() {
+        let library = FontLibrary::default();
+        let registry = GlyphRegistry::new();
+        library.install_glyph_registry(3, registry);
+        assert!(library.glyph_registry_for(3).is_some());
+
+        library.remove_glyph_registry(3);
+        assert!(library.glyph_registry_for(3).is_none());
+    }
+
+    #[test]
+    fn distinct_routes_hold_distinct_registries() {
+        let library = FontLibrary::default();
+        let a = GlyphRegistry::new();
+        let b = GlyphRegistry::new();
+        library.install_glyph_registry(1, a.clone());
+        library.install_glyph_registry(2, b.clone());
+
+        assert!(library.glyph_registry_for(1).unwrap().ptr_eq(&a));
+        assert!(library.glyph_registry_for(2).unwrap().ptr_eq(&b));
     }
 }

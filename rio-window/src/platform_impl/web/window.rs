@@ -135,7 +135,7 @@ impl Inner {
 
     pub fn set_transparent(&self, _transparent: bool) {}
 
-    pub fn set_blur(&self, _blur: bool) {}
+    pub fn set_blur(&self, _blur: crate::window::BlurStyle) {}
 
     pub fn set_visible(&self, _visible: bool) {
         // Intentionally a no-op

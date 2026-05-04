@@ -368,6 +368,16 @@ impl VulkanContext {
     /// buffer. Returns `None` if the swapchain needed recreation (caller
     /// should skip this frame).
     pub fn acquire_frame(&mut self) -> Option<VulkanFrame> {
+        // Honor a recreate request observed on the previous tick
+        // (suboptimal acquire, suboptimal present, or OUT_OF_DATE on
+        // present). Mirrors wgpu/Metal/wgpu-via-zed practice: keep
+        // the flag close to the platform-frame entry point so no
+        // tick draws against a swapchain the compositor has already
+        // declared stale.
+        if self.needs_recreate {
+            self.recreate_swapchain(self.size.width as u32, self.size.height as u32);
+        }
+
         let slot = self.frame_index;
         let sync = &self.frames[slot];
 
@@ -1353,11 +1363,17 @@ fn create_device(
 
     let device_extensions = [khr::swapchain::NAME.as_ptr()];
 
-    // Enable dynamic rendering up front — it's Vulkan 1.3 core. We're
-    // not using it yet in the clear-only path, but enabling it here
-    // avoids having to recreate the device when pipelines land.
-    let mut vk13_features =
-        vk::PhysicalDeviceVulkan13Features::default().dynamic_rendering(true);
+    // Enable dynamic_rendering and synchronization2 — both are Vulkan
+    // 1.3 core. `synchronization2` is required for `vkCmdPipelineBarrier2`,
+    // which the swapchain layout transitions
+    // (UNDEFINED → COLOR_ATTACHMENT_OPTIMAL and COLOR_ATTACHMENT_OPTIMAL
+    // → PRESENT_SRC_KHR) and atlas image transitions go through. Without
+    // the feature enabled, the v2 barrier calls are silently ignored,
+    // the swapchain image stays in UNDEFINED layout, and the compositor
+    // discards the present — visible as "first frame and stops."
+    let mut vk13_features = vk::PhysicalDeviceVulkan13Features::default()
+        .dynamic_rendering(true)
+        .synchronization2(true);
 
     let queue_infos = [queue_info];
     let create_info = vk::DeviceCreateInfo::default()
@@ -1399,12 +1415,6 @@ fn create_swapchain(
             .get_physical_device_surface_formats(physical_device, surface)
             .expect("get_physical_device_surface_formats")
     };
-    let present_modes = unsafe {
-        surface_loader
-            .get_physical_device_surface_present_modes(physical_device, surface)
-            .expect("get_physical_device_surface_present_modes")
-    };
-
     // Prefer BGRA8_UNORM (linear) so blending stays in gamma space — the
     // same choice Metal makes (`MTLPixelFormat::BGRA8Unorm` + DisplayP3
     // tag). Fragment shaders will emit sRGB-encoded output. If the
@@ -1419,14 +1429,11 @@ fn create_swapchain(
         .copied()
         .unwrap_or(formats[0]);
 
-    // Present mode: Mailbox for low-latency "triple buffered", FIFO as a
-    // guaranteed fallback. We don't expose a config knob yet — same
-    // story as Metal's hard-coded `maximumDrawableCount = 3`.
-    let present_mode = if present_modes.contains(&vk::PresentModeKHR::MAILBOX) {
-        vk::PresentModeKHR::MAILBOX
-    } else {
-        vk::PresentModeKHR::FIFO
-    };
+    // FIFO. Spec-guaranteed and vsync-throttled at present time, so the
+    // renderer can't outrun the display. MAILBOX on X11 (Mesa DRI3/Present)
+    // runs a driver-side polling thread and discards rendered frames, which
+    // pegged Xorg under sustained input.
+    let present_mode = vk::PresentModeKHR::FIFO;
 
     let extent = if caps.current_extent.width != u32::MAX {
         caps.current_extent

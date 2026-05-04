@@ -853,7 +853,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "copa"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "arrayvec",
  "criterion",
@@ -879,7 +879,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -3493,9 +3493,9 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orbclient"
-version = "0.3.53"
+version = "0.3.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12c6933ddbbd16539a7672e697bb8d41ac3a4e99ac43eeb40c07236bd7fcb2dd"
+checksum = "a570f6bca41d29acb2139229a7c873ec99bc9a313bd10804081d89bfac8ff329"
 dependencies = [
  "libc",
  "libredox",
@@ -4144,7 +4144,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "base64",
  "bitflags 2.11.1",
@@ -4182,7 +4182,7 @@ dependencies = [
 
 [[package]]
 name = "rio-grapheme-width"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "phf",
  "ucd-trie",
@@ -4190,7 +4190,7 @@ dependencies = [
 
 [[package]]
 name = "rio-notifier"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "block2 0.5.1",
  "objc-rs 0.3.1",
@@ -4203,7 +4203,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4211,7 +4211,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -4265,7 +4265,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "ahash",
  "bitflags 2.11.1",
@@ -4805,7 +4805,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "sugarloaf"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "approx",
  "ash",
@@ -4930,7 +4930,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "teletypewriter"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "corcovado",
  "dirs",
@@ -6635,9 +6635,9 @@ checksum = "e01738255b5a16e78bbb83e7fbba0a1e7dd506905cfc53f4622d89015a03fbb5"
 
 [[package]]
 name = "yeslogic-fontconfig-sys"
-version = "6.0.0"
+version = "6.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "503a066b4c037c440169d995b869046827dbc71263f6e8f3be6d77d4f3229dbd"
+checksum = "1d8b8abf912b9a29ff112e1671c97c33636903d13a69712037190e6805af4f76"
 dependencies = [
  "dlib",
  "once_cell",

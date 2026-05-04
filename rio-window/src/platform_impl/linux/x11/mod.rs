@@ -156,10 +156,6 @@ pub struct ActiveEventLoop {
     /// presentation window — single keystrokes don't. See
     /// `platform_impl::input_rate`.
     input_rate_tracker: RefCell<crate::platform_impl::input_rate::InputRateTracker>,
-    /// Shared with `EventLoopState` and every window. Set by
-    /// `request_redraw`, checked by `has_pending`, cleared by
-    /// the vsync tick after fanning out.
-    pub(super) redraw_flag: Arc<std::sync::atomic::AtomicBool>,
     /// Waker ping so `request_redraw` can unblock calloop dispatch.
     pub(super) waker: Ping,
     /// Calloop loop handle so per-window vsync timers can be
@@ -193,10 +189,6 @@ type ActivationToken = (WindowId, crate::event_loop::AsyncRequestSerial);
 pub(crate) struct EventLoopState {
     /// The latest readiness state for the x11 file descriptor
     x11_readiness: Readiness,
-    /// Set by `request_redraw` (via the shared `Arc<AtomicBool>`).
-    /// Checked by `has_pending` so the event loop wakes even when
-    /// the timer hasn't fired yet.
-    redraw_flag: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Per-window vsync timer state. Mirrors zed's
@@ -380,15 +372,12 @@ impl<T: 'static> EventLoop<T> {
             input_rate_tracker: RefCell::new(
                 crate::platform_impl::input_rate::InputRateTracker::new(),
             ),
-            redraw_flag: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             waker: waker.clone(),
             loop_handle: handle.clone(),
         };
 
         // Set initial device event filter.
         window_target.update_listen_device_events(true);
-
-        let redraw_flag = window_target.redraw_flag.clone();
 
         let root_window_target = RootAEL {
             p: PlatformActiveEventLoop::X(window_target),
@@ -452,7 +441,6 @@ impl<T: 'static> EventLoop<T> {
             user_sender,
             state: EventLoopState {
                 x11_readiness: Readiness::EMPTY,
-                redraw_flag,
             },
         }
     }
@@ -535,10 +523,6 @@ impl<T: 'static> EventLoop<T> {
 
     fn has_pending(&mut self) -> bool {
         self.vsync_receiver.has_incoming()
-            || self
-                .state
-                .redraw_flag
-                .load(std::sync::atomic::Ordering::Acquire)
             || self.event_processor.poll()
             || self.user_receiver.has_incoming()
             || self.redraw_receiver.has_incoming()
