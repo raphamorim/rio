@@ -1153,7 +1153,39 @@ impl Sugarloaf<'_> {
 
                 {
                     let load = if let Some(background_color) = self.background_color {
-                        wgpu::LoadOp::Clear(background_color.into())
+                        // The grid bg pass emits `(0,0,0,0)` for
+                        // default-bg cells (see `cell_bg` in
+                        // `frontends/rioterm/src/grid_emit.rs`) and
+                        // blends premultiplied-over the cleared color,
+                        // so the framebuffer alpha for any cell that
+                        // didn't get an explicit bg ends up = the clear
+                        // alpha. When the user sets `window.opacity <
+                        // 1` we want the compositor to treat that
+                        // cleared color as a translucent overlay over
+                        // the desktop. DWM (Windows DX12 / wgpu Vulkan
+                        // path) and wayland compositors interpret the
+                        // framebuffer RGB as **already** multiplied by
+                        // alpha when the surface is in PreMultiplied
+                        // mode. wgpu's Auto / Inherit modes also map
+                        // to that interpretation when transparency is
+                        // engaged (no platform we ship to picks
+                        // straight-alpha by default). Only
+                        // `PostMultiplied` wants the straight value.
+                        // Pre-multiply here so a translucent bg doesn't
+                        // come out as a near-fully-transparent window
+                        // on those backends.
+                        let clear = match ctx.alpha_mode {
+                            wgpu::CompositeAlphaMode::PostMultiplied => {
+                                background_color.into()
+                            }
+                            _ => wgpu::Color {
+                                r: background_color.r * background_color.a,
+                                g: background_color.g * background_color.a,
+                                b: background_color.b * background_color.a,
+                                a: background_color.a,
+                            },
+                        };
+                        wgpu::LoadOp::Clear(clear)
                     } else {
                         wgpu::LoadOp::Load
                     };
