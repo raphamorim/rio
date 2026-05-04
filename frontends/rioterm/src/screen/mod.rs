@@ -3445,7 +3445,15 @@ impl Screen<'_> {
             );
         }
 
-        if self.renderer.trail_cursor_enabled {
+        let is_cursor_visible = self
+            .context_manager
+            .current()
+            .renderable_content
+            .cursor
+            .state
+            .is_visible();
+
+        if self.renderer.trail_cursor_enabled && is_cursor_visible {
             let current_grid = self.context_manager.current_grid();
             let scaled_margin = current_grid.get_scaled_margin();
 
