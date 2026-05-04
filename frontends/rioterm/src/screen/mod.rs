@@ -3569,6 +3569,12 @@ impl Screen<'_> {
                     rio_backend::crosswords::pos::Pos,
                     rio_backend::crosswords::pos::Pos,
                 )>,
+                /// Active IME preedit overlay anchored at the cursor
+                /// position the user last saw. `None` when no
+                /// composition is active. The row-emit pass paints
+                /// the composition cells as a wezterm-style block and
+                /// breaks it with a caret beam at the IME cursor.
+                preedit_overlay: Option<crate::renderer::preedit::PreeditOverlay>,
             }
 
             let (active_key, scaled_margin) = {
@@ -3662,6 +3668,20 @@ impl Screen<'_> {
                 let cursor_color = term_colors
                     [rio_backend::config::colors::NamedColor::Cursor as usize]
                     .unwrap_or(self.renderer.named_colors.cursor);
+                // Build the IME preedit overlay against the live
+                // cursor position. `cursor.state.pos` is screen-relative
+                // (Line within 0..screen_lines).
+                let preedit_overlay = ctx.ime.preedit().and_then(|preedit| {
+                    let cols_usize = dim.columns.max(1) as usize;
+                    let rows_usize = dim.lines.max(1) as usize;
+                    let start_row = (cursor.state.pos.row.0.max(0) as usize)
+                        .min(rows_usize.saturating_sub(1));
+                    let start_col =
+                        cursor.state.pos.col.0.min(cols_usize.saturating_sub(1));
+                    crate::renderer::preedit::PreeditOverlay::new(
+                        preedit, start_row, start_col, cols_usize, rows_usize,
+                    )
+                });
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
@@ -3688,6 +3708,7 @@ impl Screen<'_> {
                     hint_matches,
                     focused_match,
                     hovered_hyperlink,
+                    preedit_overlay,
                 });
             }
 
@@ -3776,6 +3797,7 @@ impl Screen<'_> {
                 let hint_matches_slice = p.hint_matches.as_deref();
                 let focused_match_ref = p.focused_match.as_ref();
                 let hovered_hyperlink = p.hovered_hyperlink;
+                let preedit_overlay_ref = p.preedit_overlay.as_ref();
                 let mut rebuild_row = |y: usize,
                                        grid: &mut rio_backend::sugarloaf::grid::GridRenderer,
                                        rasterizer: &mut crate::grid_emit::GridGlyphRasterizer| {
@@ -3797,6 +3819,20 @@ impl Screen<'_> {
                         p.display_offset,
                         &mut hint_scratch,
                     );
+                    // Only thread the overlay through to the emit pass
+                    // for rows that actually carry preedit cells or the
+                    // IME caret. The two emit functions hit a hot loop
+                    // per cell, so the per-row "any preedit?" bit shaves
+                    // one pointer chase off non-IME frames.
+                    let preedit_row = preedit_overlay_ref.and_then(|o| {
+                        let any = o.has_any_in_row(y);
+                        let caret = o.ime_cursor_in_row(y).is_some();
+                        if any || caret {
+                            Some(crate::grid_emit::PreeditRow { overlay: o, row: y })
+                        } else {
+                            None
+                        }
+                    });
                     crate::grid_emit::build_row_bg(
                         row,
                         cols,
@@ -3805,6 +3841,7 @@ impl Screen<'_> {
                         &p.term_colors,
                         row_sel,
                         &hint_scratch,
+                        preedit_row.as_ref(),
                         &mut bg_scratch,
                     );
                     crate::grid_emit::build_row_fg(
@@ -3821,6 +3858,7 @@ impl Screen<'_> {
                         p.cell_h,
                         row_sel,
                         &hint_scratch,
+                        preedit_row.as_ref(),
                         &font_library,
                         p.route_id,
                         &mut fg_scratch,

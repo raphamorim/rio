@@ -979,6 +979,13 @@ static EXEC_MSG_ID: LazyMessageId = LazyMessageId::new("Winit::ExecMsg\0");
 // WPARAM and LPARAM are unused.
 pub(crate) static DESTROY_MSG_ID: LazyMessageId =
     LazyMessageId::new("Winit::DestroyMsg\0");
+// Message posted by `Window::request_redraw` to drive a paint via the
+// normal posted-message queue. Sustained input (IME key repeat) can
+// starve the low-priority `WM_PAINT` slot until key release; a regular
+// registered message interleaves with input and reaches the WndProc
+// per-frame. WPARAM and LPARAM are unused.
+pub(crate) static REDRAW_REQUESTED_MSG_ID: LazyMessageId =
+    LazyMessageId::new("Winit::RedrawRequested\0");
 // WPARAM is a bool specifying the `WindowFlags::MARKER_RETAIN_STATE_ON_SIZE` flag. See the
 // documentation in the `window_state` module for more information.
 pub(crate) static SET_RETAIN_STATE_ON_SIZE_MSG_ID: LazyMessageId =
@@ -1208,20 +1215,6 @@ unsafe fn public_window_callback_inner(
     userdata: &WindowData,
 ) -> LRESULT {
     let mut result = ProcResult::DefWindowProc(wparam);
-
-    // Mark any input message before further processing so the
-    // DwmFlush worker keeps fanning out redraws for the next 1 s.
-    // Mirrors macOS / Wayland / X11.
-    match msg {
-        WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP | WM_MOUSEMOVE
-        | WM_MOUSEWHEEL | WM_MOUSEHWHEEL | WM_LBUTTONDOWN | WM_LBUTTONUP
-        | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP
-        | WM_XBUTTONDOWN | WM_XBUTTONUP | WM_TOUCH | WM_POINTERDOWN
-        | WM_POINTERUPDATE | WM_POINTERUP => {
-            userdata.vsync_state.mark_input_received();
-        }
-        _ => (),
-    }
 
     // Send new modifiers before sending key events.
     let mods_changed_callback = || match msg {
@@ -1631,17 +1624,22 @@ unsafe fn public_window_callback_inner(
         }
 
         WM_IME_STARTCOMPOSITION => {
+            // Consume instead of calling `DefWindowProc`. The default
+            // handler spins a synchronous handshake with the IME that
+            // blocks this thread for ~100 ms before the paired
+            // `WM_IME_COMPOSITION` is delivered — measurably so under
+            // corvus-skk's direct-input mode, where every keystroke
+            // fires START → COMPOSITION(GCS_RESULTSTR) → END and the
+            // auto-repeat ends up capped at ~10 cps. Returning 0
+            // (wezterm also consumes the paired ENDCOMPOSITION) skips
+            // the handshake; the composition result still arrives via
+            // `WM_IME_COMPOSITION`, just on the OS key-repeat cadence.
             let ime_allowed = userdata.window_state_lock().ime_allowed;
             if ime_allowed {
                 userdata.window_state_lock().ime_state = ImeState::Enabled;
-
-                userdata.send_event(Event::WindowEvent {
-                    window_id: RootWindowId(WindowId(window)),
-                    event: WindowEvent::Ime(Ime::Enabled),
-                });
             }
 
-            result = ProcResult::DefWindowProc(wparam);
+            result = ProcResult::Value(0);
         }
 
         WM_IME_COMPOSITION => {
@@ -1662,11 +1660,23 @@ unsafe fn public_window_callback_inner(
                 }
 
                 // Google Japanese Input and ATOK have both flags, so
-                // first, receive composing result if exist.
+                // first, receive composing result if exist. We must
+                // dispatch `Ime::Preedit("")` before `Ime::Commit`:
+                // most IMEs (MS-IME, Google Japanese Input, ATOK)
+                // fire WM_IME_COMPOSITION with only GCS_RESULTSTR on
+                // confirm — no GCS_COMPSTR — so the GCS_COMPSTR
+                // branch below never runs and the app's `ime.preedit`
+                // stays `Some(...)` from the last preedit update.
+                // `process_key_event` short-circuits while a preedit
+                // is active, so without this clear every subsequent
+                // keystroke is silently dropped after each commit.
+                // For direct-input IMEs (corvus-skk hiragana) that
+                // never had a preedit, the app's handler skips
+                // damage/redraw because `None != None` is false — the
+                // extra event is just one no-op handler call.
                 if (lparam as u32 & GCS_RESULTSTR) != 0 {
                     if let Some(text) = unsafe { ime_context.get_composed_text() } {
                         userdata.window_state_lock().ime_state = ImeState::Enabled;
-
                         userdata.send_event(Event::WindowEvent {
                             window_id: RootWindowId(WindowId(window)),
                             event: WindowEvent::Ime(Ime::Preedit(String::new(), None)),
@@ -1721,14 +1731,18 @@ unsafe fn public_window_callback_inner(
                 }
 
                 userdata.window_state_lock().ime_state = ImeState::Disabled;
-
-                userdata.send_event(Event::WindowEvent {
-                    window_id: RootWindowId(WindowId(window)),
-                    event: WindowEvent::Ime(Ime::Disabled),
-                });
+                // `Ime::Disabled` is intentionally not dispatched — the
+                // app's handler only toggled an unread `enabled` flag,
+                // so the dispatch was pure overhead on every
+                // STARTCOMPOSITION / ENDCOMPOSITION cycle (e.g. every
+                // corvus-skk direct-input keystroke).
             }
 
-            result = ProcResult::DefWindowProc(wparam);
+            // Consume (matches wezterm) — the default handler, like
+            // STARTCOMPOSITION's, does a synchronous IME handshake we
+            // don't need. Skipping it keeps the per-keystroke cycle
+            // short under direct-input IMEs.
+            result = ProcResult::Value(0);
         }
 
         WM_IME_SETCONTEXT => {
@@ -2652,6 +2666,22 @@ unsafe fn public_window_callback_inner(
                 window_state.set_window_flags_in_place(|f| {
                     f.set(WindowFlags::MARKER_RETAIN_STATE_ON_SIZE, wparam != 0)
                 });
+                result = ProcResult::Value(0);
+            } else if msg == REDRAW_REQUESTED_MSG_ID.get() {
+                // Clear the VSync worker's dirty flag so it skips its
+                // own `RedrawWindow` on the next tick; the paint is
+                // already queued here.
+                userdata.vsync_state.clear_dirty(window);
+                // If we're nested inside another handler, defer to the
+                // buffered-event flush via `redraw_requested`.
+                if !userdata.event_loop_runner.should_buffer() {
+                    userdata.send_event(Event::WindowEvent {
+                        window_id: RootWindowId(WindowId(window)),
+                        event: WindowEvent::RedrawRequested,
+                    });
+                } else {
+                    userdata.window_state_lock().redraw_requested = true;
+                }
                 result = ProcResult::Value(0);
             } else if msg == TASKBAR_CREATED.get() {
                 let window_state = userdata.window_state_lock();
