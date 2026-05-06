@@ -1,6 +1,6 @@
 //! Fixed size parameters list with optional subparameters.
 
-use core::fmt::{self, Debug, Formatter};
+use std::fmt::{self, Debug, Formatter};
 
 pub(crate) const MAX_PARAMS: usize = 32;
 

@@ -37,7 +37,6 @@ sugarloaf = { workspace = true }
 rio-grapheme-width = { workspace = true }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
-copa = { workspace = true }
 # `wgpu` is only needed when the corresponding sugarloaf feature is on.
 wgpu = { workspace = true, optional = true }
 url = { workspace = true }
