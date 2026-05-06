@@ -601,16 +601,37 @@ impl Screen<'_> {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.mark_dirty();
-        self.resize_all_contexts();
-        self.context_manager
-            .current_grid_mut()
-            .update_dimensions(&mut self.sugarloaf);
+
+        for context_grid in self.context_manager.contexts_mut() {
+            let old_scale = context_grid.current().dimension.dimension.scale.max(1.0);
+            let scaled_margin = context_grid.scaled_margin;
+            let unscaled_margin = Margin::new(
+                scaled_margin.top / old_scale,
+                scaled_margin.right / old_scale,
+                scaled_margin.bottom / old_scale,
+                scaled_margin.left / old_scale,
+            );
+
+            context_grid.update_scaled_margin(Margin::new(
+                unscaled_margin.top * new_scale,
+                unscaled_margin.right * new_scale,
+                unscaled_margin.bottom * new_scale,
+                unscaled_margin.left * new_scale,
+            ));
+
+            for context in context_grid.contexts_mut().values_mut() {
+                context.context_mut().dimension.update_scale(new_scale);
+            }
+
+            context_grid.update_dimensions(&mut self.sugarloaf);
+        }
+
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
         self.context_manager
             .resize_all_grids(width, height, &mut self.sugarloaf);
+        self.mark_dirty();
 
         self
     }
