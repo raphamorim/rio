@@ -43,6 +43,10 @@ pub(crate) struct Parser {
     ignoring: bool,
     partial_utf8: [u8; 4],
     partial_utf8_len: usize,
+    /// Reused output buffer for [`simdutf::convert_utf8_to_utf32`]. Grows
+    /// to fit the largest non-ASCII ground-state chunk seen so far; empty
+    /// in steady state when sessions are pure ASCII.
+    decode_buf: Vec<u32>,
 }
 
 /// OSC accumulator with a fixed-size inline buffer and a heap fallback.
@@ -666,9 +670,9 @@ impl Parser {
             return 1;
         }
 
-        match simdutf8::basic::from_utf8(&bytes[..plain_chars]) {
+        match crate::simd_utf8::validate(&bytes[..plain_chars]) {
             Ok(parsed) => {
-                Self::ground_dispatch(performer, parsed);
+                self.ground_dispatch(performer, parsed);
                 let mut processed = plain_chars;
 
                 // If there's another character, it must be escape so process it directly.
@@ -681,17 +685,13 @@ impl Parser {
                 processed
             }
             // Handle invalid and partial utf8.
-            Err(_) => {
-                // Use simdutf8::compat::from_utf8 to get detailed error information
-                let compat_err =
-                    simdutf8::compat::from_utf8(&bytes[..plain_chars]).unwrap_err();
-
+            Err(err) => {
                 // Dispatch all the valid bytes.
-                let valid_bytes = compat_err.valid_up_to();
+                let valid_bytes = err.valid_up_to();
                 let parsed = unsafe { str::from_utf8_unchecked(&bytes[..valid_bytes]) };
-                Self::ground_dispatch(performer, parsed);
+                self.ground_dispatch(performer, parsed);
 
-                match compat_err.error_len() {
+                match err.error_len() {
                     Some(len) => {
                         // Execute C1 escapes or emit replacement character.
                         if len == 1 && bytes[valid_bytes] <= 0x9F {
@@ -746,7 +746,7 @@ impl Parser {
         self.partial_utf8_len += to_copy;
 
         // Parse the unicode character.
-        match simdutf8::basic::from_utf8(&self.partial_utf8[..self.partial_utf8_len]) {
+        match crate::simd_utf8::validate(&self.partial_utf8[..self.partial_utf8_len]) {
             // If the entire buffer is valid, use the first character and continue parsing.
             Ok(parsed) => {
                 // SAFETY: `partial_utf8_len >= 1` (caller guarantee) and `parsed`
@@ -758,21 +758,16 @@ impl Parser {
                 self.partial_utf8_len = 0;
                 c.len_utf8() - old_bytes
             }
-            Err(_) => {
-                // Use simdutf8::compat::from_utf8 to get detailed error information
-                let compat_err = simdutf8::compat::from_utf8(
-                    &self.partial_utf8[..self.partial_utf8_len],
-                )
-                .unwrap_err();
-                let valid_bytes = compat_err.valid_up_to();
+            Err(err) => {
+                let valid_bytes = err.valid_up_to();
 
                 // If we have any valid bytes, that means we partially copied another
                 // utf8 character into `partial_utf8`. Since we only care about the
                 // first character, we just ignore the rest.
                 if valid_bytes > 0 {
                     // SAFETY: `valid_bytes > 0` and the slice up to `valid_bytes` was
-                    // reported as valid UTF-8 by the compat decoder, so it contains
-                    // at least one full character.
+                    // reported as valid UTF-8, so it contains at least one full
+                    // character.
                     let c = unsafe {
                         let parsed =
                             str::from_utf8_unchecked(&self.partial_utf8[..valid_bytes]);
@@ -785,7 +780,7 @@ impl Parser {
                     return valid_bytes - old_bytes;
                 }
 
-                match compat_err.error_len() {
+                match err.error_len() {
                     // If the partial character was also invalid, emit the replacement
                     // character.
                     Some(invalid_len) => {
@@ -802,13 +797,96 @@ impl Parser {
     }
 
     /// Handle ground dispatch of print/execute for all characters in a string.
+    ///
+    /// Three batched paths:
+    /// - ASCII printable runs (`0x20..=0x7E`) → one [`Perform::print_str`].
+    /// - ASCII control bytes (`0x00..=0x1F`, `0x7F`) → [`Perform::execute`].
+    /// - Multi-byte UTF-8 runs (any byte ≥ `0x80`) → SIMD-decoded via
+    ///   `simdutf::convert_utf8_to_utf32` into [`Self::decode_buf`], then
+    ///   dispatched as one [`Perform::print_codepoints`] call (with C1
+    ///   controls `U+0080..U+009F` split out as individual `execute`).
     #[inline]
-    fn ground_dispatch<P: Perform>(performer: &mut P, text: &str) {
-        for c in text.chars() {
-            match c {
-                '\x00'..='\x1f' | '\u{80}'..='\u{9f}' => performer.execute(c as u8),
-                _ => performer.print(c),
+    fn ground_dispatch<P: Perform>(&mut self, performer: &mut P, text: &str) {
+        let bytes = text.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            let b = bytes[i];
+
+            if (0x20..=0x7E).contains(&b) {
+                // LLVM auto-vectorizes this byte-range scan into a SIMD compare.
+                let end = bytes[i..]
+                    .iter()
+                    .position(|&b| !(0x20..=0x7E).contains(&b))
+                    .map(|p| i + p)
+                    .unwrap_or(bytes.len());
+                // SAFETY: every byte in 0x20..=0x7E is valid 1-byte UTF-8.
+                let chunk = unsafe { std::str::from_utf8_unchecked(&bytes[i..end]) };
+                performer.print_str(chunk);
+                i = end;
+            } else if b < 0x80 {
+                performer.execute(b);
+                i += 1;
+            } else {
+                // Multi-byte UTF-8 run. Find its end (next ASCII byte).
+                let end = bytes[i..]
+                    .iter()
+                    .position(|&b| b < 0x80)
+                    .map(|p| i + p)
+                    .unwrap_or(bytes.len());
+                // SAFETY: caller already validated that `bytes` is well-formed
+                // UTF-8, and `i` lands on a codepoint boundary because every
+                // preceding byte was 1-byte ASCII.
+                self.decode_codepoints(&bytes[i..end]);
+                Self::dispatch_codepoints(performer, &self.decode_buf);
+                i = end;
             }
+        }
+    }
+
+    /// SIMD-transcode a validated UTF-8 byte slice into [`Self::decode_buf`]
+    /// as `u32` codepoints, sized exactly to the decoded count.
+    #[inline]
+    fn decode_codepoints(&mut self, src: &[u8]) {
+        self.decode_buf.clear();
+        // Worst-case 1 codepoint per byte (only true for ASCII; for the
+        // ≥0x80 runs we feed in here it's ≤ src.len() / 2). Reserve to
+        // src.len() so the FFI pointer write is always in-bounds.
+        self.decode_buf.reserve(src.len());
+        // SAFETY:
+        //  - `src` is valid UTF-8 (caller invariant).
+        //  - `decode_buf.capacity() >= src.len() ≥ #codepoints`.
+        //  - The buffer is exclusively borrowed.
+        let written = unsafe {
+            simdutf::convert_utf8_to_utf32(
+                src.as_ptr(),
+                src.len(),
+                self.decode_buf.as_mut_ptr(),
+            )
+        };
+        // SAFETY: `simdutf` wrote exactly `written` `u32` values starting
+        // at the buffer's data pointer.
+        unsafe {
+            self.decode_buf.set_len(written);
+        }
+    }
+
+    /// Split a decoded codepoint slice on C1 control codepoints
+    /// (`U+0080..=U+009F`) and emit non-control runs as
+    /// [`Perform::print_codepoints`], C1 codepoints as [`Perform::execute`].
+    #[inline]
+    fn dispatch_codepoints<P: Perform>(performer: &mut P, codepoints: &[u32]) {
+        let mut start = 0;
+        for (i, &cp) in codepoints.iter().enumerate() {
+            if (0x80..=0x9F).contains(&cp) {
+                if start < i {
+                    performer.print_codepoints(&codepoints[start..i]);
+                }
+                performer.execute(cp as u8);
+                start = i + 1;
+            }
+        }
+        if start < codepoints.len() {
+            performer.print_codepoints(&codepoints[start..]);
         }
     }
 }
@@ -845,6 +923,29 @@ enum State {
 pub(crate) trait Perform {
     /// Draw a character to the screen and update states.
     fn print(&mut self, _c: char) {}
+
+    /// Draw a contiguous run of characters in one batch. The default
+    /// implementation iterates and calls [`Perform::print`]; implementers
+    /// can specialize to skip per-char trait dispatch and per-char width
+    /// lookup when the run is known to be all narrow / printable / non-
+    /// combining (e.g. ASCII).
+    fn print_str(&mut self, s: &str) {
+        for c in s.chars() {
+            self.print(c);
+        }
+    }
+
+    /// Draw a contiguous run of pre-decoded Unicode codepoints in one batch.
+    /// The default implementation iterates, converts each `u32` to `char`
+    /// (replacing invalid encodings with U+FFFD), and calls
+    /// [`Perform::print`]. Implementers can specialize to bulk-process
+    /// codepoints — e.g. SIMD width lookup + bulk cell write.
+    fn print_codepoints(&mut self, codepoints: &[u32]) {
+        for &cp in codepoints {
+            let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+            self.print(c);
+        }
+    }
 
     /// Execute a C0 or C1 control function.
     fn execute(&mut self, _byte: u8) {}

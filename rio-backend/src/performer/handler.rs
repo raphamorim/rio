@@ -104,6 +104,29 @@ pub trait Handler {
     /// A character to be displayed.
     fn input(&mut self, _c: char) {}
 
+    /// A contiguous run of characters to be displayed. The default
+    /// implementation iterates and calls [`Handler::input`]; implementers
+    /// can specialize to batch the cell writes when the run satisfies a
+    /// fast-path predicate (e.g. ASCII printable, default charset, no
+    /// insert mode).
+    fn input_str(&mut self, s: &str) {
+        for c in s.chars() {
+            self.input(c);
+        }
+    }
+
+    /// A contiguous run of pre-decoded Unicode codepoints to be displayed.
+    /// Default implementation iterates and calls [`Handler::input`].
+    /// Implementers can specialize to bulk-process codepoints (SIMD width
+    /// lookup + bulk cell write), which is what makes the parser's
+    /// `simdutf` UTF-8 → u32 transcode worthwhile end-to-end.
+    fn input_codepoints(&mut self, codepoints: &[u32]) {
+        for &cp in codepoints {
+            let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+            self.input(c);
+        }
+    }
+
     /// Set cursor to position.
     fn goto(&mut self, _: Line, _: Column) {}
 
@@ -867,6 +890,29 @@ impl<U: Handler> Perform for Performer<'_, U> {
     fn print(&mut self, c: char) {
         self.handler.input(c);
         self.state.preceding_char = Some(c);
+    }
+
+    #[inline]
+    fn print_str(&mut self, s: &str) {
+        if s.is_empty() {
+            return;
+        }
+        self.handler.input_str(s);
+        // `preceding_char` is used by REP (CSI Ps b) — it just needs the
+        // last printed char, so keep it cheap by reading the last char of
+        // `s` rather than tracking per-byte.
+        self.state.preceding_char = s.chars().next_back();
+    }
+
+    #[inline]
+    fn print_codepoints(&mut self, codepoints: &[u32]) {
+        if codepoints.is_empty() {
+            return;
+        }
+        self.handler.input_codepoints(codepoints);
+        if let Some(&last) = codepoints.last() {
+            self.state.preceding_char = char::from_u32(last);
+        }
     }
 
     fn execute(&mut self, byte: u8) {
