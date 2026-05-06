@@ -4155,7 +4155,7 @@ dependencies = [
  "rio-window",
  "rustc-hash 2.1.2",
  "serde",
- "simdutf8",
+ "simdutf",
  "smallvec",
  "sugarloaf",
  "teletypewriter",
@@ -4518,10 +4518,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "703d5c7ef118737c72f1af64ad2f6f8c5e1921f818cdcb97b8fe6fc69bf66214"
 
 [[package]]
-name = "simdutf8"
-version = "0.1.5"
+name = "simdutf"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+checksum = "5f542752c7335a9174e7bb81112c3ca1415a7a6b6ec2c3e840aca347a30f9141"
+dependencies = [
+ "bitflags 2.11.1",
+ "cc",
+]
 
 [[package]]
 name = "siphasher"

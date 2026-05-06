@@ -1,7 +1,4 @@
-use base64::{
-    engine::general_purpose::{STANDARD as BASE64, STANDARD_NO_PAD},
-    Engine,
-};
+use crate::simd_base64;
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -935,16 +932,14 @@ fn decode_payload_base64(payload: &[u8]) -> Option<Vec<u8>> {
     if payload.is_empty() {
         return Some(Vec::new());
     }
-    match BASE64.decode(payload) {
-        Ok(data) => Some(data),
-        Err(_) => match STANDARD_NO_PAD.decode(payload) {
-            Ok(data) => Some(data),
-            Err(e) => {
-                debug!("Base64 payload decode failed: {:?}", e);
-                None
-            }
-        },
+    if let Some(data) = simd_base64::decode(payload) {
+        return Some(data);
     }
+    if let Some(data) = simd_base64::decode_no_pad(payload) {
+        return Some(data);
+    }
+    debug!("Base64 payload decode failed");
+    None
 }
 
 /// Error emitted from `create_graphic_data`. Maps directly to kitty
@@ -1492,6 +1487,8 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use base64::Engine as _;
 
     fn parse_kitty_graphics_protocol(
         keys: &str,
