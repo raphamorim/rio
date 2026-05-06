@@ -4640,7 +4640,7 @@ mod tests {
     /// path get caught at test time.
     #[test]
     fn osc8_hyperlink_basic() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4652,7 +4652,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         // Plain text, then "click" wrapped in an OSC 8, then plain "."
         // The bell-terminated form is what most shells emit.
@@ -4694,7 +4694,7 @@ mod tests {
     /// the boundary by id comparison.
     #[test]
     fn osc8_hyperlink_two_distinct_links_use_distinct_ids() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4706,7 +4706,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         let bytes = b"\x1b]8;;https://a.example\x07A\x1b]8;;\x07\
                       \x1b]8;;https://b.example\x07B\x1b]8;;\x07";
@@ -4731,7 +4731,7 @@ mod tests {
     /// after the reset must not inherit the previous link.
     #[test]
     fn osc8_hyperlink_reset_clears_template() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4743,7 +4743,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         // Open a hyperlink, write 'X', close it, then write 'Y'.
         processor.advance(&mut cw, b"\x1b]8;;https://example.com\x07X\x1b]8;;\x07Y");
@@ -4763,7 +4763,7 @@ mod tests {
     /// after the link on those lines).
     #[test]
     fn osc8_hyperlink_spans_linefeed() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4775,7 +4775,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         // "AB\nCD" with the whole thing inside one OSC 8 link.
         processor.advance(
@@ -6304,9 +6304,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor: crate::performer::handler::Processor<
-            crate::performer::handler::StdSyncHandler,
-        > = crate::performer::handler::Processor::new();
+        let mut processor = crate::performer::handler::Processor::default();
 
         // 32-bit image_id with high byte non-zero (matches icat's
         // rejection-sample loop in `transmit.go:280-288`).

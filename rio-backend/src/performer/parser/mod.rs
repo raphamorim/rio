@@ -20,7 +20,7 @@ mod params;
 
 pub use params::{Params, ParamsIter};
 
-const MAX_INTERMEDIATES: usize = 2;
+const MAX_INTERMEDIATES: usize = 4;
 const MAX_OSC_PARAMS: usize = 16;
 
 /// Inline OSC byte capacity. Sized to absorb common OSCs (titles, color
@@ -359,8 +359,8 @@ impl Parser {
                 self.state = State::Ground
             }
             0x5D => {
-                self.osc_raw.clear();
-                self.osc_num_params = 0;
+                // `osc_end` already clears state at the end of every OSC, so the
+                // buffer is guaranteed empty when re-entering OSC state.
                 self.state = State::OscString
             }
             0x5E => {
