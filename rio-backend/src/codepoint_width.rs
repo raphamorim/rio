@@ -1,7 +1,6 @@
 //! Fast codepoint width lookup.
 //!
-//! Mirrors Ghostty's `src/simd/codepoint_width.zig` shape: a flat
-//! BMP table indexed by `u32` codepoint, computed once at first use,
+//! Flat BMP table indexed by `u32` codepoint, computed once at first use,
 //! used for the bulk per-codepoint width queries the parser emits via
 //! [`Handler::input_codepoints`]. The table is 64 KiB of `u8` and
 //! amortises to zero on subsequent calls.

@@ -654,9 +654,11 @@ impl Parser {
 
     /// Advance the parser state from ground.
     ///
-    /// The ground state is handled separately since it can only be left using
-    /// the escape character (`\x1b`). This allows more efficient parsing by
-    /// using SIMD search with [`memchr`].
+    /// Single-pass shape: `memchr` finds the next ESC, then
+    /// [`Self::ground_dispatch`] walks the prefix, decoding non-ASCII runs
+    /// through `simdutf` with inline Maximal-Subpart U+FFFD replacement for
+    /// invalid UTF-8. The separate `validate` pass the previous shape ran
+    /// is gone — validation is fused into the decode call.
     #[inline]
     fn advance_ground<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) -> usize {
         // Find the next escape character.
@@ -670,64 +672,37 @@ impl Parser {
             return 1;
         }
 
-        match crate::simd_utf8::validate(&bytes[..plain_chars]) {
-            Ok(parsed) => {
-                self.ground_dispatch(performer, parsed);
-                let mut processed = plain_chars;
+        let has_trailing_esc = plain_chars < num_bytes;
+        let prefix = &bytes[..plain_chars];
 
-                // If there's another character, it must be escape so process it directly.
-                if processed < num_bytes {
-                    self.state = State::Escape;
-                    self.reset_params();
-                    processed += 1;
-                }
+        // No ESC follows: peel any valid-so-far partial UTF-8 sequence off
+        // the tail and stash it for the next call. With a trailing ESC, any
+        // partial bytes before the ESC are pre-ESC garbage and get U+FFFD-
+        // replaced by the MSP-aware decode loop instead.
+        let process_len = if has_trailing_esc {
+            plain_chars
+        } else {
+            trim_valid_partial_utf8(prefix)
+        };
 
-                processed
-            }
-            // Handle invalid and partial utf8.
-            Err(err) => {
-                // Dispatch all the valid bytes.
-                let valid_bytes = err.valid_up_to();
-                let parsed = unsafe { str::from_utf8_unchecked(&bytes[..valid_bytes]) };
-                self.ground_dispatch(performer, parsed);
+        self.ground_dispatch(performer, &prefix[..process_len]);
 
-                match err.error_len() {
-                    Some(len) => {
-                        // Execute C1 escapes or emit replacement character.
-                        if len == 1 && bytes[valid_bytes] <= 0x9F {
-                            performer.execute(bytes[valid_bytes]);
-                        } else {
-                            performer.print('�');
-                        }
+        if process_len < plain_chars {
+            // Stash truncated bytes for the next call.
+            let partial = &prefix[process_len..];
+            let dst_start = self.partial_utf8_len;
+            let dst_end = dst_start + partial.len();
+            self.partial_utf8[dst_start..dst_end].copy_from_slice(partial);
+            self.partial_utf8_len = dst_end;
+            return num_bytes;
+        }
 
-                        // Restart processing after the invalid bytes.
-                        //
-                        // While we could theoretically try to just re-parse
-                        // `bytes[valid_bytes + len..plain_chars]`, it's easier
-                        // to just skip it and invalid utf8 is pretty rare anyway.
-                        valid_bytes + len
-                    }
-                    None => {
-                        if plain_chars < num_bytes {
-                            // Process bytes cut off by escape.
-                            performer.print('�');
-                            self.state = State::Escape;
-                            self.reset_params();
-                            plain_chars + 1
-                        } else {
-                            // Process bytes cut off by the buffer end.
-                            let extra_bytes = num_bytes - valid_bytes;
-                            let partial_len = self.partial_utf8_len + extra_bytes;
-                            self.partial_utf8[self.partial_utf8_len..partial_len]
-                                .copy_from_slice(
-                                    &bytes[valid_bytes..valid_bytes + extra_bytes],
-                                );
-                            self.partial_utf8_len = partial_len;
-                            num_bytes
-                        }
-                    }
-                }
-            }
+        if has_trailing_esc {
+            self.state = State::Escape;
+            self.reset_params();
+            plain_chars + 1
+        } else {
+            num_bytes
         }
     }
 
@@ -796,18 +771,20 @@ impl Parser {
         }
     }
 
-    /// Handle ground dispatch of print/execute for all characters in a string.
+    /// Handle ground dispatch of print/execute for a (possibly invalid)
+    /// UTF-8 byte slice.
     ///
     /// Three batched paths:
     /// - ASCII printable runs (`0x20..=0x7E`) → one [`Perform::print_str`].
     /// - ASCII control bytes (`0x00..=0x1F`, `0x7F`) → [`Perform::execute`].
     /// - Multi-byte UTF-8 runs (any byte ≥ `0x80`) → SIMD-decoded via
-    ///   `simdutf::convert_utf8_to_utf32` into [`Self::decode_buf`], then
-    ///   dispatched as one [`Perform::print_codepoints`] call (with C1
-    ///   controls `U+0080..U+009F` split out as individual `execute`).
+    ///   `simdutf::convert_utf8_to_utf32_with_errors` into
+    ///   [`Self::decode_buf`] with inline Maximal-Subpart U+FFFD
+    ///   replacement, then dispatched as one [`Perform::print_codepoints`]
+    ///   call (with C1 controls `U+0080..U+009F` split out as individual
+    ///   `execute`).
     #[inline]
-    fn ground_dispatch<P: Perform>(&mut self, performer: &mut P, text: &str) {
-        let bytes = text.as_bytes();
+    fn ground_dispatch<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
         let mut i = 0;
         while i < bytes.len() {
             let b = bytes[i];
@@ -826,6 +803,14 @@ impl Parser {
             } else if b < 0x80 {
                 performer.execute(b);
                 i += 1;
+            } else if (0x80..=0x9F).contains(&b) {
+                // Bare C1 control byte: any properly-encoded UTF-8 sequence
+                // starts with `C2..=F4`, so a leading byte in `80..=9F` is
+                // by definition standalone. Some legacy protocols emit C1
+                // controls as raw bytes — dispatch as `execute` rather
+                // than U+FFFD-replacing them.
+                performer.execute(b);
+                i += 1;
             } else {
                 // Multi-byte UTF-8 run. Find its end (next ASCII byte).
                 let end = bytes[i..]
@@ -833,9 +818,6 @@ impl Parser {
                     .position(|&b| b < 0x80)
                     .map(|p| i + p)
                     .unwrap_or(bytes.len());
-                // SAFETY: caller already validated that `bytes` is well-formed
-                // UTF-8, and `i` lands on a codepoint boundary because every
-                // preceding byte was 1-byte ASCII.
                 self.decode_codepoints(&bytes[i..end]);
                 Self::dispatch_codepoints(performer, &self.decode_buf);
                 i = end;
@@ -843,30 +825,56 @@ impl Parser {
         }
     }
 
-    /// SIMD-transcode a validated UTF-8 byte slice into [`Self::decode_buf`]
-    /// as `u32` codepoints, sized exactly to the decoded count.
+    /// SIMD-transcode a UTF-8 byte slice into [`Self::decode_buf`] as `u32`
+    /// codepoints, replacing each invalid UTF-8 maximal subpart with one
+    /// U+FFFD inline (W3C/Unicode "Substitution of Maximal Subparts").
     #[inline]
     fn decode_codepoints(&mut self, src: &[u8]) {
         self.decode_buf.clear();
-        // Worst-case 1 codepoint per byte (only true for ASCII; for the
-        // ≥0x80 runs we feed in here it's ≤ src.len() / 2). Reserve to
-        // src.len() so the FFI pointer write is always in-bounds.
+        // Worst case: 1 codepoint per source byte. Reserve up-front so the
+        // raw pointer writes simdutf does are always in-bounds.
         self.decode_buf.reserve(src.len());
-        // SAFETY:
-        //  - `src` is valid UTF-8 (caller invariant).
-        //  - `decode_buf.capacity() >= src.len() ≥ #codepoints`.
-        //  - The buffer is exclusively borrowed.
-        let written = unsafe {
-            simdutf::convert_utf8_to_utf32(
-                src.as_ptr(),
-                src.len(),
-                self.decode_buf.as_mut_ptr(),
-            )
-        };
-        // SAFETY: `simdutf` wrote exactly `written` `u32` values starting
-        // at the buffer's data pointer.
-        unsafe {
-            self.decode_buf.set_len(written);
+
+        let mut consumed = 0;
+        while consumed < src.len() {
+            // SAFETY:
+            //  - `src.as_ptr().add(consumed)` is a valid pointer into `src`
+            //    (consumed < src.len()).
+            //  - `decode_buf` has capacity `src.len()` and currently holds
+            //    `decode_buf.len()` items; remaining slots ≥ remaining
+            //    source bytes ≥ codepoints simdutf will produce.
+            let result = unsafe {
+                simdutf::convert_utf8_to_utf32_with_errors(
+                    src.as_ptr().add(consumed),
+                    src.len() - consumed,
+                    self.decode_buf.as_mut_ptr().add(self.decode_buf.len()),
+                )
+            };
+            if result.error == simdutf::ErrorCode::Success {
+                // SAFETY: simdutf wrote `result.count` u32 values.
+                unsafe {
+                    self.decode_buf
+                        .set_len(self.decode_buf.len() + result.count);
+                }
+                return;
+            }
+
+            // simdutf errored at offset `result.count` within the slice
+            // starting at `consumed`. It already wrote codepoints for the
+            // valid prefix; count them so the buffer length stays in sync.
+            let valid_prefix = &src[consumed..consumed + result.count];
+            let written = simdutf::count_utf8(valid_prefix);
+            // SAFETY: simdutf wrote exactly `written` u32 values.
+            unsafe {
+                self.decode_buf.set_len(self.decode_buf.len() + written);
+            }
+
+            // Emit one U+FFFD for the maximal invalid subpart at the error
+            // position and advance past it.
+            let err_pos = consumed + result.count;
+            let subpart = maximal_subpart(&src[err_pos..]);
+            self.decode_buf.push(0xFFFD);
+            consumed = err_pos + subpart;
         }
     }
 
@@ -889,6 +897,106 @@ impl Parser {
             performer.print_codepoints(&codepoints[start..]);
         }
     }
+}
+
+/// Length of the maximal valid subpart of a UTF-8 sequence starting at
+/// `p[0]`, per Unicode Table 3-7 / W3C "U+FFFD Substitution of Maximal
+/// Subparts". Each maximal subpart maps to exactly one U+FFFD when
+/// reporting invalid input.
+fn maximal_subpart(p: &[u8]) -> usize {
+    if p.is_empty() {
+        return 0;
+    }
+    let b0 = p[0];
+
+    // Continuation bytes, overlong leads, or invalid leads: each is its
+    // own 1-byte maximal subpart.
+    if b0 < 0xC2 || b0 > 0xF4 {
+        return 1;
+    }
+
+    // Determine expected sequence length and per-byte continuation ranges
+    // from the lead byte (Unicode Table 3-7).
+    let (seq_len, lo, hi): (usize, [u8; 3], [u8; 3]) = match b0 {
+        0xC2..=0xDF => (2, [0x80, 0, 0], [0xBF, 0, 0]),
+        0xE0 => (3, [0xA0, 0x80, 0], [0xBF, 0xBF, 0]),
+        0xE1..=0xEC => (3, [0x80, 0x80, 0], [0xBF, 0xBF, 0]),
+        0xED => (3, [0x80, 0x80, 0], [0x9F, 0xBF, 0]),
+        0xEE..=0xEF => (3, [0x80, 0x80, 0], [0xBF, 0xBF, 0]),
+        0xF0 => (4, [0x90, 0x80, 0x80], [0xBF, 0xBF, 0xBF]),
+        0xF1..=0xF3 => (4, [0x80, 0x80, 0x80], [0xBF, 0xBF, 0xBF]),
+        0xF4 => (4, [0x80, 0x80, 0x80], [0x8F, 0xBF, 0xBF]),
+        _ => unreachable!(),
+    };
+
+    let mut valid = 1;
+    for i in 0..seq_len - 1 {
+        if valid >= p.len() {
+            break;
+        }
+        let cb = p[valid];
+        if cb < lo[i] || cb > hi[i] {
+            break;
+        }
+        valid += 1;
+    }
+    valid
+}
+
+/// Length of `input` excluding any trailing valid-so-far UTF-8 sequence.
+/// Bytes that form an invalid lead (`<C2` or `>F4`) at the tail are NOT
+/// trimmed — they're left in place so the MSP-aware decode loop can
+/// replace them with U+FFFD. Mirrors ghostty's `TrimValidPartialUTF8`.
+fn trim_valid_partial_utf8(input: &[u8]) -> usize {
+    if input.is_empty() {
+        return 0;
+    }
+
+    // A partial trailing sequence is at most 4 bytes (max UTF-8 length).
+    let check_start = if input.len() > 4 { input.len() - 4 } else { 0 };
+    let mut pos = input.len();
+    while pos > check_start {
+        let b = input[pos - 1];
+
+        // Skip continuation bytes — they could belong to a partial sequence.
+        if (b & 0xC0) == 0x80 {
+            pos -= 1;
+            continue;
+        }
+
+        // Found a non-continuation byte. Only a valid multi-byte lead
+        // (C2-F4) can start a trim-worthy partial sequence.
+        if b < 0xC2 || b > 0xF4 {
+            return input.len();
+        }
+
+        let expected = if b <= 0xDF {
+            2
+        } else if b <= 0xEF {
+            3
+        } else {
+            4
+        };
+
+        let seq_remaining = input.len() - (pos - 1);
+        if seq_remaining >= expected {
+            // Sequence is structurally complete — let the decoder handle it.
+            return input.len();
+        }
+
+        let seq_start = pos - 1;
+        let subpart = maximal_subpart(&input[seq_start..]);
+
+        if subpart == seq_remaining {
+            // All trailing bytes are part of a valid prefix → trim them.
+            return seq_start;
+        }
+
+        // Sequence is ill-formed; let the MSP-aware decoder replace it.
+        return input.len();
+    }
+
+    input.len()
 }
 
 #[derive(PartialEq, Eq, Debug, Default, Copy, Clone)]
