@@ -911,7 +911,7 @@ fn maximal_subpart(p: &[u8]) -> usize {
 
     // Continuation bytes, overlong leads, or invalid leads: each is its
     // own 1-byte maximal subpart.
-    if b0 < 0xC2 || b0 > 0xF4 {
+    if !(0xC2..=0xF4).contains(&b0) {
         return 1;
     }
 
@@ -966,7 +966,7 @@ fn trim_valid_partial_utf8(input: &[u8]) -> usize {
 
         // Found a non-continuation byte. Only a valid multi-byte lead
         // (C2-F4) can start a trim-worthy partial sequence.
-        if b < 0xC2 || b > 0xF4 {
+        if !(0xC2..=0xF4).contains(&b) {
             return input.len();
         }
 
