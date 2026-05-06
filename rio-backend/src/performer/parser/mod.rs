@@ -1,97 +1,122 @@
-//! Parser for implementing virtual terminal emulators
+//! Parser for virtual terminal escape sequences.
 //!
-//! [`Parser`] is implemented according to [Paul Williams' ANSI parser
-//! state machine]. The state machine doesn't assign meaning to the parsed data
-//! and is thus not itself sufficient for writing a terminal emulator. Instead,
-//! it is expected that an implementation of [`Perform`] is provided which does
-//! something useful with the parsed data. The [`Parser`] handles the book
-//! keeping, and the [`Perform`] gets to simply handle actions.
+//! [`Parser`] implements [Paul Williams' ANSI parser state machine]. The state
+//! machine doesn't assign meaning to the parsed data — that's the job of the
+//! [`Perform`] implementer.
 //!
-//! # Examples
+//! Forked from Alacritty's VTE; previously the standalone `copa` crate. The
+//! crate-private [`Perform`] trait keeps a single dispatch shape so the same
+//! state machine drives both the production [`Performer`] and unit-test
+//! dispatchers.
 //!
-//! For an example of using the [`Parser`] please see the examples folder. The example included
-//! there simply logs all the actions [`Perform`] does. One quick thing to see it in action is to
-//! pipe `vim` into it
-//!
-//! ```sh
-//! cargo build --release --example parselog
-//! vim | target/release/examples/parselog
-//! ```
-//!
-//! Just type `:q` to exit.
-//!
-//! # Differences from original state machine description
-//!
-//! * UTF-8 Support for Input
-//! * OSC Strings can be terminated by 0x07
-//! * Only supports 7-bit codes. Some 8-bit codes are still supported, but they no longer work in
-//!   all states.
-//!
-//! [`Parser`]: struct.Parser.html
-//! [`Perform`]: trait.Perform.html
 //! [Paul Williams' ANSI parser state machine]: https://vt100.net/emu/dec_ansi_parser
+//! [`Performer`]: super::handler::Performer
+
 #![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
-#![cfg_attr(not(feature = "std"), no_std)]
 
-use core::mem::MaybeUninit;
-use core::str;
-
-#[cfg(not(feature = "std"))]
-use arrayvec::ArrayVec;
+use std::str;
 
 mod params;
 
 pub use params::{Params, ParamsIter};
 
-const MAX_INTERMEDIATES: usize = 2;
+const MAX_INTERMEDIATES: usize = 4;
 const MAX_OSC_PARAMS: usize = 16;
-const MAX_OSC_RAW: usize = 1024;
 
-/// Parser for raw _VTE_ protocol which delegates actions to a [`Perform`]
-///
-/// [`Perform`]: trait.Perform.html
-///
-/// Generic over the value for the size of the raw Operating System Command
-/// buffer. Only used when the `std` feature is not enabled.
+/// Inline OSC byte capacity. Sized to absorb common OSCs (titles, color
+/// queries, hyperlink URLs, kitty graphics control headers) without
+/// allocation. Larger payloads (e.g. OSC 52 clipboard pastes) spill into
+/// `OscBuffer::overflow`.
+const OSC_FIXED_LEN: usize = 2048;
+
+/// Parser for raw _VTE_ protocol which delegates actions to a [`Perform`].
 #[derive(Default)]
-pub struct Parser<const OSC_RAW_BUF_SIZE: usize = MAX_OSC_RAW> {
+pub(crate) struct Parser {
     state: State,
     intermediates: [u8; MAX_INTERMEDIATES],
     intermediate_idx: usize,
     params: Params,
     param: u16,
-    #[cfg(not(feature = "std"))]
-    osc_raw: ArrayVec<u8, OSC_RAW_BUF_SIZE>,
-    #[cfg(feature = "std")]
-    osc_raw: Vec<u8>,
+    osc_raw: OscBuffer,
     osc_params: [(usize, usize); MAX_OSC_PARAMS],
     osc_num_params: usize,
     ignoring: bool,
     partial_utf8: [u8; 4],
     partial_utf8_len: usize,
+    /// Reused output buffer for [`simdutf::convert_utf8_to_utf32`]. Grows
+    /// to fit the largest non-ASCII ground-state chunk seen so far; empty
+    /// in steady state when sessions are pure ASCII.
+    decode_buf: Vec<u32>,
+}
+
+/// OSC accumulator with a fixed-size inline buffer and a heap fallback.
+///
+/// The first `OSC_FIXED_LEN` bytes of any OSC sequence land in `fixed`
+/// (zero allocation). On overflow, the populated prefix of `fixed` is copied
+/// into `overflow` once and all subsequent writes go to the `Vec` only — so
+/// at any moment a single backing slice holds the contiguous payload.
+struct OscBuffer {
+    fixed: [u8; OSC_FIXED_LEN],
+    fixed_len: usize,
+    overflow: Vec<u8>,
+}
+
+impl Default for OscBuffer {
+    fn default() -> Self {
+        Self {
+            fixed: [0; OSC_FIXED_LEN],
+            fixed_len: 0,
+            overflow: Vec::new(),
+        }
+    }
+}
+
+impl OscBuffer {
+    #[inline]
+    fn len(&self) -> usize {
+        if self.overflow.is_empty() {
+            self.fixed_len
+        } else {
+            self.overflow.len()
+        }
+    }
+
+    #[inline]
+    fn push(&mut self, byte: u8) {
+        if self.overflow.is_empty() {
+            if self.fixed_len < OSC_FIXED_LEN {
+                self.fixed[self.fixed_len] = byte;
+                self.fixed_len += 1;
+                return;
+            }
+            // Spill: promote the current contents to the heap once, then
+            // append. After this point, `overflow.len() >= OSC_FIXED_LEN`,
+            // so the `is_empty()` check above stays false until `clear`.
+            self.overflow
+                .extend_from_slice(&self.fixed[..self.fixed_len]);
+        }
+        self.overflow.push(byte);
+    }
+
+    #[inline]
+    fn slice(&self, start: usize, end: usize) -> &[u8] {
+        if self.overflow.is_empty() {
+            &self.fixed[start..end]
+        } else {
+            &self.overflow[start..end]
+        }
+    }
+
+    #[inline]
+    fn clear(&mut self) {
+        self.fixed_len = 0;
+        // Keep `overflow`'s capacity so a session that hits one large paste
+        // doesn't re-allocate on the next one.
+        self.overflow.clear();
+    }
 }
 
 impl Parser {
-    /// Create a new Parser
-    pub fn new() -> Parser {
-        Default::default()
-    }
-}
-
-impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
-    /// Create a new Parser with a custom size for the Operating System Command
-    /// buffer.
-    ///
-    /// Call with a const-generic param on `Parser`, like:
-    ///
-    /// ```rust
-    /// let mut p = copa::Parser::<64>::new_with_size();
-    /// ```
-    #[cfg(not(feature = "std"))]
-    pub fn new_with_size() -> Parser<OSC_RAW_BUF_SIZE> {
-        Default::default()
-    }
-
     #[inline]
     fn params(&self) -> &Params {
         &self.params
@@ -105,10 +130,8 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
     /// Advance the parser state.
     ///
     /// Requires a [`Perform`] implementation to handle the triggered actions.
-    ///
-    /// [`Perform`]: trait.Perform.html
     #[inline]
-    pub fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
+    pub(crate) fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
         let mut i = 0;
 
         // Handle partial codepoints from previous calls to `advance`.
@@ -129,43 +152,6 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         }
     }
 
-    /// Partially advance the parser state.
-    ///
-    /// This is equivalent to [`Self::advance`], but stops when
-    /// [`Perform::terminated`] is true after reading a byte.
-    ///
-    /// Returns the number of bytes read before termination.
-    ///
-    /// See [`Perform::advance`] for more details.
-    #[inline]
-    #[must_use = "Returned value should be used to processs the remaining bytes"]
-    pub fn advance_until_terminated<P: Perform>(
-        &mut self,
-        performer: &mut P,
-        bytes: &[u8],
-    ) -> usize {
-        let mut i = 0;
-
-        // Handle partial codepoints from previous calls to `advance`.
-        if self.partial_utf8_len != 0 {
-            i += self.advance_partial_utf8(performer, bytes);
-        }
-
-        while i != bytes.len() && !performer.terminated() {
-            match self.state {
-                State::Ground => i += self.advance_ground(performer, &bytes[i..]),
-                _ => {
-                    // Inlining it results in worse codegen.
-                    let byte = bytes[i];
-                    self.change_state(performer, byte);
-                    i += 1;
-                }
-            }
-        }
-
-        i
-    }
-
     #[inline(always)]
     fn change_state<P: Perform>(&mut self, performer: &mut P, byte: u8) {
         match self.state {
@@ -181,9 +167,9 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             State::Escape => self.advance_esc(performer, byte),
             State::EscapeIntermediate => self.advance_esc_intermediate(performer, byte),
             State::OscString => self.advance_osc_string(performer, byte),
-            State::SosString => self.advance_opaque_string(SosDispatch(performer), byte),
+            State::SosString => self.advance_sos_string(performer, byte),
             State::ApcString => self.advance_apc_string(performer, byte),
-            State::PmString => self.advance_opaque_string(PmDispatch(performer), byte),
+            State::PmString => self.advance_pm_string(performer, byte),
             State::Ground => unreachable!(),
         }
     }
@@ -377,8 +363,8 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.state = State::Ground
             }
             0x5D => {
-                self.osc_raw.clear();
-                self.osc_num_params = 0;
+                // `osc_end` already clears state at the end of every OSC, so the
+                // buffer is guaranteed empty when re-entering OSC state.
                 self.state = State::OscString
             }
             0x5E => {
@@ -435,105 +421,78 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.reset_params();
                 self.state = State::Escape
             }
-            0x3B => {
-                #[cfg(not(feature = "std"))]
-                {
-                    if self.osc_raw.is_full() {
-                        return;
-                    }
-                }
-                self.action_osc_put_param()
-            }
+            0x3B => self.action_osc_put_param(),
             _ => self.action_osc_put(byte),
         }
     }
 
     #[inline(always)]
     fn advance_apc_string<P: Perform>(&mut self, performer: &mut P, byte: u8) {
+        // Bytes stream straight through to `performer.apc_put`; the Performer
+        // owns its own accumulation buffer (`apc_state.buffer`) and parses
+        // kitty-style headers from there. The parser keeps no APC state.
         match byte {
             0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1C..=0x1F => (), // Ignore control bytes
             0x07 => {
-                // Bell-terminated APC
-                self.action_apc_end(performer);
-                self.osc_raw.clear();
-                self.osc_num_params = 0;
+                // Bell-terminated APC.
+                performer.apc_end();
                 self.state = State::Ground;
             }
             0x18 | 0x1A => {
-                // C0 termination (CAN or SUB)
-                self.action_apc_put(performer, byte);
-                self.action_apc_end(performer);
+                // C0 termination (CAN or SUB).
+                performer.apc_put(byte);
+                performer.apc_end();
                 performer.execute(byte);
-                self.osc_raw.clear();
-                self.osc_num_params = 0;
                 self.state = State::Ground;
             }
             0x1B => {
-                // Start of ST termination (\x1b\)
-                self.action_apc_end(performer);
-                self.osc_raw.clear();
-                self.osc_num_params = 0;
+                // Start of ST termination (`\x1b\`).
+                performer.apc_end();
                 self.state = State::Escape;
             }
-            0x3B => {
-                // Semicolon separates control data from payload
-                #[cfg(not(feature = "std"))]
-                {
-                    if self.osc_raw.is_full() {
-                        return;
-                    }
-                }
-                self.action_apc_put(performer, byte);
-                self.action_osc_put_param(); // Reuse existing method to track parameter boundaries
-            }
-            0x2C => {
-                // Comma is part of the control data (separates key-value pairs)
-                // Don't create a parameter boundary
-                self.action_apc_put(performer, byte);
-            }
-            0x20..=0xFF => {
-                // Collect valid APC content (control data or payload)
-                self.action_apc_put(performer, byte);
-            }
+            0x20..=0xFF => performer.apc_put(byte),
         }
     }
 
     #[inline(always)]
-    fn action_apc_put<P: Perform>(&mut self, performer: &mut P, byte: u8) {
-        #[cfg(not(feature = "std"))]
-        {
-            if self.osc_raw.is_full() {
-                return;
-            }
-        }
-        self.osc_raw.push(byte);
-        performer.apc_put(byte); // Optionally pass to apc_put for immediate processing
-    }
-
-    #[inline]
-    fn action_apc_end<P: Perform>(&self, performer: &mut P) {
-        // APCs are handled through apc_start/apc_put/apc_end hooks which properly
-        // accumulate large payloads. This function just calls apc_end() to complete the sequence.
-        performer.apc_end();
-    }
-
-    #[inline(always)]
-    fn advance_opaque_string<D: OpaqueDispatch>(&mut self, mut dispatcher: D, byte: u8) {
+    fn advance_sos_string<P: Perform>(&mut self, performer: &mut P, byte: u8) {
         match byte {
             0x07 => {
-                dispatcher.opaque_end();
+                performer.sos_end();
                 self.state = State::Ground
             }
             0x18 | 0x1A => {
-                dispatcher.opaque_end();
-                dispatcher.execute(byte);
+                performer.sos_end();
+                performer.execute(byte);
                 self.state = State::Ground
             }
             0x1B => {
-                dispatcher.opaque_end();
+                performer.sos_end();
                 self.state = State::Escape
             }
-            0x20..=0xFF => dispatcher.opaque_put(byte),
+            0x20..=0xFF => performer.sos_put(byte),
+            // Ignore all other control bytes.
+            _ => (),
+        }
+    }
+
+    #[inline(always)]
+    fn advance_pm_string<P: Perform>(&mut self, performer: &mut P, byte: u8) {
+        match byte {
+            0x07 => {
+                performer.pm_end();
+                self.state = State::Ground
+            }
+            0x18 | 0x1A => {
+                performer.pm_end();
+                performer.execute(byte);
+                self.state = State::Ground
+            }
+            0x1B => {
+                performer.pm_end();
+                self.state = State::Escape
+            }
+            0x20..=0xFF => performer.pm_put(byte),
             // Ignore all other control bytes.
             _ => (),
         }
@@ -657,12 +616,6 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
 
     #[inline(always)]
     fn action_osc_put(&mut self, byte: u8) {
-        #[cfg(not(feature = "std"))]
-        {
-            if self.osc_raw.is_full() {
-                return;
-            }
-        }
         self.osc_raw.push(byte);
     }
 
@@ -683,32 +636,29 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         self.params.clear();
     }
 
-    /// Separate method for osc_dispatch that borrows self as read-only
+    /// Separate method for osc_dispatch that borrows self as read-only.
     ///
-    /// The aliasing is needed here for multiple slices into self.osc_raw
+    /// The aliasing is needed here for multiple slices into self.osc_raw.
     #[inline]
     fn osc_dispatch<P: Perform>(&self, performer: &mut P, byte: u8) {
-        let mut slices: [MaybeUninit<&[u8]>; MAX_OSC_PARAMS] =
-            unsafe { MaybeUninit::uninit().assume_init() };
-
-        for (i, slice) in slices.iter_mut().enumerate().take(self.osc_num_params) {
-            let indices = self.osc_params[i];
-            *slice = MaybeUninit::new(&self.osc_raw[indices.0..indices.1]);
+        let mut slices: [&[u8]; MAX_OSC_PARAMS] = [&[]; MAX_OSC_PARAMS];
+        for (slice, &(start, end)) in slices
+            .iter_mut()
+            .zip(self.osc_params.iter())
+            .take(self.osc_num_params)
+        {
+            *slice = self.osc_raw.slice(start, end);
         }
-
-        unsafe {
-            let num_params = self.osc_num_params;
-            let params = &slices[..num_params] as *const [MaybeUninit<&[u8]>]
-                as *const [&[u8]];
-            performer.osc_dispatch(&*params, byte == 0x07);
-        }
+        performer.osc_dispatch(&slices[..self.osc_num_params], byte == 0x07);
     }
 
     /// Advance the parser state from ground.
     ///
-    /// The ground state is handled separately since it can only be left using
-    /// the escape character (`\x1b`). This allows more efficient parsing by
-    /// using SIMD search with [`memchr`].
+    /// Single-pass shape: `memchr` finds the next ESC, then
+    /// [`Self::ground_dispatch`] walks the prefix, decoding non-ASCII runs
+    /// through `simdutf` with inline Maximal-Subpart U+FFFD replacement for
+    /// invalid UTF-8. The separate `validate` pass the previous shape ran
+    /// is gone — validation is fused into the decode call.
     #[inline]
     fn advance_ground<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) -> usize {
         // Find the next escape character.
@@ -722,68 +672,37 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             return 1;
         }
 
-        match simdutf8::basic::from_utf8(&bytes[..plain_chars]) {
-            Ok(parsed) => {
-                Self::ground_dispatch(performer, parsed);
-                let mut processed = plain_chars;
+        let has_trailing_esc = plain_chars < num_bytes;
+        let prefix = &bytes[..plain_chars];
 
-                // If there's another character, it must be escape so process it directly.
-                if processed < num_bytes {
-                    self.state = State::Escape;
-                    self.reset_params();
-                    processed += 1;
-                }
+        // No ESC follows: peel any valid-so-far partial UTF-8 sequence off
+        // the tail and stash it for the next call. With a trailing ESC, any
+        // partial bytes before the ESC are pre-ESC garbage and get U+FFFD-
+        // replaced by the MSP-aware decode loop instead.
+        let process_len = if has_trailing_esc {
+            plain_chars
+        } else {
+            trim_valid_partial_utf8(prefix)
+        };
 
-                processed
-            }
-            // Handle invalid and partial utf8.
-            Err(_) => {
-                // Use simdutf8::compat::from_utf8 to get detailed error information
-                let compat_err =
-                    simdutf8::compat::from_utf8(&bytes[..plain_chars]).unwrap_err();
+        self.ground_dispatch(performer, &prefix[..process_len]);
 
-                // Dispatch all the valid bytes.
-                let valid_bytes = compat_err.valid_up_to();
-                let parsed = unsafe { str::from_utf8_unchecked(&bytes[..valid_bytes]) };
-                Self::ground_dispatch(performer, parsed);
+        if process_len < plain_chars {
+            // Stash truncated bytes for the next call.
+            let partial = &prefix[process_len..];
+            let dst_start = self.partial_utf8_len;
+            let dst_end = dst_start + partial.len();
+            self.partial_utf8[dst_start..dst_end].copy_from_slice(partial);
+            self.partial_utf8_len = dst_end;
+            return num_bytes;
+        }
 
-                match compat_err.error_len() {
-                    Some(len) => {
-                        // Execute C1 escapes or emit replacement character.
-                        if len == 1 && bytes[valid_bytes] <= 0x9F {
-                            performer.execute(bytes[valid_bytes]);
-                        } else {
-                            performer.print('�');
-                        }
-
-                        // Restart processing after the invalid bytes.
-                        //
-                        // While we could theoretically try to just re-parse
-                        // `bytes[valid_bytes + len..plain_chars]`, it's easier
-                        // to just skip it and invalid utf8 is pretty rare anyway.
-                        valid_bytes + len
-                    }
-                    None => {
-                        if plain_chars < num_bytes {
-                            // Process bytes cut off by escape.
-                            performer.print('�');
-                            self.state = State::Escape;
-                            self.reset_params();
-                            plain_chars + 1
-                        } else {
-                            // Process bytes cut off by the buffer end.
-                            let extra_bytes = num_bytes - valid_bytes;
-                            let partial_len = self.partial_utf8_len + extra_bytes;
-                            self.partial_utf8[self.partial_utf8_len..partial_len]
-                                .copy_from_slice(
-                                    &bytes[valid_bytes..valid_bytes + extra_bytes],
-                                );
-                            self.partial_utf8_len = partial_len;
-                            num_bytes
-                        }
-                    }
-                }
-            }
+        if has_trailing_esc {
+            self.state = State::Escape;
+            self.reset_params();
+            plain_chars + 1
+        } else {
+            num_bytes
         }
     }
 
@@ -802,27 +721,28 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         self.partial_utf8_len += to_copy;
 
         // Parse the unicode character.
-        match simdutf8::basic::from_utf8(&self.partial_utf8[..self.partial_utf8_len]) {
+        match crate::simd_utf8::validate(&self.partial_utf8[..self.partial_utf8_len]) {
             // If the entire buffer is valid, use the first character and continue parsing.
             Ok(parsed) => {
+                // SAFETY: `partial_utf8_len >= 1` (caller guarantee) and `parsed`
+                // is the validated UTF-8 view of those bytes, so it has at least
+                // one character.
                 let c = unsafe { parsed.chars().next().unwrap_unchecked() };
                 performer.print(c);
 
                 self.partial_utf8_len = 0;
                 c.len_utf8() - old_bytes
             }
-            Err(_) => {
-                // Use simdutf8::compat::from_utf8 to get detailed error information
-                let compat_err = simdutf8::compat::from_utf8(
-                    &self.partial_utf8[..self.partial_utf8_len],
-                )
-                .unwrap_err();
-                let valid_bytes = compat_err.valid_up_to();
+            Err(err) => {
+                let valid_bytes = err.valid_up_to();
 
                 // If we have any valid bytes, that means we partially copied another
                 // utf8 character into `partial_utf8`. Since we only care about the
                 // first character, we just ignore the rest.
                 if valid_bytes > 0 {
+                    // SAFETY: `valid_bytes > 0` and the slice up to `valid_bytes` was
+                    // reported as valid UTF-8, so it contains at least one full
+                    // character.
                     let c = unsafe {
                         let parsed =
                             str::from_utf8_unchecked(&self.partial_utf8[..valid_bytes]);
@@ -835,7 +755,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                     return valid_bytes - old_bytes;
                 }
 
-                match compat_err.error_len() {
+                match err.error_len() {
                     // If the partial character was also invalid, emit the replacement
                     // character.
                     Some(invalid_len) => {
@@ -851,16 +771,232 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         }
     }
 
-    /// Handle ground dispatch of print/execute for all characters in a string.
+    /// Handle ground dispatch of print/execute for a (possibly invalid)
+    /// UTF-8 byte slice.
+    ///
+    /// Three batched paths:
+    /// - ASCII printable runs (`0x20..=0x7E`) → one [`Perform::print_str`].
+    /// - ASCII control bytes (`0x00..=0x1F`, `0x7F`) → [`Perform::execute`].
+    /// - Multi-byte UTF-8 runs (any byte ≥ `0x80`) → SIMD-decoded via
+    ///   `simdutf::convert_utf8_to_utf32_with_errors` into
+    ///   [`Self::decode_buf`] with inline Maximal-Subpart U+FFFD
+    ///   replacement, then dispatched as one [`Perform::print_codepoints`]
+    ///   call (with C1 controls `U+0080..U+009F` split out as individual
+    ///   `execute`).
     #[inline]
-    fn ground_dispatch<P: Perform>(performer: &mut P, text: &str) {
-        for c in text.chars() {
-            match c {
-                '\x00'..='\x1f' | '\u{80}'..='\u{9f}' => performer.execute(c as u8),
-                _ => performer.print(c),
+    fn ground_dispatch<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
+        let mut i = 0;
+        while i < bytes.len() {
+            let b = bytes[i];
+
+            if (0x20..=0x7E).contains(&b) {
+                // LLVM auto-vectorizes this byte-range scan into a SIMD compare.
+                let end = bytes[i..]
+                    .iter()
+                    .position(|&b| !(0x20..=0x7E).contains(&b))
+                    .map(|p| i + p)
+                    .unwrap_or(bytes.len());
+                // SAFETY: every byte in 0x20..=0x7E is valid 1-byte UTF-8.
+                let chunk = unsafe { std::str::from_utf8_unchecked(&bytes[i..end]) };
+                performer.print_str(chunk);
+                i = end;
+            } else if b < 0x80 {
+                performer.execute(b);
+                i += 1;
+            } else if (0x80..=0x9F).contains(&b) {
+                // Bare C1 control byte: any properly-encoded UTF-8 sequence
+                // starts with `C2..=F4`, so a leading byte in `80..=9F` is
+                // by definition standalone. Some legacy protocols emit C1
+                // controls as raw bytes — dispatch as `execute` rather
+                // than U+FFFD-replacing them.
+                performer.execute(b);
+                i += 1;
+            } else {
+                // Multi-byte UTF-8 run. Find its end (next ASCII byte).
+                let end = bytes[i..]
+                    .iter()
+                    .position(|&b| b < 0x80)
+                    .map(|p| i + p)
+                    .unwrap_or(bytes.len());
+                self.decode_codepoints(&bytes[i..end]);
+                Self::dispatch_codepoints(performer, &self.decode_buf);
+                i = end;
             }
         }
     }
+
+    /// SIMD-transcode a UTF-8 byte slice into [`Self::decode_buf`] as `u32`
+    /// codepoints, replacing each invalid UTF-8 maximal subpart with one
+    /// U+FFFD inline (W3C/Unicode "Substitution of Maximal Subparts").
+    #[inline]
+    fn decode_codepoints(&mut self, src: &[u8]) {
+        self.decode_buf.clear();
+        // Worst case: 1 codepoint per source byte. Reserve up-front so the
+        // raw pointer writes simdutf does are always in-bounds.
+        self.decode_buf.reserve(src.len());
+
+        let mut consumed = 0;
+        while consumed < src.len() {
+            // SAFETY:
+            //  - `src.as_ptr().add(consumed)` is a valid pointer into `src`
+            //    (consumed < src.len()).
+            //  - `decode_buf` has capacity `src.len()` and currently holds
+            //    `decode_buf.len()` items; remaining slots ≥ remaining
+            //    source bytes ≥ codepoints simdutf will produce.
+            let result = unsafe {
+                simdutf::convert_utf8_to_utf32_with_errors(
+                    src.as_ptr().add(consumed),
+                    src.len() - consumed,
+                    self.decode_buf.as_mut_ptr().add(self.decode_buf.len()),
+                )
+            };
+            if result.error == simdutf::ErrorCode::Success {
+                // SAFETY: simdutf wrote `result.count` u32 values.
+                unsafe {
+                    self.decode_buf
+                        .set_len(self.decode_buf.len() + result.count);
+                }
+                return;
+            }
+
+            // simdutf errored at offset `result.count` within the slice
+            // starting at `consumed`. It already wrote codepoints for the
+            // valid prefix; count them so the buffer length stays in sync.
+            let valid_prefix = &src[consumed..consumed + result.count];
+            let written = simdutf::count_utf8(valid_prefix);
+            // SAFETY: simdutf wrote exactly `written` u32 values.
+            unsafe {
+                self.decode_buf.set_len(self.decode_buf.len() + written);
+            }
+
+            // Emit one U+FFFD for the maximal invalid subpart at the error
+            // position and advance past it.
+            let err_pos = consumed + result.count;
+            let subpart = maximal_subpart(&src[err_pos..]);
+            self.decode_buf.push(0xFFFD);
+            consumed = err_pos + subpart;
+        }
+    }
+
+    /// Split a decoded codepoint slice on C1 control codepoints
+    /// (`U+0080..=U+009F`) and emit non-control runs as
+    /// [`Perform::print_codepoints`], C1 codepoints as [`Perform::execute`].
+    #[inline]
+    fn dispatch_codepoints<P: Perform>(performer: &mut P, codepoints: &[u32]) {
+        let mut start = 0;
+        for (i, &cp) in codepoints.iter().enumerate() {
+            if (0x80..=0x9F).contains(&cp) {
+                if start < i {
+                    performer.print_codepoints(&codepoints[start..i]);
+                }
+                performer.execute(cp as u8);
+                start = i + 1;
+            }
+        }
+        if start < codepoints.len() {
+            performer.print_codepoints(&codepoints[start..]);
+        }
+    }
+}
+
+/// Length of the maximal valid subpart of a UTF-8 sequence starting at
+/// `p[0]`, per Unicode Table 3-7 / W3C "U+FFFD Substitution of Maximal
+/// Subparts". Each maximal subpart maps to exactly one U+FFFD when
+/// reporting invalid input.
+fn maximal_subpart(p: &[u8]) -> usize {
+    if p.is_empty() {
+        return 0;
+    }
+    let b0 = p[0];
+
+    // Continuation bytes, overlong leads, or invalid leads: each is its
+    // own 1-byte maximal subpart.
+    if !(0xC2..=0xF4).contains(&b0) {
+        return 1;
+    }
+
+    // Determine expected sequence length and per-byte continuation ranges
+    // from the lead byte (Unicode Table 3-7).
+    let (seq_len, lo, hi): (usize, [u8; 3], [u8; 3]) = match b0 {
+        0xC2..=0xDF => (2, [0x80, 0, 0], [0xBF, 0, 0]),
+        0xE0 => (3, [0xA0, 0x80, 0], [0xBF, 0xBF, 0]),
+        0xE1..=0xEC => (3, [0x80, 0x80, 0], [0xBF, 0xBF, 0]),
+        0xED => (3, [0x80, 0x80, 0], [0x9F, 0xBF, 0]),
+        0xEE..=0xEF => (3, [0x80, 0x80, 0], [0xBF, 0xBF, 0]),
+        0xF0 => (4, [0x90, 0x80, 0x80], [0xBF, 0xBF, 0xBF]),
+        0xF1..=0xF3 => (4, [0x80, 0x80, 0x80], [0xBF, 0xBF, 0xBF]),
+        0xF4 => (4, [0x80, 0x80, 0x80], [0x8F, 0xBF, 0xBF]),
+        _ => unreachable!(),
+    };
+
+    let mut valid = 1;
+    for i in 0..seq_len - 1 {
+        if valid >= p.len() {
+            break;
+        }
+        let cb = p[valid];
+        if cb < lo[i] || cb > hi[i] {
+            break;
+        }
+        valid += 1;
+    }
+    valid
+}
+
+/// Length of `input` excluding any trailing valid-so-far UTF-8 sequence.
+/// Bytes that form an invalid lead (`<C2` or `>F4`) at the tail are NOT
+/// trimmed — they're left in place so the MSP-aware decode loop can
+/// replace them with U+FFFD. Mirrors ghostty's `TrimValidPartialUTF8`.
+fn trim_valid_partial_utf8(input: &[u8]) -> usize {
+    if input.is_empty() {
+        return 0;
+    }
+
+    // A partial trailing sequence is at most 4 bytes (max UTF-8 length).
+    let check_start = if input.len() > 4 { input.len() - 4 } else { 0 };
+    let mut pos = input.len();
+    while pos > check_start {
+        let b = input[pos - 1];
+
+        // Skip continuation bytes — they could belong to a partial sequence.
+        if (b & 0xC0) == 0x80 {
+            pos -= 1;
+            continue;
+        }
+
+        // Found a non-continuation byte. Only a valid multi-byte lead
+        // (C2-F4) can start a trim-worthy partial sequence.
+        if !(0xC2..=0xF4).contains(&b) {
+            return input.len();
+        }
+
+        let expected = if b <= 0xDF {
+            2
+        } else if b <= 0xEF {
+            3
+        } else {
+            4
+        };
+
+        let seq_remaining = input.len() - (pos - 1);
+        if seq_remaining >= expected {
+            // Sequence is structurally complete — let the decoder handle it.
+            return input.len();
+        }
+
+        let seq_start = pos - 1;
+        let subpart = maximal_subpart(&input[seq_start..]);
+
+        if subpart == seq_remaining {
+            // All trailing bytes are part of a valid prefix → trim them.
+            return seq_start;
+        }
+
+        // Sequence is ill-formed; let the MSP-aware decoder replace it.
+        return input.len();
+    }
+
+    input.len()
 }
 
 #[derive(PartialEq, Eq, Debug, Default, Copy, Clone)]
@@ -884,19 +1020,40 @@ enum State {
     Ground,
 }
 
-/// Performs actions requested by the Parser
+/// Performs actions requested by the [`Parser`].
 ///
-/// Actions in this case mean, for example, handling a CSI escape sequence
-/// describing cursor movement, or simply printing characters to the screen.
+/// Crate-private dispatch trait. The single production implementer is
+/// [`super::handler::Performer`]; tests in this module supply their own
+/// recording dispatchers.
 ///
-/// The methods on this type correspond to actions described in
-/// <http://vt100.net/emu/dec_ansi_parser>. I've done my best to describe them in
-/// a useful way in my own words for completeness, but the site should be
-/// referenced if something isn't clear. If the site disappears at some point in
-/// the future, consider checking archive.org.
-pub trait Perform {
+/// The methods correspond to actions described in
+/// <http://vt100.net/emu/dec_ansi_parser>.
+pub(crate) trait Perform {
     /// Draw a character to the screen and update states.
     fn print(&mut self, _c: char) {}
+
+    /// Draw a contiguous run of characters in one batch. The default
+    /// implementation iterates and calls [`Perform::print`]; implementers
+    /// can specialize to skip per-char trait dispatch and per-char width
+    /// lookup when the run is known to be all narrow / printable / non-
+    /// combining (e.g. ASCII).
+    fn print_str(&mut self, s: &str) {
+        for c in s.chars() {
+            self.print(c);
+        }
+    }
+
+    /// Draw a contiguous run of pre-decoded Unicode codepoints in one batch.
+    /// The default implementation iterates, converts each `u32` to `char`
+    /// (replacing invalid encodings with U+FFFD), and calls
+    /// [`Perform::print`]. Implementers can specialize to bulk-process
+    /// codepoints — e.g. SIMD width lookup + bulk cell write.
+    fn print_codepoints(&mut self, codepoints: &[u32]) {
+        for &cp in codepoints {
+            let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+            self.print(c);
+        }
+    }
 
     /// Execute a C0 or C1 control function.
     fn execute(&mut self, _byte: u8) {}
@@ -933,9 +1090,6 @@ pub trait Perform {
 
     /// Dispatch an operating system command.
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
-
-    /// Dispatch an application program command.
-    fn apc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
 
     /// A final character has arrived for a CSI sequence
     ///
@@ -990,97 +1144,10 @@ pub trait Perform {
     /// Invoked when the end of an APC (Application Program Command) sequence is
     /// encountered.
     fn apc_end(&mut self) {}
-
-    /// Whether the parser should terminate prematurely.
-    ///
-    /// This can be used in conjunction with
-    /// [`Parser::advance_until_terminated`] to terminate the parser after
-    /// receiving certain escape sequences like synchronized updates.
-    ///
-    /// This is checked after every parsed byte, so no expensive computation
-    /// should take place in this function.
-    #[inline(always)]
-    fn terminated(&self) -> bool {
-        false
-    }
 }
-
-/// This trait is used internally to provide a common implementation for Opaque
-/// Sequences (SOS, APC, PM). Implementations of this trait will just forward
-/// calls to the equivalent method on [Perform]. Implementations of this trait
-/// are always inlined to avoid overhead.
-trait OpaqueDispatch {
-    fn execute(&mut self, byte: u8);
-    fn opaque_put(&mut self, byte: u8);
-    fn opaque_end(&mut self);
-}
-
-struct SosDispatch<'a, P: Perform>(&'a mut P);
-
-impl<P: Perform> OpaqueDispatch for SosDispatch<'_, P> {
-    #[inline(always)]
-    fn execute(&mut self, byte: u8) {
-        self.0.execute(byte);
-    }
-
-    #[inline(always)]
-    fn opaque_put(&mut self, byte: u8) {
-        self.0.sos_put(byte);
-    }
-
-    #[inline(always)]
-    fn opaque_end(&mut self) {
-        self.0.sos_end();
-    }
-}
-
-#[allow(dead_code)]
-struct ApcDispatch<'a, P: Perform>(&'a mut P);
-
-impl<P: Perform> OpaqueDispatch for ApcDispatch<'_, P> {
-    #[inline(always)]
-    fn execute(&mut self, byte: u8) {
-        self.0.execute(byte);
-    }
-
-    #[inline(always)]
-    fn opaque_put(&mut self, byte: u8) {
-        self.0.apc_put(byte);
-    }
-
-    #[inline(always)]
-    fn opaque_end(&mut self) {
-        self.0.apc_end();
-    }
-}
-
-struct PmDispatch<'a, P: Perform>(&'a mut P);
-
-impl<P: Perform> OpaqueDispatch for PmDispatch<'_, P> {
-    #[inline(always)]
-    fn execute(&mut self, byte: u8) {
-        self.0.execute(byte);
-    }
-
-    #[inline(always)]
-    fn opaque_put(&mut self, byte: u8) {
-        self.0.pm_put(byte);
-    }
-
-    #[inline(always)]
-    fn opaque_end(&mut self) {
-        self.0.pm_end();
-    }
-}
-
-#[cfg(all(test, not(feature = "std")))]
-#[macro_use]
-extern crate std;
 
 #[cfg(test)]
 mod tests {
-    use std::vec::Vec;
-
     use super::*;
 
     const OSC_BYTES: &[u8] = &[
@@ -1216,7 +1283,7 @@ mod tests {
     #[test]
     fn parse_osc() {
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, OSC_BYTES);
 
@@ -1234,7 +1301,7 @@ mod tests {
     #[test]
     fn parse_empty_osc() {
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, &[0x1B, 0x5D, 0x07]);
 
@@ -1250,7 +1317,7 @@ mod tests {
         let params = ";".repeat(params::MAX_PARAMS + 1);
         let input = format!("\x1b]{}\x1b", &params[..]).into_bytes();
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, &input);
 
@@ -1268,7 +1335,7 @@ mod tests {
     fn osc_bell_terminated() {
         const INPUT: &[u8] = b"\x1b]11;ff/00/ff\x07";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1283,7 +1350,7 @@ mod tests {
     fn osc_c0_st_terminated() {
         const INPUT: &[u8] = b"\x1b]11;ff/00/ff\x1b\\";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1302,7 +1369,7 @@ mod tests {
             0x26, 0x26, 0x20, 0x73, 0x6C, 0x65, 0x65, 0x70, 0x20, 0x31, 0x07,
         ];
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1319,7 +1386,7 @@ mod tests {
     fn osc_containing_string_terminator() {
         const INPUT: &[u8] = b"\x1b]2;\xe6\x9c\xab\x1b\\";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1333,21 +1400,43 @@ mod tests {
     }
 
     #[test]
-    fn exceed_max_buffer_size() {
-        const NUM_BYTES: usize = MAX_OSC_RAW + 100;
+    fn osc_fits_in_inline_buffer() {
+        // Stay below `OSC_FIXED_LEN`; the spill `Vec` should never grow.
+        const NUM_BYTES: usize = OSC_FIXED_LEN - 32;
         const INPUT_START: &[u8] = b"\x1b]52;s";
         const INPUT_END: &[u8] = b"\x07";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
-        // Create valid OSC escape
         parser.advance(&mut dispatcher, INPUT_START);
-
-        // Exceed max buffer size
         parser.advance(&mut dispatcher, &[b'a'; NUM_BYTES]);
+        parser.advance(&mut dispatcher, INPUT_END);
 
-        // Terminate escape for dispatch
+        assert!(parser.osc_raw.overflow.capacity() == 0);
+        assert_eq!(dispatcher.dispatched.len(), 1);
+        match &dispatcher.dispatched[0] {
+            Sequence::Osc(params, _) => {
+                assert_eq!(params.len(), 2);
+                assert_eq!(params[0], b"52");
+                assert_eq!(params[1].len(), NUM_BYTES + INPUT_END.len());
+            }
+            _ => panic!("expected osc sequence"),
+        }
+    }
+
+    #[test]
+    fn osc_spills_to_overflow() {
+        // Push past `OSC_FIXED_LEN` to exercise the heap-fallback path.
+        const NUM_BYTES: usize = OSC_FIXED_LEN + 512;
+        const INPUT_START: &[u8] = b"\x1b]52;s";
+        const INPUT_END: &[u8] = b"\x07";
+
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::default();
+
+        parser.advance(&mut dispatcher, INPUT_START);
+        parser.advance(&mut dispatcher, &[b'a'; NUM_BYTES]);
         parser.advance(&mut dispatcher, INPUT_END);
 
         assert_eq!(dispatcher.dispatched.len(), 1);
@@ -1355,12 +1444,9 @@ mod tests {
             Sequence::Osc(params, _) => {
                 assert_eq!(params.len(), 2);
                 assert_eq!(params[0], b"52");
-
-                #[cfg(feature = "std")]
                 assert_eq!(params[1].len(), NUM_BYTES + INPUT_END.len());
-
-                #[cfg(not(feature = "std"))]
-                assert_eq!(params[1].len(), MAX_OSC_RAW - params[0].len());
+                assert_eq!(params[1][0], b's');
+                assert!(params[1][1..].iter().all(|&b| b == b'a'));
             }
             _ => panic!("expected osc sequence"),
         }
@@ -1375,7 +1461,7 @@ mod tests {
         let input = format!("\x1b[{}p", &params[..]).into_bytes();
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, &input);
 
@@ -1398,7 +1484,7 @@ mod tests {
         let input = format!("\x1b[{}p", &params[..]).into_bytes();
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, &input);
 
@@ -1415,7 +1501,7 @@ mod tests {
     #[test]
     fn parse_csi_params_trailing_semicolon() {
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, b"\x1b[4;m");
 
@@ -1430,7 +1516,7 @@ mod tests {
     fn parse_csi_params_leading_semicolon() {
         // Create dispatcher and check state
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, b"\x1b[;4m");
 
@@ -1446,7 +1532,7 @@ mod tests {
         // The important part is the parameter, which is (i64::MAX + 1)
         const INPUT: &[u8] = b"\x1b[9223372036854775808m";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1461,7 +1547,7 @@ mod tests {
     fn csi_reset() {
         const INPUT: &[u8] = b"\x1b[3;1\x1b[?1049h";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1480,7 +1566,7 @@ mod tests {
     fn csi_subparameters() {
         const INPUT: &[u8] = b"\x1b[38:2:255:0:255;1m";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1500,7 +1586,7 @@ mod tests {
         let params = "1;".repeat(params::MAX_PARAMS + 1);
         let input = format!("\x1bP{}p", &params[..]).into_bytes();
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, &input);
 
@@ -1519,7 +1605,7 @@ mod tests {
     fn dcs_reset() {
         const INPUT: &[u8] = b"\x1b[3;1\x1bP1$tx\x9c";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1540,7 +1626,7 @@ mod tests {
     fn parse_dcs() {
         const INPUT: &[u8] = b"\x1bP0;1|17/ab\x9c";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1562,7 +1648,7 @@ mod tests {
     fn intermediate_reset_on_dcs_exit() {
         const INPUT: &[u8] = b"\x1bP=1sZZZ\x1b+\x5c";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1577,7 +1663,7 @@ mod tests {
     fn esc_reset() {
         const INPUT: &[u8] = b"\x1b[3;1\x1b(A";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1596,7 +1682,7 @@ mod tests {
     fn esc_reset_intermediates() {
         const INPUT: &[u8] = b"\x1b[?2004l\x1b#8";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1612,7 +1698,7 @@ mod tests {
     fn params_buffer_filled_with_subparam() {
         const INPUT: &[u8] = b"\x1b[::::::::::::::::::::::::::::::::x\x1b";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1625,84 +1711,6 @@ mod tests {
                 assert!(ignore);
             }
             _ => panic!("expected csi sequence"),
-        }
-    }
-
-    #[cfg(not(feature = "std"))]
-    #[test]
-    fn build_with_fixed_size() {
-        const INPUT: &[u8] = b"\x1b[3;1\x1b[?1049h";
-        let mut dispatcher = Dispatcher::default();
-        let mut parser: Parser<30> = Parser::new_with_size();
-
-        parser.advance(&mut dispatcher, INPUT);
-
-        assert_eq!(dispatcher.dispatched.len(), 1);
-        match &dispatcher.dispatched[0] {
-            Sequence::Csi(params, intermediates, ignore, _) => {
-                assert_eq!(intermediates, b"?");
-                assert_eq!(params, &[[1049]]);
-                assert!(!ignore);
-            }
-            _ => panic!("expected csi sequence"),
-        }
-    }
-
-    #[cfg(not(feature = "std"))]
-    #[test]
-    fn exceed_fixed_osc_buffer_size() {
-        const OSC_BUFFER_SIZE: usize = 32;
-        const NUM_BYTES: usize = OSC_BUFFER_SIZE + 100;
-        const INPUT_START: &[u8] = b"\x1b]52;";
-        const INPUT_END: &[u8] = b"\x07";
-
-        let mut dispatcher = Dispatcher::default();
-        let mut parser: Parser<OSC_BUFFER_SIZE> = Parser::new_with_size();
-
-        // Create valid OSC escape
-        parser.advance(&mut dispatcher, INPUT_START);
-
-        // Exceed max buffer size
-        parser.advance(&mut dispatcher, &[b'a'; NUM_BYTES]);
-
-        // Terminate escape for dispatch
-        parser.advance(&mut dispatcher, INPUT_END);
-
-        assert_eq!(dispatcher.dispatched.len(), 1);
-        match &dispatcher.dispatched[0] {
-            Sequence::Osc(params, _) => {
-                assert_eq!(params.len(), 2);
-                assert_eq!(params[0], b"52");
-                assert_eq!(params[1].len(), OSC_BUFFER_SIZE - params[0].len());
-                for item in params[1].iter() {
-                    assert_eq!(*item, b'a');
-                }
-            }
-            _ => panic!("expected osc sequence"),
-        }
-    }
-
-    #[cfg(not(feature = "std"))]
-    #[test]
-    fn fixed_size_osc_containing_string_terminator() {
-        const INPUT_START: &[u8] = b"\x1b]2;";
-        const INPUT_MIDDLE: &[u8] = b"s\xe6\x9c\xab";
-        const INPUT_END: &[u8] = b"\x1b\\";
-
-        let mut dispatcher = Dispatcher::default();
-        let mut parser: Parser<5> = Parser::new_with_size();
-
-        parser.advance(&mut dispatcher, INPUT_START);
-        parser.advance(&mut dispatcher, INPUT_MIDDLE);
-        parser.advance(&mut dispatcher, INPUT_END);
-
-        assert_eq!(dispatcher.dispatched.len(), 2);
-        match &dispatcher.dispatched[0] {
-            Sequence::Osc(params, false) => {
-                assert_eq!(params[0], b"2");
-                assert_eq!(params[1], INPUT_MIDDLE);
-            }
-            _ => panic!("expected osc sequence"),
         }
     }
 
@@ -1722,7 +1730,7 @@ mod tests {
         }
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
         parser.advance(&mut dispatcher, input);
 
         assert_eq!(dispatcher.dispatched, expected_dispatched);
@@ -1792,7 +1800,7 @@ mod tests {
     fn parse_kitty_apc() {
         const INPUT: &[u8] = b"\x1b_Gf=24,s=10,v=20;Zm9v\x1b\\";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1831,7 +1839,7 @@ mod tests {
         // Only semicolons should separate control data from payload
         const INPUT: &[u8] = b"\x1b_Gf=32,s=10,v=20;AQIDBA==\x1b\\";
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1882,7 +1890,7 @@ mod tests {
             b"\xF0\x9F\x8E\x89_\xF0\x9F\xA6\x80\xF0\x9F\xA6\x80_\xF0\x9F\x8E\x89";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1900,7 +1908,7 @@ mod tests {
         const INPUT: &[u8] = b"a\xEF\xBCb";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -1915,7 +1923,7 @@ mod tests {
         const INPUT: &[u8] = b"\xF0\x9F\x9A\x80";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, &INPUT[..1]);
         parser.advance(&mut dispatcher, &INPUT[1..2]);
@@ -1936,7 +1944,7 @@ mod tests {
         const INPUT: &[u8] = b"\xC4\xB8\xF0\x9F\x8E\x89";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, &INPUT[..1]);
         parser.advance(&mut dispatcher, &INPUT[1..]);
@@ -1951,7 +1959,7 @@ mod tests {
         const INPUT: &[u8] = b"a\xEF\xBCb";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, &INPUT[..1]);
         parser.advance(&mut dispatcher, &INPUT[1..2]);
@@ -1969,7 +1977,7 @@ mod tests {
         const INPUT: &[u8] = b"\xE4\xBF\x99\xB5";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, &INPUT[..2]);
         parser.advance(&mut dispatcher, &INPUT[2..]);
@@ -1983,7 +1991,7 @@ mod tests {
         const INPUT: &[u8] = b"\xD8\x1b012";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -2002,7 +2010,7 @@ mod tests {
         const INPUT: &[u8] = b"\x00\x1f\x80\x90\x98\x9b\x9c\x9d\x9e\x9fa";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 
@@ -2025,7 +2033,7 @@ mod tests {
         const INPUT: &[u8] = b"\x18\x1a";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser = Parser::new();
+        let mut parser = Parser::default();
 
         parser.advance(&mut dispatcher, INPUT);
 

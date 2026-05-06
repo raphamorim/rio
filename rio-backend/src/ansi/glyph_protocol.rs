@@ -6,7 +6,8 @@
 // Verbs:
 //   s — advertise supported payload formats; also serves as protocol
 //       detection (any reply = protocol implemented)
-//   q — query the state of a codepoint (status=0..3 bit field)
+//   q — query the state of a codepoint (status is a comma-separated
+//       list of coverage names: `system`, `glossary`, both, or empty)
 //   r — register a PUA codepoint with a glyph
 //   c — clear one PUA codepoint or every registration in this session
 //
@@ -37,12 +38,12 @@ pub const GLYPH_PROTOCOL_PREFIX: &[u8] = b"25a1";
 /// with `payload_too_large`.
 pub const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 
-/// Bitfield of payload formats this build supports, returned in the
-/// reply to the `s` verb.
-///   bit 0 = `glyf`   (OpenType simple glyphs)
-///   bit 1 = `colrv0` (flat-color layered outlines)
-///   bit 2 = `colrv1` (layered outlines with solid/linear/radial paints)
-pub const SUPPORTED_FORMATS: u8 = 0b0000_0111;
+/// Payload formats this build supports, advertised in the reply to
+/// the `s` verb as a comma-separated list of names. An empty slice
+/// produces `fmt=` (protocol implemented but no payload format
+/// accepted) — a degenerate state reserved for future negotiation,
+/// never produced by this build.
+pub const SUPPORTED_FORMATS: &[&str] = &["glyf", "colrv0", "colrv1"];
 
 /// Check whether a codepoint is in any of the three Unicode Private
 /// Use Areas.
@@ -174,19 +175,27 @@ impl ReplyMode {
     }
 }
 
-/// Query status — two-bit field per spec §5.2. Bit 0: system coverage.
-/// Bit 1: glossary coverage.
+/// Query status — the set of sources covering `cp`, per spec §5.2.
+/// Encoded on the wire as a comma-separated list of coverage names
+/// (`system`, `glossary`, both, or empty for no coverage).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryStatus {
-    Free = 0,
-    System = 1,
-    Glossary = 2,
-    Both = 3,
+    Free,
+    System,
+    Glossary,
+    Both,
 }
 
 impl QueryStatus {
-    pub fn as_u8(self) -> u8 {
-        self as u8
+    /// Wire form of the `status=` value: a comma-separated list of
+    /// coverage names. `Free` returns the empty string.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            QueryStatus::Free => "",
+            QueryStatus::System => "system",
+            QueryStatus::Glossary => "glossary",
+            QueryStatus::Both => "system,glossary",
+        }
     }
 }
 
@@ -585,13 +594,13 @@ impl<'a> Params<'a> {
     }
 }
 
-/// Format the reply to `s` (support). `fmt_bits` is the bitfield of
-/// supported payload formats; bit 0 = `glyf`. A reply of `fmt=0` means
-/// the protocol is implemented but no payload format is accepted — a
-/// degenerate state reserved for future negotiation, never produced by
-/// this build.
-pub(crate) fn format_support_response(fmt_bits: u8) -> String {
-    format!("\x1b_25a1;s;fmt={}\x1b\\", fmt_bits)
+/// Format the reply to `s` (support). `fmts` is the list of supported
+/// payload format names, joined with `,` on the wire. An empty slice
+/// produces `fmt=` — a degenerate "protocol implemented but no payload
+/// format accepted" state, reserved for future negotiation and never
+/// produced by this build.
+pub(crate) fn format_support_response(fmts: &[&str]) -> String {
+    format!("\x1b_25a1;s;fmt={}\x1b\\", fmts.join(","))
 }
 
 /// Format the reply to `q;cp=<hex>`. Public because the frontend
@@ -599,7 +608,7 @@ pub(crate) fn format_support_response(fmt_bits: u8) -> String {
 /// `FontLibrary` and the per-route registry needed to compute the
 /// status; it formats the reply itself and writes it back to the PTY.
 pub fn format_query_response(cp: u32, status: QueryStatus) -> String {
-    format!("\x1b_25a1;q;cp={:x};status={}\x1b\\", cp, status.as_u8())
+    format!("\x1b_25a1;q;cp={:x};status={}\x1b\\", cp, status.as_str())
 }
 
 /// Format a successful register reply.
@@ -942,20 +951,19 @@ mod tests {
 
     #[test]
     fn support_response_advertises_glyf_colrv0_colrv1() {
-        // bit 0 = glyf, bit 1 = colrv0, bit 2 = colrv1.
         assert_eq!(
             format_support_response(SUPPORTED_FORMATS),
-            "\x1b_25a1;s;fmt=7\x1b\\"
+            "\x1b_25a1;s;fmt=glyf,colrv0,colrv1\x1b\\"
         );
     }
 
     #[test]
-    fn support_response_encodes_arbitrary_bitfield() {
+    fn support_response_encodes_subset_and_empty() {
         assert_eq!(
-            format_support_response(0b0000_0011),
-            "\x1b_25a1;s;fmt=3\x1b\\"
+            format_support_response(&["glyf", "colrv0"]),
+            "\x1b_25a1;s;fmt=glyf,colrv0\x1b\\"
         );
-        assert_eq!(format_support_response(0), "\x1b_25a1;s;fmt=0\x1b\\");
+        assert_eq!(format_support_response(&[]), "\x1b_25a1;s;fmt=\x1b\\");
     }
 
     #[test]
@@ -1217,22 +1225,22 @@ mod tests {
     }
 
     #[test]
-    fn query_response_encodes_numeric_status() {
+    fn query_response_encodes_coverage_names() {
         assert_eq!(
             format_query_response(0xE0A0, QueryStatus::Free),
-            "\x1b_25a1;q;cp=e0a0;status=0\x1b\\"
+            "\x1b_25a1;q;cp=e0a0;status=\x1b\\"
         );
         assert_eq!(
             format_query_response(0xE0A0, QueryStatus::System),
-            "\x1b_25a1;q;cp=e0a0;status=1\x1b\\"
+            "\x1b_25a1;q;cp=e0a0;status=system\x1b\\"
         );
         assert_eq!(
             format_query_response(0xE0A0, QueryStatus::Glossary),
-            "\x1b_25a1;q;cp=e0a0;status=2\x1b\\"
+            "\x1b_25a1;q;cp=e0a0;status=glossary\x1b\\"
         );
         assert_eq!(
             format_query_response(0xE0A0, QueryStatus::Both),
-            "\x1b_25a1;q;cp=e0a0;status=3\x1b\\"
+            "\x1b_25a1;q;cp=e0a0;status=system,glossary\x1b\\"
         );
     }
 

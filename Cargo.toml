@@ -3,8 +3,6 @@ members = [
     "sugarloaf",
     "teletypewriter",
     "corcovado",
-    "copa",
-    "rio-proc-macros",
     "rio-backend",
     "rio-grapheme-width",
     "rio-window",
@@ -38,8 +36,6 @@ rio-grapheme-width = { path = "rio-grapheme-width", version = "0.4.2" }
 sugarloaf = { path = "sugarloaf", version = "0.4.2" }
 
 # Own dependencies
-copa = { path = "copa", default-features = true, version = "0.4.2" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.4.2" }
 corcovado = { path = "corcovado", version = "0.4.2" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.5", features = [
@@ -51,6 +47,7 @@ smallvec = "1.15.1"
 
 # unicode-width = "0.2.0"
 unicode-width = { package = "unicode-width-16", version = "0.1.0" }
+simdutf = "0.7.0"
 base64 = "0.22.1"
 image_rs = { package = "image", version = "0.25.10", default-features = false, features = [
     "gif",
