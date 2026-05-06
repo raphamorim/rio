@@ -852,18 +852,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
-name = "copa"
-version = "0.4.2"
-dependencies = [
- "arrayvec",
- "criterion",
- "memchr",
- "rio-proc-macros",
- "serde",
- "simdutf8",
-]
-
-[[package]]
 name = "copypasta"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4149,7 +4137,6 @@ dependencies = [
  "base64",
  "bitflags 2.11.1",
  "bytemuck",
- "copa",
  "copypasta",
  "corcovado",
  "cursor-icon",
@@ -4199,14 +4186,6 @@ dependencies = [
  "objc2-user-notifications",
  "windows 0.58.0",
  "zbus",
-]
-
-[[package]]
-name = "rio-proc-macros"
-version = "0.4.2"
-dependencies = [
- "proc-macro2",
- "quote",
 ]
 
 [[package]]
@@ -4270,7 +4249,6 @@ dependencies = [
  "ahash",
  "bitflags 2.11.1",
  "clap",
- "copa",
  "corcovado",
  "cpal",
  "criterion",

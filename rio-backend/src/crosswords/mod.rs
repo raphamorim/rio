@@ -43,12 +43,12 @@ use crate::crosswords::square::{CellFlags, Wide};
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent, TerminalDamage};
 use crate::performer::handler::Handler;
+use crate::performer::parser::Params;
 use crate::selection::{Selection, SelectionRange, SelectionType};
 use crate::simd_utf8;
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
-use copa::Params;
 use grid::row::Row;
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,

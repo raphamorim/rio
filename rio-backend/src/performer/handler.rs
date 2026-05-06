@@ -3,7 +3,6 @@ use crate::ansi::iterm2_image_protocol;
 use crate::ansi::kitty_graphics_protocol;
 use crate::ansi::CursorShape;
 use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
-use crate::batched_parser::BatchedParser;
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
@@ -26,7 +25,7 @@ use crate::ansi::{
 use std::fmt::Write;
 
 // https://vt100.net/emu/dec_ansi_parser
-use copa::{Params, ParamsIter};
+use super::parser::{Params, ParamsIter, Parser, Perform};
 
 /// Maximum time before a synchronized update is aborted.
 const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
@@ -604,7 +603,7 @@ impl Timeout for StdSyncHandler {
 #[derive(Default)]
 pub struct Processor<T: Timeout = StdSyncHandler> {
     state: ProcessorState<T>,
-    parser: BatchedParser<1024>,
+    parser: Parser,
 }
 
 impl<T: Timeout> Processor<T> {
@@ -624,27 +623,12 @@ impl<T: Timeout> Processor<T> {
     where
         H: Handler,
     {
-        let mut processed = 0;
-        while processed != bytes.len() {
-            if self.state.sync_state.timeout.pending_timeout() {
-                processed += self.advance_sync(handler, &bytes[processed..]);
-            } else {
-                let mut performer = Performer::new(&mut self.state, handler);
-                processed += self
-                    .parser
-                    .advance_until_terminated(&mut performer, &bytes[processed..]);
-            }
+        if self.state.sync_state.timeout.pending_timeout() {
+            self.advance_sync(handler, bytes);
+        } else {
+            let mut performer = Performer::new(&mut self.state, handler);
+            self.parser.advance(&mut performer, bytes);
         }
-    }
-
-    /// Flush any pending batched input
-    #[inline]
-    pub fn flush<H>(&mut self, handler: &mut H)
-    where
-        H: Handler,
-    {
-        let mut performer = Performer::new(&mut self.state, handler);
-        self.parser.flush(&mut performer);
     }
 
     /// End a synchronized update.
@@ -664,16 +648,12 @@ impl<T: Timeout> Processor<T> {
     where
         H: Handler,
     {
-        // Process all synchronized bytes.
-        //
-        // NOTE: We do not use `advance_until_terminated` here since BSU sequences are
-        // processed automatically during the synchronized update.
+        // Process all synchronized bytes. BSU sequences are processed
+        // automatically during the synchronized update.
         let buffer = mem::take(&mut self.state.sync_state.buffer);
         let offset = bsu_offset.unwrap_or(buffer.len());
         let mut performer = Performer::new(&mut self.state, handler);
         self.parser.advance(&mut performer, &buffer[..offset]);
-        // Flush any pending batched input from synchronized processing
-        self.parser.flush(&mut performer);
         self.state.sync_state.buffer = buffer;
 
         match bsu_offset {
@@ -702,10 +682,8 @@ impl<T: Timeout> Processor<T> {
     }
 
     /// Process a new byte during a synchronized update.
-    ///
-    /// Returns the number of bytes processed.
     #[cold]
-    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8]) -> usize
+    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8])
     where
         H: Handler,
     {
@@ -716,11 +694,10 @@ impl<T: Timeout> Processor<T> {
 
             // Just parse the bytes normally.
             let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance_until_terminated(&mut performer, bytes)
+            self.parser.advance(&mut performer, bytes);
         } else {
             self.state.sync_state.buffer.extend(bytes);
             self.advance_sync_csi(handler, bytes.len());
-            bytes.len()
         }
     }
 
@@ -982,7 +959,7 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
     }
 }
 
-impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
+impl<U: Handler, T: Timeout> Perform for Performer<'_, U, T> {
     fn print(&mut self, c: char) {
         self.handler.input(c);
         self.state.preceding_char = Some(c);
@@ -1668,10 +1645,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
         self.state.apc_state.buffer.push(byte);
     }
 
-    /// Called when the APC sequence ends.
-    ///
-    /// Process the accumulated APC data. This is called instead of apc_dispatch
-    /// when we implement custom APC hooks.
+    /// Called when the APC sequence ends. Processes the accumulated APC data.
     fn apc_end(&mut self) {
         debug!(
             "[apc_end] APC complete, accumulated {} bytes",
