@@ -262,6 +262,28 @@ fn test_compute_margin_exceeds_size() {
 }
 
 #[test]
+fn test_context_dimension_update_scale_refreshes_scaled_font_size() {
+    let dims = TextDimensions {
+        width: 8.0,
+        height: 16.0,
+        scale: 1.0,
+    };
+    let cell = cell_for(dims);
+    let mut context =
+        ContextDimension::build(800.0, 600.0, dims, cell, 1.0, 14.0, Margin::all(10.0));
+
+    context.update_scale(2.0);
+
+    assert_eq!(context.dimension.scale, 2.0);
+    assert_eq!(context.scaled_font_size, 28.0);
+    // Width/height-derived layout is recomputed separately after the new
+    // cell metrics are installed, so update_scale itself must not clobber
+    // the current row/column counts.
+    assert_eq!(context.columns, 97);
+    assert_eq!(context.lines, 36);
+}
+
+#[test]
 fn test_context_dimension_build() {
     let dims = TextDimensions {
         width: 16.0,

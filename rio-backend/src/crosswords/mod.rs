@@ -43,12 +43,12 @@ use crate::crosswords::square::{CellFlags, Wide};
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent, TerminalDamage};
 use crate::performer::handler::Handler;
+use crate::performer::parser::Params;
 use crate::selection::{Selection, SelectionRange, SelectionType};
 use crate::simd_utf8;
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
-use copa::Params;
 use grid::row::Row;
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
@@ -62,7 +62,6 @@ use std::ptr;
 use std::sync::Arc;
 use sugarloaf::{GraphicData, MAX_GRAPHIC_DIMENSIONS};
 use tracing::{debug, info, trace, warn};
-use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
 
 pub type NamedColor = colors::NamedColor;
@@ -2560,7 +2559,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             _ => return,
         };
 
-        if let Ok(bytes) = general_purpose::STANDARD.decode(base64) {
+        if let Some(bytes) = crate::simd_base64::decode(base64) {
             if let Ok(text) = simd_utf8::from_utf8_to_string(&bytes) {
                 self.event_proxy.send_event(
                     RioEvent::ClipboardStore(clipboard_type, text),
@@ -2582,8 +2581,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline(never)]
     fn input(&mut self, c: char) {
-        let width = match c.width() {
-            Some(width) => width,
+        let width = match crate::codepoint_width::codepoint_width(c as u32) {
+            Some(w) => w as usize,
             None => return,
         };
 
@@ -2687,6 +2686,146 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.grid.cursor.pos.col += 1;
         } else {
             self.grid.cursor.should_wrap = true;
+        }
+    }
+
+    fn input_codepoints(&mut self, codepoints: &[u32]) {
+        // Insert mode falls back: cell-rotation is per-char and the cost of
+        // bulk-handling it correctly outweighs the win.
+        if self.mode.contains(Mode::INSERT) {
+            for &cp in codepoints {
+                let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                self.input(c);
+            }
+            return;
+        }
+
+        for &cp in codepoints {
+            let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+            let width = match crate::codepoint_width::codepoint_width(cp) {
+                Some(w) => w,
+                None => continue,
+            };
+
+            if width == 0 {
+                // Combining marks, VS15/VS16. Defer to scalar `input` which
+                // owns the emoji-presentation flip and grapheme-extension
+                // logic (attaches to preceding cell rather than writing a
+                // new one).
+                self.input(c);
+                continue;
+            }
+
+            if self.grid.cursor.should_wrap {
+                self.wrapline();
+            }
+
+            let columns = self.grid.columns();
+
+            // Kitty placeholder bookkeeping: cp can't be ASCII here (parser
+            // routes ASCII through `input_str`) but the placeholder lives at
+            // U+10EEEE, so the check is still needed.
+            if cp == crate::ansi::kitty_virtual::PLACEHOLDER as u32 {
+                let row = self.grid.cursor.pos.row;
+                self.grid[row].kitty_virtual_placeholder = true;
+            }
+
+            if width == 2 {
+                if self.grid.cursor.pos.col + 1 >= columns {
+                    if self.mode.contains(Mode::LINE_WRAP) {
+                        self.write_at_cursor(' ');
+                        self.grid
+                            .cursor_cell()
+                            .set_wide(crate::crosswords::square::Wide::LeadingSpacer);
+                        self.wrapline();
+                    } else {
+                        self.grid.cursor.should_wrap = true;
+                        continue;
+                    }
+                }
+
+                self.write_at_cursor(c);
+                self.grid
+                    .cursor_cell()
+                    .set_wide(crate::crosswords::square::Wide::Wide);
+                self.grid.cursor.pos.col += 1;
+                self.write_at_cursor(' ');
+                self.grid
+                    .cursor_cell()
+                    .set_wide(crate::crosswords::square::Wide::Spacer);
+            } else {
+                // width == 1
+                self.write_at_cursor(c);
+            }
+
+            let cursor_line = self.grid.cursor.pos.row.0 as usize;
+            self.damage.damage_line(cursor_line);
+
+            if self.grid.cursor.pos.col + 1 < columns {
+                self.grid.cursor.pos.col += 1;
+            } else {
+                self.grid.cursor.should_wrap = true;
+            }
+        }
+    }
+
+    fn input_str(&mut self, s: &str) {
+        // Fast path: ASCII printable runs are the common case (vim redraws,
+        // log tails, prompt rendering). Side-step the per-char `input()`
+        // dispatch which does width lookup, wide-char/zero-width checks,
+        // kitty placeholder bookkeeping, and per-byte wrap branching.
+        let active = self.grid.cursor.charsets[self.active_charset];
+        if !s.is_ascii()
+            || active != crate::crosswords::pos::StandardCharset::Ascii
+            || self.mode.contains(Mode::INSERT)
+        {
+            for c in s.chars() {
+                self.input(c);
+            }
+            return;
+        }
+
+        let bytes = s.as_bytes();
+        let mut idx = 0;
+        while idx < bytes.len() {
+            if self.grid.cursor.should_wrap {
+                if !self.mode.contains(Mode::LINE_WRAP) {
+                    // LINE_WRAP off: cursor is parked on the last column and
+                    // each new char overwrites that cell. Defer to scalar
+                    // `input()` for those exact semantics.
+                    for c in s[idx..].chars() {
+                        self.input(c);
+                    }
+                    return;
+                }
+                self.wrapline();
+            }
+
+            let columns = self.grid.columns();
+            let cursor_col = self.grid.cursor.pos.col.0;
+            let remaining_in_row = columns.saturating_sub(cursor_col);
+            if remaining_in_row == 0 {
+                for c in s[idx..].chars() {
+                    self.input(c);
+                }
+                return;
+            }
+
+            let take = (bytes.len() - idx).min(remaining_in_row);
+            for i in 0..take {
+                let c = bytes[idx + i] as char;
+                self.write_at_cursor(c);
+                if self.grid.cursor.pos.col + 1 < columns {
+                    self.grid.cursor.pos.col += 1;
+                } else {
+                    self.grid.cursor.should_wrap = true;
+                    break;
+                }
+            }
+
+            let row = self.grid.cursor.pos.row;
+            self.damage.damage_line(row.0 as usize);
+            idx += take;
         }
     }
 
@@ -4640,7 +4779,7 @@ mod tests {
     /// path get caught at test time.
     #[test]
     fn osc8_hyperlink_basic() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4652,7 +4791,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         // Plain text, then "click" wrapped in an OSC 8, then plain "."
         // The bell-terminated form is what most shells emit.
@@ -4694,7 +4833,7 @@ mod tests {
     /// the boundary by id comparison.
     #[test]
     fn osc8_hyperlink_two_distinct_links_use_distinct_ids() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4706,7 +4845,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         let bytes = b"\x1b]8;;https://a.example\x07A\x1b]8;;\x07\
                       \x1b]8;;https://b.example\x07B\x1b]8;;\x07";
@@ -4731,7 +4870,7 @@ mod tests {
     /// after the reset must not inherit the previous link.
     #[test]
     fn osc8_hyperlink_reset_clears_template() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4743,7 +4882,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         // Open a hyperlink, write 'X', close it, then write 'Y'.
         processor.advance(&mut cw, b"\x1b]8;;https://example.com\x07X\x1b]8;;\x07Y");
@@ -4763,7 +4902,7 @@ mod tests {
     /// after the link on those lines).
     #[test]
     fn osc8_hyperlink_spans_linefeed() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4775,7 +4914,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         // "AB\nCD" with the whole thing inside one OSC 8 link.
         processor.advance(
@@ -6304,9 +6443,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor: crate::performer::handler::Processor<
-            crate::performer::handler::StdSyncHandler,
-        > = crate::performer::handler::Processor::new();
+        let mut processor = crate::performer::handler::Processor::default();
 
         // 32-bit image_id with high byte non-zero (matches icat's
         // rejection-sample loop in `transmit.go:280-288`).
