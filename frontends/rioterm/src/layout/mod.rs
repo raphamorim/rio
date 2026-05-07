@@ -1673,6 +1673,15 @@ impl ContextDimension {
         // recomputed metrics do.
     }
 
+    /// Update only the stored scale factor. Caller must follow with
+    /// `compute_cell_metrics` + `update_dimensions` so width/height
+    /// and canonical cell stride are recomputed for the new DPI.
+    #[inline]
+    pub fn update_scale(&mut self, scale: f32) {
+        self.dimension.scale = scale;
+        self.scaled_font_size = self.font_size * scale;
+    }
+
     /// Re-baseline the font size — both current and "original".
     /// Called from `update_config` so a config edit becomes the new
     /// reset target. Per-panel zoom (`change_font_size`) uses

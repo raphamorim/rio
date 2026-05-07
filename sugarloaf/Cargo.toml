@@ -118,10 +118,7 @@ ash = "0.38.0"
 # discovery (see `font/windows.rs`). Pure DirectWrite via `IDWriteFontFallback`
 # would be the moral twin of CoreText's `CTFontCreateForString`, but the
 # only Debian-packaged DirectWrite binding (winapi 0.3) is fading out and the
-# higher-level `windows` crate isn't in Debian at all. Ghostty itself
-# doesn't ship Windows discovery yet — the font-kit walk keeps Windows on
-# par with Linux's previous (no-cascade) state plus codepoint discovery
-# from the installed font set, which is the win we actually care about.
+# higher-level `windows` crate isn't in Debian at all.
 
 [dev-dependencies]
 rio-window = { workspace = true }
