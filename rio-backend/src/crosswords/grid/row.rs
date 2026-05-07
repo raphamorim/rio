@@ -22,10 +22,7 @@ pub struct Row<T> {
 
     /// Set when at least one cell in the row contains a kitty Unicode
     /// graphics-protocol placeholder (U+10EEEE). The renderer skips the
-    /// placeholder scan on rows where this is `false`. Mirrors ghostty's
-    /// `page.zig:1953-1958` `kitty_virtual_placeholder` row flag.
-    /// Cleared by `reset`; set by `Crosswords::input` whenever a
-    /// placeholder codepoint lands in the row.
+    /// placeholder scan on rows where this is `false`.
     pub kitty_virtual_placeholder: bool,
 }
 

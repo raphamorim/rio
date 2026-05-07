@@ -272,10 +272,9 @@ fn test_chunked_transfer() {
     let mut state = KittyGraphicsState::default();
 
     // Total base64 for 1x1 RGBA pixel [255, 0, 0, 255] is "/wAA/w==".
-    // Each chunk is decoded independently now (matching ghostty / chafa
-    // style), so each must be a valid base64 on its own — either a
-    // multiple of 4 chars per kitty spec, or an independently padded
-    // chunk. Here we use two spec-compliant chunks.
+    // Each chunk is decoded independently now, so each must be a
+    // valid base64 on its own — either a multiple of 4 chars per kitty
+    // spec, or an independently padded chunk.
 
     // Chunk 1 (m=1): 4 chars → 3 decoded bytes [0xFF, 0x00, 0x00]
     let params1 = vec![
