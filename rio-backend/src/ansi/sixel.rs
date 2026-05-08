@@ -28,7 +28,7 @@ use std::{fmt, mem};
 use crate::config::colors::ColorRgb;
 use sugarloaf::{ColorType, GraphicData, GraphicId, MAX_GRAPHIC_DIMENSIONS};
 
-use copa::Params;
+use crate::performer::parser::Params;
 use tracing::trace;
 
 /// Type for color registers.

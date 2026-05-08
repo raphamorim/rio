@@ -1,4 +1,6 @@
 pub mod handler;
+mod osc;
+pub mod parser;
 
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
