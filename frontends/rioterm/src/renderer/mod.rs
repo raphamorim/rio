@@ -2,6 +2,7 @@ pub mod assistant;
 pub mod command_palette;
 pub mod custom_cursor;
 pub mod island;
+pub mod preedit;
 pub mod scrollbar;
 pub mod search;
 pub mod trail_cursor;
@@ -478,7 +479,19 @@ impl Renderer {
             // Get hint matches from renderable content
             let hint_matches = context.renderable_content.hint_matches.as_deref();
 
-            // Update cursor state from snapshot
+            // Update cursor state from snapshot. The preedit overlay
+            // (built in screen/mod.rs against this same cursor pos) is
+            // anchored at whatever `terminal_snapshot.cursor` reports
+            // at render time, following wezterm's approach: if the PTY
+            // is still catching up with pending output when a
+            // composition starts, the overlay will briefly track the
+            // transient cursor position for a frame or two before the
+            // PTY settles. This short flicker is preferable to pinning
+            // an anchor to the first frame's position, which (a)
+            // freezes a stale cursor when a movement key was coalesced
+            // with the preedit event into a single render, and (b)
+            // locks the overlay in place if that first frame happens
+            // to land mid-escape-sequence.
             context.renderable_content.cursor.state = terminal_snapshot.cursor.clone();
 
             let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
