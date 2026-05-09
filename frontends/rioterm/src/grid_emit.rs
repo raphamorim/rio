@@ -1402,6 +1402,13 @@ pub fn build_row_fg(
     row_hints: &[RowHint],
     font_library: &FontLibrary,
     route_id: usize,
+    // Column of the cursor on this row, or `None` if the cursor isn't
+    // on this row (different row, or hidden). When `Some`, the
+    // run-extension loop breaks the run around the cursor cell so
+    // partial ligature lookahead (e.g. `grap` waiting for `h` to form
+    // `graph`) can't make pre-cursor cells visually disappear while
+    // the user is mid-typing.
+    cursor_col_for_row: Option<u16>,
     fg_scratch: &mut Vec<CellText>,
 ) {
     fg_scratch.clear();
@@ -1593,6 +1600,24 @@ pub fn build_row_fg(
             let sq2 = row[Column(end)];
             if is_run_breaker(sq2) {
                 break;
+            }
+            // Cursor break: keep the cursor cell in its own one-cell
+            // run so OpenType lookahead can't leave a pre-cursor span
+            // visually empty while waiting for substitution candidates
+            // to resolve (e.g. typing `paragraph` mid-row used to make
+            // `grap` blank until `h` arrived). Skipped on grapheme
+            // cells so emoji-ZWJ / combining-mark clusters stay whole
+            // when the cursor lands on them.
+            if !sq2.has_grapheme() {
+                if let Some(cursor_x) = cursor_col_for_row {
+                    let cursor_x = cursor_x as usize;
+                    if run_start == cursor_x && end == run_start + 1 {
+                        break;
+                    }
+                    if run_start < cursor_x && end == cursor_x {
+                        break;
+                    }
+                }
             }
             let style2_id = sq2.style_id();
             if style2_id != prev_style_id {
