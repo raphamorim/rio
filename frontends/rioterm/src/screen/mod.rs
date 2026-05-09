@@ -3828,6 +3828,14 @@ impl Screen<'_> {
                         &hint_scratch,
                         &mut bg_scratch,
                     );
+                    let cursor_col_for_row = if p.cursor_visible
+                        && (y as u16) == p.cursor_row
+                        && p.cursor_shape != rio_backend::ansi::CursorShape::Hidden
+                    {
+                        Some(p.cursor_col)
+                    } else {
+                        None
+                    };
                     crate::grid_emit::build_row_fg(
                         row,
                         cols,
@@ -3844,6 +3852,7 @@ impl Screen<'_> {
                         &hint_scratch,
                         &font_library,
                         p.route_id,
+                        cursor_col_for_row,
                         &mut fg_scratch,
                     );
                     grid.write_row(y as u32, &bg_scratch, &fg_scratch);
