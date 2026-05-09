@@ -3535,6 +3535,11 @@ impl Screen<'_> {
                     >,
                 >,
                 style_set: rio_backend::crosswords::style::StyleSet,
+                /// Snapshot of the grid's extras table — needed to hash
+                /// per-cell zero-width combining codepoints into the run
+                /// shape key so cells with the same base codepoint but
+                /// different combining marks don't alias in the cache.
+                extras_table: rio_backend::crosswords::grid::ExtrasTable,
                 term_colors: rio_backend::config::colors::term::TermColors,
                 cursor_col: u16,
                 cursor_row: u16,
@@ -3630,11 +3635,12 @@ impl Screen<'_> {
                     let s = self.sugarloaf.style();
                     s.font_size * s.scale_factor
                 };
-                let (visible_rows, style_set, term_colors, display_offset) = {
+                let (visible_rows, style_set, extras_table, term_colors, display_offset) = {
                     let terminal = ctx.terminal.lock();
                     (
                         terminal.visible_rows(),
                         terminal.grid.style_set.clone(),
+                        terminal.grid.extras_table.clone(),
                         terminal.colors,
                         terminal.display_offset() as i32,
                     )
@@ -3693,6 +3699,7 @@ impl Screen<'_> {
                     font_px,
                     visible_rows,
                     style_set,
+                    extras_table,
                     term_colors,
                     cursor_col: cursor.state.pos.col.0 as u16,
                     cursor_row: cursor.state.pos.row.0 as u16,
@@ -3841,6 +3848,7 @@ impl Screen<'_> {
                         cols,
                         y as u16,
                         &p.style_set,
+                        &p.extras_table,
                         renderer_ref,
                         &p.term_colors,
                         rasterizer,

@@ -22,9 +22,11 @@
 //!
 //! `font::shaper::run::RunIterator`.
 
+use core::hash::Hasher;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{AnsiColor, NamedColor};
 use rio_backend::crosswords::grid::row::Row;
+use rio_backend::crosswords::grid::ExtrasTable;
 use rio_backend::crosswords::pos::{Column, Line, Pos};
 use rio_backend::crosswords::search::Match;
 use rio_backend::crosswords::square::{ContentTag, Square};
@@ -1061,6 +1063,14 @@ pub struct GridGlyphRasterizer {
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
     run_cache: Vec<Vec<RunCacheEntry>>,
 
+    /// Per-run hasher rebuilt at every run-start. Hashed incrementally
+    /// across the run-extension loop with `(codepoint, cluster)` pairs
+    /// per cell, then finalized after the loop with `(cell_count,
+    /// font_id, size_bucket, style_flags)`. Position-independent within
+    /// a row: identical run text at different starting columns shares
+    /// the same hash.
+    run_hasher: rapidhash::fast::RapidHasher<'static>,
+
     // macOS: stage the run in UTF-16 (what CoreText wants natively)
     // so the shaper call can hand the buffer straight to
     // `CFStringCreateWithCharactersNoCopy` with no encoding
@@ -1075,6 +1085,13 @@ pub struct GridGlyphRasterizer {
     /// shaped glyphs back to the cell they belong to.
     #[cfg(target_os = "macos")]
     run_cell_starts: Vec<u32>,
+    /// `run_cell_columns[i]` is the absolute grid column for the
+    /// `i`-th appended cell in the run. Decouples the cell-index-
+    /// within-run from the grid column so wide-char spacer cells can
+    /// be skipped (not appended to scratch / hash / column array)
+    /// while still letting the glyph→column mapping recover the right
+    /// cell for each shaped glyph.
+    run_cell_columns: Vec<u16>,
     /// Cached CoreText handles per font_id.
     #[cfg(target_os = "macos")]
     handle_cache: FxHashMap<u32, rio_backend::sugarloaf::font::macos::FontHandle>,
@@ -1112,10 +1129,12 @@ impl GridGlyphRasterizer {
             run_cache: (0..RUN_BUCKET_COUNT)
                 .map(|_| Vec::with_capacity(RUN_BUCKET_SIZE))
                 .collect(),
+            run_hasher: rapidhash::fast::RapidHasher::default(),
             #[cfg(target_os = "macos")]
             run_utf16_scratch: Vec::new(),
             #[cfg(target_os = "macos")]
             run_cell_starts: Vec::new(),
+            run_cell_columns: Vec::new(),
             #[cfg(not(target_os = "macos"))]
             run_str_scratch: String::new(),
             #[cfg(target_os = "macos")]
@@ -1207,36 +1226,63 @@ fn span_style_for_flags(style_flags: u8) -> rio_backend::sugarloaf::SpanStyle {
     s
 }
 
-/// Rapidhash-based run key. Rapidhash is the official successor to
-/// wyhash (choice) — same
-/// quality, passes SMHasher, near-ideal collision probability. We use
-/// the streaming `Hasher` API so we don't have to glue the inputs
-/// into a single byte slice.
+/// Hash the cell's zero-width combining codepoints into the per-run
+/// hasher. Each combining codepoint is stamped as `(cp, cluster)` with
+/// the same cluster as the base cell. Variation Selectors (VS-15 /
+/// VS-16) only steer presentation form, not glyph identity, so they're
+/// skipped to keep the cache key stable across presentation toggles.
 #[inline]
-fn run_hash(font_id: u32, size_bucket: u16, style_flags: u8, run_bytes: &[u8]) -> u64 {
-    use core::hash::Hasher;
-    // `fast` flavour = the standard rapidhash algorithm tuned for
-    // throughput. Quality is still SMHasher-passing (near-ideal
-    // collision rate). `quality` is overkill for in-memory cache
-    // keys where we don't need DoS resistance.
-    let mut h = rapidhash::fast::RapidHasher::default();
-    h.write_u32(font_id);
-    h.write_u16(size_bucket);
-    h.write_u8(style_flags);
-    h.write(run_bytes);
-    h.finish()
+fn hash_combining(
+    rasterizer: &mut GridGlyphRasterizer,
+    extras_table: &ExtrasTable,
+    sq: Square,
+    cluster: u32,
+) {
+    if !sq.has_grapheme() {
+        return;
+    }
+    let Some(id) = sq.extras_id() else {
+        return;
+    };
+    let Some(extras) = extras_table.get(id) else {
+        return;
+    };
+    for &cp in &extras.zerowidth {
+        if cp == '\u{FE0E}' || cp == '\u{FE0F}' {
+            continue;
+        }
+        rasterizer.run_hasher.write_u32(cp as u32);
+        rasterizer.run_hasher.write_u32(cluster);
+    }
 }
 
 // Force inline — called once per cell during run extension on the hot
 // path; body is two field reads + two compares so a real call is pure
 // overhead.
+//
+// Wide-char spacer cells (`Wide::Spacer` / `Wide::LeadingSpacer`) carry
+// `' '` as their codepoint but represent the right half / left padding
+// of a multi-cell glyph rather than an independent space character —
+// they're handled separately via `is_skipped_spacer` at the run-start
+// and run-extend sites instead of being treated as run breakers, so a
+// wide-char run can extend past its own spacer to the next glyph.
 #[inline(always)]
 fn is_run_breaker(sq: Square) -> bool {
     if sq.is_bg_only() {
         return true;
     }
-    let ch = sq.c();
-    ch == '\0' || ch == ' '
+    sq.c() == '\0'
+}
+
+/// Wide-char spacer cells contain a synthetic `' '` to occupy the
+/// second column of a wide character (or the trailing column before a
+/// soft-wrap). They aren't independent glyphs — the shaper emits the
+/// wide glyph at the base cell and we want spacers skipped from the
+/// run text + hash + cluster mapping.
+#[inline(always)]
+fn is_skipped_spacer(sq: Square) -> bool {
+    use rio_backend::crosswords::square::Wide;
+    matches!(sq.wide(), Wide::Spacer | Wide::LeadingSpacer)
 }
 
 /// Lookup. Hash → bucket; scan from most-recent; rotate on hit. No
@@ -1391,6 +1437,7 @@ pub fn build_row_fg(
     cols: usize,
     y: u16,
     style_set: &StyleSet,
+    extras_table: &ExtrasTable,
     renderer: &Renderer,
     term_colors: &TermColors,
     rasterizer: &mut GridGlyphRasterizer,
@@ -1455,10 +1502,26 @@ pub fn build_row_fg(
         fg_scratch,
     );
 
+    // Trim the row from the right: walk back to the last non-breaker
+    // cell so the outer loop doesn't iterate the (typically large)
+    // trailing-blank tail of a partially-filled row.
+    let max = (0..cols)
+        .rev()
+        .find(|&i| !is_run_breaker(row[Column(i)]))
+        .map(|i| i + 1)
+        .unwrap_or(0);
+
     let mut x: usize = 0;
-    while x < cols {
+    while x < max {
         let sq = row[Column(x)];
         if is_run_breaker(sq) {
+            x += 1;
+            continue;
+        }
+        // Wide-char spacers shouldn't be a run-start either — the
+        // wide glyph lives in the preceding `Wide` cell, this cell is
+        // pure padding. Advance past it.
+        if is_skipped_spacer(sq) {
             x += 1;
             continue;
         }
@@ -1593,6 +1656,19 @@ pub fn build_row_fg(
             rasterizer.run_str_scratch.clear();
             rasterizer.run_str_scratch.push(shape_ch);
         }
+        rasterizer.run_cell_columns.clear();
+        rasterizer.run_cell_columns.push(x as u16);
+        // Reset the per-run hasher and stamp the run-start cell as
+        // `(codepoint, cluster=0)`. Subsequent cells append themselves
+        // in the run-extension loop below.
+        rasterizer.run_hasher = rapidhash::fast::RapidHasher::default();
+        rasterizer.run_hasher.write_u32(shape_ch as u32);
+        rasterizer.run_hasher.write_u32(0);
+        // Hash the cell's zero-width combining codepoints too — without
+        // this, `(e, U+0301)` and `(e, U+0302)` would alias in the run
+        // cache. Variation Selectors (VS-15 / VS-16) don't change the
+        // glyph identity, so skip them.
+        hash_combining(rasterizer, extras_table, sq, 0);
 
         // Extend the run while (font_id, style_flags) match.
         let mut end = x + 1;
@@ -1600,6 +1676,40 @@ pub fn build_row_fg(
             let sq2 = row[Column(end)];
             if is_run_breaker(sq2) {
                 break;
+            }
+            // Wide-char spacer: advance past without appending to scratch
+            // / hash / column array. The shaper treated the preceding
+            // `Wide` cell as the glyph; this cell is just padding.
+            if is_skipped_spacer(sq2) {
+                end += 1;
+                continue;
+            }
+            // Selection-boundary break: keep selection start / end
+            // exactly aligned to a run boundary so per-cell selection
+            // re-coloring never lands mid-ligature glyph. `lo` is the
+            // first selected column and `hi` is the last (inclusive),
+            // so we break when stepping onto `lo` or one past `hi`.
+            if let Some(sel) = row_sel {
+                let end_u16 = end as u16;
+                if end_u16 == sel.lo || end_u16 == sel.hi.saturating_add(1) {
+                    break;
+                }
+            }
+            // Hard-break before known-bad Latin ligatures (`fl`, `fi`,
+            // `st`). In monospace these typically render with a single
+            // ligature glyph that visually breaks the cell grid even
+            // when the per-cell font otherwise lines up.
+            if !sq2.has_grapheme() {
+                let prev = row[Column(end - 1)];
+                if !prev.has_grapheme() {
+                    let prev_cp = prev.c();
+                    let cp = sq2.c();
+                    if (prev_cp == 'f' && (cp == 'l' || cp == 'i'))
+                        || (prev_cp == 's' && cp == 't')
+                    {
+                        break;
+                    }
+                }
             }
             // Cursor break: keep the cursor cell in its own one-cell
             // run so OpenType lookahead can't leave a pre-cursor span
@@ -1654,29 +1764,27 @@ pub fn build_row_fg(
             {
                 rasterizer.run_str_scratch.push(shape_ch2);
             }
+            // Stamp the cell into the per-run hasher with its relative
+            // cluster offset (`end - run_start`, captured *before* the
+            // increment below).
+            let cluster = (end - run_start) as u32;
+            rasterizer.run_hasher.write_u32(shape_ch2 as u32);
+            rasterizer.run_hasher.write_u32(cluster);
+            hash_combining(rasterizer, extras_table, sq2, cluster);
+            rasterizer.run_cell_columns.push(end as u16);
             end += 1;
         }
 
-        #[cfg(target_os = "macos")]
-        let run_bytes: &[u8] = {
-            // Reinterpret the u16 scratch as bytes for the hasher —
-            // same alignment rule as `slice::align_to`, but we know
-            // u16 → u8 is always well-aligned so this is a trivial
-            // cast. Only the byte pattern matters for the hash.
-            let s = &rasterizer.run_utf16_scratch;
-            // Safety: `u16` has stricter alignment than `u8`; the
-            // resulting byte slice aliases `s` read-only for the
-            // lifetime of this borrow.
-            unsafe {
-                core::slice::from_raw_parts(
-                    s.as_ptr() as *const u8,
-                    s.len() * core::mem::size_of::<u16>(),
-                )
-            }
-        };
-        #[cfg(not(target_os = "macos"))]
-        let run_bytes: &[u8] = rasterizer.run_str_scratch.as_bytes();
-        let hash = run_hash(font_id, size_bucket, run_style_flags, run_bytes);
+        // Finalize the per-run hash: append `(cell_count, font_id,
+        // size_bucket)`. `style_flags` are not included separately
+        // because `font_id` already varies with style (`resolve_font`
+        // factors style_flags into the resolution key); adding them
+        // a second time would just be redundant work.
+        let cell_count = (end - run_start) as u32;
+        rasterizer.run_hasher.write_u32(cell_count);
+        rasterizer.run_hasher.write_u32(font_id);
+        rasterizer.run_hasher.write_u16(size_bucket);
+        let hash = rasterizer.run_hasher.finish();
 
         // Shape (cached) and capture ascent for this (font_id, size).
         let ascent_px = if run_cache_get(&mut rasterizer.run_cache, hash).is_some() {
@@ -1753,7 +1861,16 @@ pub fn build_row_fg(
         }
 
         for &(glyph_id, cell_idx_in_run) in &glyph_emits {
-            let grid_col = (run_start as u16).saturating_add(cell_idx_in_run);
+            // Map the appended-cell index back to its actual grid
+            // column. Spacer cells were skipped from the run text so
+            // `cell_idx_in_run` no longer equals `column - run_start`;
+            // the parallel `run_cell_columns` table records the source
+            // column for each appended cell.
+            let grid_col = rasterizer
+                .run_cell_columns
+                .get(cell_idx_in_run as usize)
+                .copied()
+                .unwrap_or((run_start as u16).saturating_add(cell_idx_in_run));
             if (grid_col as usize) >= cols {
                 continue;
             }
@@ -1779,9 +1896,10 @@ pub fn build_row_fg(
 
             // Pull fg from the cluster's first cell. Non-ligature runs
             // end up with one cluster per cell (per-cell colour);
-            // ligatures take the first cluster cell's colour.
-            let src_col =
-                (run_start + cell_idx_in_run as usize).min(cols.saturating_sub(1));
+            // ligatures take the first cluster cell's colour. Mapped
+            // through `run_cell_columns` for the same reason as
+            // `grid_col` above.
+            let src_col = (grid_col as usize).min(cols.saturating_sub(1));
             let src_sq = row[Column(src_col)];
             let (atlas, color) = if is_color {
                 // Colour glyphs (emoji) don't take the selection-fg /
