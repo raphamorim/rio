@@ -6,11 +6,10 @@ use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Scroll;
 use crate::crosswords::pos::{Direction, Pos};
 use crate::crosswords::search::{Match, RegexSearch};
-use crate::crosswords::LineDamage;
 use crate::error::RioError;
 use rio_window::event::Event as RioWindowEvent;
 use std::borrow::Cow;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
@@ -46,16 +45,25 @@ pub enum ClickState {
     TripleClick,
 }
 
-/// Terminal damage information for efficient rendering
-#[derive(Debug, Clone, PartialEq, Default)]
+/// Terminal damage hint — coarse signal for the renderer's update path.
+/// The actual per-row decision lives on the snapshot's `Row::dirty`
+/// (post-`snapshot_visible`); this enum just gates `update` itself
+/// (skip vs incremental vs full rebuild). Variants:
+/// - `Noop` — no terminal-side change worth rendering for
+/// - `Full` — global state changed (resize, palette, mode flip),
+///   force a full rebuild even if no individual row is dirty
+/// - `Partial` — at least one row's content changed; the snapshot's
+///   per-row dirty bits identify which rows
+/// - `CursorOnly` — cursor moved/blinked, no cell content changed
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TerminalDamage {
     /// Nothing changed — skip rendering entirely
     #[default]
     Noop,
     /// The entire terminal needs to be redrawn
     Full,
-    /// Only specific lines need to be redrawn
-    Partial(BTreeSet<LineDamage>),
+    /// At least one row changed; consult per-row dirty bits
+    Partial,
     /// Only the cursor position has changed
     CursorOnly,
 }

@@ -357,6 +357,9 @@ impl Screen<'_> {
     #[allow(dead_code)]
     pub fn drop_grid(&mut self, route_id: usize) {
         self.grids.remove(&route_id);
+        // The per-context viewport buffers (visible_rows, cell_styles,
+        // extras_table) live on `RenderableContent` and drop with the
+        // context itself.
     }
 
     #[inline]
@@ -3448,11 +3451,9 @@ impl Screen<'_> {
             }
         }
 
-        let (window_update, any_panel_dirty) = self.renderer.run(
-            &mut self.sugarloaf,
-            &mut self.context_manager,
-            &self.search_state.focused_match,
-        );
+        let (window_update, any_panel_dirty) = self
+            .renderer
+            .run(&mut self.sugarloaf, &mut self.context_manager);
         let has_animation = self.renderer.needs_redraw();
         let should_present = any_panel_dirty || has_animation;
 
@@ -3534,12 +3535,19 @@ impl Screen<'_> {
                         rio_backend::crosswords::square::Square,
                     >,
                 >,
-                style_set: rio_backend::crosswords::style::StyleSet,
+                /// Per-cell resolved styles, flat row-major (length =
+                /// `cols * rows`). Materialized under the terminal
+                /// lock by walking visible cells and resolving
+                /// `style_id → Style` once per cell. Post-unlock the
+                /// renderer reads styles purely from this slab; no
+                /// reference back to the live grid's intern table.
+                cell_styles: Vec<rio_backend::crosswords::style::Style>,
                 /// Snapshot of the grid's extras table — needed to hash
                 /// per-cell zero-width combining codepoints into the run
                 /// shape key so cells with the same base codepoint but
                 /// different combining marks don't alias in the cache.
-                extras_table: rio_backend::crosswords::grid::ExtrasTable,
+                extras:
+                    rustc_hash::FxHashMap<u16, rio_backend::crosswords::square::Extras>,
                 term_colors: rio_backend::config::colors::term::TermColors,
                 cursor_col: u16,
                 cursor_row: u16,
@@ -3635,22 +3643,27 @@ impl Screen<'_> {
                     let s = self.sugarloaf.style();
                     s.font_size * s.scale_factor
                 };
-                let (visible_rows, style_set, extras_table, term_colors, display_offset) = {
-                    let terminal = ctx.terminal.lock();
-                    (
-                        terminal.visible_rows(),
-                        terminal.grid.style_set.clone(),
-                        terminal.grid.extras_table.clone(),
-                        terminal.colors,
-                        terminal.display_offset() as i32,
-                    )
-                };
+                // The viewport snapshot was already taken by
+                // `Renderer::run` for this context: visible rows,
+                // per-cell styles, extras table, term colors, and
+                // display offset all live on `ctx.renderable_content`.
+                // No second terminal lock and no second materialize —
+                // we take ownership of the buffers via `mem::take`
+                // and put them back at the end of the render pass so
+                // the next frame's `Renderer::run` resumes the same
+                // allocations.
+                let visible_rows =
+                    std::mem::take(&mut ctx.renderable_content.visible_rows);
+                let cell_styles = std::mem::take(&mut ctx.renderable_content.cell_styles);
+                let extras = std::mem::take(&mut ctx.renderable_content.extras);
+                let term_colors = ctx.renderable_content.term_colors;
+                let display_offset = ctx.renderable_content.display_offset as i32;
                 let selection = ctx.renderable_content.selection_range;
                 let cursor = &ctx.renderable_content.cursor;
                 // Take + reset so next frame sees fresh damage only
                 // from this frame's `Renderer::run`.
                 let damage = std::mem::replace(
-                    &mut ctx.renderable_content.last_frame_damage,
+                    &mut ctx.renderable_content.frame_damage,
                     rio_backend::event::TerminalDamage::Noop,
                 );
                 let hint_matches = ctx.renderable_content.hint_matches.clone();
@@ -3698,8 +3711,8 @@ impl Screen<'_> {
                     cell_h,
                     font_px,
                     visible_rows,
-                    style_set,
-                    extras_table,
+                    cell_styles,
+                    extras,
                     term_colors,
                     cursor_col: cursor.state.pos.col.0 as u16,
                     cursor_row: cursor.state.pos.row.0 as u16,
@@ -3743,7 +3756,7 @@ impl Screen<'_> {
             let rasterizer = &mut self.grid_rasterizer;
             let renderer_ref = &self.renderer;
             for (route_id, grid) in self.grids.iter_mut() {
-                let Some(p) = panels.iter().find(|p| p.route_id == *route_id) else {
+                let Some(p) = panels.iter_mut().find(|p| p.route_id == *route_id) else {
                     continue;
                 };
 
@@ -3762,22 +3775,20 @@ impl Screen<'_> {
                 let force_full = grid.needs_full_rebuild()
                     || matches!(p.damage, rio_backend::event::TerminalDamage::Full);
 
-                enum RowsToRebuild<'a> {
+                enum RowsToRebuild {
                     None,
                     All,
-                    Only(
-                        &'a std::collections::BTreeSet<
-                            rio_backend::crosswords::LineDamage,
-                        >,
-                    ),
+                    /// Per-row decision: walk `visible_rows` and
+                    /// rebuild rows whose `dirty` bit is set.
+                    Dirty,
                 }
                 let rows_to_rebuild = if force_full {
                     RowsToRebuild::All
                 } else {
-                    match &p.damage {
+                    match p.damage {
                         rio_backend::event::TerminalDamage::Full => RowsToRebuild::All,
-                        rio_backend::event::TerminalDamage::Partial(lines) => {
-                            RowsToRebuild::Only(lines)
+                        rio_backend::event::TerminalDamage::Partial => {
+                            RowsToRebuild::Dirty
                         }
                         rio_backend::event::TerminalDamage::CursorOnly
                         | rio_backend::event::TerminalDamage::Noop => RowsToRebuild::None,
@@ -3801,70 +3812,73 @@ impl Screen<'_> {
                 // never needs shaping so it runs on all platforms;
                 // the fg path is macOS-specific pending the
                 // wgpu+swash port.
-                let hint_matches_slice = p.hint_matches.as_deref();
-                let focused_match_ref = p.focused_match.as_ref();
-                let hovered_hyperlink = p.hovered_hyperlink;
-                let mut rebuild_row = |y: usize,
-                                       grid: &mut rio_backend::sugarloaf::grid::GridRenderer,
-                                       rasterizer: &mut crate::grid_emit::GridGlyphRasterizer| {
-                    let Some(row) = p.visible_rows.get(y) else {
-                        return;
+                let mut rebuild_row =
+                    |p: &PanelFrame,
+                     y: usize,
+                     grid: &mut rio_backend::sugarloaf::grid::GridRenderer,
+                     rasterizer: &mut crate::grid_emit::GridGlyphRasterizer| {
+                        let Some(row) = p.visible_rows.get(y) else {
+                            return;
+                        };
+                        let row_styles_start = y * cols;
+                        let row_styles_end = row_styles_start + cols;
+                        let row_styles =
+                            &p.cell_styles[row_styles_start..row_styles_end];
+                        let row_sel = crate::grid_emit::row_selection_for(
+                            p.selection,
+                            y,
+                            cols,
+                            p.display_offset,
+                        );
+                        crate::grid_emit::row_hints_for(
+                            p.hint_matches.as_deref(),
+                            p.focused_match.as_ref(),
+                            p.hovered_hyperlink,
+                            y,
+                            cols,
+                            p.display_offset,
+                            &mut hint_scratch,
+                        );
+                        crate::grid_emit::build_row_bg(
+                            row,
+                            cols,
+                            row_styles,
+                            renderer_ref,
+                            &p.term_colors,
+                            row_sel,
+                            &hint_scratch,
+                            &mut bg_scratch,
+                        );
+                        let cursor_col_for_row = if p.cursor_visible
+                            && (y as u16) == p.cursor_row
+                            && p.cursor_shape != rio_backend::ansi::CursorShape::Hidden
+                        {
+                            Some(p.cursor_col)
+                        } else {
+                            None
+                        };
+                        crate::grid_emit::build_row_fg(
+                            row,
+                            cols,
+                            y as u16,
+                            row_styles,
+                            &p.extras,
+                            renderer_ref,
+                            &p.term_colors,
+                            rasterizer,
+                            grid,
+                            p.font_px,
+                            p.cell_w,
+                            p.cell_h,
+                            row_sel,
+                            &hint_scratch,
+                            &font_library,
+                            p.route_id,
+                            cursor_col_for_row,
+                            &mut fg_scratch,
+                        );
+                        grid.write_row(y as u32, &bg_scratch, &fg_scratch);
                     };
-                    let row_sel = crate::grid_emit::row_selection_for(
-                        p.selection,
-                        y,
-                        cols,
-                        p.display_offset,
-                    );
-                    crate::grid_emit::row_hints_for(
-                        hint_matches_slice,
-                        focused_match_ref,
-                        hovered_hyperlink,
-                        y,
-                        cols,
-                        p.display_offset,
-                        &mut hint_scratch,
-                    );
-                    crate::grid_emit::build_row_bg(
-                        row,
-                        cols,
-                        &p.style_set,
-                        renderer_ref,
-                        &p.term_colors,
-                        row_sel,
-                        &hint_scratch,
-                        &mut bg_scratch,
-                    );
-                    let cursor_col_for_row = if p.cursor_visible
-                        && (y as u16) == p.cursor_row
-                        && p.cursor_shape != rio_backend::ansi::CursorShape::Hidden
-                    {
-                        Some(p.cursor_col)
-                    } else {
-                        None
-                    };
-                    crate::grid_emit::build_row_fg(
-                        row,
-                        cols,
-                        y as u16,
-                        &p.style_set,
-                        &p.extras_table,
-                        renderer_ref,
-                        &p.term_colors,
-                        rasterizer,
-                        grid,
-                        p.font_px,
-                        p.cell_w,
-                        p.cell_h,
-                        row_sel,
-                        &hint_scratch,
-                        &font_library,
-                        p.route_id,
-                        cursor_col_for_row,
-                        &mut fg_scratch,
-                    );
-                    grid.write_row(y as u32, &bg_scratch, &fg_scratch);
-                };
 
                 match rows_to_rebuild {
                     RowsToRebuild::None => {
@@ -3875,13 +3889,21 @@ impl Screen<'_> {
                     }
                     RowsToRebuild::All => {
                         for y in 0..p.visible_rows.len() {
-                            rebuild_row(y, grid, rasterizer);
+                            rebuild_row(p, y, grid, rasterizer);
                         }
                         grid.mark_full_rebuild_done();
                     }
-                    RowsToRebuild::Only(lines) => {
-                        for ld in lines {
-                            rebuild_row(ld.line, grid, rasterizer);
+                    RowsToRebuild::Dirty => {
+                        // Walk the snapshot rows; rebuild + clear the
+                        // per-row dirty bit. Set by `snapshot_visible`
+                        // for rows it copied this frame; cleared here
+                        // so next frame starts clean.
+                        for y in 0..p.visible_rows.len() {
+                            if !p.visible_rows[y].dirty {
+                                continue;
+                            }
+                            rebuild_row(p, y, grid, rasterizer);
+                            p.visible_rows[y].dirty = false;
                         }
                     }
                 }
@@ -4010,6 +4032,28 @@ impl Screen<'_> {
                 // composite them on top of their re-pushed selves.
                 self.sugarloaf.discard_frame();
             }
+
+            // Return each panel's snapshot buffers to the matching
+            // context's `renderable_content` so the next frame's
+            // `Renderer::run` can reuse the existing allocations
+            // (rows, per-cell styles, extras table). Closed routes
+            // simply drop their PanelFrame; the context (and its
+            // renderable_content) is gone too.
+            for (_, item) in self
+                .context_manager
+                .current_grid_mut()
+                .contexts_mut()
+                .iter_mut()
+            {
+                let route_id = item.val.route_id;
+                if let Some(idx) = panels.iter().position(|p| p.route_id == route_id) {
+                    let p = panels.swap_remove(idx);
+                    item.val.renderable_content.visible_rows = p.visible_rows;
+                    item.val.renderable_content.cell_styles = p.cell_styles;
+                    item.val.renderable_content.extras = p.extras;
+                }
+            }
+            panels.clear();
         }
 
         // Mark as dirty if we need continuous rendering (e.g.,
@@ -4237,63 +4281,54 @@ impl Screen<'_> {
                 .renderable_content
                 .hint_matches = Some(matches);
 
-            // Mark lines with hint labels as damaged
-            let mut damaged_lines = std::collections::BTreeSet::new();
+            // Hint state changed (search input, label visibility,
+            // match selection). The visualization changes per-cell —
+            // hint highlights, label glyphs — without touching cell
+            // content, so we mark each affected line dirty on the
+            // live grid. The next snapshot picks them up via the
+            // per-row dirty walk and sets `visible_rows[y].dirty` so
+            // GPU emit re-emits those rows. Coarse fallback when we
+            // can't compute affected lines: `Full`.
             {
-                let current = &self.context_manager.current();
-                let hint_labels = &current.renderable_content.hint_labels;
-                let terminal = current.terminal.lock();
+                let current = self.context_manager.current_mut();
+                let hint_labels = current.renderable_content.hint_labels.clone();
+                let hint_matches = current.renderable_content.hint_matches.clone();
+                let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
                 let screen_lines = terminal.screen_lines();
-                drop(terminal);
 
-                if !hint_labels.is_empty() {
-                    // Collect all lines that have hint labels
-                    for label in hint_labels {
-                        let line = label.position.row.0 - display_offset as i32;
-                        if line >= 0 && (line as usize) < screen_lines {
-                            damaged_lines.insert(
-                                rio_backend::crosswords::LineDamage::new(
-                                    line as usize,
-                                    true,
-                                ),
-                            );
-                        }
+                let mut any = false;
+                for label in &hint_labels {
+                    let line = label.position.row.0 - display_offset as i32;
+                    if line >= 0 && (line as usize) < screen_lines {
+                        terminal.grid[rio_backend::crosswords::pos::Line(line)].dirty =
+                            true;
+                        any = true;
                     }
                 }
-
-                // Also damage lines with hint matches
-                if let Some(hint_matches) = &current.renderable_content.hint_matches {
+                if let Some(hint_matches) = &hint_matches {
                     for hint_match in hint_matches {
                         let start_line = hint_match.start().row.0 - display_offset as i32;
                         let end_line = hint_match.end().row.0 - display_offset as i32;
-
                         for line in start_line..=end_line {
                             if line >= 0 && (line as usize) < screen_lines {
-                                damaged_lines.insert(
-                                    rio_backend::crosswords::LineDamage::new(
-                                        line as usize,
-                                        true,
-                                    ),
-                                );
+                                terminal.grid[rio_backend::crosswords::pos::Line(line)]
+                                    .dirty = true;
+                                any = true;
                             }
                         }
                     }
                 }
-            }
+                drop(terminal);
 
-            let current = self.context_manager.current_mut();
-            if !damaged_lines.is_empty() {
                 current
                     .renderable_content
                     .pending_update
-                    .set_terminal_damage(TerminalDamage::Partial(damaged_lines));
-            } else {
-                // Force full damage if no specific lines (for hint highlights)
-                current
-                    .renderable_content
-                    .pending_update
-                    .set_terminal_damage(TerminalDamage::Full);
+                    .set_terminal_damage(if any {
+                        TerminalDamage::Partial
+                    } else {
+                        TerminalDamage::Full
+                    });
             }
         } else if !self.search_active() {
             // Clear hint state only if search is not active,

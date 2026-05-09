@@ -510,19 +510,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if route_id == route.window.screen.ctx().current_route() {
-                        // Get cursor position for damage
-                        let cursor_line = {
-                            let terminal = route
-                                .window
-                                .screen
-                                .ctx_mut()
-                                .current_mut()
-                                .terminal
-                                .lock();
-                            terminal.cursor().pos.row.0 as usize
-                        };
-
-                        // Set terminal damage for cursor line
+                        // Cursor blink toggles the cursor sprite (a
+                        // separate quad), not cell content — so we
+                        // signal `CursorOnly` and the GPU emit skips
+                        // per-row rebuild while the cursor uniform
+                        // updates downstream.
                         route
                             .window
                             .screen
@@ -531,14 +523,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .renderable_content
                             .pending_update
                             .set_terminal_damage(
-                                rio_backend::event::TerminalDamage::Partial(
-                                    [rio_backend::crosswords::LineDamage::new(
-                                        cursor_line,
-                                        true,
-                                    )]
-                                    .into_iter()
-                                    .collect(),
-                                ),
+                                rio_backend::event::TerminalDamage::CursorOnly,
                             );
 
                         route.request_redraw();

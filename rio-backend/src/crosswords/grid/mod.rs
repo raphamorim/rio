@@ -61,7 +61,8 @@ pub struct Grid<T> {
 
     /// Per-grid intern table for cell styles. Cells store only a `StyleId`;
     /// the actual fg/bg/underline_color/sgr-flags live here and are looked up
-    /// at render/SGR-mutation time.
+    /// at render/SGR-mutation time. The renderer snapshots a clone under the
+    /// terminal lock so post-unlock reads don't race PTY writes.
     pub style_set: crate::crosswords::style::StyleSet,
 
     /// Per-grid storage for the rare per-cell data that used to live inside
@@ -245,6 +246,13 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
                 self.raw[line].reset(&self.cursor.template);
             }
         }
+
+        // See `scroll_up` for the rationale — `raw.swap` / `raw.rotate`
+        // don't propagate `Row::dirty` across line indices, so we mark
+        // the whole region dirty at the end.
+        for i in (region.start.0..region.end.0).map(Line::from) {
+            self.raw[i].dirty = true;
+        }
     }
 
     pub fn cursor_square(&mut self) -> &mut T {
@@ -256,6 +264,12 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     ///
     /// This is the performance-sensitive part of scrolling.
     pub fn scroll_up(&mut self, region: &Range<Line>, positions: usize) {
+        // Storage-level shifts below (`raw.swap`, `raw.rotate`) move
+        // row content between line indices without going through
+        // `IndexMut`, so the moved Row's `dirty` bit travels with the
+        // content rather than tracking the destination line. We mark
+        // the whole region dirty at the end so the snapshot picks up
+        // the post-scroll layout. Same fix for `scroll_down` below.
         // When rotating the entire region with fixed lines at the top, just reset everything.
         if region.end - region.start <= positions && region.start != 0 {
             for i in (region.start.0..region.end.0).map(Line::from) {
@@ -306,6 +320,13 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         // Ensure all new lines are fully cleared.
         for i in (region.end.0 - positions as i32..region.end.0).map(Line::from) {
             self.raw[i].reset(&self.cursor.template);
+        }
+
+        // Mark every row in the region dirty. Reset rows above already
+        // got `dirty = true` from `Row::reset`; the swap/rotate'd ones
+        // still have whatever bit they carried in via the source line.
+        for i in (region.start.0..region.end.0).map(Line::from) {
+            self.raw[i].dirty = true;
         }
     }
 

@@ -54,7 +54,6 @@ use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
 use square::{Hyperlink, LineLength, Square};
-use std::collections::BTreeSet;
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
@@ -593,29 +592,14 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Peek damage event based on current damage state
     pub fn peek_damage_event(&self) -> Option<TerminalDamage> {
-        let display_offset = self.grid.display_offset();
         if self.damage.full {
             Some(TerminalDamage::Full)
+        } else if self.damage.lines.iter().any(|line| line.is_damaged()) {
+            Some(TerminalDamage::Partial)
+        } else if self.damage.last_cursor != self.grid.cursor.pos {
+            Some(TerminalDamage::CursorOnly)
         } else {
-            // Collect damaged lines
-            let damaged_lines: BTreeSet<LineDamage> = self
-                .damage
-                .lines
-                .iter()
-                .filter(|line| line.is_damaged())
-                .map(|line| LineDamage::new(line.line + display_offset, true))
-                .collect();
-
-            if damaged_lines.is_empty() {
-                // Check if cursor moved
-                if self.damage.last_cursor != self.grid.cursor.pos {
-                    Some(TerminalDamage::CursorOnly)
-                } else {
-                    None // No damage to emit
-                }
-            } else {
-                Some(TerminalDamage::Partial(damaged_lines))
-            }
+            None
         }
     }
 
@@ -1335,76 +1319,235 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn visible_rows(&self) -> Vec<Row<Square>> {
-        let mut start = self.scroll_region.start.0;
-        let mut end = self.scroll_region.end.0;
-        let mut visible_rows = Vec::with_capacity(self.grid.screen_lines());
-
-        let scroll = self.display_offset() as i32;
-        if scroll != 0 {
-            start -= scroll;
-            end -= scroll;
-        }
-
-        for row in start..end {
-            visible_rows.push(self.grid[Line(row)].clone());
-        }
-
-        visible_rows
+        let mut buf = Vec::with_capacity(self.grid.screen_lines());
+        self.fill_visible_rows(&mut buf);
+        buf
     }
 
-    /// Get visible rows with damage information - only clones damaged lines
-    pub fn visible_rows_with_damage(
+    /// Materialize per-cell styles for one row, pushing `cols` entries
+    /// to `dst`. Fast-paths rows where `occ == 0`: a row that hasn't
+    /// been written to since its last reset has all cells sharing the
+    /// same `style_id` (the cursor template's style at reset time —
+    /// often default, but bold/dim/etc. when the user is mid-SGR).
+    /// Resolve once and broadcast — skip the per-cell `style_set.get`
+    /// walk that would otherwise return the same `Style` for every
+    /// cell.
+    #[inline]
+    fn materialize_row_styles(
         &self,
-        damage: &TerminalDamage,
-    ) -> (Vec<Row<Square>>, Vec<usize>) {
+        row: &Row<Square>,
+        cols: usize,
+        dst: &mut Vec<crate::crosswords::style::Style>,
+    ) {
+        if row.occ == 0 {
+            let style = row
+                .inner
+                .first()
+                .map_or_else(crate::crosswords::style::Style::default, |sq| {
+                    self.grid.style_set.get(sq.style_id())
+                });
+            for _ in 0..cols {
+                dst.push(style);
+            }
+            return;
+        }
+        let row_cells = &row.inner;
+        for x in 0..cols {
+            let style = row_cells.get(x).map_or_else(
+                crate::crosswords::style::Style::default,
+                |sq| {
+                    if sq.is_bg_only() {
+                        crate::crosswords::style::Style::default()
+                    } else {
+                        self.grid.style_set.get(sq.style_id())
+                    }
+                },
+            );
+            dst.push(style);
+        }
+    }
+
+    /// In-place variant of [`Self::materialize_row_styles`]. Writes
+    /// into `dst[0..cols]`. Used by the per-row dirty path so existing
+    /// slots get rewritten without dropping the `Vec`'s capacity.
+    #[inline]
+    fn materialize_row_styles_at(
+        &self,
+        row: &Row<Square>,
+        cols: usize,
+        dst: &mut [crate::crosswords::style::Style],
+    ) {
+        if row.occ == 0 {
+            let style = row
+                .inner
+                .first()
+                .map_or_else(crate::crosswords::style::Style::default, |sq| {
+                    self.grid.style_set.get(sq.style_id())
+                });
+            dst[..cols].fill(style);
+            return;
+        }
+        let row_cells = &row.inner;
+        for (x, slot) in dst.iter_mut().take(cols).enumerate() {
+            *slot = row_cells.get(x).map_or_else(
+                crate::crosswords::style::Style::default,
+                |sq| {
+                    if sq.is_bg_only() {
+                        crate::crosswords::style::Style::default()
+                    } else {
+                        self.grid.style_set.get(sq.style_id())
+                    }
+                },
+            );
+        }
+    }
+
+    /// Damage-aware viewport snapshot. Updates `dst` (rows) and
+    /// `cell_styles` (per-cell resolved `Style`, flat row-major,
+    /// length `cols × rows`) to reflect the visible viewport, using
+    /// `damage` to skip unchanged rows.
+    ///
+    /// - `Noop` / `CursorOnly`: preserve both buffers — no row content
+    ///   changed.
+    /// - `Full`: rebuild every row + every cell style.
+    /// - `Partial(lines)`: rebuild only rows in the damage set; other
+    ///   rows in `dst` / `cell_styles` keep their previous values.
+    /// - First-frame / size-mismatch: forced full rebuild regardless
+    ///   of `damage` (covers cold buffers and resize-in-flight).
+    ///
+    /// Per-row dirty filter via `Row::dirty`, per-cell style
+    /// materialize by value, plus a plain-text fast path for blank
+    /// rows (`row.occ == 0`). The `damage` hint only gates whether to
+    /// do any work at all (`Noop`/`CursorOnly` skip; `Full` forces a
+    /// full rebuild even with no dirty rows; `Partial` walks the
+    /// per-row bits). Two-stage dirty: live-grid bits cleared after
+    /// read; snapshot (`dst`) bits set on rebuilt rows so the GPU
+    /// emit path can read + clear them downstream.
+    pub fn snapshot_visible(
+        &mut self,
+        damage: &crate::event::TerminalDamage,
+        cols: usize,
+        dst: &mut Vec<Row<Square>>,
+        cell_styles: &mut Vec<crate::crosswords::style::Style>,
+        extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
+    ) {
+        use crate::event::TerminalDamage;
         let mut start = self.scroll_region.start.0;
         let mut end = self.scroll_region.end.0;
-        let mut visible_rows = Vec::with_capacity(self.grid.screen_lines());
-        let mut damaged_lines = Vec::new();
-
         let scroll = self.display_offset() as i32;
         if scroll != 0 {
             start -= scroll;
             end -= scroll;
         }
+        let count = (end - start) as usize;
+        let total = count * cols;
 
-        // Determine which lines are damaged
-        match damage {
-            TerminalDamage::Full => {
-                // For full damage, all lines are damaged
-                for (i, row) in (start..end).enumerate() {
-                    visible_rows.push(self.grid[Line(row)].clone());
-                    damaged_lines.push(i);
-                }
-            }
-            TerminalDamage::Partial(lines) => {
-                // Only clone damaged lines
-                let damaged_set: std::collections::HashSet<usize> =
-                    lines.iter().filter(|d| d.damaged).map(|d| d.line).collect();
+        let needs_full = matches!(damage, TerminalDamage::Full)
+            || dst.len() != count
+            || cell_styles.len() != total;
 
-                for (i, row) in (start..end).enumerate() {
-                    visible_rows.push(self.grid[Line(row)].clone());
-                    if damaged_set.contains(&i) {
-                        damaged_lines.push(i);
-                    }
-                }
+        if needs_full {
+            dst.clear();
+            dst.reserve(count);
+            cell_styles.clear();
+            cell_styles.reserve(total);
+            extras.clear();
+            for row_idx in start..end {
+                let src = &self.grid[Line(row_idx)];
+                let mut copied = src.clone();
+                copied.dirty = true;
+                dst.push(copied);
+                self.materialize_row_styles(src, cols, cell_styles);
+                self.refresh_row_extras(src, extras);
             }
-            TerminalDamage::CursorOnly => {
-                // For cursor-only damage, we still need all rows but mark cursor line
-                let cursor_line = self.grid.cursor.pos.row.0 as usize;
-                for (i, row) in (start..end).enumerate() {
-                    visible_rows.push(self.grid[Line(row)].clone());
-                    if i == cursor_line {
-                        damaged_lines.push(i);
-                    }
-                }
+            for row_idx in start..end {
+                self.grid[Line(row_idx)].dirty = false;
             }
-            TerminalDamage::Noop => {
-                // Nothing changed
-            }
+            return;
         }
 
-        (visible_rows, damaged_lines)
+        if matches!(damage, TerminalDamage::Noop | TerminalDamage::CursorOnly) {
+            // Preserve both buffers — no cell content can have changed
+            // (these damage variants come from cursor-only / overlay
+            // events, not cell writes).
+            return;
+        }
+
+        // Partial damage: walk visible rows, copy only the ones whose
+        // own dirty bit is set on the live grid. Set the snapshot
+        // row's dirty bit so GPU emit knows to re-emit it; clear the
+        // live grid's bit since we just read it. Refresh extras for
+        // dirty rows only. Stale ids in `extras` accumulate when they
+        // fall out of view; the periodic-deinit safety net
+        // (`DEINIT_PERIOD`) handles drift.
+        #[allow(clippy::needless_range_loop)]
+        for y in 0..count {
+            let row_idx = start + y as i32;
+            if !self.grid[Line(row_idx)].dirty {
+                continue;
+            }
+            let src = &self.grid[Line(row_idx)];
+            dst[y].copy_from(src);
+            dst[y].dirty = true;
+            let off = y * cols;
+            self.materialize_row_styles_at(src, cols, &mut cell_styles[off..off + cols]);
+            self.refresh_row_extras(src, extras);
+        }
+        for row_idx in start..end {
+            self.grid[Line(row_idx)].dirty = false;
+        }
+    }
+
+    /// Insert (overwriting) every extras id referenced by `row`'s
+    /// cells into `extras`. Overwrite semantics are deliberate — when
+    /// extras data is mutated in place on the live grid (e.g., a
+    /// zerowidth combining codepoint appended to an existing cell),
+    /// the cell's row is marked dirty by the surrounding `IndexMut`
+    /// write, so any other rows referencing the same id pick up the
+    /// fresh data on this row's refresh.
+    fn refresh_row_extras(
+        &self,
+        row: &Row<Square>,
+        extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
+    ) {
+        for sq in &row.inner {
+            if let Some(id) = sq.extras_id() {
+                if let Some(live) = self.grid.extras_table.get(id) {
+                    extras.insert(id, live.clone());
+                }
+            }
+        }
+    }
+
+    /// Copy the visible viewport into `dst` in place. Reuses both the
+    /// outer `Vec`'s capacity and each inner `Row`'s `Vec<Square>`
+    /// allocation (via [`Row::copy_from`]) so the renderer's frame
+    /// buffer doesn't reallocate every frame at steady state.
+    #[inline]
+    pub fn fill_visible_rows(&self, dst: &mut Vec<Row<Square>>) {
+        let mut start = self.scroll_region.start.0;
+        let mut end = self.scroll_region.end.0;
+        let scroll = self.display_offset() as i32;
+        if scroll != 0 {
+            start -= scroll;
+            end -= scroll;
+        }
+        let count = (end - start) as usize;
+
+        // Copy each visible row into the matching slot. Excess slots
+        // get truncated; missing ones get pushed (with a fresh `Row`
+        // each — first-frame allocation only).
+        for (i, row_idx) in (start..end).enumerate() {
+            let src = &self.grid[Line(row_idx)];
+            if let Some(dst_row) = dst.get_mut(i) {
+                dst_row.copy_from(src);
+            } else {
+                dst.push(src.clone());
+            }
+        }
+        if dst.len() > count {
+            dst.truncate(count);
+        }
     }
 
     /// Get terminal dimensions
@@ -4986,7 +5129,7 @@ mod tests {
 
         // Specifically check that it's not just cursor-only damage
         match damage {
-            Some(TerminalDamage::Partial(_)) | Some(TerminalDamage::Full) => {
+            Some(TerminalDamage::Partial) | Some(TerminalDamage::Full) => {
                 // Good - line damage was registered
             }
             Some(TerminalDamage::CursorOnly) | Some(TerminalDamage::Noop) => {
