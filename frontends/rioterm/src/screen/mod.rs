@@ -1577,8 +1577,6 @@ impl Screen<'_> {
     }
 
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
-        let layout = self.context_manager.current().dimension;
-        let previous_margin = layout.margin;
         let padding_y_top = padding_top_from_config(
             &self.renderer.navigation,
             self.renderer.margin.top,
@@ -1587,8 +1585,16 @@ impl Screen<'_> {
         );
         let padding_y_bottom = self.renderer.margin.bottom;
 
-        if previous_margin.top != padding_y_top
-            || previous_margin.bottom != padding_y_bottom
+        // Compare against the grid's scaled_margin (the actual current margin)
+        // rather than dimension.margin, which apply_taffy_layout zeroes out and
+        // therefore cannot tell us whether the top-bar margin changed.
+        let scale = self.sugarloaf.scale_factor();
+        let current_scaled_margin = self.context_manager.current_grid().scaled_margin;
+        let previous_margin_top = current_scaled_margin.top / scale;
+        let previous_margin_bottom = current_scaled_margin.bottom / scale;
+
+        if previous_margin_top != padding_y_top
+            || previous_margin_bottom != padding_y_bottom
         {
             let current_dim = self.context_manager.current().dimension;
             if current_dim.font_size > 0.0 {
@@ -1596,7 +1602,6 @@ impl Screen<'_> {
                 s.font_size = current_dim.font_size;
                 s.line_height = current_dim.line_height;
 
-                let scale = self.sugarloaf.scale_factor();
                 let d = self.context_manager.current_grid_mut();
                 d.update_scaled_margin(Margin::new(
                     padding_y_top * scale,
@@ -2617,6 +2622,11 @@ impl Screen<'_> {
 
         let window_width = self.sugarloaf.window_size().width;
         let num_tabs = self.context_manager.len();
+
+        // Island is hidden when hide_if_single is set with a single tab.
+        if self.renderer.navigation.hide_if_single && num_tabs <= 1 {
+            return false;
+        }
 
         // Check if the color picker is open and the click hits a swatch
         if let Some(ref mut island) = self.renderer.island {
