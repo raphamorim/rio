@@ -3702,10 +3702,15 @@ impl Screen<'_> {
                 let cursor_color = term_colors
                     [rio_backend::config::colors::NamedColor::Cursor as usize]
                     .unwrap_or(self.renderer.named_colors.cursor);
-                // `dim` can race ahead of the terminal during resize;
-                // the snapshot was captured under the same lock as
-                // `visible_rows` / `cell_styles`, so use it to keep
-                // row widths consistent with the painted data.
+                // `dim` (`ContextDimension`) is mutated by the resize
+                // event handler outside the terminal lock, so it can
+                // race ahead of the snapshot. `renderable_content.columns`
+                // / `screen_lines` are captured under the same lock as
+                // `visible_rows` / `cell_styles` (see `Renderer::run`),
+                // so reading from there keeps the row widths consistent
+                // with the painted data — without this, a resize landing
+                // between snapshot and panel-build OOBs `cell_styles` at
+                // `grid_emit.rs:965` (issue #1593).
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
