@@ -2617,13 +2617,12 @@ impl Screen<'_> {
 
         let window_width = self.sugarloaf.window_size().width;
         let num_tabs = self.context_manager.len();
+        let island_visible = self.renderer.navigation.island_visible(num_tabs);
 
-        // Island is hidden when hide_if_single is set with a single tab.
-        if self.renderer.navigation.hide_if_single && num_tabs <= 1 {
-            return false;
-        }
-
-        // Check if the color picker is open and the click hits a swatch
+        // Check if the color picker is open and the click hits a swatch.
+        // Handled before the `island_visible` short-circuit so a picker
+        // left open across a tab-close (hide_if_single trip) can still
+        // be dismissed by clicking its swatches.
         if let Some(ref mut island) = self.renderer.island {
             if island.is_color_picker_open() {
                 let consumed = island.handle_color_picker_click(
@@ -2649,6 +2648,13 @@ impl Screen<'_> {
                     self.mark_dirty();
                 }
             }
+            return false;
+        }
+
+        // Island isn't painted (hide_if_single + single tab on macOS).
+        // Nothing to click on, so let the caller route the event to the
+        // grid for selection / double-click maximize at the OS title bar.
+        if !island_visible {
             return false;
         }
 
