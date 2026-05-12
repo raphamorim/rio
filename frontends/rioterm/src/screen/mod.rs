@@ -3702,11 +3702,15 @@ impl Screen<'_> {
                 let cursor_color = term_colors
                     [rio_backend::config::colors::NamedColor::Cursor as usize]
                     .unwrap_or(self.renderer.named_colors.cursor);
+                // `dim` can race ahead of the terminal during resize;
+                // the snapshot was captured under the same lock as
+                // `visible_rows` / `cell_styles`, so use it to keep
+                // row widths consistent with the painted data.
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
-                    cols: dim.columns.max(1) as u32,
-                    rows: dim.lines.max(1) as u32,
+                    cols: ctx.renderable_content.columns.max(1) as u32,
+                    rows: ctx.renderable_content.screen_lines.max(1) as u32,
                     cell_w,
                     cell_h,
                     font_px,
