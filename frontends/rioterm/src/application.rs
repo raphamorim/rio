@@ -1332,16 +1332,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
 
-                // Check if mouse is over island and set cursor to default.
-                // Skip guard when island is hidden (hide_if_single + single tab).
+                // Only force the default cursor while the island is
+                // visible — when it's hidden (hide_if_single + single
+                // tab on macOS) the band at the top has no tabs to
+                // hover, and the I-beam from the terminal grid below
+                // should stay during top-edge drags.
                 use crate::renderer::island::ISLAND_HEIGHT;
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
                 let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
                 let num_tabs = route.window.screen.ctx().len();
                 let nav = &route.window.screen.renderer.navigation;
-                let island_is_visible =
-                    nav.is_enabled() && !(nav.hide_if_single && num_tabs <= 1);
-                if island_is_visible && y <= island_height_px {
+                if nav.island_visible(num_tabs) && y <= island_height_px {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
                 }
