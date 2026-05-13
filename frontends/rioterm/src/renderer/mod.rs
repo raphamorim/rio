@@ -7,8 +7,6 @@ pub mod search;
 pub mod trail_cursor;
 pub mod utils;
 
-use crate::context::renderable::TerminalSnapshot;
-use rio_backend::crosswords::LineDamage;
 use rio_backend::event::TerminalDamage;
 use taffy::NodeId;
 
@@ -25,8 +23,6 @@ use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::Sugarloaf;
-use std::collections::BTreeSet;
-use std::ops::RangeInclusive;
 
 /// The window-bg clear alpha that flows into sugarloaf's
 /// `set_background_color`. Stored on the renderer and re-applied on
@@ -268,7 +264,6 @@ impl Renderer {
         &mut self,
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
-        focused_match: &Option<RangeInclusive<Pos>>,
     ) -> (Option<crate::context::renderable::WindowUpdate>, bool) {
         let mut any_panel_dirty = false;
         let grid = context_manager.current_grid_mut();
@@ -298,8 +293,7 @@ impl Renderer {
             }
         }
 
-        for (key, grid_context) in grid.contexts_mut().iter_mut() {
-            let is_active = &active_key == key;
+        for (_key, grid_context) in grid.contexts_mut().iter_mut() {
             let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
 
@@ -336,10 +330,18 @@ impl Renderer {
                 .take_terminal_damage();
             context.renderable_content.pending_update.reset();
 
-            // Compute snapshot at render time — extract PTY-side damage from the
-            // terminal, merge with any UI-side damage, and clear the in-flight
-            // flag so the PTY thread can send a new notification.
-            let terminal_snapshot = {
+            // Compute snapshot at render time — extract PTY-side damage
+            // from the terminal, merge with any UI-side damage, and clear
+            // the in-flight flag so the PTY thread can send a new
+            // notification. One lock + one materialize per frame per
+            // context: `snapshot_visible` populates `visible_rows` /
+            // `cell_styles` with damage-aware filtering, the rest of the
+            // misc fields (term_colors, kitty graphics state, dimensions,
+            // cursor, blink) get committed by value below. After the
+            // lock drops the renderer reads everything it needs from
+            // `renderable_content` — no second lock, no shared state
+            // with the live terminal.
+            {
                 let mut terminal = context.terminal.lock();
 
                 // Clear in-flight flag so PTY thread can notify again
@@ -368,57 +370,51 @@ impl Renderer {
 
                 terminal.reset_damage();
 
-                // Hand the computed damage off to the grid
-                // emission path in `Screen::render`. `snapshot` is
-                // still used on the non-macOS rich-text path below;
-                // this just persists a copy on the context. Cheap
-                // (`TerminalDamage::Partial` is a `BTreeSet` of a
-                // few dozen `LineDamage` entries at most).
-                context.renderable_content.last_frame_damage = damage.clone();
-
-                let snapshot = TerminalSnapshot {
-                    colors: terminal.colors,
-                    display_offset: terminal.display_offset(),
-                    blinking_cursor: terminal.blinking_cursor,
-                    visible_rows: terminal.visible_rows(),
-                    style_set: terminal.grid.style_set.clone(),
-                    extras_table: terminal.grid.extras_table.clone(),
-                    cursor: terminal.cursor(),
-                    damage,
-                    columns: terminal.columns(),
-                    screen_lines: terminal.screen_lines(),
-                    history_size: terminal.history_size(),
-                    kitty_virtual_placements: terminal
+                let snapshot_cols = terminal.columns();
+                terminal.snapshot_visible(
+                    &damage,
+                    snapshot_cols,
+                    &mut context.renderable_content.visible_rows,
+                    &mut context.renderable_content.cell_styles,
+                    &mut context.renderable_content.extras,
+                );
+                context.renderable_content.term_colors = terminal.colors;
+                context.renderable_content.display_offset = terminal.display_offset();
+                context.renderable_content.columns = snapshot_cols;
+                context.renderable_content.screen_lines = terminal.screen_lines();
+                context.renderable_content.history_size = terminal.history_size();
+                context.renderable_content.blinking_cursor = terminal.blinking_cursor;
+                context.renderable_content.cursor.state = terminal.cursor();
+                context.renderable_content.kitty_virtual_placements =
+                    terminal.graphics.kitty_virtual_placements.clone();
+                context.renderable_content.kitty_images =
+                    terminal.graphics.kitty_images.clone();
+                context.renderable_content.kitty_placements = {
+                    let mut placements: Vec<_> = terminal
                         .graphics
-                        .kitty_virtual_placements
-                        .clone(),
-                    kitty_images: terminal.graphics.kitty_images.clone(),
-                    kitty_placements: {
-                        let mut placements: Vec<_> = terminal
-                            .graphics
-                            .kitty_placements
-                            .values()
-                            .filter(|p| {
-                                terminal.graphics.kitty_images.contains_key(&p.image_id)
-                            })
-                            .cloned()
-                            .collect();
-                        placements.sort_by_key(|p| p.z_index);
-                        placements
-                    },
-                    kitty_graphics_dirty: terminal.graphics.kitty_graphics_dirty,
+                        .kitty_placements
+                        .values()
+                        .filter(|p| {
+                            terminal.graphics.kitty_images.contains_key(&p.image_id)
+                        })
+                        .cloned()
+                        .collect();
+                    placements.sort_by_key(|p| p.z_index);
+                    placements
                 };
+                context.renderable_content.kitty_graphics_dirty =
+                    terminal.graphics.kitty_graphics_dirty;
                 terminal.graphics.kitty_graphics_dirty = false;
+                context.renderable_content.frame_damage = damage;
                 drop(terminal);
-
-                snapshot
-            };
+            }
 
             // Recalculate image overlay positions every frame when placements
             // exist. Positions depend on display_offset and history_size which
             // change on scroll and text output (like approach).
-            let has_overlays = !terminal_snapshot.kitty_placements.is_empty();
-            let has_virtual = !terminal_snapshot.kitty_virtual_placements.is_empty();
+            let rc = &context.renderable_content;
+            let has_overlays = !rc.kitty_placements.is_empty();
+            let has_virtual = !rc.kitty_virtual_placements.is_empty();
             if has_overlays || has_virtual {
                 let layout = context.dimension;
                 // Canonical integer cell stride — line_height already
@@ -436,11 +432,11 @@ impl Renderer {
                 overlays.clear();
 
                 if has_overlays {
-                    let history_size = terminal_snapshot.history_size as i64;
-                    let display_offset = terminal_snapshot.display_offset as i64;
-                    let screen_lines = terminal_snapshot.screen_lines as i64;
+                    let history_size = rc.history_size as i64;
+                    let display_offset = rc.display_offset as i64;
+                    let screen_lines = rc.screen_lines as i64;
 
-                    for p in &terminal_snapshot.kitty_placements {
+                    for p in &rc.kitty_placements {
                         let screen_row = p.dest_row - (history_size - display_offset);
                         let image_bottom_row = screen_row + p.rows as i64;
                         // Cull only if fully off-screen (like )
@@ -463,63 +459,22 @@ impl Renderer {
                 if has_virtual {
                     Self::push_virtual_placeholder_overlays(
                         overlays,
-                        &terminal_snapshot,
+                        rc,
                         origin_x,
                         origin_y,
                         cell_width,
                         cell_height,
                     );
                 }
-            } else if terminal_snapshot.kitty_graphics_dirty {
+            } else if rc.kitty_graphics_dirty {
                 // Placements were removed — clear overlays
                 sugarloaf.clear_image_overlays_for(context.rich_text_id);
             }
 
-            // Get hint matches from renderable content
-            let hint_matches = context.renderable_content.hint_matches.as_deref();
-
-            // Update cursor state from snapshot
-            context.renderable_content.cursor.state = terminal_snapshot.cursor.clone();
-
-            let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
-
-            // Check for partial damage to optimize rendering
-            if !force_full_damage {
-                match &terminal_snapshot.damage {
-                    TerminalDamage::Noop => {
-                        // Should not reach here — Noop is handled before snapshot
-                        continue;
-                    }
-                    TerminalDamage::Full => {
-                        // Full damage, render everything
-                    }
-                    TerminalDamage::Partial(lines) => {
-                        if !lines.is_empty() {
-                            specific_lines = Some(lines.clone());
-                        }
-                    }
-                    TerminalDamage::CursorOnly => {
-                        specific_lines = Some(
-                            [LineDamage {
-                                line: *context.renderable_content.cursor.state.pos.row
-                                    as usize,
-                                damaged: true,
-                            }]
-                            .into_iter()
-                            .collect(),
-                        );
-                    }
-                }
-            }
-
-            let rich_text_id = context.rich_text_id;
-
-            let mut is_cursor_visible =
-                context.renderable_content.cursor.state.is_visible();
             context.renderable_content.has_blinking_enabled =
-                terminal_snapshot.blinking_cursor;
+                context.renderable_content.blinking_cursor;
 
-            if terminal_snapshot.blinking_cursor {
+            if context.renderable_content.blinking_cursor {
                 let has_selection = context.renderable_content.selection_range.is_some();
                 if !has_selection {
                     let mut should_blink = true;
@@ -561,24 +516,7 @@ impl Renderer {
                     context.renderable_content.is_blinking_cursor_visible = true;
                     context.renderable_content.last_blink_toggle = None;
                 }
-
-                is_cursor_visible = context.renderable_content.is_blinking_cursor_visible;
             }
-
-            if !is_active && context.renderable_content.cursor.state.is_visible() {
-                is_cursor_visible = true;
-            }
-
-            // Grid renderer is the authoritative terminal text path on
-            // every platform now. The grid emits from terminal state
-            // directly and resolves its own cursor cells; the
-            // previously-computed damage / cursor visibility /
-            // hint-match info isn't used here.
-            let _ = specific_lines;
-            let _ = is_cursor_visible;
-            let _ = hint_matches;
-            let _ = focused_match;
-            let _ = rich_text_id;
         }
 
         let window_size = sugarloaf.window_size();
@@ -768,7 +706,7 @@ impl Renderer {
     ///    (`renderPlacement`, `graphics_unicode.zig:212-329`).
     fn push_virtual_placeholder_overlays(
         overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
-        snapshot: &TerminalSnapshot,
+        rc: &RenderableContent,
         origin_x: f32,
         origin_y: f32,
         cell_width: f32,
@@ -783,7 +721,7 @@ impl Renderer {
         // graphics protocol.
         const VIRTUAL_Z_INDEX: i32 = -1;
 
-        for (line_idx, row) in snapshot.visible_rows.iter().enumerate() {
+        for (line_idx, row) in rc.visible_rows.iter().enumerate() {
             // Per-row dirty flag: skip rows that never had a placeholder
             // written. O(visible_w · visible_h) → O(rows_with_placeholders).
             if !row.kitty_virtual_placeholder {
@@ -801,7 +739,7 @@ impl Renderer {
                     if let Some((p, start_col)) = run.take() {
                         flush_run(
                             overlays,
-                            snapshot,
+                            rc,
                             p.complete(),
                             line_idx,
                             start_col,
@@ -815,10 +753,11 @@ impl Renderer {
                     continue;
                 }
 
-                let style = snapshot.style_set.get(square.style_id());
+                let style_idx = line_idx * rc.columns + col_idx;
+                let style = rc.cell_styles.get(style_idx).copied().unwrap_or_default();
                 let combining: &[char] = square
                     .extras_id()
-                    .and_then(|eid| snapshot.extras_table.get(eid))
+                    .and_then(|eid| rc.extras.get(&eid))
                     .map(|e| e.zerowidth.as_slice())
                     .unwrap_or(&[]);
 
@@ -836,7 +775,7 @@ impl Renderer {
                         if let Some((p, start_col)) = run.take() {
                             flush_run(
                                 overlays,
-                                snapshot,
+                                rc,
                                 p.complete(),
                                 line_idx,
                                 start_col,
@@ -865,7 +804,7 @@ impl Renderer {
             if let Some((p, start_col)) = run {
                 flush_run(
                     overlays,
-                    snapshot,
+                    rc,
                     p.complete(),
                     line_idx,
                     start_col,
@@ -887,7 +826,7 @@ impl Renderer {
         #[allow(clippy::too_many_arguments)]
         fn flush_run(
             overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
-            snapshot: &TerminalSnapshot,
+            rc: &RenderableContent,
             run: PlaceholderRun,
             screen_line: usize,
             start_screen_col: usize,
@@ -897,15 +836,15 @@ impl Renderer {
             cell_height: f32,
             z_index: i32,
         ) {
-            let vp = snapshot
+            let vp = rc
                 .kitty_virtual_placements
                 .get(&(run.image_id, run.placement_id))
-                .or_else(|| snapshot.kitty_virtual_placements.get(&(run.image_id, 0)));
+                .or_else(|| rc.kitty_virtual_placements.get(&(run.image_id, 0)));
             let vp = match vp {
                 Some(v) => v,
                 None => return,
             };
-            let img = match snapshot.kitty_images.get(&run.image_id) {
+            let img = match rc.kitty_images.get(&run.image_id) {
                 Some(i) => i,
                 None => return,
             };
