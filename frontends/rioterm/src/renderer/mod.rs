@@ -4,6 +4,7 @@ pub mod custom_cursor;
 pub mod island;
 pub mod scrollbar;
 pub mod search;
+pub mod smooth_scroll;
 pub mod trail_cursor;
 pub mod utils;
 
@@ -87,6 +88,8 @@ pub struct Renderer {
     pub custom_mouse_cursor: bool,
     pub trail_cursor_enabled: bool,
     pub trail_cursor: trail_cursor::TrailCursor,
+    pub smooth_scroll_enabled: bool,
+    pub smooth_scroll: smooth_scroll::SmoothScroll,
 }
 
 impl Renderer {
@@ -158,6 +161,8 @@ impl Renderer {
             custom_mouse_cursor: config.effects.custom_mouse_cursor,
             trail_cursor_enabled: config.effects.trail_cursor,
             trail_cursor: trail_cursor::TrailCursor::new(),
+            smooth_scroll_enabled: config.scroll.smooth,
+            smooth_scroll: smooth_scroll::SmoothScroll::new(),
         }
     }
 
@@ -289,6 +294,7 @@ impl Renderer {
                         display_offset: terminal.display_offset(),
                         history_size: terminal.history_size(),
                         screen_lines: terminal.screen_lines(),
+                        scroll_sub_offset: self.smooth_scroll.offset_y(),
                     });
             }
         }
@@ -371,13 +377,23 @@ impl Renderer {
                 terminal.reset_damage();
 
                 let snapshot_cols = terminal.columns();
+                // Fetch one extra row above the viewport when smooth scroll
+                // has a fractional offset, so the partial row is available
+                // for the GPU to reveal.
+                let extra_rows = if self.smooth_scroll.needs_extra_row() {
+                    1
+                } else {
+                    0
+                };
                 terminal.snapshot_visible(
                     &damage,
                     snapshot_cols,
                     &mut context.renderable_content.visible_rows,
                     &mut context.renderable_content.cell_styles,
                     &mut context.renderable_content.extras,
+                    extra_rows,
                 );
+                context.renderable_content.extra_rows = extra_rows;
                 context.renderable_content.term_colors = terminal.colors;
                 context.renderable_content.display_offset = terminal.display_offset();
                 context.renderable_content.columns = snapshot_cols;
@@ -664,6 +680,9 @@ impl Renderer {
     #[inline]
     pub fn needs_redraw(&mut self) -> bool {
         if self.trail_cursor_enabled && self.trail_cursor.is_animating() {
+            return true;
+        }
+        if self.smooth_scroll.is_animating() {
             return true;
         }
         if self.scrollbar.needs_redraw() {
