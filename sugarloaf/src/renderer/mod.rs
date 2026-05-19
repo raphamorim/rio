@@ -1719,10 +1719,11 @@ impl Renderer {
         width: f32,
         depth: f32,
         color: [f32; 4],
+        order: u8,
     ) {
         self.comp
             .batches
-            .add_line(x1, y1, x2, y2, width, depth, color);
+            .add_line(x1, y1, x2, y2, width, depth, color, order);
     }
 
     #[inline]

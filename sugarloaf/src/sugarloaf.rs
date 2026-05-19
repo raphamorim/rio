@@ -786,10 +786,19 @@ impl Sugarloaf<'_> {
         width: f32,
         depth: f32,
         color: [f32; 4],
+        order: u8,
     ) {
         let s = self.state.style.scale_factor;
-        self.renderer
-            .line(x1 * s, y1 * s, x2 * s, y2 * s, width * s, depth, color);
+        self.renderer.line(
+            x1 * s,
+            y1 * s,
+            x2 * s,
+            y2 * s,
+            width * s,
+            depth,
+            color,
+            order,
+        );
     }
 
     /// Draw an arc (stroke only).
