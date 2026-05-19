@@ -705,15 +705,16 @@ impl BatchManager {
         width: f32,
         depth: f32,
         color: [f32; 4],
+        order: u8,
     ) {
         for batch in self.active.iter_mut() {
-            if batch.order == 0
+            if batch.order == order
                 && batch.add_line(x1, y1, x2, y2, width, depth, color, None, None, false)
             {
                 return;
             }
         }
-        self.alloc_batch(0)
+        self.alloc_batch(order)
             .add_line(x1, y1, x2, y2, width, depth, color, None, None, false);
     }
 
@@ -838,36 +839,6 @@ impl BatchManager {
                 }
             }
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn add_mask_rect_with_order(
-        &mut self,
-        rect: &Rect,
-        depth: f32,
-        color: &[f32; 4],
-        coords: &[f32; 4],
-        subpix: bool,
-        order: u8,
-    ) {
-        let cr = self.clip_rect;
-        for batch in self.active.iter_mut() {
-            if batch.order == order
-                && batch.rect(rect, depth, color, Some(coords), None, Some(1), subpix, cr)
-            {
-                return;
-            }
-        }
-        self.alloc_batch(order).rect(
-            rect,
-            depth,
-            color,
-            Some(coords),
-            None,
-            Some(1),
-            subpix,
-            cr,
-        );
     }
 
     #[inline]
@@ -3183,6 +3154,7 @@ impl BatchManager {
                     stroke_width,
                     depth,
                     color,
+                    0,
                 );
 
                 // Bottom edge: from middle-left to bottom-right
@@ -3194,6 +3166,7 @@ impl BatchManager {
                     stroke_width,
                     depth,
                     color,
+                    0,
                 );
 
                 // // Right edge: from bottom-right to top-right
@@ -3222,6 +3195,7 @@ impl BatchManager {
                     stroke_width,
                     depth,
                     color,
+                    0,
                 );
 
                 // Bottom edge: from middle-right to bottom-left
@@ -3233,6 +3207,7 @@ impl BatchManager {
                     stroke_width,
                     depth,
                     color,
+                    0,
                 );
 
                 // Left edge: from bottom-left to top-left
@@ -3352,7 +3327,7 @@ impl BatchManager {
                     let x2 = x + (line_width * (1.0 - x_factor2));
 
                     // Draw segment of the curve
-                    self.add_line(x1, y1, x2, y2, line_thickness, depth, color);
+                    self.add_line(x1, y1, x2, y2, line_thickness, depth, color, 0);
                 }
 
                 // Calculate endpoints for top and bottom
@@ -3367,7 +3342,16 @@ impl BatchManager {
                 let bottom_x = x + (line_width * (1.0 - bottom_x_factor));
 
                 // Draw the horizontal line at the top
-                self.add_line(top_x, y, x + line_width, y, line_thickness, depth, color);
+                self.add_line(
+                    top_x,
+                    y,
+                    x + line_width,
+                    y,
+                    line_thickness,
+                    depth,
+                    color,
+                    0,
+                );
 
                 // Draw the horizontal line at the bottom
                 self.add_line(
@@ -3378,6 +3362,7 @@ impl BatchManager {
                     line_thickness,
                     depth,
                     color,
+                    0,
                 );
             }
             DrawableChar::PowerlineCurvedRightHollow => {
@@ -3417,7 +3402,7 @@ impl BatchManager {
                     let x2 = x + (line_width * x_factor2);
 
                     // Draw segment of the curve
-                    self.add_line(x1, y1, x2, y2, line_thickness, depth, color);
+                    self.add_line(x1, y1, x2, y2, line_thickness, depth, color, 0);
                 }
 
                 // Calculate endpoints for top and bottom
@@ -3433,7 +3418,7 @@ impl BatchManager {
                 let bottom_x = x + (line_width * bottom_x_factor);
 
                 // Draw the horizontal line at the top
-                self.add_line(x, y, top_x, y, line_thickness, depth, color);
+                self.add_line(x, y, top_x, y, line_thickness, depth, color, 0);
 
                 // Draw the horizontal line at the bottom
                 self.add_line(
@@ -3444,6 +3429,7 @@ impl BatchManager {
                     line_thickness,
                     depth,
                     color,
+                    0,
                 );
             }
             DrawableChar::PowerlineLowerLeftTriangle => {
@@ -3470,6 +3456,7 @@ impl BatchManager {
                     stroke_width,
                     depth,
                     color,
+                    0,
                 );
             }
             DrawableChar::PowerlineLowerRightTriangle => {
@@ -3496,6 +3483,7 @@ impl BatchManager {
                     stroke_width,
                     depth,
                     color,
+                    0,
                 );
             }
             DrawableChar::PowerlineUpperLeftTriangle => {
@@ -3523,6 +3511,7 @@ impl BatchManager {
                     stroke_width,
                     depth,
                     color,
+                    0,
                 );
             }
             DrawableChar::PowerlineUpperRightTriangle => {
@@ -3550,6 +3539,7 @@ impl BatchManager {
                     stroke_width,
                     depth,
                     color,
+                    0,
                 );
             }
             DrawableChar::HorizontalLightDash => {

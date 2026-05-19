@@ -603,9 +603,10 @@ impl Island {
             return false;
         }
 
-        // Total picker width
-        let total_swatches_width = PICKER_COLORS.len() as f32 * PICKER_SWATCH_SIZE
-            + (PICKER_COLORS.len() - 1) as f32 * PICKER_SWATCH_GAP;
+        // Total picker width — N color swatches + 1 reset swatch
+        let slot_count = PICKER_COLORS.len() + 1;
+        let total_swatches_width = slot_count as f32 * PICKER_SWATCH_SIZE
+            + (slot_count - 1) as f32 * PICKER_SWATCH_GAP;
         let picker_start_x = tab_x + (tab_width - total_swatches_width) / 2.0;
 
         // Check each swatch
@@ -626,6 +627,20 @@ impl Island {
             }
         }
 
+        // Reset swatch — clears any custom color for this tab
+        let reset_x = picker_start_x
+            + PICKER_COLORS.len() as f32 * (PICKER_SWATCH_SIZE + PICKER_SWATCH_GAP);
+        if mouse_x_unscaled >= reset_x
+            && mouse_x_unscaled <= reset_x + PICKER_SWATCH_SIZE
+            && mouse_y_unscaled >= swatch_y
+            && mouse_y_unscaled <= swatch_y_end
+        {
+            self.tab_colors.remove(&picker_tab);
+            self.apply_rename();
+            self.color_picker_tab = None;
+            return true;
+        }
+
         // Clicked in picker area but not on a swatch
         true
     }
@@ -641,8 +656,10 @@ impl Island {
         let bg_y = ISLAND_HEIGHT;
 
         // Compute total swatches width to derive the consistent inner content width
-        let total_swatches_width = PICKER_COLORS.len() as f32 * PICKER_SWATCH_SIZE
-            + (PICKER_COLORS.len() - 1) as f32 * PICKER_SWATCH_GAP;
+        // N color swatches + 1 reset swatch
+        let slot_count = PICKER_COLORS.len() + 1;
+        let total_swatches_width = slot_count as f32 * PICKER_SWATCH_SIZE
+            + (slot_count - 1) as f32 * PICKER_SWATCH_GAP;
         let inner_width = total_swatches_width;
         let bg_width = inner_width + padding * 2.0;
         let bg_x = tab_x + (tab_width - bg_width) / 2.0;
@@ -697,6 +714,47 @@ impl Island {
                 10,
             );
         }
+
+        // Reset swatch — neutral box with a diagonal slash, selected when no color is set
+        let reset_x = content_x
+            + PICKER_COLORS.len() as f32 * (PICKER_SWATCH_SIZE + PICKER_SWATCH_GAP);
+        let reset_selected = selected_color.is_none();
+        if reset_selected {
+            let border = 2.0;
+            sugarloaf.rounded_rect(
+                None,
+                reset_x - border,
+                swatch_y - border,
+                PICKER_SWATCH_SIZE + border * 2.0,
+                PICKER_SWATCH_SIZE + border * 2.0,
+                [1.0, 1.0, 1.0, 1.0],
+                0.0,
+                4.0,
+                10,
+            );
+        }
+        sugarloaf.rounded_rect(
+            None,
+            reset_x,
+            swatch_y,
+            PICKER_SWATCH_SIZE,
+            PICKER_SWATCH_SIZE,
+            [0.22, 0.22, 0.22, 1.0],
+            0.0,
+            3.0,
+            10,
+        );
+        let slash_inset = 3.0;
+        sugarloaf.line(
+            reset_x + slash_inset,
+            swatch_y + PICKER_SWATCH_SIZE - slash_inset,
+            reset_x + PICKER_SWATCH_SIZE - slash_inset,
+            swatch_y + slash_inset,
+            1.5,
+            0.0,
+            [0.86, 0.26, 0.27, 1.0],
+            10,
+        );
 
         // Rename text input — same left/right edge as swatches
         let input_y = swatch_y + PICKER_SWATCH_SIZE + PICKER_INPUT_MARGIN_TOP;
