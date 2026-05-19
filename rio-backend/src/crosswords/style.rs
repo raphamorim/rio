@@ -160,6 +160,11 @@ impl StyleSet {
         id
     }
 
+    #[inline]
+    pub fn styles(&self) -> &[Style] {
+        &self.styles
+    }
+
     /// Number of distinct styles currently interned.
     #[inline]
     pub fn len(&self) -> usize {

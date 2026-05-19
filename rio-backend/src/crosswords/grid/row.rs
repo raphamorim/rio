@@ -25,6 +25,8 @@ pub struct Row<T> {
     /// placeholder scan on rows where this is `false`.
     pub kitty_virtual_placeholder: bool,
 
+    pub has_extras: bool,
+
     /// Per-row dirty bit set on every write through `IndexMut` /
     /// `last_mut` / `iter_mut` / `reset` / `append*` / `front_split_off`.
     /// Read + cleared by the renderer's snapshot path so it can copy
@@ -40,6 +42,7 @@ impl<T> Default for Row<T> {
             inner: Vec::new(),
             occ: 0,
             kitty_virtual_placeholder: false,
+            has_extras: false,
             dirty: true,
         }
     }
@@ -77,6 +80,7 @@ impl<T: Clone + Default> Row<T> {
             inner,
             occ: 0,
             kitty_virtual_placeholder: false,
+            has_extras: false,
             dirty: true,
         }
     }
@@ -92,6 +96,7 @@ impl<T: Clone + Default> Row<T> {
         self.inner.clone_from(&src.inner);
         self.occ = src.occ;
         self.kitty_virtual_placeholder = src.kitty_virtual_placeholder;
+        self.has_extras = src.has_extras;
     }
 
     /// Increase the number of columns in the row.
@@ -148,6 +153,7 @@ impl<T: Clone + Default> Row<T> {
         }
         self.occ = 0;
         self.kitty_virtual_placeholder = false;
+        self.has_extras = false;
         self.dirty = true;
     }
 }
@@ -160,6 +166,7 @@ impl<T> Row<T> {
             inner: vec,
             occ,
             kitty_virtual_placeholder: false,
+            has_extras: true,
             dirty: true,
         }
     }
@@ -188,6 +195,7 @@ impl<T> Row<T> {
     {
         self.occ += vec.len();
         self.dirty = true;
+        self.has_extras = true;
         self.inner.append(vec);
     }
 
@@ -195,6 +203,7 @@ impl<T> Row<T> {
     pub fn append_front(&mut self, mut vec: Vec<T>) {
         self.occ += vec.len();
         self.dirty = true;
+        self.has_extras = true;
 
         vec.append(&mut self.inner);
         self.inner = vec;
