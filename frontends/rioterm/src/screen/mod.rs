@@ -2602,6 +2602,7 @@ impl Screen<'_> {
         &mut self,
         window: &rio_window::window::Window,
         clipboard: &mut Clipboard,
+        is_right_click: bool,
     ) -> bool {
         // Only handle if navigation is enabled
         if !self.renderer.navigation.is_enabled() {
@@ -2658,11 +2659,12 @@ impl Screen<'_> {
             return false;
         }
 
-        // Handle double-click: toggle window maximization
-        if let ClickState::DoubleClick = self.mouse.click_state {
-            let is_maximized = window.is_maximized();
-            window.set_maximized(!is_maximized);
-            return true;
+        if !is_right_click {
+            if let ClickState::DoubleClick = self.mouse.click_state {
+                let is_maximized = window.is_maximized();
+                window.set_maximized(!is_maximized);
+                return true;
+            }
         }
 
         #[cfg(target_os = "macos")]
@@ -2687,8 +2689,8 @@ impl Screen<'_> {
             return true;
         }
 
-        // Control + click → toggle color picker for that tab
-        if self.modifiers.state().control_key() {
+        // Right-click or Control + left-click → toggle color picker for that tab
+        if is_right_click || self.modifiers.state().control_key() {
             // Get current displayed title for the rename input
             let current_title = self
                 .context_manager
