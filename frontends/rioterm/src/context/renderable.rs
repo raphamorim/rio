@@ -72,11 +72,7 @@ pub struct RenderableContent {
     /// virtual-placement overlay path. Single source of truth — only
     /// one terminal lock + one materialize pass per frame per panel.
     pub visible_rows: Vec<Row<Square>>,
-    /// Parallel per-cell resolved styles, flat row-major (length
-    /// `cols × rows`). Same lifecycle as `visible_rows`. Renderer
-    /// consumers read styles by position out of this slab and never
-    /// touch the live grid's intern table.
-    pub cell_styles: Vec<rio_backend::crosswords::style::Style>,
+    pub style_table: Vec<rio_backend::crosswords::style::Style>,
     /// Per-frame snapshot of extras (zero-width chars, hyperlinks,
     /// sixel/iterm graphics) actually referenced by visible cells —
     /// keyed by the cell's `extras_id`. Refreshed per-dirty-row by
@@ -91,8 +87,7 @@ pub struct RenderableContent {
     /// downstream selection-line / hint-line math.
     pub display_offset: usize,
     /// Cached terminal dimensions captured under the same lock as
-    /// `visible_rows`. Used for cell_styles indexing and kitty
-    /// placement positioning.
+    /// `visible_rows`. Used for kitty placement positioning.
     pub columns: usize,
     pub screen_lines: usize,
     pub history_size: usize,
@@ -123,7 +118,7 @@ impl RenderableContent {
             background: None,
             frame_damage: TerminalDamage::Full,
             visible_rows: Vec::new(),
-            cell_styles: Vec::new(),
+            style_table: Vec::new(),
             extras: rustc_hash::FxHashMap::default(),
             term_colors: TermColors::default(),
             display_offset: 0,

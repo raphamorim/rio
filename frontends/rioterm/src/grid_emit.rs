@@ -41,6 +41,18 @@ pub(crate) type ExtrasMap = FxHashMap<u16, Extras>;
 
 use crate::renderer::Renderer;
 
+#[inline(always)]
+pub(crate) fn resolve_style(style_table: &[Style], sq: Square) -> Style {
+    if sq.is_bg_only() {
+        return Style::default();
+    }
+    let sid = sq.style_id() as usize;
+    if sid == 0 {
+        return Style::default();
+    }
+    style_table.get(sid).copied().unwrap_or_default()
+}
+
 /// Per-row selection interval, in column indices. `None` = row is
 /// outside the selection. Block selections reduce to the same
 /// `[lo, hi]` on every row; linear selections expand middle rows to
@@ -943,7 +955,7 @@ fn normalized_to_u8(c: [f32; 4]) -> [u8; 4] {
 pub fn build_row_bg(
     row: &Row<Square>,
     cols: usize,
-    row_styles: &[Style],
+    style_table: &[Style],
     renderer: &Renderer,
     term_colors: &TermColors,
     row_sel: Option<RowSelection>,
@@ -964,7 +976,7 @@ pub fn build_row_bg(
         for x in 0..cols {
             let sq = row[Column(x)];
             bg_scratch.push(CellBg {
-                rgba: cell_bg(sq, row_styles[x], renderer, term_colors),
+                rgba: cell_bg(sq, resolve_style(style_table, sq), renderer, term_colors),
             });
         }
         return;
@@ -990,7 +1002,7 @@ pub fn build_row_bg(
     };
     for x in 0..cols {
         let sq = row[Column(x)];
-        let style = row_styles[x];
+        let style = resolve_style(style_table, sq);
         let col = x as u16;
         let rgba = if cell_in_row_sel(row_sel, col) {
             // Selection bg wins over hint bg and the cell's own bg,
@@ -1440,7 +1452,7 @@ pub fn build_row_fg(
     row: &Row<Square>,
     cols: usize,
     y: u16,
-    row_styles: &[Style],
+    style_table: &[Style],
     extras_table: &ExtrasMap,
     renderer: &Renderer,
     term_colors: &TermColors,
@@ -1494,7 +1506,7 @@ pub fn build_row_fg(
         row,
         cols,
         y,
-        row_styles,
+        style_table,
         renderer,
         term_colors,
         grid,
@@ -1533,7 +1545,8 @@ pub fn build_row_fg(
         // Open a run at x.
         let ch = sq.c();
         let run_start_style_id = sq.style_id();
-        let run_style_flags = (row_styles[x].flags.bits() & SHAPING_FLAG_MASK) as u8;
+        let run_style_flags =
+            (resolve_style(style_table, sq).flags.bits() & SHAPING_FLAG_MASK) as u8;
         let (font_id, is_emoji) =
             rasterizer.resolve_font(ch, run_style_flags, font_library, route_id);
 
@@ -1568,7 +1581,7 @@ pub fn build_row_fg(
 
             // fg colour, mirroring the regular emit loop's
             // selection / hint precedence.
-            let style = row_styles[x];
+            let style = resolve_style(style_table, sq);
             let color = if !needs_per_cell_check {
                 cell_fg(sq, style, renderer, term_colors)
             } else {
@@ -1735,7 +1748,8 @@ pub fn build_row_fg(
             }
             let style2_id = sq2.style_id();
             if style2_id != prev_style_id {
-                let f = (row_styles[end].flags.bits() & SHAPING_FLAG_MASK) as u8;
+                let f = (resolve_style(style_table, sq2).flags.bits() & SHAPING_FLAG_MASK)
+                    as u8;
                 if f != run_style_flags {
                     break;
                 }
@@ -1905,7 +1919,7 @@ pub fn build_row_fg(
             // `grid_col` above.
             let src_col = (grid_col as usize).min(cols.saturating_sub(1));
             let src_sq = row[Column(src_col)];
-            let src_style = row_styles[src_col];
+            let src_style = resolve_style(style_table, src_sq);
             let (atlas, color) = if is_color {
                 // Colour glyphs (emoji) don't take the selection-fg /
                 // hint-fg swap — behaviour for
@@ -1964,7 +1978,7 @@ pub fn build_row_fg(
         row,
         cols,
         y,
-        row_styles,
+        style_table,
         renderer,
         term_colors,
         grid,
@@ -1982,7 +1996,7 @@ fn emit_underlines(
     row: &Row<Square>,
     cols: usize,
     y: u16,
-    row_styles: &[Style],
+    style_table: &[Style],
     renderer: &Renderer,
     term_colors: &TermColors,
     grid: &mut GridRenderer,
@@ -1995,7 +2009,7 @@ fn emit_underlines(
 ) {
     for x in 0..cols {
         let sq = row[Column(x)];
-        let style = row_styles[x];
+        let style = resolve_style(style_table, sq);
         let col = x as u16;
         // SGR underline (UNDER, double, curly, …) wins over the
         // hover-only forced underline. When the cell has no SGR
@@ -2052,7 +2066,7 @@ fn emit_strikethroughs(
     row: &Row<Square>,
     cols: usize,
     y: u16,
-    row_styles: &[Style],
+    style_table: &[Style],
     renderer: &Renderer,
     term_colors: &TermColors,
     grid: &mut GridRenderer,
@@ -2065,7 +2079,7 @@ fn emit_strikethroughs(
 ) {
     for x in 0..cols {
         let sq = row[Column(x)];
-        let style = row_styles[x];
+        let style = resolve_style(style_table, sq);
         if !style.flags.contains(StyleFlags::STRIKEOUT) {
             continue;
         }

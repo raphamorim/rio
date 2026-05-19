@@ -357,7 +357,7 @@ impl Screen<'_> {
     #[allow(dead_code)]
     pub fn drop_grid(&mut self, route_id: usize) {
         self.grids.remove(&route_id);
-        // The per-context viewport buffers (visible_rows, cell_styles,
+        // The per-context viewport buffers (visible_rows, style_table,
         // extras_table) live on `RenderableContent` and drop with the
         // context itself.
     }
@@ -3548,13 +3548,7 @@ impl Screen<'_> {
                         rio_backend::crosswords::square::Square,
                     >,
                 >,
-                /// Per-cell resolved styles, flat row-major (length =
-                /// `cols * rows`). Materialized under the terminal
-                /// lock by walking visible cells and resolving
-                /// `style_id → Style` once per cell. Post-unlock the
-                /// renderer reads styles purely from this slab; no
-                /// reference back to the live grid's intern table.
-                cell_styles: Vec<rio_backend::crosswords::style::Style>,
+                style_table: Vec<rio_backend::crosswords::style::Style>,
                 /// Snapshot of the grid's extras table — needed to hash
                 /// per-cell zero-width combining codepoints into the run
                 /// shape key so cells with the same base codepoint but
@@ -3667,7 +3661,7 @@ impl Screen<'_> {
                 // allocations.
                 let visible_rows =
                     std::mem::take(&mut ctx.renderable_content.visible_rows);
-                let cell_styles = std::mem::take(&mut ctx.renderable_content.cell_styles);
+                let style_table = std::mem::take(&mut ctx.renderable_content.style_table);
                 let extras = std::mem::take(&mut ctx.renderable_content.extras);
                 let term_colors = ctx.renderable_content.term_colors;
                 let display_offset = ctx.renderable_content.display_offset as i32;
@@ -3715,15 +3709,6 @@ impl Screen<'_> {
                 let cursor_color = term_colors
                     [rio_backend::config::colors::NamedColor::Cursor as usize]
                     .unwrap_or(self.renderer.named_colors.cursor);
-                // `dim` (`ContextDimension`) is mutated by the resize
-                // event handler outside the terminal lock, so it can
-                // race ahead of the snapshot. `renderable_content.columns`
-                // / `screen_lines` are captured under the same lock as
-                // `visible_rows` / `cell_styles` (see `Renderer::run`),
-                // so reading from there keeps the row widths consistent
-                // with the painted data — without this, a resize landing
-                // between snapshot and panel-build OOBs `cell_styles` at
-                // `grid_emit.rs:965` (issue #1593).
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
@@ -3733,7 +3718,7 @@ impl Screen<'_> {
                     cell_h,
                     font_px,
                     visible_rows,
-                    cell_styles,
+                    style_table,
                     extras,
                     term_colors,
                     cursor_col: cursor.state.pos.col.0 as u16,
@@ -3842,10 +3827,7 @@ impl Screen<'_> {
                         let Some(row) = p.visible_rows.get(y) else {
                             return;
                         };
-                        let row_styles_start = y * cols;
-                        let row_styles_end = row_styles_start + cols;
-                        let row_styles =
-                            &p.cell_styles[row_styles_start..row_styles_end];
+                        let style_table = p.style_table.as_slice();
                         let row_sel = crate::grid_emit::row_selection_for(
                             p.selection,
                             y,
@@ -3864,7 +3846,7 @@ impl Screen<'_> {
                         crate::grid_emit::build_row_bg(
                             row,
                             cols,
-                            row_styles,
+                            style_table,
                             renderer_ref,
                             &p.term_colors,
                             row_sel,
@@ -3883,7 +3865,7 @@ impl Screen<'_> {
                             row,
                             cols,
                             y as u16,
-                            row_styles,
+                            style_table,
                             &p.extras,
                             renderer_ref,
                             &p.term_colors,
@@ -4071,7 +4053,7 @@ impl Screen<'_> {
                 if let Some(idx) = panels.iter().position(|p| p.route_id == route_id) {
                     let p = panels.swap_remove(idx);
                     item.val.renderable_content.visible_rows = p.visible_rows;
-                    item.val.renderable_content.cell_styles = p.cell_styles;
+                    item.val.renderable_content.style_table = p.style_table;
                     item.val.renderable_content.extras = p.extras;
                 }
             }

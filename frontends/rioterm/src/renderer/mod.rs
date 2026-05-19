@@ -330,17 +330,6 @@ impl Renderer {
                 .take_terminal_damage();
             context.renderable_content.pending_update.reset();
 
-            // Compute snapshot at render time — extract PTY-side damage
-            // from the terminal, merge with any UI-side damage, and clear
-            // the in-flight flag so the PTY thread can send a new
-            // notification. One lock + one materialize per frame per
-            // context: `snapshot_visible` populates `visible_rows` /
-            // `cell_styles` with damage-aware filtering, the rest of the
-            // misc fields (term_colors, kitty graphics state, dimensions,
-            // cursor, blink) get committed by value below. After the
-            // lock drops the renderer reads everything it needs from
-            // `renderable_content` — no second lock, no shared state
-            // with the live terminal.
             {
                 let mut terminal = context.terminal.lock();
 
@@ -375,7 +364,7 @@ impl Renderer {
                     &damage,
                     snapshot_cols,
                     &mut context.renderable_content.visible_rows,
-                    &mut context.renderable_content.cell_styles,
+                    &mut context.renderable_content.style_table,
                     &mut context.renderable_content.extras,
                 );
                 context.renderable_content.term_colors = terminal.colors;
@@ -753,8 +742,7 @@ impl Renderer {
                     continue;
                 }
 
-                let style_idx = line_idx * rc.columns + col_idx;
-                let style = rc.cell_styles.get(style_idx).copied().unwrap_or_default();
+                let style = crate::grid_emit::resolve_style(&rc.style_table, *square);
                 let combining: &[char] = square
                     .extras_id()
                     .and_then(|eid| rc.extras.get(&eid))
