@@ -46,7 +46,6 @@ pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
     draw_bold_text_with_light_colors: bool,
-    #[allow(dead_code)] // grid path doesn't consult this yet
     use_drawable_chars: bool,
     pub named_colors: Colors,
     pub colors: List,
@@ -159,6 +158,11 @@ impl Renderer {
             trail_cursor_enabled: config.effects.trail_cursor,
             trail_cursor: trail_cursor::TrailCursor::new(),
         }
+    }
+
+    #[inline]
+    pub fn use_drawable_chars(&self) -> bool {
+        self.use_drawable_chars
     }
 
     #[inline]
