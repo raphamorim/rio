@@ -354,6 +354,12 @@ use rio_backend::sugarloaf::font::glyph_registry::CUSTOM_GLYPH_FONT_ID_U32;
 /// hash-key space.
 const CURSOR_FONT_ID_BASE: u32 = 0xFFFF_FE00;
 
+/// Sentinel font_id for built-in drawable sprites (box-drawing, blocks,
+/// braille, …). A single id suffices — the codepoint itself goes in the
+/// atlas `glyph_id`. Sits below the cursor range and far above any real
+/// font index, so it never collides.
+const DRAWABLE_FONT_ID: u32 = 0xFFFF_FD00;
+
 /// Cursor sprite styles. `font.Sprite::cursor_*`
 ///. Each variant maps to a distinct
 /// rasterized bitmap stored in the grid's grayscale atlas.
@@ -591,6 +597,45 @@ fn ensure_cursor_sprite_slot(
             bearing_x,
             bearing_y,
             bytes: &bytes,
+        },
+    )
+}
+
+/// Look up or rasterize a built-in drawable sprite (box-drawing, …) into
+/// the grid atlas. Keyed by codepoint + cell height, so a font-size / DPI
+/// change re-rasterizes; rasterized once then served from the atlas like
+/// any glyph. Modeled on `ensure_cursor_sprite_slot`. Returns `None` when
+/// the codepoint isn't a sprite we draw, so the caller falls back to the
+/// font.
+fn ensure_drawable_sprite(
+    grid: &mut GridRenderer,
+    cp: u32,
+    cell_w: u32,
+    cell_h: u32,
+) -> Option<AtlasSlot> {
+    let key = GlyphKey {
+        font_id: DRAWABLE_FONT_ID,
+        glyph_id: cp,
+        // One cell size per pane atlas, so `cell_h` alone identifies the
+        // rasterization (`cell_w` is a function of the font size). Sprites
+        // are always single-cell; wide (CJK-ambiguous) cells aren't
+        // special-cased.
+        size_bucket: cell_h.min(u16::MAX as u32) as u16,
+    };
+    if let Some(slot) = grid.lookup_glyph(key) {
+        return Some(slot);
+    }
+    let sprite = rio_backend::sugarloaf::sprite::rasterize(cp, cell_w, cell_h)?;
+    grid.insert_glyph(
+        key,
+        RasterizedGlyph {
+            width: sprite.width,
+            height: sprite.height,
+            // Full-cell sprite anchored to the cell box (same convention
+            // as the block cursor): top-left at the cell origin.
+            bearing_x: 0,
+            bearing_y: cell_h.min(i16::MAX as u32) as i16,
+            bytes: &sprite.bytes,
         },
     )
 }
@@ -1444,9 +1489,9 @@ fn shape_run_swash(
 /// Run-level fg emission. Shapes once per run, emits one CellText per
 /// shaped glyph. Works on both macOS (CoreText) and non-macOS (swash).
 ///
-/// Emits in three ordered phases so decoration z-order matches
-/// 's: underlines first (drawn under glyphs), glyphs, then
-/// strikethroughs (drawn on top).
+/// Emits in three ordered phases so decoration z-order is correct:
+/// underlines first (drawn under glyphs), glyphs, then strikethroughs
+/// (drawn on top).
 #[allow(clippy::too_many_arguments)]
 pub fn build_row_fg(
     row: &Row<Square>,
@@ -1490,6 +1535,8 @@ pub fn build_row_fg(
     let has_sel = row_sel.is_some();
     let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
     let needs_per_cell_check = has_sel || has_color_hints;
+    // Consulted in the per-cell sprite hook and the run-extension break.
+    let use_drawable_chars = renderer.use_drawable_chars();
 
     // Glyph Protocol registry for *this pane*. One Arc clone per row;
     // the per-cell custom-glyph helper then uses the local handle so
@@ -1637,6 +1684,52 @@ pub fn build_row_fg(
             continue;
         }
 
+        // Built-in drawable sprite short-circuit: box-drawing and other
+        // procedurally-rendered codepoints render as a one-cell atlas
+        // sprite (crisp + seamless in any font) instead of the font
+        // glyph. Glyph-protocol customs (handled above) still win. If the
+        // sprite can't be produced we fall through to normal shaping.
+        if use_drawable_chars && rio_backend::sugarloaf::sprite::is_drawable(ch as u32) {
+            if let Some(slot) =
+                ensure_drawable_sprite(grid, ch as u32, cell_w_u32, cell_h_u32)
+            {
+                if slot.w != 0 && slot.h != 0 {
+                    // fg colour, mirroring the regular emit loop's
+                    // selection / hint precedence.
+                    let style = resolve_style(style_table, sq);
+                    let color = if !needs_per_cell_check {
+                        cell_fg(sq, style, renderer, term_colors)
+                    } else {
+                        let is_sel = cell_in_row_sel(row_sel, x as u16);
+                        let hint_tag = if is_sel {
+                            None
+                        } else {
+                            cell_in_row_hints(row_hints, x as u16)
+                        };
+                        if is_sel {
+                            cell_fg_selected(sq, style, renderer, term_colors)
+                        } else if let Some(tag) = hint_tag {
+                            cell_fg_hinted(tag, renderer)
+                        } else {
+                            cell_fg(sq, style, renderer, term_colors)
+                        }
+                    };
+                    fg_scratch.push(CellText {
+                        glyph_pos: [slot.x as u32, slot.y as u32],
+                        glyph_size: [slot.w as u32, slot.h as u32],
+                        bearings: [slot.bearing_x, slot.bearing_y],
+                        grid_pos: [x as u16, y],
+                        color,
+                        atlas: CellText::ATLAS_GRAYSCALE,
+                        bools: 0,
+                        _pad: [0, 0],
+                    });
+                }
+                x += 1;
+                continue;
+            }
+        }
+
         let run_start = x;
         // Sticky style_id — typical syntax-highlighted output has long
         // stretches of cells sharing one style_id. While it stays equal
@@ -1700,6 +1793,16 @@ pub fn build_row_fg(
             if is_skipped_spacer(sq2) {
                 end += 1;
                 continue;
+            }
+            // Built-in drawable sprites are emitted one cell at a time by
+            // the per-cell hook above; they must not be swallowed into a
+            // shaped font run, or only the run's first cell would get a
+            // sprite and the rest would fall back to the font. Break so the
+            // next outer-loop iteration handles this cell as a sprite.
+            if use_drawable_chars
+                && rio_backend::sugarloaf::sprite::is_drawable(sq2.c() as u32)
+            {
+                break;
             }
             // Selection-boundary break: keep selection start / end
             // exactly aligned to a run boundary so per-cell selection

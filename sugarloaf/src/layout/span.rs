@@ -11,7 +11,7 @@
 //! batches in the renderer.
 
 use crate::sugarloaf::primitives::SugarCursor;
-use crate::{DrawableChar, Graphic};
+use crate::Graphic;
 use swash::{Attributes, Setting};
 
 /// Index into a font setting cache.
@@ -105,8 +105,6 @@ pub struct SpanStyle {
     pub cursor: Option<SugarCursor>,
     /// Media (kitty-protocol image).
     pub media: Option<Graphic>,
-    /// Drawable character (Unicode box-drawing / Powerline / sextants).
-    pub drawable_char: Option<DrawableChar>,
     /// PUA constraint width: how many cells the glyph should visually
     /// fill. None for normal glyphs, Some(1.0) or Some(2.0) for PUA
     /// glyphs. Does NOT affect positioning/advance — only compositor
@@ -134,7 +132,6 @@ impl Default for SpanStyle {
             decoration: None,
             decoration_color: None,
             media: None,
-            drawable_char: None,
             pua_constraint: None,
             nerd_font_constraint: None,
         }
