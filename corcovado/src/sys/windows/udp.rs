@@ -181,10 +181,7 @@ impl UdpSocket {
                         }
                         Ok((data.len(), addr))
                     } else {
-                        Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            "failed to parse socket address",
-                        ))
+                        Err(io::Error::other("failed to parse socket address"))
                     };
                     me.iocp.put_buffer(data);
                     self.imp.schedule_read_from(&mut me);
@@ -303,7 +300,7 @@ impl UdpSocket {
         self.imp.inner.socket.take_error()
     }
 
-    fn inner(&self) -> MutexGuard<Inner> {
+    fn inner(&self) -> MutexGuard<'_, Inner> {
         self.imp.inner()
     }
 
@@ -324,7 +321,7 @@ impl UdpSocket {
 }
 
 impl Imp {
-    fn inner(&self) -> MutexGuard<Inner> {
+    fn inner(&self) -> MutexGuard<'_, Inner> {
         self.inner.inner.lock().unwrap()
     }
 

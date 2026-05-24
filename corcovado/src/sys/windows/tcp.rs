@@ -254,12 +254,12 @@ impl TcpStream {
         }
     }
 
-    fn inner(&self) -> MutexGuard<StreamInner> {
+    fn inner(&self) -> MutexGuard<'_, StreamInner> {
         self.imp.inner()
     }
 
     #[allow(unused)]
-    fn before_read(&self) -> io::Result<MutexGuard<StreamInner>> {
+    fn before_read(&self) -> io::Result<MutexGuard<'_, StreamInner>> {
         let mut me = self.inner();
 
         match me.read {
@@ -425,7 +425,7 @@ impl TcpStream {
 }
 
 impl StreamImp {
-    fn inner(&self) -> MutexGuard<StreamInner> {
+    fn inner(&self) -> MutexGuard<'_, StreamInner> {
         self.inner.inner.lock().unwrap()
     }
 
@@ -803,13 +803,13 @@ impl TcpListener {
         self.imp.inner.socket.take_error()
     }
 
-    fn inner(&self) -> MutexGuard<ListenerInner> {
+    fn inner(&self) -> MutexGuard<'_, ListenerInner> {
         self.imp.inner()
     }
 }
 
 impl ListenerImp {
-    fn inner(&self) -> MutexGuard<ListenerInner> {
+    fn inner(&self) -> MutexGuard<'_, ListenerInner> {
         self.inner.inner.lock().unwrap()
     }
 
