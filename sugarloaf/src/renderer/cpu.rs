@@ -57,12 +57,18 @@ fn pack_premul(r: u8, g: u8, b: u8, a: u8) -> u32 {
 
 #[inline(always)]
 fn pack_opaque(r: u8, g: u8, b: u8) -> u32 {
-    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+    // alpha = 0xff so alpha-respecting compositors (Windows DWM under
+    // `DwmEnableBlurBehindWindow`) treat the pixel as fully opaque.
+    // For non-transparent windows the OS ignores this byte, so writing
+    // 0xff is a no-op there.
+    0xff00_0000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }
 
-/// Scalar SWAR Porter-Duff source-over with premultiplied source against
-/// opaque dest. Computes channels of R+B together in one multiply, G in
-/// another. ~30% faster than the naive 3-multiply scalar form.
+/// Scalar SWAR premultiplied source-over for all four channels (RGBA).
+/// Pairs R+B in a single u32 lane (`00RR00BB`), then G and A each on
+/// their own. Result preserves the premultiplied invariant so chained
+/// blends stay valid, which lets `window.opacity < 1` survive into the
+/// final framebuffer instead of getting masked back to alpha = 0.
 #[inline(always)]
 fn blend_over_swar(src_premul: u32, dst: u32) -> u32 {
     let sa = (src_premul >> 24) & 0xff;
@@ -70,7 +76,7 @@ fn blend_over_swar(src_premul: u32, dst: u32) -> u32 {
         return dst;
     }
     if sa == 255 {
-        return src_premul & 0x00ff_ffff;
+        return src_premul;
     }
     let inv = 255 - sa;
     // R and B share a u32: 00RR00BB.
@@ -79,33 +85,43 @@ fn blend_over_swar(src_premul: u32, dst: u32) -> u32 {
     // G alone.
     let g = ((dst >> 8) & 0xff) * inv;
     let g = ((g + 0x80 + (g >> 8)) >> 8) & 0xff;
-    let dst_blended = rb | (g << 8);
-    let src_rgb = src_premul & 0x00ff_ffff;
-    // Premultiplied src guarantees src.rgb <= src.a, so adding to the
-    // attenuated dst can't carry into the next channel.
-    let out_rb = ((src_rgb & 0x00ff_00ff) + (dst_blended & 0x00ff_00ff)) & 0x00ff_00ff;
-    let out_g = (((src_rgb >> 8) & 0xff) + ((dst_blended >> 8) & 0xff)) & 0xff;
-    out_rb | (out_g << 8)
+    // A alone — same `(x*inv) / 255` SWAR trick.
+    let da = (dst >> 24) & 0xff;
+    let a = da * inv;
+    let a = ((a + 0x80 + (a >> 8)) >> 8) & 0xff;
+    let dst_blended = rb | (g << 8) | (a << 24);
+    // Premultiplied src guarantees src.rgb <= src.a (and src.a <= 0xff),
+    // so adding to the attenuated dst can't carry into the next channel.
+    let out_rb = ((src_premul & 0x00ff_00ff) + (dst_blended & 0x00ff_00ff)) & 0x00ff_00ff;
+    let out_g = (((src_premul >> 8) & 0xff) + ((dst_blended >> 8) & 0xff)) & 0xff;
+    let out_a = (((src_premul >> 24) & 0xff) + ((dst_blended >> 24) & 0xff)) & 0xff;
+    out_rb | (out_g << 8) | (out_a << 24)
 }
 
 /// SWAR source-over with constant src across all lanes (translucent rect).
-/// `src_v` is splat of `(src_premul & 0x00ff_ffff)`; `inv_v` is splat of
-/// `(255 - src.a)`. 4 dst pixels per call.
+/// `src_v` is splat of the full premultiplied src (RGBA, alpha in upper
+/// byte); `inv_v` is splat of `(255 - src.a)`. 4 dst pixels per call.
 #[inline(always)]
 fn blend_over_simd_const_src_x4(src_v: u32x4, inv_v: u32x4, dst: u32x4) -> u32x4 {
     let mask_rb = u32x4::splat(0x00ff_00ff);
     let half_rb = u32x4::splat(0x0080_0080);
-    let mask_g = u32x4::splat(0xff);
+    let mask_byte = u32x4::splat(0xff);
+    let half_byte = u32x4::splat(0x80);
 
     let drb = (dst & mask_rb) * inv_v;
     let drb = ((drb + half_rb + ((drb >> 8) & mask_rb)) >> 8) & mask_rb;
 
-    let dg = (dst >> 8) & mask_g;
+    let dg = (dst >> 8) & mask_byte;
     let dg = dg * inv_v;
-    let dg = ((dg + u32x4::splat(0x80) + (dg >> 8)) >> 8) & mask_g;
+    let dg = ((dg + half_byte + (dg >> 8)) >> 8) & mask_byte;
     let dg = dg << 8;
 
-    src_v + drb + dg
+    let da = (dst >> 24) & mask_byte;
+    let da = da * inv_v;
+    let da = ((da + half_byte + (da >> 8)) >> 8) & mask_byte;
+    let da = da << 24;
+
+    src_v + drb + dg + da
 }
 
 /// 256-bit version of `blend_over_simd_const_src_x4` — 8 dst pixels per call.
@@ -115,17 +131,23 @@ fn blend_over_simd_const_src_x4(src_v: u32x4, inv_v: u32x4, dst: u32x4) -> u32x4
 fn blend_over_simd_const_src_x8(src_v: u32x8, inv_v: u32x8, dst: u32x8) -> u32x8 {
     let mask_rb = u32x8::splat(0x00ff_00ff);
     let half_rb = u32x8::splat(0x0080_0080);
-    let mask_g = u32x8::splat(0xff);
+    let mask_byte = u32x8::splat(0xff);
+    let half_byte = u32x8::splat(0x80);
 
     let drb = (dst & mask_rb) * inv_v;
     let drb = ((drb + half_rb + ((drb >> 8) & mask_rb)) >> 8) & mask_rb;
 
-    let dg = (dst >> 8) & mask_g;
+    let dg = (dst >> 8) & mask_byte;
     let dg = dg * inv_v;
-    let dg = ((dg + u32x8::splat(0x80) + (dg >> 8)) >> 8) & mask_g;
+    let dg = ((dg + half_byte + (dg >> 8)) >> 8) & mask_byte;
     let dg = dg << 8;
 
-    src_v + drb + dg
+    let da = (dst >> 24) & mask_byte;
+    let da = da * inv_v;
+    let da = ((da + half_byte + (da >> 8)) >> 8) & mask_byte;
+    let da = da << 24;
+
+    src_v + drb + dg + da
 }
 
 /// SWAR source-over with **per-lane** src and inv_a — used by glyph blit
@@ -137,21 +159,25 @@ fn blend_over_simd_var_src_x4(src: u32x4, dst: u32x4) -> u32x4 {
     let mask_byte = u32x4::splat(0xff);
     let mask_rb = u32x4::splat(0x00ff_00ff);
     let half_rb = u32x4::splat(0x0080_0080);
-    let mask_rgb = u32x4::splat(0x00ff_ffff);
+    let half_byte = u32x4::splat(0x80);
 
     let sa = (src >> 24) & mask_byte;
     let inv_v = u32x4::splat(255) - sa;
-    let src_rgb = src & mask_rgb;
 
     let drb = (dst & mask_rb) * inv_v;
     let drb = ((drb + half_rb + ((drb >> 8) & mask_rb)) >> 8) & mask_rb;
 
     let dg = (dst >> 8) & mask_byte;
     let dg = dg * inv_v;
-    let dg = ((dg + u32x4::splat(0x80) + (dg >> 8)) >> 8) & mask_byte;
+    let dg = ((dg + half_byte + (dg >> 8)) >> 8) & mask_byte;
     let dg = dg << 8;
 
-    src_rgb + drb + dg
+    let da = (dst >> 24) & mask_byte;
+    let da = da * inv_v;
+    let da = ((da + half_byte + (da >> 8)) >> 8) & mask_byte;
+    let da = da << 24;
+
+    src + drb + dg + da
 }
 
 #[derive(Clone, Copy)]
@@ -367,12 +393,21 @@ pub fn render_cpu(
         }
     };
 
+    // Bg fill writes premultiplied RGBA. The alpha byte carries
+    // `window.opacity`; on alpha-respecting compositors (Windows DWM
+    // under `DwmEnableBlurBehindWindow`, Wayland surfaces) that's what
+    // makes the window translucent. For fully opaque windows the OS
+    // ignores the alpha byte, so writing `(rgb*1, 1)` is a no-op there.
     let bg_u32 = match background {
-        Some(c) => pack_opaque(
-            (c.r.clamp(0.0, 1.0) * 255.0) as u8,
-            (c.g.clamp(0.0, 1.0) * 255.0) as u8,
-            (c.b.clamp(0.0, 1.0) * 255.0) as u8,
-        ),
+        Some(c) => {
+            let a = c.a.clamp(0.0, 1.0);
+            pack_premul(
+                (c.r.clamp(0.0, 1.0) * a * 255.0) as u8,
+                (c.g.clamp(0.0, 1.0) * a * 255.0) as u8,
+                (c.b.clamp(0.0, 1.0) * a * 255.0) as u8,
+                (a * 255.0) as u8,
+            )
+        }
         None => 0,
     };
     buffer.fill(bg_u32);
@@ -522,14 +557,11 @@ fn fill_translucent_simd(
     let pg = (g as u32 * a_u + 127) / 255;
     let pb = (b as u32 * a_u + 127) / 255;
     let src_premul = pack_premul(pr as u8, pg as u8, pb as u8, a);
-    let src_rgb = src_premul & 0x00ff_ffff;
     let inv = 255 - a_u;
-    let src_v8 = u32x8::splat(src_rgb);
+    let src_v8 = u32x8::splat(src_premul);
     let inv_v8 = u32x8::splat(inv);
-    let src_v4 = u32x4::splat(src_rgb);
+    let src_v4 = u32x4::splat(src_premul);
     let inv_v4 = u32x4::splat(inv);
-    let mask_rgb_x8 = u32x8::splat(0x00ff_ffff);
-    let mask_rgb_x4 = u32x4::splat(0x00ff_ffff);
 
     let buf_w_us = buf_w as usize;
     for y in y0..y1 {
@@ -544,7 +576,7 @@ fn fill_translucent_simd(
                 chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
                 chunk[7],
             ]);
-            let out = blend_over_simd_const_src_x8(src_v8, inv_v8, dst) & mask_rgb_x8;
+            let out = blend_over_simd_const_src_x8(src_v8, inv_v8, dst);
             let arr = out.to_array();
             chunk.copy_from_slice(&arr);
         }
@@ -554,7 +586,7 @@ fn fill_translucent_simd(
         let mut chunks4 = tail.chunks_exact_mut(4);
         for chunk in &mut chunks4 {
             let dst = u32x4::new([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            let out = blend_over_simd_const_src_x4(src_v4, inv_v4, dst) & mask_rgb_x4;
+            let out = blend_over_simd_const_src_x4(src_v4, inv_v4, dst);
             let arr = out.to_array();
             chunk.copy_from_slice(&arr);
         }
@@ -657,8 +689,6 @@ fn draw_glyph(
     let buf_w_us = buf_w as usize;
     let g_w_us = glyph.w as usize;
 
-    let mask_rgb_x4 = u32x4::splat(0x00ff_ffff);
-
     for yy in 0..glyph.h as usize {
         let dst_y = y0 as usize + yy;
         let dst_row_off = dst_y * buf_w_us + x0 as usize;
@@ -673,7 +703,7 @@ fn draw_glyph(
         for (dchunk, schunk) in (&mut dst_chunks).zip(&mut src_chunks) {
             let dst = u32x4::new([dchunk[0], dchunk[1], dchunk[2], dchunk[3]]);
             let src = u32x4::new([schunk[0], schunk[1], schunk[2], schunk[3]]);
-            let out = blend_over_simd_var_src_x4(src, dst) & mask_rgb_x4;
+            let out = blend_over_simd_var_src_x4(src, dst);
             let arr = out.to_array();
             dchunk.copy_from_slice(&arr);
         }

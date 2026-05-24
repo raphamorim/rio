@@ -6,7 +6,7 @@ pub struct WgpuContext<'a> {
     pub surface: wgpu::Surface<'a>,
     pub queue: wgpu::Queue,
     pub format: wgpu::TextureFormat,
-    alpha_mode: wgpu::CompositeAlphaMode,
+    pub alpha_mode: wgpu::CompositeAlphaMode,
     pub adapter_info: wgpu::AdapterInfo,
     surface_caps: wgpu::SurfaceCapabilities,
     pub size: SugarloafWindowSize,

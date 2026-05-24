@@ -1979,7 +1979,14 @@ impl Drop for TextVulkanState {
 
 #[inline]
 fn pack_opaque(r: u8, g: u8, b: u8) -> u32 {
-    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+    // alpha = 0xff so alpha-respecting compositors treat it as opaque
+    // (DWM under `DwmEnableBlurBehindWindow`, Wayland surfaces).
+    0xff00_0000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+}
+
+#[inline]
+fn pack_premul(r: u8, g: u8, b: u8, a: u8) -> u32 {
+    ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }
 
 #[inline]
@@ -1995,10 +2002,21 @@ fn blend_premul_over(src: [u8; 4], dst: u32) -> u32 {
     let dr = (dst >> 16) & 0xff;
     let dg = (dst >> 8) & 0xff;
     let db = dst & 0xff;
+    let da = (dst >> 24) & 0xff;
     let or = src[0] as u32 + (dr * inv + 127) / 255;
     let og = src[1] as u32 + (dg * inv + 127) / 255;
     let ob = src[2] as u32 + (db * inv + 127) / 255;
-    pack_opaque(or.min(255) as u8, og.min(255) as u8, ob.min(255) as u8)
+    // Alpha follows the same Porter-Duff source-over so the
+    // framebuffer alpha — which controls window translucency on
+    // alpha-respecting compositors — composes correctly across
+    // overlapping draws.
+    let oa = sa + (da * inv + 127) / 255;
+    pack_premul(
+        or.min(255) as u8,
+        og.min(255) as u8,
+        ob.min(255) as u8,
+        oa.min(255) as u8,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
