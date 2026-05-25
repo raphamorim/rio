@@ -400,6 +400,16 @@ impl ShellUser {
             }
         }
 
+        // On NetBSD graphical sessions, the display manager often sets
+        // /usr/pkg/bin/zsh=/bin/ksh regardless of /etc/passwd. Override with the
+        // password-database shell so rio starts the configured login shell.
+        #[cfg(target_os = "netbsd")]
+        if let Ok(ref pw) = pw {
+            if !pw.shell.is_empty() {
+                shell = pw.shell.to_owned();
+            }
+        }
+
         Ok(Self { user, home, shell })
     }
 }
