@@ -260,7 +260,7 @@ impl WgpuGridRenderer {
         let text_pipeline = build_text_pipeline(
             &device,
             ctx.format,
-            &[&text_uniform_bgl, &text_atlas_bgl],
+            &[Some(&text_uniform_bgl), Some(&text_atlas_bgl)],
             &shader,
         );
 
@@ -703,7 +703,7 @@ fn build_bg_pipeline(
 ) -> wgpu::RenderPipeline {
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("grid.bg_pl"),
-        bind_group_layouts: &[bg_bgl],
+        bind_group_layouts: &[Some(bg_bgl)],
         immediate_size: 0,
     });
 
@@ -740,7 +740,7 @@ fn build_bg_pipeline(
 fn build_text_pipeline(
     device: &wgpu::Device,
     color_format: wgpu::TextureFormat,
-    bgls: &[&wgpu::BindGroupLayout],
+    bgls: &[Option<&wgpu::BindGroupLayout>],
     shader: &wgpu::ShaderModule,
 ) -> wgpu::RenderPipeline {
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
