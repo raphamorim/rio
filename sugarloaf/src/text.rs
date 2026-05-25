@@ -702,9 +702,35 @@ impl Text {
                     bytes: &raw.bytes,
                 };
                 let slot = if is_color {
-                    state.atlas_color.insert(key, raster)?
+                    if let Some(slot) = state.atlas_color.insert(key, raster) {
+                        slot
+                    } else if state.atlas_color.grow() {
+                        crate::grid::vulkan::update_text_atlas_descriptor_set(
+                            &state.shared.raw,
+                            state.atlas_descriptor_set,
+                            &state.atlas_grayscale.image,
+                            &state.atlas_color.image,
+                            state.sampler,
+                        );
+                        state.atlas_color.insert(key, raster)?
+                    } else {
+                        return None;
+                    }
                 } else {
-                    state.atlas_grayscale.insert(key, raster)?
+                    if let Some(slot) = state.atlas_grayscale.insert(key, raster) {
+                        slot
+                    } else if state.atlas_grayscale.grow() {
+                        crate::grid::vulkan::update_text_atlas_descriptor_set(
+                            &state.shared.raw,
+                            state.atlas_descriptor_set,
+                            &state.atlas_grayscale.image,
+                            &state.atlas_color.image,
+                            state.sampler,
+                        );
+                        state.atlas_grayscale.insert(key, raster)?
+                    } else {
+                        return None;
+                    }
                 };
                 return Some((
                     slot.x,

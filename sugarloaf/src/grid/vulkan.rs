@@ -49,6 +49,9 @@ const CURSOR_ROW_SLOTS: usize = 2;
 /// Initial atlas side. 2048² @ R8 = 4 MiB; matches the Metal default.
 const ATLAS_SIZE: u16 = 2048;
 
+/// Hard cap on atlas side, same as Metal.
+const ATLAS_MAX_SIZE: u16 = 8192;
+
 // =======================================================================
 // Glyph atlas
 // =======================================================================
@@ -73,7 +76,7 @@ struct PendingUpload {
 /// caller drives uploads via `prepare_uploads(...)` before
 /// `cmd_begin_rendering`.
 pub struct VulkanGlyphAtlas {
-    image: VulkanImage,
+    pub(crate) image: VulkanImage,
     allocator: AtlasAllocator,
     slots: FxHashMap<GlyphKey, AtlasSlot>,
     bytes_per_pixel: u32,
@@ -91,6 +94,10 @@ pub struct VulkanGlyphAtlas {
     /// slot N's staging is GPU-complete before the next reuse.
     staging: [Option<crate::context::vulkan::VulkanBuffer>; FRAMES_IN_FLIGHT],
     staging_capacity: [usize; FRAMES_IN_FLIGHT],
+    /// Queue handle for oneshot submit during atlas growth.
+    queue: vk::Queue,
+    /// Queue family index, must match the queue used for submit.
+    queue_family_index: u32,
 }
 
 impl VulkanGlyphAtlas {
@@ -150,6 +157,8 @@ impl VulkanGlyphAtlas {
             initialized: true,
             staging: std::array::from_fn(|_| None),
             staging_capacity: [0; FRAMES_IN_FLIGHT],
+            queue: ctx.queue,
+            queue_family_index: ctx.queue_family_index,
         }
     }
 
@@ -270,6 +279,244 @@ impl VulkanGlyphAtlas {
             bytes: glyph.bytes.to_vec(),
         });
         Some(slot)
+    }
+
+    /// Double the atlas texture + allocator dimensions, copying old
+    /// texel data into the top-left of the new image via a oneshot
+    /// `vkCmdCopyImage`. Existing `AtlasSlot`s stay valid because
+    /// their `(x, y)` fall inside the unchanged old region. Returns
+    /// `false` if the atlas is already at `ATLAS_MAX_SIZE`, caller
+    /// must handle the failure (there is no eviction).
+    pub fn grow(&mut self) -> bool {
+        let (old_w, old_h) = self.allocator.dimensions();
+        if old_w >= ATLAS_MAX_SIZE {
+            return false;
+        }
+        let new_size = old_w.saturating_mul(2).min(ATLAS_MAX_SIZE);
+        if new_size <= old_w {
+            return false;
+        }
+
+        let shared = self.image.shared.clone();
+
+        // Create a new, larger image.
+        let image_info = vk::ImageCreateInfo::default()
+            .image_type(vk::ImageType::TYPE_2D)
+            .format(self.image.format)
+            .extent(vk::Extent3D {
+                width: new_size as u32,
+                height: new_size as u32,
+                depth: 1,
+            })
+            .mip_levels(1)
+            .array_layers(1)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .usage(
+                vk::ImageUsageFlags::TRANSFER_DST
+                    | vk::ImageUsageFlags::TRANSFER_SRC
+                    | vk::ImageUsageFlags::SAMPLED,
+            )
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .initial_layout(vk::ImageLayout::UNDEFINED);
+        let new_image = unsafe {
+            shared
+                .create_image(&image_info, None)
+                .expect("grow: create_image")
+        };
+
+        let req = unsafe { shared.get_image_memory_requirements(new_image) };
+        let mem_type = crate::context::vulkan::find_memory_type(
+            &shared.instance,
+            shared.physical_device,
+            req.memory_type_bits,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )
+        .expect("grow: no DEVICE_LOCAL memory type");
+
+        let alloc_info = vk::MemoryAllocateInfo::default()
+            .allocation_size(req.size)
+            .memory_type_index(mem_type);
+        let new_memory = unsafe {
+            shared
+                .allocate_memory(&alloc_info, None)
+                .expect("grow: allocate_memory")
+        };
+        unsafe {
+            shared
+                .bind_image_memory(new_image, new_memory, 0)
+                .expect("grow: bind_image_memory");
+        }
+
+        let view_info = vk::ImageViewCreateInfo::default()
+            .image(new_image)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(self.image.format)
+            .components(vk::ComponentMapping::default())
+            .subresource_range(
+                vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1),
+            );
+        let new_view = unsafe {
+            shared
+                .create_image_view(&view_info, None)
+                .expect("grow: create_image_view")
+        };
+
+        // Oneshot command: copy old image to new image.
+        let old_img = self.image.handle();
+        let old_w_u32 = old_w as u32;
+        let old_h_u32 = old_h as u32;
+
+        unsafe {
+            let pool_info = vk::CommandPoolCreateInfo::default()
+                .queue_family_index(self.queue_family_index)
+                .flags(vk::CommandPoolCreateFlags::TRANSIENT);
+            let pool = shared
+                .create_command_pool(&pool_info, None)
+                .expect("grow: create_command_pool");
+
+            let alloc = vk::CommandBufferAllocateInfo::default()
+                .command_pool(pool)
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .command_buffer_count(1);
+            let cmd = shared
+                .allocate_command_buffers(&alloc)
+                .expect("grow: allocate_command_buffers")[0];
+
+            let begin = vk::CommandBufferBeginInfo::default()
+                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+            shared
+                .begin_command_buffer(cmd, &begin)
+                .expect("grow: begin");
+
+            // Old: SHADER_READ_ONLY to TRANSFER_SRC
+            let old_to_src = vk::ImageMemoryBarrier2::default()
+                .src_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+                .src_access_mask(vk::AccessFlags2::SHADER_READ)
+                .dst_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                .dst_access_mask(vk::AccessFlags2::TRANSFER_READ)
+                .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(old_img)
+                .subresource_range(color_subresource_range());
+            // New: UNDEFINED to TRANSFER_DST
+            let new_to_dst = vk::ImageMemoryBarrier2::default()
+                .src_stage_mask(vk::PipelineStageFlags2::TOP_OF_PIPE)
+                .src_access_mask(vk::AccessFlags2::empty())
+                .dst_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                .dst_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(new_image)
+                .subresource_range(color_subresource_range());
+            let barriers = [old_to_src, new_to_dst];
+            let dep = vk::DependencyInfo::default().image_memory_barriers(&barriers);
+            shared.raw.cmd_pipeline_barrier2(cmd, &dep);
+
+            // Copy old to new.
+            let copy_region = vk::ImageCopy2::default()
+                .src_subresource(
+                    vk::ImageSubresourceLayers::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .base_array_layer(0)
+                        .layer_count(1),
+                )
+                .src_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                .dst_subresource(
+                    vk::ImageSubresourceLayers::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .base_array_layer(0)
+                        .layer_count(1),
+                )
+                .dst_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                .extent(vk::Extent3D {
+                    width: old_w_u32,
+                    height: old_h_u32,
+                    depth: 1,
+                });
+            let copy_regions = [copy_region];
+            let copy_info = vk::CopyImageInfo2::default()
+                .src_image(old_img)
+                .src_image_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                .dst_image(new_image)
+                .dst_image_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .regions(&copy_regions);
+            shared.raw.cmd_copy_image2(cmd, &copy_info);
+
+            // Old back to SHADER_READ_ONLY.
+            let old_back = vk::ImageMemoryBarrier2::default()
+                .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                .src_access_mask(vk::AccessFlags2::TRANSFER_READ)
+                .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+                .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+                .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(old_img)
+                .subresource_range(color_subresource_range());
+            // New to SHADER_READ_ONLY.
+            let new_to_read = vk::ImageMemoryBarrier2::default()
+                .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+                .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(new_image)
+                .subresource_range(color_subresource_range());
+            let after = [old_back, new_to_read];
+            let dep_after = vk::DependencyInfo::default().image_memory_barriers(&after);
+            shared.raw.cmd_pipeline_barrier2(cmd, &dep_after);
+
+            shared.end_command_buffer(cmd).expect("grow: end");
+
+            let fence = shared
+                .create_fence(&vk::FenceCreateInfo::default(), None)
+                .expect("grow: create_fence");
+            let cmds = [cmd];
+            let submit = vk::SubmitInfo::default().command_buffers(&cmds);
+            shared
+                .queue_submit(self.queue, &[submit], fence)
+                .expect("grow: queue_submit");
+            shared
+                .wait_for_fences(&[fence], true, u64::MAX)
+                .expect("grow: wait_for_fences");
+
+            shared.destroy_fence(fence, None);
+            shared.destroy_command_pool(pool, None);
+        }
+
+        // Swap in the new image. Drop the old one, its view, image,
+        // and memory are freed by `VulkanImage::Drop`.
+        let format = self.image.format;
+        let old_image = std::mem::replace(
+            &mut self.image,
+            VulkanImage {
+                shared: shared.clone(),
+                image: new_image,
+                view: new_view,
+                memory: new_memory,
+                width: new_size as u32,
+                height: new_size as u32,
+                format,
+            },
+        );
+        drop(old_image);
+
+        self.allocator.grow_to(new_size, new_size);
+        true
     }
 }
 
@@ -608,7 +855,21 @@ impl VulkanGridRenderer {
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        self.atlas_grayscale.insert(key, glyph)
+        if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
+            return Some(slot);
+        }
+        if self.atlas_grayscale.grow() {
+            update_text_atlas_descriptor_set(
+                &self.shared.raw,
+                self.text_atlas_descriptor_set,
+                &self.atlas_grayscale.image,
+                &self.atlas_color.image,
+                self.sampler,
+            );
+            self.atlas_grayscale.insert(key, glyph)
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -617,7 +878,21 @@ impl VulkanGridRenderer {
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        self.atlas_color.insert(key, glyph)
+        if let Some(slot) = self.atlas_color.insert(key, glyph) {
+            return Some(slot);
+        }
+        if self.atlas_color.grow() {
+            update_text_atlas_descriptor_set(
+                &self.shared.raw,
+                self.text_atlas_descriptor_set,
+                &self.atlas_grayscale.image,
+                &self.atlas_color.image,
+                self.sampler,
+            );
+            self.atlas_color.insert(key, glyph)
+        } else {
+            None
+        }
     }
 
     /// Drain pending atlas uploads into `cmd`. MUST be called BEFORE
@@ -1140,7 +1415,7 @@ fn update_text_uniform_descriptor_set(
     }
 }
 
-fn update_text_atlas_descriptor_set(
+pub(crate) fn update_text_atlas_descriptor_set(
     device: &ash::Device,
     set: vk::DescriptorSet,
     grayscale: &VulkanImage,
