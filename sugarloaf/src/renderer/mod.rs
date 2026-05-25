@@ -2593,8 +2593,8 @@ impl WgpuRenderer {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: None,
                     bind_group_layouts: &[
-                        &constant_bind_group_layout,
-                        &layout_bind_group_layout,
+                        Some(&constant_bind_group_layout),
+                        Some(&layout_bind_group_layout),
                     ],
                     ..Default::default()
                 });
@@ -2851,8 +2851,8 @@ impl WgpuRenderer {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("image pipeline layout"),
                     bind_group_layouts: &[
-                        &constant_bind_group_layout, // group 0: transform + sampler
-                        &image_bind_group_layout,    // group 1: image texture
+                        Some(&constant_bind_group_layout), // group 0: transform + sampler
+                        Some(&image_bind_group_layout),    // group 1: image texture
                     ],
                     immediate_size: 0,
                 });

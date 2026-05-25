@@ -36,10 +36,9 @@ impl<'a> WgpuContext<'a> {
         // - `webgpu`
         // - `primary`
         let backend = wgpu::Backends::from_env().unwrap_or(wgpu_backend);
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: backend,
-            ..Default::default()
-        });
+        let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
+        instance_desc.backends = backend;
+        let instance = wgpu::Instance::new(instance_desc);
 
         tracing::info!("selected instance: {instance:?}");
 
