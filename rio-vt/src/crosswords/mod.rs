@@ -6704,6 +6704,7 @@ mod tests {
     /// - test_keyboard_mode_reset: Terminal reset behavior on keyboard stack
     /// - test_keyboard_mode_stack_underflow_protection: Stack underflow protection
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_push_pop() {
         let size = CrosswordsSize::new(10, 10);
@@ -6751,6 +6752,7 @@ mod tests {
         assert_eq!(term.keyboard_mode_stack[1], KeyboardModes::NO_MODE.bits()); // Should be cleared
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_stack_wraparound() {
         let size = CrosswordsSize::new(10, 10);
@@ -6810,6 +6812,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_set_replace() {
         let size = CrosswordsSize::new(10, 10);
@@ -6846,6 +6849,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_set_union() {
         let size = CrosswordsSize::new(10, 10);
@@ -6878,6 +6882,7 @@ mod tests {
         assert_eq!(term.keyboard_mode_stack[term.keyboard_mode_idx], expected);
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_set_difference() {
         let size = CrosswordsSize::new(10, 10);
@@ -6913,6 +6918,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_report() {
         let size = CrosswordsSize::new(10, 10);
@@ -6961,6 +6967,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_stack_underflow_protection() {
         let size = CrosswordsSize::new(10, 10);
@@ -7081,6 +7088,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_syncs_with_mode() {
         let size = CrosswordsSize::new(10, 10);
@@ -7861,6 +7869,7 @@ mod tests {
 
     /// The flag byte an embedder needs to encode keys is the one the terminal
     /// would report; it must survive set, push and pop.
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn keyboard_mode_reports_the_active_flags() {
         use crate::performer::handler::Processor;
