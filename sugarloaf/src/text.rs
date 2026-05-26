@@ -1061,8 +1061,11 @@ impl Text {
             atlas_color.view(),
         );
 
-        let pipeline =
-            build_text_pipeline_wgpu(device, format, &[&uniform_bgl, &atlas_bgl]);
+        let pipeline = build_text_pipeline_wgpu(
+            device,
+            format,
+            &[Some(&uniform_bgl), Some(&atlas_bgl)],
+        );
         let instance_capacity: usize = 256;
         let instance_buffer = alloc_instance_buffer_wgpu(device, instance_capacity);
 
@@ -1502,7 +1505,7 @@ fn alloc_instance_buffer_wgpu(device: &wgpu::Device, capacity: usize) -> wgpu::B
 fn build_text_pipeline_wgpu(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
-    bind_group_layouts: &[&wgpu::BindGroupLayout],
+    bind_group_layouts: &[Option<&wgpu::BindGroupLayout>],
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("sugarloaf.text.wgsl"),

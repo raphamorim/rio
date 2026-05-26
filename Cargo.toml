@@ -62,7 +62,7 @@ regex = "1.12.3"
 onig = { version = "6.5.1", default-features = false }
 bytemuck = { version = "1.25.0", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
-wgpu = "29.0.3"
+wgpu = { version = "29.0.3", default-features = false, features = ["std", "gles", "vulkan", "wgsl"] }
 libc = "0.2.185"
 smol_str = "0.3.2"
 futures = "0.3.31"
