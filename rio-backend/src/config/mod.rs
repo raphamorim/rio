@@ -2,8 +2,10 @@ pub mod bell;
 pub mod bindings;
 pub mod colors;
 pub mod defaults;
+pub mod effects;
 pub mod hints;
 pub mod keyboard;
+pub mod layout;
 pub mod navigation;
 pub mod platform;
 pub mod renderer;
@@ -17,6 +19,7 @@ use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
 use crate::config::hints::Hints;
 use crate::config::keyboard::Keyboard;
+use crate::config::layout::{Margin, Panel};
 use crate::config::navigation::Navigation;
 use crate::config::platform::{Platform, PlatformConfig};
 use crate::config::renderer::Renderer;
@@ -28,7 +31,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::{default::Default, fs::File};
 use sugarloaf::font::fonts::SugarloafFonts;
-use theme::{AdaptiveColors, AdaptiveTheme, Theme};
+use theme::{AdaptiveColors, AdaptiveTheme, AppearanceTheme, Theme};
 use tracing::warn;
 
 #[derive(Clone, Debug)]
@@ -116,10 +119,10 @@ pub struct Config {
     pub fonts: SugarloafFonts,
     #[serde(default = "default_editor")]
     pub editor: Shell,
-    #[serde(rename = "padding-x", default = "f32::default")]
-    pub padding_x: f32,
-    #[serde(rename = "padding-y", default = "default_padding_y")]
-    pub padding_y: [f32; 2],
+    #[serde(default = "default_margin", alias = "margin")]
+    pub margin: Margin,
+    #[serde(default = "Panel::default")]
+    pub panel: Panel,
     #[serde(default = "Vec::default", rename = "env-vars")]
     pub env_vars: Vec<String>,
     #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
@@ -128,6 +131,8 @@ pub struct Config {
     pub colors: Colors,
     #[serde(default = "Option::default", skip_serializing)]
     pub adaptive_colors: Option<AdaptiveColors>,
+    #[serde(default = "Option::default", rename = "force-theme")]
+    pub force_theme: Option<AppearanceTheme>,
     #[serde(default = "Developer::default")]
     pub developer: Developer,
     #[serde(default = "Bindings::default")]
@@ -139,6 +144,8 @@ pub struct Config {
     pub ignore_selection_fg_color: bool,
     #[serde(default = "default_bool_true", rename = "confirm-before-quit")]
     pub confirm_before_quit: bool,
+    #[serde(default = "bool::default", rename = "copy-on-select")]
+    pub copy_on_select: bool,
     #[serde(
         default = "bool::default",
         rename = "hide-mouse-cursor-when-typing",
@@ -153,6 +160,15 @@ pub struct Config {
     pub hints: Hints,
     #[serde(default = "Bell::default")]
     pub bell: Bell,
+    #[serde(default = "default_bool_true", rename = "enable-scroll-bar")]
+    pub enable_scroll_bar: bool,
+    #[serde(
+        default = "default_scrollback_history_limit",
+        rename = "scrollback-history-limit"
+    )]
+    pub scrollback_history_limit: usize,
+    #[serde(default = "effects::Effects::default")]
+    pub effects: effects::Effects,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -486,6 +502,12 @@ impl Config {
             if let Some(height) = window_overwrite.height {
                 self.window.height = height;
             }
+            if let Some(columns) = window_overwrite.columns {
+                self.window.columns = Some(columns);
+            }
+            if let Some(rows) = window_overwrite.rows {
+                self.window.rows = Some(rows);
+            }
             if let Some(mode) = window_overwrite.mode {
                 self.window.mode = mode;
             }
@@ -506,6 +528,12 @@ impl Config {
             }
             if let Some(macos_shadow) = window_overwrite.macos_use_shadow {
                 self.window.macos_use_shadow = macos_shadow;
+            }
+            if let Some(x) = window_overwrite.macos_traffic_light_position_x {
+                self.window.macos_traffic_light_position_x = Some(x);
+            }
+            if let Some(y) = window_overwrite.macos_traffic_light_position_y {
+                self.window.macos_traffic_light_position_y = Some(y);
             }
             if let Some(initial_title) = &window_overwrite.initial_title {
                 self.window.initial_title = Some(initial_title.clone());
@@ -554,13 +582,20 @@ impl Config {
             {
                 self.navigation.unfocused_split_opacity = unfocused_opacity;
             }
+            if let Some(fill) = navigation_overwrite.unfocused_split_fill {
+                self.navigation.unfocused_split_fill = Some(fill);
+            }
         }
+
+        // Clamp after platform merge so both the base and any override go
+        // through the same bound.
+        self.navigation.unfocused_split_opacity =
+            crate::config::navigation::clamp_unfocused_split_opacity(
+                self.navigation.unfocused_split_opacity,
+            );
 
         // Merge renderer fields individually
         if let Some(renderer_overwrite) = &platform_config.renderer {
-            if let Some(performance) = renderer_overwrite.performance {
-                self.renderer.performance = performance;
-            }
             if let Some(backend) = &renderer_overwrite.backend {
                 self.renderer.backend = backend.clone();
             }
@@ -570,6 +605,7 @@ impl Config {
             if let Some(disable_occluded) = renderer_overwrite.disable_occluded_render {
                 self.renderer.disable_occluded_render = disable_occluded;
             }
+            #[cfg(feature = "wgpu")]
             if let Some(filters) = &renderer_overwrite.filters {
                 self.renderer.filters = filters.clone();
             }
@@ -597,6 +633,7 @@ impl Default for Config {
             editor: default_editor(),
             adaptive_theme: None,
             adaptive_colors: None,
+            force_theme: None,
             bindings: Bindings::default(),
             colors: Colors::default(),
             scroll: Scroll::default(),
@@ -608,8 +645,8 @@ impl Default for Config {
             line_height: default_line_height(),
             navigation: Navigation::default(),
             option_as_alt: default_option_as_alt(),
-            padding_x: f32::default(),
-            padding_y: default_padding_y(),
+            margin: default_margin(),
+            panel: Panel::default(),
             renderer: Renderer::default(),
             shell: default_shell(),
             platform: Platform::default(),
@@ -619,10 +656,14 @@ impl Default for Config {
             working_dir: default_working_dir(),
             ignore_selection_fg_color: false,
             confirm_before_quit: true,
+            copy_on_select: false,
             hide_cursor_when_typing: false,
             draw_bold_text_with_light_colors: false,
             hints: Hints::default(),
             bell: Bell::default(),
+            enable_scroll_bar: true,
+            scrollback_history_limit: default_scrollback_history_limit(),
+            effects: effects::Effects::default(),
         }
     }
 }
@@ -685,16 +726,12 @@ mod tests {
         let result = create_temporary_config(
             "empty",
             r#"
-            # Config is empty
+ # Config is empty
         "#,
         );
 
         assert!(!result.renderer.disable_unfocused_render);
 
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
 
@@ -710,10 +747,6 @@ mod tests {
     fn test_if_explicit_defaults_match() {
         let result = create_temporary_config("defaults", &default_config_file_content());
 
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
         let env_vars: Vec<String> = vec![];
         assert_eq!(result.env_vars, env_vars);
         assert_eq!(result.cursor.shape, default_cursor());
@@ -748,10 +781,6 @@ mod tests {
 
         let result = Config::load_from_path(&file_name);
 
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -772,7 +801,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         assert_eq!(result.renderer.backend, renderer::Backend::Vulkan);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -794,7 +822,6 @@ mod tests {
         );
 
         assert!(!result.renderer.disable_occluded_render);
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -813,7 +840,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
         assert_eq!(result.cursor.shape, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
@@ -843,8 +869,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
-        assert_eq!(result.renderer.backend, renderer::Backend::Automatic);
         assert_eq!(result.cursor.shape, CursorShape::Underline);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -864,7 +888,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.option_as_alt, String::from("Both"));
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -885,10 +908,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -910,10 +929,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Bindings
@@ -930,7 +945,7 @@ mod tests {
             r#"
             font-size = 14.0
             line-height = 2.0
-            padding-x = 0.0
+            margin = [0]
 
             [renderer]
             performance = "Low"
@@ -945,10 +960,12 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         assert_eq!(result.fonts.size, 14.0);
         assert_eq!(result.line_height, 2.0);
-        assert_eq!(result.padding_x, 0.0);
+        assert_eq!(result.margin.top, 0.0);
+        assert_eq!(result.margin.bottom, 0.0);
+        assert_eq!(result.margin.left, 0.0);
+        assert_eq!(result.margin.right, 0.0);
         assert_eq!(result.window.opacity, 0.5);
         assert_eq!(
             result.window.background_image,
@@ -973,7 +990,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, "lucario");
         // Colors
@@ -1071,10 +1087,10 @@ mod tests {
         );
 
         // assert_eq!(
-        //     result.colors.background,
-        //     ColorBuilder::from_hex(String::from("#2B3E50"), Format::SRGB0_1)
-        //         .unwrap()
-        //         .to_wgpu()
+        // result.colors.background,
+        // ColorBuilder::from_hex(String::from("#2B3E50"), Format::SRGB0_1)
+        // .unwrap()
+        // .to_wgpu()
         // );
 
         assert_eq!(result.colors.background.0, hex_to_color_arr("#2B3E50"));
@@ -1114,7 +1130,6 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         // Advanced
         assert!(result.renderer.disable_unfocused_render);
         assert!(result.use_fork);
@@ -1159,7 +1174,7 @@ mod tests {
             r#"
             [renderer]
             performance = "Low"
-            backend = "GL"
+            backend = "Webgpu"
 
             [developer]
             enable-fps-counter = true
@@ -1167,8 +1182,7 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.renderer.performance, renderer::Performance::Low);
-        assert_eq!(result.renderer.backend, renderer::Backend::GL);
+        assert_eq!(result.renderer.backend, renderer::Backend::Webgpu);
         // Developer
         assert_eq!(result.developer.log_level, String::from("INFO"));
         assert!(result.developer.enable_fps_counter);
@@ -1186,7 +1200,7 @@ mod tests {
             "symbol-map",
             r#"
             fonts.symbol-map = [
-                # covers: '⊗','⊘','⊙'
+ # covers: '⊗','⊘','⊙'
                 { start = "2297", end = "2299", font-family = "PowerlineSymbols" },
                 { start = "E0C0", end = "E0C7", font-family = "Cascadia Code NF" },
             ]
@@ -1225,6 +1239,41 @@ mod tests {
     }
 
     #[test]
+    fn test_scrollback_history_limit_default() {
+        let result = create_temporary_config(
+            "scrollback-default",
+            r#"
+            [window]
+            width = 800
+        "#,
+        );
+        assert_eq!(result.scrollback_history_limit, 10_000);
+    }
+
+    #[test]
+    fn test_scrollback_history_limit_custom() {
+        let result = create_temporary_config(
+            "scrollback-custom",
+            r#"
+            scrollback-history-limit = 50000
+        "#,
+        );
+        assert_eq!(result.scrollback_history_limit, 50_000);
+    }
+
+    #[test]
+    fn test_scrollback_history_limit_zero_disables() {
+        // A value of 0 disables scrollback. Must round-trip cleanly.
+        let result = create_temporary_config(
+            "scrollback-zero",
+            r#"
+            scrollback-history-limit = 0
+        "#,
+        );
+        assert_eq!(result.scrollback_history_limit, 0);
+    }
+
+    #[test]
     fn test_window_colorspace_default() {
         let result = create_temporary_config(
             "window-colorspace-default",
@@ -1235,9 +1284,9 @@ mod tests {
         "#,
         );
 
-        #[cfg(target_os = "macos")]
-        assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
-        #[cfg(not(target_os = "macos"))]
+        // Default is sRGB on every platform — same semantics as ghostty's
+        // `window-colorspace` default. `[window] colorspace` describes how
+        // input color bytes are *interpreted*, not the surface gamut.
         assert_eq!(result.window.colorspace, window::Colorspace::Srgb);
     }
 
@@ -1332,7 +1381,7 @@ mod tests {
         assert_eq!(result.window.width, 800);
         assert_eq!(result.window.height, 600);
         assert_eq!(result.window.opacity, 0.75);
-        assert!(result.window.blur);
+        assert!(result.window.blur.is_enabled());
     }
 
     #[test]
@@ -1375,7 +1424,6 @@ mod tests {
         // Backend should be set
         assert_eq!(result.renderer.backend, renderer::Backend::Metal);
         // Other fields should be preserved
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert!(result.renderer.disable_unfocused_render);
     }
 
@@ -1386,7 +1434,7 @@ mod tests {
             "platform-navigation-merge",
             r#"
             [navigation]
-            mode = "TopTab"
+            mode = "Tab"
             clickable = true
 
             [platform]
@@ -1444,7 +1492,7 @@ mod tests {
             disable-unfocused-render = false
 
             [navigation]
-            mode = "BottomTab"
+            mode = "Tab"
             clickable = false
 
             shell = { program = "/bin/sh", args = ["-c"] }
@@ -1471,20 +1519,16 @@ mod tests {
 
         // Window: opacity and blur overridden, others preserved
         assert_eq!(result.window.opacity, 1.0);
-        assert!(result.window.blur);
+        assert!(result.window.blur.is_enabled());
         assert_eq!(result.window.width, 1024);
         assert_eq!(result.window.height, 768);
 
         // Renderer: performance overridden, disable_unfocused_render preserved
-        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert!(!result.renderer.disable_unfocused_render);
 
         // Navigation: clickable overridden, mode preserved
         assert!(result.navigation.clickable);
-        assert_eq!(
-            result.navigation.mode,
-            navigation::NavigationMode::BottomTab
-        );
+        assert_eq!(result.navigation.mode, navigation::NavigationMode::Tab);
 
         // Shell: completely replaced
         assert_eq!(result.shell.program, "/bin/zsh");

@@ -130,8 +130,24 @@ pub struct UnownedWindow {
     cursor_visible: Mutex<bool>,
     ime_sender: Mutex<ImeSender>,
     pub shared_state: Mutex<SharedState>,
-    redraw_sender: WakeSender<WindowId>,
     activation_sender: WakeSender<super::ActivationToken>,
+    pub(crate) redraw_pending: std::sync::atomic::AtomicBool,
+    waker: calloop::ping::Ping,
+    /// Per-window vsync timer state. Mirrors zed's `RefreshState`
+    /// in `gpui_linux::linux::x11::client`. Managed by
+    /// `ActiveEventLoop::update_refresh_loop` from event handlers
+    /// (`map_notify`, `visibility_notify`).
+    pub(crate) refresh_state: std::sync::Mutex<Option<super::RefreshState>>,
+    /// `true` between `MapNotify` and `UnmapNotify`. Read by
+    /// `update_refresh_loop` to decide whether to keep the per-window
+    /// vsync timer running.
+    pub(crate) is_mapped: std::sync::atomic::AtomicBool,
+    /// `true` when the window's last `VisibilityNotify` reported
+    /// `VisibilityFullyObscured`. Combined with `is_mapped` by
+    /// `update_refresh_loop` — kept separate so a map while still
+    /// obscured doesn't restart the timer prematurely. Matches zed's
+    /// `last_visibility` field.
+    pub(crate) is_fully_obscured: std::sync::atomic::AtomicBool,
 }
 
 macro_rules! leap {
@@ -372,8 +388,15 @@ impl UnownedWindow {
             cursor_visible: Mutex::new(true),
             ime_sender: Mutex::new(event_loop.ime_sender.clone()),
             shared_state: SharedState::new(guessed_monitor, &window_attrs),
-            redraw_sender: event_loop.redraw_sender.clone(),
             activation_sender: event_loop.activation_sender.clone(),
+            redraw_pending: std::sync::atomic::AtomicBool::new(false),
+            waker: event_loop.waker.clone(),
+            refresh_state: std::sync::Mutex::new(None),
+            // The window starts unmapped; `MapNotify` will flip these.
+            // We assume not-obscured by default — the first
+            // `VisibilityNotify` will correct it if needed.
+            is_mapped: std::sync::atomic::AtomicBool::new(false),
+            is_fully_obscured: std::sync::atomic::AtomicBool::new(false),
         };
 
         // Title must be set before mapping. Some tiling window managers (i.e. i3) use the window
@@ -1123,7 +1146,7 @@ impl UnownedWindow {
     pub fn set_transparent(&self, _transparent: bool) {}
 
     #[inline]
-    pub fn set_blur(&self, _blur: bool) {}
+    pub fn set_blur(&self, _blur: crate::window::BlurStyle) {}
 
     fn set_decorations_inner(
         &self,
@@ -1983,9 +2006,18 @@ impl UnownedWindow {
 
     #[inline]
     pub fn request_redraw(&self) {
-        self.redraw_sender
-            .send(WindowId(self.xwindow as _))
-            .unwrap();
+        // Mark the per-window dirty flag; the per-window vsync timer
+        // (registered in `update_refresh_loop`) picks it up on the
+        // next tick. Ping wakes the calloop dispatcher in case it
+        // is blocked in `Wait` so the next tick isn't deferred. No
+        // global "has work" flag — that pattern caused a 100% CPU
+        // spin between key/mouse events and the next vsync edge,
+        // because nothing ever cleared it. Mirrors zed's
+        // `gpui_linux::linux::x11` flow (no global flag) and the
+        // Wayland backend (per-window AtomicBool + ping).
+        self.redraw_pending
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.waker.ping();
     }
 
     #[inline]

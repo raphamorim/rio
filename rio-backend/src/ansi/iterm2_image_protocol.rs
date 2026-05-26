@@ -12,9 +12,7 @@ use sugarloaf::{GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 use rustc_hash::FxHashMap;
 use std::str;
 
-use base64::engine::general_purpose::STANDARD as Base64;
-use base64::Engine;
-
+use crate::simd_base64;
 use crate::simd_utf8;
 
 /// Parse the OSC 1337 parameters to add a graphic to the grid.
@@ -25,10 +23,10 @@ pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
         return None;
     }
 
-    let buffer = match Base64.decode(contents) {
-        Ok(buffer) => buffer,
-        Err(err) => {
-            tracing::warn!("Can't decode base64 data: {}", err);
+    let buffer = match simd_base64::decode(contents) {
+        Some(buffer) => buffer,
+        None => {
+            tracing::warn!("Can't decode iTerm2 base64 image payload");
             return None;
         }
     };
@@ -41,7 +39,7 @@ pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
         }
     };
 
-    let mut graphics = GraphicData::from_dynamic_image(GraphicId(0), image);
+    let mut graphics = GraphicData::from_dynamic_image(GraphicId::new(1), image);
     graphics.resize = resize_param(&params);
     Some(graphics)
 }

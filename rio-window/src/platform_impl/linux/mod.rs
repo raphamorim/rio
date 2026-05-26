@@ -339,7 +339,7 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_blur(&self, blur: bool) {
+    pub fn set_blur(&self, blur: crate::window::BlurStyle) {
         x11_or_wayland!(match self; Window(w) => w.set_blur(blur));
     }
 
@@ -854,6 +854,12 @@ impl<T: 'static> EventLoopProxy<T> {
     }
 }
 
+// X11's ActiveEventLoop is much larger than the Wayland variant; the
+// imbalance is intentional (X11 carries more state) and only one
+// variant is constructed per process. Boxing the larger variant
+// would just trade stack size for a heap allocation that lives the
+// whole event-loop lifetime.
+#[allow(clippy::large_enum_variant)]
 pub enum ActiveEventLoop {
     #[cfg(wayland_platform)]
     Wayland(Box<wayland::ActiveEventLoop>),

@@ -114,6 +114,21 @@ pub trait WindowExtMacOS {
 
     /// Sets the window's colorspace for wide color gamut support.
     fn set_colorspace(&self, colorspace: Colorspace);
+
+    /// Sets the position of the traffic light buttons (close, minimize, maximize).
+    /// The position is specified as (x, y) coordinates in points from the top-left corner.
+    /// Pass None to reset to the default position.
+    fn set_traffic_light_position(&self, position: Option<(f64, f64)>);
+
+    /// Push the configured `window.opacity` into the liquid-glass
+    /// tint computation. Effective only when
+    /// [`crate::window::BlurStyle::MacosGlassRegular`] /
+    /// [`crate::window::BlurStyle::MacosGlassClear`] is active and
+    /// `NSGlassEffectView` is available at runtime (macOS 26+).
+    /// Otherwise stored for the next time glass installs. Mirrors
+    /// the `tintColor = bg.withAlphaComponent(opacity)` step in
+    /// AppKit-native glass setups.
+    fn set_glass_opacity(&self, opacity: f64);
 }
 
 impl WindowExtMacOS for Window {
@@ -143,6 +158,12 @@ impl WindowExtMacOS for Window {
     fn set_background_color(&self, r: f64, g: f64, b: f64, a: f64) {
         self.window
             .maybe_queue_on_main(move |w| w.set_background_color(r, g, b, a))
+    }
+
+    #[inline]
+    fn set_glass_opacity(&self, opacity: f64) {
+        self.window
+            .maybe_queue_on_main(move |w| w.set_glass_opacity(opacity))
     }
 
     #[inline]
@@ -215,6 +236,12 @@ impl WindowExtMacOS for Window {
         self.window
             .maybe_queue_on_main(move |w| w.set_colorspace(colorspace))
     }
+
+    #[inline]
+    fn set_traffic_light_position(&self, position: Option<(f64, f64)>) {
+        self.window
+            .maybe_queue_on_main(move |w| w.set_traffic_light_position(position))
+    }
 }
 
 /// Corresponds to `NSApplicationActivationPolicy`.
@@ -272,6 +299,9 @@ pub trait WindowAttributesExtMacOS {
     fn with_unified_titlebar(self, unified_titlebar: bool) -> Self;
     /// Sets the window's colorspace for wide color gamut support.
     fn with_colorspace(self, colorspace: Colorspace) -> Self;
+    /// Sets the position of the traffic light buttons (close, minimize, maximize).
+    /// The position is specified as (x, y) coordinates in points from the top-left corner.
+    fn with_traffic_light_position(self, x: f64, y: f64) -> Self;
 }
 
 impl WindowAttributesExtMacOS for WindowAttributes {
@@ -356,6 +386,12 @@ impl WindowAttributesExtMacOS for WindowAttributes {
     #[inline]
     fn with_colorspace(mut self, colorspace: Colorspace) -> Self {
         self.platform_specific.colorspace = Some(colorspace);
+        self
+    }
+
+    #[inline]
+    fn with_traffic_light_position(mut self, x: f64, y: f64) -> Self {
+        self.platform_specific.traffic_light_position = Some((x, y));
         self
     }
 }

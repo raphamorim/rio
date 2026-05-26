@@ -14,11 +14,9 @@ use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
 };
-#[cfg(target_os = "macos")]
-use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
-use crate::context::grid::{ContextDimension, Delta};
+use crate::context;
 use crate::context::renderable::{Cursor, RenderableContent};
-use crate::context::{self, process_open_url, ContextManager};
+use crate::context::{next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},
@@ -27,26 +25,24 @@ use crate::crosswords::{
     Mode,
 };
 use crate::hints::HintState;
+use crate::layout::ContextDimension;
 use crate::mouse::{calculate_mouse_position, Mouse};
-use crate::renderer::{
-    utils::{padding_bottom_from_config, padding_top_from_config},
-    Renderer,
-};
+use crate::renderer::{utils::padding_top_from_config, Renderer};
 use crate::screen::hint::HintMatches;
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
-use rio_backend::config::renderer::{
-    Backend as RendererBackend, Performance as RendererPerformance,
-};
+use rio_backend::config::layout::Margin;
+use rio_backend::config::renderer::Backend;
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
+use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
-    layout::RootStyle, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
+    SugarloafWindow, SugarloafWindowSize,
 };
 use rio_window::event::ElementState;
 use rio_window::event::Modifiers;
@@ -55,18 +51,9 @@ use rio_window::event::MouseButton;
 use rio_window::keyboard::ModifiersKeyState;
 use rio_window::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
 use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
-use std::cell::RefCell;
-use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
-use std::rc::Rc;
 use touch::TouchPurpose;
-
-/// Minimum number of pixels at the bottom/top where selection scrolling is performed.
-const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
-
-/// Number of pixels for increasing the selection scrolling speed factor by one.
-const SELECTION_SCROLLING_STEP: f32 = 10.;
 
 /// Maximum number of lines for the blocking search while still typing the search regex.
 const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
@@ -85,9 +72,24 @@ pub struct Screen<'screen> {
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
-    pub clipboard: Rc<RefCell<Clipboard>>,
     last_ime_cursor_pos: Option<(f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
+    pub resize_state: Option<crate::layout::ResizeState>,
+    /// Per-panel `GridRenderer`, keyed by `route_id`. Lazily created
+    /// on first render of each panel so construction (which compiles
+    /// the Metal/WGSL shaders and builds pipeline states) runs once
+    /// per panel lifetime. Removed when the panel closes.
+    ///
+    /// Phase 2.0: the grids are constructed and kept in sync with
+    /// panel layout, but `sugarloaf.render_with_grids` is still
+    /// called with an empty slice — so behavior is unchanged and
+    /// this only validates that the shaders compile on real
+    /// hardware. Phase 2.1/2.2 flip the switch.
+    pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
+    /// Per-window glyph rasterizer shared across panels. Owns a
+    /// char → font resolution cache; the per-panel atlas lives on
+    /// each `GridRenderer`.
+    pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
 }
 
 pub struct ScreenWindowProperties {
@@ -98,6 +100,18 @@ pub struct ScreenWindowProperties {
     pub window_id: rio_window::window::WindowId,
 }
 
+/// Whether the render surface should run in macOS compositor's
+/// opaque-window fast path. Non-opaque iff the user actually
+/// configured transparency (`window.opacity < 1`) or a glass
+/// background effect — system blur on its own is not enough, since
+/// without `opacity < 1` there's nothing transparent for the blur to
+/// read through, so we keep the fast path for that case. Default =
+/// opaque.
+#[inline]
+fn window_should_be_opaque(config: &rio_backend::config::Config) -> bool {
+    config.window.opacity >= 1.0 && !config.window.blur.is_glass()
+}
+
 impl Screen<'_> {
     pub fn new<'screen>(
         window_properties: ScreenWindowProperties,
@@ -105,7 +119,6 @@ impl Screen<'_> {
         event_proxy: EventProxy,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
-        clipboard: Rc<RefCell<Clipboard>>,
     ) -> Result<Screen<'screen>, Box<dyn Error>> {
         let size = window_properties.size;
         let scale = window_properties.scale;
@@ -115,13 +128,12 @@ impl Screen<'_> {
 
         let padding_y_top = padding_top_from_config(
             &config.navigation,
-            config.padding_y[0],
+            config.margin.top,
             1,
             config.window.macos_use_unified_titlebar,
         );
 
-        let padding_y_bottom =
-            padding_bottom_from_config(&config.navigation, config.padding_y[1], 1, false);
+        let padding_y_bottom = config.margin.bottom;
         let sugarloaf_layout =
             RootStyle::new(scale as f32, config.fonts.size, config.line_height);
 
@@ -137,28 +149,34 @@ impl Screen<'_> {
             },
         };
 
-        let power_preference = match config.renderer.performance {
-            RendererPerformance::High => wgpu::PowerPreference::HighPerformance,
-            RendererPerformance::Low => wgpu::PowerPreference::LowPower,
-        };
-
-        let backend = match config.renderer.backend {
-            RendererBackend::Automatic => {
-                #[cfg(target_arch = "wasm32")]
-                let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-                #[cfg(not(target_arch = "wasm32"))]
-                let default_backend = wgpu::Backends::all();
-
-                default_backend
+        let backend = if config.renderer.use_cpu {
+            SugarloafBackend::Cpu
+        } else {
+            match config.renderer.backend {
+                // `Backend::Vulkan` from the user config means the
+                // native ash backend on Linux. Other OSes fall through
+                // to the wgpu Vulkan path when the `wgpu` feature is
+                // on; otherwise we degrade to CPU rasterizer.
+                #[cfg(target_os = "linux")]
+                Backend::Vulkan => SugarloafBackend::Vulkan,
+                #[cfg(all(not(target_os = "linux"), feature = "wgpu"))]
+                Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
+                #[cfg(all(not(target_os = "linux"), not(feature = "wgpu")))]
+                Backend::Vulkan => SugarloafBackend::Cpu,
+                #[cfg(target_os = "macos")]
+                Backend::Metal => SugarloafBackend::Metal,
+                #[cfg(all(feature = "wgpu", target_arch = "wasm32"))]
+                Backend::Webgpu => SugarloafBackend::Wgpu(
+                    wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
+                ),
+                #[cfg(all(feature = "wgpu", not(target_arch = "wasm32")))]
+                Backend::Webgpu => SugarloafBackend::Wgpu(wgpu::Backends::all()),
+                #[cfg(not(feature = "wgpu"))]
+                Backend::Webgpu => SugarloafBackend::Cpu,
             }
-            RendererBackend::Vulkan => wgpu::Backends::VULKAN,
-            RendererBackend::GL => wgpu::Backends::GL,
-            RendererBackend::Metal => wgpu::Backends::METAL,
-            RendererBackend::DX12 => wgpu::Backends::DX12,
         };
 
         let sugarloaf_renderer = SugarloafRenderer {
-            power_preference,
             backend,
             font_features: config.fonts.features.clone(),
             colorspace: config.window.colorspace.to_sugarloaf_colorspace(),
@@ -177,9 +195,10 @@ impl Screen<'_> {
             }
         };
 
+        #[cfg(feature = "wgpu")]
         sugarloaf.update_filters(config.renderer.filters.as_slice());
 
-        let renderer = Renderer::new(config, font_library);
+        let mut renderer = Renderer::new(config);
 
         let bindings = crate::bindings::default_key_bindings(config);
 
@@ -204,22 +223,45 @@ impl Screen<'_> {
             // does not make sense fetch for foreground process names/path
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
+            split_active_color: config.colors.split_active,
+            panel: config.panel,
             title: config.title.clone(),
             keyboard: config.keyboard,
+            scrollback_history_limit: config.scrollback_history_limit,
         };
 
-        let rich_text_id = sugarloaf.create_rich_text();
+        // Allocate a rich_text_id for the new panel. Sugarloaf no
+        // longer tracks per-id panel metadata — position/bounds live
+        // on `ContextDimension` via rio's layout system; the id is
+        // still useful as a key for image_overlays + grid renderers.
+        let rich_text_id = next_rich_text_id();
 
-        let margin = Delta {
-            x: config.padding_x,
-            top_y: padding_y_top,
-            bottom_y: padding_y_bottom,
-        };
+        // Create unscaled margin for ContextDimension (compute() will scale it)
+        let margin = Margin::new(
+            padding_y_top,
+            config.margin.right,
+            padding_y_bottom,
+            config.margin.left,
+        );
+        // Create scaled margin for ContextGrid (already in physical pixels)
+        let scaled_margin = Margin::new(
+            padding_y_top * scale as f32,
+            config.margin.right * scale as f32,
+            padding_y_bottom * scale as f32,
+            config.margin.left * scale as f32,
+        );
+        let (text_dimensions, cell_metrics) = sugarloaf.compute_cell_metrics(
+            config.fonts.size,
+            config.line_height,
+            scale as f32,
+        );
         let context_dimension = ContextDimension::build(
             size.width as f32,
             size.height as f32,
-            sugarloaf.get_rich_text_dimensions(&rich_text_id),
+            text_dimensions,
+            cell_metrics,
             config.line_height,
+            config.fonts.size,
             margin,
         );
 
@@ -239,20 +281,29 @@ impl Screen<'_> {
             rich_text_id,
             context_manager_config,
             context_dimension,
-            margin,
+            scaled_margin,
             sugarloaf_errors,
         )?;
 
-        if cfg!(target_os = "macos") {
-            sugarloaf.set_background_color(None);
-        } else {
-            sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
-        }
+        // Window is opaque (compositor fast path) unless the user
+        // actually configured transparency. The render surface can
+        // hold per-pixel alpha either way — see `cell_bg` in
+        // `grid_emit.rs` — but flipping the layer to non-opaque is
+        // what makes the OS treat those alpha bits as see-through.
+        sugarloaf.set_window_opaque(window_should_be_opaque(config));
+
+        sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
 
         if let Some(image) = &config.window.background_image {
-            sugarloaf.set_background_image(image);
+            if let Err(message) = sugarloaf.set_background_image(image) {
+                renderer.assistant.set_error(RioError {
+                    level: RioErrorLevel::Warning,
+                    report: RioErrorType::BackgroundImageLoadFailure(message),
+                });
+            }
+        } else {
+            sugarloaf.clear_background_image();
         }
-        sugarloaf.render();
 
         Ok(Screen {
             search_state: SearchState::default(),
@@ -271,9 +322,44 @@ impl Screen<'_> {
             touchpurpose: TouchPurpose::default(),
             renderer,
             bindings,
-            clipboard,
             last_ime_cursor_pos: None,
+            resize_state: None,
+            grids: rustc_hash::FxHashMap::default(),
+            grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
         })
+    }
+
+    /// Ensure a `GridRenderer` exists for `route_id` with the given
+    /// dimensions. Lazily constructs on first call, resizes on
+    /// subsequent calls when `(cols, rows)` change. Phase 2.0: the
+    /// returned grid isn't yet bound into `render_with_grids`, so
+    /// this is a smoke-test for shader compilation and pipeline
+    /// creation on real hardware.
+    pub fn ensure_grid(&mut self, route_id: usize, cols: u32, rows: u32) {
+        use std::collections::hash_map::Entry;
+        match self.grids.entry(route_id) {
+            Entry::Occupied(mut e) => e.get_mut().resize(cols, rows),
+            Entry::Vacant(e) => {
+                e.insert(rio_backend::sugarloaf::grid::GridRenderer::new(
+                    &self.sugarloaf.ctx,
+                    cols,
+                    rows,
+                ));
+            }
+        }
+    }
+
+    /// Discard the grid for a panel that has closed. Frees the GPU
+    /// buffers + pipeline state. Wired into the context-close path
+    /// in Phase 2.1; kept `#[allow(dead_code)]` for Phase 2.0 so the
+    /// method is available without failing the warnings-as-errors
+    /// build.
+    #[allow(dead_code)]
+    pub fn drop_grid(&mut self, route_id: usize) {
+        self.grids.remove(&route_id);
+        // The per-context viewport buffers (visible_rows, style_table,
+        // extras_table) live on `RenderableContent` and drop with the
+        // context itself.
     }
 
     #[inline]
@@ -284,6 +370,28 @@ impl Screen<'_> {
     #[inline]
     pub fn ctx_mut(&mut self) -> &mut ContextManager<EventProxy> {
         &mut self.context_manager
+    }
+
+    /// Mark the active context dirty. Replaces synchronous
+    /// `self.render()` calls scattered through keyboard / mouse / VI /
+    /// search / hint handlers — those used to force an immediate
+    /// render, which bypassed vsync. With the damage system, the
+    /// caller in `application.rs` already requests a redraw after the
+    /// handler returns, and the next vsync fires `RedrawRequested`
+    /// which consumes the dirty flag. UI-only: terminal cells didn't
+    /// change, so no row rebuild is needed — the `(None, None) =>
+    /// TerminalDamage::Noop` branch in `Renderer::run` keeps the
+    /// panel in the render set without re-emitting rows.
+    ///
+    /// Terminal-content changes (scroll, selection band, PTY output)
+    /// still flow through `set_terminal_damage` on their own paths.
+    #[inline]
+    pub fn mark_dirty(&mut self) {
+        self.context_manager
+            .current_mut()
+            .renderable_content
+            .pending_update
+            .set_dirty();
     }
 
     #[inline]
@@ -302,14 +410,16 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn select_current_based_on_mouse(&mut self) {
+    pub fn select_current_based_on_mouse(&mut self) -> bool {
         if self
             .context_manager
             .current_grid_mut()
             .select_current_based_on_mouse(&self.mouse)
         {
             self.context_manager.select_route_from_current_grid();
+            return true;
         }
+        false
     }
 
     #[inline]
@@ -317,17 +427,18 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (context, margin) = current_grid.current_context_with_computed_dimension();
         let context_dimension = context.dimension;
-        let style = self.sugarloaf.style();
+        // Canonical integer cell stride — `cell.cell_height` already
+        // has line_height baked in by sugarloaf, do NOT re-multiply.
+        // Single source of truth shared with the GPU grid uniform.
         calculate_mouse_position(
             &self.mouse,
             display_offset,
-            style.scale_factor,
             (context_dimension.columns, context_dimension.lines),
-            margin.x,
-            margin.top_y,
+            margin.left,
+            margin.top,
             (
-                context_dimension.dimension.width,
-                context_dimension.dimension.height * style.line_height,
+                context_dimension.cell.cell_width,
+                context_dimension.cell.cell_height,
             ),
         )
     }
@@ -335,16 +446,6 @@ impl Screen<'_> {
     #[inline]
     pub fn touch_purpose(&mut self) -> &mut TouchPurpose {
         &mut self.touchpurpose
-    }
-
-    #[inline]
-    #[cfg(target_os = "macos")]
-    pub fn is_macos_deadzone(&self, pos_y: f64) -> bool {
-        let layout = self
-            .sugarloaf
-            .rich_text_layout(&self.context_manager.current().rich_text_id);
-        let scale_f64 = layout.dimensions.scale as f64;
-        pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
     }
 
     /// update_config is triggered in any configuration file update
@@ -358,16 +459,11 @@ impl Screen<'_> {
         let num_tabs = self.ctx().len();
         let padding_y_top = padding_top_from_config(
             &config.navigation,
-            config.padding_y[0],
+            config.margin.top,
             num_tabs,
             config.window.macos_use_unified_titlebar,
         );
-        let padding_y_bottom = padding_bottom_from_config(
-            &config.navigation,
-            config.padding_y[1],
-            num_tabs,
-            self.search_active(),
-        );
+        let padding_y_bottom = config.margin.bottom;
 
         if should_update_font_library {
             self.sugarloaf.update_font(font_library);
@@ -376,32 +472,50 @@ impl Screen<'_> {
         s.font_size = config.fonts.size;
         s.line_height = config.line_height;
 
+        #[cfg(feature = "wgpu")]
         self.sugarloaf
             .update_filters(config.renderer.filters.as_slice());
-        self.renderer = Renderer::new(config, font_library);
 
+        // Preserve existing Island (tab state) and update its colors
+        let old_island = self.renderer.island.take();
+        self.renderer = Renderer::new(config);
+        if let Some(mut island) = old_island {
+            island.update_colors(
+                config.colors.tabs,
+                config.colors.tabs_active,
+                config.colors.tab_border,
+            );
+            self.renderer.island = Some(island);
+        }
+
+        let scale = self.sugarloaf.scale_factor();
         for context_grid in self.context_manager.contexts_mut() {
             context_grid.update_line_height(config.line_height);
 
-            context_grid.update_margin((
-                config.padding_x,
-                padding_y_top,
-                padding_y_bottom,
+            context_grid.update_scaled_margin(Margin::new(
+                padding_y_top * scale,
+                config.margin.right * scale,
+                padding_y_bottom * scale,
+                config.margin.left * scale,
             ));
 
-            context_grid.update_dimensions(&self.sugarloaf);
+            // Update per-panel font size and line height BEFORE
+            // update_dimensions — the recompute reads from these
+            // fields. `rebaseline_font_size` also re-anchors the
+            // "reset" target so the next change_font_size(Reset)
+            // returns to the new config size.
+            for current_context in context_grid.contexts_mut().values_mut() {
+                let current_context = current_context.context_mut();
+                current_context
+                    .dimension
+                    .rebaseline_font_size(config.fonts.size);
+                current_context.dimension.line_height = config.line_height;
+            }
+
+            context_grid.update_dimensions(&mut self.sugarloaf);
 
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
-                self.sugarloaf.set_rich_text_font_size(
-                    &current_context.rich_text_id,
-                    config.fonts.size,
-                );
-                self.sugarloaf.set_rich_text_line_height(
-                    &current_context.rich_text_id,
-                    current_context.dimension.line_height,
-                );
-
                 let mut terminal = current_context.terminal.lock();
                 current_context.renderable_content =
                     RenderableContent::from_cursor_config(&config.cursor);
@@ -419,15 +533,23 @@ impl Screen<'_> {
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
 
-        if cfg!(target_os = "macos") {
-            self.sugarloaf.set_background_color(None);
-        } else {
-            self.sugarloaf
-                .set_background_color(Some(self.renderer.dynamic_background.1));
-        }
+        // Re-evaluate the opaque flag — toggling `window.opacity` /
+        // `window.blur` at runtime should flip the compositor mode.
+        self.sugarloaf
+            .set_window_opaque(window_should_be_opaque(config));
+
+        self.sugarloaf
+            .set_background_color(Some(self.renderer.dynamic_background.1));
 
         if let Some(image) = &config.window.background_image {
-            self.sugarloaf.set_background_image(image);
+            if let Err(message) = self.sugarloaf.set_background_image(image) {
+                self.renderer.assistant.set_error(RioError {
+                    level: RioErrorLevel::Warning,
+                    report: RioErrorType::BackgroundImageLoadFailure(message),
+                });
+            }
+        } else {
+            self.sugarloaf.clear_background_image();
         }
 
         self.resize_all_contexts();
@@ -435,22 +557,21 @@ impl Screen<'_> {
 
     #[inline]
     pub fn change_font_size(&mut self, action: FontSizeAction) {
-        let action: u8 = match action {
-            FontSizeAction::Increase => 2,
-            FontSizeAction::Decrease => 1,
-            FontSizeAction::Reset => 0,
+        let dim = &mut self.context_manager.current_mut().dimension;
+        let changed = match action {
+            FontSizeAction::Increase => dim.increase_font_size(),
+            FontSizeAction::Decrease => dim.decrease_font_size(),
+            FontSizeAction::Reset => dim.reset_font_size(),
         };
-
-        self.sugarloaf.set_rich_text_font_size_based_on_action(
-            &self.context_manager.current().rich_text_id,
-            action,
-        );
+        if !changed {
+            return;
+        }
 
         self.context_manager
             .current_grid_mut()
-            .update_dimensions(&self.sugarloaf);
+            .update_dimensions(&mut self.sugarloaf);
 
-        self.render();
+        self.mark_dirty();
         self.resize_all_contexts();
     }
 
@@ -469,9 +590,8 @@ impl Screen<'_> {
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
-        for context_grid in self.context_manager.contexts_mut() {
-            context_grid.resize(width, height);
-        }
+        self.context_manager
+            .resize_all_grids(width, height, &mut self.sugarloaf);
 
         self
     }
@@ -484,17 +604,37 @@ impl Screen<'_> {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.render();
-        self.resize_all_contexts();
-        self.context_manager
-            .current_grid_mut()
-            .update_dimensions(&self.sugarloaf);
+
+        for context_grid in self.context_manager.contexts_mut() {
+            let old_scale = context_grid.current().dimension.dimension.scale.max(1.0);
+            let scaled_margin = context_grid.scaled_margin;
+            let unscaled_margin = Margin::new(
+                scaled_margin.top / old_scale,
+                scaled_margin.right / old_scale,
+                scaled_margin.bottom / old_scale,
+                scaled_margin.left / old_scale,
+            );
+
+            context_grid.update_scaled_margin(Margin::new(
+                unscaled_margin.top * new_scale,
+                unscaled_margin.right * new_scale,
+                unscaled_margin.bottom * new_scale,
+                unscaled_margin.left * new_scale,
+            ));
+
+            for context in context_grid.contexts_mut().values_mut() {
+                context.context_mut().dimension.update_scale(new_scale);
+            }
+
+            context_grid.update_dimensions(&mut self.sugarloaf);
+        }
+
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
-        for context_grid in self.context_manager.contexts_mut() {
-            context_grid.resize(width, height);
-        }
+        self.context_manager
+            .resize_all_grids(width, height, &mut self.sugarloaf);
+        self.mark_dirty();
 
         self
     }
@@ -549,7 +689,11 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn process_key_event(&mut self, key: &rio_window::event::KeyEvent) {
+    pub fn process_key_event(
+        &mut self,
+        key: &rio_window::event::KeyEvent,
+        clipboard: &mut Clipboard,
+    ) {
         if self.context_manager.current().ime.preedit().is_some() {
             return;
         }
@@ -599,7 +743,7 @@ impl Screen<'_> {
                 ) => {
                     self.hint_state.stop();
                     self.update_hint_state();
-                    self.render();
+                    self.mark_dirty();
                     return;
                 }
                 rio_window::keyboard::Key::Named(
@@ -609,7 +753,7 @@ impl Screen<'_> {
                     self.hint_state.keyboard_input(&*terminal, '\x08');
                     drop(terminal);
                     self.update_hint_state();
-                    self.render();
+                    self.mark_dirty();
                     return;
                 }
                 _ => {}
@@ -623,21 +767,21 @@ impl Screen<'_> {
                     self.hint_state.keyboard_input(&*terminal, character)
                 {
                     drop(terminal);
-                    self.execute_hint_action(&hint_match);
+                    self.execute_hint_action(&hint_match, clipboard);
                     // Stop hint mode and update state with proper damage tracking
                     self.hint_state.stop();
                     self.update_hint_state();
-                    self.render();
+                    self.mark_dirty();
                     return;
                 }
                 drop(terminal);
             }
             self.update_hint_state();
-            self.render();
+            self.mark_dirty();
             return;
         }
 
-        let ignore_chars = self.process_key_bindings(key, &mode, mods);
+        let ignore_chars = self.process_key_bindings(key, &mode, mods, clipboard);
         if ignore_chars {
             return;
         }
@@ -649,7 +793,7 @@ impl Screen<'_> {
                 self.search_input(character);
             }
 
-            self.render();
+            self.mark_dirty();
             return;
         }
 
@@ -719,7 +863,11 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn process_mouse_bindings(&mut self, button: MouseButton) {
+    pub fn process_mouse_bindings(
+        &mut self,
+        button: MouseButton,
+        clipboard: &mut Clipboard,
+    ) {
         let mode = self.get_mode();
         let binding_mode = BindingMode::new(&mode, self.search_active());
         let mouse_mode = self.mouse_mode();
@@ -736,7 +884,7 @@ impl Screen<'_> {
             if binding.is_triggered_by(binding_mode.to_owned(), mods, &button)
                 && binding.action == Act::PasteSelection
             {
-                let content = self.clipboard.borrow_mut().get(ClipboardType::Selection);
+                let content = clipboard.get(ClipboardType::Selection);
                 self.paste(&content, true);
             }
         }
@@ -747,6 +895,7 @@ impl Screen<'_> {
         key: &rio_window::event::KeyEvent,
         mode: &Mode,
         mods: ModifiersState,
+        clipboard: &mut Clipboard,
     ) -> bool {
         let search_active = self.search_active();
         let binding_mode = BindingMode::new(mode, search_active);
@@ -769,7 +918,7 @@ impl Screen<'_> {
                 //
                 // For more see https://github.com/rust-windowing/winit/issues/2945.
                 // if (cfg!(target_os = "macos") || (cfg!(windows) && mods.control_key()))
-                //     && mods.alt_key()
+                // && mods.alt_key()
                 if (mods.shift_key() || mods.alt_key())
                     || mods.alt_key() && (cfg!(windows) && mods.control_key())
                 {
@@ -798,20 +947,18 @@ impl Screen<'_> {
                         self.paste(s, false);
                     }
                     Act::Paste => {
-                        let content =
-                            self.clipboard.borrow_mut().get(ClipboardType::Clipboard);
+                        let content = clipboard.get(ClipboardType::Clipboard);
                         self.paste(&content, true);
                     }
                     Act::ClearSelection => {
                         self.clear_selection();
                     }
                     Act::PasteSelection => {
-                        let content =
-                            self.clipboard.borrow_mut().get(ClipboardType::Selection);
+                        let content = clipboard.get(ClipboardType::Selection);
                         self.paste(&content, true);
                     }
                     Act::Copy => {
-                        self.copy_selection(ClipboardType::Clipboard);
+                        self.copy_selection(ClipboardType::Clipboard, clipboard);
                     }
                     Act::Hint(hint_config) => {
                         self.start_hint_mode(hint_config.clone());
@@ -819,52 +966,52 @@ impl Screen<'_> {
                     Act::SearchForward => {
                         self.start_search(Direction::Right);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SearchBackward => {
                         self.start_search(Direction::Left);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchConfirm) => {
-                        self.confirm_search();
+                        self.confirm_search(clipboard);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchCancel) => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchClear) => {
                         let direction = self.search_state.direction;
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.start_search(direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchFocusNext) => {
                         self.advance_search_origin(self.search_state.direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchFocusPrevious) => {
                         let direction = self.search_state.direction.opposite();
                         self.advance_search_origin(direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchDeleteWord) => {
                         self.search_pop_word();
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchHistoryPrevious) => {
                         self.search_history_previous();
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Search(SearchAction::SearchHistoryNext) => {
                         self.search_history_next();
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ToggleViMode => {
                         let context = self.context_manager.current_mut();
@@ -875,9 +1022,11 @@ impl Screen<'_> {
                         context
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.renderer.set_vi_mode(has_vi_mode_enabled);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ViMotion(motion) => {
                         let context = self.context_manager.current_mut();
@@ -894,8 +1043,10 @@ impl Screen<'_> {
                         context
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
-                        self.render();
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
+                        self.mark_dirty();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
                         let context = self.context_manager.current_mut();
@@ -911,44 +1062,70 @@ impl Screen<'_> {
                         context
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
-                        self.render();
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
+                        self.mark_dirty();
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
-                        self.toggle_selection(SelectionType::Simple, Side::Left);
+                        self.toggle_selection(
+                            SelectionType::Simple,
+                            Side::Left,
+                            clipboard,
+                        );
                         self.context_manager
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
-                        self.render();
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
+                        self.mark_dirty();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
-                        self.toggle_selection(SelectionType::Lines, Side::Left);
+                        self.toggle_selection(
+                            SelectionType::Lines,
+                            Side::Left,
+                            clipboard,
+                        );
                         self.context_manager
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
-                        self.render();
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
+                        self.mark_dirty();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
-                        self.toggle_selection(SelectionType::Block, Side::Left);
+                        self.toggle_selection(
+                            SelectionType::Block,
+                            Side::Left,
+                            clipboard,
+                        );
                         self.context_manager
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
-                        self.render();
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
+                        self.mark_dirty();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
-                        self.toggle_selection(SelectionType::Semantic, Side::Left);
+                        self.toggle_selection(
+                            SelectionType::Semantic,
+                            Side::Left,
+                            clipboard,
+                        );
                         self.context_manager
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
-                        self.render();
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
+                        self.mark_dirty();
                     }
                     Act::SplitRight => {
                         self.split_right();
@@ -977,23 +1154,23 @@ impl Screen<'_> {
                         self.context_manager.create_new_window();
                     }
                     Act::CloseCurrentSplitOrTab => {
-                        self.close_split_or_tab();
+                        self.close_split_or_tab(clipboard);
                     }
                     Act::TabCreateNew => {
-                        self.create_tab();
+                        self.create_tab(clipboard);
                     }
                     Act::TabCloseCurrent => {
-                        self.close_tab();
+                        self.close_tab(clipboard);
                     }
                     Act::TabCloseUnfocused => {
                         self.clear_selection();
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         if self.ctx().len() <= 1 {
                             return true;
                         }
                         self.context_manager.close_unfocused_tabs();
                         self.resize_top_or_bottom_line(1);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::Quit => {
                         self.context_manager.quit();
@@ -1009,19 +1186,22 @@ impl Screen<'_> {
                     }
                     Act::ScrollPageUp => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = terminal.grid.screen_lines() as i32;
                         terminal.vi_mode_cursor =
                             terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
                         terminal.scroll_display(Scroll::PageUp);
                         drop(terminal);
-                        self.render();
+                        self.renderer.scrollbar.notify_scroll(rtid);
+                        self.mark_dirty();
                     }
                     Act::ScrollPageDown => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = -(terminal.grid.screen_lines() as i32);
 
                         terminal.vi_mode_cursor =
@@ -1029,12 +1209,14 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::PageDown);
                         drop(terminal);
-                        self.render();
+                        self.renderer.scrollbar.notify_scroll(rtid);
+                        self.mark_dirty();
                     }
                     Act::ScrollHalfPageUp => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = terminal.grid.screen_lines() as i32 / 2;
 
                         terminal.vi_mode_cursor =
@@ -1042,12 +1224,14 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
-                        self.render();
+                        self.renderer.scrollbar.notify_scroll(rtid);
+                        self.mark_dirty();
                     }
                     Act::ScrollHalfPageDown => {
                         // Move vi mode cursor.
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         let scroll_lines = -(terminal.grid.screen_lines() as i32 / 2);
 
                         terminal.vi_mode_cursor =
@@ -1055,22 +1239,26 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
-                        self.render();
+                        self.renderer.scrollbar.notify_scroll(rtid);
+                        self.mark_dirty();
                     }
                     Act::ScrollToTop => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         terminal.scroll_display(Scroll::Top);
 
                         let topmost_line = terminal.grid.topmost_line();
                         terminal.vi_mode_cursor.pos.row = topmost_line;
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
-                        self.render();
+                        self.renderer.scrollbar.notify_scroll(rtid);
+                        self.mark_dirty();
                     }
                     Act::ScrollToBottom => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         terminal.scroll_display(Scroll::Bottom);
 
                         // Move vi mode cursor.
@@ -1080,23 +1268,41 @@ impl Screen<'_> {
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
-                        self.render();
+                        self.renderer.scrollbar.notify_scroll(rtid);
+                        self.mark_dirty();
                     }
                     Act::Scroll(delta) => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
                         terminal.scroll_display(Scroll::Delta(*delta));
                         drop(terminal);
-                        self.render();
+                        self.renderer.scrollbar.notify_scroll(rtid);
+                        self.mark_dirty();
                     }
                     Act::ClearHistory => {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
                         terminal.clear_saved_history();
                         drop(terminal);
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
+                    Act::ToggleAppearanceTheme => {
+                        self.context_manager.toggle_appearance_theme();
+                    }
+                    Act::OpenCommandPalette => {
+                        // One-way "open": the action never closes an
+                        // already-visible palette. Users close it via
+                        // Esc (handled inside the palette's own key
+                        // dispatcher in `router::mod`). Idempotent —
+                        // re-firing while the palette is already open
+                        // must NOT wipe the user's in-progress query.
+                        if !self.renderer.command_palette.is_enabled() {
+                            self.renderer.command_palette.set_enabled(true);
+                            self.mark_dirty();
+                        }
+                    }
                     Act::Minimize => {
                         self.context_manager.minimize();
                     }
@@ -1108,60 +1314,116 @@ impl Screen<'_> {
                         self.context_manager.hide_other_apps();
                     }
                     Act::SelectNextSplit => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.context_manager.select_next_split();
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SelectPrevSplit => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.context_manager.select_prev_split();
-                        self.render();
+                        self.mark_dirty();
                     }
                     Act::SelectNextSplitOrTab => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_next_split_or_tab();
-                        self.render();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
+                        self.mark_dirty();
                     }
                     Act::SelectPrevSplitOrTab => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_prev_split_or_tab();
-                        self.render();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
+                        self.mark_dirty();
                     }
                     Act::SelectTab(tab_index) => {
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.select_tab(*tab_index);
-                        self.cancel_search();
-                        self.render();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
+                        self.cancel_search(clipboard);
+                        self.mark_dirty();
                     }
                     Act::SelectLastTab => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.select_last_tab();
-                        self.render();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
+                        self.mark_dirty();
                     }
                     Act::SelectNextTab => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_next();
-                        self.render();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
+                        self.mark_dirty();
                     }
                     Act::MoveCurrentTabToPrev => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.move_current_to_prev();
-                        self.render();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
+                        self.mark_dirty();
                     }
                     Act::MoveCurrentTabToNext => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.move_current_to_next();
-                        self.render();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
+                        self.mark_dirty();
                     }
                     Act::SelectPrevTab => {
-                        self.cancel_search();
+                        self.cancel_search(clipboard);
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_prev();
-                        self.render();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
+                        self.mark_dirty();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
@@ -1173,123 +1435,177 @@ impl Screen<'_> {
     }
 
     pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager
-            .split_from_config(rich_text_id, false, config);
+        // Allocate panel id; position lands on `ContextDimension`
+        // through the Taffy layout pass (`apply_taffy_layout`).
+        let _ = self.renderer.margin.top
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let _ = config.margin.left;
+        let rich_text_id = next_rich_text_id();
+        self.context_manager.split_from_config(
+            rich_text_id,
+            false,
+            config,
+            &mut self.sugarloaf,
+        );
 
-        self.render();
+        self.mark_dirty();
     }
 
     pub fn split_right(&mut self) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.split(rich_text_id, false);
+        let rich_text_id = next_rich_text_id();
+        self.context_manager
+            .split(rich_text_id, false, &mut self.sugarloaf);
 
-        self.render();
+        self.mark_dirty();
     }
 
     pub fn split_down(&mut self) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.split(rich_text_id, true);
+        let rich_text_id = next_rich_text_id();
+        self.context_manager
+            .split(rich_text_id, true, &mut self.sugarloaf);
 
-        self.render();
+        self.mark_dirty();
     }
 
     pub fn move_divider_up(&mut self) {
         let amount = 20.0; // Default movement amount
-        if self.context_manager.move_divider_up(amount) {
-            self.render();
+        if self
+            .context_manager
+            .move_divider_up(amount, &mut self.sugarloaf)
+        {
+            self.mark_dirty();
         }
     }
 
     pub fn move_divider_down(&mut self) {
         let amount = 20.0; // Default movement amount
-        if self.context_manager.move_divider_down(amount) {
-            self.render();
+        if self
+            .context_manager
+            .move_divider_down(amount, &mut self.sugarloaf)
+        {
+            self.mark_dirty();
         }
     }
 
     pub fn move_divider_left(&mut self) {
         let amount = 40.0; // Default movement amount
-        if self.context_manager.move_divider_left(amount) {
-            self.render();
+        if self
+            .context_manager
+            .move_divider_left(amount, &mut self.sugarloaf)
+        {
+            self.mark_dirty();
         }
     }
 
     pub fn move_divider_right(&mut self) {
         let amount = 40.0; // Default movement amount
-        if self.context_manager.move_divider_right(amount) {
-            self.render();
+        if self
+            .context_manager
+            .move_divider_right(amount, &mut self.sugarloaf)
+        {
+            self.mark_dirty();
         }
     }
 
-    pub fn create_tab(&mut self) {
+    pub fn create_tab(&mut self, clipboard: &mut Clipboard) {
         let redirect = true;
 
         // We resize the current tab ahead to prepare the
         // dimensions to be copied to next tab.
         let num_tabs = self.ctx().len();
+        let old_index = self.context_manager.current_index();
         self.resize_top_or_bottom_line(num_tabs + 1);
 
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.add_context(redirect, rich_text_id);
+        // Update the old tab's rich text positions to reflect the new margin
+        // (on Linux/Windows when hide_if_single transitions from hidden to visible)
+        #[cfg(not(target_os = "macos"))]
+        self.context_manager.contexts_mut()[old_index]
+            .update_dimensions(&mut self.sugarloaf);
 
-        self.cancel_search();
-        self.render();
+        // Allocate panel id; the layout pass handles positioning via
+        // `ContextDimension` once the new tab's grid is built.
+        let _ = self.context_manager.current_grid().scaled_margin.left;
+        let _ = self.renderer.margin.top
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let rich_text_id = next_rich_text_id();
+        self.context_manager.add_context(redirect, rich_text_id);
+        let new_index = self.context_manager.current_index();
+        self.context_manager.switch_context_visibility(
+            &mut self.sugarloaf,
+            old_index,
+            new_index,
+        );
+
+        self.cancel_search(clipboard);
+        self.mark_dirty();
     }
 
-    pub fn close_split_or_tab(&mut self) {
+    pub fn close_split_or_tab(&mut self, clipboard: &mut Clipboard) {
         if self.context_manager.current_grid_len() > 1 {
             self.clear_selection();
-            self.context_manager.remove_current_grid();
-            self.render();
+            self.context_manager
+                .remove_current_grid(&mut self.sugarloaf);
+            self.mark_dirty();
         } else {
-            self.close_tab();
+            self.close_tab(clipboard);
         }
     }
 
-    pub fn close_tab(&mut self) {
+    pub fn close_tab(&mut self, clipboard: &mut Clipboard) {
         self.clear_selection();
-        self.context_manager.close_current_context();
+        self.context_manager
+            .close_current_context(&mut self.sugarloaf);
 
-        self.cancel_search();
+        self.cancel_search(clipboard);
         if self.ctx().len() <= 1 {
+            // Update the remaining tab's margin and position
+            // (on Linux/Windows when hide_if_single transitions to hidden)
+            #[cfg(not(target_os = "macos"))]
+            {
+                self.resize_top_or_bottom_line(1);
+                self.context_manager
+                    .current_grid_mut()
+                    .update_dimensions(&mut self.sugarloaf);
+                self.mark_dirty();
+            }
             return;
         }
 
         let num_tabs = self.ctx().len().wrapping_sub(1);
         self.resize_top_or_bottom_line(num_tabs);
-        self.render();
+        self.mark_dirty();
     }
 
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
         let layout = self.context_manager.current().dimension;
         let previous_margin = layout.margin;
         let padding_y_top = padding_top_from_config(
-            &self.renderer.navigation.navigation,
-            self.renderer.navigation.padding_y[0],
+            &self.renderer.navigation,
+            self.renderer.margin.top,
             num_tabs,
             self.renderer.macos_use_unified_titlebar,
         );
-        let padding_y_bottom = padding_bottom_from_config(
-            &self.renderer.navigation.navigation,
-            self.renderer.navigation.padding_y[1],
-            num_tabs,
-            self.search_active(),
-        );
+        let padding_y_bottom = self.renderer.margin.bottom;
 
-        if previous_margin.top_y != padding_y_top
-            || previous_margin.bottom_y != padding_y_bottom
+        if previous_margin.top != padding_y_top
+            || previous_margin.bottom != padding_y_bottom
         {
-            let layout = self
-                .sugarloaf
-                .rich_text_layout(&self.context_manager.current().rich_text_id);
-            let s = self.sugarloaf.style_mut();
-            s.font_size = layout.font_size;
-            s.line_height = layout.line_height;
+            let current_dim = self.context_manager.current().dimension;
+            if current_dim.font_size > 0.0 {
+                let s = self.sugarloaf.style_mut();
+                s.font_size = current_dim.font_size;
+                s.line_height = current_dim.line_height;
 
-            let d = self.context_manager.current_grid_mut();
-            d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
-            self.resize_all_contexts();
+                let scale = self.sugarloaf.scale_factor();
+                let d = self.context_manager.current_grid_mut();
+                d.update_scaled_margin(Margin::new(
+                    padding_y_top * scale,
+                    d.scaled_margin.right,
+                    padding_y_bottom * scale,
+                    d.scaled_margin.left,
+                ));
+                self.resize_all_contexts();
+            }
         }
     }
 
@@ -1411,7 +1727,7 @@ impl Screen<'_> {
         }
     }
 
-    pub fn copy_selection(&mut self, ty: ClipboardType) {
+    pub fn copy_selection(&mut self, ty: ClipboardType, clipboard: &mut Clipboard) {
         let terminal = self.context_manager.current_mut().terminal.lock();
         let text = match terminal.selection_to_string().filter(|s| !s.is_empty()) {
             Some(text) => text,
@@ -1419,12 +1735,7 @@ impl Screen<'_> {
         };
         drop(terminal);
 
-        if ty == ClipboardType::Selection {
-            self.clipboard
-                .borrow_mut()
-                .set(ClipboardType::Clipboard, text.clone());
-        }
-        self.clipboard.borrow_mut().set(ty, text);
+        clipboard.set(ty, text);
     }
 
     #[inline]
@@ -1437,8 +1748,14 @@ impl Screen<'_> {
     }
 
     #[inline]
-    fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
-        self.copy_selection(ClipboardType::Selection);
+    fn start_selection(
+        &mut self,
+        ty: SelectionType,
+        point: Pos,
+        side: Side,
+        clipboard: &mut Clipboard,
+    ) {
+        self.copy_selection(ClipboardType::Selection, clipboard);
         let current = self.context_manager.current_mut();
         let mut terminal = current.terminal.lock();
         let selection = Selection::new(ty, point, side);
@@ -1454,7 +1771,12 @@ impl Screen<'_> {
     }
 
     #[inline]
-    fn toggle_selection(&mut self, ty: SelectionType, side: Side) {
+    fn toggle_selection(
+        &mut self,
+        ty: SelectionType,
+        side: Side,
+        clipboard: &mut Clipboard,
+    ) {
         let mut terminal = self.context_manager.current().terminal.lock();
         match &mut terminal.selection {
             Some(selection) if selection.ty == ty && !selection.is_empty() => {
@@ -1464,12 +1786,12 @@ impl Screen<'_> {
             Some(selection) if !selection.is_empty() => {
                 selection.ty = ty;
                 drop(terminal);
-                self.copy_selection(ClipboardType::Selection);
+                self.copy_selection(ClipboardType::Selection, clipboard);
             }
             _ => {
                 let pos = terminal.vi_mode_cursor.pos;
                 drop(terminal);
-                self.start_selection(ty, pos, side)
+                self.start_selection(ty, pos, side, clipboard)
             }
         }
 
@@ -1563,12 +1885,18 @@ impl Screen<'_> {
         let current = self.context_manager.current_mut();
 
         if let Some(hint_match) = highlighted_hint {
-            // Mark the hint range as damaged so it gets re-rendered
+            // Mark the hint range as damaged so it gets re-rendered.
+            //
+            // Two damage signals are required:
+            // * Terminal-side: `update_selection_damage` marks the affected
+            // lines so the partial render path knows what to redraw.
+            // * Renderer-side: `pending_update.set_terminal_damage(Full)`
+            // ensures the render loop doesn't early-exit on
+            // `!pending_update.is_dirty()`
             {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
 
-                // Create a temporary selection range for damage tracking
                 let hint_range = rio_backend::selection::SelectionRange::new(
                     hint_match.start,
                     hint_match.end,
@@ -1577,16 +1905,26 @@ impl Screen<'_> {
                 terminal.update_selection_damage(Some(hint_range), display_offset);
             }
 
+            current
+                .renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             current.renderable_content.highlighted_hint = Some(hint_match);
             true
         } else {
-            // Clear any previous hint damage
             if current.renderable_content.highlighted_hint.is_some() {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
                 terminal.update_selection_damage(None, display_offset);
             }
 
+            // Force a render so the previously-highlighted line clears.
+            if had_highlight {
+                current
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+            }
             current.renderable_content.highlighted_hint = None;
             had_highlight
         }
@@ -1647,7 +1985,7 @@ impl Screen<'_> {
 
             // Check regex patterns if specified
             if let Some(regex_pattern) = &hint_config.regex {
-                if let Ok(regex) = regex::Regex::new(regex_pattern) {
+                if let Ok(regex) = onig::Regex::new(regex_pattern) {
                     if let Some(regex_match) = self.find_regex_match_at_point(
                         terminal,
                         point,
@@ -1676,63 +2014,62 @@ impl Screen<'_> {
             return None;
         }
 
-        let cell = &grid[point.row][point.col];
-        if let Some(hyperlink) = cell.hyperlink() {
-            // Find the extent of this hyperlink
-            let mut start_col = point.col;
-            let mut end_col = point.col;
+        // Look up the cell's hyperlink via the per-grid extras table.
+        // Cells in the same OSC 8 span share an `extras_id`, so we
+        // walk left/right comparing ids (cheap u16 compare) to find
+        // the span boundaries, then look up the URI once.
+        let id = terminal.cell_hyperlink_id(point.row, point.col)?;
 
-            // Scan backward to find start
-            while start_col > rio_backend::crosswords::pos::Column(0) {
-                let prev_col = start_col - 1;
-                let prev_cell = &grid[point.row][prev_col];
-                if prev_cell.hyperlink().as_ref() == Some(&hyperlink) {
-                    start_col = prev_col;
-                } else {
-                    break;
-                }
+        let mut start_col = point.col;
+        let mut end_col = point.col;
+
+        while start_col > rio_backend::crosswords::pos::Column(0) {
+            let prev_col = start_col - 1;
+            if terminal.cell_hyperlink_id(point.row, prev_col) == Some(id) {
+                start_col = prev_col;
+            } else {
+                break;
             }
-
-            // Scan forward to find end
-            while end_col < grid.columns() - 1 {
-                let next_col = end_col + 1;
-                let next_cell = &grid[point.row][next_col];
-                if next_cell.hyperlink().as_ref() == Some(&hyperlink) {
-                    end_col = next_col;
-                } else {
-                    break;
-                }
+        }
+        while end_col < grid.columns() - 1 {
+            let next_col = end_col + 1;
+            if terminal.cell_hyperlink_id(point.row, next_col) == Some(id) {
+                end_col = next_col;
+            } else {
+                break;
             }
-
-            // Create a dummy hint config for hyperlinks
-            let hint_config = std::rc::Rc::new(rio_backend::config::hints::Hint {
-                regex: None,
-                hyperlinks: true,
-                post_processing: true,
-                persist: false,
-                action: rio_backend::config::hints::HintAction::Command {
-                    command: rio_backend::config::hints::HintCommand::Simple(
-                        "xdg-open".to_string(),
-                    ),
-                },
-                mouse: rio_backend::config::hints::HintMouse::default(),
-                binding: None,
-            });
-
-            let mut uri = hyperlink.uri().to_string();
-            if hint_config.post_processing {
-                uri = post_process_hyperlink_uri(&uri);
-            }
-
-            return Some(crate::hints::HintMatch {
-                text: uri,
-                start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
-                end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
-                hint: hint_config,
-            });
         }
 
-        None
+        let hyperlink = terminal.cell_hyperlink(point.row, point.col)?;
+
+        // Build a synthetic hint config so the rest of the hint
+        // pipeline (highlighting, click action) treats this just like
+        // a regex/url match.
+        let hint_config = std::rc::Rc::new(rio_backend::config::hints::Hint {
+            regex: None,
+            hyperlinks: true,
+            post_processing: true,
+            persist: false,
+            action: rio_backend::config::hints::HintAction::Command {
+                command: rio_backend::config::hints::HintCommand::Simple(
+                    "xdg-open".to_string(),
+                ),
+            },
+            mouse: rio_backend::config::hints::HintMouse::default(),
+            binding: None,
+        });
+
+        let mut uri = hyperlink.uri().to_string();
+        if hint_config.post_processing {
+            uri = post_process_hyperlink_uri(&uri);
+        }
+
+        Some(crate::hints::HintMatch {
+            text: uri,
+            start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
+            end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
+            hint: hint_config,
+        })
     }
 
     /// Find regex match at the specified point
@@ -1740,7 +2077,7 @@ impl Screen<'_> {
         &self,
         terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
         point: rio_backend::crosswords::pos::Pos,
-        regex: &regex::Regex,
+        regex: &onig::Regex,
         hint_config: std::rc::Rc<rio_backend::config::hints::Hint>,
     ) -> Option<crate::hints::HintMatch> {
         let grid = &terminal.grid;
@@ -1754,19 +2091,19 @@ impl Screen<'_> {
         let mut line_text = String::new();
         for col in 0..grid.columns() {
             let cell = &grid[point.row][rio_backend::crosswords::pos::Column(col)];
-            line_text.push(cell.c);
+            line_text.push(cell.c());
         }
         let line_text = line_text.trim_end();
 
-        // Find all matches in this line and check if point is within any of them
-        for mat in regex.find_iter(line_text) {
-            let start_col = rio_backend::crosswords::pos::Column(mat.start());
-            let end_col =
-                rio_backend::crosswords::pos::Column(mat.end().saturating_sub(1));
+        // Find all matches in this line and check if point is within any of them.
+        // Onig yields (byte_start, byte_end); we slice the source ourselves.
+        for (start, end) in regex.find_iter(line_text) {
+            let start_col = rio_backend::crosswords::pos::Column(start);
+            let end_col = rio_backend::crosswords::pos::Column(end.saturating_sub(1));
 
             // Check if the point is within this match
             if point.col >= start_col && point.col <= end_col {
-                let original_match_text = mat.as_str().to_string();
+                let original_match_text = line_text[start..end].to_string();
                 let mut match_text = original_match_text.clone();
 
                 // Apply grid-based post-processing
@@ -1788,7 +2125,7 @@ impl Screen<'_> {
                     for col in processed_start.0..=processed_end.0 {
                         let cell =
                             &grid[point.row][rio_backend::crosswords::pos::Column(col)];
-                        processed_text.push(cell.c);
+                        processed_text.push(cell.c());
                     }
                     match_text = processed_text.trim_end().to_string();
                 }
@@ -1825,15 +2162,16 @@ impl Screen<'_> {
             return false;
         }
 
+        // Look up the cell under the mouse and dispatch open_hyperlink
+        // if it carries an OSC 8 link.
         let terminal = self.context_manager.current().terminal.lock();
         let display_offset = terminal.display_offset();
         let pos = self.mouse_position(display_offset);
-        let pos_hyperlink = terminal.grid[pos].hyperlink();
+        let pos_hyperlink = terminal.cell_hyperlink(pos.row, pos.col);
         drop(terminal);
 
         if let Some(hyperlink) = pos_hyperlink {
             self.open_hyperlink(hyperlink);
-
             return true;
         }
 
@@ -1842,7 +2180,7 @@ impl Screen<'_> {
 
     /// Trigger hint action at mouse position
     #[inline]
-    pub fn trigger_hint(&mut self) -> bool {
+    pub fn trigger_hint(&mut self, clipboard: &mut Clipboard) -> bool {
         // Take the highlighted hint
         let hint_match = self
             .context_manager
@@ -1852,7 +2190,7 @@ impl Screen<'_> {
             .take();
 
         if let Some(hint_match) = hint_match {
-            self.execute_hint_action(&hint_match);
+            self.execute_hint_action(&hint_match, clipboard);
             true
         } else {
             false
@@ -1902,71 +2240,86 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
-        let current_context = self.context_manager.current();
-        let layout = current_context.dimension;
-        let sugarloaf_layout = self
-            .sugarloaf
-            .rich_text_layout(&current_context.rich_text_id);
-        let scale_factor = layout.dimension.scale;
-        let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
-        let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
+    /// Compute the selection scroll delta for the given mouse Y position.
+    /// Returns 0 if the mouse is within the viewport, ±1 at the edges.
+    /// `mouse_y` is in physical pixels (from CursorMoved position.y).
+    pub fn selection_scroll_delta(&self, mouse_y: f64) -> i32 {
+        let current_grid = self.context_manager.current_grid();
+        let (context, margin) = current_grid.current_context_with_computed_dimension();
+        let layout = context.dimension;
+        // Canonical integer cell stride. line_height is already
+        // baked into `cell.cell_height`; the previous code
+        // multiplied by line_height again, breaking the
+        // edge-of-viewport detection at line_height ≠ 1.0.
+        let cell_height = layout.cell.cell_height as f64;
+        let text_area_top = margin.top as f64;
+        let text_area_bottom = text_area_top + layout.lines as f64 * cell_height;
+        let window_height = self.sugarloaf.window_size().height as f64;
 
-        // Compute the height of the scrolling areas.
-        let end_top = max(min_height, crate::constants::PADDING_Y as i32) as f64;
-        let text_area_bottom = (crate::constants::PADDING_Y + layout.lines as f32)
-            * sugarloaf_layout.font_size;
-        let start_bottom =
-            min(layout.height as i32 - min_height, text_area_bottom as i32) as f64;
-
-        // Get distance from closest window boundary.
-        let delta = if mouse_y < end_top {
-            end_top - mouse_y + step
-        } else if mouse_y >= start_bottom {
-            start_bottom - mouse_y - step
+        if mouse_y < text_area_top {
+            1 // scroll up (into history)
+        } else if mouse_y >= window_height - cell_height && mouse_y >= text_area_bottom {
+            -1 // scroll down (toward present)
         } else {
+            0
+        }
+    }
+
+    /// Perform one tick of selection auto-scroll.
+    /// Reads mouse.raw_y to compute scroll direction.
+    /// Scrolls 1 line per tick.
+    pub fn selection_scroll_tick(&mut self) {
+        if self.mouse.left_button_state != rio_window::event::ElementState::Pressed {
             return;
-        };
+        }
+
+        let delta = self.selection_scroll_delta(self.mouse.raw_y);
+        if delta == 0 {
+            return;
+        }
 
         let mut terminal = self.context_manager.current_mut().terminal.lock();
-        terminal.scroll_display(Scroll::Delta((delta / step) as i32));
+        terminal.scroll_display(Scroll::Delta(delta));
         drop(terminal);
+
+        // Update selection to match the new scroll position.
+        let display_offset = self.display_offset();
+        let point = self.mouse_position(display_offset);
+        let side = self.mouse.square_side;
+        self.update_selection(point, side);
     }
 
     #[inline]
-    pub fn contains_point(&self, x: usize, y: usize) -> bool {
-        let current_context = self.context_manager.current();
-        let layout = current_context.dimension;
-        let width = layout.dimension.width;
-        x <= (layout.margin.x + layout.columns as f32 * width) as usize
-            && x > (layout.margin.x * layout.dimension.scale) as usize
-            && y <= (layout.margin.top_y * layout.dimension.scale
-                + layout.lines as f32 * layout.dimension.height)
-                as usize
-            && y > layout.margin.top_y as usize
+    pub fn contains_point(&self, x: f64, y: f64) -> bool {
+        let current_grid = self.context_manager.current_grid();
+        let (context, margin) = current_grid.current_context_with_computed_dimension();
+        let layout = context.dimension;
+        // Canonical integer stride — same as the GPU paints with.
+        // line_height is already baked into `cell.cell_height`; do
+        // NOT multiply again here.
+        let cell_w = layout.cell.cell_width as f64;
+        let cell_h = layout.cell.cell_height as f64;
+        let left = margin.left as f64;
+        let top = margin.top as f64;
+        x > left
+            && x <= left + layout.columns as f64 * cell_w
+            && y > top
+            && y <= top + layout.lines as f64 * cell_h
     }
 
     #[inline]
-    pub fn side_by_pos(&self, x: usize) -> Side {
+    pub fn side_by_pos(&self, x: f64) -> Side {
+        let current_grid = self.context_manager.current_grid();
+        let (_, margin) = current_grid.current_context_with_computed_dimension();
         let current_context = self.context_manager.current();
         let layout = current_context.dimension;
-        let width = (layout.dimension.width) as usize;
-        let margin_x = layout.margin.x * layout.dimension.scale;
 
-        let cell_x = x.saturating_sub(margin_x as usize) % width;
-        let half_cell_width = width / 2;
-
-        let additional_padding = (layout.width - margin_x) % width as f32;
-        let end_of_grid = layout.width - margin_x - additional_padding;
-
-        if cell_x > half_cell_width
-            // Edge case when mouse leaves the window.
-            || x as f32 >= end_of_grid
-        {
-            Side::Right
-        } else {
-            Side::Left
-        }
+        crate::mouse::calculate_side_by_pos(
+            x,
+            margin.left,
+            layout.cell.cell_width,
+            layout.width,
+        )
     }
 
     #[inline]
@@ -1978,8 +2331,422 @@ impl Screen<'_> {
             .is_none()
     }
 
+    // return true if the click was handled by the island
     #[inline]
-    pub fn on_left_click(&mut self, point: Pos) {
+    pub fn handle_palette_click(&mut self, clipboard: &mut Clipboard) -> bool {
+        if !self.renderer.command_palette.is_enabled() {
+            return false;
+        }
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let window_width = self.sugarloaf.window_size().width;
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        match self.renderer.command_palette.hit_test(
+            mouse_x,
+            mouse_y,
+            window_width,
+            scale_factor,
+        ) {
+            Ok(Some(index)) => {
+                // Clicked a result row — select and execute
+                if let Some(action) = {
+                    // Temporarily set selected index to the clicked row
+                    self.renderer.command_palette.selected_index = index;
+                    self.renderer.command_palette.get_selected_action()
+                } {
+                    self.renderer.command_palette.set_enabled(false);
+                    self.execute_palette_action(action, clipboard);
+                }
+                self.mark_dirty();
+                true
+            }
+            Ok(None) => {
+                // Clicked inside palette but not on a result (e.g. input area)
+                true
+            }
+            Err(()) => {
+                // Clicked outside — close palette
+                self.renderer.command_palette.set_enabled(false);
+                self.mark_dirty();
+                true
+            }
+        }
+    }
+
+    #[inline]
+    pub fn handle_search_click(&mut self, clipboard: &mut Clipboard) -> bool {
+        if !self.renderer.search.is_active() {
+            return false;
+        }
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let window_width = self.sugarloaf.window_size().width;
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        match self
+            .renderer
+            .search
+            .hit_test(mouse_x, mouse_y, window_width, scale_factor)
+        {
+            Ok(Some(action)) => {
+                use crate::renderer::search::SearchOverlayAction;
+                match action {
+                    SearchOverlayAction::Next => {
+                        self.advance_search_origin(self.search_state.direction);
+                    }
+                    SearchOverlayAction::Previous => {
+                        let direction = self.search_state.direction.opposite();
+                        self.advance_search_origin(direction);
+                    }
+                    SearchOverlayAction::Close => {
+                        self.cancel_search(clipboard);
+                        self.resize_top_or_bottom_line(self.ctx().len());
+                    }
+                }
+                self.mark_dirty();
+                true
+            }
+            Ok(None) => {
+                // Clicked inside overlay but not on a button (input area)
+                true
+            }
+            Err(()) => {
+                // Clicked outside — don't close search, just pass through
+                false
+            }
+        }
+    }
+
+    #[inline]
+    pub fn handle_assistant_click(&mut self) -> bool {
+        if !self.renderer.assistant.is_active() {
+            return false;
+        }
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let window_width = self.sugarloaf.window_size().width;
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        match self.renderer.assistant.hit_test(
+            mouse_x,
+            mouse_y,
+            window_width,
+            scale_factor,
+        ) {
+            Ok(Some(action)) => {
+                use crate::renderer::assistant::AssistantOverlayAction;
+                match action {
+                    AssistantOverlayAction::Close => {
+                        self.renderer.assistant.clear();
+                    }
+                    AssistantOverlayAction::OpenDocs => {
+                        Self::open_docs_url();
+                    }
+                }
+                self.mark_dirty();
+                true
+            }
+            Ok(None) => {
+                // Clicked inside overlay but not on a button
+                true
+            }
+            Err(()) => {
+                // Clicked outside — close the assistant overlay
+                self.renderer.assistant.clear();
+                self.mark_dirty();
+                true
+            }
+        }
+    }
+
+    fn open_docs_url() {
+        let url = "https://rioterm.com/docs/config";
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("open").arg(url).spawn();
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+        }
+        #[cfg(windows)]
+        {
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", "start", "", url])
+                .spawn();
+        }
+    }
+
+    pub fn handle_scrollbar_click(&mut self) -> bool {
+        let scale_factor = self.sugarloaf.scale_factor();
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        let grid = self.context_manager.current_grid_mut();
+        let grid_margin = (grid.scaled_margin.left, grid.scaled_margin.top);
+
+        let item = match grid.current_item() {
+            Some(item) => item,
+            None => return false,
+        };
+
+        let panel_rect = item.layout_rect;
+        let rich_text_id = item.context().rich_text_id;
+
+        let terminal = item.context().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let history_size = terminal.history_size();
+        let screen_lines = terminal.screen_lines();
+        drop(terminal);
+
+        if let Some((grab_offset, geom)) = self.renderer.scrollbar.hit_test(
+            mouse_x,
+            mouse_y,
+            panel_rect,
+            scale_factor,
+            display_offset,
+            history_size,
+            screen_lines,
+            grid_margin,
+        ) {
+            self.renderer.scrollbar.start_drag(
+                rich_text_id,
+                grab_offset,
+                &geom,
+                history_size,
+            );
+
+            // If clicked on track (not on thumb), jump-scroll to that position
+            if grab_offset.is_none() {
+                if let Some(new_offset) = self.renderer.scrollbar.drag_update(mouse_y) {
+                    let mut terminal = self.context_manager.current_mut().terminal.lock();
+                    let current = terminal.display_offset();
+                    let delta = new_offset as i32 - current as i32;
+                    terminal.scroll_display(Scroll::Delta(delta));
+                    drop(terminal);
+                }
+            }
+            self.mark_dirty();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn handle_scrollbar_drag(&mut self, mouse_y: f32) -> bool {
+        if !self.renderer.scrollbar.is_dragging() {
+            return false;
+        }
+
+        if let Some(new_offset) = self.renderer.scrollbar.drag_update(mouse_y) {
+            let mut terminal = self.context_manager.current_mut().terminal.lock();
+            let current = terminal.display_offset();
+            let delta = new_offset as i32 - current as i32;
+            if delta != 0 {
+                terminal.scroll_display(Scroll::Delta(delta));
+            }
+            drop(terminal);
+            self.mark_dirty();
+        }
+        true
+    }
+
+    pub fn handle_scrollbar_release(&mut self) {
+        self.renderer.scrollbar.end_drag();
+    }
+
+    pub fn is_hovering_scrollbar(&self) -> bool {
+        if !self.renderer.scrollbar.is_enabled() {
+            return false;
+        }
+        let scale_factor = self.sugarloaf.scale_factor();
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        let grid = self.context_manager.current_grid();
+        let grid_margin = (grid.scaled_margin.left, grid.scaled_margin.top);
+
+        let item = match grid.current_item() {
+            Some(item) => item,
+            None => return false,
+        };
+
+        let panel_rect = item.layout_rect;
+
+        let terminal = item.context().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let history_size = terminal.history_size();
+        let screen_lines = terminal.screen_lines();
+        drop(terminal);
+
+        self.renderer
+            .scrollbar
+            .hit_test(
+                mouse_x,
+                mouse_y,
+                panel_rect,
+                scale_factor,
+                display_offset,
+                history_size,
+                screen_lines,
+                grid_margin,
+            )
+            .is_some()
+    }
+
+    pub fn handle_island_click(
+        &mut self,
+        window: &rio_window::window::Window,
+        clipboard: &mut Clipboard,
+        is_right_click: bool,
+    ) -> bool {
+        // Only handle if navigation is enabled
+        if !self.renderer.navigation.is_enabled() {
+            return false;
+        }
+
+        let mouse_x = self.mouse.x;
+        let mouse_y = self.mouse.y;
+
+        use crate::renderer::island::ISLAND_HEIGHT;
+        let scale_factor = self.sugarloaf.scale_factor();
+        let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
+
+        let window_width = self.sugarloaf.window_size().width;
+        let num_tabs = self.context_manager.len();
+        let island_visible = self.renderer.navigation.island_visible(num_tabs);
+
+        // Check if the color picker is open and the click hits a swatch.
+        // Handled before the `island_visible` short-circuit so a picker
+        // left open across a tab-close (hide_if_single trip) can still
+        // be dismissed by clicking its swatches.
+        if let Some(ref mut island) = self.renderer.island {
+            if island.is_color_picker_open() {
+                let consumed = island.handle_color_picker_click(
+                    mouse_x as f32,
+                    mouse_y as f32,
+                    scale_factor,
+                    window_width,
+                    num_tabs,
+                );
+                if consumed {
+                    self.mark_dirty();
+                    return true;
+                }
+            }
+        }
+
+        // Check if click is within island height
+        if mouse_y > island_height_px {
+            // Close picker if clicking outside
+            if let Some(ref mut island) = self.renderer.island {
+                if island.is_color_picker_open() {
+                    island.close_color_picker();
+                    self.mark_dirty();
+                }
+            }
+            return false;
+        }
+
+        // Island isn't painted (hide_if_single + single tab on macOS).
+        // Nothing to click on, so let the caller route the event to the
+        // grid for selection / double-click maximize at the OS title bar.
+        if !island_visible {
+            return false;
+        }
+
+        if !is_right_click {
+            if let ClickState::DoubleClick = self.mouse.click_state {
+                let is_maximized = window.is_maximized();
+                window.set_maximized(!is_maximized);
+                return true;
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        let left_margin = 76.0;
+        #[cfg(not(target_os = "macos"))]
+        let left_margin = 0.0;
+
+        let margin_right = 8.0;
+        let available_width = (window_width / scale_factor) - margin_right - left_margin;
+        let tab_width = available_width / num_tabs as f32;
+
+        let mouse_x_unscaled = mouse_x as f32 / scale_factor;
+
+        if mouse_x_unscaled < left_margin {
+            return true;
+        }
+
+        let x_in_tabs = mouse_x_unscaled - left_margin;
+        let clicked_tab = (x_in_tabs / tab_width) as usize;
+
+        if clicked_tab >= num_tabs {
+            return true;
+        }
+
+        // Right-click or Control + left-click → toggle color picker for that tab
+        if is_right_click || self.modifiers.state().control_key() {
+            // Get current displayed title for the rename input
+            let current_title = self
+                .context_manager
+                .titles
+                .titles
+                .get(&clicked_tab)
+                .and_then(|t| {
+                    if !t.content.is_empty() {
+                        Some(t.content.clone())
+                    } else {
+                        t.extra.as_ref().and_then(|e| {
+                            if !e.program.is_empty() {
+                                Some(e.program.clone())
+                            } else {
+                                None
+                            }
+                        })
+                    }
+                })
+                .unwrap_or_else(|| String::from("~"));
+            if let Some(ref mut island) = self.renderer.island {
+                island.toggle_color_picker(clicked_tab, &current_title);
+                self.mark_dirty();
+            }
+            return true;
+        }
+
+        // Normal click → switch tab
+        if clicked_tab != self.context_manager.current_index() {
+            self.cancel_search(clipboard);
+            self.clear_selection();
+            let old_index = self.context_manager.current_index();
+            self.context_manager.set_current(clicked_tab);
+            let new_index = self.context_manager.current_index();
+            self.context_manager.switch_context_visibility(
+                &mut self.sugarloaf,
+                old_index,
+                new_index,
+            );
+
+            self.mark_dirty();
+        }
+
+        // Close picker on normal click
+        if let Some(ref mut island) = self.renderer.island {
+            if island.is_color_picker_open() {
+                island.close_color_picker();
+                self.mark_dirty();
+            }
+        }
+
+        true
+    }
+
+    #[inline]
+    pub fn on_left_click(&mut self, point: Pos, clipboard: &mut Clipboard) {
         let side = self.mouse.square_side;
 
         match self.mouse.click_state {
@@ -1992,17 +2759,27 @@ impl Screen<'_> {
 
                     // Start new empty selection.
                     if self.modifiers.state().control_key() {
-                        self.start_selection(SelectionType::Block, point, side);
+                        self.start_selection(
+                            SelectionType::Block,
+                            point,
+                            side,
+                            clipboard,
+                        );
                     } else {
-                        self.start_selection(SelectionType::Simple, point, side);
+                        self.start_selection(
+                            SelectionType::Simple,
+                            point,
+                            side,
+                            clipboard,
+                        );
                     }
                 }
             }
             ClickState::DoubleClick => {
-                self.start_selection(SelectionType::Semantic, point, side);
+                self.start_selection(SelectionType::Semantic, point, side, clipboard);
             }
             ClickState::TripleClick => {
-                self.start_selection(SelectionType::Lines, point, side);
+                self.start_selection(SelectionType::Lines, point, side, clipboard);
             }
             ClickState::None => (),
         };
@@ -2058,28 +2835,28 @@ impl Screen<'_> {
         // Enable IME so we can input into the search bar with it if we were in Vi mode.
         // self.window().set_ime_allowed(true);
 
-        self.render();
+        self.mark_dirty();
     }
 
     #[inline]
-    fn confirm_search(&mut self) {
+    fn confirm_search(&mut self, clipboard: &mut Clipboard) {
         // Just cancel search when not in vi mode.
         if !self.get_mode().contains(Mode::VI) {
-            self.cancel_search();
+            self.cancel_search(clipboard);
             return;
         }
 
         // Force unlimited search if the previous one was interrupted.
         // let timer_id = TimerId::new(Topic::DelayedSearch, self.display.window.id());
         // if self.scheduler.scheduled(timer_id) {
-        //     self.goto_match(None);
+        // self.goto_match(None);
         // }
 
         self.exit_search();
     }
 
     #[inline]
-    fn cancel_search(&mut self) {
+    fn cancel_search(&mut self, clipboard: &mut Clipboard) {
         if self.get_mode().contains(Mode::VI) {
             // Recover pre-search state in vi mode.
             self.search_reset_state();
@@ -2087,9 +2864,9 @@ impl Screen<'_> {
             // Create a selection for the focused match.
             let start = *focused_match.start();
             let end = *focused_match.end();
-            self.start_selection(SelectionType::Simple, start, Side::Left);
+            self.start_selection(SelectionType::Simple, start, Side::Left, clipboard);
             self.update_selection(end, Side::Right);
-            self.copy_selection(ClipboardType::Selection);
+            self.copy_selection(ClipboardType::Selection, clipboard);
         }
 
         self.search_state.dfas = None;
@@ -2107,7 +2884,7 @@ impl Screen<'_> {
         // Clear focused match.
         self.search_state.focused_match = None;
 
-        self.render();
+        self.mark_dirty();
     }
 
     #[inline]
@@ -2141,7 +2918,7 @@ impl Screen<'_> {
         }
 
         self.update_search();
-        self.render();
+        self.mark_dirty();
     }
 
     fn update_search(&mut self) {
@@ -2370,11 +3147,9 @@ impl Screen<'_> {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        let layout = self
-            .sugarloaf
-            .rich_text_layout(&self.context_manager.current().rich_text_id);
-        let width = layout.dimensions.width as f64;
-        let height = layout.dimensions.height as f64;
+        let dim = self.context_manager.current().dimension.dimension;
+        let width = dim.width as f64;
+        let height = dim.height as f64;
         let mode = self.get_mode();
 
         const MOUSE_WHEEL_UP: u8 = 64;
@@ -2419,9 +3194,7 @@ impl Screen<'_> {
             let line_cmd = if new_scroll_y_px > 0. { b'A' } else { b'B' };
             let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
 
-            let lines = (self.mouse.accumulated_scroll.y
-                / (layout.dimensions.height) as f64)
-                .abs() as usize;
+            let lines = (self.mouse.accumulated_scroll.y / height).abs() as usize;
 
             let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
 
@@ -2445,13 +3218,15 @@ impl Screen<'_> {
         } else {
             self.mouse.accumulated_scroll.y +=
                 (new_scroll_y_px * self.mouse.multiplier) / self.mouse.divider;
-            let lines = (self.mouse.accumulated_scroll.y
-                / layout.dimensions.height as f64) as i32;
+            let lines = (self.mouse.accumulated_scroll.y / height) as i32;
 
             if lines != 0 {
-                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                let current = self.context_manager.current_mut();
+                let rich_text_id = current.rich_text_id;
+                let mut terminal = current.terminal.lock();
                 terminal.scroll_display(Scroll::Delta(lines));
                 drop(terminal);
+                self.renderer.scrollbar.notify_scroll(rich_text_id);
             }
         }
 
@@ -2510,21 +3285,7 @@ impl Screen<'_> {
         }
     }
 
-    pub fn render_assistant(
-        &mut self,
-        assistant: &crate::router::routes::assistant::Assistant,
-    ) {
-        self.sugarloaf.clear();
-        crate::router::routes::assistant::screen(
-            &mut self.sugarloaf,
-            &self.context_manager.current().dimension,
-            assistant,
-        );
-        self.sugarloaf.render();
-    }
-
-    pub fn render_welcome(&mut self) {
-        self.sugarloaf.clear();
+    pub(crate) fn render_welcome(&mut self) {
         crate::router::routes::welcome::screen(
             &mut self.sugarloaf,
             &self.context_manager.current().dimension,
@@ -2532,20 +3293,142 @@ impl Screen<'_> {
         self.sugarloaf.render();
     }
 
-    pub fn render_dialog(&mut self, content: &str, confirm: &str, close: &str) {
-        self.sugarloaf.clear();
-        crate::router::routes::dialog::screen(
-            &mut self.sugarloaf,
-            &self.context_manager.current().dimension,
-            content,
-            confirm,
-            close,
-        );
-        self.sugarloaf.render();
+    pub fn execute_palette_action(
+        &mut self,
+        action: crate::renderer::command_palette::PaletteAction,
+        clipboard: &mut Clipboard,
+    ) {
+        use crate::renderer::command_palette::PaletteAction;
+        match action {
+            PaletteAction::TabCreate => self.create_tab(clipboard),
+            PaletteAction::TabClose => self.close_tab(clipboard),
+            PaletteAction::TabCloseUnfocused => {
+                if self.ctx().len() > 1 {
+                    self.context_manager.close_unfocused_tabs();
+                    self.resize_top_or_bottom_line(1);
+                }
+            }
+            PaletteAction::SelectNextTab => {
+                self.clear_selection();
+                let old = self.context_manager.current_index();
+                self.context_manager.switch_to_next();
+                let new = self.context_manager.current_index();
+                self.context_manager.switch_context_visibility(
+                    &mut self.sugarloaf,
+                    old,
+                    new,
+                );
+            }
+            PaletteAction::SelectPrevTab => {
+                self.clear_selection();
+                let old = self.context_manager.current_index();
+                self.context_manager.switch_to_prev();
+                let new = self.context_manager.current_index();
+                self.context_manager.switch_context_visibility(
+                    &mut self.sugarloaf,
+                    old,
+                    new,
+                );
+            }
+            PaletteAction::SplitRight => self.split_right(),
+            PaletteAction::SplitDown => self.split_down(),
+            PaletteAction::SelectNextSplit => {
+                self.context_manager.select_next_split();
+            }
+            PaletteAction::SelectPrevSplit => {
+                self.context_manager.select_prev_split();
+            }
+            PaletteAction::CloseCurrentSplitOrTab => self.close_split_or_tab(clipboard),
+            PaletteAction::ConfigEditor => {
+                self.context_manager.switch_to_settings();
+            }
+            PaletteAction::WindowCreateNew => {
+                self.context_manager.create_new_window();
+            }
+            PaletteAction::IncreaseFontSize => {
+                self.change_font_size(FontSizeAction::Increase);
+            }
+            PaletteAction::DecreaseFontSize => {
+                self.change_font_size(FontSizeAction::Decrease);
+            }
+            PaletteAction::ResetFontSize => {
+                self.change_font_size(FontSizeAction::Reset);
+            }
+            PaletteAction::ToggleViMode => {
+                let context = self.context_manager.current_mut();
+                let mut terminal = context.terminal.lock();
+                terminal.toggle_vi_mode();
+                drop(terminal);
+                context
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+            }
+            PaletteAction::ToggleFullscreen => {
+                self.context_manager.toggle_full_screen();
+            }
+            PaletteAction::ToggleAppearanceTheme => {
+                self.context_manager.toggle_appearance_theme();
+            }
+            PaletteAction::Copy => {
+                self.copy_selection(ClipboardType::Clipboard, clipboard);
+            }
+            PaletteAction::Paste => {
+                let content = clipboard.get(ClipboardType::Clipboard);
+                self.paste(&content, true);
+            }
+            PaletteAction::SearchForward => {
+                self.start_search(Direction::Right);
+            }
+            PaletteAction::SearchBackward => {
+                self.start_search(Direction::Left);
+            }
+            PaletteAction::ClearHistory => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                terminal.clear_saved_history();
+            }
+            PaletteAction::ListFonts => {
+                // Handled in the router: switches the palette into fonts
+                // mode and keeps it open. If we land here it's either a
+                // bug (router should have intercepted) or an external
+                // caller firing the action directly — do nothing so the
+                // palette just closes without side effects.
+            }
+            PaletteAction::Quit => {
+                self.context_manager.quit();
+            }
+        }
     }
 
-    pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
-        // let screen_render_start = std::time::Instant::now();
+    /// The single entry point that actually draws to the GPU.
+    ///
+    /// Only `WindowEvent::RedrawRequested` in `application.rs` is
+    /// allowed to call this — everything else in the crate goes
+    /// through the damage system: mark `pending_update` via
+    /// `mark_dirty` / `set_terminal_damage` and call
+    /// `route.request_redraw()`. The next CVDisplayLink tick fires
+    /// `RedrawRequested` which consumes the damage here. `pub(crate)`
+    /// enforces that contract — external callers (plugins, tests)
+    /// can't force a render outside the vsync-paced path.
+    pub(crate) fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
+        // Phase 2.0 smoke test: ensure the active panel has a
+        // `GridRenderer`. This forces `MetalGridRenderer::new` /
+        // `WgpuGridRenderer::new` to actually run on real hardware,
+        // which is when the Metal shader compiler + wgpu pipeline
+        // creator first see our shader source. Any shader syntax
+        // error here becomes a startup panic rather than a silent
+        // failure later. Nothing is rendered *through* the grid yet
+        // — `sugarloaf.render()` is still called with no grids
+        // slice below.
+        let current_route = self.context_manager.current_route();
+        let (grid_cols, grid_rows) = {
+            let terminal = self.context_manager.current().terminal.lock();
+            (terminal.columns() as u32, terminal.screen_lines() as u32)
+        };
+        if grid_cols > 0 && grid_rows > 0 {
+            self.ensure_grid(current_route, grid_cols, grid_rows);
+        }
+
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -2553,7 +3436,11 @@ impl Screen<'_> {
                     self.search_state.history.get(history_index).cloned(),
                 );
             }
+        } else {
+            self.renderer.set_active_search(None);
+        }
 
+        if is_search_active {
             // Update search hints in renderable content
             let terminal = self.context_manager.current().terminal.lock();
             let hints = self
@@ -2573,16 +3460,618 @@ impl Screen<'_> {
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             }
         }
 
-        // let renderer_run_start = std::time::Instant::now();
-        let window_update = self.renderer.run(
-            &mut self.sugarloaf,
-            &mut self.context_manager,
-            &self.search_state.focused_match,
-        );
+        let (window_update, any_panel_dirty) = self
+            .renderer
+            .run(&mut self.sugarloaf, &mut self.context_manager);
+        let has_animation = self.renderer.needs_redraw();
+        let should_present = any_panel_dirty || has_animation;
+
+        if self.renderer.custom_mouse_cursor {
+            let scale = self.sugarloaf.scale_factor();
+            crate::renderer::custom_cursor::draw(
+                &mut self.sugarloaf,
+                self.mouse.x as f32,
+                self.mouse.y as f32,
+                scale,
+            );
+        }
+
+        if self.renderer.trail_cursor_enabled {
+            let current_grid = self.context_manager.current_grid();
+            let scaled_margin = current_grid.get_scaled_margin();
+
+            if let Some(current_item) = current_grid.current_item() {
+                let layout = current_item.val.dimension;
+                // Canonical integer stride — same value the GPU
+                // shader uses; line_height is already baked in.
+                let cell_width = layout.cell.cell_width as f32;
+                let cell_height = layout.cell.cell_height as f32;
+                let scale_factor = self.sugarloaf.scale_factor();
+
+                let panel_rect = current_item.layout_rect;
+                let origin_x = panel_rect[0] + scaled_margin.left;
+                let origin_y = panel_rect[1] + scaled_margin.top;
+
+                let cursor = &self.context_manager.current().renderable_content.cursor;
+                let cursor_row = cursor.state.pos.row.0 as usize;
+                let cursor_col = cursor.state.pos.col.0;
+
+                // Cursor position in physical pixels.
+                let cursor_px_x = origin_x + cursor_col as f32 * cell_width;
+                let cursor_px_y = origin_y + cursor_row as f32 * cell_height;
+
+                self.renderer.trail_cursor.set_destination(
+                    cursor_px_x,
+                    cursor_px_y,
+                    cell_width,
+                    cell_height,
+                );
+                self.renderer.trail_cursor.animate(cell_width, cell_height);
+
+                let cursor_color = self.renderer.named_colors.cursor;
+                self.renderer.trail_cursor.draw(
+                    &mut self.sugarloaf,
+                    scale_factor,
+                    cursor_color,
+                );
+            }
+        }
+
+        // Phase 2.2/2.3: per-panel CellBg + CellText emission with
+        // per-row dirty gating. Iterates every panel in the active
+        // grid. For each:
+        // - `damage == Noop | CursorOnly` + grid not forcing full:
+        // skip `write_row` entirely. Cursor state is carried
+        // by `GridUniforms`, so a pure blink/move doesn't
+        // touch the cell buffers.
+        // - `damage == Full` | first-frame | resize:
+        // rebuild every visible row.
+        // - `damage == Partial(lines)`:
+        // rebuild only those rows.
+        // Unchanged rows keep their CellBg + CellText resident in
+        // the grid's CPU state, which is re-uploaded verbatim.
+        {
+            struct PanelFrame {
+                route_id: usize,
+                layout_rect: [f32; 4],
+                cols: u32,
+                rows: u32,
+                cell_w: f32,
+                cell_h: f32,
+                font_px: f32,
+                visible_rows: Vec<
+                    rio_backend::crosswords::grid::row::Row<
+                        rio_backend::crosswords::square::Square,
+                    >,
+                >,
+                style_table: Vec<rio_backend::crosswords::style::Style>,
+                /// Snapshot of the grid's extras table — needed to hash
+                /// per-cell zero-width combining codepoints into the run
+                /// shape key so cells with the same base codepoint but
+                /// different combining marks don't alias in the cache.
+                extras:
+                    rustc_hash::FxHashMap<u16, rio_backend::crosswords::square::Extras>,
+                term_colors: rio_backend::config::colors::term::TermColors,
+                cursor_col: u16,
+                cursor_row: u16,
+                cursor_visible: bool,
+                /// Terminal-side cursor shape (block / underline /
+                /// beam / hidden). Driven by DECSCUSR + the
+                /// configured default. Mapped to a render style
+                /// inside the rebuild loop.
+                cursor_shape: rio_backend::ansi::CursorShape,
+                /// `true` when the terminal has cursor blink
+                /// enabled (DECTCEM blink mode or SGR cursor blink).
+                cursor_blinking: bool,
+                /// `true` for the visible half of the blink cycle.
+                /// Always `true` when blink isn't enabled. Driven
+                /// by `Renderer::run`'s blink toggler.
+                cursor_blink_visible: bool,
+                /// `true` while an IME pre-edit string is active —
+                /// forces a block cursor regardless of the
+                /// configured shape so the user can tell IME is
+                /// taking input.
+                cursor_preedit: bool,
+                /// Resolved cursor color: OSC 12 wins, then config /
+                /// theme `cursor`.
+                /// `state.colors.cursor → config.cursor_color`
+                /// resolution. Per-panel
+                /// because each terminal can issue its own OSC 12.
+                cursor_color: rio_backend::config::colors::ColorArray,
+                is_active: bool,
+                damage: rio_backend::event::TerminalDamage,
+                /// Selection is per-context (`renderable_content`), not
+                /// per-terminal. Grabbed alongside the grid snapshot so
+                /// `build_row_bg`/`build_row_fg` can tint selected cells.
+                selection: Option<rio_backend::selection::SelectionRange>,
+                /// `i - display_offset = absolute Line` for the
+                /// per-row selection interval check. Snapshotted at
+                /// the same lock as `visible_rows` to stay consistent.
+                display_offset: i32,
+                /// Search-hint matches for this panel. `None` when
+                /// search is inactive. Consumed alongside `selection`
+                /// inside `build_row_bg` / `build_row_fg` to apply
+                /// `search_match_background` / `_foreground`.
+                hint_matches: Option<Vec<rio_backend::crosswords::search::Match>>,
+                /// Currently-focused search match (↑/↓ navigation).
+                /// Rendered with `search_focused_match_background` /
+                /// `_foreground` — `.search_selected`
+                /// highlight tag.
+                focused_match: Option<rio_backend::crosswords::search::Match>,
+                /// (start, end) of the currently-hovered hyperlink /
+                /// regex hint. Only populated for the active panel.
+                /// Triggers the forced underline in `emit_underlines`;
+                /// no bg / fg color change.
+                hovered_hyperlink: Option<(
+                    rio_backend::crosswords::pos::Pos,
+                    rio_backend::crosswords::pos::Pos,
+                )>,
+            }
+
+            let (active_key, scaled_margin) = {
+                let grid = self.context_manager.current_grid();
+                (grid.current, grid.scaled_margin)
+            };
+            // Snapshot the window's focused search match before the
+            // per-context borrow below. `search_state` lives on
+            // `Screen`, so we can't reach for it from inside the
+            // `contexts_mut` iteration.
+            let search_focused_match = self.search_state.focused_match.clone();
+            let mut panels: Vec<PanelFrame> = Vec::new();
+            for (key, item) in self
+                .context_manager
+                .current_grid_mut()
+                .contexts_mut()
+                .iter_mut()
+            {
+                let ctx = &mut item.val;
+                let dim = ctx.dimension;
+                // Canonical integer cell stride — single source of
+                // truth for paint, layout, and mouse hit-test. The
+                // bg fragment shader does
+                // `floor((pixel - padding) / cell_size)` and the text
+                // vertex multiplies `grid_pos * cell_size`, so both
+                // sides must agree on the same integer stride or
+                // adjacent columns drift to 7 vs 8 px wide and seams
+                // show up.
+                let cell_w = dim.cell.cell_width as f32;
+                let cell_h = dim.cell.cell_height as f32;
+                // Per-panel font size lives on `ContextDimension` since
+                // the panel-state migration; sugarloaf is no longer
+                // consulted. Per-panel zoom mutates
+                // `dim.scaled_font_size` directly.
+                let font_px = if dim.scaled_font_size > 0.0 {
+                    dim.scaled_font_size
+                } else {
+                    let s = self.sugarloaf.style();
+                    s.font_size * s.scale_factor
+                };
+                // The viewport snapshot was already taken by
+                // `Renderer::run` for this context: visible rows,
+                // per-cell styles, extras table, term colors, and
+                // display offset all live on `ctx.renderable_content`.
+                // No second terminal lock and no second materialize —
+                // we take ownership of the buffers via `mem::take`
+                // and put them back at the end of the render pass so
+                // the next frame's `Renderer::run` resumes the same
+                // allocations.
+                let visible_rows =
+                    std::mem::take(&mut ctx.renderable_content.visible_rows);
+                let style_table = std::mem::take(&mut ctx.renderable_content.style_table);
+                let extras = std::mem::take(&mut ctx.renderable_content.extras);
+                let term_colors = ctx.renderable_content.term_colors;
+                let display_offset = ctx.renderable_content.display_offset as i32;
+                let selection = ctx.renderable_content.selection_range;
+                let cursor = &ctx.renderable_content.cursor;
+                // Take + reset so next frame sees fresh damage only
+                // from this frame's `Renderer::run`.
+                let damage = std::mem::replace(
+                    &mut ctx.renderable_content.frame_damage,
+                    rio_backend::event::TerminalDamage::Noop,
+                );
+                let hint_matches = ctx.renderable_content.hint_matches.clone();
+                let is_active = *key == active_key;
+                // `focused_match` lives on `Screen::search_state` — it's
+                // a per-window state tied to whichever panel has search
+                // focus, which is the active one. Don't paint a focused
+                // highlight on non-active panels even if they happen to
+                // carry hint_matches.
+                let focused_match = if is_active {
+                    search_focused_match.clone()
+                } else {
+                    None
+                };
+                // Only the active panel can be under the mouse, so
+                // hyperlink-hover state only makes sense there. Same
+                // reasoning as `focused_match` above.
+                let hovered_hyperlink = if is_active {
+                    ctx.renderable_content
+                        .highlighted_hint
+                        .as_ref()
+                        .map(|h| (h.start, h.end))
+                } else {
+                    None
+                };
+                let cursor_shape = cursor.state.content;
+                let cursor_blinking = ctx.renderable_content.has_blinking_enabled;
+                let cursor_blink_visible =
+                    !cursor_blinking || ctx.renderable_content.is_blinking_cursor_visible;
+                let cursor_preedit = ctx.ime.preedit().is_some();
+                // OSC 12 wins; otherwise fall back to the named-color
+                // theme value. `Renderer::color`'s fallback (the
+                // indexed-color List) is not populated for the Cursor
+                // slot — `List::fill_named` skips it — so we read
+                // `named_colors.cursor` directly.
+                let cursor_color = term_colors
+                    [rio_backend::config::colors::NamedColor::Cursor as usize]
+                    .unwrap_or(self.renderer.named_colors.cursor);
+                panels.push(PanelFrame {
+                    route_id: ctx.route_id,
+                    layout_rect: item.layout_rect,
+                    cols: ctx.renderable_content.columns.max(1) as u32,
+                    rows: ctx.renderable_content.screen_lines.max(1) as u32,
+                    cell_w,
+                    cell_h,
+                    font_px,
+                    visible_rows,
+                    style_table,
+                    extras,
+                    term_colors,
+                    cursor_col: cursor.state.pos.col.0 as u16,
+                    cursor_row: cursor.state.pos.row.0 as u16,
+                    cursor_visible: cursor.state.is_visible(),
+                    cursor_shape,
+                    cursor_blinking,
+                    cursor_blink_visible,
+                    cursor_preedit,
+                    cursor_color,
+                    is_active,
+                    damage,
+                    selection,
+                    display_offset,
+                    hint_matches,
+                    focused_match,
+                    hovered_hyperlink,
+                });
+            }
+
+            // --- ensure every panel has a matching GridRenderer ---
+            for p in &panels {
+                self.ensure_grid(p.route_id, p.cols, p.rows);
+            }
+
+            // --- emit cells + build uniforms per panel ---
+            let window_size = self.sugarloaf.window_size();
+            let font_library = self.sugarloaf.font_library().clone();
+            let bg_col = self.renderer.named_colors.background.0;
+            // Same `input_colorspace` value the Metal quad pipeline
+            // feeds into `Globals` — the grid shader applies the
+            // matching sRGB → DisplayP3 transform so cell bg, window
+            // fill, and UI overlays produce identical framebuffer
+            // colors. single `load_color` path.
+            let input_colorspace = self.sugarloaf.input_colorspace();
+
+            let mut frame_grids: Vec<(
+                &mut rio_backend::sugarloaf::grid::GridRenderer,
+                rio_backend::sugarloaf::grid::GridUniforms,
+            )> = Vec::with_capacity(panels.len());
+
+            let rasterizer = &mut self.grid_rasterizer;
+            let renderer_ref = &self.renderer;
+            for (route_id, grid) in self.grids.iter_mut() {
+                let Some(p) = panels.iter_mut().find(|p| p.route_id == *route_id) else {
+                    continue;
+                };
+
+                // Decide which rows to rebuild.
+                //
+                // `force_full` short-circuits damage to "rebuild all":
+                // - grid was just created or resized (CPU buffers
+                // are zeroed, so whatever damage says we have to
+                // do a full fill).
+                // - damage == Full (the terminal explicitly asked).
+                //
+                // `Noop` / `CursorOnly` → no row rebuilds, uniforms
+                // alone carry the frame's state change.
+                //
+                // `Partial(lines)` → rebuild only those row indices.
+                let force_full = grid.needs_full_rebuild()
+                    || matches!(p.damage, rio_backend::event::TerminalDamage::Full);
+
+                enum RowsToRebuild {
+                    None,
+                    All,
+                    /// Per-row decision: walk `visible_rows` and
+                    /// rebuild rows whose `dirty` bit is set.
+                    Dirty,
+                }
+                let rows_to_rebuild = if force_full {
+                    RowsToRebuild::All
+                } else {
+                    match p.damage {
+                        rio_backend::event::TerminalDamage::Full => RowsToRebuild::All,
+                        rio_backend::event::TerminalDamage::Partial => {
+                            RowsToRebuild::Dirty
+                        }
+                        rio_backend::event::TerminalDamage::CursorOnly
+                        | rio_backend::event::TerminalDamage::Noop => RowsToRebuild::None,
+                    }
+                };
+
+                let cols = p.cols as usize;
+                let mut bg_scratch: Vec<rio_backend::sugarloaf::grid::CellBg> =
+                    Vec::with_capacity(cols);
+                let mut fg_scratch: Vec<rio_backend::sugarloaf::grid::CellText> =
+                    Vec::with_capacity(cols);
+                let mut hint_scratch: Vec<crate::grid_emit::RowHint> = Vec::new();
+
+                // Small helper: rebuild one row into the grid's
+                // buffers. Closure-style to avoid duplicating the
+                // body between the `All` and `Only` branches.
+                //
+                // Two passes now: `build_row_bg` emits `CellBg` per
+                // cell (unconditional), `build_row_fg` does run-level
+                // shaping + glyph emission (macOS only). The bg pass
+                // never needs shaping so it runs on all platforms;
+                // the fg path is macOS-specific pending the
+                // wgpu+swash port.
+                let mut rebuild_row =
+                    |p: &PanelFrame,
+                     y: usize,
+                     grid: &mut rio_backend::sugarloaf::grid::GridRenderer,
+                     rasterizer: &mut crate::grid_emit::GridGlyphRasterizer| {
+                        let Some(row) = p.visible_rows.get(y) else {
+                            return;
+                        };
+                        let style_table = p.style_table.as_slice();
+                        let row_sel = crate::grid_emit::row_selection_for(
+                            p.selection,
+                            y,
+                            cols,
+                            p.display_offset,
+                        );
+                        crate::grid_emit::row_hints_for(
+                            p.hint_matches.as_deref(),
+                            p.focused_match.as_ref(),
+                            p.hovered_hyperlink,
+                            y,
+                            cols,
+                            p.display_offset,
+                            &mut hint_scratch,
+                        );
+                        crate::grid_emit::build_row_bg(
+                            row,
+                            cols,
+                            style_table,
+                            renderer_ref,
+                            &p.term_colors,
+                            row_sel,
+                            &hint_scratch,
+                            &mut bg_scratch,
+                        );
+                        let cursor_col_for_row = if p.cursor_visible
+                            && (y as u16) == p.cursor_row
+                            && p.cursor_shape != rio_backend::ansi::CursorShape::Hidden
+                        {
+                            Some(p.cursor_col)
+                        } else {
+                            None
+                        };
+                        crate::grid_emit::build_row_fg(
+                            row,
+                            cols,
+                            y as u16,
+                            style_table,
+                            &p.extras,
+                            renderer_ref,
+                            &p.term_colors,
+                            rasterizer,
+                            grid,
+                            p.font_px,
+                            p.cell_w,
+                            p.cell_h,
+                            row_sel,
+                            &hint_scratch,
+                            &font_library,
+                            p.route_id,
+                            cursor_col_for_row,
+                            &mut fg_scratch,
+                        );
+                        grid.write_row(y as u32, &bg_scratch, &fg_scratch);
+                    };
+
+                match rows_to_rebuild {
+                    RowsToRebuild::None => {
+                        // Nothing to rebuild — previous frame's
+                        // CellBg/CellText stay resident. The GPU
+                        // pass below still runs so updated uniforms
+                        // (cursor_pos moved, etc.) take effect.
+                    }
+                    RowsToRebuild::All => {
+                        for y in 0..p.visible_rows.len() {
+                            rebuild_row(p, y, grid, rasterizer);
+                        }
+                        grid.mark_full_rebuild_done();
+                    }
+                    RowsToRebuild::Dirty => {
+                        // Walk the snapshot rows; rebuild + clear the
+                        // per-row dirty bit. Set by `snapshot_visible`
+                        // for rows it copied this frame; cleared here
+                        // so next frame starts clean.
+                        for y in 0..p.visible_rows.len() {
+                            if !p.visible_rows[y].dirty {
+                                continue;
+                            }
+                            rebuild_row(p, y, grid, rasterizer);
+                            p.visible_rows[y].dirty = false;
+                        }
+                    }
+                }
+
+                // Cursor pipeline (`addCursor` /
+                // `cursor.style()`):
+                // 1. Decide render style with strict priority:
+                // preedit > visible > focused > blink > shape.
+                // 2. Always clear both cursor slots first — last
+                // frame's sprite (if any) needs to disappear
+                // whether we emit a new one or not.
+                // 3. Some(style): emit a sprite into slot 0 (block)
+                // or slot rows+1 (others). For Block we ALSO
+                // write the bg-tint uniforms below so the bg
+                // fragment paints the block + the text shader
+                // inverts the underlying glyph.
+                // 4. None: leave both slots empty + zero uniforms.
+                let render_style = crate::grid_emit::cursor_render_style(
+                    crate::grid_emit::CursorRenderInputs {
+                        visible: p.cursor_visible,
+                        focused: p.is_active,
+                        blink_visible: p.cursor_blink_visible,
+                        blinking: p.cursor_blinking,
+                        preedit: p.cursor_preedit,
+                        shape: p.cursor_shape,
+                    },
+                );
+                grid.clear_cursor();
+                if let Some(style) = render_style {
+                    let cell_w = p.cell_w.round().clamp(1.0, u32::MAX as f32) as u32;
+                    let cell_h = p.cell_h.round().clamp(1.0, u32::MAX as f32) as u32;
+                    let cursor_color = [
+                        (p.cursor_color[0].clamp(0.0, 1.0) * 255.0) as u8,
+                        (p.cursor_color[1].clamp(0.0, 1.0) * 255.0) as u8,
+                        (p.cursor_color[2].clamp(0.0, 1.0) * 255.0) as u8,
+                        255,
+                    ];
+                    crate::grid_emit::emit_cursor_sprite(
+                        grid,
+                        style,
+                        p.cursor_col,
+                        p.cursor_row,
+                        cursor_color,
+                        cell_w,
+                        cell_h,
+                    );
+                }
+
+                // Panel's grid origin in drawable-pixel space =
+                // window scaled_margin + the panel's layout rect
+                // offset inside the root container. Snap to integer
+                // pixels so `cell_size * grid_pos + grid_padding`
+                // always lands on pixel boundaries. Without this, a
+                // fractional margin (e.g. Taffy layout computing
+                // 10.5px offsets) shifts the whole grid half a pixel
+                // and the bg fragment's
+                // `floor((pixel - padding) / cell_size)` disagrees
+                // with the text vertex's `cell_size * grid_pos`
+                // about where cell boundaries are → visible seams.
+                let panel_left = (scaled_margin.left + p.layout_rect[0]).round();
+                let panel_top = (scaled_margin.top + p.layout_rect[1]).round();
+
+                // Bg-tint uniforms fire ONLY for the active block
+                // style — the bg shader paints the cursor cell in
+                // `cursor_bg_color` and the text shader swaps glyph
+                // fg to `cursor_color` (so the character inverts on
+                // top of the block). All other styles (bar /
+                // underline / hollow) draw via the sprite emitted
+                // above; their bg/text stays untouched. Same gate as
+                // .
+                let (cursor_pos, cursor_col_u, cursor_bg_u) = if matches!(
+                    render_style,
+                    Some(crate::grid_emit::CursorRenderStyle::Block)
+                ) {
+                    (
+                        [p.cursor_col as u32, p.cursor_row as u32],
+                        [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
+                        [p.cursor_color[0], p.cursor_color[1], p.cursor_color[2], 1.0],
+                    )
+                } else {
+                    ([u32::MAX; 2], [0.0; 4], [0.0; 4])
+                };
+
+                let uniforms = rio_backend::sugarloaf::grid::GridUniforms {
+                    projection:
+                        rio_backend::sugarloaf::components::core::orthographic_projection(
+                            window_size.width,
+                            window_size.height,
+                        ),
+                    // grid_padding = (top, right, bottom, left). The
+                    // bg shader only reads `.w` (left) + `.x` (top)
+                    // to anchor the grid, so right/bottom can stay
+                    // 0. padding_extend is 0 too — each panel's
+                    // grid must stay bounded to its own rect so
+                    // sibling panels / the window margin aren't
+                    // painted by this grid. The full-window bg fill
+                    // (re-enabled in sugarloaf's render_metal) now
+                    // handles the space outside all panels.
+                    grid_padding: [panel_top, 0.0, 0.0, panel_left],
+                    cursor_color: cursor_col_u,
+                    cursor_bg_color: cursor_bg_u,
+                    cell_size: [p.cell_w, p.cell_h],
+                    grid_size: [p.cols, p.rows],
+                    cursor_pos,
+                    _pad_cursor: [0; 2],
+                    min_contrast: 0.0,
+                    flags: 0,
+                    padding_extend: 0,
+                    input_colorspace,
+                };
+
+                frame_grids.push((grid, uniforms));
+            }
+
+            if should_present {
+                if frame_grids.is_empty() {
+                    self.sugarloaf.render();
+                } else {
+                    self.sugarloaf.render_with_grids(&mut frame_grids);
+                }
+            } else {
+                // Nothing to draw this frame, but `Renderer::run`
+                // (plus overlays, borders, scrollbars, …) already
+                // pushed into sugarloaf's per-frame queues. Drain
+                // them so the next presented frame doesn't
+                // composite them on top of their re-pushed selves.
+                self.sugarloaf.discard_frame();
+            }
+
+            // Return each panel's snapshot buffers to the matching
+            // context's `renderable_content` so the next frame's
+            // `Renderer::run` can reuse the existing allocations
+            // (rows, per-cell styles, extras table). Closed routes
+            // simply drop their PanelFrame; the context (and its
+            // renderable_content) is gone too.
+            for (_, item) in self
+                .context_manager
+                .current_grid_mut()
+                .contexts_mut()
+                .iter_mut()
+            {
+                let route_id = item.val.route_id;
+                if let Some(idx) = panels.iter().position(|p| p.route_id == route_id) {
+                    let p = panels.swap_remove(idx);
+                    item.val.renderable_content.visible_rows = p.visible_rows;
+                    item.val.renderable_content.style_table = p.style_table;
+                    item.val.renderable_content.extras = p.extras;
+                }
+            }
+            panels.clear();
+        }
+
+        // Mark as dirty if we need continuous rendering (e.g.,
+        // indeterminate progress bar, trail cursor animation). UI-only
+        // — terminal cells didn't change, but we want the next vsync
+        // to fire a render so overlays/animations tick forward.
+        if has_animation {
+            self.context_manager
+                .current_mut()
+                .renderable_content
+                .pending_update
+                .set_dirty();
+        }
+
         // In case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
@@ -2598,13 +4087,6 @@ impl Screen<'_> {
                 .blink_cursor(self.renderer.config_blinking_interval);
         }
 
-        // let _screen_render_duration = screen_render_start.elapsed();
-        // if self.renderer.enable_performance_logging {
-        // println!(
-        //     "[PERF] Screen render() total: {:?}\n",
-        //     screen_render_duration
-        // );
-        // }
         window_update
     }
 
@@ -2619,17 +4101,22 @@ impl Screen<'_> {
             return;
         }
 
-        let current_context = self.context_manager.current();
-        let terminal = current_context.terminal.lock();
+        let current_grid = self.context_manager.current_grid();
+        let scaled_margin = current_grid.get_scaled_margin();
+
+        let Some(current_item) = current_grid.current_item() else {
+            return;
+        };
+
+        let layout = current_item.val.dimension;
+        let terminal = current_item.val.terminal.lock();
         let cursor_pos = terminal.grid.cursor.pos;
-        let layout = current_context.dimension;
         drop(terminal);
 
-        // Calculate pixel position of cursor
-        let cell_width = layout.dimension.width;
-        let cell_height = layout.dimension.height;
-        let margin_x = layout.margin.x * layout.dimension.scale;
-        let margin_y = layout.margin.top_y * layout.dimension.scale;
+        // Calculate pixel position of cursor — canonical integer
+        // stride (line_height already baked into cell_height).
+        let cell_width = layout.cell.cell_width as f32;
+        let cell_height = layout.cell.cell_height as f32;
 
         // Validate dimensions before calculation
         if cell_width <= 0.0 || cell_height <= 0.0 {
@@ -2641,11 +4128,16 @@ impl Screen<'_> {
             return;
         }
 
-        // Convert grid position to pixel position, centering horizontally in the cell
+        // Panel origin: layout_rect is relative to root container,
+        // add scaled_margin to get absolute screen position
+        let panel_rect = current_item.layout_rect;
+        let origin_x = panel_rect[0] + scaled_margin.left;
+        let origin_y = panel_rect[1] + scaled_margin.top;
+
+        // Convert grid position to pixel position
         let pixel_x =
-            margin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
-        let pixel_y =
-            margin_y + (cursor_pos.row.0 as f32 * cell_height * layout.line_height);
+            origin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
+        let pixel_y = origin_y + (cursor_pos.row.0 as f32 * cell_height);
 
         // Validate final coordinates
         if pixel_x.is_nan() || pixel_y.is_nan() || pixel_x < 0.0 || pixel_y < 0.0 {
@@ -2672,11 +4164,11 @@ impl Screen<'_> {
 
     /// Process a new character for keyboard hints
     #[allow(dead_code)]
-    pub fn hint_input(&mut self, c: char) {
+    pub fn hint_input(&mut self, c: char, clipboard: &mut Clipboard) {
         let terminal = self.context_manager.current().terminal.lock();
         if let Some(hint_match) = self.hint_state.keyboard_input(&*terminal, c) {
             drop(terminal);
-            self.execute_hint_action(&hint_match);
+            self.execute_hint_action(&hint_match, clipboard);
             // Stop hint mode and update state with proper damage tracking
             self.hint_state.stop();
             self.update_hint_state();
@@ -2684,7 +4176,7 @@ impl Screen<'_> {
             drop(terminal);
             self.update_hint_state();
         }
-        self.render();
+        self.mark_dirty();
     }
 
     /// Start hint mode with the given hint configuration
@@ -2700,19 +4192,21 @@ impl Screen<'_> {
         // Update hint state and trigger damage tracking
         self.update_hint_state();
 
-        self.render();
+        self.mark_dirty();
     }
 
     /// Execute the action for a selected hint
-    fn execute_hint_action(&mut self, hint_match: &crate::hints::HintMatch) {
+    fn execute_hint_action(
+        &mut self,
+        hint_match: &crate::hints::HintMatch,
+        clipboard: &mut Clipboard,
+    ) {
         use rio_backend::config::hints::{HintAction, HintCommand, HintInternalAction};
 
         match &hint_match.hint.action {
             HintAction::Action { action } => match action {
                 HintInternalAction::Copy => {
-                    self.clipboard
-                        .borrow_mut()
-                        .set(ClipboardType::Clipboard, hint_match.text.clone());
+                    clipboard.set(ClipboardType::Clipboard, hint_match.text.clone());
                 }
                 HintInternalAction::Paste => {
                     self.paste(&hint_match.text, true);
@@ -2727,26 +4221,47 @@ impl Screen<'_> {
                     self.context_manager
                         .current_mut()
                         .set_selection(Some(selection));
-                    self.render();
+                    self.mark_dirty();
                 }
                 HintInternalAction::MoveViModeCursor => {
                     // Move vi mode cursor to hint position
                     let mut terminal = self.context_manager.current().terminal.lock();
                     terminal.vi_mode_cursor.pos = hint_match.start;
                     drop(terminal);
-                    self.render();
+                    self.mark_dirty();
                 }
             },
-            HintAction::Command { command } => match command {
-                HintCommand::Simple(program) => {
-                    self.exec(program, [&hint_match.text]);
+            HintAction::Command { command } => {
+                // If the match looks like a local path, resolve it against
+                // the terminal's OSC 7 CWD and fall back to the raw text if
+                // the path doesn't exist (or the text is a URL).
+                let arg_text = {
+                    let cwd = &self
+                        .context_manager
+                        .current()
+                        .terminal
+                        .lock()
+                        .current_directory;
+                    match crate::hints::resolve_path_for_opening(
+                        &hint_match.text,
+                        cwd.as_deref(),
+                    ) {
+                        Some(resolved) => resolved.to_string_lossy().into_owned(),
+                        None => hint_match.text.clone(),
+                    }
+                };
+
+                match command {
+                    HintCommand::Simple(program) => {
+                        self.exec(program, [&arg_text]);
+                    }
+                    HintCommand::WithArgs { program, args } => {
+                        let mut all_args = args.clone();
+                        all_args.push(arg_text);
+                        self.exec(program, &all_args);
+                    }
                 }
-                HintCommand::WithArgs { program, args } => {
-                    let mut all_args = args.clone();
-                    all_args.push(hint_match.text.clone());
-                    self.exec(program, &all_args);
-                }
-            },
+            }
         }
     }
 
@@ -2770,66 +4285,58 @@ impl Screen<'_> {
                 .renderable_content
                 .hint_matches = Some(matches);
 
-            // Mark lines with hint labels as damaged
-            let mut damaged_lines = std::collections::BTreeSet::new();
+            // Hint state changed (search input, label visibility,
+            // match selection). The visualization changes per-cell —
+            // hint highlights, label glyphs — without touching cell
+            // content, so we mark each affected line dirty on the
+            // live grid. The next snapshot picks them up via the
+            // per-row dirty walk and sets `visible_rows[y].dirty` so
+            // GPU emit re-emits those rows. Coarse fallback when we
+            // can't compute affected lines: `Full`.
             {
-                let current = &self.context_manager.current();
-                let hint_labels = &current.renderable_content.hint_labels;
-                let terminal = current.terminal.lock();
+                let current = self.context_manager.current_mut();
+                let hint_labels = current.renderable_content.hint_labels.clone();
+                let hint_matches = current.renderable_content.hint_matches.clone();
+                let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
                 let screen_lines = terminal.screen_lines();
-                drop(terminal);
 
-                if !hint_labels.is_empty() {
-                    // Collect all lines that have hint labels
-                    for label in hint_labels {
-                        let line = label.position.row.0 - display_offset as i32;
-                        if line >= 0 && (line as usize) < screen_lines {
-                            damaged_lines.insert(
-                                rio_backend::crosswords::LineDamage::new(
-                                    line as usize,
-                                    true,
-                                ),
-                            );
-                        }
+                let mut any = false;
+                for label in &hint_labels {
+                    let line = label.position.row.0 - display_offset as i32;
+                    if line >= 0 && (line as usize) < screen_lines {
+                        terminal.grid[rio_backend::crosswords::pos::Line(line)].dirty =
+                            true;
+                        any = true;
                     }
                 }
-
-                // Also damage lines with hint matches
-                if let Some(hint_matches) = &current.renderable_content.hint_matches {
+                if let Some(hint_matches) = &hint_matches {
                     for hint_match in hint_matches {
                         let start_line = hint_match.start().row.0 - display_offset as i32;
                         let end_line = hint_match.end().row.0 - display_offset as i32;
-
                         for line in start_line..=end_line {
                             if line >= 0 && (line as usize) < screen_lines {
-                                damaged_lines.insert(
-                                    rio_backend::crosswords::LineDamage::new(
-                                        line as usize,
-                                        true,
-                                    ),
-                                );
+                                terminal.grid[rio_backend::crosswords::pos::Line(line)]
+                                    .dirty = true;
+                                any = true;
                             }
                         }
                     }
                 }
-            }
+                drop(terminal);
 
-            let current = self.context_manager.current_mut();
-            if !damaged_lines.is_empty() {
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(TerminalDamage::Partial(damaged_lines));
-            } else {
-                // Force full damage if no specific lines (for hint highlights)
-                current
-                    .renderable_content
-                    .pending_update
-                    .set_ui_damage(TerminalDamage::Full);
+                    .set_terminal_damage(if any {
+                        TerminalDamage::Partial
+                    } else {
+                        TerminalDamage::Full
+                    });
             }
-        } else {
-            // Clear hint state
+        } else if !self.search_active() {
+            // Clear hint state only if search is not active,
+            // since search also uses hint_matches for highlighting
             self.context_manager
                 .current_mut()
                 .renderable_content
@@ -2844,7 +4351,7 @@ impl Screen<'_> {
             current
                 .renderable_content
                 .pending_update
-                .set_ui_damage(TerminalDamage::Full);
+                .set_terminal_damage(TerminalDamage::Full);
         }
     }
 
@@ -2910,7 +4417,7 @@ impl Screen<'_> {
         // First pass: handle uneven brackets/parentheses
         while current_pos <= end_pos {
             if let Some(indexed) = iter.next() {
-                let c = indexed.square.c;
+                let c = indexed.square.c();
                 current_pos = indexed.pos;
 
                 match c {
@@ -2955,7 +4462,7 @@ impl Screen<'_> {
 
         while final_end > start_pos {
             if let Some(indexed) = iter.next() {
-                let c = indexed.square.c;
+                let c = indexed.square.c();
                 if !matches!(c, '.' | ',' | ':' | ';' | '?' | '!' | '(' | '[' | '\'') {
                     break;
                 }

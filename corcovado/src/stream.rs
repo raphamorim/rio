@@ -256,3 +256,9 @@ impl FromRawFd for UnixStream {
         }
     }
 }
+
+impl From<UnixStream> for OwnedFd {
+    fn from(stream: UnixStream) -> OwnedFd {
+        stream.inner.into()
+    }
+}

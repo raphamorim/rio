@@ -1,6 +1,9 @@
 pub mod image;
 pub mod uniforms;
 // pub mod svg;
+// `buffer` is a thin wrapper over `wgpu::Buffer` — gated together
+// with the rest of the wgpu code.
+#[cfg(feature = "wgpu")]
 pub mod buffer;
 pub mod shapes;
 

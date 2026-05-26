@@ -34,27 +34,30 @@ mod test_write_then_drop;
 #[cfg(target_os = "fuchsia")]
 mod test_fuchsia_handles;
 
-use bytes::{Buf, MutBuf};
+use bytes::{Buf, BufMut, BytesMut};
 use corcovado::event::Event;
 use corcovado::{Events, Poll};
 use std::io::{self, Read, Write};
 use std::time::Duration;
 
 pub trait TryRead {
-    fn try_read_buf<B: MutBuf>(&mut self, buf: &mut B) -> io::Result<Option<usize>>
+    fn try_read_buf(&mut self, buf: &mut BytesMut) -> io::Result<Option<usize>>
     where
         Self: Sized,
     {
-        // Reads the length of the slice supplied by buf.mut_bytes into the buffer
-        // This is not guaranteed to consume an entire datagram or segment.
-        // If your protocol is msg based (instead of continuous stream) you should
-        // ensure that your buffer is large enough to hold an entire segment (1532 bytes if not jumbo
-        // frames)
-        let res = self.try_read(unsafe { buf.mut_bytes() });
+        let remaining = buf.capacity() - buf.len();
+        if remaining == 0 {
+            return Ok(Some(0));
+        }
+        buf.reserve(remaining);
+        let dst = buf.chunk_mut();
+        let dst_slice =
+            unsafe { std::slice::from_raw_parts_mut(dst.as_mut_ptr(), dst.len()) };
+        let res = self.try_read(dst_slice);
 
         if let Ok(Some(cnt)) = res {
             unsafe {
-                buf.advance(cnt);
+                buf.advance_mut(cnt);
             }
         }
 
@@ -69,7 +72,7 @@ pub trait TryWrite {
     where
         Self: Sized,
     {
-        let res = self.try_write(buf.bytes());
+        let res = self.try_write(buf.chunk());
 
         if let Ok(Some(cnt)) = res {
             buf.advance(cnt);

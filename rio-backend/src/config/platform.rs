@@ -44,7 +44,7 @@ pub struct PlatformWindow {
     #[serde(default = "Option::default")]
     pub opacity: Option<f32>,
     #[serde(default = "Option::default")]
-    pub blur: Option<bool>,
+    pub blur: Option<window::WindowBlur>,
     #[serde(
         default = "Option::default",
         rename = "background-image",
@@ -57,6 +57,10 @@ pub struct PlatformWindow {
     pub macos_use_unified_titlebar: Option<bool>,
     #[serde(default = "Option::default", rename = "macos-use-shadow")]
     pub macos_use_shadow: Option<bool>,
+    #[serde(default = "Option::default", rename = "macos-traffic-light-position-x")]
+    pub macos_traffic_light_position_x: Option<f64>,
+    #[serde(default = "Option::default", rename = "macos-traffic-light-position-y")]
+    pub macos_traffic_light_position_y: Option<f64>,
     #[serde(default = "Option::default", rename = "initial-title")]
     pub initial_title: Option<String>,
     #[serde(default = "Option::default", rename = "windows-use-undecorated-shadow")]
@@ -70,6 +74,10 @@ pub struct PlatformWindow {
     pub windows_corner_preference: Option<window::WindowsCornerPreference>,
     #[serde(default = "Option::default")]
     pub colorspace: Option<window::Colorspace>,
+    #[serde(default = "Option::default")]
+    pub columns: Option<u16>,
+    #[serde(default = "Option::default")]
+    pub rows: Option<u16>,
 }
 
 /// Platform-specific navigation config with optional fields for selective override
@@ -93,19 +101,24 @@ pub struct PlatformNavigation {
     pub open_config_with_split: Option<bool>,
     #[serde(default = "Option::default", rename = "unfocused-split-opacity")]
     pub unfocused_split_opacity: Option<f32>,
+    #[serde(
+        default = "Option::default",
+        deserialize_with = "crate::config::colors::deserialize_to_arr_opt",
+        rename = "unfocused-split-fill"
+    )]
+    pub unfocused_split_fill: Option<crate::config::colors::ColorArray>,
 }
 
 /// Platform-specific renderer config with optional fields for selective override
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct PlatformRenderer {
     #[serde(default = "Option::default")]
-    pub performance: Option<renderer::Performance>,
-    #[serde(default = "Option::default")]
     pub backend: Option<renderer::Backend>,
     #[serde(default = "Option::default", rename = "disable-unfocused-render")]
     pub disable_unfocused_render: Option<bool>,
     #[serde(default = "Option::default", rename = "disable-occluded-render")]
     pub disable_occluded_render: Option<bool>,
+    #[cfg(feature = "wgpu")]
     #[serde(default = "Option::default", skip_serializing)]
     pub filters: Option<Vec<sugarloaf::Filter>>,
     #[serde(default = "Option::default")]

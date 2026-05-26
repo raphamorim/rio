@@ -12,9 +12,9 @@ use std::mem;
 use std::ops::{Bound, Range, RangeBounds};
 
 use crate::ansi::CursorShape;
-use crate::crosswords::grid::{Dimensions, GridSquare, Indexed};
+use crate::crosswords::grid::{Dimensions, Indexed};
 use crate::crosswords::pos::{Boundary, Column, Line, Pos, Side};
-use crate::crosswords::square::{Flags, Square};
+use crate::crosswords::square::{Square, Wide};
 use crate::crosswords::Crosswords;
 use crate::event::EventListener;
 
@@ -94,7 +94,7 @@ impl SelectionRange {
         }
 
         // Check if a wide char's trailing spacer is selected.
-        indexed.square.flags().contains(Flags::WIDE_CHAR)
+        matches!(indexed.square.wide(), Wide::Wide)
             && self.contains(Pos::new(indexed.pos.row, indexed.pos.col + 1))
     }
 }
@@ -450,7 +450,14 @@ mod tests {
         let size = CrosswordsSize::new(width, height);
         let window_id = crate::event::WindowId::from(0);
 
-        Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0)
+        Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        )
     }
 
     /// Test case of single cell selection.

@@ -15,7 +15,7 @@ corcovado = { workspace = true }
 tracing = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-signal-hook = "0.3.17"
+signal-hook = "0.4.4"
 iovec = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
@@ -28,5 +28,5 @@ windows-sys = { version = "0.59.0", features = [
     "Win32_System_WindowsProgramming",
     "Win32_System_IO",
 ]}
-miow = "0.6.0"
+miow = "0.6.1"
 parking_lot = { workspace = true }

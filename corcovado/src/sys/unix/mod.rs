@@ -54,7 +54,7 @@ pub use self::ready::{UnixReady, READY_ALL};
 
 use std::os::unix::io::FromRawFd;
 
-pub fn pipe() -> ::io::Result<(Io, Io)> {
+pub fn pipe() -> crate::io::Result<(Io, Io)> {
     // Use pipe2 for atomically setting O_CLOEXEC if we can, but otherwise
     // just fall back to using `pipe`.
     dlsym!(fn pipe2(*mut c_int, c_int) -> c_int);
@@ -98,7 +98,7 @@ impl IsMinusOne for isize {
     }
 }
 
-fn cvt<T: IsMinusOne>(t: T) -> ::io::Result<T> {
+fn cvt<T: IsMinusOne>(t: T) -> crate::io::Result<T> {
     use std::io;
 
     if t.is_minus_one() {

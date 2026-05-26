@@ -1,6 +1,6 @@
-use event::Evented;
+use crate::event::Evented;
+use crate::{io, poll, Poll, PollOpt, Ready, Token};
 use std::os::unix::io::RawFd;
-use {io, poll, Poll, PollOpt, Ready, Token};
 
 /*
  *

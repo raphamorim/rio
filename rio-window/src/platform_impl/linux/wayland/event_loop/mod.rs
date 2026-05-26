@@ -483,6 +483,9 @@ impl<T: 'static> EventLoop<T> {
 
         for window_id in window_ids.iter() {
             let event = self.with_state(|state| {
+                // Cache before mutably borrowing state.windows.
+                let present_after_input = state.should_present_after_input();
+
                 let window_requests = state.window_requests.get_mut();
                 if window_requests.get(window_id).unwrap().take_closed() {
                     mem::drop(window_requests.remove(window_id));
@@ -502,15 +505,26 @@ impl<T: 'static> EventLoop<T> {
                     return None;
                 }
 
-                // Reset the frame callbacks state.
+                // Reset the frame-callback state so the window can accept a new
+                // callback when the app commits (pre_present_notify).
+                //
+                // NOTE: don't call request_frame_callback here. It would call
+                // wl_suface::frame() before we know wether  a render will happen.
+                // If this iteration emits no RedraRequested, the app never commits,
+                // callback stay pending forever and the next itration sees
+                // state == Requested and short-cirtuits above.
+                // Freezing the loop until external events happen to work around it.
+                let was_received =
+                    window.frame_callback_state() == FrameCallbackState::Received;
                 window.frame_callback_reset();
+
                 let mut redraw_requested = window_requests
                     .get(window_id)
                     .unwrap()
                     .take_redraw_requested();
 
-                // Redraw the frame while at it.
                 redraw_requested |= window.refresh_frame();
+                redraw_requested |= was_received && present_after_input;
 
                 redraw_requested.then_some(WindowEvent::RedrawRequested)
             });

@@ -1,4 +1,3 @@
-// Produces WGPU Color based on ColorBuilder
 pub mod defaults;
 pub mod term;
 
@@ -9,11 +8,14 @@ use serde::{de, Deserialize};
 use std::num::ParseIntError;
 use std::ops::Mul;
 
-pub type ColorWGPU = wgpu::Color;
+// `ColorWGPU` is the legacy name; `sugarloaf::Color` is the actual
+// type now (mirrors `wgpu::Color`'s shape, but doesn't drag wgpu
+// into the dep tree on Linux/macOS native builds).
+pub type ColorWGPU = sugarloaf::Color;
 pub type ColorArray = [f32; 4];
 pub type ColorComposition = (ColorArray, ColorWGPU);
 
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ColorRgb {
     pub r: u8,
     pub g: u8,
@@ -84,7 +86,7 @@ pub enum Format {
     SRGB0_1,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AnsiColor {
     Named(NamedColor),
     Spec(ColorRgb),
@@ -120,18 +122,6 @@ pub struct Colors {
         rename = "tabs-active"
     )]
     pub tabs_active: ColorArray,
-    #[serde(
-        deserialize_with = "deserialize_to_arr",
-        default = "defaults::tabs_active_foreground",
-        rename = "tabs-active-foreground"
-    )]
-    pub tabs_active_foreground: ColorArray,
-    #[serde(
-        deserialize_with = "deserialize_to_arr",
-        default = "defaults::tabs_foreground",
-        rename = "tabs-foreground"
-    )]
-    pub tabs_foreground: ColorArray,
     #[serde(default = "defaults::cursor", deserialize_with = "deserialize_to_arr")]
     pub cursor: ColorArray,
     #[serde(
@@ -148,14 +138,14 @@ pub struct Colors {
     pub magenta: ColorArray,
     #[serde(default = "defaults::tabs", deserialize_with = "deserialize_to_arr")]
     pub tabs: ColorArray,
-    #[serde(default = "defaults::bar", deserialize_with = "deserialize_to_arr")]
-    pub bar: ColorArray,
     #[serde(
-        default = "defaults::tabs_active_highlight",
-        rename = "tabs-active-highlight",
+        default = "defaults::tab_border",
+        rename = "tab-border",
         deserialize_with = "deserialize_to_arr"
     )]
-    pub tabs_active_highlight: ColorArray,
+    pub tab_border: ColorArray,
+    #[serde(default = "defaults::bar", deserialize_with = "deserialize_to_arr")]
+    pub bar: ColorArray,
     #[serde(default = "defaults::white", deserialize_with = "deserialize_to_arr")]
     pub white: ColorArray,
     #[serde(
@@ -281,6 +271,12 @@ pub struct Colors {
     #[serde(default = "defaults::split", deserialize_with = "deserialize_to_arr")]
     pub split: ColorArray,
     #[serde(
+        default = "defaults::split_active",
+        deserialize_with = "deserialize_to_arr",
+        rename = "split-active"
+    )]
+    pub split_active: ColorArray,
+    #[serde(
         default = "defaults::search_match_background",
         deserialize_with = "deserialize_to_arr",
         rename = "search-match-background"
@@ -329,12 +325,11 @@ impl Default for Colors {
             yellow: defaults::yellow(),
             bar: defaults::bar(),
             tabs: defaults::tabs(),
-            tabs_active_highlight: defaults::tabs_active_highlight(),
             tabs_active: defaults::tabs_active(),
-            tabs_active_foreground: defaults::tabs_active_foreground(),
-            tabs_foreground: defaults::tabs_foreground(),
+            tab_border: defaults::tab_border(),
             cursor: defaults::cursor(),
             split: defaults::split(),
+            split_active: defaults::split_active(),
             vi_cursor: defaults::vi_cursor(),
             black: defaults::black(),
             cyan: defaults::cyan(),
@@ -382,7 +377,7 @@ pub fn hex_to_color_wgpu(s: &str) -> ColorWGPU {
         .to_wgpu()
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum NamedColor {
     /// Black.
     Black = 0,
@@ -591,8 +586,8 @@ impl ColorBuilder {
         }
     }
 
-    pub fn to_wgpu(&self) -> wgpu::Color {
-        wgpu::Color {
+    pub fn to_wgpu(&self) -> sugarloaf::Color {
+        sugarloaf::Color {
             r: self.red,
             g: self.green,
             b: self.blue,
@@ -743,7 +738,7 @@ mod tests {
 
     #[test]
     fn test_conversion_from_hex_sgb_255() {
-        let color: wgpu::Color =
+        let color: sugarloaf::Color =
             ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
                 .unwrap()
                 .to_wgpu();
@@ -772,7 +767,7 @@ mod tests {
 
     #[test]
     fn test_conversion_from_hex_sgb_1() {
-        let color: wgpu::Color =
+        let color: sugarloaf::Color =
             ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_255)
                 .unwrap()
                 .to_wgpu();

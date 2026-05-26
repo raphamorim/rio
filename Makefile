@@ -1,7 +1,4 @@
-.PHONY: docs
-
 BUILD_MISC_DIR = misc
-DOCS_DIR = docs
 TARGET = rio
 TARGET_DIR = target/release
 TARGET_DIR_DEBIAN = target/debian
@@ -17,18 +14,12 @@ TERMINFO = $(BUILD_MISC_DIR)/rio.terminfo
 
 all: install run
 
-docs:
-	cd $(DOCS_DIR) && npm start
-
-docs-build:
-	cd $(DOCS_DIR) && npm ci && npm run build
-
 run:
 	cargo run -p rioterm --release
 
 # OXS: optionally you can run "/bin/launchctl setenv MTL_HUD_ENABLED 1"
 dev:
-	MTL_HUD_ENABLED=1 cargo run -p rioterm
+	MTL_HUD_ENABLED=1 cargo run -p rioterm --features wgpu
 
 dev-debug:
 	MTL_HUD_ENABLED=1 RIO_LOG_LEVEL=debug make dev

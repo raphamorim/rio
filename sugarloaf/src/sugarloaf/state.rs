@@ -3,290 +3,121 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+//! Sugarloaf-side global state — font handle, root style, and a
+//! single visual-bell overlay slot. The previous version owned the
+//! `Content` registry that tracked per-panel layout; that bookkeeping
+//! moved to rio's `ContextDimension` (see
+//! `memory/project_sugarloaf_content_drop.md`). This module is now
+//! mostly a thin holder.
+
 use crate::font::FontLibrary;
 use crate::layout::RootStyle;
-use crate::sugarloaf::QuadBrush;
-use crate::sugarloaf::{RichTextBrush, RichTextLayout};
+use crate::renderer::Renderer;
 use crate::Graphics;
-use crate::{Content, Object, Quad, RichText, SugarDimensions};
-use std::collections::HashSet;
 
 pub struct SugarState {
-    objects: Vec<Object>,
-    pub rich_texts: Vec<RichText>,
-    rich_text_repaint: HashSet<usize>,
-    rich_text_to_be_removed: Vec<usize>,
     pub style: RootStyle,
-    pub content: Content,
-    pub quads: Vec<Quad>,
-    pub visual_bell_overlay: Option<Quad>,
+    /// Live font handle. Cloned (Arc-shallow) into per-frame contexts.
+    /// Replaces the previous indirection through `Content`.
+    pub fonts: FontLibrary,
+    pub visual_bell_overlay: Option<crate::sugarloaf::primitives::Rect>,
 }
 
 impl SugarState {
     pub fn new(
         style: RootStyle,
         font_library: &FontLibrary,
-        font_features: &Option<Vec<String>>,
+        _font_features: &Option<Vec<String>>,
     ) -> SugarState {
-        let mut content = Content::new(font_library);
-        let found_font_features = SugarState::found_font_features(font_features);
-        content.set_font_features(found_font_features);
-
+        // Font features used to be threaded through the rich-text
+        // shaper; with that pipeline gone they're no longer applied
+        // here. Grid-side shaping (`grid_emit`) and UI text shaping
+        // (`sugarloaf::text`) handle features inline at shape time.
         SugarState {
-            content: Content::new(font_library),
-            quads: vec![],
+            fonts: font_library.clone(),
             style,
-            objects: vec![],
-            rich_texts: vec![],
-            rich_text_to_be_removed: vec![],
-            rich_text_repaint: HashSet::default(),
             visual_bell_overlay: None,
         }
     }
 
+    /// Compatibility shim used by the per-frame `compute_updates` —
+    /// the old shaper kept font-feature settings here. Kept as a
+    /// helper that returns an empty list so call sites don't need a
+    /// rewrite while the rest of the pipeline is being torn down.
     pub fn found_font_features(
-        font_features: &Option<Vec<String>>,
-    ) -> Vec<crate::font_introspector::Setting<u16>> {
-        let mut found_font_features = vec![];
-        if let Some(features) = font_features {
-            for feature in features {
-                let setting: crate::font_introspector::Setting<u16> =
-                    (feature.as_str(), 1).into();
-                found_font_features.push(setting);
-            }
-        }
-
-        found_font_features
+        _font_features: &Option<Vec<String>>,
+    ) -> Vec<swash::Setting<u16>> {
+        Vec::new()
     }
 
-    #[inline]
-    pub fn new_layer(&mut self) {}
-
-    #[inline]
-    pub fn get_state_layout(&self, id: &usize) -> RichTextLayout {
-        if let Some(builder_state) = self.content.get_state(id) {
-            return builder_state.layout;
-        }
-
-        RichTextLayout::from_default_layout(&self.style)
-    }
-
-    #[inline]
-    pub fn compute_layout_rescale(
-        &mut self,
-        scale: f32,
-        advance_brush: &mut RichTextBrush,
-    ) {
-        self.style.scale_factor = scale;
-        for (id, state) in &mut self.content.states {
-            state.rescale(scale);
-            state.layout.dimensions.height = 0.0;
-            state.layout.dimensions.width = 0.0;
-
-            self.rich_text_repaint.insert(*id);
-        }
-
-        self.process_rich_text_repaint(advance_brush);
-    }
-
-    #[inline]
-    pub fn set_rich_text_font_size(
-        &mut self,
-        rich_text_id: &usize,
-        font_size: f32,
-        advance_brush: &mut RichTextBrush,
-    ) {
-        if let Some(rte) = self.content.get_state_mut(rich_text_id) {
-            rte.layout.font_size = font_size;
-            rte.update_font_size();
-
-            rte.layout.dimensions.height = 0.0;
-            rte.layout.dimensions.width = 0.0;
-            self.rich_text_repaint.insert(*rich_text_id);
-        }
-
-        self.process_rich_text_repaint(advance_brush);
-    }
-
-    #[inline]
-    pub fn set_rich_text_font_size_based_on_action(
-        &mut self,
-        rich_text_id: &usize,
-        operation: u8,
-        advance_brush: &mut RichTextBrush,
-    ) {
-        if let Some(rte) = self.content.get_state_mut(rich_text_id) {
-            let should_update = match operation {
-                0 => rte.reset_font_size(),
-                2 => rte.increase_font_size(),
-                1 => rte.decrease_font_size(),
-                _ => false,
-            };
-
-            if should_update {
-                rte.layout.dimensions.height = 0.0;
-                rte.layout.dimensions.width = 0.0;
-                self.rich_text_repaint.insert(*rich_text_id);
-            }
-        }
-
-        self.process_rich_text_repaint(advance_brush);
-    }
-
-    #[inline]
-    pub fn set_rich_text_line_height(&mut self, rich_text_id: &usize, line_height: f32) {
-        if let Some(rte) = self.content.get_state_mut(rich_text_id) {
-            rte.layout.line_height = line_height;
-        }
-    }
-
-    fn process_rich_text_repaint(&mut self, advance_brush: &mut RichTextBrush) {
-        for rich_text in &self.rich_text_repaint {
-            self.content.update_dimensions(rich_text, advance_brush);
-        }
-
-        self.rich_text_repaint.clear();
-    }
-
-    #[inline]
-    pub fn set_fonts(&mut self, fonts: &FontLibrary, advance_brush: &mut RichTextBrush) {
-        self.content.set_font_library(fonts);
-        for (id, state) in &mut self.content.states {
-            state.layout.dimensions.height = 0.0;
-            state.layout.dimensions.width = 0.0;
-            self.rich_text_repaint.insert(*id);
-        }
-
-        self.process_rich_text_repaint(advance_brush);
-    }
-
-    #[inline]
-    pub fn set_font_features(&mut self, font_features: &Option<Vec<String>>) {
-        let found_font_features = SugarState::found_font_features(font_features);
-        self.content.set_font_features(found_font_features);
-    }
-
-    #[inline]
-    pub fn clean_screen(&mut self) {
-        // self.content.clear();
-        self.objects.clear();
-    }
-
-    #[inline]
-    pub fn compute_objects(&mut self, new_objects: Vec<Object>) {
-        // Block are used only with elementary renderer
-        let mut rich_texts: Vec<RichText> = vec![];
-        for obj in &new_objects {
-            if let Object::RichText(rich_text) = obj {
-                rich_texts.push(*rich_text);
-            }
-        }
-        self.objects = new_objects;
-        self.rich_texts = rich_texts
-    }
-
-    #[inline]
-    pub fn reset(&mut self) {
-        self.quads.clear();
-        for rte_id in &self.rich_text_to_be_removed {
-            self.content.remove_state(rte_id);
-        }
-
-        self.content.mark_states_clean();
-        self.rich_text_to_be_removed.clear();
-    }
-
-    #[inline]
-    pub fn clear_rich_text(&mut self, id: &usize) {
-        self.content.clear_state(id);
-    }
-
-    #[inline]
-    pub fn create_rich_text(&mut self) -> usize {
-        self.content
-            .create_state(&RichTextLayout::from_default_layout(&self.style))
-    }
-
-    #[inline]
-    pub fn create_temp_rich_text(&mut self) -> usize {
-        let id = self
-            .content
-            .create_state(&RichTextLayout::from_default_layout(&self.style));
-        self.rich_text_to_be_removed.push(id);
-        id
-    }
-
-    pub fn content(&mut self) -> &mut Content {
-        &mut self.content
-    }
-
+    /// Drive the per-frame `Renderer::prepare` step. The legacy
+    /// transient-text shaping pass is gone; `advance_brush.prepare`
+    /// remains because it still emits per-frame quads / clears the
+    /// instance buffers that the immediate-mode `rect/quad/...`
+    /// helpers fill.
     #[inline]
     pub fn compute_updates(
         &mut self,
-        advance_brush: &mut RichTextBrush,
-        quad_brush: &mut QuadBrush,
+        advance_brush: &mut Renderer,
         context: &mut super::Context,
         graphics: &mut Graphics,
+        image_data: &mut rustc_hash::FxHashMap<u32, super::graphics::GraphicDataEntry>,
+        image_overlays: &rustc_hash::FxHashMap<
+            usize,
+            Vec<super::graphics::GraphicOverlay>,
+        >,
     ) {
-        advance_brush.prepare(context, self, graphics);
-        quad_brush.resize(context);
-
-        // Elementary renderer is used for everything else in sugarloaf
-        // like objects rendering (created by .text() or .append_rects())
-        // It means that's either the first render or objects were erased on compute_diff() step
-        for object in &self.objects {
-            match object {
-                Object::Quad(composed_quad) => {
-                    self.quads.push(*composed_quad);
-                }
-                Object::RichText(_rich_text) => {
-                    // self.rich_texts.push(*rich_text);
-                }
-            }
-        }
+        advance_brush.prepare(context, self, graphics, image_data, image_overlays);
     }
 
+    /// `compute_dimensions` used to walk per-id Content states and
+    /// recompute cell metrics on the `needs_repaint` flag. Per-panel
+    /// dimensions live on rio's `ContextDimension` now and rio drives
+    /// the recompute through `Sugarloaf::compute_cell_metrics`. This
+    /// is preserved as a no-op stub so existing render-loop call
+    /// sites stay shape-compatible until they're audited.
     #[inline]
-    pub fn get_rich_text_dimensions(
+    pub fn compute_dimensions(&mut self) {}
+
+    /// Pre-frame cleanup hook. Was responsible for purging Content
+    /// states marked for removal. With Content gone, sugarloaf has no
+    /// per-id state of its own to GC; the only remaining sweep
+    /// (per-frame text instances) lives on `crate::text::Text`.
+    #[inline]
+    pub fn reset(&mut self) {}
+
+    /// Was responsible for marking every panel-text state for
+    /// removal so the next frame's `reset` would drop them. Without
+    /// Content there's nothing to mark — kept as a no-op so the
+    /// `Sugarloaf::clear` path doesn't change shape.
+    #[inline]
+    pub fn clean_screen(&mut self) {}
+
+    /// Refresh `RootStyle.scale_factor`. Per-panel `dimension` /
+    /// `scaled_font_size` updates happen on rio's `ContextDimension`
+    /// — this only touches sugarloaf's global default that new panels
+    /// inherit from.
+    #[inline]
+    pub fn compute_layout_rescale(&mut self, scale: f32) {
+        self.style.scale_factor = scale;
+    }
+
+    pub fn set_visual_bell_overlay(
         &mut self,
-        id: &usize,
-        advance_brush: &mut RichTextBrush,
-    ) -> SugarDimensions {
-        self.content.update_dimensions(id, advance_brush);
-        if let Some(rte) = self.content.get_state(id) {
-            return rte.layout.dimensions;
-        }
-
-        SugarDimensions::default()
-    }
-
-    #[inline]
-    pub fn compute_dimensions(&mut self, advance_brush: &mut RichTextBrush) {
-        // If sugar dimensions are empty then need to find it
-        for rich_text in &self.rich_texts {
-            if let Some(rte) = self.content.get_state(&rich_text.id) {
-                if rte.layout.dimensions.width == 0.0
-                    || rte.layout.dimensions.height == 0.0
-                {
-                    self.rich_text_repaint.insert(rich_text.id);
-
-                    tracing::info!("has empty dimensions, will try to find...");
-                }
-            }
-        }
-
-        if self.rich_text_repaint.is_empty() {
-            return;
-        }
-        for rich_text in &self.rich_text_repaint {
-            self.content.update_dimensions(rich_text, advance_brush);
-        }
-
-        self.rich_text_repaint.clear();
-    }
-
-    #[inline]
-    pub fn set_visual_bell_overlay(&mut self, overlay: Option<Quad>) {
+        overlay: Option<crate::sugarloaf::primitives::Rect>,
+    ) {
         self.visual_bell_overlay = overlay;
+    }
+
+    /// Was a no-op even before Content was removed; kept for the
+    /// `Sugarloaf::update_font` call site until that path is
+    /// simplified to skip routing through state.
+    #[inline]
+    pub fn set_fonts(
+        &mut self,
+        font_library: &FontLibrary,
+        _advance_brush: &mut Renderer,
+    ) {
+        self.fonts = font_library.clone();
     }
 }

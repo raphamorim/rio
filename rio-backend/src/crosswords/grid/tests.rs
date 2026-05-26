@@ -14,14 +14,6 @@ impl GridSquare for usize {
     fn reset(&mut self, template: &Self) {
         *self = *template;
     }
-
-    fn flags(&self) -> &Flags {
-        unimplemented!();
-    }
-
-    fn flags_mut(&mut self) -> &mut Flags {
-        unimplemented!();
-    }
 }
 
 // Scroll up moves lines upward.
@@ -32,7 +24,7 @@ fn scroll_up() {
         grid[Line(i as i32)][Column(0)] = i;
     }
 
-    grid.scroll_up::<usize>(&(Line(0)..Line(10)), 2);
+    grid.scroll_up(&(Line(0)..Line(10)), 2);
 
     assert_eq!(grid[Line(0)][Column(0)], 2);
     assert_eq!(grid[Line(0)].occ, 1);
@@ -64,7 +56,7 @@ fn scroll_down() {
         grid[Line(i as i32)][Column(0)] = i;
     }
 
-    grid.scroll_down::<usize>(&(Line(0)..Line(10)), 2);
+    grid.scroll_down(&(Line(0)..Line(10)), 2);
 
     assert_eq!(grid[Line(0)][Column(0)], 0); // was 8.
     assert_eq!(grid[Line(0)].occ, 0);
@@ -96,7 +88,7 @@ fn scroll_down_with_history() {
         grid[Line(i as i32)][Column(0)] = i;
     }
 
-    grid.scroll_down::<usize>(&(Line(0)..Line(10)), 2);
+    grid.scroll_down(&(Line(0)..Line(10)), 2);
 
     assert_eq!(grid[Line(0)][Column(0)], 0); // was 8.
     assert_eq!(grid[Line(0)].occ, 0);
@@ -234,7 +226,7 @@ fn shrink_reflow_empty_cell_inside_line() {
 
     assert_eq!(grid[Line(-1)].len(), 2);
     assert_eq!(grid[Line(-1)][Column(0)], cell('1'));
-    assert_eq!(grid[Line(-1)][Column(1)], wrap_cell(' '));
+    assert_eq!(grid[Line(-1)][Column(1)], wrap_cell('\0'));
 
     assert_eq!(grid[Line(0)].len(), 2);
     assert_eq!(grid[Line(0)][Column(0)], cell('3'));
@@ -248,7 +240,7 @@ fn shrink_reflow_empty_cell_inside_line() {
     assert_eq!(grid[Line(-3)][Column(0)], wrap_cell('1'));
 
     assert_eq!(grid[Line(-2)].len(), 1);
-    assert_eq!(grid[Line(-2)][Column(0)], wrap_cell(' '));
+    assert_eq!(grid[Line(-2)][Column(0)], wrap_cell('\0'));
 
     assert_eq!(grid[Line(-1)].len(), 1);
     assert_eq!(grid[Line(-1)][Column(0)], wrap_cell('3'));
@@ -357,12 +349,12 @@ fn shrink_reflow_disabled() {
 #[allow(clippy::all)]
 fn cell(c: char) -> Square {
     let mut cell = Square::default();
-    cell.c = c;
+    cell.set_c(c);
     cell
 }
 
 fn wrap_cell(c: char) -> Square {
     let mut cell = cell(c);
-    cell.flags.insert(Flags::WRAPLINE);
+    cell.set_wrapline(true);
     cell
 }

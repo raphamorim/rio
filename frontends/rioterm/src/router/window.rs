@@ -38,7 +38,7 @@ pub fn create_window_builder(
         .with_resizable(true)
         .with_decorations(true)
         .with_transparent(config.window.opacity < 1.)
-        .with_blur(config.window.blur)
+        .with_blur(config.window.blur.into())
         .with_window_icon(Some(icon));
 
     match config.window.decorations {
@@ -104,6 +104,13 @@ pub fn create_window_builder(
         window_builder = window_builder
             .with_colorspace(config.window.colorspace.to_rio_window_colorspace());
 
+        if let (Some(x), Some(y)) = (
+            config.window.macos_traffic_light_position_x,
+            config.window.macos_traffic_light_position_y,
+        ) {
+            window_builder = window_builder.with_traffic_light_position(x, y);
+        }
+
         if config.navigation.is_native() {
             if let Some(identifier) = tab_id {
                 window_builder = window_builder
@@ -111,10 +118,18 @@ pub fn create_window_builder(
                     .with_unified_titlebar(config.window.macos_use_unified_titlebar);
             }
         } else {
+            use crate::constants::TRAFFIC_LIGHT_PADDING;
             window_builder = window_builder
                 .with_title_hidden(true)
                 .with_titlebar_transparent(true)
                 .with_fullsize_content_view(true);
+
+            if config.navigation.is_enabled() {
+                window_builder = window_builder.with_traffic_light_position(
+                    TRAFFIC_LIGHT_PADDING,
+                    TRAFFIC_LIGHT_PADDING,
+                );
+            }
         }
     }
 
@@ -147,8 +162,13 @@ pub fn create_window_builder(
 }
 
 pub fn configure_window(winit_window: &Window, config: &Config) {
-    let current_mouse_cursor = CursorIcon::Text;
-    winit_window.set_cursor(current_mouse_cursor);
+    if config.effects.custom_mouse_cursor {
+        winit_window.set_cursor_visible(false);
+    } else {
+        winit_window.set_cursor_visible(true);
+        let current_mouse_cursor = CursorIcon::Text;
+        winit_window.set_cursor(current_mouse_cursor);
+    }
 
     // https://docs.rs/winit/latest/winit;/window/enum.ImePurpose.html#variant.Terminal
     winit_window.set_ime_purpose(ImePurpose::Terminal);
@@ -224,5 +244,15 @@ pub fn configure_window(winit_window: &Window, config: &Config) {
         winit_window.set_title(title);
     }
 
-    winit_window.set_blur(config.window.blur);
+    // macOS-only: stash the opacity value before set_blur so the
+    // initial glass install reads the correct tint. No-op on macOS <
+    // 26 / non-macOS — only matters when liquid-glass actually
+    // engages.
+    #[cfg(target_os = "macos")]
+    {
+        use rio_window::platform::macos::WindowExtMacOS;
+        winit_window.set_glass_opacity(config.window.opacity as f64);
+    }
+
+    winit_window.set_blur(config.window.blur.into());
 }

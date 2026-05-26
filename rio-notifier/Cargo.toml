@@ -1,0 +1,30 @@
+[package]
+name = "rio-notifier"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Rio notifier crate."
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = { workspace = true }
+block2 = "0.5.1"
+objc2 = "0.5.2"
+objc2-foundation = { version = "0.2.2", features = ["NSString"] }
+objc2-user-notifications = { version = "0.2.2", features = [
+    "UNUserNotificationCenter",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationTrigger",
+    "block2",
+] }
+
+[target.'cfg(all(not(target_os = "macos"), not(target_os = "windows")))'.dependencies]
+zbus = { version = "4", features = ["blocking"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Data_Xml_Dom",
+    "UI_Notifications",
+] }

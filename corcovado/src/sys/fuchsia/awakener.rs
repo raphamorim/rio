@@ -1,6 +1,6 @@
+use crate::{io, poll, Evented, Poll, PollOpt, Ready, Token};
 use std::sync::{Arc, Mutex, Weak};
 use zircon;
-use {io, poll, Evented, Poll, PollOpt, Ready, Token};
 
 pub struct Awakener {
     /// Token and weak reference to the port on which Awakener was registered.

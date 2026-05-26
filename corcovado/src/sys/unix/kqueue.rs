@@ -6,13 +6,14 @@ use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use std::{cmp, fmt, ptr};
+use tracing::trace;
 
 use libc::{self, time_t};
 
-use event_imp::{self as event, Event};
-use sys::unix::io::set_cloexec;
-use sys::unix::{cvt, UnixReady};
-use {io, PollOpt, Ready, Token};
+use crate::event_imp::{self as event, Event};
+use crate::sys::unix::io::set_cloexec;
+use crate::sys::unix::{cvt, UnixReady};
+use crate::{io, PollOpt, Ready, Token};
 
 /// Each Selector has a globally unique(ish) ID associated with it. This ID
 /// gets tracked by `TcpStream`, `TcpListener`, etc... when they are first
@@ -35,6 +36,22 @@ type UData = ::libc::intptr_t;
 #[cfg(target_os = "netbsd")]
 type Count = usize;
 
+#[cfg(target_os = "freebsd")]
+macro_rules! kevent {
+    ($id: expr, $filter: expr, $flags: expr, $data: expr) => {
+        libc::kevent {
+            ident: $id as ::libc::uintptr_t,
+            filter: $filter as Filter,
+            flags: $flags,
+            fflags: 0,
+            data: 0,
+            udata: $data as UData,
+            ext: [0; 4],
+        }
+    };
+}
+
+#[cfg(not(target_os = "freebsd"))]
 macro_rules! kevent {
     ($id: expr, $filter: expr, $flags: expr, $data: expr) => {
         libc::kevent {
@@ -386,8 +403,8 @@ impl fmt::Debug for Events {
 
 #[test]
 fn does_not_register_rw() {
-    use unix::EventedFd;
-    use {Poll, PollOpt, Ready, Token};
+    use crate::unix::EventedFd;
+    use crate::{Poll, PollOpt, Ready, Token};
 
     let kq = unsafe { libc::kqueue() };
     let kqf = EventedFd(&kq);

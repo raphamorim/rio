@@ -25,24 +25,31 @@ bytemuck = { workspace = true }
 corcovado = { workspace = true }
 rustc-hash = { workspace = true }
 regex = { workspace = true }
+onig = { workspace = true }
 raw-window-handle = { workspace = true }
-copypasta = { version = "0.10.1", default-features = false }
+copypasta = { version = "0.10.2", default-features = false }
 dirs = "6.0.0"
 image_rs = { workspace = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
 sugarloaf = { workspace = true }
+rio-grapheme-width = { workspace = true }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
-copa = { workspace = true }
-wgpu = { workspace = true }
+# `wgpu` is only needed when the corresponding sugarloaf feature is on.
+wgpu = { workspace = true, optional = true }
 url = { workspace = true }
 regex-automata = "0.4.9"
 cursor-icon = { version = "1.1.0", default-features = false }
 smallvec = { version = "1.13.2", default-features = false }
 rio-window = { workspace = true }
-simdutf8 = { version = "0.1.5", default-features = false }
+simdutf = { workspace = true }
+flate2 = { workspace = true }
+lazy_static = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
 
 [features]
 default = ["wayland", "x11"]
@@ -52,3 +59,7 @@ x11 = [
 wayland = [
     "copypasta/wayland",
 ]
+# Enable the wgpu backend in sugarloaf (needed on Windows where the
+# native Vulkan/Metal backends aren't available, and as an opt-in for
+# librashader CRT/scanline filters on Linux/macOS).
+wgpu = ["dep:wgpu", "sugarloaf/wgpu"]

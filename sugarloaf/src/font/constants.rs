@@ -7,57 +7,19 @@ macro_rules! font {
 
 pub const DEFAULT_FONT_FAMILY: &str = "cascadiacode";
 
-// Fonts:
-// CascadiaCode-Bold.ttf
-// CascadiaCode-BoldItalic.ttf
-// CascadiaCode-ExtraLight.ttf
-// CascadiaCode-ExtraLightItalic.ttf
-// CascadiaCode-Italic.ttf
-// CascadiaCode-Light.ttf
-// CascadiaCode-LightItalic.ttf
-// CascadiaCode-Regular.ttf
-// CascadiaCode-SemiBold.ttf
-// CascadiaCode-SemiBoldItalic.ttf
-// CascadiaCode-SemiLight.ttf
-// CascadiaCode-SemiLightItalic.ttf
+/// Cascadia Code Nerd Font, upright, variable `wght` axis (200–700).
+/// Used for Regular and Bold slots — same outlines, different `wght` value.
+pub const FONT_CASCADIA_CODE_NF: &[u8] =
+    font!("./resources/CascadiaCode/CascadiaCodeNF.ttf");
 
-pub const FONT_CASCADIAMONO_BOLD: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-Bold.otf");
+/// Cascadia Code Nerd Font, italic, variable `wght` axis (200–700).
+/// Used for Italic and Bold-Italic slots — same outlines, different `wght` value.
+pub const FONT_CASCADIA_CODE_NF_ITALIC: &[u8] =
+    font!("./resources/CascadiaCode/CascadiaCodeNFItalic.ttf");
 
-pub const FONT_CASCADIAMONO_BOLD_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-BoldItalic.otf");
+/// Default `wght` axis value used when a slot wants regular weight.
+pub const WGHT_REGULAR: f32 = 400.0;
 
-pub const FONT_CASCADIAMONO_EXTRA_LIGHT: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-ExtraLight.otf");
-
-pub const FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-ExtraLightItalic.otf");
-
-pub const FONT_CASCADIAMONO_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-Italic.otf");
-
-pub const FONT_CASCADIAMONO_LIGHT: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-Light.otf");
-
-pub const FONT_CASCADIAMONO_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-LightItalic.otf");
-
-pub const FONT_CASCADIAMONO_REGULAR: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-Regular.otf");
-
-pub const FONT_CASCADIAMONO_SEMI_BOLD: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-SemiBold.otf");
-
-pub const FONT_CASCADIAMONO_SEMI_BOLD_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-SemiBoldItalic.otf");
-
-pub const FONT_CASCADIAMONO_SEMI_LIGHT: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-SemiLight.otf");
-
-pub const FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCode-SemiLightItalic.otf");
-
-pub const FONT_SYMBOLS_NERD_FONT_MONO: &[u8] =
-    font!("./resources/SymbolsNerdFontMono/SymbolsNerdFontMono-Regular.ttf");
-
-pub const FONT_TWEMOJI_EMOJI: &[u8] = font!("./resources/Twemoji/Twemoji.Mozilla.ttf");
+/// `wght` axis value used when a slot wants bold weight (matches the
+/// Cascadia Code variable font's bold instance).
+pub const WGHT_BOLD: f32 = 700.0;

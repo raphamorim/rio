@@ -57,6 +57,9 @@ pub enum RioErrorType {
     // configuration invalid theme
     InvalidConfigurationTheme(String),
 
+    // background image referenced in config could not be loaded
+    BackgroundImageLoadFailure(String),
+
     // reports that are ignored by RioErrorType
     IgnoredReport,
 }
@@ -67,17 +70,7 @@ impl std::fmt::Display for RioErrorType {
             RioErrorType::FontsNotFound(fonts) => {
                 let mut font_str = String::from("");
                 for font in fonts.iter() {
-                    let weight = if font.weight.is_none() {
-                        String::from("any weight")
-                    } else {
-                        format!("{} weight", font.weight.unwrap())
-                    };
-
-                    let style = format!("{:?} style", font.style);
-
-                    font_str +=
-                        format!("\n• \"{}\" using {:?} {:?}", font.family, weight, style)
-                            .as_str();
+                    font_str += format!("\n• \"{}\"", font.family).as_str();
                 }
 
                 write!(f, "Font(s) not found:\n{font_str}")
@@ -93,10 +86,16 @@ impl std::fmt::Display for RioErrorType {
             }
             RioErrorType::IgnoredReport => write!(f, ""),
             RioErrorType::InvalidConfigurationFormat(message) => {
-                write!(f, "Found an issue loading the configuration file:\n\n{message}\n\nRio will proceed with the default configuration\nhttps://raphamorim.io/rio/docs/config")
+                write!(f, "Found an issue loading the configuration file:\n\n{message}\n\nRio will proceed with the default configuration")
             }
             RioErrorType::InvalidConfigurationTheme(message) => {
                 write!(f, "Found an issue in the configured theme:\n\n{message}")
+            }
+            RioErrorType::BackgroundImageLoadFailure(message) => {
+                write!(
+                    f,
+                    "Could not load the configured background image:\n\n{message}\n\nCheck `window.background-image.path` in your config."
+                )
             }
         }
     }

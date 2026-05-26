@@ -98,18 +98,15 @@ This section documents the *[window]* table of the configuration file.
 
 	Default: _"Enabled"_
 
-*background-image* = { path = _"<string>"_, opacity = _<float>_, width = _<float>_, height = _<float>_, x = _<float>_, y = _<float>_ }
+*background-image* = { path = _"<string>"_, opacity = _<float>_ }
 
-	Background image configuration.
+	Window background image. The image is uploaded once into a dedicated GPU
+	texture and stretched to cover the full window.
 
 	*path*
 		Path to the background image file.
 	*opacity*
-		Image opacity from _0.0_ to _1.0_.
-	*width*, *height*
-		Image dimensions as percentage of window size.
-	*x*, *y*
-		Image position as percentage of window size.
+		Image opacity from _0.0_ to _1.0_. Default _1.0_.
 
 # FONTS
 
@@ -322,11 +319,11 @@ This section documents the *[scroll]* table of the configuration file.
 
 This section documents the *[navigation]* table of the configuration file.
 
-*mode* = _"NativeTab"_ | _"TopTab"_ | _"BottomTab"_ | _"Breadcrumb"_ | _"Plain"_
+*mode* = _"NativeTab"_ | _"Tab"_ | _"Plain"_
 
-	Navigation display mode.
+Navigation display mode.
 
-	Default: _"NativeTab"_
+Default: _"Tab"_
 
 *clickable* = _true_ | _false_
 

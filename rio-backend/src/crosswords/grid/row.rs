@@ -3,8 +3,6 @@
 // which is licensed under Apache 2.0 license.
 
 use crate::crosswords::grid::GridSquare;
-use crate::crosswords::square::Flags;
-use crate::crosswords::square::ResetDiscriminant;
 use crate::crosswords::Column;
 use core::cmp::min;
 use std::cmp::max;
@@ -12,7 +10,7 @@ use std::ops::{Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo, RangeToInc
 use std::{ptr, slice};
 
 /// A row in the grid.
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Row<T> {
     pub inner: Vec<T>,
 
@@ -21,6 +19,33 @@ pub struct Row<T> {
     /// This is the upper bound on the number of elements in the row, which have been modified
     /// since the last reset. All cells after this point are guaranteed to be equal.
     pub(crate) occ: usize,
+
+    /// Set when at least one cell in the row contains a kitty Unicode
+    /// graphics-protocol placeholder (U+10EEEE). The renderer skips the
+    /// placeholder scan on rows where this is `false`.
+    pub kitty_virtual_placeholder: bool,
+
+    pub has_extras: bool,
+
+    /// Per-row dirty bit set on every write through `IndexMut` /
+    /// `last_mut` / `iter_mut` / `reset` / `append*` / `front_split_off`.
+    /// Read + cleared by the renderer's snapshot path so it can copy
+    /// only the rows that changed since the last snapshot. Defaults
+    /// to `true` on `new()` and `default()` so a freshly-constructed
+    /// row triggers its first snapshot.
+    pub dirty: bool,
+}
+
+impl<T> Default for Row<T> {
+    fn default() -> Self {
+        Self {
+            inner: Vec::new(),
+            occ: 0,
+            kitty_virtual_placeholder: false,
+            has_extras: false,
+            dirty: true,
+        }
+    }
 }
 
 impl<T: PartialEq> PartialEq for Row<T> {
@@ -51,7 +76,27 @@ impl<T: Clone + Default> Row<T> {
             inner.set_len(columns);
         }
 
-        Row { inner, occ: 0 }
+        Row {
+            inner,
+            occ: 0,
+            kitty_virtual_placeholder: false,
+            has_extras: false,
+            dirty: true,
+        }
+    }
+
+    /// Copy `src` into `self` in place, reusing the existing `inner` Vec
+    /// allocation. Equivalent to `*self = src.clone()` but skips the
+    /// per-call `Vec` allocation when `self.inner.capacity() >=
+    /// src.inner.len()` (the common case for renderer frame buffers).
+    /// Does not touch `self.dirty` — the snapshot path manages that
+    /// flag on the source row, not on the destination buffer.
+    #[inline]
+    pub fn copy_from(&mut self, src: &Self) {
+        self.inner.clone_from(&src.inner);
+        self.occ = src.occ;
+        self.kitty_virtual_placeholder = src.kitty_virtual_placeholder;
+        self.has_extras = src.has_extras;
     }
 
     /// Increase the number of columns in the row.
@@ -81,12 +126,9 @@ impl<T: Clone + Default> Row<T> {
         new_row.truncate(index);
 
         self.occ = min(self.occ, columns);
+        self.dirty = true;
 
-        if new_row.is_empty()
-            || new_row
-                .iter()
-                .all(|cell| cell.flags().contains(Flags::GRAPHICS))
-        {
+        if new_row.is_empty() {
             None
         } else {
             Some(new_row)
@@ -95,25 +137,24 @@ impl<T: Clone + Default> Row<T> {
 
     /// Reset all cells in the row to the `template` cell.
     #[inline]
-    pub fn reset<D>(&mut self, template: &T)
+    pub fn reset(&mut self, template: &T)
     where
-        T: ResetDiscriminant<D> + GridSquare,
-        D: PartialEq,
+        T: GridSquare,
     {
         debug_assert!(!self.inner.is_empty());
 
-        // Mark all cells as dirty if template cell changed.
+        // Always reset every cell in the row. The previous implementation
+        // skipped untouched cells when the template's discriminant matched
+        // the rightmost cell — that optimization was based on the inline
+        // bg-color field on the cell, which no longer exists.
         let len = self.inner.len();
-        if self.inner[len - 1].discriminant() != template.discriminant() {
-            self.occ = len;
-        }
-
-        // Reset every dirty cell in the row.
-        for item in &mut self.inner[0..self.occ] {
+        for item in &mut self.inner[0..len] {
             item.reset(template);
         }
-
         self.occ = 0;
+        self.kitty_virtual_placeholder = false;
+        self.has_extras = false;
+        self.dirty = true;
     }
 }
 
@@ -121,7 +162,13 @@ impl<T: Clone + Default> Row<T> {
 impl<T> Row<T> {
     #[inline]
     pub fn from_vec(vec: Vec<T>, occ: usize) -> Row<T> {
-        Row { inner: vec, occ }
+        Row {
+            inner: vec,
+            occ,
+            kitty_virtual_placeholder: false,
+            has_extras: true,
+            dirty: true,
+        }
     }
 
     #[inline]
@@ -137,6 +184,7 @@ impl<T> Row<T> {
     #[inline]
     pub fn last_mut(&mut self) -> Option<&mut T> {
         self.occ = self.inner.len();
+        self.dirty = true;
         self.inner.last_mut()
     }
 
@@ -146,12 +194,16 @@ impl<T> Row<T> {
         T: GridSquare,
     {
         self.occ += vec.len();
+        self.dirty = true;
+        self.has_extras = true;
         self.inner.append(vec);
     }
 
     #[inline]
     pub fn append_front(&mut self, mut vec: Vec<T>) {
         self.occ += vec.len();
+        self.dirty = true;
+        self.has_extras = true;
 
         vec.append(&mut self.inner);
         self.inner = vec;
@@ -160,6 +212,7 @@ impl<T> Row<T> {
     #[inline]
     pub fn front_split_off(&mut self, at: usize) -> Vec<T> {
         self.occ = self.occ.saturating_sub(at);
+        self.dirty = true;
 
         let mut split = self.inner.split_off(at);
         std::mem::swap(&mut split, &mut self.inner);
@@ -192,6 +245,7 @@ impl<'a, T> IntoIterator for &'a mut Row<T> {
     #[inline]
     fn into_iter(self) -> slice::IterMut<'a, T> {
         self.occ = self.len();
+        self.dirty = true;
         self.inner.iter_mut()
     }
 }
@@ -209,6 +263,7 @@ impl<T> IndexMut<Column> for Row<T> {
     #[inline]
     fn index_mut(&mut self, index: Column) -> &mut T {
         self.occ = max(self.occ, *index + 1);
+        self.dirty = true;
         &mut self.inner[index.0]
     }
 }
@@ -226,6 +281,7 @@ impl<T> IndexMut<Range<Column>> for Row<T> {
     #[inline]
     fn index_mut(&mut self, index: Range<Column>) -> &mut [T] {
         self.occ = max(self.occ, *index.end);
+        self.dirty = true;
         &mut self.inner[(index.start.0)..(index.end.0)]
     }
 }
@@ -243,6 +299,7 @@ impl<T> IndexMut<RangeTo<Column>> for Row<T> {
     #[inline]
     fn index_mut(&mut self, index: RangeTo<Column>) -> &mut [T] {
         self.occ = max(self.occ, *index.end);
+        self.dirty = true;
         &mut self.inner[..(index.end.0)]
     }
 }
@@ -260,6 +317,7 @@ impl<T> IndexMut<RangeFrom<Column>> for Row<T> {
     #[inline]
     fn index_mut(&mut self, index: RangeFrom<Column>) -> &mut [T] {
         self.occ = self.len();
+        self.dirty = true;
         &mut self.inner[(index.start.0)..]
     }
 }
@@ -277,6 +335,7 @@ impl<T> IndexMut<RangeFull> for Row<T> {
     #[inline]
     fn index_mut(&mut self, _: RangeFull) -> &mut [T] {
         self.occ = self.len();
+        self.dirty = true;
         &mut self.inner[..]
     }
 }
@@ -294,6 +353,7 @@ impl<T> IndexMut<RangeToInclusive<Column>> for Row<T> {
     #[inline]
     fn index_mut(&mut self, index: RangeToInclusive<Column>) -> &mut [T] {
         self.occ = max(self.occ, *index.end);
+        self.dirty = true;
         &mut self.inner[..=(index.end.0)]
     }
 }

@@ -5,6 +5,7 @@ use std::net::{self, Shutdown, SocketAddr};
 use std::os::windows::prelude::*;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
+use tracing::trace;
 use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
 
@@ -13,11 +14,11 @@ use miow::iocp::CompletionStatus;
 use miow::net::*;
 use net2::{TcpBuilder, TcpStreamExt as Net2TcpExt};
 
-use event::Evented;
-use sys::windows::from_raw_arc::FromRawArc;
-use sys::windows::selector::{Overlapped, ReadyBinding};
-use sys::windows::Family;
-use {poll, Poll, PollOpt, Ready, Token};
+use crate::event::Evented;
+use crate::sys::windows::from_raw_arc::FromRawArc;
+use crate::sys::windows::selector::{Overlapped, ReadyBinding};
+use crate::sys::windows::Family;
+use crate::{poll, Poll, PollOpt, Ready, Token};
 
 pub struct TcpStream {
     /// Separately stored implementation to ensure that the `Drop`

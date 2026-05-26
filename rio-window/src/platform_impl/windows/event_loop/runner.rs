@@ -37,6 +37,11 @@ pub(crate) struct EventLoopRunner<T: 'static> {
     event_buffer: RefCell<VecDeque<BufferedEvent<T>>>,
 
     panic_error: Cell<Option<PanicError>>,
+
+    /// When true, the WM_CLOSE handler shows a native MessageBox
+    /// before emitting `WindowEvent::CloseRequested`. Mirrors
+    /// macOS's `applicationShouldTerminate` NSAlert path.
+    confirm_before_quit: Cell<bool>,
 }
 
 pub type PanicError = Box<dyn Any + Send + 'static>;
@@ -72,7 +77,18 @@ impl<T> EventLoopRunner<T> {
             last_events_cleared: Cell::new(Instant::now()),
             event_handler: Cell::new(None),
             event_buffer: RefCell::new(VecDeque::new()),
+            confirm_before_quit: Cell::new(false),
         }
+    }
+
+    #[inline]
+    pub(crate) fn set_confirm_before_quit(&self, confirm: bool) {
+        self.confirm_before_quit.set(confirm);
+    }
+
+    #[inline]
+    pub(crate) fn confirm_before_quit(&self) -> bool {
+        self.confirm_before_quit.get()
     }
 
     /// Associate the application's event handler with the runner
@@ -116,6 +132,7 @@ impl<T> EventLoopRunner<T> {
             last_events_cleared: _,
             event_handler,
             event_buffer: _,
+            confirm_before_quit: _,
         } = self;
         interrupt_msg_dispatch.set(false);
         runner_state.set(RunnerState::Uninitialized);

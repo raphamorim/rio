@@ -15,7 +15,7 @@ use regex_automata::{Anchored, Input, MatchKind};
 use tracing::{debug, warn};
 
 use crate::crosswords::grid::{BidirectionalIterator, Dimensions, GridIterator, Indexed};
-use crate::crosswords::square::{Flags, Square};
+use crate::crosswords::square::{Square, Wide};
 use crate::crosswords::Crosswords;
 use crate::crosswords::{Boundary, Column, Direction, Pos, Side};
 
@@ -331,8 +331,8 @@ impl<T: event::EventListener> Crosswords<T> {
 
         let mut cell = iter.square();
         self.skip_fullwidth(&mut iter, &mut cell, regex.direction);
-        let mut c = cell.c;
-        let mut last_wrapped = iter.square().flags.contains(Flags::WRAPLINE);
+        let mut c = cell.c();
+        let mut last_wrapped = iter.square().wrapline();
 
         let mut point = iter.pos();
         let mut last_point = point;
@@ -434,8 +434,8 @@ impl<T: event::EventListener> Crosswords<T> {
 
             self.skip_fullwidth(&mut iter, &mut cell, regex.direction);
 
-            c = cell.c;
-            let wrapped = iter.square().flags.contains(Flags::WRAPLINE);
+            c = cell.c();
+            let wrapped = iter.square().wrapline();
 
             last_point = mem::replace(&mut point, iter.pos());
 
@@ -479,14 +479,12 @@ impl<T: event::EventListener> Crosswords<T> {
             // In the alternate screen buffer there might not be a wide char spacer after a wide
             // char, so we only advance the iterator when the wide char is not in the last column.
             Direction::Right
-                if square.flags.contains(Flags::WIDE_CHAR)
+                if matches!(square.wide(), Wide::Wide)
                     && iter.pos().col < self.grid.last_column() =>
             {
                 iter.next();
             }
-            Direction::Right
-                if square.flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) =>
-            {
+            Direction::Right if matches!(square.wide(), Wide::LeadingSpacer) => {
                 if let Some(Indexed {
                     square: new_cell, ..
                 }) = iter.next()
@@ -495,7 +493,7 @@ impl<T: event::EventListener> Crosswords<T> {
                 }
                 iter.next();
             }
-            Direction::Left if square.flags.contains(Flags::WIDE_CHAR_SPACER) => {
+            Direction::Left if matches!(square.wide(), Wide::Spacer) => {
                 if let Some(Indexed {
                     square: new_cell, ..
                 }) = iter.prev()
@@ -504,10 +502,7 @@ impl<T: event::EventListener> Crosswords<T> {
                 }
 
                 let prev = iter.pos().sub(&self.grid, Boundary::Grid, 1);
-                if self.grid[prev]
-                    .flags
-                    .contains(Flags::LEADING_WIDE_CHAR_SPACER)
-                {
+                if matches!(self.grid[prev].wide(), Wide::LeadingSpacer) {
                     iter.prev();
                 }
             }
@@ -517,7 +512,7 @@ impl<T: event::EventListener> Crosswords<T> {
 
     /// Find next matching bracket.
     pub fn bracket_search(&self, point: Pos) -> Option<Pos> {
-        let start_char = self.grid[point].c;
+        let start_char = self.grid[point].c();
 
         // Find the matching bracket we're looking for
         let (forward, end_char) = BRACKET_PAIRS.iter().find_map(|(open, close)| {
@@ -547,11 +542,11 @@ impl<T: event::EventListener> Crosswords<T> {
             };
 
             // Check if the bracket matches
-            if cell.c == end_char && skip_pairs == 0 {
+            if cell.square.c() == end_char && skip_pairs == 0 {
                 return Some(cell.pos);
-            } else if cell.c == start_char {
+            } else if cell.square.c() == start_char {
                 skip_pairs += 1;
-            } else if cell.c == end_char {
+            } else if cell.square.c() == end_char {
                 skip_pairs -= 1;
             }
         }
@@ -564,14 +559,13 @@ impl<T: event::EventListener> Crosswords<T> {
     pub fn semantic_search_left(&self, point: Pos) -> Pos {
         match self.inline_search_left(point, self.semantic_escape_chars()) {
             // If we found a match, reverse for at least one cell, skipping over wide cell spacers.
-            Ok(point) => {
-                let wide_spacer =
-                    Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
-                self.grid
-                    .iter_from(point)
-                    .find(|cell| !cell.flags.intersects(wide_spacer))
-                    .map_or(point, |cell| cell.pos)
-            }
+            Ok(point) => self
+                .grid
+                .iter_from(point)
+                .find(|cell| {
+                    !matches!(cell.square.wide(), Wide::Spacer | Wide::LeadingSpacer)
+                })
+                .map_or(point, |cell| cell.pos),
             Err(point) => point,
         }
     }
@@ -597,15 +591,16 @@ impl<T: event::EventListener> Crosswords<T> {
         let mut iter = self.grid.iter_from(point);
         let last_column = self.grid.columns() - 1;
 
-        let wide_spacer = Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
         while let Some(cell) = iter.prev() {
-            if cell.pos.col == last_column && !cell.flags.contains(Flags::WRAPLINE) {
+            if cell.pos.col == last_column && !cell.square.wrapline() {
                 break;
             }
 
             point = cell.pos;
 
-            if !cell.flags.intersects(wide_spacer) && needles.contains(cell.c) {
+            if !matches!(cell.square.wide(), Wide::Spacer | Wide::LeadingSpacer)
+                && needles.contains(cell.square.c())
+            {
                 return Ok(point);
             }
         }
@@ -618,22 +613,23 @@ impl<T: event::EventListener> Crosswords<T> {
         // Limit the starting point to the last line in the history
         point.row = max(point.row, self.grid.topmost_line());
 
-        let wide_spacer = Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
         let last_column = self.grid.columns() - 1;
 
         // Immediately stop if start point in on line break.
-        if point.col == last_column && !self.grid[point].flags.contains(Flags::WRAPLINE) {
+        if point.col == last_column && !self.grid[point].wrapline() {
             return Err(point);
         }
 
         for cell in self.grid.iter_from(point) {
             point = cell.pos;
 
-            if !cell.flags.intersects(wide_spacer) && needles.contains(cell.c) {
+            if !matches!(cell.square.wide(), Wide::Spacer | Wide::LeadingSpacer)
+                && needles.contains(cell.square.c())
+            {
                 return Ok(point);
             }
 
-            if point.col == last_column && !cell.flags.contains(Flags::WRAPLINE) {
+            if point.col == last_column && !cell.square.wrapline() {
                 break;
             }
         }
@@ -644,9 +640,7 @@ impl<T: event::EventListener> Crosswords<T> {
     /// Find the beginning of the current line across linewraps.
     pub fn line_search_left(&self, mut point: Pos) -> Pos {
         while point.row > self.grid.topmost_line()
-            && self.grid[point.row - 1i32][self.grid.last_column()]
-                .flags
-                .contains(Flags::WRAPLINE)
+            && self.grid[point.row - 1i32][self.grid.last_column()].wrapline()
         {
             point.row -= 1;
         }
@@ -659,9 +653,7 @@ impl<T: event::EventListener> Crosswords<T> {
     /// Find the end of the current line across linewraps.
     pub fn line_search_right(&self, mut point: Pos) -> Pos {
         while point.row + 1 < self.grid.screen_lines()
-            && self.grid[point.row][self.grid.last_column()]
-                .flags
-                .contains(Flags::WRAPLINE)
+            && self.grid[point.row][self.grid.last_column()].wrapline()
         {
             point.row += 1;
         }
@@ -777,31 +769,31 @@ mod tests {
         // Create terminal with the appropriate dimensions.
         let window_id = crate::event::WindowId::from(0);
         let size = CrosswordsSize::new(num_cols, lines.len());
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
 
         // Fill terminal with content.
         for (line, text) in lines.iter().enumerate() {
             let line = Line(line as i32);
             if !text.ends_with('\r') && line + 1 != lines.len() {
-                term.grid[line][Column(num_cols - 1)]
-                    .flags
-                    .insert(Flags::WRAPLINE);
+                term.grid[line][Column(num_cols - 1)].set_wrapline(true);
             }
 
             let mut index = 0;
             for c in text.chars().take_while(|c| *c != '\r') {
-                term.grid[line][Column(index)].c = c;
+                term.grid[line][Column(index)].set_c(c);
 
                 // Handle fullwidth characters.
                 let width = c.width().unwrap();
                 if width == 2 {
-                    term.grid[line][Column(index)]
-                        .flags
-                        .insert(Flags::WIDE_CHAR);
-                    term.grid[line][Column(index + 1)]
-                        .flags
-                        .insert(Flags::WIDE_CHAR_SPACER);
+                    term.grid[line][Column(index)].set_wide(Wide::Wide);
+                    term.grid[line][Column(index + 1)].set_wide(Wide::Spacer);
                 }
 
                 index += width;
@@ -1221,9 +1213,7 @@ mod tests {
             xxx \n\
             🦇xx\
         ");
-        term.grid[Line(0)][Column(3)]
-            .flags
-            .insert(Flags::LEADING_WIDE_CHAR_SPACER);
+        term.grid[Line(0)][Column(3)].set_wide(Wide::LeadingSpacer);
 
         let mut regex = RegexSearch::new("🦇x").unwrap();
         let start = Pos::new(Line(0), Column(0));
@@ -1270,11 +1260,17 @@ mod tests {
     fn wide_without_spacer() {
         let window_id = crate::event::WindowId::from(0);
         let size = CrosswordsSize::new(2, 2);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
-        term.grid[Line(0)][Column(0)].c = 'x';
-        term.grid[Line(0)][Column(1)].c = '字';
-        term.grid[Line(0)][Column(1)].flags = Flags::WIDE_CHAR;
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        term.grid[Line(0)][Column(0)].set_c('x');
+        term.grid[Line(0)][Column(1)].set_c('字');
+        term.grid[Line(0)][Column(1)].set_wide(Wide::Wide);
 
         let mut regex = RegexSearch::new("test").unwrap();
 
@@ -1467,7 +1463,7 @@ mod tests {
     #[test]
     fn no_spacer_fullwidth_linewrap() {
         let mut term = mock_term("abY\nxab");
-        term.grid[Line(0)][Column(2)].c = '🦇';
+        term.grid[Line(0)][Column(2)].set_c('🦇');
 
         let mut regex = RegexSearch::new("🦇x").unwrap();
         let start = Pos::new(Line(0), Column(0));

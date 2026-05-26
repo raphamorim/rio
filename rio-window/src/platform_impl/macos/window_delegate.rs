@@ -6,7 +6,9 @@ use core_graphics::display::{CGDisplay, CGPoint};
 use monitor::VideoModeHandle;
 use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{declare_class, msg_send_id, mutability, sel, ClassType, DeclaredClass};
+use objc2::{
+    declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass,
+};
 use objc2_app_kit::{
     NSAppKitVersionNumber, NSAppKitVersionNumber10_12, NSAppearance, NSApplication,
     NSApplicationPresentationOptions, NSBackingStoreType, NSColor, NSDraggingDestination,
@@ -56,6 +58,7 @@ pub struct PlatformSpecificWindowAttributes {
     pub option_as_alt: OptionAsAlt,
     pub unified_titlebar: bool,
     pub colorspace: Option<crate::platform::macos::Colorspace>,
+    pub traffic_light_position: Option<(f64, f64)>,
 }
 
 impl Default for PlatformSpecificWindowAttributes {
@@ -75,6 +78,7 @@ impl Default for PlatformSpecificWindowAttributes {
             option_as_alt: Default::default(),
             unified_titlebar: false,
             colorspace: None,
+            traffic_light_position: None,
         }
     }
 }
@@ -131,8 +135,24 @@ pub(crate) struct State {
     display_link: RefCell<Option<super::display_link::DisplayLink>>,
     // Track when rendering is needed (dirty state)
     needs_redraw: Cell<bool>,
-    // Track last input timestamp for 1-second presentation window
-    last_input_timestamp: Cell<std::time::Instant>,
+    // Rate-gated post-input sustain window. Replaces the raw
+    // `last_input_timestamp` — single keystrokes no longer force
+    // 1 s of vsync redraws. See `platform_impl::input_rate`.
+    input_rate_tracker: RefCell<super::super::input_rate::InputRateTracker>,
+    // Position of traffic light buttons (close, minimize, maximize)
+    // Specified as (x, y) coordinates from top-left corner
+    traffic_light_position: Cell<Option<(f64, f64)>>,
+    // Liquid-glass effect, populated only when `BlurStyle::MacosGlass*`
+    // is active AND `NSGlassEffectView` is available at runtime
+    // (macOS 26+). When present, the host window's contentView is the
+    // glass and `WinitView` is hosted inside it as `glass.contentView`.
+    glass_effect: RefCell<Option<super::glass::GlassEffect>>,
+    // Opacity multiplier baked into the glass tint colour
+    // (`tintColor = bg.withAlphaComponent(opacity)`). Stored
+    // separately because the rio-window `set_blur` API takes a
+    // `BlurStyle` only — opacity is plumbed through
+    // `set_glass_opacity`.
+    glass_opacity: Cell<f64>,
 }
 
 declare_class!(
@@ -181,6 +201,8 @@ declare_class!(
             trace_scope!("windowDidResize:");
             // NOTE: WindowEvent::Resized is reported in frameDidChange.
             self.emit_move_event();
+            // Reapply traffic light positioning after resize
+            self.move_traffic_light();
         }
 
         #[method(windowWillStartLiveResize:)]
@@ -216,6 +238,8 @@ declare_class!(
             // TODO: center the cursor if the window had mouse grab when it
             // lost focus
             self.queue_event(WindowEvent::Focused(true));
+            // Reapply traffic light positioning when window becomes active
+            self.move_traffic_light();
         }
 
         #[method(windowDidResignKey:)]
@@ -361,6 +385,8 @@ declare_class!(
                 if let Err(e) = self.start_display_link() {
                     tracing::warn!("Failed to start display link when window became visible: {}", e);
                 }
+                // Reapply traffic light positioning when window becomes visible
+                self.move_traffic_light();
             } else if let Err(e) = self.stop_display_link() {
                 tracing::warn!("Failed to stop display link when window became occluded: {}", e);
             }
@@ -752,7 +778,14 @@ impl WindowDelegate {
             background_color: unsafe { NSColor::blackColor().into() },
             display_link: RefCell::new(None),
             needs_redraw: Cell::new(false),
-            last_input_timestamp: Cell::new(std::time::Instant::now()),
+            input_rate_tracker: RefCell::new(
+                crate::platform_impl::input_rate::InputRateTracker::new(),
+            ),
+            traffic_light_position: Cell::new(
+                attrs.platform_specific.traffic_light_position,
+            ),
+            glass_effect: RefCell::new(None),
+            glass_opacity: Cell::new(1.0),
         });
         let delegate: Retained<WindowDelegate> =
             unsafe { msg_send_id![super(delegate), init] };
@@ -774,7 +807,7 @@ impl WindowDelegate {
             )
         };
 
-        if attrs.blur {
+        if attrs.blur.is_enabled() {
             delegate.set_blur(attrs.blur);
         }
 
@@ -815,13 +848,35 @@ impl WindowDelegate {
         // Initialize display link for VSync timing
         delegate.initialize_display_link();
 
+        // Apply traffic light positioning if specified
+        delegate.move_traffic_light();
+
         Ok(delegate)
     }
 
     #[track_caller]
     pub(super) fn view(&self) -> Retained<WinitView> {
-        // SAFETY: The view inside WinitWindow is always `WinitView`
-        unsafe { Retained::cast(self.window().contentView().unwrap()) }
+        // In glass mode the host window's contentView is an
+        // `NSGlassEffectView` and `WinitView` lives one level deeper
+        // as the glass's contentView. Drill through when glass is
+        // installed; otherwise the contentView is `WinitView`
+        // directly.
+        // SAFETY: The view inside WinitWindow is always `WinitView`,
+        // either as contentView (no glass) or as glass.contentView
+        // (glass installed). Both paths are populated by
+        // `WindowDelegate::new` / `install_or_update_glass`.
+        if let Some(glass) = self.ivars().glass_effect.borrow().as_ref() {
+            let inner = glass
+                .content_view()
+                .expect("glass installed but its contentView is nil");
+            unsafe { Retained::cast(inner) }
+        } else {
+            let cv = self
+                .window()
+                .contentView()
+                .expect("WinitWindow has no contentView");
+            unsafe { Retained::cast(cv) }
+        }
     }
 
     #[track_caller]
@@ -883,7 +938,10 @@ impl WindowDelegate {
     }
 
     pub fn set_title(&self, title: &str) {
-        self.window().setTitle(&NSString::from_str(title))
+        self.window().setTitle(&NSString::from_str(title));
+        // Reapply traffic light positioning after title change
+        // macOS can reset traffic light positions when the title changes
+        self.move_traffic_light();
     }
 
     pub fn set_subtitle(&self, subtitle: &str) {
@@ -907,10 +965,41 @@ impl WindowDelegate {
         }
     }
 
-    pub fn set_blur(&self, blur: bool) {
-        // NOTE: in general we want to specify the blur radius, but the choice of 80
-        // should be a reasonable default.
-        let radius = if blur { 80 } else { 0 };
+    pub fn set_blur(&self, blur: crate::window::BlurStyle) {
+        use crate::window::BlurStyle;
+
+        match blur {
+            BlurStyle::Off => {
+                self.uninstall_glass();
+                self.set_cgs_blur_radius(0);
+            }
+            BlurStyle::System => {
+                self.uninstall_glass();
+                self.set_cgs_blur_radius(80);
+            }
+            BlurStyle::MacosGlassRegular | BlurStyle::MacosGlassClear => {
+                if super::glass::GlassEffect::class_available() {
+                    // CGS blur off — the glass view paints the
+                    // backdrop itself, layering CGS on top doubles
+                    // the effect.
+                    self.set_cgs_blur_radius(0);
+                    self.install_or_update_glass(blur);
+                } else {
+                    tracing::warn!(
+                        requested = ?blur,
+                        "macOS liquid-glass requires NSGlassEffectView (macOS 26+). \
+                         Falling back to the standard system backdrop blur."
+                    );
+                    self.uninstall_glass();
+                    self.set_cgs_blur_radius(80);
+                }
+            }
+        }
+    }
+
+    /// CGS private-API knob — the legacy `window.blur = true` path.
+    /// Radius 80 matches upstream winit; 0 disables.
+    fn set_cgs_blur_radius(&self, radius: i64) {
         let window_number = unsafe { self.window().windowNumber() };
         unsafe {
             ffi::CGSSetWindowBackgroundBlurRadius(
@@ -919,6 +1008,124 @@ impl WindowDelegate {
                 radius,
             );
         }
+    }
+
+    /// Install (first call) or update (subsequent calls) the
+    /// liquid-glass effect. View hierarchy moves from
+    /// `window.contentView = WinitView`
+    /// to
+    /// `window.contentView = NSGlassEffectView`,
+    /// `glass.contentView = WinitView`.
+    fn install_or_update_glass(&self, blur: crate::window::BlurStyle) {
+        use super::glass::{GlassEffect, GlassStyle};
+        use crate::window::BlurStyle;
+
+        let style = match blur {
+            BlurStyle::MacosGlassRegular => GlassStyle::Regular,
+            BlurStyle::MacosGlassClear => GlassStyle::Clear,
+            _ => return,
+        };
+
+        // Decide whether we need to perform a fresh install. Probe
+        // with a short borrow that drops at the end of the
+        // expression so we don't hold any RefCell across the
+        // AppKit calls below — `setContentView` can re-enter the
+        // delegate via subview lifecycle callbacks, and a held
+        // borrow_mut would turn that into a `BorrowMutError` panic.
+        let need_install = self.ivars().glass_effect.borrow().is_none();
+
+        if need_install {
+            let glass = match GlassEffect::new() {
+                Some(g) => g,
+                None => return,
+            };
+            let window = self.window();
+            // Bail rather than installing an empty glass: with no
+            // WinitView to host, `view()` would later panic when
+            // anything tries to read the inner view. Shouldn't fire
+            // — `setContentView` runs at window creation before
+            // `set_blur`.
+            let Some(view) = window.contentView() else {
+                tracing::warn!("set_blur(glass) with no contentView; skipping install");
+                return;
+            };
+            // Order matters for retain counts: the Retained<NSView>
+            // we hold via `view` keeps WinitView alive across the
+            // swap. `window.setContentView(glass)` detaches the
+            // old contentView; `glass.setContentView(&view)`
+            // re-parents it under the glass.
+            window.setContentView(Some(glass.as_ns_view()));
+            glass.set_content_view(&view);
+            // Stash. Short borrow_mut, no AppKit call inside.
+            *self.ivars().glass_effect.borrow_mut() = Some(glass);
+        }
+
+        // Apply config under a fresh, scoped borrow. Reads from
+        // other ivars (`background_color`, `glass_opacity`) are
+        // separate RefCells, so they don't conflict with this one.
+        if let Some(glass) = self.ivars().glass_effect.borrow().as_ref() {
+            glass.set_style(style);
+            // Tint = bg × opacity. Without the opacity multiply the
+            // tint colour swallows the blur entirely on
+            // `macos-glass-clear`.
+            glass.set_tint_color_with_opacity(
+                &self.ivars().background_color.borrow(),
+                self.ivars().glass_opacity.get(),
+            );
+            // Match the host window's rounded corners so glass
+            // doesn't paint past them. `_cornerRadius` is a private
+            // selector — gated on `respondsToSelector:` so it
+            // degrades gracefully if Apple ever removes / renames it.
+            if let Some(radius) = self.window_corner_radius() {
+                glass.set_corner_radius(radius);
+            }
+        }
+    }
+
+    /// Query the host `NSWindow`'s rounded-corner radius via the
+    /// private `_cornerRadius` selector. Returns `None` when the
+    /// selector isn't available so the caller can fall back to
+    /// square corners.
+    fn window_corner_radius(&self) -> Option<f64> {
+        use objc2::msg_send;
+        use objc2::sel;
+        let window = self.window();
+        // SAFETY: `respondsToSelector:` is a stable NSObject method;
+        // when it returns true, `_cornerRadius` is documented (in
+        // NSThemeFrame headers, leaked via private headers) to
+        // return a CGFloat. Both calls are gated, so a future SDK
+        // that removes `_cornerRadius` falls through to `None`.
+        unsafe {
+            let responds: bool =
+                msg_send![window, respondsToSelector: sel!(_cornerRadius)];
+            if responds {
+                let radius: f64 = msg_send![window, _cornerRadius];
+                Some(radius)
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Reverse of `install_or_update_glass`: pull `WinitView` back
+    /// out of the glass and reinstate it as the window's contentView,
+    /// then drop the glass. No-op if glass isn't installed.
+    fn uninstall_glass(&self) {
+        // Move the glass out under a short borrow_mut so no RefCell
+        // borrow is held across the AppKit `setContentView` call
+        // below — same re-entrancy concern as `install_or_update_glass`.
+        let glass = self.ivars().glass_effect.borrow_mut().take();
+        let Some(glass) = glass else { return };
+
+        let window = self.window();
+        if let Some(view) = glass.content_view() {
+            // Same retain ordering as install: hold the inner
+            // view via `Retained` across the swap, then let glass
+            // drop and release.
+            window.setContentView(Some(&view));
+        }
+        // glass drops here; AppKit releases the NSGlassEffectView.
+        drop(glass);
     }
 
     pub fn set_visible(&self, visible: bool) {
@@ -956,25 +1163,25 @@ impl WindowDelegate {
     #[inline]
     pub fn pre_present_notify(&self) {}
 
-    /// Mark that input was received.
+    /// Record an input event for rate-gated post-input presentation.
     ///
-    /// This updates the timestamp used for the 1-second presentation window
-    /// to prevent display downclocking.
+    /// Only sustained high-rate input (≥ 60 events/sec over 100 ms)
+    /// extends the post-input vsync-redraw window — single keystrokes
+    /// don't. Matches Zed's `InputRateTracker`
+    /// (`zed/crates/gpui/src/window.rs:987`).
     #[inline]
     pub(crate) fn mark_input_received(&self) {
-        self.ivars()
-            .last_input_timestamp
-            .set(std::time::Instant::now());
+        self.ivars().input_rate_tracker.borrow_mut().record_input();
     }
 
-    /// Check if we should keep presenting frames after input.
-    ///
-    /// After ANY input, keeps presenting frames for 1 second to prevent
-    /// the display from downclocking the refresh rate.
+    /// `true` while we're still inside a high-rate-input sustain
+    /// window. Used by the CVDisplayLink callback to decide whether
+    /// to fire a redraw even when the window isn't dirty, preventing
+    /// ProMotion / VRR displays from downclocking while the user is
+    /// actively typing / scrolling.
     #[inline]
     pub fn should_present_after_input(&self) -> bool {
-        self.ivars().last_input_timestamp.get().elapsed()
-            < std::time::Duration::from_secs(1)
+        self.ivars().input_rate_tracker.borrow().is_high_rate()
     }
 
     pub fn outer_position(&self) -> Result<PhysicalPosition<i32>, NotSupportedError> {
@@ -1759,6 +1966,74 @@ impl WindowDelegate {
     pub fn reset_dead_keys(&self) {
         // (Artur) I couldn't find a way to implement this.
     }
+
+    pub(crate) fn move_traffic_light(&self) {
+        let position = self.ivars().traffic_light_position.get();
+        let Some((x, y)) = position else {
+            return;
+        };
+
+        // Moving traffic lights while fullscreen doesn't work properly
+        if self.fullscreen().is_some() {
+            return;
+        }
+
+        let window = self.window();
+
+        // Get titlebar height for coordinate conversion
+        // macOS uses bottom-left origin, but users specify top-left coordinates
+        let window_frame = window.frame();
+        let content_layout_rect: NSRect = unsafe { msg_send![window, contentLayoutRect] };
+        let titlebar_height = window_frame.size.height - content_layout_rect.size.height;
+
+        unsafe {
+            let close_button =
+                window.standardWindowButton(NSWindowButton::NSWindowCloseButton);
+            let miniaturize_button =
+                window.standardWindowButton(NSWindowButton::NSWindowMiniaturizeButton);
+            let zoom_button =
+                window.standardWindowButton(NSWindowButton::NSWindowZoomButton);
+
+            let Some(close_btn) = close_button else {
+                return;
+            };
+            let Some(min_btn) = miniaturize_button else {
+                return;
+            };
+            let Some(zoom_btn) = zoom_button else {
+                return;
+            };
+
+            // Read all button frames before modifying any
+            let mut close_frame = close_btn.frame();
+            let mut min_frame = min_btn.frame();
+            let mut zoom_frame = zoom_btn.frame();
+
+            let button_height = close_frame.size.height;
+            let button_spacing = min_frame.origin.x - close_frame.origin.x;
+
+            // Convert y from top-left to bottom-left coordinate system
+            let mut origin_x = x;
+            let origin_y = titlebar_height - y - button_height;
+
+            // Set close button position
+            close_frame.origin.x = origin_x;
+            close_frame.origin.y = origin_y;
+            close_btn.setFrame(close_frame);
+            origin_x += button_spacing;
+
+            // Set miniaturize button position
+            min_frame.origin.x = origin_x;
+            min_frame.origin.y = origin_y;
+            min_btn.setFrame(min_frame);
+            origin_x += button_spacing;
+
+            // Set zoom button position
+            zoom_frame.origin.x = origin_x;
+            zoom_frame.origin.y = origin_y;
+            zoom_btn.setFrame(zoom_frame);
+        }
+    }
 }
 
 fn restore_and_release_display(monitor: &MonitorHandle) {
@@ -1925,7 +2200,10 @@ impl WindowExtMacOS for WindowDelegate {
     }
 
     fn set_document_edited(&self, edited: bool) {
-        self.window().setDocumentEdited(edited)
+        self.window().setDocumentEdited(edited);
+        // Changing the document edited state resets the traffic light position,
+        // so we have to move it again.
+        self.move_traffic_light();
     }
 
     fn set_option_as_alt(&self, option_as_alt: OptionAsAlt) {
@@ -1964,6 +2242,28 @@ impl WindowExtMacOS for WindowDelegate {
         unsafe {
             window.toolbar().is_some()
                 && window.toolbarStyle() == NSWindowToolbarStyle::Unified
+        }
+    }
+
+    fn set_traffic_light_position(&self, position: Option<(f64, f64)>) {
+        self.ivars().traffic_light_position.set(position);
+        self.move_traffic_light();
+    }
+
+    fn set_glass_opacity(&self, opacity: f64) {
+        let clamped = opacity.clamp(0.0, 1.0);
+        if (self.ivars().glass_opacity.get() - clamped).abs() < f64::EPSILON {
+            return;
+        }
+        self.ivars().glass_opacity.set(clamped);
+        // If glass is currently installed, re-apply the tint so the
+        // visible alpha tracks the new opacity without waiting for a
+        // full set_blur cycle.
+        if let Some(glass) = self.ivars().glass_effect.borrow().as_ref() {
+            glass.set_tint_color_with_opacity(
+                &self.ivars().background_color.borrow(),
+                clamped,
+            );
         }
     }
 }

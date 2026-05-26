@@ -1,11 +1,11 @@
+use crate::sys::fuchsia::{poll_opts_to_wait_async, sys, DontDrop};
+use crate::{io, poll, Evented, Poll, PollOpt, Ready, Token};
 use libc;
 use std::mem;
 use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
-use sys::fuchsia::{poll_opts_to_wait_async, sys, DontDrop};
 use zircon;
 use zircon::AsHandleRef;
-use {io, poll, Evented, Poll, PollOpt, Ready, Token};
 
 /// Properties of an `EventedFd`'s current registration
 #[derive(Debug)]
@@ -247,7 +247,7 @@ impl Evented for EventedFd {
 }
 
 fn ioevent_to_epoll(interest: Ready, opts: PollOpt) -> u32 {
-    use event_imp::ready_from_usize;
+    use crate::event_imp::ready_from_usize;
     const HUP: usize = 0b01000;
 
     let mut kind = 0;
