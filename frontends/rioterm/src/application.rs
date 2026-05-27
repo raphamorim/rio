@@ -1094,6 +1094,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 route.window.screen.handle_island_click(
                                     &route.window.winit_window,
                                     &mut self.router.clipboard,
+                                    false,
                                 );
 
                             if handled_by_island {
@@ -1103,6 +1104,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             }
 
                             if route.window.screen.handle_scrollbar_click() {
+                                route.request_redraw();
+                                return;
+                            }
+                        } else if let MouseButton::Right = button {
+                            let handled_by_island =
+                                route.window.screen.handle_island_click(
+                                    &route.window.winit_window,
+                                    &mut self.router.clipboard,
+                                    true,
+                                );
+
+                            if handled_by_island {
                                 route.request_redraw();
                                 return;
                             }

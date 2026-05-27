@@ -1137,6 +1137,10 @@ impl<U: EventListener> Crosswords<U> {
         // whole flag set without filtering.
         cell.set_cell_flags(template_flags);
         *cursor_square = cell;
+        if template_extras_id.is_some() {
+            let row = self.grid.cursor.pos.row;
+            self.grid[row].has_extras = true;
+        }
     }
 
     /// If the previous cell is a narrow, text-presentation emoji base whose
@@ -1324,111 +1328,12 @@ impl<U: EventListener> Crosswords<U> {
         buf
     }
 
-    /// Materialize per-cell styles for one row, pushing `cols` entries
-    /// to `dst`. Fast-paths rows where `occ == 0`: a row that hasn't
-    /// been written to since its last reset has all cells sharing the
-    /// same `style_id` (the cursor template's style at reset time —
-    /// often default, but bold/dim/etc. when the user is mid-SGR).
-    /// Resolve once and broadcast — skip the per-cell `style_set.get`
-    /// walk that would otherwise return the same `Style` for every
-    /// cell.
-    #[inline]
-    fn materialize_row_styles(
-        &self,
-        row: &Row<Square>,
-        cols: usize,
-        dst: &mut Vec<crate::crosswords::style::Style>,
-    ) {
-        if row.occ == 0 {
-            let style = row
-                .inner
-                .first()
-                .map_or_else(crate::crosswords::style::Style::default, |sq| {
-                    self.grid.style_set.get(sq.style_id())
-                });
-            for _ in 0..cols {
-                dst.push(style);
-            }
-            return;
-        }
-        let row_cells = &row.inner;
-        for x in 0..cols {
-            let style = row_cells.get(x).map_or_else(
-                crate::crosswords::style::Style::default,
-                |sq| {
-                    if sq.is_bg_only() {
-                        crate::crosswords::style::Style::default()
-                    } else {
-                        self.grid.style_set.get(sq.style_id())
-                    }
-                },
-            );
-            dst.push(style);
-        }
-    }
-
-    /// In-place variant of [`Self::materialize_row_styles`]. Writes
-    /// into `dst[0..cols]`. Used by the per-row dirty path so existing
-    /// slots get rewritten without dropping the `Vec`'s capacity.
-    #[inline]
-    fn materialize_row_styles_at(
-        &self,
-        row: &Row<Square>,
-        cols: usize,
-        dst: &mut [crate::crosswords::style::Style],
-    ) {
-        if row.occ == 0 {
-            let style = row
-                .inner
-                .first()
-                .map_or_else(crate::crosswords::style::Style::default, |sq| {
-                    self.grid.style_set.get(sq.style_id())
-                });
-            dst[..cols].fill(style);
-            return;
-        }
-        let row_cells = &row.inner;
-        for (x, slot) in dst.iter_mut().take(cols).enumerate() {
-            *slot = row_cells.get(x).map_or_else(
-                crate::crosswords::style::Style::default,
-                |sq| {
-                    if sq.is_bg_only() {
-                        crate::crosswords::style::Style::default()
-                    } else {
-                        self.grid.style_set.get(sq.style_id())
-                    }
-                },
-            );
-        }
-    }
-
-    /// Damage-aware viewport snapshot. Updates `dst` (rows) and
-    /// `cell_styles` (per-cell resolved `Style`, flat row-major,
-    /// length `cols × rows`) to reflect the visible viewport, using
-    /// `damage` to skip unchanged rows.
-    ///
-    /// - `Noop` / `CursorOnly`: preserve both buffers — no row content
-    ///   changed.
-    /// - `Full`: rebuild every row + every cell style.
-    /// - `Partial(lines)`: rebuild only rows in the damage set; other
-    ///   rows in `dst` / `cell_styles` keep their previous values.
-    /// - First-frame / size-mismatch: forced full rebuild regardless
-    ///   of `damage` (covers cold buffers and resize-in-flight).
-    ///
-    /// Per-row dirty filter via `Row::dirty`, per-cell style
-    /// materialize by value, plus a plain-text fast path for blank
-    /// rows (`row.occ == 0`). The `damage` hint only gates whether to
-    /// do any work at all (`Noop`/`CursorOnly` skip; `Full` forces a
-    /// full rebuild even with no dirty rows; `Partial` walks the
-    /// per-row bits). Two-stage dirty: live-grid bits cleared after
-    /// read; snapshot (`dst`) bits set on rebuilt rows so the GPU
-    /// emit path can read + clear them downstream.
     pub fn snapshot_visible(
         &mut self,
         damage: &crate::event::TerminalDamage,
         cols: usize,
         dst: &mut Vec<Row<Square>>,
-        cell_styles: &mut Vec<crate::crosswords::style::Style>,
+        style_table: &mut Vec<crate::crosswords::style::Style>,
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
     ) {
         use crate::event::TerminalDamage;
@@ -1440,24 +1345,22 @@ impl<U: EventListener> Crosswords<U> {
             end -= scroll;
         }
         let count = (end - start) as usize;
-        let total = count * cols;
 
-        let needs_full = matches!(damage, TerminalDamage::Full)
-            || dst.len() != count
-            || cell_styles.len() != total;
+        let _ = cols;
+        style_table.clear();
+        style_table.extend_from_slice(self.grid.style_set.styles());
+
+        let needs_full = matches!(damage, TerminalDamage::Full) || dst.len() != count;
 
         if needs_full {
             dst.clear();
             dst.reserve(count);
-            cell_styles.clear();
-            cell_styles.reserve(total);
             extras.clear();
             for row_idx in start..end {
                 let src = &self.grid[Line(row_idx)];
                 let mut copied = src.clone();
                 copied.dirty = true;
                 dst.push(copied);
-                self.materialize_row_styles(src, cols, cell_styles);
                 self.refresh_row_extras(src, extras);
             }
             for row_idx in start..end {
@@ -1467,19 +1370,9 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         if matches!(damage, TerminalDamage::Noop | TerminalDamage::CursorOnly) {
-            // Preserve both buffers — no cell content can have changed
-            // (these damage variants come from cursor-only / overlay
-            // events, not cell writes).
             return;
         }
 
-        // Partial damage: walk visible rows, copy only the ones whose
-        // own dirty bit is set on the live grid. Set the snapshot
-        // row's dirty bit so GPU emit knows to re-emit it; clear the
-        // live grid's bit since we just read it. Refresh extras for
-        // dirty rows only. Stale ids in `extras` accumulate when they
-        // fall out of view; the periodic-deinit safety net
-        // (`DEINIT_PERIOD`) handles drift.
         #[allow(clippy::needless_range_loop)]
         for y in 0..count {
             let row_idx = start + y as i32;
@@ -1489,8 +1382,6 @@ impl<U: EventListener> Crosswords<U> {
             let src = &self.grid[Line(row_idx)];
             dst[y].copy_from(src);
             dst[y].dirty = true;
-            let off = y * cols;
-            self.materialize_row_styles_at(src, cols, &mut cell_styles[off..off + cols]);
             self.refresh_row_extras(src, extras);
         }
         for row_idx in start..end {
@@ -1510,6 +1401,9 @@ impl<U: EventListener> Crosswords<U> {
         row: &Row<Square>,
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
     ) {
+        if !row.has_extras {
+            return;
+        }
         for sq in &row.inner {
             if let Some(id) = sq.extras_id() {
                 if let Some(live) = self.grid.extras_table.get(id) {
@@ -2766,6 +2660,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let cell = &mut self.grid[row][column];
                 cell.set_extras_id(Some(id));
                 cell.insert_cell_flag(CellFlags::GRAPHEME);
+                self.grid[row].has_extras = true;
             }
             return;
         }
@@ -3837,6 +3732,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     cell_ref.set_extras_id(Some(eid));
                 }
                 cell_ref.insert_cell_flag(CellFlags::GRAPHICS);
+                self.grid.raw[line].has_extras = true;
             }
 
             self.mark_line_damaged(line);
