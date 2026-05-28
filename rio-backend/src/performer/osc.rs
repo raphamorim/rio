@@ -212,9 +212,9 @@ pub(super) fn parse_dynamic_colors(params: &[&[u8]]) -> Option<Vec<DynamicColorE
     if params.len() < 2 {
         return None;
     }
-    let mut dynamic_code = parse_number(params[0])? as u16;
+    let base_code = parse_number(params[0])? as u16;
     let mut out = Vec::with_capacity(params.len() - 1);
-    for param in &params[1..] {
+    for (dynamic_code, param) in (base_code..).zip(params[1..].iter()) {
         // 10 is the first dynamic color (foreground).
         let offset = (dynamic_code as usize).checked_sub(10)?;
         let index_usize = NamedColor::Foreground as usize + offset;
@@ -239,7 +239,6 @@ pub(super) fn parse_dynamic_colors(params: &[&[u8]]) -> Option<Vec<DynamicColorE
             dynamic_code,
             spec,
         });
-        dynamic_code += 1;
     }
     Some(out)
 }
