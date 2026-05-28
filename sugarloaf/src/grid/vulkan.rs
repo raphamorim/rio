@@ -1203,7 +1203,6 @@ fn image_copy_region(
         })
 }
 
-
 fn create_bg_descriptor_set_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
     let bindings = [
         vk::DescriptorSetLayoutBinding::default()
