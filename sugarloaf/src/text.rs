@@ -1290,6 +1290,7 @@ struct SwashRawGlyph {
 }
 
 #[cfg(not(target_os = "macos"))]
+#[allow(clippy::too_many_arguments)]
 fn rasterize_swash_glyph(
     scale_ctx: &mut swash::scale::ScaleContext,
     font_entry: &(crate::font::SharedData, u32, swash::CacheKey),
