@@ -1,27 +1,28 @@
 #version 450
 
-// Per-instance text (glyph) vertex shader, ported from
-// `grid_text_vertex` in `sugarloaf/src/grid/shaders/grid.metal`.
-// Each instance is one `CellText` quad (4-vertex triangle strip).
+// Per-instance text (glyph) vertex shader. Each instance is one
+// `CellText` quad (4-vertex triangle strip).
 //
 // Vertex layout matches `CellText` in `sugarloaf/src/grid/cell.rs`
-// (32 bytes, 7 packed attributes). Vulkan attribute formats are
-// chosen per the `cell.rs` layout comments:
+// (32 bytes). The host-side struct also carries `atlas` (offset 28)
+// and `page` (offset 30) bytes that the host uses for bucketing
+// cells per (kind, page) before issuing draws — but the shader
+// doesn't read either, because the bound descriptor set already
+// implies which page is sampled and a push constant carries the kind
+// (see `grid_text.frag.glsl`).
+//
 //   loc 0  R32G32_UINT      glyph_pos    (offset 0)
 //   loc 1  R32G32_UINT      glyph_size   (offset 8)
 //   loc 2  R16G16_SINT      bearings     (offset 16, sign-ext to ivec2)
 //   loc 3  R16G16_UINT      grid_pos     (offset 20, zero-ext to uvec2)
 //   loc 4  R8G8B8A8_UNORM   color        (offset 24, → vec4 0..1)
-//   loc 5  R8_UINT          atlas        (offset 28)
-//   loc 6  R8_UINT          bools        (offset 29)
+//   loc 5  R8_UINT          bools        (offset 29)
 //
 // Triangle-strip vertex order (4 vertices, as `cmd_draw(4, N, ...)`):
 //   vid 0 → (0, 0)  TL
 //   vid 1 → (1, 0)  TR
 //   vid 2 → (0, 1)  BL
 //   vid 3 → (1, 1)  BR
-// Same `corner = (vid==1||vid==3, vid==2||vid==3)` trick the Metal
-// shader uses.
 
 layout(set = 0, binding = 0, std140) uniform Uniforms {
     mat4 projection;
@@ -43,12 +44,10 @@ layout(location = 1) in uvec2 in_glyph_size;
 layout(location = 2) in ivec2 in_bearings;
 layout(location = 3) in uvec2 in_grid_pos;
 layout(location = 4) in vec4  in_color;     // unorm8 → vec4 0..1
-layout(location = 5) in uint  in_atlas;
-layout(location = 6) in uint  in_bools;
+layout(location = 5) in uint  in_bools;
 
-layout(location = 0) flat out uint out_atlas;
-layout(location = 1) flat out vec4 out_color;
-layout(location = 2)      out vec2 out_tex_coord;
+layout(location = 0) flat out vec4 out_color;
+layout(location = 1)      out vec2 out_tex_coord;
 
 const uint BOOL_IS_CURSOR_GLYPH = 2u;
 
@@ -113,7 +112,6 @@ void main() {
     // Atlas tex coord in PIXEL space — we sample with `texelFetch`
     // (nearest filter, no normalization needed).
     out_tex_coord = vec2(in_glyph_pos) + size * corner;
-    out_atlas = in_atlas;
 
     // Foreground color through the same colorspace pipeline as the bg
     // pass. `in_color` is already 0..1 from R8G8B8A8_UNORM.

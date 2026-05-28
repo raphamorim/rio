@@ -674,7 +674,8 @@ pub fn emit_cursor_sprite(
         // fg-swap skips it (the sprite paints in `color` directly,
         // not in `cursor_color` from the uniforms).
         bools: CellText::BOOL_IS_CURSOR_GLYPH,
-        _pad: [0, 0],
+        page: slot.page,
+        _pad: 0,
     };
     if sprite.is_block_slot() {
         grid.set_block_cursor(&[cursor_cell]);
@@ -1676,7 +1677,8 @@ pub fn build_row_fg(
                         color,
                         atlas,
                         bools: 0,
-                        _pad: [0, 0],
+                        page: slot.page,
+                        _pad: 0,
                     });
                 }
             }
@@ -1722,7 +1724,8 @@ pub fn build_row_fg(
                         color,
                         atlas: CellText::ATLAS_GRAYSCALE,
                         bools: 0,
-                        _pad: [0, 0],
+                        page: slot.page,
+                        _pad: 0,
                     });
                 }
                 x += 1;
@@ -2068,7 +2071,8 @@ pub fn build_row_fg(
                 color,
                 atlas,
                 bools: 0,
-                _pad: [0, 0],
+                page: slot.page,
+                _pad: 0,
             });
         }
 
@@ -2159,7 +2163,8 @@ fn emit_underlines(
             color,
             atlas: CellText::ATLAS_GRAYSCALE,
             bools: 0,
-            _pad: [0, 0],
+            page: slot.page,
+            _pad: 0,
         });
     }
 }
@@ -2216,7 +2221,8 @@ fn emit_strikethroughs(
             color,
             atlas: CellText::ATLAS_GRAYSCALE,
             bools: 0,
-            _pad: [0, 0],
+            page: slot.page,
+            _pad: 0,
         });
     }
 }
