@@ -3,24 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-//! Native Vulkan backend for the grid renderer.
-//!
-//! Phase 4: bg + text passes. Mirrors `grid::metal::MetalGridRenderer`
-//! in shape so the rioterm emit loop can drive both via the
-//! `GridRenderer` enum without per-backend conditionals.
-//!
-//! Per-frame ring: bg + uniform + fg buffers are sized per
-//! `FRAMES_IN_FLIGHT` slot, indexed by `VulkanFrame::slot`. The
-//! `acquire_frame` fence wait already proved that slot's GPU work is
-//! done, so writing into slot `N`'s buffers from the CPU is safe.
-//!
-//! Atlas uploads are deferred — `insert_glyph` records pending pixels
-//! into a per-atlas queue, and `render` flushes the queue into the
-//! frame's command buffer (one staging buffer per slot, copy +
-//! barrier, then the text pass reads). Per-glyph synchronous uploads
-//! would cost ~1ms/glyph (vkQueueSubmit + fence wait) — way too slow
-//! for the first-frame burst of ~ASCII printables.
-
 use ash::vk;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -51,10 +33,6 @@ const ATLAS_SIZE: u16 = 2048;
 
 /// Hard cap on atlas side, same as Metal.
 const ATLAS_MAX_SIZE: u16 = 8192;
-
-// =======================================================================
-// Glyph atlas
-// =======================================================================
 
 /// One pending glyph upload — `bytes` were copied at insert time, so
 /// the rasterizer's buffer can be reused immediately. Drained by
@@ -129,13 +107,6 @@ impl VulkanGlyphAtlas {
         // One-shot UNDEFINED → SHADER_READ_ONLY_OPTIMAL transition so the
         // atlas matches the layout declared in its descriptor write
         // (`SHADER_READ_ONLY_OPTIMAL`) from the moment it's bound.
-        // Without this the validation layer flags
-        // `vkQueueSubmit() expects ... SHADER_READ_ONLY_OPTIMAL — current
-        // layout is UNDEFINED` even when the text pipeline does no actual
-        // sampling (the descriptor binding alone is enough for validation
-        // to assume a read may happen). On real drivers it's UB; in
-        // practice it shows up as an empty / black first frame after
-        // a70b774 because the GPU may discard the draw entirely.
         let img_handle = image.handle();
         ctx.submit_oneshot(|cmd| unsafe {
             let to_read = vk::ImageMemoryBarrier2::default()
@@ -542,10 +513,6 @@ impl VulkanGlyphAtlas {
     }
 }
 
-// =======================================================================
-// Grid renderer
-// =======================================================================
-
 pub struct VulkanGridRenderer {
     /// Shared device handle. Cloned from `VulkanContext` at
     /// construction so this renderer's `Drop` can call `destroy_*` on
@@ -561,22 +528,18 @@ pub struct VulkanGridRenderer {
     cols: u32,
     rows: u32,
 
-    // ---------- bg state ----------
     bg_buffers: [VulkanBuffer; FRAMES_IN_FLIGHT],
     bg_dirty: [bool; FRAMES_IN_FLIGHT],
     bg_cpu: Vec<CellBg>,
 
-    // ---------- shared uniform state ----------
     uniform_buffers: [VulkanBuffer; FRAMES_IN_FLIGHT],
 
-    // ---------- bg pipeline ----------
     bg_descriptor_pool: vk::DescriptorPool,
     bg_descriptor_set_layout: vk::DescriptorSetLayout,
     bg_descriptor_sets: [vk::DescriptorSet; FRAMES_IN_FLIGHT],
     bg_pipeline_layout: vk::PipelineLayout,
     bg_pipeline: vk::Pipeline,
 
-    // ---------- text state ----------
     fg_rows: Vec<Vec<CellText>>,
     fg_staging: Vec<CellText>,
     fg_buffers: [Option<VulkanBuffer>; FRAMES_IN_FLIGHT],
@@ -584,7 +547,6 @@ pub struct VulkanGridRenderer {
     fg_live_count: [u32; FRAMES_IN_FLIGHT],
     fg_dirty: [bool; FRAMES_IN_FLIGHT],
 
-    // ---------- text pipeline ----------
     text_uniform_descriptor_set_layout: vk::DescriptorSetLayout,
     text_atlas_descriptor_set_layout: vk::DescriptorSetLayout,
     text_descriptor_pool: vk::DescriptorPool,
@@ -594,7 +556,6 @@ pub struct VulkanGridRenderer {
     text_pipeline: vk::Pipeline,
     sampler: vk::Sampler,
 
-    // ---------- atlases ----------
     pub atlas_grayscale: VulkanGlyphAtlas,
     pub atlas_color: VulkanGlyphAtlas,
 
@@ -606,7 +567,6 @@ impl VulkanGridRenderer {
         let shared = ctx.shared().clone();
         let device = &shared.raw;
 
-        // ----- bg + uniforms -----
         let bg_buffers = std::array::from_fn(|_| alloc_bg_buffer(ctx, cols, rows));
         let uniform_buffers = std::array::from_fn(|_| {
             ctx.allocate_host_visible_buffer(
@@ -640,7 +600,6 @@ impl VulkanGridRenderer {
             ctx.swapchain_format(),
         );
 
-        // ----- text -----
         let atlas_grayscale = VulkanGlyphAtlas::new_grayscale(ctx);
         let atlas_color = VulkanGlyphAtlas::new_color(ctx);
         let sampler = create_sampler(device);
@@ -1187,10 +1146,7 @@ impl Drop for VulkanGridRenderer {
     }
 }
 
-// =======================================================================
-// Helpers
-// =======================================================================
-
+#[inline]
 fn alloc_bg_buffer(ctx: &VulkanContext, cols: u32, rows: u32) -> VulkanBuffer {
     let size = (cols as u64)
         .saturating_mul(rows as u64)
@@ -1199,12 +1155,14 @@ fn alloc_bg_buffer(ctx: &VulkanContext, cols: u32, rows: u32) -> VulkanBuffer {
     ctx.allocate_host_visible_buffer(size, vk::BufferUsageFlags::STORAGE_BUFFER)
 }
 
+#[inline]
 fn init_fg_rows(rows: u32) -> Vec<Vec<CellText>> {
     (0..(rows as usize + CURSOR_ROW_SLOTS))
         .map(|_| Vec::new())
         .collect()
 }
 
+#[inline]
 fn color_subresource_range() -> vk::ImageSubresourceRange {
     vk::ImageSubresourceRange::default()
         .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -1214,6 +1172,7 @@ fn color_subresource_range() -> vk::ImageSubresourceRange {
         .layer_count(1)
 }
 
+#[inline]
 fn image_copy_region(
     buffer_offset: u64,
     x: u16,
@@ -1244,7 +1203,6 @@ fn image_copy_region(
         })
 }
 
-// ----- descriptor / pipeline setup helpers -----
 
 fn create_bg_descriptor_set_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
     let bindings = [
