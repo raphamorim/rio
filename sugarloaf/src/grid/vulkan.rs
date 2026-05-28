@@ -114,7 +114,16 @@ impl VulkanGlyphAtlas {
             ATLAS_SIZE as u32,
             ATLAS_SIZE as u32,
             format,
-            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            // TRANSFER_SRC so the first `grow()` can use this image as the
+            // copy source when migrating texels into the larger atlas. Images
+            // allocated by `grow()` itself already carry it; only this initial
+            // allocation needs it added explicitly. Without it, the first grow
+            // transitions this image to TRANSFER_SRC_OPTIMAL and reads it in
+            // vkCmdCopyImage2 — undefined behaviour for an image created
+            // without TRANSFER_SRC.
+            vk::ImageUsageFlags::TRANSFER_DST
+                | vk::ImageUsageFlags::TRANSFER_SRC
+                | vk::ImageUsageFlags::SAMPLED,
         );
 
         // One-shot UNDEFINED → SHADER_READ_ONLY_OPTIMAL transition so the
@@ -298,6 +307,19 @@ impl VulkanGlyphAtlas {
         }
 
         let shared = self.image.shared.clone();
+
+        // Idle the GPU before mutating atlas resources. Below we free the old
+        // image (`drop(old_image)`) and the caller rewrites the single shared
+        // atlas descriptor set — but `acquire_frame` only waits on the current
+        // slot's fence, so up to `FRAMES_IN_FLIGHT - 1` previously-submitted
+        // frames may still be sampling the old image through that set. Freeing
+        // in-use memory or updating a bound descriptor set is undefined
+        // behaviour. The oneshot fence below only covers the copy, not those
+        // prior frames. grow() only fires when the atlas fills, so a full idle
+        // is an acceptable stall here — same approach as swapchain recreation.
+        unsafe {
+            let _ = shared.device_wait_idle();
+        }
 
         // Create a new, larger image.
         let image_info = vk::ImageCreateInfo::default()
