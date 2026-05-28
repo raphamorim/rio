@@ -315,9 +315,7 @@ impl VulkanGlyphAtlas {
         // Try existing pages in order. Glyphs pack into the earliest
         // page that fits — keeps the active working set on page 0/1.
         for (i, page) in self.pages.iter_mut().enumerate() {
-            if let Some((x, y)) =
-                page.allocator.allocate(glyph.width, glyph.height)
-            {
+            if let Some((x, y)) = page.allocator.allocate(glyph.width, glyph.height) {
                 let slot = AtlasSlot {
                     x,
                     y,
@@ -421,11 +419,8 @@ fn make_page(
         shared.raw.cmd_pipeline_barrier2(cmd, &dep);
     });
 
-    let descriptor_set = allocate_one_descriptor_set(
-        &shared.raw,
-        descriptor_pool,
-        descriptor_set_layout,
-    );
+    let descriptor_set =
+        allocate_one_descriptor_set(&shared.raw, descriptor_pool, descriptor_set_layout);
     update_page_descriptor_set(&shared.raw, descriptor_set, &image, sampler);
 
     VulkanAtlasPage {
@@ -538,7 +533,9 @@ fn submit_inline_oneshot(
 
         let begin = vk::CommandBufferBeginInfo::default()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-        shared.begin_command_buffer(cmd, &begin).expect("oneshot: begin");
+        shared
+            .begin_command_buffer(cmd, &begin)
+            .expect("oneshot: begin");
         record(cmd);
         shared.end_command_buffer(cmd).expect("oneshot: end");
 

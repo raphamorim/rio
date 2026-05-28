@@ -1169,8 +1169,7 @@ impl Text {
         // mismatched instances can't share a draw. Typical overlay:
         // 1–2 buckets (a few glyphs on page 0, both kinds at most),
         // so the linear-search grouping is cheap.
-        let mut groups: Vec<((u8, u8), Vec<TextInstance>)> =
-            Vec::with_capacity(4);
+        let mut groups: Vec<((u8, u8), Vec<TextInstance>)> = Vec::with_capacity(4);
         for inst in &self.instances {
             let key = (inst.atlas, inst.page);
             match groups.iter_mut().find(|(k, _)| *k == key) {
@@ -1178,8 +1177,7 @@ impl Text {
                 None => groups.push((key, vec![*inst])),
             }
         }
-        let mut bucketed: Vec<TextInstance> =
-            Vec::with_capacity(self.instances.len());
+        let mut bucketed: Vec<TextInstance> = Vec::with_capacity(self.instances.len());
         let mut buckets: Vec<((u8, u8), u32, u32)> = Vec::with_capacity(groups.len());
         for ((kind, page), insts) in groups.into_iter() {
             let start = bucketed.len() as u32;
