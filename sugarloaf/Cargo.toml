@@ -120,20 +120,6 @@ ash = "0.38.0"
 # only Debian-packaged DirectWrite binding (winapi 0.3) is fading out and the
 # higher-level `windows` crate isn't in Debian at all.
 
-[target.'cfg(windows)'.dependencies]
-# Pin `windows` to `^0.62` on Windows so wgpu-hal (which requires
-# `^0.62`, default-resolves to `0.62.2`) and gpu-allocator (which
-# caps at `<=0.62`, i.e. `<=0.62.0`) unify on `0.62.0` — the only
-# version that satisfies both. Without this pin the resolver picks
-# two copies (gpu-allocator falls back to `0.54.0`, shared with
-# cpal) and the dx12 backend in wgpu-hal fails to compile —
-# `ID3D12Device` types coming from different `windows` versions are
-# distinct types in Rust. Sugarloaf itself doesn't use the `windows`
-# crate; this entry only exists to coerce the resolver. Drop once
-# gpu-allocator releases a version requiring `windows = ^0.62` (so
-# `0.62.x` patches are accepted), or wgpu-hal pins to `=0.62.0`.
-windows = { version = "=0.62.0", default-features = false }
-
 [dev-dependencies]
 rio-window = { workspace = true }
 png = "0.17.16"
