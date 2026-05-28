@@ -217,6 +217,7 @@ impl MetalGlyphAtlas {
                 h: 0,
                 bearing_x: glyph.bearing_x,
                 bearing_y: glyph.bearing_y,
+                page: 0,
             };
             self.slots.insert(key, slot);
             return Some(slot);
@@ -230,6 +231,7 @@ impl MetalGlyphAtlas {
             h: glyph.height,
             bearing_x: glyph.bearing_x,
             bearing_y: glyph.bearing_y,
+            page: 0,
         };
         self.slots.insert(key, slot);
 

@@ -27,6 +27,11 @@ pub struct GlyphKey {
 /// Atlas position + glyph metrics for one rasterized glyph. Exactly
 /// the fields the `grid_text_vertex` shader reads via `CellText`:
 /// `glyph_pos`, `glyph_size`, `bearings`.
+///
+/// `page` is the index of the atlas page this glyph lives in. The
+/// Vulkan backend's per-kind atlas is a list of fixed-size pages
+/// (`grid/vulkan.rs`); the other backends use a single image / texture
+/// and leave `page` at 0.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AtlasSlot {
     pub x: u16,
@@ -35,6 +40,7 @@ pub struct AtlasSlot {
     pub h: u16,
     pub bearing_x: i16,
     pub bearing_y: i16,
+    pub page: u8,
 }
 
 /// Raw rasterized glyph bitmap, caller-supplied. The atlas doesn't

@@ -69,9 +69,13 @@ pub struct CellText {
     /// Packed bits. bit 0 = `no_min_contrast`, bit 1 = `is_cursor_glyph`.
     /// Unused bits reserved for future decoration flags.
     pub bools: u8,
-    /// Explicit padding to bring the struct to 32 bytes. Both backends'
-    /// vertex descriptors ignore these bytes.
-    pub _pad: [u8; 2],
+    /// Index of the atlas page this glyph lives in. Used host-side by
+    /// the Vulkan backend to bucket cells per-page and bind the right
+    /// page's descriptor set per draw; other backends use a single
+    /// texture and leave this at 0.
+    pub page: u8,
+    /// Explicit padding to bring the struct to 32 bytes.
+    pub _pad: u8,
 }
 
 impl CellText {
