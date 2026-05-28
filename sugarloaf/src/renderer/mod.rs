@@ -1048,8 +1048,7 @@ impl Renderer {
         // overlays for hidden panels (callers `clear_image_overlays_for`
         // on hide / panel removal). The renderer just drains whatever
         // `image_overlays` currently holds.
-        let overlays: Vec<_> =
-            image_overlays.iter().flat_map(|(_, v)| v.iter()).collect();
+        let overlays: Vec<_> = image_overlays.values().flat_map(|v| v.iter()).collect();
         if !overlays.is_empty() {
             self.render_graphic_overlays(context, image_data, &overlays);
         } else {
