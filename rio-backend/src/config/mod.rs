@@ -6,6 +6,7 @@ pub mod effects;
 pub mod hints;
 pub mod keyboard;
 pub mod layout;
+pub mod mouse;
 pub mod navigation;
 pub mod platform;
 pub mod renderer;
@@ -20,6 +21,7 @@ use crate::config::defaults::*;
 use crate::config::hints::Hints;
 use crate::config::keyboard::Keyboard;
 use crate::config::layout::{Margin, Panel};
+use crate::config::mouse::Mouse;
 use crate::config::navigation::Navigation;
 use crate::config::platform::{Platform, PlatformConfig};
 use crate::config::renderer::Renderer;
@@ -152,6 +154,8 @@ pub struct Config {
         alias = "hide-cursor-when-typing"
     )]
     pub hide_cursor_when_typing: bool,
+    #[serde(default = "Mouse::default")]
+    pub mouse: Mouse,
     #[serde(default = "Renderer::default")]
     pub renderer: Renderer,
     #[serde(default = "bool::default", rename = "draw-bold-text-with-light-colors")]
@@ -658,6 +662,7 @@ impl Default for Config {
             confirm_before_quit: true,
             copy_on_select: false,
             hide_cursor_when_typing: false,
+            mouse: Mouse::default(),
             draw_bold_text_with_light_colors: false,
             hints: Hints::default(),
             bell: Bell::default(),
