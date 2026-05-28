@@ -24,7 +24,12 @@ objc2-user-notifications = { version = "0.2.2", features = [
 zbus = { version = "4", features = ["blocking"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = [
+# Bumped from `0.58` to `0.62` so this doesn't pull a second copy of
+# the `windows` crate alongside sugarloaf's pin (see
+# `sugarloaf/Cargo.toml` for the wgpu-hal / gpu-allocator
+# version-mismatch story). `Data_Xml_Dom` + `UI_Notifications` are
+# stable across both versions.
+windows = { version = "0.62", features = [
     "Data_Xml_Dom",
     "UI_Notifications",
 ] }
