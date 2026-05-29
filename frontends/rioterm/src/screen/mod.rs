@@ -131,6 +131,7 @@ impl Screen<'_> {
             config.margin.top,
             1,
             config.window.macos_use_unified_titlebar,
+            rio_backend::config::navigation::PaneZoom::NotZoomed,
         );
 
         let padding_y_bottom = config.margin.bottom;
@@ -420,11 +421,13 @@ impl Screen<'_> {
         should_update_font_library: bool,
     ) {
         let num_tabs = self.ctx().len();
+        let zoom = self.context_manager.current_pane_zoom();
         let padding_y_top = padding_top_from_config(
             &config.navigation,
             config.margin.top,
             num_tabs,
             config.window.macos_use_unified_titlebar,
+            zoom,
         );
         let padding_y_bottom = config.margin.bottom;
 
@@ -1341,20 +1344,20 @@ impl Screen<'_> {
                     }
                     Act::SelectNextSplit => {
                         self.cancel_search(clipboard);
-                        self.context_manager.clear_split_zoom(&mut self.sugarloaf);
+                        self.clear_split_zoom();
                         self.context_manager.select_next_split();
                         self.mark_dirty();
                     }
                     Act::SelectPrevSplit => {
                         self.cancel_search(clipboard);
-                        self.context_manager.clear_split_zoom(&mut self.sugarloaf);
+                        self.clear_split_zoom();
                         self.context_manager.select_prev_split();
                         self.mark_dirty();
                     }
                     Act::SelectNextSplitOrTab => {
                         self.cancel_search(clipboard);
                         self.clear_selection();
-                        self.context_manager.clear_split_zoom(&mut self.sugarloaf);
+                        self.clear_split_zoom();
                         let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_next_split_or_tab();
                         let new_index = self.context_manager.current_index();
@@ -1368,7 +1371,7 @@ impl Screen<'_> {
                     Act::SelectPrevSplitOrTab => {
                         self.cancel_search(clipboard);
                         self.clear_selection();
-                        self.context_manager.clear_split_zoom(&mut self.sugarloaf);
+                        self.clear_split_zoom();
                         let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_prev_split_or_tab();
                         let new_index = self.context_manager.current_index();
@@ -1492,18 +1495,26 @@ impl Screen<'_> {
     }
 
     pub fn split_right(&mut self) {
+        let was_zoomed = self.context_manager.current_grid().is_zoomed();
         let rich_text_id = next_rich_text_id();
         self.context_manager
             .split(rich_text_id, false, &mut self.sugarloaf);
 
+        if was_zoomed {
+            self.resync_island_after_zoom();
+        }
         self.mark_dirty();
     }
 
     pub fn split_down(&mut self) {
+        let was_zoomed = self.context_manager.current_grid().is_zoomed();
         let rich_text_id = next_rich_text_id();
         self.context_manager
             .split(rich_text_id, true, &mut self.sugarloaf);
 
+        if was_zoomed {
+            self.resync_island_after_zoom();
+        }
         self.mark_dirty();
     }
 
@@ -1512,7 +1523,26 @@ impl Screen<'_> {
             .context_manager
             .toggle_split_zoom(&mut self.sugarloaf)
         {
+            self.resync_island_after_zoom();
             self.mark_dirty();
+        }
+    }
+
+    /// Clear an active zoom on the current grid, re-reserving tab-bar
+    /// space if that changed the bar's visibility. Used by split
+    /// navigation, which drops out of zoom first.
+    pub fn clear_split_zoom(&mut self) {
+        if self.context_manager.clear_split_zoom(&mut self.sugarloaf) {
+            self.resync_island_after_zoom();
+        }
+    }
+
+    /// Re-reserve the tab-bar (island) height after a zoom change. Only
+    /// the single-tab case is affected: with multiple tabs the bar is
+    /// always visible, so its height doesn't depend on zoom.
+    fn resync_island_after_zoom(&mut self) {
+        if self.ctx().len() <= 1 {
+            self.resize_top_or_bottom_line(1);
         }
     }
 
@@ -1591,9 +1621,13 @@ impl Screen<'_> {
 
     pub fn close_split_or_tab(&mut self, clipboard: &mut Clipboard) {
         if self.context_manager.current_grid_len() > 1 {
+            let was_zoomed = self.context_manager.current_grid().is_zoomed();
             self.clear_selection();
             self.context_manager
                 .remove_current_grid(&mut self.sugarloaf);
+            if was_zoomed {
+                self.resync_island_after_zoom();
+            }
             self.mark_dirty();
         } else {
             self.close_tab(clipboard);
@@ -1628,11 +1662,13 @@ impl Screen<'_> {
     }
 
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
+        let zoom = self.context_manager.current_pane_zoom();
         let padding_y_top = padding_top_from_config(
             &self.renderer.navigation,
             self.renderer.margin.top,
             num_tabs,
             self.renderer.macos_use_unified_titlebar,
+            zoom,
         );
         let padding_y_bottom = self.renderer.margin.bottom;
 
@@ -2808,7 +2844,9 @@ impl Screen<'_> {
 
         let window_width = self.sugarloaf.window_size().width;
         let num_tabs = self.context_manager.len();
-        let island_visible = self.renderer.navigation.island_visible(num_tabs);
+        let zoom = self.context_manager.current_pane_zoom();
+        let island_visible =
+            self.renderer.navigation.island_visible_with(num_tabs, zoom);
 
         if let Some(ref mut island) = self.renderer.island {
             if island.is_color_picker_open() {
@@ -3655,11 +3693,11 @@ impl Screen<'_> {
             PaletteAction::SplitRight => self.split_right(),
             PaletteAction::SplitDown => self.split_down(),
             PaletteAction::SelectNextSplit => {
-                self.context_manager.clear_split_zoom(&mut self.sugarloaf);
+                self.clear_split_zoom();
                 self.context_manager.select_next_split();
             }
             PaletteAction::SelectPrevSplit => {
-                self.context_manager.clear_split_zoom(&mut self.sugarloaf);
+                self.clear_split_zoom();
                 self.context_manager.select_prev_split();
             }
             PaletteAction::ToggleSplitZoom => self.toggle_split_zoom(),
