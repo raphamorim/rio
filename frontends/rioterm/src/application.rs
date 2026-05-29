@@ -1227,6 +1227,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
 
                         if let MouseButton::Left | MouseButton::Right = button {
+                            // Claim the PRIMARY selection regardless of
+                            // copy_on_select — middle-click / Shift+Insert paste
+                            // PRIMARY, and other terminals all populate it on
+                            // mouse selection. No-op where there is no primary
+                            // selection (macOS, Windows).
+                            route.window.screen.copy_selection(
+                                ClipboardType::Selection,
+                                &mut self.router.clipboard,
+                            );
+
                             if self.config.copy_on_select {
                                 route.window.screen.copy_selection(
                                     ClipboardType::Clipboard,
