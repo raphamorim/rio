@@ -1774,6 +1774,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 "yes (y)",
                                 "no (n)",
                             );
+                            // The dialog is an overlay drawn outside the
+                            // terminal's damage tracking. `render()` discards
+                            // the frame when no panel is dirty, which would
+                            // drop the overlay on idle frames — force a
+                            // present so the dialog reliably shows.
+                            route.window.screen.mark_dirty();
                         }
 
                         if let Some(window_update) = route.window.screen.render() {
