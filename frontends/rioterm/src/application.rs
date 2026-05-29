@@ -1461,12 +1461,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 return;
                             }
                         } else if matches!(button, MouseButton::Left | MouseButton::Right)
-                            && self.config.copy_on_select
                         {
+                            // Claim the PRIMARY selection regardless of
+                            // copy_on_select — middle-click / Shift+Insert paste
+                            // PRIMARY, and other terminals all populate it on
+                            // mouse selection. No-op where there is no primary
+                            // selection (macOS, Windows).
                             route.window.screen.copy_selection(
-                                ClipboardType::Clipboard,
+                                ClipboardType::Selection,
                                 &mut self.router.clipboard,
                             );
+
+                            if self.config.copy_on_select {
+                                route.window.screen.copy_selection(
+                                    ClipboardType::Clipboard,
+                                    &mut self.router.clipboard,
+                                );
+                            }
                         }
                     }
                 }
