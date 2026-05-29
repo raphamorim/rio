@@ -419,7 +419,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::Exit) => {
+            RioEventType::Rio(RioEvent::Quit) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if self.config.confirm_before_quit {
                         route.confirm_quit();
