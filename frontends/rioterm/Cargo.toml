@@ -53,6 +53,9 @@ rio-notifier = { workspace = true }
 
 [target.'cfg(all(not(target_os = "macos"), not(target_os = "windows")))'.dependencies]
 cpal = { version = "0.15", optional = true }
+# Loaded at runtime via dlopen for the freedesktop event-sound theme
+# (libcanberra). No build-time dependency; degrades gracefully if absent.
+libloading = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = { workspace = true }
