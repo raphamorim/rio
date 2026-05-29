@@ -12,7 +12,7 @@ use crate::watcher::configuration_file_updates;
 ))]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use raw_window_handle::HasDisplayHandle;
-use rio_backend::clipboard::{Clipboard, ClipboardType};
+use rio_backend::clipboard::Clipboard;
 use rio_backend::config::colors::{ColorRgb, NamedColor};
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
@@ -1462,22 +1462,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             }
                         } else if matches!(button, MouseButton::Left | MouseButton::Right)
                         {
-                            // Claim the PRIMARY selection regardless of
-                            // copy_on_select — middle-click / Shift+Insert paste
-                            // PRIMARY, and other terminals all populate it on
-                            // mouse selection. No-op where there is no primary
-                            // selection (macOS, Windows).
-                            route.window.screen.copy_selection(
-                                ClipboardType::Selection,
+                            route.window.screen.copy_selection_on_pointer_release(
+                                self.config.copy_on_select,
                                 &mut self.router.clipboard,
                             );
-
-                            if self.config.copy_on_select {
-                                route.window.screen.copy_selection(
-                                    ClipboardType::Clipboard,
-                                    &mut self.router.clipboard,
-                                );
-                            }
                         }
                     }
                 }
