@@ -1354,8 +1354,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
                 let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
                 let num_tabs = route.window.screen.ctx().len();
+                let zoom = route.window.screen.context_manager.current_pane_zoom();
                 let nav = &route.window.screen.renderer.navigation;
-                if nav.island_visible(num_tabs) && y <= island_height_px {
+                if nav.island_visible_with(num_tabs, zoom) && y <= island_height_px {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
                 }

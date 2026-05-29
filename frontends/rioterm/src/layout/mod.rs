@@ -435,6 +435,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     /// Get separator lines between adjacent panels for rendering.
     pub fn get_panel_borders(&self) -> Vec<Rect> {
+        // No separators while zoomed: only the maximized panel is
+        // visible, so there's nothing to divide.
         if !self.should_draw_borders() || self.is_zoomed() {
             return vec![];
         }

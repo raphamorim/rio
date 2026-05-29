@@ -1,6 +1,6 @@
 use crate::constants;
 use crate::layout::ContextDimension;
-use rio_backend::config::navigation::Navigation;
+use rio_backend::config::navigation::{Navigation, PaneZoom};
 use rio_backend::config::Config;
 use rio_window::window::Theme;
 
@@ -10,13 +10,16 @@ pub fn padding_top_from_config(
     padding_y_top: f32,
     #[allow(unused)] num_tabs: usize,
     #[allow(unused)] macos_use_unified_titlebar: bool,
+    #[allow(unused)] zoom: PaneZoom,
 ) -> f32 {
     // When navigation is enabled (Tab mode), start content below island
     if navigation.is_enabled() {
         // On Linux/Windows, if hide_if_single is true and there's only one tab,
-        // the island is hidden so render from 0 + configured margin
+        // the island is hidden so render from 0 + configured margin — unless a
+        // pane is zoomed, in which case the island is forced visible to carry
+        // the zoom indicator.
         #[cfg(not(target_os = "macos"))]
-        if navigation.hide_if_single && num_tabs <= 1 {
+        if navigation.hide_if_single && num_tabs <= 1 && zoom == PaneZoom::NotZoomed {
             return constants::PADDING_Y + padding_y_top;
         }
 

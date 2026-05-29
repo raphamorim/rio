@@ -801,6 +801,25 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &self.contexts[self.current_index]
     }
 
+    /// Whether the grid (tab) at `index` has a maximized (zoomed) pane.
+    /// Per-tab predicate used when drawing the tab strip's zoom glyph.
+    #[inline]
+    pub fn grid_is_zoomed(&self, index: usize) -> bool {
+        self.contexts
+            .get(index)
+            .is_some_and(|grid| grid.is_zoomed())
+    }
+
+    /// Zoom state of the current grid, as the named [`PaneZoom`] the
+    /// layout/island/input visibility checks consume — keeps callers
+    /// from re-deriving it from a bare bool.
+    #[inline]
+    pub fn current_pane_zoom(&self) -> rio_backend::config::navigation::PaneZoom {
+        rio_backend::config::navigation::PaneZoom::from_zoomed(
+            self.grid_is_zoomed(self.current_index),
+        )
+    }
+
     /// Get panel borders for the current grid (returns empty vec if single panel)
     #[inline]
     pub fn get_panel_borders(&self) -> Vec<Rect> {

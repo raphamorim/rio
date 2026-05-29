@@ -199,15 +199,89 @@ impl Navigation {
     /// the empty band over a hidden island doesn't intercept events.
     #[inline]
     pub fn island_visible(&self, num_tabs: usize) -> bool {
-        self.is_enabled() && !(self.hide_if_single && num_tabs == 1)
+        self.island_visible_with(num_tabs, PaneZoom::NotZoomed)
+    }
+
+    /// Like [`Self::island_visible`], but a maximized pane keeps the strip
+    /// visible even for a single tab so it can carry the zoom indicator.
+    #[inline]
+    pub fn island_visible_with(&self, num_tabs: usize, zoom: PaneZoom) -> bool {
+        self.is_enabled()
+            && (zoom == PaneZoom::Zoomed || !(self.hide_if_single && num_tabs == 1))
+    }
+}
+
+/// Whether a maximized (zoomed) pane is forcing the tab strip to stay
+/// visible. A named alternative to a bare `bool` at the several call
+/// sites that decide tab-bar visibility and top-margin reservation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneZoom {
+    Zoomed,
+    NotZoomed,
+}
+
+impl PaneZoom {
+    #[inline]
+    pub fn from_zoomed(zoomed: bool) -> Self {
+        if zoomed {
+            PaneZoom::Zoomed
+        } else {
+            PaneZoom::NotZoomed
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::config::colors::hex_to_color_arr;
-    use crate::config::navigation::{Navigation, NavigationMode};
+    use crate::config::navigation::{Navigation, NavigationMode, PaneZoom};
     use serde::Deserialize;
+
+    fn nav(mode: NavigationMode, hide_if_single: bool) -> Navigation {
+        Navigation {
+            mode,
+            hide_if_single,
+            ..Navigation::default()
+        }
+    }
+
+    #[test]
+    fn island_visibility_across_config_tab_and_zoom() {
+        use NavigationMode::{Plain, Tab};
+        use PaneZoom::{NotZoomed, Zoomed};
+
+        // Tab mode, hide_if_single: single tab hides the bar unless a
+        // pane is zoomed; multiple tabs always show it.
+        let hide = nav(Tab, true);
+        assert!(!hide.island_visible_with(1, NotZoomed));
+        assert!(hide.island_visible_with(1, Zoomed));
+        assert!(hide.island_visible_with(2, NotZoomed));
+        assert!(hide.island_visible_with(2, Zoomed));
+
+        // Tab mode, hide_if_single off: bar always shows, zoom is moot.
+        let show = nav(Tab, false);
+        assert!(show.island_visible_with(1, NotZoomed));
+        assert!(show.island_visible_with(1, Zoomed));
+        assert!(show.island_visible_with(2, NotZoomed));
+
+        // Plain mode has no strip; zoom can't force one into existence.
+        let plain = nav(Plain, true);
+        assert!(!plain.island_visible_with(1, NotZoomed));
+        assert!(!plain.island_visible_with(1, Zoomed));
+        assert!(!plain.island_visible_with(2, NotZoomed));
+
+        // `island_visible` is the not-zoomed case of `island_visible_with`.
+        for n in 1..=3 {
+            assert_eq!(
+                hide.island_visible(n),
+                hide.island_visible_with(n, NotZoomed)
+            );
+            assert_eq!(
+                plain.island_visible(n),
+                plain.island_visible_with(n, NotZoomed)
+            );
+        }
+    }
 
     #[derive(Debug, Clone, Deserialize, PartialEq)]
     struct Root {
