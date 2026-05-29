@@ -117,6 +117,14 @@ pub struct ContextGrid<T: EventListener> {
     tree: TaffyTree<()>,
     root_node: NodeId,
     border_config: BorderConfig,
+    /// When `Some`, the panel maximized to fill the whole tab.
+    /// Siblings along its path to the root are hidden via
+    /// `Display::None` so Taffy lays the focused panel out exactly
+    /// as if it were the only one.
+    zoomed: Option<NodeId>,
+    /// Nodes set to `Display::None` for the active zoom, restored to
+    /// `Display::Flex` when zoom is cleared.
+    zoom_hidden: Vec<NodeId>,
 }
 
 pub struct ContextGridItem<T: EventListener> {
@@ -140,6 +148,15 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     #[inline]
     pub fn context_mut(&mut self) -> &mut Context<T> {
         &mut self.val
+    }
+
+    /// A panel is hidden when its layout collapsed to zero area —
+    /// today that only happens to the siblings of a zoomed panel,
+    /// which Taffy lays out with `Display::None`. Hidden panels are
+    /// skipped by the resize and render passes.
+    #[inline]
+    pub fn is_hidden(&self) -> bool {
+        self.layout_rect[2] <= 0.0 || self.layout_rect[3] <= 0.0
     }
 
     /// Previously stashed panel position into the rich-text object's
@@ -231,6 +248,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             tree,
             root_node,
             border_config,
+            zoomed: None,
+            zoom_hidden: Vec::new(),
         };
         grid.calculate_positions();
         grid
@@ -340,7 +359,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// Find a draggable border near the given mouse position (physical pixels).
     /// Returns None if no border is within the hit threshold.
     pub fn find_border_at_position(&self, x: f32, y: f32) -> Option<PanelBorder> {
-        if self.inner.len() <= 1 {
+        if self.inner.len() <= 1 || self.is_zoomed() {
             return None;
         }
 
@@ -416,7 +435,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     /// Get separator lines between adjacent panels for rendering.
     pub fn get_panel_borders(&self) -> Vec<Rect> {
-        if !self.should_draw_borders() {
+        if !self.should_draw_borders() || self.is_zoomed() {
             return vec![];
         }
 
@@ -897,8 +916,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let is_multi_panel = self.inner.len() > 1;
 
         for item in self.inner.values_mut() {
-            let [abs_x, abs_y, width, height] = item.layout_rect;
+            // Panels hidden by a zoom collapse to zero area in Taffy.
+            // Leave their terminal at its previous size rather than
+            // reflowing it to nothing.
+            if item.is_hidden() {
+                continue;
+            }
 
+            let [abs_x, abs_y, width, height] = item.layout_rect;
             let x = (abs_x + self.scaled_margin.left) / scale;
             let y = (abs_y + self.scaled_margin.top) / scale;
 
@@ -922,6 +947,108 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             // panel metadata.
             let _ = (x, y, abs_x, abs_y, width, height, is_multi_panel);
         }
+        true
+    }
+
+    #[inline]
+    pub fn is_zoomed(&self) -> bool {
+        self.zoomed.is_some()
+    }
+
+    /// Panels that should be tinted as "unfocused": every panel other
+    /// than `active`, excluding ones hidden by a zoom. Hidden panels
+    /// are skipped so they don't paint a stale-sized shadow over the
+    /// maximized panel.
+    pub fn unfocused_panels(
+        &self,
+        active: NodeId,
+    ) -> impl Iterator<Item = &ContextGridItem<T>> {
+        self.inner
+            .iter()
+            .filter(move |(key, item)| **key != active && !item.is_hidden())
+            .map(|(_, item)| item)
+    }
+
+    /// Hide every sibling along the path from `target` up to the root by
+    /// setting it to `Display::None`. The visible chain keeps its
+    /// `flex_grow`, so the focused leaf expands to fill the whole area.
+    /// Records the hidden nodes so the change can be reverted exactly.
+    fn apply_zoom_styles(&mut self, target: NodeId) {
+        let mut hidden = Vec::new();
+        let mut node = target;
+        while let Some(parent) = self.tree.parent(node) {
+            if let Ok(siblings) = self.tree.children(parent) {
+                for sibling in siblings {
+                    if sibling == node {
+                        continue;
+                    }
+                    if let Ok(mut style) = self.tree.style(sibling).cloned() {
+                        style.display = Display::None;
+                        if self.tree.set_style(sibling, style).is_ok() {
+                            hidden.push(sibling);
+                        }
+                    }
+                }
+            }
+            node = parent;
+        }
+        self.zoom_hidden = hidden;
+        self.zoomed = Some(target);
+    }
+
+    /// Revert the `Display::None` overrides applied by `apply_zoom_styles`.
+    /// Does not recompute layout — callers that need fresh geometry
+    /// invoke `apply_taffy_layout` afterwards.
+    fn restore_zoom_styles(&mut self) {
+        for node in std::mem::take(&mut self.zoom_hidden) {
+            if let Ok(mut style) = self.tree.style(node).cloned() {
+                style.display = Display::Flex;
+                let _ = self.tree.set_style(node, style);
+            }
+        }
+        self.zoomed = None;
+    }
+
+    /// Force every panel to fully repaint on the next frame. Zooming
+    /// changes which panels are visible without changing the focused
+    /// route, so the renderer's per-panel damage gate would otherwise
+    /// keep the just-revealed panels stale.
+    fn mark_all_panels_full_damage(&mut self) {
+        for item in self.inner.values_mut() {
+            item.val
+                .renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+        }
+    }
+
+    /// Toggle zoom on the focused split. Returns `true` when the zoom
+    /// state changed (so the caller can request a repaint). A single
+    /// panel can't be zoomed — there's nothing to hide.
+    pub fn toggle_zoom(&mut self, sugarloaf: &mut Sugarloaf) -> bool {
+        if self.is_zoomed() {
+            self.restore_zoom_styles();
+        } else {
+            if self.inner.len() <= 1 {
+                return false;
+            }
+            self.apply_zoom_styles(self.current);
+        }
+        self.apply_taffy_layout(sugarloaf);
+        self.mark_all_panels_full_damage();
+        true
+    }
+
+    /// Clear an active zoom (if any) and restore the normal layout.
+    /// Returns `true` when a zoom was cleared. Used by navigation and
+    /// other actions that should drop out of zoom first.
+    pub fn clear_zoom(&mut self, sugarloaf: &mut Sugarloaf) -> bool {
+        if !self.is_zoomed() {
+            return false;
+        }
+        self.restore_zoom_styles();
+        self.apply_taffy_layout(sugarloaf);
+        self.mark_all_panels_full_damage();
         true
     }
 
@@ -1243,6 +1370,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return;
         }
 
+        // Drop any zoom first: the zoomed panel may be the one being
+        // removed, and the siblings must be visible again afterwards.
+        if self.is_zoomed() {
+            self.restore_zoom_styles();
+        }
+
         let to_remove = self.current;
 
         if !self.inner.contains_key(&to_remove) {
@@ -1316,6 +1449,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return;
         }
 
+        // Splitting while zoomed drops out of zoom first so the new
+        // layout shows every panel.
+        if self.is_zoomed() {
+            self.restore_zoom_styles();
+        }
+
         // Create taffy node first, then item
         if let Ok(new_node) = self.try_split_right() {
             let new_context = ContextGridItem::new(context);
@@ -1329,6 +1468,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn split_down(&mut self, context: Context<T>, sugarloaf: &mut Sugarloaf) {
         if !self.inner.contains_key(&self.current) {
             return;
+        }
+
+        // Splitting while zoomed drops out of zoom first so the new
+        // layout shows every panel.
+        if self.is_zoomed() {
+            self.restore_zoom_styles();
         }
 
         // Create taffy node first, then item

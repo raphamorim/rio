@@ -1147,6 +1147,9 @@ impl Screen<'_> {
                     Act::MoveDividerRight => {
                         self.move_divider_right();
                     }
+                    Act::ToggleSplitZoom => {
+                        self.toggle_split_zoom();
+                    }
                     Act::ConfigEditor => {
                         self.context_manager.switch_to_settings();
                     }
@@ -1315,17 +1318,20 @@ impl Screen<'_> {
                     }
                     Act::SelectNextSplit => {
                         self.cancel_search(clipboard);
+                        self.context_manager.clear_split_zoom(&mut self.sugarloaf);
                         self.context_manager.select_next_split();
                         self.mark_dirty();
                     }
                     Act::SelectPrevSplit => {
                         self.cancel_search(clipboard);
+                        self.context_manager.clear_split_zoom(&mut self.sugarloaf);
                         self.context_manager.select_prev_split();
                         self.mark_dirty();
                     }
                     Act::SelectNextSplitOrTab => {
                         self.cancel_search(clipboard);
                         self.clear_selection();
+                        self.context_manager.clear_split_zoom(&mut self.sugarloaf);
                         let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_next_split_or_tab();
                         let new_index = self.context_manager.current_index();
@@ -1339,6 +1345,7 @@ impl Screen<'_> {
                     Act::SelectPrevSplitOrTab => {
                         self.cancel_search(clipboard);
                         self.clear_selection();
+                        self.context_manager.clear_split_zoom(&mut self.sugarloaf);
                         let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_prev_split_or_tab();
                         let new_index = self.context_manager.current_index();
@@ -1465,6 +1472,15 @@ impl Screen<'_> {
             .split(rich_text_id, true, &mut self.sugarloaf);
 
         self.mark_dirty();
+    }
+
+    pub fn toggle_split_zoom(&mut self) {
+        if self
+            .context_manager
+            .toggle_split_zoom(&mut self.sugarloaf)
+        {
+            self.mark_dirty();
+        }
     }
 
     pub fn move_divider_up(&mut self) {
@@ -3333,11 +3349,14 @@ impl Screen<'_> {
             PaletteAction::SplitRight => self.split_right(),
             PaletteAction::SplitDown => self.split_down(),
             PaletteAction::SelectNextSplit => {
+                self.context_manager.clear_split_zoom(&mut self.sugarloaf);
                 self.context_manager.select_next_split();
             }
             PaletteAction::SelectPrevSplit => {
+                self.context_manager.clear_split_zoom(&mut self.sugarloaf);
                 self.context_manager.select_prev_split();
             }
+            PaletteAction::ToggleSplitZoom => self.toggle_split_zoom(),
             PaletteAction::CloseCurrentSplitOrTab => self.close_split_or_tab(clipboard),
             PaletteAction::ConfigEditor => {
                 self.context_manager.switch_to_settings();
@@ -3628,6 +3647,12 @@ impl Screen<'_> {
                 .contexts_mut()
                 .iter_mut()
             {
+                // Skip panels hidden by a zoom. Their snapshot buffers
+                // stay untouched, so there's nothing to restore for
+                // them at the end of the pass.
+                if item.is_hidden() {
+                    continue;
+                }
                 let ctx = &mut item.val;
                 let dim = ctx.dimension;
                 // Canonical integer cell stride — single source of

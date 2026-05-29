@@ -283,6 +283,9 @@ impl Renderer {
         if self.scrollbar.is_enabled() {
             self.scrollbar.clear_panel_states();
             for grid_context in grid.contexts_mut().values() {
+                if grid_context.is_hidden() {
+                    continue;
+                }
                 let panel_rect = grid_context.layout_rect;
                 let ctx = grid_context.context();
                 let terminal = ctx.terminal.lock();
@@ -298,6 +301,9 @@ impl Renderer {
         }
 
         for (_key, grid_context) in grid.contexts_mut().iter_mut() {
+            if grid_context.is_hidden() {
+                continue;
+            }
             let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
 
@@ -535,10 +541,7 @@ impl Renderer {
                 tint[2],
                 1.0 - self.unfocused_split_opacity,
             ];
-            for (key, grid_context) in grid.contexts_mut().iter() {
-                if &active_key == key {
-                    continue;
-                }
+            for grid_context in grid.unfocused_panels(active_key) {
                 // Match the grid renderer's actual paint region —
                 // `.round()`ed integer-pixel origin +
                 // `cols * round(cell_w)` × `rows * round(cell_h)`

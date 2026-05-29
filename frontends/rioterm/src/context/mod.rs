@@ -571,6 +571,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.current_mut().renderable_content.last_typing = Some(Instant::now());
     }
 
+    /// Toggle zoom on the focused split of the current grid.
+    #[inline]
+    pub fn toggle_split_zoom(&mut self, sugarloaf: &mut Sugarloaf) -> bool {
+        self.contexts[self.current_index].toggle_zoom(sugarloaf)
+    }
+
+    /// Drop the current grid out of zoom (if zoomed). Returns `true`
+    /// when a zoom was cleared.
+    #[inline]
+    pub fn clear_split_zoom(&mut self, sugarloaf: &mut Sugarloaf) -> bool {
+        self.contexts[self.current_index].clear_zoom(sugarloaf)
+    }
+
     #[inline]
     pub fn select_next_split(&mut self) {
         self.contexts[self.current_index].select_next_split();
