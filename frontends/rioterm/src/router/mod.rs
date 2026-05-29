@@ -331,9 +331,11 @@ impl Route<'_> {
                 match &key_event.logical_key {
                     Key::Character(c) if c.as_str() == "n" || c.as_str() == "N" => {
                         self.path = RoutePath::Terminal;
+                        self.request_overlay_redraw();
                     }
                     Key::Named(NamedKey::Escape) => {
                         self.path = RoutePath::Terminal;
+                        self.request_overlay_redraw();
                     }
                     Key::Character(c) if c.as_str() == "y" || c.as_str() == "Y" => {
                         self.quit();
