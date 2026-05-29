@@ -1211,7 +1211,7 @@ impl GridGlyphRasterizer {
     }
 
     #[inline]
-    fn resolve_font(
+    pub(crate) fn resolve_font(
         &mut self,
         ch: char,
         style_flags: u8,
@@ -1245,15 +1245,8 @@ impl GridGlyphRasterizer {
             .entry((ch, style_flags, route_id))
             .or_insert_with(|| {
                 let span_style = span_style_for_flags(style_flags);
-                #[cfg(target_os = "macos")]
                 let (id, emoji) =
                     font_library.resolve_font_for_char(ch, &span_style, Some(route_id));
-                #[cfg(not(target_os = "macos"))]
-                let (id, emoji) = {
-                    let lib = font_library.inner.read();
-                    lib.find_best_font_match(ch, &span_style, Some(route_id))
-                        .unwrap_or((0, false))
-                };
                 (id as u32, emoji)
             })
     }
@@ -2495,4 +2488,62 @@ fn font_library_hinting(_r: &GridGlyphRasterizer) -> bool {
     // For now the lock on swash rasterize is a small fraction of
     // render time; optimise if profiling flags it.
     true
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod resolve_font_cascade_tests {
+    use super::*;
+    use rio_backend::sugarloaf::font::constants::FONT_CASCADIA_CODE_NF;
+    use rio_backend::sugarloaf::font::{FontData, FontLibrary, FontLibraryData};
+    use rio_backend::sugarloaf::SpanStyle;
+    use std::sync::Arc;
+
+    fn make_lib_with_primary_only() -> FontLibrary {
+        let mut data = FontLibraryData::default();
+        data.insert(
+            FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load primary"),
+        );
+        FontLibrary {
+            inner: Arc::new(parking_lot::RwLock::new(data)),
+        }
+    }
+
+    /// Regression test for the bug where Linux/Windows shape paths
+    /// called `find_best_font_match` instead of `resolve_font_for_char`,
+    /// pinning codepoints absent from CascadiaCodeNF (e.g. U+23BF
+    /// "DENTISTRY SYMBOL LIGHT VERTICAL AND TOP RIGHT", used in Claude
+    /// Code output) to font_id 0 and rendering them as tofu. The fix
+    /// unified both call sites on `resolve_font_for_char`, which
+    /// triggers fontconfig cascade discovery on a primary-font miss.
+    ///
+    /// Linux-only because the cascade goes through fontconfig and
+    /// needs a system font covering U+23BF (FreeMono / Adwaita Mono /
+    /// IosevkaTerm Nerd Font Mono / Symbola are common matches). A
+    /// probe library establishes whether the host can cascade at all;
+    /// if not, the test skips — the bug it's guarding against isn't
+    /// reproducible there either way. If the host *can* cascade, the
+    /// assertion is unconditional: returning font_id 0 then is exactly
+    /// the regression.
+    #[test]
+    fn grid_resolve_font_cascades_for_char_outside_primary_font() {
+        const PROBE_CH: char = '\u{23BF}';
+
+        let probe = make_lib_with_primary_only();
+        let (probe_id, _) =
+            probe.resolve_font_for_char(PROBE_CH, &SpanStyle::default(), None);
+        if probe_id == 0 {
+            return;
+        }
+
+        let lib = make_lib_with_primary_only();
+        let mut rast = GridGlyphRasterizer::new();
+        let (font_id, _is_emoji) = rast.resolve_font(PROBE_CH, 0, &lib, 0);
+
+        assert_ne!(
+            font_id, 0,
+            "U+23BF is not in CascadiaCodeNF and the host can cascade-discover it \
+             (verified by probe). The grid resolver must reach `resolve_font_for_char` \
+             so the cascade fires — `find_best_font_match` alone would pin to 0 (tofu)."
+        );
+    }
 }

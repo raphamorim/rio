@@ -2107,6 +2107,62 @@ mod postscript_resolver_tests {
     }
 }
 
+#[cfg(all(test, target_os = "linux"))]
+mod linux_cascade_tests {
+    use super::*;
+
+    /// Linux mirror of `resolve_font_for_char_lazy_discovers_cascade_font`.
+    /// Verifies fontconfig cascade discovery fires on a primary-font
+    /// miss and registers the discovered font. Uses U+23BF (the actual
+    /// regression character: missing-glyph rendering of `⎿` from
+    /// Claude Code's CLI output) — broadly covered on Linux by
+    /// FreeMono / Adwaita Mono / IosevkaTerm Nerd Font / Symbola.
+    ///
+    /// Skips when fontconfig can't find any covering font (true on
+    /// some minimal CI images) — the cascade can't fire there so the
+    /// test has nothing to assert.
+    #[test]
+    fn resolve_font_for_char_lazy_discovers_cascade_font_linux() {
+        use crate::SpanStyle;
+        use std::sync::Arc;
+
+        let make_lib = || {
+            let mut data = FontLibraryData::default();
+            data.insert(
+                FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load"),
+            );
+            FontLibrary {
+                inner: Arc::new(parking_lot::RwLock::new(data)),
+            }
+        };
+
+        let style = SpanStyle::default();
+        let probe = make_lib();
+        let (probe_id, _) = probe.resolve_font_for_char('\u{23BF}', &style, None);
+        if probe_id == 0 {
+            return;
+        }
+
+        let lib = make_lib();
+        let starting_len = lib.inner.read().inner.len();
+        let (font_id, _is_emoji) = lib.resolve_font_for_char('\u{23BF}', &style, None);
+
+        assert_ne!(
+            font_id, 0,
+            "lazy discovery should register a new font_id distinct from primary"
+        );
+        assert_eq!(
+            lib.inner.read().inner.len(),
+            starting_len + 1,
+            "lazy discovery should have registered exactly one new font"
+        );
+        assert!(
+            font_id < lib.inner.read().inner.len(),
+            "returned font_id should index into the library"
+        );
+    }
+}
+
 #[cfg(test)]
 mod glyph_registry_install_tests {
     use super::*;
