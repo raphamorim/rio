@@ -121,7 +121,13 @@ ash = "0.38.0"
 # higher-level `windows` crate isn't in Debian at all.
 
 [dev-dependencies]
-rio-window = { workspace = true }
+# x11/wayland enable the platform cfg aliases rio-window's build.rs
+# sets — without one of them rio-window's platform_impl emits a
+# compile_error on Linux. The workspace declaration sets
+# default-features = false, so we re-enable them explicitly here.
+# Transitive x11/wayland deps are target.'cfg(free_unix)'-gated, so
+# this is a no-op on macOS/Windows.
+rio-window = { workspace = true, features = ["x11", "wayland", "wayland-dlopen"] }
 png = "0.17.16"
 deflate = "1.0.0"
 criterion = { workspace = true }
