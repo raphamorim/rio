@@ -96,3 +96,13 @@ split-debuginfo = "unpacked"
 lto = false
 incremental = true
 opt-level = 0
+
+# Temporary pin to a fork carrying the cosmic-text title renderer (proper
+# shaping + font fallback) in the CSD title-bar. Without this, emoji / CJK /
+# many symbols in window titles render as identical .notdef hollow boxes on
+# GNOME Wayland (and any other compositor that forces CSD). Tracking:
+#   downstream: https://github.com/raphamorim/rio/issues/1622
+#   upstream:   https://github.com/PolyMeilex/sctk-adwaita/issues/96
+# Drop this patch when the fix lands in a released sctk-adwaita 0.10.x.
+[patch.crates-io]
+sctk-adwaita = { git = "https://github.com/nikicat/sctk-adwaita", branch = "cosmic-text-0.10" }
