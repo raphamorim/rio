@@ -1770,6 +1770,30 @@ impl Screen<'_> {
         self.context_manager.request_render();
     }
 
+    /// Install a pre-computed selection range. Used by the OSC 8
+    /// double-click fast path, where the span comes from the extras
+    /// table walk instead of a `SelectionType`-driven expansion. Builds
+    /// a `Simple` selection covering exactly the supplied cells so
+    /// `terminal.selection_to_string()` (and any later drag-extend)
+    /// works the same way as a manual drag selection would.
+    #[inline]
+    fn set_selection_range(
+        &mut self,
+        range: rio_backend::selection::SelectionRange,
+        clipboard: &mut Clipboard,
+    ) {
+        self.copy_selection(ClipboardType::Selection, clipboard);
+        let current = self.context_manager.current_mut();
+        let mut terminal = current.terminal.lock();
+        let mut selection = Selection::new(SelectionType::Simple, range.start, Side::Left);
+        selection.update(range.end, Side::Right);
+        terminal.selection = Some(selection);
+        drop(terminal);
+
+        current.set_selection(Some(range));
+        self.context_manager.request_render();
+    }
+
     #[inline]
     fn toggle_selection(
         &mut self,
@@ -2014,32 +2038,11 @@ impl Screen<'_> {
             return None;
         }
 
-        // Look up the cell's hyperlink via the per-grid extras table.
-        // Cells in the same OSC 8 span share an `extras_id`, so we
-        // walk left/right comparing ids (cheap u16 compare) to find
-        // the span boundaries, then look up the URI once.
-        let id = terminal.cell_hyperlink_id(point.row, point.col)?;
-
-        let mut start_col = point.col;
-        let mut end_col = point.col;
-
-        while start_col > rio_backend::crosswords::pos::Column(0) {
-            let prev_col = start_col - 1;
-            if terminal.cell_hyperlink_id(point.row, prev_col) == Some(id) {
-                start_col = prev_col;
-            } else {
-                break;
-            }
-        }
-        while end_col < grid.columns() - 1 {
-            let next_col = end_col + 1;
-            if terminal.cell_hyperlink_id(point.row, next_col) == Some(id) {
-                end_col = next_col;
-            } else {
-                break;
-            }
-        }
-
+        // Delegate the span walk (including soft-wrap row crossing) to
+        // the shared helper so this code path and the OSC 8 double-click
+        // fast path agree on the selection boundaries.
+        let span =
+            rio_backend::crosswords::hyperlink::hyperlink_span_at(terminal, point)?;
         let hyperlink = terminal.cell_hyperlink(point.row, point.col)?;
 
         // Build a synthetic hint config so the rest of the hint
@@ -2066,8 +2069,8 @@ impl Screen<'_> {
 
         Some(crate::hints::HintMatch {
             text: uri,
-            start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
-            end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
+            start: span.start,
+            end: span.end,
             hint: hint_config,
         })
     }
@@ -2776,7 +2779,22 @@ impl Screen<'_> {
                 }
             }
             ClickState::DoubleClick => {
-                self.start_selection(SelectionType::Semantic, point, side, clipboard);
+                // OSC 8 fast path: if the click cell carries a hyperlink,
+                // select the full link span instead of the semantic-word
+                // boundaries. Producers that emit OSC 8 (gh, fd, eza,
+                // most modern shells) get correct selection even when
+                // the anchor text isn't itself a parseable URL.
+                let osc8 = {
+                    let terminal = self.context_manager.current().terminal.lock();
+                    rio_backend::crosswords::hyperlink::hyperlink_span_at(
+                        &terminal, point,
+                    )
+                };
+                if let Some(range) = osc8 {
+                    self.set_selection_range(range, clipboard);
+                } else {
+                    self.start_selection(SelectionType::Semantic, point, side, clipboard);
+                }
             }
             ClickState::TripleClick => {
                 self.start_selection(SelectionType::Lines, point, side, clipboard);

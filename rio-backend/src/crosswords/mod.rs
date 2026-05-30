@@ -16,6 +16,7 @@
 
 pub mod attr;
 pub mod grid;
+pub mod hyperlink;
 pub mod pos;
 pub mod search;
 pub mod square;
