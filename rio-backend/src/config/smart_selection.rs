@@ -39,7 +39,11 @@ pub fn default_rules() -> Vec<(&'static str, &'static str, u8)> {
             r#"(?:https?|ftp|file|ssh|git|mailto|gemini|gopher|news|magnet|ipfs|ipns)://?[^\s<>"\\{}\^\x00-\x1f\[\]()]+"#,
             PRECISION_URL,
         ),
-        ("file_line", r"[\w./~-]+\.[\w]+:\d+(?::\d+)?", PRECISION_HIGH),
+        (
+            "file_line",
+            r"[\w./~-]+\.[\w]+:\d+(?::\d+)?",
+            PRECISION_HIGH,
+        ),
         (
             "uuid",
             r"(?-u:\b)[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}(?-u:\b)",
@@ -171,10 +175,7 @@ impl SmartSelectionConfig {
                 match SmartRule::new(name.clone(), &pattern, precision) {
                     Ok(rule) => Some(rule),
                     Err(e) => {
-                        warn!(
-                            "smart-selection rule {:?} failed to compile: {}",
-                            name, e
-                        );
+                        warn!("smart-selection rule {:?} failed to compile: {}", name, e);
                         None
                     }
                 }
