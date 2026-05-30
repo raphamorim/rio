@@ -82,6 +82,10 @@ pub struct Screen<'screen> {
     last_close_press: Option<(std::time::Instant, f32)>,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
     pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
+    /// Compiled smart-selection rules; consulted on double-click
+    /// after the OSC 8 fast path. Kept on `Screen` to amortize the
+    /// DFA compile cost across clicks.
+    smart_rules: Vec<rio_backend::crosswords::smart_select::SmartRule>,
 }
 
 pub struct ChromePress {
@@ -319,6 +323,8 @@ impl Screen<'_> {
             last_close_press: None,
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
+            smart_rules:
+                rio_backend::config::smart_selection::compile_default_rules(),
         })
     }
 
@@ -3060,18 +3066,27 @@ impl Screen<'_> {
                 }
             }
             ClickState::DoubleClick => {
-                // OSC 8 fast path: if the click cell carries a hyperlink,
-                // select the full link span instead of the semantic-word
-                // boundaries. Producers that emit OSC 8 (gh, fd, eza,
-                // most modern shells) get correct selection even when
-                // the anchor text isn't itself a parseable URL.
-                let osc8 = {
+                // Double-click resolution order:
+                //   1. OSC 8 hyperlink span (precise, producer-driven).
+                //   2. Smart-select rules (URL, file:line, UUID, ...).
+                //   3. Fallback to semantic word boundaries.
+                // Each step short-circuits on success so the cheaper
+                // checks run first and unrelated text falls through to
+                // the existing semantic behavior with no regression.
+                let resolved = {
                     let terminal = self.context_manager.current().terminal.lock();
                     rio_backend::crosswords::hyperlink::hyperlink_span_at(
                         &terminal, point,
                     )
+                    .or_else(|| {
+                        rio_backend::crosswords::smart_select::smart_select_at(
+                            &terminal,
+                            &mut self.smart_rules,
+                            point,
+                        )
+                    })
                 };
-                if let Some(range) = osc8 {
+                if let Some(range) = resolved {
                     self.set_selection_range(range, clipboard);
                 } else {
                     self.start_selection(SelectionType::Semantic, point, side, clipboard);
