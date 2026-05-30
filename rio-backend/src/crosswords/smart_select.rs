@@ -6,6 +6,7 @@
 //! `None` when nothing matches, leaving the caller free to use a
 //! plainer selection strategy (semantic, word, etc.).
 
+use crate::config::smart_selection::SmartSelectionConfig;
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::pos::{Direction, Pos};
 use crate::crosswords::search::{Match, RegexIter, RegexSearch};
@@ -39,6 +40,48 @@ impl SmartRule {
             regex: RegexSearch::new(pattern)?,
             precision,
         })
+    }
+}
+
+/// Owns the compiled rule list and exposes the two operations the
+/// rest of the app needs: select-at-click and reload-from-config.
+/// Splitting the recompile out of `Screen::update_config` keeps the
+/// hot-reload path testable without spinning up a window.
+#[derive(Debug)]
+pub struct SmartSelector {
+    rules: Vec<SmartRule>,
+}
+
+impl SmartSelector {
+    pub fn new(config: &SmartSelectionConfig) -> Self {
+        Self {
+            rules: config.compile(),
+        }
+    }
+
+    /// Replace the rule set with one freshly compiled from `config`.
+    /// Called on config reload; cheap relative to a click, but heavy
+    /// enough (compiles every regex) to be off the click hot path.
+    pub fn reload(&mut self, config: &SmartSelectionConfig) {
+        self.rules = config.compile();
+    }
+
+    /// Resolve the click against the active rule set.
+    pub fn select_at<T: EventListener>(
+        &mut self,
+        term: &Crosswords<T>,
+        click: Pos,
+    ) -> Option<SelectionRange> {
+        smart_select_at(term, &mut self.rules, click)
+    }
+
+    /// Number of active rules. Useful for assertions; not on a hot path.
+    pub fn len(&self) -> usize {
+        self.rules.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rules.is_empty()
     }
 }
 
@@ -275,5 +318,99 @@ mod tests {
         // URL ends on a later row, at the last URL char before the space.
         assert!(r.end.row > Line(0));
         assert!(r.end > r.start);
+    }
+
+    // --- reload-path tests (the "hot-reload D" check from the manual
+    // sampler, asserted directly so a regression in the reload wiring
+    // shows up in CI instead of needing a windowed integration run).
+    use crate::config::smart_selection::{SmartSelectionConfig, UserRule};
+
+    fn url_click_setup() -> (Crosswords<VoidListener>, Pos) {
+        let mut term = cw(80, 5);
+        write(&mut term, b"see https://cli.github.com/manual end");
+        // Click on the `g` of `github` (inside the URL).
+        let click = Pos::new(Line(0), Column(15));
+        (term, click)
+    }
+
+    #[test]
+    fn selector_picks_up_master_disable_on_reload() {
+        let (term, click) = url_click_setup();
+        let mut sel = SmartSelector::new(&SmartSelectionConfig::default());
+        assert!(
+            sel.select_at(&term, click).is_some(),
+            "defaults should match the URL",
+        );
+
+        sel.reload(&SmartSelectionConfig {
+            enabled: false,
+            rules: vec![],
+        });
+        assert!(
+            sel.select_at(&term, click).is_none(),
+            "after disabling the engine the URL must no longer smart-select",
+        );
+
+        // Re-enable and confirm the URL match returns — proves reload
+        // isn't a one-shot.
+        sel.reload(&SmartSelectionConfig::default());
+        assert!(sel.select_at(&term, click).is_some());
+    }
+
+    #[test]
+    fn selector_picks_up_rule_disable_on_reload() {
+        let mut term = cw(80, 5);
+        write(&mut term, b"trace src/main.rs:42:7 here");
+        let click = Pos::new(Line(0), Column(15));
+
+        let mut sel = SmartSelector::new(&SmartSelectionConfig::default());
+        let r = sel.select_at(&term, click).expect("file_line should match");
+        // Full `src/main.rs:42:7` (cols 6..=21).
+        assert_eq!(r.end, Pos::new(Line(0), Column(21)));
+
+        sel.reload(&SmartSelectionConfig {
+            enabled: true,
+            rules: vec![UserRule {
+                name: "file_line".into(),
+                regex: None,
+                precision: None,
+                enabled: false,
+            }],
+        });
+        // After disabling the file_line rule, no other default matches
+        // `src/main.rs:42:7` (URL needs a scheme, ipv4 needs all
+        // dotted numbers, etc.) — so smart-select returns None and
+        // the click falls through to semantic.
+        assert!(sel.select_at(&term, click).is_none());
+    }
+
+    #[test]
+    fn selector_picks_up_added_user_rule_on_reload() {
+        let mut term = cw(80, 5);
+        // Phabricator-style ticket containing a `:` so semantic
+        // can't catch it. Without the user rule no built-in matches.
+        write(&mut term, b"see T:1234 today");
+        let click = Pos::new(Line(0), Column(6));
+
+        let mut sel = SmartSelector::new(&SmartSelectionConfig::default());
+        assert!(
+            sel.select_at(&term, click).is_none(),
+            "no default rule should match a `T:1234` token",
+        );
+
+        sel.reload(&SmartSelectionConfig {
+            enabled: true,
+            rules: vec![UserRule {
+                name: "phab".into(),
+                regex: Some(r"T:\d+".into()),
+                precision: Some(120),
+                enabled: true,
+            }],
+        });
+        let r = sel
+            .select_at(&term, click)
+            .expect("after reload the user rule should match");
+        assert_eq!(r.start, Pos::new(Line(0), Column(4)));
+        assert_eq!(r.end, Pos::new(Line(0), Column(9)));
     }
 }
