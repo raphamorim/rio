@@ -2041,6 +2041,7 @@ pub fn build_row_fg(
                 is_emoji,
                 synthetic_italic,
                 synthetic_bold,
+                font_library,
             ) else {
                 continue;
             };
@@ -2273,6 +2274,7 @@ fn ensure_glyph_by_id(
     is_emoji: bool,
     synthetic_italic: bool,
     synthetic_bold: bool,
+    font_library: &FontLibrary,
 ) -> Option<(GlyphKey, AtlasSlot, bool)> {
     let key = GlyphKey {
         font_id,
@@ -2295,6 +2297,7 @@ fn ensure_glyph_by_id(
         is_emoji,
         synthetic_bold,
         synthetic_italic,
+        font_library,
     )?;
     let is_color = raw.is_color;
 
@@ -2424,6 +2427,10 @@ fn rasterize_glyph_native(
     is_emoji: bool,
     synthetic_bold: bool,
     synthetic_italic: bool,
+    // macOS bakes `wght` into the CTFont handle at load time, so the
+    // rasterize path needs no library lookup — accepted for signature
+    // parity with the swash backend.
+    _font_library: &FontLibrary,
 ) -> Option<RawGlyph> {
     let handle = rasterizer.handle_cache.get(&font_id)?.clone();
     let raw = rio_backend::sugarloaf::font::macos::rasterize_glyph(
@@ -2453,6 +2460,7 @@ fn rasterize_glyph_native(
     _is_emoji: bool,
     synthetic_bold: bool,
     synthetic_italic: bool,
+    font_library: &FontLibrary,
 ) -> Option<RawGlyph> {
     use rio_backend::sugarloaf::swash::{
         scale::{
@@ -2470,14 +2478,23 @@ fn rasterize_glyph_native(
         key: font_entry.2,
     };
 
-    // wght_variation_cache is populated by the matching shape_run_swash
-    // call earlier in the frame; `copied().flatten()` keeps `None` if it
-    // wasn't (a glyph that bypassed shaping has no variable-axis override).
-    let wght = rasterizer
+    // Resolve the `wght` axis the same deterministic way shaping does:
+    // populate the per-font_id cache from the font library on a miss.
+    // Rasterization must NOT depend on `shape_run_swash` having run this
+    // frame — when the shaped-run cache hits, shaping is skipped, and a
+    // bare `flatten()` to `None` here would rasterize a bold slot at the
+    // variable font's default 400 instance (the "some glyphs aren't bold"
+    // artifact, varying per window with cache state).
+    let wght = *rasterizer
         .wght_variation_cache
-        .get(&font_id)
-        .copied()
-        .flatten();
+        .entry(font_id)
+        .or_insert_with(|| {
+            font_library
+                .inner
+                .read()
+                .get(&(font_id as usize))
+                .wght_variation
+        });
     const WGHT_TAG: rio_backend::sugarloaf::swash::Tag = u32::from_be_bytes(*b"wght");
     let wght_var = wght.map(|v| Setting {
         tag: WGHT_TAG,
@@ -2544,4 +2561,97 @@ fn font_library_hinting(_r: &GridGlyphRasterizer) -> bool {
     // For now the lock on swash rasterize is a small fraction of
     // render time; optimise if profiling flags it.
     true
+}
+
+/// A bundled variable-font slot (e.g. bold / bold-italic) bakes its
+/// weight into the swash `wght` axis at *rasterize* time via
+/// `wght_variation`. The grid rasterizer feeds that axis through a
+/// per-font_id side cache (`wght_variation_cache`) that is populated by
+/// `shape_run_swash`. But shaping is skipped whenever the shaped-run
+/// cache hits (`run_cache_get(..).is_some()`), so a glyph can reach
+/// `rasterize_glyph_native` with the side cache still empty for its
+/// font_id. The old code then `flatten()`ed the miss to `None` and
+/// rasterized at the variable font's default 400 instance — producing a
+/// *non-bold* glyph for a bold slot, depending purely on whether shaping
+/// happened to run this frame. That's the "some symbols aren't bold, and
+/// which ones varies per window" artifact.
+///
+/// This test pins the invariant: the rasterized outline for a bold slot
+/// must be identical whether or not `shape_run_swash` pre-populated the
+/// side cache. It fails before the fix (cold path renders lighter) and
+/// passes once `rasterize_glyph_native` resolves `wght` from the font
+/// library on a cache miss instead of defaulting to `None`.
+#[cfg(all(test, not(target_os = "macos")))]
+mod wght_rasterize_tests {
+    use super::*;
+    use rio_backend::sugarloaf::font::constants::FONT_CASCADIA_CODE_NF;
+    use rio_backend::sugarloaf::font::{FontData, FontLibrary, FontLibraryData};
+    use rio_backend::sugarloaf::swash::{FontRef, Weight};
+    use std::sync::Arc;
+
+    fn ink_mass(g: &RawGlyph) -> u64 {
+        g.bytes.iter().map(|&b| b as u64).sum()
+    }
+
+    #[test]
+    fn bold_slot_rasterizes_bold_without_prior_shaping() {
+        // font_id 0 = bundled Cascadia baked to the bold axis (wght 700),
+        // exactly how the bold / bold-italic slots are loaded.
+        let mut data = FontLibraryData::default();
+        data.insert(
+            FontData::from_static_slice_with_wght(
+                FONT_CASCADIA_CODE_NF,
+                Some(700.0),
+                Some(Weight::BOLD),
+            )
+            .expect("load bold slot"),
+        );
+        let lib = FontLibrary {
+            inner: Arc::new(parking_lot::RwLock::new(data)),
+        };
+        assert_eq!(
+            lib.inner.read().get(&0).wght_variation,
+            Some(700.0),
+            "slot must carry the bold wght axis override"
+        );
+
+        let glyph_id = FontRef::from_index(FONT_CASCADIA_CODE_NF, 0)
+            .expect("font ref")
+            .charmap()
+            .map('a' as u32);
+        assert_ne!(glyph_id, 0, "'a' must be present in Cascadia Code");
+
+        let size_u16 = 32u16;
+        let font_entry = lib.inner.read().get_data(&0).expect("font data");
+
+        // Warm path: side cache populated, as a run-cache *miss* would
+        // leave it after `shape_run_swash`. This is the correct reference.
+        let mut warm = GridGlyphRasterizer::new();
+        warm.font_data_cache.insert(0, font_entry.clone());
+        warm.wght_variation_cache.insert(0, Some(700.0));
+        let bold =
+            rasterize_glyph_native(&mut warm, 0, glyph_id, size_u16, false, false, false, &lib)
+                .expect("warm rasterize");
+
+        // Cold path: shaping was skipped (run-cache *hit*), so the side
+        // cache has no entry for this font_id. This is the buggy case.
+        let mut cold = GridGlyphRasterizer::new();
+        cold.font_data_cache.insert(0, font_entry);
+        // Intentionally leave `wght_variation_cache` empty.
+        let cold_glyph =
+            rasterize_glyph_native(&mut cold, 0, glyph_id, size_u16, false, false, false, &lib)
+                .expect("cold rasterize");
+
+        assert!(ink_mass(&bold) > 0, "reference glyph must have ink");
+        assert_eq!(
+            (cold_glyph.width, cold_glyph.height, ink_mass(&cold_glyph)),
+            (bold.width, bold.height, ink_mass(&bold)),
+            "bold-slot glyph must rasterize at wght 700 regardless of whether \
+             shape_run_swash ran this frame. The cold path (run-cache hit -> no \
+             side-cache entry) fell back to the variable font's default 400 \
+             instance, yielding a lighter glyph (ink {} vs {}).",
+            ink_mass(&cold_glyph),
+            ink_mass(&bold),
+        );
+    }
 }
