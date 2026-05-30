@@ -9,6 +9,7 @@ pub mod layout;
 pub mod navigation;
 pub mod platform;
 pub mod renderer;
+pub mod smart_selection;
 pub mod theme;
 pub mod title;
 pub mod window;

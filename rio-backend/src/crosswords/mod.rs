@@ -19,6 +19,7 @@ pub mod grid;
 pub mod hyperlink;
 pub mod pos;
 pub mod search;
+pub mod smart_select;
 pub mod square;
 pub mod style;
 pub mod vi_mode;
