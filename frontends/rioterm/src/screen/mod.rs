@@ -330,10 +330,9 @@ impl Screen<'_> {
             resize_state: None,
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
-            smart_selector:
-                rio_backend::crosswords::smart_select::SmartSelector::new(
-                    &config.smart_selection,
-                ),
+            smart_selector: rio_backend::crosswords::smart_select::SmartSelector::new(
+                &config.smart_selection,
+            ),
         })
     }
 
@@ -1798,7 +1797,8 @@ impl Screen<'_> {
         self.copy_selection(ClipboardType::Selection, clipboard);
         let current = self.context_manager.current_mut();
         let mut terminal = current.terminal.lock();
-        let mut selection = Selection::new(SelectionType::Simple, range.start, Side::Left);
+        let mut selection =
+            Selection::new(SelectionType::Simple, range.start, Side::Left);
         selection.update(range.end, Side::Right);
         terminal.selection = Some(selection);
         drop(terminal);

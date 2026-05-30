@@ -107,10 +107,7 @@ mod tests {
     fn single_cell_hyperlink() {
         let mut term = cw(20, 5);
         let mut p = Processor::default();
-        p.advance(
-            &mut term,
-            b"\x1b]8;;https://example.com\x07X\x1b]8;;\x07",
-        );
+        p.advance(&mut term, b"\x1b]8;;https://example.com\x07X\x1b]8;;\x07");
         let r = hyperlink_span_at(&term, Pos::new(Line(0), Column(0))).unwrap();
         assert_eq!(r.start, Pos::new(Line(0), Column(0)));
         assert_eq!(r.end, Pos::new(Line(0), Column(0)));
