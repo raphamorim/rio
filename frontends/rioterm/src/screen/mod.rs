@@ -1519,10 +1519,7 @@ impl Screen<'_> {
     }
 
     pub fn toggle_split_zoom(&mut self) {
-        if self
-            .context_manager
-            .toggle_split_zoom(&mut self.sugarloaf)
-        {
+        if self.context_manager.toggle_split_zoom(&mut self.sugarloaf) {
             self.resync_island_after_zoom();
             self.mark_dirty();
         }
@@ -2845,8 +2842,7 @@ impl Screen<'_> {
         let window_width = self.sugarloaf.window_size().width;
         let num_tabs = self.context_manager.len();
         let zoom = self.context_manager.current_pane_zoom();
-        let island_visible =
-            self.renderer.navigation.island_visible_with(num_tabs, zoom);
+        let island_visible = self.renderer.navigation.island_visible_with(num_tabs, zoom);
 
         if let Some(ref mut island) = self.renderer.island {
             if island.is_color_picker_open() {
