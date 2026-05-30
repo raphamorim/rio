@@ -385,6 +385,56 @@ mod tests {
     }
 
     #[test]
+    fn worst_case_select_stays_under_budget() {
+        // The engine has to be cheap enough for a worst-case logical
+        // line not to introduce visible click-to-paint latency. Cap
+        // the budget at 50 ms — typical is sub-millisecond, so 50× is
+        // a regression sentinel (e.g. an accidental per-click DFA
+        // recompile, an O(n²) sneaking in) not a tight bound that
+        // CI noise would trip.
+        use std::time::Instant;
+
+        let cols = MAX_SCAN_CELLS;
+        let mut term = cw(cols, 1);
+
+        // Repeating filler that frequently *starts* a match for each
+        // built-in rule (hex char → git_sha, digit+dot → ipv4, dot+
+        // alnum → file_line, `@` → email) without ever completing,
+        // forcing the DFAs to do real work. One real URL sits
+        // mid-line so the chosen-match path also executes.
+        let chunk = b"abc123.de4@xy5 ";
+        let url = b"https://example.com/path";
+        let mut body = Vec::with_capacity(cols);
+        while body.len() + chunk.len() + url.len() < cols / 2 {
+            body.extend_from_slice(chunk);
+        }
+        let url_start = body.len();
+        body.extend_from_slice(url);
+        while body.len() + chunk.len() < cols {
+            body.extend_from_slice(chunk);
+        }
+        write(&mut term, &body);
+
+        let mut sel = SmartSelector::new(&SmartSelectionConfig::default());
+        let click = Pos::new(Line(0), Column(url_start + url.len() / 2));
+
+        // Warm up — first call may pay one-shot lazy-DFA caching cost.
+        let _ = sel.select_at(&term, click);
+
+        let start = Instant::now();
+        let r = sel.select_at(&term, click);
+        let elapsed = start.elapsed();
+
+        assert!(r.is_some(), "URL should still match on a long line");
+        assert!(
+            elapsed.as_millis() < 50,
+            "smart_select_at took {:?} on a {}-cell line (budget: 50ms)",
+            elapsed,
+            cols,
+        );
+    }
+
+    #[test]
     fn selector_picks_up_added_user_rule_on_reload() {
         let mut term = cw(80, 5);
         // Phabricator-style ticket containing a `:` so semantic
