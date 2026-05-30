@@ -1496,6 +1496,12 @@ fn shape_run_swash(
         .shape_ctx
         .builder(font_ref)
         .size(size_u16 as f32)
+        // Clear stale coordinates before applying `wght`: swash's
+        // `ShaperBuilder::variations()` shares the same never-cleared coord
+        // buffer as the scaler, so an unweighted run shaped after a weighted
+        // one would inherit the prior `wght` (wrong advances). See the
+        // matching note in `rasterize_glyph_native`.
+        .normalized_coords(core::iter::empty::<i16>())
         .variations(var_slice.iter().copied())
         .build();
     shaper.add_str(&rasterizer.run_str_scratch);
@@ -2511,6 +2517,17 @@ fn rasterize_glyph_native(
         .builder(font_ref)
         .hint(hinting)
         .size(size_u16 as f32)
+        // Force a clean coordinate slate before applying our `wght`. swash's
+        // `variations()` only `resize()`s the shared `ScaleContext` coord
+        // buffer and overwrites the axes it's handed — it never clears stale
+        // entries. So a slot with no variation (`wght == None`, empty
+        // `var_slice`) would inherit the previous build's coordinates: an
+        // unweighted italic glyph rasterized right after a bold one would
+        // come out bold. `normalized_coords()` *does* clear, giving a
+        // deterministic default-instance slate that `variations()` then sets
+        // `wght` on. (Far more visible under dim text, which fragments runs
+        // and interleaves more weights through this one shared context.)
+        .normalized_coords(core::iter::empty::<i16>())
         .variations(var_slice.iter().copied())
         .build();
 
@@ -2654,6 +2671,127 @@ mod wght_rasterize_tests {
              instance, yielding a lighter glyph (ink {} vs {}).",
             ink_mass(&cold_glyph),
             ink_mass(&bold),
+        );
+    }
+
+    /// swash's `ScaleContext` keeps a single coordinate buffer that every
+    /// `builder(..).variations(..)` reuses. `variations()` only `resize()`s
+    /// and overwrites the axes it's given — it never clears stale entries —
+    /// so a slot with `wght == None` (empty variation set) silently inherits
+    /// the *previous* build's `wght` coordinate. In the grid renderer the
+    /// one `scale_ctx` is shared across every font_id, so an unweighted
+    /// italic glyph rasterized right after a bold (wght 700) glyph comes out
+    /// bold. That's the rare "false bold" artifact — rare because it needs a
+    /// weighted build to immediately precede an unweighted one, and far more
+    /// frequent under dim text, which fragments runs and interleaves more
+    /// weights through the shared context.
+    ///
+    /// This test drives two font_ids through one rasterizer: id 0 = bold
+    /// (wght 700), id 1 = unweighted (wght None, the italic/regular-default
+    /// case). It pins the invariant that the unweighted glyph rasterizes
+    /// identically whether or not a bold glyph was rasterized just before it.
+    /// Fails before the fix (post-bold render matches bold's heavier ink),
+    /// passes once the builder clears coordinates before applying `wght`.
+    #[test]
+    fn unweighted_slot_unaffected_by_prior_bold_rasterize() {
+        let mut data = FontLibraryData::default();
+        // id 0: bold slot (wght 700).
+        data.insert(
+            FontData::from_static_slice_with_wght(
+                FONT_CASCADIA_CODE_NF,
+                Some(700.0),
+                Some(Weight::BOLD),
+            )
+            .expect("load bold slot"),
+        );
+        // id 1: unweighted slot (wght None) — same upright face, default
+        // instance, mirroring how the italic / regular-default slots load.
+        data.insert(
+            FontData::from_static_slice_with_wght(FONT_CASCADIA_CODE_NF, None, None)
+                .expect("load unweighted slot"),
+        );
+        let lib = FontLibrary {
+            inner: Arc::new(parking_lot::RwLock::new(data)),
+        };
+        assert_eq!(lib.inner.read().get(&0).wght_variation, Some(700.0));
+        assert_eq!(lib.inner.read().get(&1).wght_variation, None);
+
+        let glyph_id = FontRef::from_index(FONT_CASCADIA_CODE_NF, 0)
+            .expect("font ref")
+            .charmap()
+            .map('a' as u32);
+        assert_ne!(glyph_id, 0, "'a' must be present in Cascadia Code");
+
+        let size_u16 = 32u16;
+        let bold_entry = lib.inner.read().get_data(&0).expect("bold data");
+        let plain_entry = lib.inner.read().get_data(&1).expect("plain data");
+
+        // Baseline: rasterize the unweighted glyph on a fresh rasterizer
+        // with no prior build polluting the shared ScaleContext. This is the
+        // correct default-instance reference.
+        let mut clean = GridGlyphRasterizer::new();
+        clean.font_data_cache.insert(1, plain_entry.clone());
+        clean.wght_variation_cache.insert(1, None);
+        let plain_ref = rasterize_glyph_native(
+            &mut clean, 1, glyph_id, size_u16, false, false, false, &lib,
+        )
+        .expect("baseline rasterize");
+
+        // Leak path: rasterize the BOLD glyph first (seeds the shared
+        // scale_ctx coords with wght 700), then the unweighted glyph through
+        // the SAME rasterizer. Without the fix, the unweighted build inherits
+        // the stale 700 coordinate and renders bold.
+        let mut shared = GridGlyphRasterizer::new();
+        shared.font_data_cache.insert(0, bold_entry);
+        shared.wght_variation_cache.insert(0, Some(700.0));
+        shared.font_data_cache.insert(1, plain_entry);
+        shared.wght_variation_cache.insert(1, None);
+        let bold_first = rasterize_glyph_native(
+            &mut shared,
+            0,
+            glyph_id,
+            size_u16,
+            false,
+            false,
+            false,
+            &lib,
+        )
+        .expect("bold rasterize");
+        let plain_after = rasterize_glyph_native(
+            &mut shared,
+            1,
+            glyph_id,
+            size_u16,
+            false,
+            false,
+            false,
+            &lib,
+        )
+        .expect("post-bold unweighted rasterize");
+
+        assert!(ink_mass(&plain_ref) > 0, "baseline glyph must have ink");
+        // Sanity: bold really is heavier than the unweighted default, so the
+        // assertion below can actually distinguish a leak.
+        assert!(
+            ink_mass(&bold_first) > ink_mass(&plain_ref),
+            "bold glyph (ink {}) must be heavier than the unweighted default \
+             (ink {}) for this test to be meaningful",
+            ink_mass(&bold_first),
+            ink_mass(&plain_ref),
+        );
+        assert_eq!(
+            (
+                plain_after.width,
+                plain_after.height,
+                ink_mass(&plain_after)
+            ),
+            (plain_ref.width, plain_ref.height, ink_mass(&plain_ref)),
+            "an unweighted (wght None) glyph must rasterize at the default \
+             instance regardless of a preceding bold rasterize through the \
+             shared ScaleContext. It instead inherited the stale wght 700 \
+             coordinate (ink {} vs the correct {}), rendering a false bold.",
+            ink_mass(&plain_after),
+            ink_mass(&plain_ref),
         );
     }
 }
