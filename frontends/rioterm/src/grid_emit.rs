@@ -2629,18 +2629,20 @@ mod wght_rasterize_tests {
         let mut warm = GridGlyphRasterizer::new();
         warm.font_data_cache.insert(0, font_entry.clone());
         warm.wght_variation_cache.insert(0, Some(700.0));
-        let bold =
-            rasterize_glyph_native(&mut warm, 0, glyph_id, size_u16, false, false, false, &lib)
-                .expect("warm rasterize");
+        let bold = rasterize_glyph_native(
+            &mut warm, 0, glyph_id, size_u16, false, false, false, &lib,
+        )
+        .expect("warm rasterize");
 
         // Cold path: shaping was skipped (run-cache *hit*), so the side
         // cache has no entry for this font_id. This is the buggy case.
         let mut cold = GridGlyphRasterizer::new();
         cold.font_data_cache.insert(0, font_entry);
         // Intentionally leave `wght_variation_cache` empty.
-        let cold_glyph =
-            rasterize_glyph_native(&mut cold, 0, glyph_id, size_u16, false, false, false, &lib)
-                .expect("cold rasterize");
+        let cold_glyph = rasterize_glyph_native(
+            &mut cold, 0, glyph_id, size_u16, false, false, false, &lib,
+        )
+        .expect("cold rasterize");
 
         assert!(ink_mass(&bold) > 0, "reference glyph must have ink");
         assert_eq!(

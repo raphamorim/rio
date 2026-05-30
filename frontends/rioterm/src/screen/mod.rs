@@ -541,9 +541,10 @@ impl Screen<'_> {
                     // some other event (focus, input, resize) marks it
                     // dirty. Force a full repaint here so each existing
                     // panel re-emits its cells against the new fonts.
-                    current_context.renderable_content.pending_update.set_terminal_damage(
-                        rio_backend::event::TerminalDamage::Full,
-                    );
+                    current_context
+                        .renderable_content
+                        .pending_update
+                        .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
                 }
                 let shape = config.cursor.shape;
                 terminal.cursor_shape = shape;
