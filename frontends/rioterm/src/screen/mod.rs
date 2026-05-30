@@ -1486,10 +1486,7 @@ impl Screen<'_> {
     }
 
     pub fn toggle_split_zoom(&mut self) {
-        if self
-            .context_manager
-            .toggle_split_zoom(&mut self.sugarloaf)
-        {
+        if self.context_manager.toggle_split_zoom(&mut self.sugarloaf) {
             self.resync_island_after_zoom();
             self.mark_dirty();
         }
@@ -2673,8 +2670,7 @@ impl Screen<'_> {
         let window_width = self.sugarloaf.window_size().width;
         let num_tabs = self.context_manager.len();
         let zoom = self.context_manager.current_pane_zoom();
-        let island_visible =
-            self.renderer.navigation.island_visible_with(num_tabs, zoom);
+        let island_visible = self.renderer.navigation.island_visible_with(num_tabs, zoom);
 
         // Check if the color picker is open and the click hits a swatch.
         // Handled before the `island_visible` short-circuit so a picker
