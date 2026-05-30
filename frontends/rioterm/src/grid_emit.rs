@@ -1174,6 +1174,13 @@ pub struct GridGlyphRasterizer {
             rio_backend::sugarloaf::swash::CacheKey,
         ),
     >,
+    /// `wght` axis value per font_id, populated lazily on first shape /
+    /// rasterize. `None` means the face has no variable-axis override
+    /// (system-loaded fonts), `Some(v)` means a bundled variable face
+    /// with a baked `wght` value (Cascadia Code regular at 400, bold at
+    /// 700, or user-overridden values from `fonts.<slot>.weight`).
+    #[cfg(not(target_os = "macos"))]
+    wght_variation_cache: FxHashMap<u32, Option<f32>>,
 }
 
 impl Default for GridGlyphRasterizer {
@@ -1207,6 +1214,8 @@ impl GridGlyphRasterizer {
             scale_ctx: rio_backend::sugarloaf::swash::scale::ScaleContext::new(),
             #[cfg(not(target_os = "macos"))]
             font_data_cache: FxHashMap::default(),
+            #[cfg(not(target_os = "macos"))]
+            wght_variation_cache: FxHashMap::default(),
         }
     }
 
@@ -1439,7 +1448,7 @@ fn shape_run_swash(
     size_bucket: u16,
     font_library: &FontLibrary,
 ) -> Option<(Vec<ShapedGlyph>, i16)> {
-    use rio_backend::sugarloaf::swash::FontRef;
+    use rio_backend::sugarloaf::swash::{FontRef, Setting};
 
     let font_entry = rasterizer
         .font_data_cache
@@ -1455,6 +1464,26 @@ fn shape_run_swash(
         key: font_entry.2,
     };
 
+    let wght = *rasterizer
+        .wght_variation_cache
+        .entry(font_id)
+        .or_insert_with(|| {
+            font_library
+                .inner
+                .read()
+                .get(&(font_id as usize))
+                .wght_variation
+        });
+    const WGHT_TAG: rio_backend::sugarloaf::swash::Tag = u32::from_be_bytes(*b"wght");
+    let wght_var = wght.map(|v| Setting {
+        tag: WGHT_TAG,
+        value: v,
+    });
+    let var_slice: &[Setting<f32>] = match wght_var {
+        Some(ref s) => std::slice::from_ref(s),
+        None => &[],
+    };
+
     let ascent_px = *rasterizer
         .ascent_cache
         .entry((font_id, size_bucket))
@@ -1467,6 +1496,7 @@ fn shape_run_swash(
         .shape_ctx
         .builder(font_ref)
         .size(size_u16 as f32)
+        .variations(var_slice.iter().copied())
         .build();
     shaper.add_str(&rasterizer.run_str_scratch);
     let mut glyphs: Vec<ShapedGlyph> = Vec::new();
@@ -2430,7 +2460,7 @@ fn rasterize_glyph_native(
             Render, Source, StrikeWith,
         },
         zeno::{Angle, Format, Transform},
-        FontRef,
+        FontRef, Setting,
     };
 
     let font_entry = rasterizer.font_data_cache.get(&font_id)?.clone();
@@ -2440,12 +2470,31 @@ fn rasterize_glyph_native(
         key: font_entry.2,
     };
 
+    // wght_variation_cache is populated by the matching shape_run_swash
+    // call earlier in the frame; `copied().flatten()` keeps `None` if it
+    // wasn't (a glyph that bypassed shaping has no variable-axis override).
+    let wght = rasterizer
+        .wght_variation_cache
+        .get(&font_id)
+        .copied()
+        .flatten();
+    const WGHT_TAG: rio_backend::sugarloaf::swash::Tag = u32::from_be_bytes(*b"wght");
+    let wght_var = wght.map(|v| Setting {
+        tag: WGHT_TAG,
+        value: v,
+    });
+    let var_slice: &[Setting<f32>] = match wght_var {
+        Some(ref s) => std::slice::from_ref(s),
+        None => &[],
+    };
+
     let hinting = font_library_hinting(rasterizer);
     let mut scaler = rasterizer
         .scale_ctx
         .builder(font_ref)
         .hint(hinting)
         .size(size_u16 as f32)
+        .variations(var_slice.iter().copied())
         .build();
 
     let sources: &[Source] = &[

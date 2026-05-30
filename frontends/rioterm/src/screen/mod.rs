@@ -467,6 +467,21 @@ impl Screen<'_> {
 
         if should_update_font_library {
             self.sugarloaf.update_font(font_library);
+            // The rasterizer's per-font_id caches (font_data, wght_variation,
+            // ascent, run, synthesis, handle) point at the previous
+            // FontLibrary's faces — keeping them after a font rebuild would
+            // shape/raster the new ids against stale bytes, ascents, and
+            // variable-axis values. Replace with a fresh rasterizer so the
+            // next frame repopulates from the new library.
+            self.grid_rasterizer = crate::grid_emit::GridGlyphRasterizer::new();
+            // Per-panel GridRenderers hold glyph atlases keyed by
+            // (font_id, glyph_id, size_bucket); an atlas hit short-circuits
+            // rasterization, so leaving them around would keep serving the
+            // old wght / outlines from existing tabs while only freshly-
+            // opened tabs (which lazily build a new GridRenderer) would
+            // pick up the reload. Drop them so `ensure_grid` reinstates
+            // each panel with an empty atlas on the next frame.
+            self.grids.clear();
         }
         let s = self.sugarloaf.style_mut();
         s.font_size = config.fonts.size;
@@ -519,6 +534,17 @@ impl Screen<'_> {
                 let mut terminal = current_context.terminal.lock();
                 current_context.renderable_content =
                     RenderableContent::from_cursor_config(&config.cursor);
+                if should_update_font_library {
+                    // Font library swap invalidates every cached glyph but
+                    // doesn't dirty the panel by itself, so the renderer's
+                    // damage gate keeps serving the previous frame until
+                    // some other event (focus, input, resize) marks it
+                    // dirty. Force a full repaint here so each existing
+                    // panel re-emits its cells against the new fonts.
+                    current_context.renderable_content.pending_update.set_terminal_damage(
+                        rio_backend::event::TerminalDamage::Full,
+                    );
+                }
                 let shape = config.cursor.shape;
                 terminal.cursor_shape = shape;
                 terminal.default_cursor_shape = shape;
