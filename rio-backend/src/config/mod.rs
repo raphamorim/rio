@@ -159,6 +159,11 @@ pub struct Config {
     pub draw_bold_text_with_light_colors: bool,
     #[serde(default = "Hints::default")]
     pub hints: Hints,
+    #[serde(
+        default = "smart_selection::SmartSelectionConfig::default",
+        rename = "smart-selection"
+    )]
+    pub smart_selection: smart_selection::SmartSelectionConfig,
     #[serde(default = "Bell::default")]
     pub bell: Bell,
     #[serde(default = "default_bool_true", rename = "enable-scroll-bar")]
@@ -661,6 +666,7 @@ impl Default for Config {
             hide_cursor_when_typing: false,
             draw_bold_text_with_light_colors: false,
             hints: Hints::default(),
+            smart_selection: smart_selection::SmartSelectionConfig::default(),
             bell: Bell::default(),
             enable_scroll_bar: true,
             scrollback_history_limit: default_scrollback_history_limit(),

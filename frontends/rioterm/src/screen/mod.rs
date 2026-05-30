@@ -91,9 +91,9 @@ pub struct Screen<'screen> {
     /// each `GridRenderer`.
     pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
     /// Compiled smart-selection rules; consulted on double-click
-    /// after the OSC 8 fast path. Kept on `Screen` to amortize the
-    /// DFA compile cost across clicks.
-    smart_rules: Vec<rio_backend::crosswords::smart_select::SmartRule>,
+    /// after the OSC 8 fast path. Owns its own reload logic so
+    /// config edits take effect without rebuilding the `Screen`.
+    smart_selector: rio_backend::crosswords::smart_select::SmartSelector,
 }
 
 pub struct ScreenWindowProperties {
@@ -330,8 +330,10 @@ impl Screen<'_> {
             resize_state: None,
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
-            smart_rules:
-                rio_backend::config::smart_selection::compile_default_rules(),
+            smart_selector:
+                rio_backend::crosswords::smart_select::SmartSelector::new(
+                    &config.smart_selection,
+                ),
         })
     }
 
@@ -538,6 +540,11 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
+
+        // Recompile smart-selection rules so [smart-selection] edits
+        // take effect without a restart. A bad user regex is warned
+        // and skipped by `compile()` itself.
+        self.smart_selector.reload(&config.smart_selection);
 
         // Re-evaluate the opaque flag — toggling `window.opacity` /
         // `window.blur` at runtime should flip the compositor mode.
@@ -2797,13 +2804,7 @@ impl Screen<'_> {
                     rio_backend::crosswords::hyperlink::hyperlink_span_at(
                         &terminal, point,
                     )
-                    .or_else(|| {
-                        rio_backend::crosswords::smart_select::smart_select_at(
-                            &terminal,
-                            &mut self.smart_rules,
-                            point,
-                        )
-                    })
+                    .or_else(|| self.smart_selector.select_at(&terminal, point))
                 };
                 if let Some(range) = resolved {
                     self.set_selection_range(range, clipboard);
