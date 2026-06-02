@@ -10,6 +10,12 @@ pub struct Bell {
     pub urgency: UrgencyHint,
     #[serde(default = "default_notification")]
     pub notification: BellNotification,
+    /// Minimum time in milliseconds between two bells. A burst of BEL bytes
+    /// (e.g. `cat`-ing a binary file) is coalesced down to one bell per this
+    /// window, so the terminal does not ring constantly. Applies to the audible
+    /// sound, the urgency hint and the notification alike.
+    #[serde(default = "default_min_interval", rename = "min-interval")]
+    pub min_interval: u64,
 }
 
 /// How the audible bell behaves.
@@ -63,6 +69,7 @@ impl Default for Bell {
             audio: default_audio(),
             urgency: default_urgency(),
             notification: default_notification(),
+            min_interval: default_min_interval(),
         }
     }
 }
@@ -96,6 +103,12 @@ fn default_urgency() -> UrgencyHint {
 
 fn default_notification() -> BellNotification {
     BellNotification::Disabled
+}
+
+fn default_min_interval() -> u64 {
+    // 3 seconds: comfortably longer than any bell sound, so an accidental
+    // binary `cat` rings at most once every few seconds instead of constantly.
+    3_000
 }
 
 impl<'de> Deserialize<'de> for AudioBell {
@@ -253,6 +266,12 @@ mod tests {
     fn missing_fields_use_defaults() {
         let bell = parse("");
         assert_eq!(bell, Bell::default());
+        assert_eq!(bell.min_interval, 3_000);
+    }
+
+    #[test]
+    fn min_interval_is_configurable() {
+        assert_eq!(parse("min-interval = 500").min_interval, 500);
     }
 
     #[test]
@@ -261,6 +280,7 @@ mod tests {
             audio: AudioBell::System,
             urgency: UrgencyHint::Enabled,
             notification: BellNotification::Disabled,
+            min_interval: 3_000,
         };
         let serialized = toml::to_string(&bell).unwrap();
         assert_eq!(toml::from_str::<Bell>(&serialized).unwrap(), bell);
