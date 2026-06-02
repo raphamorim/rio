@@ -1,12 +1,68 @@
 //! Terminal bell side effects: the audible beep and the desktop environment's
 //! event sound theme.
+//!
+//! Playback always happens on a single dedicated worker thread, so it can never
+//! block the window/event-loop thread — even a synthesized tone that must stay
+//! alive for its full duration, or a system sound that does blocking IPC. A
+//! flood of bells (e.g. `cat`-ing a binary file) is throttled upstream by the
+//! backend's coalescing gate, so this thread only ever sees the occasional
+//! bell.
+
+use rio_backend::config::bell::AudioBell;
+use std::sync::mpsc::{channel, Sender};
+use std::sync::OnceLock;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 mod canberra;
 
+static BELL_TX: OnceLock<Sender<AudioBell>> = OnceLock::new();
+
+/// Sender to the bell worker thread, spawned lazily on first use.
+fn sender() -> &'static Sender<AudioBell> {
+    BELL_TX.get_or_init(|| {
+        let (tx, rx) = channel::<AudioBell>();
+        if let Err(err) =
+            std::thread::Builder::new()
+                .name("rio-bell".into())
+                .spawn(move || {
+                    // Play bells one at a time. Each call blocks only this worker
+                    // thread for as long as the backend needs to keep the sound
+                    // alive; the window thread is never touched.
+                    while let Ok(audio) = rx.recv() {
+                        play(audio);
+                    }
+                })
+        {
+            tracing::warn!("failed to spawn bell worker thread: {err}");
+        }
+        tx
+    })
+}
+
+/// Ring the bell for `audio` on the worker thread. Never blocks the calling
+/// (window) thread, and is a no-op for [`AudioBell::Off`].
+pub fn ring(audio: AudioBell) {
+    if matches!(audio, AudioBell::Off) {
+        return;
+    }
+    if let Err(err) = sender().send(audio) {
+        tracing::warn!("bell worker unavailable: {err}");
+    }
+}
+
+/// Play the bell, blocking the worker thread until the sound has been issued
+/// (and, for the synthesized tone, fully played).
+fn play(audio: AudioBell) {
+    match audio {
+        AudioBell::Off => {}
+        AudioBell::Beep => beep(),
+        AudioBell::System => system_sound(),
+    }
+}
+
 /// Play the legacy/native beep: the self-synthesized tone on Linux/BSD (behind
 /// the `audio` feature), or the OS system beep on macOS/Windows.
-pub fn beep() {
+fn beep() {
     #[cfg(target_os = "macos")]
     {
         // Use the system bell sound on macOS.
@@ -31,11 +87,9 @@ pub fn beep() {
     {
         #[cfg(feature = "audio")]
         {
-            std::thread::spawn(|| {
-                if let Err(e) = tone::play() {
-                    tracing::warn!("Failed to play bell sound: {}", e);
-                }
-            });
+            if let Err(e) = tone::play() {
+                tracing::warn!("Failed to play bell sound: {}", e);
+            }
         }
         #[cfg(not(feature = "audio"))]
         {
@@ -50,7 +104,7 @@ pub fn beep() {
 /// the freedesktop sound theme (via libcanberra), which respects the user's
 /// theme, output routing, volume, mute and Do-Not-Disturb. On macOS/Windows the
 /// native system beep already is the system sound.
-pub fn system_sound() {
+fn system_sound() {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
         beep();

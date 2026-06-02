@@ -133,6 +133,8 @@ pub struct ContextManagerConfig {
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
     pub scrollback_history_limit: usize,
+    /// Minimum time in milliseconds between two bells (`bell.min-interval`).
+    pub bell_min_interval: u64,
 }
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
@@ -241,6 +243,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             config.scrollback_history_limit,
         );
         terminal.blinking_cursor = cursor_state.1;
+        terminal.bell_min_interval =
+            std::time::Duration::from_millis(config.bell_min_interval);
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
         let pty;
@@ -1026,6 +1030,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title: config.title,
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
+            bell_min_interval: config.bell.min_interval,
         };
 
         let current = self.current();

@@ -228,6 +228,7 @@ impl Screen<'_> {
             title: config.title.clone(),
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
+            bell_min_interval: config.bell.min_interval,
         };
 
         // Allocate a rich_text_id for the new panel. Sugarloaf no
@@ -523,6 +524,8 @@ impl Screen<'_> {
                 terminal.cursor_shape = shape;
                 terminal.default_cursor_shape = shape;
                 terminal.blinking_cursor = config.cursor.blinking;
+                terminal.bell_min_interval =
+                    std::time::Duration::from_millis(config.bell.min_interval);
                 drop(terminal);
             }
         }

@@ -7,7 +7,6 @@ use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
 use raw_window_handle::HasDisplayHandle;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
-use rio_backend::config::bell::AudioBell;
 use rio_backend::config::colors::{ColorRgb, NamedColor};
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
@@ -96,11 +95,12 @@ impl Application<'_> {
 
     fn handle_bell(&mut self, window_id: WindowId) {
         tracing::debug!("bell fired: audio={:?}", self.config.bell.audio);
-        match self.config.bell.audio {
-            AudioBell::Off => {}
-            AudioBell::Beep => crate::bell::beep(),
-            AudioBell::System => crate::bell::system_sound(),
-        }
+
+        // Playback always runs on the bell worker thread, never the window
+        // thread. The flood from `cat`-ing a binary file is already coalesced
+        // upstream in the backend (one bell per `bell.min-interval`), so this
+        // only ever sees the occasional bell.
+        crate::bell::ring(self.config.bell.audio);
 
         let urgency = self.config.bell.urgency.is_enabled();
         let notify = self.config.bell.notification.is_enabled();
