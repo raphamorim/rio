@@ -68,14 +68,14 @@ tiny-skia = "0.12.0"
 wide = "1.2.0"
 
 # librashader is wgpu-only — gate the entire filter chain together.
-librashader = { version = "0.10.0", default-features = false, features = ["runtime-wgpu", "stable", "presets"], optional = true }
-librashader-common = { version = "0.10", optional = true }
-librashader-presets = { version = "0.10", optional = true }
-librashader-preprocess = { version = "0.10", optional = true }
-librashader-pack = { version = "0.10", optional = true }
-librashader-reflect = { version = "0.10", features = ["stable", "wgsl"], default-features = false, optional = true }
-librashader-runtime = { version = "0.10", optional = true }
-librashader-cache = { version = "0.10", optional = true }
+librashader = { version = "0.11.0", default-features = false, features = ["runtime-wgpu", "stable", "presets"], optional = true }
+librashader-common = { version = "0.11", optional = true }
+librashader-presets = { version = "0.11", optional = true }
+librashader-preprocess = { version = "0.11", optional = true }
+librashader-pack = { version = "0.11", optional = true }
+librashader-reflect = { version = "0.11", features = ["stable", "wgsl"], default-features = false, optional = true }
+librashader-runtime = { version = "0.11", optional = true }
+librashader-cache = { version = "0.11", optional = true }
 thiserror = "2.0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -118,10 +118,7 @@ ash = "0.38.0"
 # discovery (see `font/windows.rs`). Pure DirectWrite via `IDWriteFontFallback`
 # would be the moral twin of CoreText's `CTFontCreateForString`, but the
 # only Debian-packaged DirectWrite binding (winapi 0.3) is fading out and the
-# higher-level `windows` crate isn't in Debian at all. Ghostty itself
-# doesn't ship Windows discovery yet — the font-kit walk keeps Windows on
-# par with Linux's previous (no-cascade) state plus codepoint discovery
-# from the installed font set, which is the win we actually care about.
+# higher-level `windows` crate isn't in Debian at all.
 
 [dev-dependencies]
 rio-window = { workspace = true }

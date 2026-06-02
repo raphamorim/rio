@@ -125,7 +125,7 @@ impl PipelineLayoutObjects {
                 entries: &sampler_bindings,
             });
 
-        let bind_group_layout_refs = [&main_bind_group, &sampler_bind_group];
+        let bind_group_layout_refs = [Some(&main_bind_group), Some(&sampler_bind_group)];
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("shader pipeline layout"),

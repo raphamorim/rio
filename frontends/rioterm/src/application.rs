@@ -510,19 +510,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if route_id == route.window.screen.ctx().current_route() {
-                        // Get cursor position for damage
-                        let cursor_line = {
-                            let terminal = route
-                                .window
-                                .screen
-                                .ctx_mut()
-                                .current_mut()
-                                .terminal
-                                .lock();
-                            terminal.cursor().pos.row.0 as usize
-                        };
-
-                        // Set terminal damage for cursor line
+                        // Cursor blink toggles the cursor sprite (a
+                        // separate quad), not cell content — so we
+                        // signal `CursorOnly` and the GPU emit skips
+                        // per-row rebuild while the cursor uniform
+                        // updates downstream.
                         route
                             .window
                             .screen
@@ -531,14 +523,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .renderable_content
                             .pending_update
                             .set_terminal_damage(
-                                rio_backend::event::TerminalDamage::Partial(
-                                    [rio_backend::crosswords::LineDamage::new(
-                                        cursor_line,
-                                        true,
-                                    )]
-                                    .into_iter()
-                                    .collect(),
-                                ),
+                                rio_backend::event::TerminalDamage::CursorOnly,
                             );
 
                         route.request_redraw();
@@ -1109,6 +1094,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 route.window.screen.handle_island_click(
                                     &route.window.winit_window,
                                     &mut self.router.clipboard,
+                                    false,
                                 );
 
                             if handled_by_island {
@@ -1118,6 +1104,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             }
 
                             if route.window.screen.handle_scrollbar_click() {
+                                route.request_redraw();
+                                return;
+                            }
+                        } else if let MouseButton::Right = button {
+                            let handled_by_island =
+                                route.window.screen.handle_island_click(
+                                    &route.window.winit_window,
+                                    &mut self.router.clipboard,
+                                    true,
+                                );
+
+                            if handled_by_island {
                                 route.request_redraw();
                                 return;
                             }
@@ -1347,13 +1345,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
 
-                // Check if mouse is over island and set cursor to default
+                // Only force the default cursor while the island is
+                // visible — when it's hidden (hide_if_single + single
+                // tab on macOS) the band at the top has no tabs to
+                // hover, and the I-beam from the terminal grid below
+                // should stay during top-edge drags.
                 use crate::renderer::island::ISLAND_HEIGHT;
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
                 let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
-                if route.window.screen.renderer.navigation.is_enabled()
-                    && y <= island_height_px
-                {
+                let num_tabs = route.window.screen.ctx().len();
+                let nav = &route.window.screen.renderer.navigation;
+                if nav.island_visible(num_tabs) && y <= island_height_px {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
                 }

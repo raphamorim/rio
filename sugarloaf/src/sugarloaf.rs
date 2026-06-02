@@ -786,10 +786,19 @@ impl Sugarloaf<'_> {
         width: f32,
         depth: f32,
         color: [f32; 4],
+        order: u8,
     ) {
         let s = self.state.style.scale_factor;
-        self.renderer
-            .line(x1 * s, y1 * s, x2 * s, y2 * s, width * s, depth, color);
+        self.renderer.line(
+            x1 * s,
+            y1 * s,
+            x2 * s,
+            y2 * s,
+            width * s,
+            depth,
+            color,
+            order,
+        );
     }
 
     /// Draw an arc (stroke only).
@@ -1139,94 +1148,85 @@ impl Sugarloaf<'_> {
             _ => return,
         };
 
-        match ctx.surface.get_current_texture() {
-            Ok(frame) => {
-                let mut encoder =
-                    ctx.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: None,
-                        });
-
-                let view = frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-
-                {
-                    let load = if let Some(background_color) = self.background_color {
-                        wgpu::LoadOp::Clear(background_color.into())
-                    } else {
-                        wgpu::LoadOp::Load
-                    };
-
-                    let mut rpass =
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                            label: None,
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &view,
-                                resolve_target: None,
-                                depth_slice: None,
-                                ops: wgpu::Operations {
-                                    load,
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            multiview_mask: None,
-                        });
-
-                    // Grid passes first — cell bg/text composite under
-                    // the rich-text UI overlays drawn below. Wgpu
-                    // doesn't yet interleave kitty image layers with
-                    // the grid bg/text split (BrushRenderer::render
-                    // owns kitty image draws inline), so for now the
-                    // bg+text passes run back-to-back per panel —
-                    // same visual result as the prior single render
-                    // call. Re-ordering kitty layers around the
-                    // bg/text split would require pulling image
-                    // draws out of BrushRenderer::render — Metal
-                    // already does that; wgpu follow-up.
-                    for (grid, uniforms) in grids.iter_mut() {
-                        grid.render_bg_wgpu(&mut rpass, uniforms);
-                        grid.render_text_wgpu(&mut rpass, uniforms);
-                    }
-
-                    self.renderer.render(ctx, &mut rpass);
-
-                    // UI text pass (swash-backed). Lazy-init the
-                    // wgpu pipeline + atlases on the first frame.
-                    // The wgpu text backend is compiled only on
-                    // non-macOS; macOS uses Metal. If a wgpu context
-                    // is ever selected on macOS, text renders via
-                    // the Metal path from a different sugarloaf
-                    // call instead (today macOS always takes the
-                    // Metal branch).
-                    #[cfg(not(target_os = "macos"))]
-                    {
-                        self.text.init_wgpu(&ctx.device, &ctx.queue, ctx.format);
-                        self.text
-                            .render_wgpu(&mut rpass, [ctx.size.width, ctx.size.height]);
-                    }
-                }
-
-                if let Some(ref mut filters_brush) = self.filters_brush {
-                    filters_brush.render(
-                        ctx,
-                        &mut encoder,
-                        &frame.texture,
-                        &frame.texture,
-                    );
-                }
-                ctx.queue.submit(Some(encoder.finish()));
-                frame.present();
+        let frame = match ctx.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            _ => {
+                self.reset();
+                return;
             }
-            Err(error) => {
-                if error == wgpu::SurfaceError::OutOfMemory {
-                    panic!("Swapchain error: {error}. Rendering cannot continue.")
-                }
+        };
+        let mut encoder = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        {
+            let load = if let Some(background_color) = self.background_color {
+                wgpu::LoadOp::Clear(background_color.into())
+            } else {
+                wgpu::LoadOp::Load
+            };
+
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                multiview_mask: None,
+            });
+
+            // Grid passes first — cell bg/text composite under
+            // the rich-text UI overlays drawn below. Wgpu
+            // doesn't yet interleave kitty image layers with
+            // the grid bg/text split (BrushRenderer::render
+            // owns kitty image draws inline), so for now the
+            // bg+text passes run back-to-back per panel —
+            // same visual result as the prior single render
+            // call. Re-ordering kitty layers around the
+            // bg/text split would require pulling image
+            // draws out of BrushRenderer::render — Metal
+            // already does that; wgpu follow-up.
+            for (grid, uniforms) in grids.iter_mut() {
+                grid.render_bg_wgpu(&mut rpass, uniforms);
+                grid.render_text_wgpu(&mut rpass, uniforms);
+            }
+
+            self.renderer.render(ctx, &mut rpass);
+
+            // UI text pass (swash-backed). Lazy-init the
+            // wgpu pipeline + atlases on the first frame.
+            // The wgpu text backend is compiled only on
+            // non-macOS; macOS uses Metal. If a wgpu context
+            // is ever selected on macOS, text renders via
+            // the Metal path from a different sugarloaf
+            // call instead (today macOS always takes the
+            // Metal branch).
+            #[cfg(not(target_os = "macos"))]
+            {
+                self.text.init_wgpu(&ctx.device, &ctx.queue, ctx.format);
+                self.text
+                    .render_wgpu(&mut rpass, [ctx.size.width, ctx.size.height]);
             }
         }
+
+        if let Some(ref mut filters_brush) = self.filters_brush {
+            filters_brush.render(ctx, &mut encoder, &frame.texture, &frame.texture);
+        }
+        ctx.queue.submit(Some(encoder.finish()));
+        frame.present();
         self.reset();
     }
 }

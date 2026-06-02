@@ -295,12 +295,6 @@ after:
     - cmd: cargo publish -p sugarloaf
       if: "{{ and .IsRelease .IsMerging }}"
       output: true
-    - cmd: cargo publish -p rio-proc-macros
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p copa
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
     - cmd: cargo publish -p corcovado
       if: "{{ and .IsRelease .IsMerging }}"
       output: true

@@ -3,14 +3,11 @@ use crate::ansi::iterm2_image_protocol;
 use crate::ansi::kitty_graphics_protocol;
 use crate::ansi::CursorShape;
 use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
-use crate::batched_parser::BatchedParser;
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
-use crate::simd_utf8;
 use cursor_icon::CursorIcon;
 use std::mem;
-use std::str::FromStr;
 use std::time::Duration;
 use std::time::Instant;
 use sugarloaf::GraphicData;
@@ -26,7 +23,8 @@ use crate::ansi::{
 use std::fmt::Write;
 
 // https://vt100.net/emu/dec_ansi_parser
-use copa::{Params, ParamsIter};
+use super::osc;
+use super::parser::{Params, ParamsIter, Parser, Perform};
 
 /// Maximum time before a synchronized update is aborted.
 const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
@@ -42,81 +40,6 @@ const BSU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026h";
 
 /// ESU CSI sequence for terminating synchronized updates.
 const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
-
-fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
-    if !color.is_empty() && color[0] == b'#' {
-        parse_legacy_color(&color[1..])
-    } else if color.len() >= 4 && &color[..4] == b"rgb:" {
-        parse_rgb_color(&color[4..])
-    } else {
-        None
-    }
-}
-
-/// Parse colors in `rgb:r(rrr)/g(ggg)/b(bbb)` format.
-fn parse_rgb_color(color: &[u8]) -> Option<ColorRgb> {
-    let colors = simd_utf8::from_utf8_fast(color)
-        .ok()?
-        .split('/')
-        .collect::<Vec<_>>();
-
-    if colors.len() != 3 {
-        return None;
-    }
-
-    // Scale values instead of filling with `0`s.
-    let scale = |input: &str| {
-        if input.len() > 4 {
-            None
-        } else {
-            let max = u32::pow(16, input.len() as u32) - 1;
-            let value = u32::from_str_radix(input, 16).ok()?;
-            Some((255 * value / max) as u8)
-        }
-    };
-
-    Some(ColorRgb {
-        r: scale(colors[0])?,
-        g: scale(colors[1])?,
-        b: scale(colors[2])?,
-    })
-}
-
-/// Parse colors in `#r(rrr)g(ggg)b(bbb)` format.
-fn parse_legacy_color(color: &[u8]) -> Option<ColorRgb> {
-    let item_len = color.len() / 3;
-
-    // Truncate/Fill to two byte precision.
-    let color_from_slice = |slice: &[u8]| {
-        let col =
-            usize::from_str_radix(simd_utf8::from_utf8_fast(slice).ok()?, 16).ok()? << 4;
-        Some((col >> (4 * slice.len().saturating_sub(1))) as u8)
-    };
-
-    Some(ColorRgb {
-        r: color_from_slice(&color[0..item_len])?,
-        g: color_from_slice(&color[item_len..item_len * 2])?,
-        b: color_from_slice(&color[item_len * 2..])?,
-    })
-}
-
-fn parse_number(input: &[u8]) -> Option<u8> {
-    if input.is_empty() {
-        return None;
-    }
-    let mut num: u8 = 0;
-    for c in input {
-        let c = *c as char;
-        if let Some(digit) = c.to_digit(10) {
-            num = num
-                .checked_mul(10)
-                .and_then(|v| v.checked_add(digit as u8))?
-        } else {
-            return None;
-        }
-    }
-    Some(num)
-}
 
 fn parse_sgr_color(params: &mut dyn Iterator<Item = u16>) -> Option<AnsiColor> {
     match params.next() {
@@ -180,6 +103,29 @@ pub trait Handler {
 
     /// A character to be displayed.
     fn input(&mut self, _c: char) {}
+
+    /// A contiguous run of characters to be displayed. The default
+    /// implementation iterates and calls [`Handler::input`]; implementers
+    /// can specialize to batch the cell writes when the run satisfies a
+    /// fast-path predicate (e.g. ASCII printable, default charset, no
+    /// insert mode).
+    fn input_str(&mut self, s: &str) {
+        for c in s.chars() {
+            self.input(c);
+        }
+    }
+
+    /// A contiguous run of pre-decoded Unicode codepoints to be displayed.
+    /// Default implementation iterates and calls [`Handler::input`].
+    /// Implementers can specialize to bulk-process codepoints (SIMD width
+    /// lookup + bulk cell write), which is what makes the parser's
+    /// `simdutf` UTF-8 → u32 transcode worthwhile end-to-end.
+    fn input_codepoints(&mut self, codepoints: &[u32]) {
+        for &cp in codepoints {
+            let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+            self.input(c);
+        }
+    }
 
     /// Set cursor to position.
     fn goto(&mut self, _: Line, _: Column) {}
@@ -504,26 +450,13 @@ pub trait Handler {
     fn set_scp(&mut self, _char_path: ScpCharPath, _update_mode: ScpUpdateMode) {}
 }
 
-pub trait Timeout: Default {
-    /// Sets the timeout for the next synchronized update.
-    ///
-    /// The `duration` parameter specifies the duration of the timeout. Once the
-    /// specified duration has elapsed, the synchronized update rotuine can be
-    /// performed.
-    fn set_timeout(&mut self, duration: Duration);
-    /// Clear the current timeout.
-    fn clear_timeout(&mut self);
-    /// Returns whether a timeout is currently active and has not yet expired.
-    fn pending_timeout(&self) -> bool;
-}
-
 #[derive(Debug, Default)]
-struct ProcessorState<T: Timeout> {
+struct ProcessorState {
     /// Last processed character for repetition.
     preceding_char: Option<char>,
 
     /// State for synchronized terminal updates.
-    sync_state: SyncState<T>,
+    sync_state: SyncState,
 
     /// State for XTGETTCAP requests.
     xtgettcap_state: XtgettcapState,
@@ -533,9 +466,9 @@ struct ProcessorState<T: Timeout> {
 }
 
 #[derive(Debug)]
-struct SyncState<T: Timeout> {
+struct SyncState {
     /// Expiration time of the synchronized update.
-    timeout: T,
+    timeout: StdSyncHandler,
 
     /// Bytes read during the synchronized update.
     buffer: Vec<u8>,
@@ -562,7 +495,7 @@ struct ApcState {
     buffer: Vec<u8>,
 }
 
-impl<T: Timeout> Default for SyncState<T> {
+impl Default for SyncState {
     fn default() -> Self {
         Self {
             buffer: Vec::with_capacity(SYNC_BUFFER_SIZE),
@@ -571,7 +504,7 @@ impl<T: Timeout> Default for SyncState<T> {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StdSyncHandler {
     timeout: Option<Instant>,
 }
@@ -582,9 +515,7 @@ impl StdSyncHandler {
     pub fn sync_timeout(&self) -> Option<Instant> {
         self.timeout
     }
-}
 
-impl Timeout for StdSyncHandler {
     #[inline]
     fn set_timeout(&mut self, duration: Duration) {
         self.timeout = Some(Instant::now() + duration);
@@ -602,19 +533,14 @@ impl Timeout for StdSyncHandler {
 }
 
 #[derive(Default)]
-pub struct Processor<T: Timeout = StdSyncHandler> {
-    state: ProcessorState<T>,
-    parser: BatchedParser<1024>,
+pub struct Processor {
+    state: ProcessorState,
+    parser: Parser,
 }
 
-impl<T: Timeout> Processor<T> {
-    #[inline]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
+impl Processor {
     /// Synchronized update timeout.
-    pub fn sync_timeout(&self) -> &T {
+    pub fn sync_timeout(&self) -> &StdSyncHandler {
         &self.state.sync_state.timeout
     }
 
@@ -624,27 +550,12 @@ impl<T: Timeout> Processor<T> {
     where
         H: Handler,
     {
-        let mut processed = 0;
-        while processed != bytes.len() {
-            if self.state.sync_state.timeout.pending_timeout() {
-                processed += self.advance_sync(handler, &bytes[processed..]);
-            } else {
-                let mut performer = Performer::new(&mut self.state, handler);
-                processed += self
-                    .parser
-                    .advance_until_terminated(&mut performer, &bytes[processed..]);
-            }
+        if self.state.sync_state.timeout.pending_timeout() {
+            self.advance_sync(handler, bytes);
+        } else {
+            let mut performer = Performer::new(&mut self.state, handler);
+            self.parser.advance(&mut performer, bytes);
         }
-    }
-
-    /// Flush any pending batched input
-    #[inline]
-    pub fn flush<H>(&mut self, handler: &mut H)
-    where
-        H: Handler,
-    {
-        let mut performer = Performer::new(&mut self.state, handler);
-        self.parser.flush(&mut performer);
     }
 
     /// End a synchronized update.
@@ -664,16 +575,12 @@ impl<T: Timeout> Processor<T> {
     where
         H: Handler,
     {
-        // Process all synchronized bytes.
-        //
-        // NOTE: We do not use `advance_until_terminated` here since BSU sequences are
-        // processed automatically during the synchronized update.
+        // Process all synchronized bytes. BSU sequences are processed
+        // automatically during the synchronized update.
         let buffer = mem::take(&mut self.state.sync_state.buffer);
         let offset = bsu_offset.unwrap_or(buffer.len());
         let mut performer = Performer::new(&mut self.state, handler);
         self.parser.advance(&mut performer, &buffer[..offset]);
-        // Flush any pending batched input from synchronized processing
-        self.parser.flush(&mut performer);
         self.state.sync_state.buffer = buffer;
 
         match bsu_offset {
@@ -702,10 +609,8 @@ impl<T: Timeout> Processor<T> {
     }
 
     /// Process a new byte during a synchronized update.
-    ///
-    /// Returns the number of bytes processed.
     #[cold]
-    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8]) -> usize
+    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8])
     where
         H: Handler,
     {
@@ -716,11 +621,10 @@ impl<T: Timeout> Processor<T> {
 
             // Just parse the bytes normally.
             let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance_until_terminated(&mut performer, bytes)
+            self.parser.advance(&mut performer, bytes);
         } else {
             self.state.sync_state.buffer.extend(bytes);
             self.advance_sync_csi(handler, bytes.len());
-            bytes.len()
         }
     }
 
@@ -759,18 +663,18 @@ impl<T: Timeout> Processor<T> {
     }
 }
 
-struct Performer<'a, H: Handler, T: Timeout> {
-    state: &'a mut ProcessorState<T>,
+struct Performer<'a, H: Handler> {
+    state: &'a mut ProcessorState,
     handler: &'a mut H,
 }
 
-impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
+impl<'a, H: Handler + 'a> Performer<'a, H> {
     /// Create a performer.
     #[inline]
     pub fn new<'b>(
-        state: &'b mut ProcessorState<T>,
+        state: &'b mut ProcessorState,
         handler: &'b mut H,
-    ) -> Performer<'b, H, T> {
+    ) -> Performer<'b, H> {
         Performer { state, handler }
     }
 
@@ -982,10 +886,33 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
     }
 }
 
-impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
+impl<U: Handler> Perform for Performer<'_, U> {
     fn print(&mut self, c: char) {
         self.handler.input(c);
         self.state.preceding_char = Some(c);
+    }
+
+    #[inline]
+    fn print_str(&mut self, s: &str) {
+        if s.is_empty() {
+            return;
+        }
+        self.handler.input_str(s);
+        // `preceding_char` is used by REP (CSI Ps b) — it just needs the
+        // last printed char, so keep it cheap by reading the last char of
+        // `s` rather than tracking per-byte.
+        self.state.preceding_char = s.chars().next_back();
+    }
+
+    #[inline]
+    fn print_codepoints(&mut self, codepoints: &[u32]) {
+        if codepoints.is_empty() {
+            return;
+        }
+        self.handler.input_codepoints(codepoints);
+        if let Some(&last) = codepoints.last() {
+            self.state.preceding_char = char::from_u32(last);
+        }
     }
 
     fn execute(&mut self, byte: u8) {
@@ -1081,63 +1008,34 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
         match params[0] {
             // Set window title.
-            b"0" | b"2" => {
-                if params.len() >= 2 {
-                    let title = params[1..]
-                        .iter()
-                        .flat_map(|x| simd_utf8::from_utf8_fast(x))
-                        .collect::<Vec<&str>>()
-                        .join(";")
-                        .trim()
-                        .to_owned();
-                    self.handler.set_title(Some(title));
-                    return;
-                }
-                unhandled(params);
-            }
+            b"0" | b"2" => match osc::parse_title(params) {
+                Some(title) => self.handler.set_title(Some(title)),
+                None => unhandled(params),
+            },
 
             // Set color index.
-            b"4" => {
-                if params.len() <= 1 || params.len().is_multiple_of(2) {
-                    unhandled(params);
-                    return;
-                }
-
-                for chunk in params[1..].chunks(2) {
-                    let index = match parse_number(chunk[0]) {
-                        Some(index) => index,
-                        None => {
-                            unhandled(params);
-                            continue;
+            b"4" => match osc::parse_palette_entries(params) {
+                Some(entries) => {
+                    for entry in entries {
+                        match entry.spec {
+                            osc::ColorSpec::Set(c) => {
+                                self.handler.set_color(entry.index as usize, c)
+                            }
+                            osc::ColorSpec::Query => self.handler.dynamic_color_sequence(
+                                format!("4;{}", entry.index),
+                                entry.index as usize,
+                                terminator,
+                            ),
                         }
-                    };
-
-                    if let Some(c) = xparse_color(chunk[1]) {
-                        self.handler.set_color(index as usize, c);
-                    } else if chunk[1] == b"?" {
-                        let prefix = format!("4;{index}");
-                        self.handler.dynamic_color_sequence(
-                            prefix,
-                            index as usize,
-                            terminator,
-                        );
-                    } else {
-                        unhandled(params);
                     }
                 }
-            }
+                None => unhandled(params),
+            },
 
             // Inform current directory.
             b"7" => {
-                if let Ok(s) = simd_utf8::from_utf8_fast(params[1]) {
-                    if let Ok(url) = url::Url::parse(s) {
-                        let path = url.path();
-
-                        // NB the path coming from Url has a leading slash; must slice that off
-                        // in windows.
-                        #[cfg(windows)]
-                        let path = &path[1..];
-
+                if params.len() >= 2 {
+                    if let Some(path) = osc::parse_current_directory(params[1]) {
                         self.handler.set_current_directory(path.into());
                     }
                 }
@@ -1145,188 +1043,98 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
             // Hyperlink.
             b"8" if params.len() > 2 => {
-                let link_params = params[1];
-                let uri = simd_utf8::from_utf8_fast(params[2]).unwrap_or_default();
-
-                // The OSC 8 escape sequence must be stopped when getting an empty `uri`.
-                if uri.is_empty() {
-                    self.handler.set_hyperlink(None);
-                    return;
-                }
-
-                // Link parameters are in format of `key1=value1:key2=value2`. Currently only key
-                // `id` is defined.
-                let id = link_params
-                    .split(|&b| b == b':')
-                    .find_map(|kv| kv.strip_prefix(b"id="))
-                    .and_then(|kv| simd_utf8::from_utf8_fast(kv).ok());
-
-                self.handler.set_hyperlink(Some(Hyperlink::new(id, uri)));
+                self.handler
+                    .set_hyperlink(osc::parse_hyperlink(params[1], params[2]));
             }
 
-            // OSC 9;4 - ConEmu/Windows Terminal progress bar reporting
-            // Format: OSC 9;4;<state>;<progress> ST
-            // States: 0=remove, 1=set, 2=error, 3=indeterminate, 4=pause
+            // OSC 9;4 progress; OSC 9 desktop notification fallback.
             b"9" => {
-                // Check if this is OSC 9;4 progress reporting
-                // params[0] = b"9", params[1] = b"4", params[2] = state, params[3] = progress (optional)
-                if params.len() >= 3 && params[1] == b"4" {
-                    // Parse state from params[2]
-                    let state = match params[2] {
-                        b"0" => Some(crate::event::ProgressState::Remove),
-                        b"1" => Some(crate::event::ProgressState::Set),
-                        b"2" => Some(crate::event::ProgressState::Error),
-                        b"3" => Some(crate::event::ProgressState::Indeterminate),
-                        b"4" => Some(crate::event::ProgressState::Pause),
-                        _ => None,
-                    };
-
-                    if let Some(state) = state {
-                        // Parse optional progress value from params[3]
-                        let progress = if params.len() >= 4 {
-                            parse_number(params[3]).map(|p| p.min(100))
-                        } else {
-                            None
-                        };
-
-                        let report = crate::event::ProgressReport { state, progress };
-                        self.handler.set_progress_report(report);
-                        return;
-                    }
-                }
-                // OSC 9 desktop notification: ESC ] 9 ; <body> ST
-                if params.len() >= 2 {
+                if let Some(report) = osc::parse_progress_report(params) {
+                    self.handler.set_progress_report(report);
+                } else if params.len() >= 2 {
                     let body = std::str::from_utf8(params[1])
                         .unwrap_or_default()
                         .to_string();
                     self.handler.desktop_notification(String::new(), body);
-                    return;
+                } else {
+                    unhandled(params);
                 }
-                unhandled(params);
             }
 
-            // OSC 777 - rxvt notification: ESC ] 777 ; notify ; <title> ; <body> ST
-            b"777" => {
-                if params.len() >= 4 && params[1] == b"notify" {
-                    let title = std::str::from_utf8(params[2])
-                        .unwrap_or_default()
-                        .to_string();
-                    let body = std::str::from_utf8(params[3])
-                        .unwrap_or_default()
-                        .to_string();
-                    self.handler.desktop_notification(title, body);
-                    return;
-                }
-                unhandled(params);
+            // OSC 777 - rxvt notification.
+            b"777" if params.len() >= 4 && params[1] == b"notify" => {
+                let title = std::str::from_utf8(params[2])
+                    .unwrap_or_default()
+                    .to_string();
+                let body = std::str::from_utf8(params[3])
+                    .unwrap_or_default()
+                    .to_string();
+                self.handler.desktop_notification(title, body);
             }
 
-            b"10" | b"11" | b"12" => {
-                if params.len() >= 2 {
-                    if let Some(mut dynamic_code) = parse_number(params[0]) {
-                        for param in &params[1..] {
-                            // 10 is the first dynamic color, also the foreground.
-                            let offset = dynamic_code as usize - 10;
-                            let index = NamedColor::Foreground as usize + offset;
-
-                            // End of setting dynamic colors.
-                            if index > NamedColor::Cursor as usize {
-                                unhandled(params);
-                                break;
+            // Set or query dynamic colors (foreground/background/cursor).
+            b"10" | b"11" | b"12" => match osc::parse_dynamic_colors(params) {
+                Some(entries) => {
+                    for entry in entries {
+                        match entry.spec {
+                            osc::ColorSpec::Set(c) => {
+                                self.handler.set_color(entry.index as usize, c)
                             }
-
-                            if let Some(color) = xparse_color(param) {
-                                self.handler.set_color(index, color);
-                            } else if param == b"?" {
-                                self.handler.dynamic_color_sequence(
-                                    dynamic_code.to_string(),
-                                    index,
-                                    terminator,
-                                );
-                            } else {
-                                unhandled(params);
-                            }
-                            dynamic_code += 1;
+                            osc::ColorSpec::Query => self.handler.dynamic_color_sequence(
+                                entry.dynamic_code.to_string(),
+                                entry.index as usize,
+                                terminator,
+                            ),
                         }
-                        return;
                     }
                 }
-                unhandled(params);
-            }
+                None => unhandled(params),
+            },
 
             // Set mouse cursor shape.
-            b"22" if params.len() == 2 => {
-                let shape = simd_utf8::from_utf8_lossy_fast(params[1]);
-                match CursorIcon::from_str(&shape) {
-                    Ok(cursor_icon) => self.handler.set_mouse_cursor_icon(cursor_icon),
-                    Err(_) => {
-                        debug!("[osc 22] unrecognized cursor icon shape: {shape:?}")
-                    }
-                }
-            }
+            b"22" if params.len() == 2 => match osc::parse_mouse_cursor_icon(params[1]) {
+                Some(icon) => self.handler.set_mouse_cursor_icon(icon),
+                None => debug!("[osc 22] unrecognized cursor icon shape"),
+            },
 
-            // Set cursor style.
-            b"50" => {
-                if params.len() >= 2
-                    && params[1].len() >= 13
-                    && params[1][0..12] == *b"CursorShape="
-                {
-                    let shape = match params[1][12] as char {
-                        '0' => CursorShape::Block,
-                        '1' => CursorShape::Beam,
-                        '2' => CursorShape::Underline,
-                        _ => return unhandled(params),
-                    };
-                    self.handler.set_cursor_shape(shape);
-                    return;
-                }
-                unhandled(params);
-            }
+            // Set text cursor style.
+            b"50" => match osc::parse_cursor_shape(params) {
+                Some(shape) => self.handler.set_cursor_shape(shape),
+                None => unhandled(params),
+            },
 
-            // Set clipboard.
-            b"52" => {
-                if params.len() < 3 {
-                    return unhandled(params);
+            // Clipboard load/store.
+            b"52" => match osc::parse_clipboard(params) {
+                Some(osc::ClipboardOp::Load { kind }) => {
+                    self.handler.clipboard_load(kind, terminator)
                 }
-
-                let clipboard = params[1].first().unwrap_or(&b'c');
-                match params[2] {
-                    b"?" => self.handler.clipboard_load(*clipboard, terminator),
-                    base64 => self.handler.clipboard_store(*clipboard, base64),
+                Some(osc::ClipboardOp::Store { kind, payload }) => {
+                    self.handler.clipboard_store(kind, payload)
                 }
-            }
+                None => unhandled(params),
+            },
 
-            b"104" => {
-                // Reset all color indexes when no parameters are given.
-                if params.len() == 1 || params[1].is_empty() {
+            // Reset palette colors (all, or a specific list).
+            b"104" => match osc::parse_palette_reset(params) {
+                osc::PaletteReset::All => {
                     for i in 0..256 {
                         self.handler.reset_color(i);
                     }
-                    return;
                 }
-
-                // Reset color indexes given as parameters.
-                for param in &params[1..] {
-                    match parse_number(param) {
-                        Some(index) => self.handler.reset_color(index as usize),
-                        None => unhandled(params),
+                osc::PaletteReset::Indices(indices) => {
+                    for index in indices {
+                        self.handler.reset_color(index as usize);
                     }
                 }
-            }
+            },
 
-            // Reset foreground color.
             b"110" => self.handler.reset_color(NamedColor::Foreground as usize),
-
-            // Reset background color.
             b"111" => self.handler.reset_color(NamedColor::Background as usize),
-
-            // Reset text cursor color.
             b"112" => self.handler.reset_color(NamedColor::Cursor as usize),
 
-            // OSC 1337 is not necessarily only used by iTerm2 protocol
-            // OSC 1337 is equal to xterm OSC 50
+            // OSC 1337 — iTerm2 inline image protocol.
             b"1337" => {
                 if let Some(graphic) = iterm2_image_protocol::parse(params) {
-                    // iTerm2 protocol uses None (traditional behavior like Sixel)
                     self.handler.insert_graphic(graphic, None, None);
                 }
             }
@@ -1668,10 +1476,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
         self.state.apc_state.buffer.push(byte);
     }
 
-    /// Called when the APC sequence ends.
-    ///
-    /// Process the accumulated APC data. This is called instead of apc_dispatch
-    /// when we implement custom APC hooks.
+    /// Called when the APC sequence ends. Processes the accumulated APC data.
     fn apc_end(&mut self) {
         debug!(
             "[apc_end] APC complete, accumulated {} bytes",

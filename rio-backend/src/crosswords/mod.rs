@@ -43,18 +43,17 @@ use crate::crosswords::square::{CellFlags, Wide};
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent, TerminalDamage};
 use crate::performer::handler::Handler;
+use crate::performer::parser::Params;
 use crate::selection::{Selection, SelectionRange, SelectionType};
 use crate::simd_utf8;
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
-use copa::Params;
 use grid::row::Row;
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
 use square::{Hyperlink, LineLength, Square};
-use std::collections::BTreeSet;
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
@@ -62,7 +61,6 @@ use std::ptr;
 use std::sync::Arc;
 use sugarloaf::{GraphicData, MAX_GRAPHIC_DIMENSIONS};
 use tracing::{debug, info, trace, warn};
-use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
 
 pub type NamedColor = colors::NamedColor;
@@ -594,29 +592,14 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Peek damage event based on current damage state
     pub fn peek_damage_event(&self) -> Option<TerminalDamage> {
-        let display_offset = self.grid.display_offset();
         if self.damage.full {
             Some(TerminalDamage::Full)
+        } else if self.damage.lines.iter().any(|line| line.is_damaged()) {
+            Some(TerminalDamage::Partial)
+        } else if self.damage.last_cursor != self.grid.cursor.pos {
+            Some(TerminalDamage::CursorOnly)
         } else {
-            // Collect damaged lines
-            let damaged_lines: BTreeSet<LineDamage> = self
-                .damage
-                .lines
-                .iter()
-                .filter(|line| line.is_damaged())
-                .map(|line| LineDamage::new(line.line + display_offset, true))
-                .collect();
-
-            if damaged_lines.is_empty() {
-                // Check if cursor moved
-                if self.damage.last_cursor != self.grid.cursor.pos {
-                    Some(TerminalDamage::CursorOnly)
-                } else {
-                    None // No damage to emit
-                }
-            } else {
-                Some(TerminalDamage::Partial(damaged_lines))
-            }
+            None
         }
     }
 
@@ -1154,6 +1137,10 @@ impl<U: EventListener> Crosswords<U> {
         // whole flag set without filtering.
         cell.set_cell_flags(template_flags);
         *cursor_square = cell;
+        if template_extras_id.is_some() {
+            let row = self.grid.cursor.pos.row;
+            self.grid[row].has_extras = true;
+        }
     }
 
     /// If the previous cell is a narrow, text-presentation emoji base whose
@@ -1336,76 +1323,125 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn visible_rows(&self) -> Vec<Row<Square>> {
-        let mut start = self.scroll_region.start.0;
-        let mut end = self.scroll_region.end.0;
-        let mut visible_rows = Vec::with_capacity(self.grid.screen_lines());
-
-        let scroll = self.display_offset() as i32;
-        if scroll != 0 {
-            start -= scroll;
-            end -= scroll;
-        }
-
-        for row in start..end {
-            visible_rows.push(self.grid[Line(row)].clone());
-        }
-
-        visible_rows
+        let mut buf = Vec::with_capacity(self.grid.screen_lines());
+        self.fill_visible_rows(&mut buf);
+        buf
     }
 
-    /// Get visible rows with damage information - only clones damaged lines
-    pub fn visible_rows_with_damage(
-        &self,
-        damage: &TerminalDamage,
-    ) -> (Vec<Row<Square>>, Vec<usize>) {
+    pub fn snapshot_visible(
+        &mut self,
+        damage: &crate::event::TerminalDamage,
+        cols: usize,
+        dst: &mut Vec<Row<Square>>,
+        style_table: &mut Vec<crate::crosswords::style::Style>,
+        extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
+    ) {
+        use crate::event::TerminalDamage;
         let mut start = self.scroll_region.start.0;
         let mut end = self.scroll_region.end.0;
-        let mut visible_rows = Vec::with_capacity(self.grid.screen_lines());
-        let mut damaged_lines = Vec::new();
-
         let scroll = self.display_offset() as i32;
         if scroll != 0 {
             start -= scroll;
             end -= scroll;
         }
+        let count = (end - start) as usize;
 
-        // Determine which lines are damaged
-        match damage {
-            TerminalDamage::Full => {
-                // For full damage, all lines are damaged
-                for (i, row) in (start..end).enumerate() {
-                    visible_rows.push(self.grid[Line(row)].clone());
-                    damaged_lines.push(i);
-                }
-            }
-            TerminalDamage::Partial(lines) => {
-                // Only clone damaged lines
-                let damaged_set: std::collections::HashSet<usize> =
-                    lines.iter().filter(|d| d.damaged).map(|d| d.line).collect();
+        let _ = cols;
+        style_table.clear();
+        style_table.extend_from_slice(self.grid.style_set.styles());
 
-                for (i, row) in (start..end).enumerate() {
-                    visible_rows.push(self.grid[Line(row)].clone());
-                    if damaged_set.contains(&i) {
-                        damaged_lines.push(i);
-                    }
-                }
+        let needs_full = matches!(damage, TerminalDamage::Full) || dst.len() != count;
+
+        if needs_full {
+            dst.clear();
+            dst.reserve(count);
+            extras.clear();
+            for row_idx in start..end {
+                let src = &self.grid[Line(row_idx)];
+                let mut copied = src.clone();
+                copied.dirty = true;
+                dst.push(copied);
+                self.refresh_row_extras(src, extras);
             }
-            TerminalDamage::CursorOnly => {
-                // For cursor-only damage, we still need all rows but mark cursor line
-                let cursor_line = self.grid.cursor.pos.row.0 as usize;
-                for (i, row) in (start..end).enumerate() {
-                    visible_rows.push(self.grid[Line(row)].clone());
-                    if i == cursor_line {
-                        damaged_lines.push(i);
-                    }
-                }
+            for row_idx in start..end {
+                self.grid[Line(row_idx)].dirty = false;
             }
-            TerminalDamage::Noop => {
-                // Nothing changed
-            }
+            return;
         }
 
-        (visible_rows, damaged_lines)
+        if matches!(damage, TerminalDamage::Noop | TerminalDamage::CursorOnly) {
+            return;
+        }
+
+        #[allow(clippy::needless_range_loop)]
+        for y in 0..count {
+            let row_idx = start + y as i32;
+            if !self.grid[Line(row_idx)].dirty {
+                continue;
+            }
+            let src = &self.grid[Line(row_idx)];
+            dst[y].copy_from(src);
+            dst[y].dirty = true;
+            self.refresh_row_extras(src, extras);
+        }
+        for row_idx in start..end {
+            self.grid[Line(row_idx)].dirty = false;
+        }
+    }
+
+    /// Insert (overwriting) every extras id referenced by `row`'s
+    /// cells into `extras`. Overwrite semantics are deliberate — when
+    /// extras data is mutated in place on the live grid (e.g., a
+    /// zerowidth combining codepoint appended to an existing cell),
+    /// the cell's row is marked dirty by the surrounding `IndexMut`
+    /// write, so any other rows referencing the same id pick up the
+    /// fresh data on this row's refresh.
+    fn refresh_row_extras(
+        &self,
+        row: &Row<Square>,
+        extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
+    ) {
+        if !row.has_extras {
+            return;
+        }
+        for sq in &row.inner {
+            if let Some(id) = sq.extras_id() {
+                if let Some(live) = self.grid.extras_table.get(id) {
+                    extras.insert(id, live.clone());
+                }
+            }
+        }
+    }
+
+    /// Copy the visible viewport into `dst` in place. Reuses both the
+    /// outer `Vec`'s capacity and each inner `Row`'s `Vec<Square>`
+    /// allocation (via [`Row::copy_from`]) so the renderer's frame
+    /// buffer doesn't reallocate every frame at steady state.
+    #[inline]
+    pub fn fill_visible_rows(&self, dst: &mut Vec<Row<Square>>) {
+        let mut start = self.scroll_region.start.0;
+        let mut end = self.scroll_region.end.0;
+        let scroll = self.display_offset() as i32;
+        if scroll != 0 {
+            start -= scroll;
+            end -= scroll;
+        }
+        let count = (end - start) as usize;
+
+        // Copy each visible row into the matching slot. Excess slots
+        // get truncated; missing ones get pushed (with a fresh `Row`
+        // each — first-frame allocation only).
+        for (i, row_idx) in (start..end).enumerate() {
+            let src = &self.grid[Line(row_idx)];
+            if let Some(dst_row) = dst.get_mut(i) {
+                dst_row.copy_from(src);
+            } else {
+                dst.push(src.clone());
+            }
+        }
+        if dst.len() > count {
+            dst.truncate(count);
+        }
     }
 
     /// Get terminal dimensions
@@ -2560,7 +2596,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             _ => return,
         };
 
-        if let Ok(bytes) = general_purpose::STANDARD.decode(base64) {
+        if let Some(bytes) = crate::simd_base64::decode(base64) {
             if let Ok(text) = simd_utf8::from_utf8_to_string(&bytes) {
                 self.event_proxy.send_event(
                     RioEvent::ClipboardStore(clipboard_type, text),
@@ -2582,8 +2618,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline(never)]
     fn input(&mut self, c: char) {
-        let width = match c.width() {
-            Some(width) => width,
+        let width = match crate::codepoint_width::codepoint_width(c as u32) {
+            Some(w) => w as usize,
             None => return,
         };
 
@@ -2624,6 +2660,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let cell = &mut self.grid[row][column];
                 cell.set_extras_id(Some(id));
                 cell.insert_cell_flag(CellFlags::GRAPHEME);
+                self.grid[row].has_extras = true;
             }
             return;
         }
@@ -2687,6 +2724,146 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.grid.cursor.pos.col += 1;
         } else {
             self.grid.cursor.should_wrap = true;
+        }
+    }
+
+    fn input_codepoints(&mut self, codepoints: &[u32]) {
+        // Insert mode falls back: cell-rotation is per-char and the cost of
+        // bulk-handling it correctly outweighs the win.
+        if self.mode.contains(Mode::INSERT) {
+            for &cp in codepoints {
+                let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                self.input(c);
+            }
+            return;
+        }
+
+        for &cp in codepoints {
+            let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+            let width = match crate::codepoint_width::codepoint_width(cp) {
+                Some(w) => w,
+                None => continue,
+            };
+
+            if width == 0 {
+                // Combining marks, VS15/VS16. Defer to scalar `input` which
+                // owns the emoji-presentation flip and grapheme-extension
+                // logic (attaches to preceding cell rather than writing a
+                // new one).
+                self.input(c);
+                continue;
+            }
+
+            if self.grid.cursor.should_wrap {
+                self.wrapline();
+            }
+
+            let columns = self.grid.columns();
+
+            // Kitty placeholder bookkeeping: cp can't be ASCII here (parser
+            // routes ASCII through `input_str`) but the placeholder lives at
+            // U+10EEEE, so the check is still needed.
+            if cp == crate::ansi::kitty_virtual::PLACEHOLDER as u32 {
+                let row = self.grid.cursor.pos.row;
+                self.grid[row].kitty_virtual_placeholder = true;
+            }
+
+            if width == 2 {
+                if self.grid.cursor.pos.col + 1 >= columns {
+                    if self.mode.contains(Mode::LINE_WRAP) {
+                        self.write_at_cursor(' ');
+                        self.grid
+                            .cursor_cell()
+                            .set_wide(crate::crosswords::square::Wide::LeadingSpacer);
+                        self.wrapline();
+                    } else {
+                        self.grid.cursor.should_wrap = true;
+                        continue;
+                    }
+                }
+
+                self.write_at_cursor(c);
+                self.grid
+                    .cursor_cell()
+                    .set_wide(crate::crosswords::square::Wide::Wide);
+                self.grid.cursor.pos.col += 1;
+                self.write_at_cursor(' ');
+                self.grid
+                    .cursor_cell()
+                    .set_wide(crate::crosswords::square::Wide::Spacer);
+            } else {
+                // width == 1
+                self.write_at_cursor(c);
+            }
+
+            let cursor_line = self.grid.cursor.pos.row.0 as usize;
+            self.damage.damage_line(cursor_line);
+
+            if self.grid.cursor.pos.col + 1 < columns {
+                self.grid.cursor.pos.col += 1;
+            } else {
+                self.grid.cursor.should_wrap = true;
+            }
+        }
+    }
+
+    fn input_str(&mut self, s: &str) {
+        // Fast path: ASCII printable runs are the common case (vim redraws,
+        // log tails, prompt rendering). Side-step the per-char `input()`
+        // dispatch which does width lookup, wide-char/zero-width checks,
+        // kitty placeholder bookkeeping, and per-byte wrap branching.
+        let active = self.grid.cursor.charsets[self.active_charset];
+        if !s.is_ascii()
+            || active != crate::crosswords::pos::StandardCharset::Ascii
+            || self.mode.contains(Mode::INSERT)
+        {
+            for c in s.chars() {
+                self.input(c);
+            }
+            return;
+        }
+
+        let bytes = s.as_bytes();
+        let mut idx = 0;
+        while idx < bytes.len() {
+            if self.grid.cursor.should_wrap {
+                if !self.mode.contains(Mode::LINE_WRAP) {
+                    // LINE_WRAP off: cursor is parked on the last column and
+                    // each new char overwrites that cell. Defer to scalar
+                    // `input()` for those exact semantics.
+                    for c in s[idx..].chars() {
+                        self.input(c);
+                    }
+                    return;
+                }
+                self.wrapline();
+            }
+
+            let columns = self.grid.columns();
+            let cursor_col = self.grid.cursor.pos.col.0;
+            let remaining_in_row = columns.saturating_sub(cursor_col);
+            if remaining_in_row == 0 {
+                for c in s[idx..].chars() {
+                    self.input(c);
+                }
+                return;
+            }
+
+            let take = (bytes.len() - idx).min(remaining_in_row);
+            for i in 0..take {
+                let c = bytes[idx + i] as char;
+                self.write_at_cursor(c);
+                if self.grid.cursor.pos.col + 1 < columns {
+                    self.grid.cursor.pos.col += 1;
+                } else {
+                    self.grid.cursor.should_wrap = true;
+                    break;
+                }
+            }
+
+            let row = self.grid.cursor.pos.row;
+            self.damage.damage_line(row.0 as usize);
+            idx += take;
         }
     }
 
@@ -3555,6 +3732,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     cell_ref.set_extras_id(Some(eid));
                 }
                 cell_ref.insert_cell_flag(CellFlags::GRAPHICS);
+                self.grid.raw[line].has_extras = true;
             }
 
             self.mark_line_damaged(line);
@@ -4640,7 +4818,7 @@ mod tests {
     /// path get caught at test time.
     #[test]
     fn osc8_hyperlink_basic() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4652,7 +4830,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         // Plain text, then "click" wrapped in an OSC 8, then plain "."
         // The bell-terminated form is what most shells emit.
@@ -4694,7 +4872,7 @@ mod tests {
     /// the boundary by id comparison.
     #[test]
     fn osc8_hyperlink_two_distinct_links_use_distinct_ids() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4706,7 +4884,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         let bytes = b"\x1b]8;;https://a.example\x07A\x1b]8;;\x07\
                       \x1b]8;;https://b.example\x07B\x1b]8;;\x07";
@@ -4731,7 +4909,7 @@ mod tests {
     /// after the reset must not inherit the previous link.
     #[test]
     fn osc8_hyperlink_reset_clears_template() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4743,7 +4921,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         // Open a hyperlink, write 'X', close it, then write 'Y'.
         processor.advance(&mut cw, b"\x1b]8;;https://example.com\x07X\x1b]8;;\x07Y");
@@ -4763,7 +4941,7 @@ mod tests {
     /// after the link on those lines).
     #[test]
     fn osc8_hyperlink_spans_linefeed() {
-        use crate::performer::handler::{Processor, StdSyncHandler};
+        use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -4775,7 +4953,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor = Processor::<StdSyncHandler>::new();
+        let mut processor = Processor::default();
 
         // "AB\nCD" with the whole thing inside one OSC 8 link.
         processor.advance(
@@ -4847,7 +5025,7 @@ mod tests {
 
         // Specifically check that it's not just cursor-only damage
         match damage {
-            Some(TerminalDamage::Partial(_)) | Some(TerminalDamage::Full) => {
+            Some(TerminalDamage::Partial) | Some(TerminalDamage::Full) => {
                 // Good - line damage was registered
             }
             Some(TerminalDamage::CursorOnly) | Some(TerminalDamage::Noop) => {
@@ -6304,9 +6482,7 @@ mod tests {
             0,
             10_000,
         );
-        let mut processor: crate::performer::handler::Processor<
-            crate::performer::handler::StdSyncHandler,
-        > = crate::performer::handler::Processor::new();
+        let mut processor = crate::performer::handler::Processor::default();
 
         // 32-bit image_id with high byte non-zero (matches icat's
         // rejection-sample loop in `transmit.go:280-288`).

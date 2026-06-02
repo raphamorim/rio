@@ -5,6 +5,7 @@ mod font_cache;
 pub mod grid;
 pub mod layout;
 pub mod renderer;
+pub mod sprite;
 mod sugarloaf;
 pub mod text;
 
@@ -40,8 +41,8 @@ pub use crate::sugarloaf::{
         Graphics, ResizeCommand, ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
     },
     primitives::{
-        contains_braille_dot, drawable_character, is_private_user_area, Corners,
-        CursorKind, DrawableChar, ImageProperties, Quad, Rect, SugarCursor,
+        is_private_user_area, Corners, CursorKind, ImageProperties, Quad, Rect,
+        SugarCursor,
     },
     Color, Colorspace, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,

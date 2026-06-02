@@ -1048,8 +1048,7 @@ impl Renderer {
         // overlays for hidden panels (callers `clear_image_overlays_for`
         // on hide / panel removal). The renderer just drains whatever
         // `image_overlays` currently holds.
-        let overlays: Vec<_> =
-            image_overlays.iter().flat_map(|(_, v)| v.iter()).collect();
+        let overlays: Vec<_> = image_overlays.values().flat_map(|v| v.iter()).collect();
         if !overlays.is_empty() {
             self.render_graphic_overlays(context, image_data, &overlays);
         } else {
@@ -1719,10 +1718,11 @@ impl Renderer {
         width: f32,
         depth: f32,
         color: [f32; 4],
+        order: u8,
     ) {
         self.comp
             .batches
-            .add_line(x1, y1, x2, y2, width, depth, color);
+            .add_line(x1, y1, x2, y2, width, depth, color, order);
     }
 
     #[inline]
@@ -2348,12 +2348,12 @@ impl Renderer {
     /// pass that `Sugarloaf::render_vulkan` opens. Order:
     /// 1. Background image (full-screen quad).
     /// 2. BelowText image overlays (kitty / sixel placements with
-    /// `dest_pos.z < 0`).
+    ///    `dest_pos.z < 0`).
     /// 3. Rich-text quad pass — `quad()` / `rect()` calls + cell
-    /// underline decorations (dashed/dotted/curly handled in
-    /// `quad.frag.glsl`).
+    ///    underline decorations (dashed/dotted/curly handled in
+    ///    `quad.frag.glsl`).
     /// 4. Non-quad geometry — `polygon()` / `line()` / `triangle()`
-    /// / `arc()` calls (cursor underline shape, hint highlights).
+    ///    / `arc()` calls (cursor underline shape, hint highlights).
     /// 5. AboveText image overlays.
     /// 6. Optional bootstrap rect (`RIO_VULKAN_BOOTSTRAP=1`).
     ///
@@ -2592,8 +2592,8 @@ impl WgpuRenderer {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: None,
                     bind_group_layouts: &[
-                        &constant_bind_group_layout,
-                        &layout_bind_group_layout,
+                        Some(&constant_bind_group_layout),
+                        Some(&layout_bind_group_layout),
                     ],
                     ..Default::default()
                 });
@@ -2850,8 +2850,8 @@ impl WgpuRenderer {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("image pipeline layout"),
                     bind_group_layouts: &[
-                        &constant_bind_group_layout, // group 0: transform + sampler
-                        &image_bind_group_layout,    // group 1: image texture
+                        Some(&constant_bind_group_layout), // group 0: transform + sampler
+                        Some(&image_bind_group_layout),    // group 1: image texture
                     ],
                     immediate_size: 0,
                 });

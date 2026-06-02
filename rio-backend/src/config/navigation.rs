@@ -192,6 +192,15 @@ impl Navigation {
     pub fn is_enabled(&self) -> bool {
         self.mode == NavigationMode::Tab
     }
+
+    /// Whether the rio-rendered tab strip ("island") is actually painted
+    /// this frame. Mirrors the gate at `island.rs:358` — input layers
+    /// (click routing, cursor override) must agree with the renderer so
+    /// the empty band over a hidden island doesn't intercept events.
+    #[inline]
+    pub fn island_visible(&self, num_tabs: usize) -> bool {
+        self.is_enabled() && !(self.hide_if_single && num_tabs == 1)
+    }
 }
 
 #[cfg(test)]
