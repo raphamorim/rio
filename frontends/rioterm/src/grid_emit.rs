@@ -1245,15 +1245,17 @@ impl GridGlyphRasterizer {
             .entry((ch, style_flags, route_id))
             .or_insert_with(|| {
                 let span_style = span_style_for_flags(style_flags);
-                #[cfg(target_os = "macos")]
+                // Lazy cascade discovery on every platform: on a miss in
+                // the loaded library, resolve_font_for_char asks the OS
+                // (fontconfig on Linux, CoreText on macOS, font-kit on
+                // Windows) for a font that covers `ch` and registers it.
+                // Without this, codepoints absent from the user's primary
+                // font (Nerd Font icons, CJK, emoji) render as the
+                // primary font's .notdef tofu. Result is memoized in the
+                // font_resolve cache, so the OS query fires at most once
+                // per (ch, style, route).
                 let (id, emoji) =
                     font_library.resolve_font_for_char(ch, &span_style, Some(route_id));
-                #[cfg(not(target_os = "macos"))]
-                let (id, emoji) = {
-                    let lib = font_library.inner.read();
-                    lib.find_best_font_match(ch, &span_style, Some(route_id))
-                        .unwrap_or((0, false))
-                };
                 (id as u32, emoji)
             })
     }

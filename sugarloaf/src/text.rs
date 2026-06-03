@@ -380,16 +380,14 @@ impl Text {
                     FontStyle::Normal
                 };
                 ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
-                #[cfg(target_os = "macos")]
+                // Lazy cascade discovery on every platform — see the
+                // matching note in rioterm grid_emit::resolve_font. On a
+                // miss the OS is queried for a covering font and it is
+                // registered, so UI text (tab titles, search bar, …) in
+                // glyphs outside the primary font doesn't fall back to
+                // .notdef tofu.
                 let resolved =
                     self.font_library.resolve_font_for_char(first_ch, &ss, None);
-
-                #[cfg(not(target_os = "macos"))]
-                let resolved = {
-                    let lib = self.font_library.inner.read();
-                    lib.find_best_font_match(first_ch, &ss, None)
-                        .unwrap_or((0, false))
-                };
                 let v = (resolved.0 as u32, resolved.1);
                 e.insert(v);
                 v

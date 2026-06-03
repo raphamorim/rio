@@ -2108,6 +2108,104 @@ mod postscript_resolver_tests {
 }
 
 #[cfg(test)]
+mod cascade_contract_tests {
+    use super::*;
+    use crate::SpanStyle;
+
+    /// Regression guard for the Linux/Windows "Nerd Font icons render as
+    /// tofu" bug — the `ls --icons` folder/file glyphs (and any CJK or
+    /// emoji outside the primary font) showing the primary font's
+    /// `.notdef`. The render path (`rioterm` grid_emit + sugarloaf text)
+    /// must resolve glyphs through `resolve_font_for_char`, whose miss
+    /// path lazily discovers a covering system font. The defect was
+    /// calling `find_best_font_match` there, which masks a miss as the
+    /// primary font (`font_id` 0) and never triggers discovery.
+    ///
+    /// This pins the two-method contract `resolve_font_for_char` is built
+    /// on, deterministically and with no dependency on installed system
+    /// fonts: only the bundled Cascadia Code is registered, and U+6C34
+    /// (水) — a CJK ideograph Cascadia does not carry — stands in for any
+    /// glyph absent from the primary font.
+    #[test]
+    fn missing_glyph_strict_reports_miss_nonstrict_masks_as_primary() {
+        let mut data = FontLibraryData::default();
+        data.insert(
+            FontData::from_static_slice(FONT_CASCADIA_CODE_NF)
+                .expect("load bundled font"),
+        );
+        let absent = '\u{6C34}';
+        let style = SpanStyle::default();
+
+        assert_eq!(
+            data.find_best_font_match_strict(absent, &style, None),
+            None,
+            "strict lookup must surface a true miss so cascade discovery fires \
+             instead of silently rendering the primary font's notdef",
+        );
+        assert_eq!(
+            data.find_best_font_match(absent, &style, None),
+            Some((0, false)),
+            "non-strict lookup masks the miss as the primary font — the tofu path \
+             the render code must NOT take for fallback glyphs",
+        );
+    }
+}
+
+#[cfg(all(test, unix, not(target_os = "macos"), not(target_os = "android")))]
+mod linux_cascade_discovery_tests {
+    use super::*;
+    use crate::SpanStyle;
+    use std::sync::Arc;
+
+    /// End-to-end Linux fallback discovery: a bare library holding only
+    /// the bundled Cascadia Code is asked for a glyph Cascadia lacks.
+    /// `resolve_font_for_char` must consult fontconfig, find a covering
+    /// font, register it, and return its non-zero id — the path that was
+    /// dead on Linux (the render code called `find_best_font_match`,
+    /// which never discovers) and made Nerd Font icons render as tofu.
+    ///
+    /// Discovery needs the host to actually have a font covering the
+    /// codepoint, which minimal CI images may lack. A fontconfig probe
+    /// gates the assertion so the test is a no-op pass on a font-bare
+    /// host rather than a flake.
+    #[test]
+    fn resolve_font_for_char_discovers_cascade_font_on_linux() {
+        let missing = '\u{6C34}'; // CJK 水 — absent from Cascadia Code.
+
+        // Probe: is there anything to discover on this host?
+        if crate::font::linux::discover_fallback("monospace", missing, true, false, false)
+            .is_none()
+        {
+            return; // font-bare environment; nothing to assert.
+        }
+
+        let mut data = FontLibraryData::default();
+        data.insert(
+            FontData::from_static_slice(FONT_CASCADIA_CODE_NF)
+                .expect("load bundled font"),
+        );
+        let lib = FontLibrary {
+            inner: Arc::new(parking_lot::RwLock::new(data)),
+        };
+        let starting_len = lib.inner.read().inner.len();
+
+        let (font_id, _is_emoji) =
+            lib.resolve_font_for_char(missing, &SpanStyle::default(), None);
+
+        assert_ne!(
+            font_id, 0,
+            "lazy discovery must register and return a fallback font, not the \
+             primary font's notdef tofu",
+        );
+        assert_eq!(
+            lib.inner.read().inner.len(),
+            starting_len + 1,
+            "discovery should register exactly one new font",
+        );
+    }
+}
+
+#[cfg(test)]
 mod glyph_registry_install_tests {
     use super::*;
     use crate::font::glyph_registry::GlyphRegistry;
