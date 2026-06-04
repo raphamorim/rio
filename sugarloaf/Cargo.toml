@@ -68,7 +68,7 @@ tiny-skia = "0.12.0"
 wide = "1.2.0"
 
 # librashader is wgpu-only — gate the entire filter chain together.
-librashader = { version = "0.11.0", default-features = false, features = ["runtime-wgpu", "stable", "presets"], optional = true }
+librashader = { version = "0.11.1", default-features = false, features = ["runtime-wgpu", "stable", "presets"], optional = true }
 librashader-common = { version = "0.11", optional = true }
 librashader-presets = { version = "0.11", optional = true }
 librashader-preprocess = { version = "0.11", optional = true }
