@@ -414,6 +414,8 @@ fn test_cursor_movement_default() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
 
     term.place_graphic(placement);
@@ -492,6 +494,8 @@ fn test_cursor_movement_no_move() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 1, // Don't move cursor
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
 
     term.place_graphic(placement);
@@ -597,6 +601,8 @@ fn test_image_row_occupation_exact_fit() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
 
     term.place_graphic(placement);
@@ -665,6 +671,8 @@ fn test_image_row_occupation_single_row() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
 
     term.place_graphic(placement);
@@ -732,6 +740,8 @@ fn test_image_row_occupation_three_rows() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
 
     term.place_graphic(placement);
@@ -804,6 +814,8 @@ fn test_image_row_occupation_from_middle() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
 
     term.place_graphic(placement);
@@ -916,6 +928,8 @@ fn test_place_nonexistent_graphic() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
 
     // Should not panic, just warn
@@ -2606,6 +2620,8 @@ fn test_swap_alt_isolates_placements() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 1,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
     term.place_graphic(placement);
     assert!(
@@ -3065,6 +3081,8 @@ fn test_resize_widen_unwraps_command_image_follows() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 1,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
     term.place_graphic(placement);
 
@@ -3143,6 +3161,8 @@ fn test_resize_narrow_wraps_command_image_follows() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 1,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
     term.place_graphic(placement);
 
@@ -3261,6 +3281,8 @@ fn test_debug_widen_visible_layout() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
     term.place_graphic(placement);
 
@@ -3319,6 +3341,8 @@ fn test_debug_narrow_visible_layout() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
     term.place_graphic(placement);
 
@@ -3379,6 +3403,8 @@ fn test_resize_narrow_combined_col_and_row_change() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
     term.place_graphic(placement);
 
@@ -3476,6 +3502,8 @@ fn test_resize_narrow_with_multi_row_image() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0, // Default: cursor moves to last row of image
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
     term.place_graphic(placement);
 
@@ -3588,6 +3616,8 @@ fn test_resize_narrow_with_cursor_at_bottom_of_screen() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
     term.place_graphic(placement);
 
@@ -3688,6 +3718,8 @@ fn test_resize_narrow_with_prompt_after_image() {
         virtual_placement: false,
         unicode_placeholder: 0,
         cursor_movement: 0, // Default kitty behaviour: cursor stays on the last row of image
+        cell_x_offset: 0,
+        cell_y_offset: 0,
     };
     term.place_graphic(placement);
 

@@ -4454,8 +4454,8 @@ impl<U: EventListener> Crosswords<U> {
             rows,
             pixel_width: display_w as u32,
             pixel_height: display_h as u32,
-            cell_x_offset: 0,
-            cell_y_offset: 0,
+            cell_x_offset: placement.cell_x_offset,
+            cell_y_offset: placement.cell_y_offset,
             z_index: placement.z_index,
             transmit_time,
         };
@@ -6640,6 +6640,8 @@ mod tests {
             virtual_placement: true,
             unicode_placeholder: 0,
             cursor_movement: 0,
+            cell_x_offset: 0,
+            cell_y_offset: 0,
         };
 
         cw.place_graphic(placement);
