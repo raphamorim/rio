@@ -27,6 +27,9 @@
 // coverage for codepoints they intend to register.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use sugarloaf::font::glyph_placement::{
+    HAlign, PlacementParams, SizeMode, VAlign, PAD_DENOM,
+};
 
 /// Protocol identifier — the literal ASCII string `"25a1"` that
 /// prefixes every Glyph Protocol APC body. Terminals MUST drop APC
@@ -70,6 +73,9 @@ pub enum GlyphCommand {
     Register {
         cp: u32,
         payload: GlyphPayload,
+        /// §8.5 sizing/placement (`aw`/`lh`/`width`/`size`/`align`/
+        /// `pad`), spec defaults filled in for omitted keys.
+        placement: PlacementParams,
         reply: ReplyMode,
     },
     /// Clear a single PUA codepoint (`Some`) or every slot (`None`).
@@ -337,6 +343,8 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         return Err(ParseError::Malformed("register upm must be non-zero"));
     }
 
+    let placement = parse_placement(&params, upm)?;
+
     let payload_b64 = trim(payload_b64);
     let raw = BASE64
         .decode(payload_b64)
@@ -381,7 +389,128 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         _ => unreachable!("fmt validated above"),
     };
 
-    Ok(GlyphCommand::Register { cp, payload, reply })
+    Ok(GlyphCommand::Register {
+        cp,
+        payload,
+        placement,
+        reply,
+    })
+}
+
+/// Parse the §8.5 sizing/placement keys of an `r` request. Omitted
+/// keys take their spec defaults (`aw`/`lh` default to `upm`); present
+/// keys with invalid values reject the whole request as malformed,
+/// matching how `upm`/`fmt` are handled. Only unrecognised *keys* are
+/// ignored (§11 conformance rule), not bad values of known keys.
+fn parse_placement(params: &Params<'_>, upm: u16) -> Result<PlacementParams, ParseError> {
+    let aw = match params.get("aw") {
+        Some(raw) => parse_decimal_u16(raw)
+            .filter(|v| *v != 0)
+            .ok_or(ParseError::Malformed("register aw invalid"))?,
+        None => upm,
+    };
+    let lh = match params.get("lh") {
+        Some(raw) => parse_decimal_u16(raw)
+            .filter(|v| *v != 0)
+            .ok_or(ParseError::Malformed("register lh invalid"))?,
+        None => upm,
+    };
+
+    let width = match params.get("width").map(|v| trim(v)) {
+        None | Some(b"1") => 1,
+        Some(b"2") => 2,
+        Some(_) => return Err(ParseError::Malformed("register width must be 1 or 2")),
+    };
+
+    let size = match params.get("size").map(|v| trim(v)) {
+        None => SizeMode::Height,
+        Some(b"height") => SizeMode::Height,
+        Some(b"advance") => SizeMode::Advance,
+        Some(b"contain") => SizeMode::Contain,
+        Some(b"cover") => SizeMode::Cover,
+        Some(b"stretch") => SizeMode::Stretch,
+        Some(_) => return Err(ParseError::Malformed("register size unknown")),
+    };
+
+    let align = match params.get("align") {
+        None => (HAlign::Center, VAlign::Center),
+        Some(raw) => {
+            let (h_raw, rest) = split_once(raw, b',');
+            let (v_raw, extra) = split_once(rest, b',');
+            if !extra.is_empty() || rest.is_empty() {
+                return Err(ParseError::Malformed("register align needs <h>,<v>"));
+            }
+            let h = match trim(h_raw) {
+                b"start" => HAlign::Start,
+                b"center" => HAlign::Center,
+                b"end" => HAlign::End,
+                _ => return Err(ParseError::Malformed("register align <h> unknown")),
+            };
+            let v = match trim(v_raw) {
+                b"start" => VAlign::Start,
+                b"center" => VAlign::Center,
+                b"end" => VAlign::End,
+                b"baseline" => VAlign::Baseline,
+                _ => return Err(ParseError::Malformed("register align <v> unknown")),
+            };
+            (h, v)
+        }
+    };
+
+    let pad = match params.get("pad") {
+        None => [0u16; 4],
+        Some(raw) => {
+            let mut parts = [&b""[..]; 4];
+            let mut rest: &[u8] = raw;
+            for (i, slot) in parts.iter_mut().enumerate() {
+                let (part, tail) = split_once(rest, b',');
+                if part.is_empty() || (i < 3 && tail.is_empty()) {
+                    return Err(ParseError::Malformed(
+                        "register pad needs <t>,<r>,<b>,<l>",
+                    ));
+                }
+                *slot = part;
+                rest = tail;
+            }
+            if !rest.is_empty() {
+                return Err(ParseError::Malformed("register pad needs <t>,<r>,<b>,<l>"));
+            }
+            let mut pad = [0u16; 4];
+            for (slot, raw) in pad.iter_mut().zip(parts) {
+                *slot = parse_pad_fraction(raw)
+                    .ok_or(ParseError::Malformed("register pad fraction invalid"))?;
+            }
+            // §8.5.2 — an axis fully padded away is a client bug; the
+            // request proceeds as if no padding was given.
+            let denom = PAD_DENOM as u32;
+            let [t, r, b, l] = pad.map(u32::from);
+            if t + b >= denom || l + r >= denom {
+                pad = [0; 4];
+            }
+            pad
+        }
+    };
+
+    Ok(PlacementParams {
+        aw,
+        lh,
+        width,
+        size,
+        align,
+        pad,
+    })
+}
+
+/// Parse one `pad` fraction (`0.0`–`1.0`, decimal) into fixed-point
+/// [`PAD_DENOM`]ths. Rejects negatives, values above 1, and anything
+/// that isn't a plain decimal number.
+fn parse_pad_fraction(raw: &[u8]) -> Option<u16> {
+    let s = std::str::from_utf8(trim(raw)).ok()?;
+    let v: f32 = s.parse().ok()?;
+    if !v.is_finite() || !(0.0..=1.0).contains(&v) {
+        return None;
+    }
+    Some((v * PAD_DENOM).round() as u16)
 }
 
 /// Decode a `colrv0`/`colrv1` container (see [`ColrContainer`] doc for
@@ -717,9 +846,117 @@ mod tests {
                     glyf: vec![0x01, 0x02, 0x03],
                     upm: 1000,
                 },
+                placement: PlacementParams::with_upm(1000),
                 reply: ReplyMode::All,
             }
         );
+    }
+
+    #[test]
+    fn register_placement_defaults_follow_upm() {
+        // No placement keys: aw/lh default to upm, width 1,
+        // size=height, align=center,center, no padding (§6.1).
+        let body = format!("25a1;r;cp=E0A0;upm=2048;{}", b64(&[0x01]));
+        match parse(body.as_bytes()).unwrap() {
+            GlyphCommand::Register { placement, .. } => {
+                assert_eq!(placement, PlacementParams::with_upm(2048));
+            }
+            other => panic!("expected register, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn register_parses_full_placement() {
+        let body = format!(
+            "25a1;r;cp=E0A0;upm=1000;aw=600;lh=1200;width=2;size=contain;align=start,baseline;pad=0.1,0.25,0,0.5;{}",
+            b64(&[0x01])
+        );
+        match parse(body.as_bytes()).unwrap() {
+            GlyphCommand::Register { placement, .. } => {
+                assert_eq!(placement.aw, 600);
+                assert_eq!(placement.lh, 1200);
+                assert_eq!(placement.width, 2);
+                assert_eq!(placement.size, SizeMode::Contain);
+                assert_eq!(placement.align, (HAlign::Start, VAlign::Baseline));
+                assert_eq!(placement.pad, [1000, 2500, 0, 5000]);
+            }
+            other => panic!("expected register, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn register_parses_every_size_and_align_name() {
+        for (name, mode) in [
+            ("height", SizeMode::Height),
+            ("advance", SizeMode::Advance),
+            ("contain", SizeMode::Contain),
+            ("cover", SizeMode::Cover),
+            ("stretch", SizeMode::Stretch),
+        ] {
+            let body = format!("25a1;r;cp=E0A0;size={};{}", name, b64(&[0x01]));
+            match parse(body.as_bytes()).unwrap() {
+                GlyphCommand::Register { placement, .. } => {
+                    assert_eq!(placement.size, mode, "size={name}");
+                }
+                other => panic!("expected register, got {:?}", other),
+            }
+        }
+        for (name, v) in [
+            ("start", VAlign::Start),
+            ("center", VAlign::Center),
+            ("end", VAlign::End),
+            ("baseline", VAlign::Baseline),
+        ] {
+            let body = format!("25a1;r;cp=E0A0;align=end,{};{}", name, b64(&[0x01]));
+            match parse(body.as_bytes()).unwrap() {
+                GlyphCommand::Register { placement, .. } => {
+                    assert_eq!(placement.align, (HAlign::End, v), "v={name}");
+                }
+                other => panic!("expected register, got {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn register_rejects_invalid_placement_values() {
+        // Invalid *values* of known keys are malformed — only unknown
+        // *keys* are ignored per the §11 conformance rule.
+        for params in [
+            "width=3",
+            "width=0",
+            "size=fit",
+            "align=center",
+            "align=center,center,center",
+            "align=middle,center",
+            "align=center,bottom",
+            "pad=0.1,0.2",
+            "pad=0.1,0.2,0.3,0.4,0.5",
+            "pad=1.5,0,0,0",
+            "pad=-0.1,0,0,0",
+            "pad=a,0,0,0",
+            "aw=0",
+            "lh=0",
+            "aw=abc",
+        ] {
+            let body = format!("25a1;r;cp=E0A0;{};{}", params, b64(&[0x01]));
+            assert!(
+                matches!(parse(body.as_bytes()), Err(ParseError::Malformed(_))),
+                "{params} should be malformed"
+            );
+        }
+    }
+
+    #[test]
+    fn register_degenerate_pad_resets_to_zero() {
+        // §8.5.2: an axis padded fully away (t+b ≥ 1 or l+r ≥ 1) is a
+        // client bug; the request proceeds with no padding at all.
+        let body = format!("25a1;r;cp=E0A0;pad=0.6,0,0.6,0;{}", b64(&[0x01]));
+        match parse(body.as_bytes()).unwrap() {
+            GlyphCommand::Register { placement, .. } => {
+                assert_eq!(placement.pad, [0; 4]);
+            }
+            other => panic!("expected register, got {:?}", other),
+        }
     }
 
     #[test]
@@ -1003,6 +1240,7 @@ mod tests {
                         container: c,
                         upm: 1000,
                     },
+                placement: _,
                 reply: ReplyMode::All,
             } => {
                 assert_eq!(c.glyphs.len(), 1);
@@ -1034,6 +1272,7 @@ mod tests {
                         container: c,
                         upm: 2048,
                     },
+                placement: _,
                 reply: ReplyMode::All,
             } => {
                 assert_eq!(c.glyphs.len(), 3);

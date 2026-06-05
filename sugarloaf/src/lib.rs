@@ -14,6 +14,10 @@ pub mod text;
 /// `font::glyph_registry` and `renderer::image_cache::colr_raster` so
 /// downstream crates have one stable place to import from.
 pub mod glyph_protocol {
+    pub use crate::font::glyph_placement::{
+        place, CellGeometry, HAlign, PlacedTransform, PlacementParams, SizeMode, VAlign,
+        PAD_DENOM,
+    };
     pub use crate::font::glyph_registry::{
         is_pua, pack_atlas_glyph_id, GlyphRegistry, RegisterRejection, RegisteredGlyph,
         StoredPayload, CUSTOM_GLYPH_FONT_ID, CUSTOM_GLYPH_FONT_ID_U32, GLOSSARY_CAPACITY,

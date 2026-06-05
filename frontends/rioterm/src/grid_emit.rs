@@ -1648,15 +1648,20 @@ pub fn build_row_fg(
                 }
             };
 
+            // Render span = the cells this glyph actually occupies in
+            // the grid. A `width=2` registration wrote Wide+Spacer at
+            // input time; a cell written *before* the registration
+            // declared wide stays narrow, and clamping to grid truth
+            // keeps the glyph from overdrawing an occupied neighbour.
+            let span_cells: u8 =
+                if matches!(sq.wide(), rio_backend::crosswords::square::Wide::Wide) {
+                    2
+                } else {
+                    1
+                };
+
             if let Some((_, slot, is_color)) = ensure_custom_glyph_by_codepoint(
-                grid,
-                registry,
-                ch as u32,
-                size_bucket,
-                size_u16,
-                cell_h,
-                ascent_px,
-                color,
+                grid, registry, ch as u32, cell_w, cell_h, ascent_px, span_cells, color,
             ) {
                 if slot.w != 0 && slot.h != 0 {
                     // Colour atlas entries are pre-painted (palette
@@ -2293,19 +2298,22 @@ fn ensure_glyph_by_id(
 }
 
 /// Look up or rasterise a Glyph Protocol registration into the grid
-/// atlas. The atlas key combines the codepoint with the registration's
-/// `version` (bumped on every register/clear) so re-registering the
-/// same codepoint never serves a stale rasterisation. Each unique
-/// (codepoint × version × pixel size) combination owns one atlas slot;
-/// previous-version slots become unreachable and the atlas LRU evicts
-/// them in due course.
+/// atlas, applying the registration's §8.5 sizing/placement model
+/// against the current cell box. The atlas key combines the codepoint
+/// with the registration's `version` (bumped on every register/clear)
+/// so re-registering the same codepoint never serves a stale
+/// rasterisation. Each unique (codepoint × version × cell geometry ×
+/// span) combination owns one atlas slot; previous-version slots
+/// become unreachable and the atlas LRU evicts them in due course.
 ///
 /// `ascent_px` matches the primary font's ascent at the same size
-/// bucket — Glyph Protocol payloads have no font-of-their-own, so we
-/// align registered glyphs to the surrounding text baseline. A more
-/// faithful rendering would walk the registered outline's bbox to
-/// compute per-glyph bearings, but for icon-style PUA glyphs the
-/// primary-font baseline produces the expected appearance.
+/// bucket — it pins the cell's text baseline for registrations using
+/// `align=<h>,baseline`, so character-like custom glyphs sit on the
+/// same line as surrounding text.
+///
+/// `span_cells` is the grid-truth render span (2 when the cell is
+/// `Wide`, else 1) — the §8.5 span is `width × cell_width`, clamped to
+/// what the grid actually reserved.
 ///
 /// `registry` is the active terminal's glyph registry, cloned once
 /// per row by `build_row_fg`. Passing it in (instead of going through
@@ -2314,16 +2322,16 @@ fn ensure_glyph_by_id(
 ///
 /// Returns `None` when the registration was cleared between font
 /// resolution and render, or when rasterisation produces no pixels
-/// (zero-area outline, malformed COLR, etc.).
+/// (zero-area outline, malformed COLR, degenerate cell geometry).
 #[allow(clippy::too_many_arguments)]
 fn ensure_custom_glyph_by_codepoint(
     grid: &mut GridRenderer,
     registry: &rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry,
     codepoint: u32,
-    size_bucket: u16,
-    size_u16: u16,
+    cell_w: f32,
     cell_h: f32,
     ascent_px: i16,
+    span_cells: u8,
     foreground_rgba: [u8; 4],
 ) -> Option<(GlyphKey, AtlasSlot, bool)> {
     use rio_backend::sugarloaf::font::glyph_registry::pack_atlas_glyph_id;
@@ -2332,6 +2340,19 @@ fn ensure_custom_glyph_by_codepoint(
     // happens under the registry's RwLock read; the entry's payload is
     // cloned out so the lock drops before we hit tiny-skia.
     let entry = registry.get(codepoint)?;
+
+    // The placed bitmap depends on the cell box (§8.5 spans are
+    // cell-relative), not the font size — so the bucket is cell
+    // geometry, cursor-sprite style: render span in the top bit, the
+    // cell width's low bits, and the full cell height. Stale-geometry
+    // entries (font resize, line-height change) age out through the
+    // atlas LRU exactly like regular glyphs at a dead size bucket.
+    let cell_w_u = cell_w.round().clamp(0.0, u16::MAX as f32) as u16;
+    let cell_h_u = cell_h.round().clamp(0.0, u16::MAX as f32) as u16;
+    let size_bucket: u16 = ((u16::from(span_cells == 2)) << 15)
+        | ((cell_w_u & 0x7) << 12)
+        | (cell_h_u.min(0xFFF));
+
     let key = GlyphKey {
         font_id: CUSTOM_GLYPH_FONT_ID_U32,
         glyph_id: pack_atlas_glyph_id(codepoint, entry.version),
@@ -2344,18 +2365,29 @@ fn ensure_custom_glyph_by_codepoint(
         return Some((key, slot, true));
     }
 
+    let geom = rio_backend::sugarloaf::glyph_protocol::CellGeometry {
+        cell_width: cell_w,
+        cell_height: cell_h,
+        ascent: f32::from(ascent_px),
+        span_cells,
+    };
     let raster = rio_backend::sugarloaf::glyph_protocol::rasterize_payload(
         &entry.payload,
-        entry.upm,
-        size_u16,
+        &entry.placement,
+        &geom,
         foreground_rgba,
     )?;
 
+    // The rasteriser returns cell-relative offsets: `left` from the
+    // cell's left edge, `top` from the cell's top edge (top-down). The
+    // grid shader expects bottom-up bearings (`offset.y = cell_h −
+    // bearing_y`), so the conversion is one subtraction — all §8.5
+    // baseline/align math already happened inside the placement
+    // transform.
     let bearing_y = {
         let cell_h_i16 = cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
         cell_h_i16
-            .saturating_sub(ascent_px)
-            .saturating_add(raster.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
+            .saturating_sub(raster.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
     };
     let raster_in = RasterizedGlyph {
         width: raster.width,

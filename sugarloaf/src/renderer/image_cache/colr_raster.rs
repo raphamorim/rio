@@ -34,6 +34,16 @@ use tiny_skia::{
 };
 
 use crate::font::glyf_decode;
+use crate::font::glyph_placement::{
+    place, CellGeometry, PlacedTransform, PlacementParams,
+};
+
+/// Hard ceiling on either bitmap axis. The §8.5 size modes allow the
+/// scaled outline to overflow its span (`height`, `advance`, `cover`),
+/// but a hostile registration (`aw=1` + `size=advance`) could otherwise
+/// request a gigapixel pixmap. Anything past this bound wouldn't fit an
+/// atlas page anyway.
+const MAX_RASTER_DIM: f32 = 4096.0;
 
 /// Bitmap + placement metadata produced by [`rasterize_payload`] (and
 /// internally by [`rasterize`]). `is_color` distinguishes the two
@@ -45,61 +55,94 @@ pub struct RasterizedPayload {
     pub data: Vec<u8>,
     pub width: u16,
     pub height: u16,
-    /// Pixel offset from the cell's pen position to the bitmap's
-    /// left edge.
+    /// Pixel offset from the cell's LEFT edge to the bitmap's left
+    /// edge. May be negative when the placed outline overflows the
+    /// cell (e.g. `size=height` with a wide extent).
     pub left: i32,
-    /// Pixel offset from the baseline to the bitmap's top edge
-    /// (positive = baseline below the top).
+    /// Pixel offset from the cell's TOP edge to the bitmap's top edge
+    /// (top-down). The §8.5 placement model already positioned the
+    /// outline inside the cell box, so no baseline math is left for
+    /// the caller — converting to the grid's bottom-up bearing is
+    /// `cell_height - top`.
     pub top: i32,
     pub is_color: bool,
 }
 
-/// Rasterise a registered Glyph Protocol payload. Dispatches the
-/// monochrome `glyf` path through tiny-skia's anti-aliased fill (A8
-/// output) and the colour `colrv0`/`colrv1` paths through the COLR
-/// painter graph (RGBA8 output). Returns `None` on malformed payload
-/// or degenerate sizing.
+/// Rasterise a registered Glyph Protocol payload, applying the §8.5
+/// pad → size → align placement model against the target cell box.
+/// Dispatches the monochrome `glyf` path through tiny-skia's
+/// anti-aliased fill (A8 output) and the colour `colrv0`/`colrv1`
+/// paths through the COLR painter graph (RGBA8 output). Returns `None`
+/// on malformed payload or degenerate sizing.
 pub fn rasterize_payload(
     payload: &crate::font::glyph_registry::StoredPayload,
-    upm: u16,
-    pixel_size: u16,
+    placement: &PlacementParams,
+    geom: &CellGeometry,
     foreground_rgba: [u8; 4],
 ) -> Option<RasterizedPayload> {
     use crate::font::glyph_registry::StoredPayload;
     match payload {
-        StoredPayload::Glyf { glyf } => rasterize_mono(glyf, upm, pixel_size),
+        StoredPayload::Glyf { glyf } => rasterize_mono(glyf, placement, geom),
         StoredPayload::ColrV0 { glyphs, colr, cpal }
         | StoredPayload::ColrV1 { glyphs, colr, cpal } => {
-            rasterize(glyphs, colr, cpal, upm, pixel_size, foreground_rgba)
+            rasterize(glyphs, colr, cpal, placement, geom, foreground_rgba)
         }
     }
 }
 
-/// Walk a `glyf` simple-glyph outline and rasterise it as an A8 alpha
-/// mask sized to fit `pixel_size`. The atlas-bound caller uploads
-/// the bytes straight into the grayscale atlas, same shape as the
-/// swash/CT mono path produces.
-fn rasterize_mono(glyf: &[u8], upm: u16, pixel_size: u16) -> Option<RasterizedPayload> {
-    if pixel_size == 0 || upm == 0 {
+/// The placed bitmap rectangle for a design-space bbox: cell-local
+/// `left`/`top` plus pixel dimensions, padded 1 px on each side so
+/// anti-aliased edges never clip (sub-pixel expansion via
+/// floor/ceil). `None` when the transform degenerates or the result
+/// exceeds [`MAX_RASTER_DIM`].
+fn placed_bitmap_rect(
+    t: &PlacedTransform,
+    x_min: f32,
+    y_min: f32,
+    x_max: f32,
+    y_max: f32,
+) -> Option<(f32, f32, u32, u32)> {
+    if !(t.sx.is_finite() && t.sy.is_finite()) || t.sx <= 0.0 || t.sy <= 0.0 {
         return None;
     }
-
-    let outline = glyf_decode::decode(glyf).ok()?;
-    let scale = pixel_size as f32 / upm as f32;
-
     let pad = 1.0_f32;
-    let pix_w = (((outline.x_max - outline.x_min) as f32 * scale).ceil() + pad * 2.0)
-        .max(1.0) as u32;
-    let pix_h = (((outline.y_max - outline.y_min) as f32 * scale).ceil() + pad * 2.0)
-        .max(1.0) as u32;
+    // Y flips: design y_max is the bitmap top.
+    let left = (t.map_x(x_min) - pad).floor();
+    let top = (t.map_y(y_max) - pad).floor();
+    let w = (t.map_x(x_max) + pad).ceil() - left;
+    let h = (t.map_y(y_min) + pad).ceil() - top;
+    if !(left.is_finite() && top.is_finite()) || w > MAX_RASTER_DIM || h > MAX_RASTER_DIM
+    {
+        return None;
+    }
+    Some((left, top, w.max(1.0) as u32, h.max(1.0) as u32))
+}
 
-    // `glyf_decode::Outline::walk` flips Y so its output is Y-down
-    // with origin at the top of the bbox (y=0 → top, y increases
-    // downward to `y_max - y_min`). That matches tiny-skia's pixmap
-    // convention exactly, so we feed walk's coords straight in
-    // without further flipping. The COLR rasteriser un-flips because
-    // its painter expects Y-up design units; this monochrome path
-    // skips the painter and goes pixmap-direct.
+/// Walk a `glyf` simple-glyph outline and rasterise it as an A8 alpha
+/// mask at its §8.5-placed size. The atlas-bound caller uploads the
+/// bytes straight into the grayscale atlas, same shape as the
+/// swash/CT mono path produces.
+fn rasterize_mono(
+    glyf: &[u8],
+    placement: &PlacementParams,
+    geom: &CellGeometry,
+) -> Option<RasterizedPayload> {
+    let outline = glyf_decode::decode(glyf).ok()?;
+    let t = place(placement, geom, outline.y_min as f32);
+    let (left, top, pix_w, pix_h) = placed_bitmap_rect(
+        &t,
+        outline.x_min as f32,
+        outline.y_min as f32,
+        outline.x_max as f32,
+        outline.y_max as f32,
+    )?;
+
+    // `glyf_decode::Outline::walk(1, 1.0)` emits design units with Y
+    // already flipped down from the bbox top: `y_walk = y_max − y`.
+    // Composing with the placement transform:
+    //   px_x = t.map_x(x_walk)
+    //   px_y = t.map_y(y) = (t.ty − sy·y_max) + sy·y_walk
+    // then shift into bitmap-local space by (−left, −top).
     let cmds = outline.walk(1, 1.0);
     if cmds.is_empty() {
         return None;
@@ -116,17 +159,13 @@ fn rasterize_mono(glyf: &[u8], upm: u16, pixel_size: u16) -> Option<RasterizedPa
     let path = pb.finish()?;
 
     let mut pixmap = Pixmap::new(pix_w, pix_h)?;
-    // X: shift so design `x_min` lands at pixel `pad`.
-    // Y: walk already puts the bbox top at y=0, so a flat `pad`
-    // offset places the top of the glyph one px below the pixmap
-    // top edge.
     let ctm = Transform::from_row(
-        scale,
+        t.sx,
         0.0,
         0.0,
-        scale,
-        pad - outline.x_min as f32 * scale,
-        pad,
+        t.sy,
+        t.tx - left,
+        (t.ty - t.sy * outline.y_max as f32) - top,
     );
     let mut paint = SkPaint::default();
     paint.set_color_rgba8(0xFF, 0xFF, 0xFF, 0xFF);
@@ -137,38 +176,28 @@ fn rasterize_mono(glyf: &[u8], upm: u16, pixel_size: u16) -> Option<RasterizedPa
     // the alpha channel (which equals R/G/B since we filled white).
     let data: Vec<u8> = pixmap.pixels().iter().map(|p| p.alpha()).collect();
 
-    // Placement: `floor` left and `ceil` top to expand outward by a
-    // sub-pixel and avoid clipping anti-aliased edges, matching the
-    // COLR rasteriser's convention. The bitmap's top edge sits at
-    // design-unit `y_max` in baseline-up convention.
-    let left = (outline.x_min as f32 * scale - pad).floor() as i32;
-    let top = (outline.y_max as f32 * scale + pad).ceil() as i32;
-
     Some(RasterizedPayload {
         data,
         width: pix_w as u16,
         height: pix_h as u16,
-        left,
-        top,
+        left: left as i32,
+        top: top as i32,
         is_color: false,
     })
 }
 
-/// Rasterise a COLR glyph to RGBA. Returns `None` when COLR/CPAL is
-/// malformed, when the base-glyph outline is empty, or when tiny-skia
-/// rejects a degenerate configuration (e.g. zero pixmap size).
+/// Rasterise a COLR glyph to RGBA at its §8.5-placed size. Returns
+/// `None` when COLR/CPAL is malformed, when the base-glyph outline is
+/// empty, or when tiny-skia rejects a degenerate configuration (e.g.
+/// zero pixmap size).
 pub(super) fn rasterize(
     glyphs: &[Vec<u8>],
     colr_bytes: &[u8],
     cpal_bytes: &[u8],
-    upm: u16,
-    pixel_size: u16,
+    placement: &PlacementParams,
+    geom: &CellGeometry,
     foreground: [u8; 4],
 ) -> Option<RasterizedPayload> {
-    if pixel_size == 0 || upm == 0 {
-        return None;
-    }
-
     // ttf-parser's `colr::Table::parse` requires a non-empty CPAL
     // slice, even for v1 fonts that make no palette lookups. If the
     // container ships an empty CPAL (legal for v1-only paints), feed
@@ -210,27 +239,20 @@ pub(super) fn rasterize(
                 (a as i32, b as i32, c as i32, d as i32)
             }
         };
-    let scale = pixel_size as f32 / upm as f32;
 
-    let pad = 1.0_f32;
-    let pix_w = (((x_max - x_min) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
-    let pix_h = (((y_max - y_min) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
+    let t = place(placement, geom, y_min as f32);
+    let (left, top, pix_w, pix_h) =
+        placed_bitmap_rect(&t, x_min as f32, y_min as f32, x_max as f32, y_max as f32)?;
 
     let base_pixmap = Pixmap::new(pix_w, pix_h)?;
 
-    // Font units (y-up, origin at baseline) → pixmap pixels (y-down,
-    // origin at top-left). The identity-sized glyph outline in the
-    // painter gets this transform applied before drawing.
+    // Font units (y-up, origin at baseline) → bitmap-local pixels
+    // (y-down, origin at the bitmap's top-left). The placement
+    // transform maps to cell-local pixels; subtracting the bitmap
+    // origin shifts into bitmap space.
     // Matrix [sx, ky, kx, sy, tx, ty] applies (x,y) as
     //   (sx*x + kx*y + tx, ky*x + sy*y + ty).
-    let base_ctm = Transform::from_row(
-        scale,
-        0.0,
-        0.0,
-        -scale,
-        -(x_min as f32) * scale + pad,
-        (y_max as f32) * scale + pad,
-    );
+    let base_ctm = Transform::from_row(t.sx, 0.0, 0.0, -t.sy, t.tx - left, t.ty - top);
 
     let mut raster = ColorRaster {
         layers: vec![Layer {
@@ -253,8 +275,8 @@ pub(super) fn rasterize(
         data: pixmap_to_rgba(&final_pixmap),
         width: pix_w as u16,
         height: pix_h as u16,
-        left: (x_min as f32 * scale - pad).floor() as i32,
-        top: (y_max as f32 * scale + pad).ceil() as i32,
+        left: left as i32,
+        top: top as i32,
         is_color: true,
     })
 }
@@ -817,16 +839,32 @@ mod tests {
         v
     }
 
+    /// Square cell geometry sized to render the test glyph 1:1 when
+    /// `size=height` maps `lh` onto the cell height.
+    fn geom_cell(w: f32, h: f32) -> CellGeometry {
+        CellGeometry {
+            cell_width: w,
+            cell_height: h,
+            ascent: h * 0.8,
+            span_cells: 1,
+        }
+    }
+
     #[test]
     fn rasterize_mono_top_pixels_filled_bottom_pixels_empty() {
         // Outline occupies only the top 25% of the em — after raster,
         // the top rows of the bitmap should be inked and the bottom
         // rows should be transparent. Catches the Y-flip bug we hit
         // earlier (where the strip rendered at the bottom instead).
+        // A 100×100 cell with `lh=100` keeps the historical 1:1 scale.
         let upm = 100i16;
         let bytes = glyf_top_strip(upm, upm / 4);
-        let r = rasterize_mono(&bytes, upm as u16, upm as u16)
-            .expect("rasterize succeeds for valid simple glyph");
+        let r = rasterize_mono(
+            &bytes,
+            &PlacementParams::with_upm(upm as u16),
+            &geom_cell(100.0, 100.0),
+        )
+        .expect("rasterize succeeds for valid simple glyph");
 
         let w = r.width as usize;
         let h = r.height as usize;
@@ -853,10 +891,59 @@ mod tests {
     }
 
     #[test]
-    fn rasterize_mono_rejects_zero_pixel_size() {
+    fn rasterize_mono_rejects_degenerate_geometry() {
         let bytes = glyf_top_strip(100, 25);
-        assert!(rasterize_mono(&bytes, 100, 0).is_none());
-        assert!(rasterize_mono(&bytes, 0, 16).is_none());
+        // Zero cell height → zero scale.
+        assert!(rasterize_mono(
+            &bytes,
+            &PlacementParams::with_upm(100),
+            &geom_cell(100.0, 0.0)
+        )
+        .is_none());
+        // upm 0 clamps the extent to 1 design unit, blowing the scale
+        // past MAX_RASTER_DIM — rejected rather than allocated.
+        assert!(rasterize_mono(
+            &bytes,
+            &PlacementParams::with_upm(0),
+            &geom_cell(100.0, 100.0)
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn rasterize_mono_contain_centers_inside_cell() {
+        // Full-em square outline, contain-fit into a 10×20 cell: the
+        // placed bitmap (minus the 1-px AA pad) must stay inside the
+        // cell box on both axes.
+        let bytes = glyf_top_strip(100, 100);
+        let mut p = PlacementParams::with_upm(100);
+        p.size = crate::font::glyph_placement::SizeMode::Contain;
+        let r = rasterize_mono(&bytes, &p, &geom_cell(10.0, 20.0)).expect("rasterize");
+        assert!(r.left >= -1, "left {} inside cell", r.left);
+        assert!(r.top >= -1, "top {} inside cell", r.top);
+        assert!(
+            r.left + r.width as i32 <= 11,
+            "right {} inside cell",
+            r.left + r.width as i32
+        );
+        assert!(
+            r.top + r.height as i32 <= 21,
+            "bottom {} inside cell",
+            r.top + r.height as i32
+        );
+    }
+
+    #[test]
+    fn rasterize_mono_stretch_fills_cell() {
+        let bytes = glyf_top_strip(100, 100);
+        let mut p = PlacementParams::with_upm(100);
+        p.size = crate::font::glyph_placement::SizeMode::Stretch;
+        let r = rasterize_mono(&bytes, &p, &geom_cell(10.0, 20.0)).expect("rasterize");
+        // Cell box plus the 1-px AA pad on each side.
+        assert_eq!(r.left, -1);
+        assert_eq!(r.top, -1);
+        assert_eq!(r.width, 12);
+        assert_eq!(r.height, 22);
     }
 
     #[test]

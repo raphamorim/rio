@@ -1,6 +1,7 @@
 pub mod constants;
 pub mod fonts;
 pub mod glyf_decode;
+pub mod glyph_placement;
 pub mod glyph_registry;
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
 pub mod linux;

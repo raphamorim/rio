@@ -957,6 +957,29 @@ impl<U: EventListener> Crosswords<U> {
             .saturating_sub(self.grid.screen_lines())
     }
 
+    /// Effective terminal width override for a codepoint from a Glyph
+    /// Protocol registration. The `width=` key (§6.1) is authoritative
+    /// for layout — cursor advance, wrapping, selection — overriding
+    /// the codepoint's UAX #11 East Asian Width (all PUA ranges are
+    /// Ambiguous, i.e. 1, by default).
+    ///
+    /// Hot-path cost: non-PUA codepoints pay two range compares; PUA
+    /// codepoints pay one relaxed atomic load unless this session has
+    /// at least one live `width=2` registration (the common case is
+    /// none — narrow registrations don't need the override since the
+    /// table already yields 1).
+    #[inline]
+    fn glyph_protocol_width(&self, cp: u32) -> Option<u8> {
+        if !crate::ansi::glyph_protocol::is_pua(cp) {
+            return None;
+        }
+        let registry = self.glyph_registry.as_ref()?;
+        if !registry.has_wide() {
+            return None;
+        }
+        registry.width_of(cp)
+    }
+
     /// Damage the entire line at the cursor position
     #[inline]
     pub fn damage_cursor_line(&mut self) {
@@ -2622,6 +2645,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             Some(w) => w as usize,
             None => return,
         };
+        let width = self
+            .glyph_protocol_width(c as u32)
+            .map(usize::from)
+            .unwrap_or(width);
 
         // Handle zero-width characters.
         if width == 0 {
@@ -2744,6 +2771,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 Some(w) => w,
                 None => continue,
             };
+            let width = self.glyph_protocol_width(cp).unwrap_or(width);
 
             if width == 0 {
                 // Combining marks, VS15/VS16. Defer to scalar `input` which
@@ -4115,6 +4143,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         &mut self,
         cp: u32,
         payload: crate::ansi::glyph_protocol::GlyphPayload,
+        placement: sugarloaf::font::glyph_placement::PlacementParams,
     ) -> Result<(), crate::ansi::glyph_protocol::RegisterError> {
         use crate::ansi::glyph_protocol::{is_pua, GlyphPayload, RegisterError};
         use sugarloaf::font::glyf_decode;
@@ -4181,7 +4210,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let was_uninitialised = self.glyph_registry.is_none();
         let registry = self.glyph_registry.get_or_insert_with(GlyphRegistry::new);
 
-        let result = match registry.register(cp, stored, upm) {
+        let result = match registry.register(cp, stored, upm, placement) {
             Ok(_evicted) => Ok(()),
             Err(RegisterRejection::OutOfNamespace) => {
                 // Unreachable given the is_pua check above, but the
@@ -4201,6 +4230,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
             );
         }
 
+        // §7.3 cache invalidation: an overwrite (or eviction) changes
+        // what an already-displayed codepoint should look like, but
+        // doesn't touch any cell — so partial damage would happily
+        // keep serving the previous rasterisation. Register is rare;
+        // full damage is the cheap correct answer.
+        if result.is_ok() {
+            self.damage.full = true;
+        }
+
         result
     }
 
@@ -4213,6 +4251,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             None => registry.clear_all(),
             Some(cp) => registry.clear_one(cp),
         }
+        // Cleared codepoints still on screen must repaint (as system
+        // font or tofu) — same partial-damage blindness as overwrite.
+        self.damage.full = true;
     }
 
     fn glyph_query(&mut self, cp: u32) {
@@ -4574,6 +4615,10 @@ mod tests {
         crate::ansi::glyph_protocol::GlyphPayload::Glyf { glyf: bytes, upm }
     }
 
+    fn placement_1000() -> sugarloaf::font::glyph_placement::PlacementParams {
+        sugarloaf::font::glyph_placement::PlacementParams::with_upm(1000)
+    }
+
     fn registry_contains(cw: &Crosswords<VoidListener>, cp: u32) -> bool {
         cw.glyph_registry.as_ref().is_some_and(|r| r.contains(cp))
     }
@@ -4594,7 +4639,12 @@ mod tests {
 
         let glyf = minimal_glyf_bytes();
         // E0A0 is the Powerline branch codepoint — in basic PUA.
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(glyf, 1000));
+        let res = Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(glyf, 1000),
+            placement_1000(),
+        );
         assert!(res.is_ok());
         assert!(cw.glyph_registry.is_some());
         assert!(registry_contains(&cw, 0xE0A0));
@@ -4610,6 +4660,7 @@ mod tests {
             &mut cw,
             0x61,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            placement_1000(),
         );
         assert_eq!(res, Err(RegisterError::OutOfNamespace));
         assert!(cw.glyph_registry.is_none());
@@ -4630,7 +4681,12 @@ mod tests {
         v.extend_from_slice(&0i16.to_be_bytes());
         v.extend_from_slice(&0i16.to_be_bytes());
 
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(v, 1000));
+        let res = Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(v, 1000),
+            placement_1000(),
+        );
         assert_eq!(res, Err(RegisterError::HintingUnsupported));
         // Decode failed before the registry was touched, so it stays
         // uninitialised.
@@ -4652,12 +4708,14 @@ mod tests {
             &mut cw,
             0xE0A0,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            placement_1000(),
         )
         .unwrap();
         Handler::glyph_register(
             &mut cw,
             0xE0A1,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            placement_1000(),
         )
         .unwrap();
         assert_eq!(registry_len(&cw), 2);
@@ -4676,18 +4734,127 @@ mod tests {
             &mut cw,
             0xE0A0,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            placement_1000(),
         )
         .unwrap();
         Handler::glyph_register(
             &mut cw,
             0xE0A1,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            placement_1000(),
         )
         .unwrap();
 
         Handler::glyph_clear(&mut cw, Some(0xE0A0));
         assert!(!registry_contains(&cw, 0xE0A0));
         assert!(registry_contains(&cw, 0xE0A1));
+    }
+
+    #[test]
+    fn glyph_protocol_register_and_clear_set_full_damage() {
+        let mut cw = make_crosswords();
+        cw.damage.full = false;
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+            placement_1000(),
+        )
+        .unwrap();
+        // §7.3: an overwrite changes what a displayed codepoint looks
+        // like without touching cells; partial damage can't see it.
+        assert!(cw.damage.full);
+
+        cw.damage.full = false;
+        Handler::glyph_clear(&mut cw, Some(0xE0A0));
+        assert!(cw.damage.full);
+    }
+
+    #[test]
+    fn glyph_protocol_width_default_is_narrow() {
+        let mut cw = make_crosswords();
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+            placement_1000(),
+        )
+        .unwrap();
+
+        Handler::input(&mut cw, '\u{E0A0}');
+        assert_eq!(cw.grid.cursor.pos.col.0, 1, "narrow: cursor advances 1");
+        assert_eq!(
+            cw.grid[Line(0)][Column(0)].wide(),
+            crate::crosswords::square::Wide::Narrow
+        );
+    }
+
+    #[test]
+    fn glyph_protocol_width_two_occupies_wide_pair() {
+        let mut cw = make_crosswords();
+        let mut placement = placement_1000();
+        placement.width = 2;
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+            placement,
+        )
+        .unwrap();
+
+        Handler::input(&mut cw, '\u{E0A0}');
+        assert_eq!(
+            cw.grid[Line(0)][Column(0)].wide(),
+            crate::crosswords::square::Wide::Wide,
+            "declared width=2 writes a Wide cell"
+        );
+        assert_eq!(
+            cw.grid[Line(0)][Column(1)].wide(),
+            crate::crosswords::square::Wide::Spacer,
+            "followed by its Spacer"
+        );
+        assert_eq!(cw.grid.cursor.pos.col.0, 2, "cursor advances 2");
+
+        // The bulk path takes the same override.
+        let mut cw = make_crosswords();
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+            placement,
+        )
+        .unwrap();
+        Handler::input_codepoints(&mut cw, &[0xE0A0]);
+        assert_eq!(
+            cw.grid[Line(0)][Column(0)].wide(),
+            crate::crosswords::square::Wide::Wide
+        );
+        assert_eq!(
+            cw.grid[Line(0)][Column(1)].wide(),
+            crate::crosswords::square::Wide::Spacer
+        );
+    }
+
+    #[test]
+    fn glyph_protocol_width_override_only_for_registered_cp() {
+        let mut cw = make_crosswords();
+        let mut placement = placement_1000();
+        placement.width = 2;
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+            placement,
+        )
+        .unwrap();
+
+        // A different (unregistered) PUA codepoint keeps table width 1.
+        Handler::input(&mut cw, '\u{E0A1}');
+        assert_eq!(cw.grid.cursor.pos.col.0, 1);
+        assert_eq!(
+            cw.grid[Line(0)][Column(0)].wide(),
+            crate::crosswords::square::Wide::Narrow
+        );
     }
 
     #[test]

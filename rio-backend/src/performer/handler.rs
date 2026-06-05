@@ -412,12 +412,14 @@ pub trait Handler {
     /// parser has already verified `cp` is in PUA and the container
     /// size is within bounds. The `payload` carries format-specific
     /// data: monochrome `glyf`, or a `colrv0`/`colrv1` colour
-    /// container. `Err(reason)` causes the dispatcher to emit an error
-    /// response.
+    /// container; `placement` carries the §8.5 sizing/placement model
+    /// (spec defaults filled in). `Err(reason)` causes the dispatcher
+    /// to emit an error response.
     fn glyph_register(
         &mut self,
         _cp: u32,
         _payload: glyph_protocol::GlyphPayload,
+        _placement: sugarloaf::font::glyph_placement::PlacementParams,
     ) -> Result<(), glyph_protocol::RegisterError> {
         Ok(())
     }
@@ -842,22 +844,25 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                 // reply back to the originating pane's PTY directly.
                 self.handler.glyph_query(cp);
             }
-            Ok(glyph_protocol::GlyphCommand::Register { cp, payload, reply }) => {
-                match self.handler.glyph_register(cp, payload) {
-                    Ok(()) => {
-                        if reply.emit_success() {
-                            let resp = glyph_protocol::format_register_ok(cp);
-                            self.handler.glyph_protocol_response(resp);
-                        }
-                    }
-                    Err(reason) => {
-                        if reply.emit_error() {
-                            let resp = glyph_protocol::format_register_error(cp, reason);
-                            self.handler.glyph_protocol_response(resp);
-                        }
+            Ok(glyph_protocol::GlyphCommand::Register {
+                cp,
+                payload,
+                placement,
+                reply,
+            }) => match self.handler.glyph_register(cp, payload, placement) {
+                Ok(()) => {
+                    if reply.emit_success() {
+                        let resp = glyph_protocol::format_register_ok(cp);
+                        self.handler.glyph_protocol_response(resp);
                     }
                 }
-            }
+                Err(reason) => {
+                    if reply.emit_error() {
+                        let resp = glyph_protocol::format_register_error(cp, reason);
+                        self.handler.glyph_protocol_response(resp);
+                    }
+                }
+            },
             Ok(glyph_protocol::GlyphCommand::Clear { cp }) => {
                 self.handler.glyph_clear(cp);
                 let resp = glyph_protocol::format_clear_ok(cp);
