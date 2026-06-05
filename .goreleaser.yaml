@@ -285,10 +285,7 @@ winget:
 
 after:
   hooks:
-    - cmd: brew bump-cask-pr rio --version {{ .Version }}
-      if: "{{ and .IsRelease .IsMerging }}"
-      env: ["HOMEBREW_GITHUB_API_TOKEN={{ .Env.GITHUB_TOKEN }}"]
-      output: true
+    # homebrew-cask is bumped automatically by BrewTestBot (cask has livecheck)
     - cmd: cargo publish -p rio-window
       if: "{{ and .IsRelease .IsMerging }}"
       output: true
