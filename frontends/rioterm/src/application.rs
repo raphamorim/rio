@@ -1132,7 +1132,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 if route.window.screen.mouse.y
                                     <= (ISLAND_HEIGHT * scale) as f64
                                 {
-                                    let _ = route.window.winit_window.drag_window();
+                                    route
+                                        .window
+                                        .screen
+                                        .start_window_drag(&route.window.winit_window);
                                 }
                             }
 
