@@ -3496,7 +3496,8 @@ impl Screen<'_> {
                 let origin_x = panel_rect[0] + scaled_margin.left;
                 let origin_y = panel_rect[1] + scaled_margin.top;
 
-                let cursor = &self.context_manager.current().renderable_content.cursor;
+                let current = self.context_manager.current();
+                let cursor = &current.renderable_content.cursor;
                 let cursor_row = cursor.state.pos.row.0 as usize;
                 let cursor_col = cursor.state.pos.col.0;
 
@@ -3504,6 +3505,7 @@ impl Screen<'_> {
                 let cursor_px_x = origin_x + cursor_col as f32 * cell_width;
                 let cursor_px_y = origin_y + cursor_row as f32 * cell_height;
 
+                self.renderer.trail_cursor.set_route(current.route_id);
                 self.renderer.trail_cursor.set_destination(
                     cursor_px_x,
                     cursor_px_y,
