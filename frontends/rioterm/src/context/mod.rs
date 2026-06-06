@@ -910,6 +910,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let current = self.current_index;
         let target_index = if current == 0 { len - 1 } else { current - 1 };
         self.contexts.swap(current, target_index);
+        self.titles.swap_indices(current, target_index);
         self.select_tab(target_index);
     }
 
@@ -923,6 +924,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let current = self.current_index;
         let target_index = if current == len - 1 { 0 } else { current + 1 };
         self.contexts.swap(current, target_index);
+        self.titles.swap_indices(current, target_index);
         self.select_tab(target_index);
     }
 
@@ -940,6 +942,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let grid = self.contexts.remove(current);
         self.contexts.insert(target, grid);
+        self.titles.move_index(current, target);
         self.set_current(target);
     }
 

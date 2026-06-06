@@ -1402,7 +1402,6 @@ impl Screen<'_> {
                         if let Some(ref mut island) = self.renderer.island {
                             island.remap_tab_swap(old_index, new_index, tab_width);
                         }
-                        self.context_manager.titles.last_title_update = None;
                         self.mark_dirty();
                     }
                     Act::MoveCurrentTabToNext => {
@@ -1421,7 +1420,6 @@ impl Screen<'_> {
                         if let Some(ref mut island) = self.renderer.island {
                             island.remap_tab_swap(old_index, new_index, tab_width);
                         }
-                        self.context_manager.titles.last_title_update = None;
                         self.mark_dirty();
                     }
                     Act::SelectPrevTab => {
@@ -2627,6 +2625,18 @@ impl Screen<'_> {
         (left_margin, available_width, tab_width)
     }
 
+    /// Hand the current press to AppKit as a window drag, releasing the
+    /// latched button state first — `performWindowDragWithEvent` may
+    /// swallow the matching mouse-up (winit: "macOS: May prevent the
+    /// button release event to be triggered"), which would otherwise
+    /// leave `left_button_state` stuck at `Pressed` and spuriously arm
+    /// selection auto-scroll later.
+    #[cfg(target_os = "macos")]
+    pub fn start_window_drag(&mut self, window: &rio_window::window::Window) {
+        self.mouse.left_button_state = ElementState::Released;
+        let _ = window.drag_window();
+    }
+
     pub fn handle_island_click(
         &mut self,
         window: &rio_window::window::Window,
@@ -2701,10 +2711,13 @@ impl Screen<'_> {
         let mouse_x_unscaled = mouse_x as f32 / scale_factor;
 
         // Automatic titlebar dragging is disabled for island windows
-        // (`with_mouse_down_can_move_window(false)`), so presses on the
-        // band margins outside the tabs hand the drag back to AppKit.
+        // (`with_mouse_down_can_move_window(false)`), so left presses on
+        // the band margins outside the tabs hand the drag back to AppKit.
         if mouse_x_unscaled < left_margin {
-            let _ = window.drag_window();
+            #[cfg(target_os = "macos")]
+            if !is_right_click {
+                self.start_window_drag(window);
+            }
             return true;
         }
 
@@ -2712,7 +2725,10 @@ impl Screen<'_> {
         let clicked_tab = (x_in_tabs / tab_width) as usize;
 
         if clicked_tab >= num_tabs {
-            let _ = window.drag_window();
+            #[cfg(target_os = "macos")]
+            if !is_right_click {
+                self.start_window_drag(window);
+            }
             return true;
         }
 
@@ -2720,7 +2736,7 @@ impl Screen<'_> {
         // convention) instead of selecting/reordering.
         #[cfg(target_os = "macos")]
         if !is_right_click && self.modifiers.state().super_key() {
-            let _ = window.drag_window();
+            self.start_window_drag(window);
             return true;
         }
 
@@ -2850,8 +2866,6 @@ impl Screen<'_> {
             if let Some(ref mut island) = self.renderer.island {
                 island.remap_tab_move(old_index, new_index, tab_width);
             }
-            // Force titles to re-sync to the new order on the next pass.
-            self.context_manager.titles.last_title_update = None;
         }
         self.mark_dirty();
     }
@@ -3263,6 +3277,20 @@ impl Screen<'_> {
 
     #[inline]
     pub fn on_focus_change(&mut self, is_focused: bool) {
+        if !is_focused {
+            // The matching mouse-up goes to whoever stole focus — drop
+            // any armed/active tab drag and the latched button state so
+            // re-entry doesn't keep dragging (or auto-scrolling) with no
+            // button held.
+            if let Some(ref mut island) = self.renderer.island {
+                if island.is_dragging() {
+                    island.cancel_drag();
+                    self.mark_dirty();
+                }
+            }
+            self.mouse.left_button_state = ElementState::Released;
+        }
+
         if self.get_mode().contains(Mode::FOCUS_IN_OUT) {
             let chr = if is_focused { "I" } else { "O" };
 

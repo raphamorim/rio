@@ -276,8 +276,10 @@ impl Island {
 
     /// Check if the island needs continuous rendering (for animations)
     pub fn needs_redraw(&self) -> bool {
+        // A held drag doesn't need continuous frames: the floating tab
+        // only moves on CursorMoved (which requests its own redraws);
+        // only the slide springs animate between input events.
         matches!(self.progress_state, Some(ProgressState::Indeterminate))
-            || self.drag.as_ref().is_some_and(|d| d.started)
             || !self.slide_springs.is_empty()
     }
 
@@ -604,6 +606,18 @@ impl Island {
             self.slide_springs.clear();
             self.render_progress_bar(sugarloaf, window_width, scale_factor);
             return;
+        }
+
+        // A reorder that didn't come from this drag (tab closed via
+        // shell exit, keyboard move) breaks the drag.tab_index ==
+        // current_index invariant — drop the drag instead of floating
+        // a phantom tab over the wrong slot.
+        if self
+            .drag
+            .as_ref()
+            .is_some_and(|d| d.tab_index != current_tab_index)
+        {
+            self.drag = None;
         }
 
         // Advance the slide springs (drag-reorder animation) by this
