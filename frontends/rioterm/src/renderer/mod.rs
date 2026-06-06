@@ -4,6 +4,7 @@ pub mod custom_cursor;
 pub mod island;
 pub mod scrollbar;
 pub mod search;
+pub mod spring;
 pub mod trail_cursor;
 pub mod utils;
 
@@ -570,6 +571,7 @@ impl Renderer {
                 sugarloaf,
                 (window_size.width, window_size.height, scale_factor),
                 context_manager,
+                self.named_colors.background.0,
             );
         }
 

@@ -926,6 +926,23 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.select_tab(target_index);
     }
 
+    /// Move the current tab to an arbitrary index, shifting the tabs in
+    /// between by one (rotate, not swap) so their relative order is kept.
+    pub fn move_current_tab_to(&mut self, target: usize) {
+        if self.config.is_native {
+            return;
+        }
+
+        let current = self.current_index;
+        if target == current || target >= self.contexts.len() {
+            return;
+        }
+
+        let grid = self.contexts.remove(current);
+        self.contexts.insert(target, grid);
+        self.set_current(target);
+    }
+
     pub fn split(
         &mut self,
         rich_text_id: usize,
@@ -1387,5 +1404,56 @@ pub mod test {
         context_manager.move_current_to_prev();
         assert_eq!(context_manager.current_index, 4);
         assert_eq!(context_manager.current().rich_text_id, 1);
+    }
+
+    #[test]
+    fn test_move_current_tab_to() {
+        let window_id = WindowId::from(0);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        let should_redirect = false;
+
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+
+        // Tag every tab with its starting position.
+        for i in 0..5 {
+            context_manager.set_current(i);
+            context_manager.current_mut().rich_text_id = i;
+        }
+
+        let order = |cm: &mut ContextManager<VoidListener>| -> Vec<usize> {
+            (0..5)
+                .map(|i| {
+                    cm.set_current(i);
+                    cm.current().rich_text_id
+                })
+                .collect()
+        };
+
+        // Multi-slot jump forward: tabs in between shift left by one.
+        context_manager.set_current(1);
+        context_manager.move_current_tab_to(3);
+        assert_eq!(context_manager.current_index, 3);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+        assert_eq!(order(&mut context_manager), vec![0, 2, 3, 1, 4]);
+
+        // Multi-slot jump backward: tabs in between shift right by one.
+        context_manager.set_current(3);
+        context_manager.move_current_tab_to(0);
+        assert_eq!(context_manager.current_index, 0);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+        assert_eq!(order(&mut context_manager), vec![1, 0, 2, 3, 4]);
+
+        // No-op cases: same index and out-of-bounds target.
+        context_manager.set_current(2);
+        context_manager.move_current_tab_to(2);
+        assert_eq!(context_manager.current_index, 2);
+        context_manager.move_current_tab_to(5);
+        assert_eq!(context_manager.current_index, 2);
+        assert_eq!(order(&mut context_manager), vec![1, 0, 2, 3, 4]);
     }
 }
