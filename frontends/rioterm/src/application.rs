@@ -993,11 +993,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Welcome / dialog routes: restore titlebar-band
                     // window dragging — it's disabled statically on
                     // island windows (`mouse_down_can_move_window`) so
-                    // tab drags can reorder.
+                    // tab drags can reorder. Gated on the CREATION-time
+                    // flag: the AppKit side can't change on config
+                    // reload.
                     #[cfg(target_os = "macos")]
                     if state == ElementState::Pressed
                         && button == MouseButton::Left
-                        && route.window.screen.renderer.navigation.is_enabled()
+                        && route.window.screen.band_drag_manual
                     {
                         use crate::renderer::island::ISLAND_HEIGHT;
                         let scale = route.window.screen.sugarloaf.scale_factor();
@@ -1122,11 +1124,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             // hidden with a single tab): restore the
                             // titlebar drag AppKit would have done —
                             // it's disabled statically for island
-                            // windows. Deliberately no `return`: the
+                            // windows, so this follows the CREATION-time
+                            // flag (a config reload can't re-teach
+                            // AppKit). Deliberately no `return`: the
                             // press also flows to the grid below,
                             // matching AppKit's old dual behavior.
                             #[cfg(target_os = "macos")]
-                            if route.window.screen.renderer.navigation.is_enabled() {
+                            if route.window.screen.band_drag_manual {
                                 use crate::renderer::island::ISLAND_HEIGHT;
                                 let scale = route.window.screen.sugarloaf.scale_factor();
                                 if route.window.screen.mouse.y

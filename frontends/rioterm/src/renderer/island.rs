@@ -154,11 +154,42 @@ const PICKER_COLORS: [[f32; 4]; 6] = [
 ];
 
 /// Right margin after last tab
-const ISLAND_MARGIN_RIGHT: f32 = 8.0;
+pub const ISLAND_MARGIN_RIGHT: f32 = 8.0;
 
 /// Left margin on macOS to account for traffic light buttons
 #[cfg(target_os = "macos")]
-const ISLAND_MARGIN_LEFT_MACOS: f32 = 76.0;
+pub const ISLAND_MARGIN_LEFT_MACOS: f32 = 76.0;
+
+/// Equal-width tab strip geometry, in logical px. Single source of
+/// truth shared by rendering, hit-testing, the color picker, and the
+/// drag-reorder math.
+#[derive(Clone, Copy, PartialEq)]
+pub struct TabStripLayout {
+    pub left_margin: f32,
+    pub available_width: f32,
+    pub tab_width: f32,
+}
+
+/// Compute the tab strip layout from the physical window width.
+pub fn tab_strip_layout(
+    window_width: f32,
+    scale_factor: f32,
+    num_tabs: usize,
+) -> TabStripLayout {
+    #[cfg(target_os = "macos")]
+    let left_margin = ISLAND_MARGIN_LEFT_MACOS;
+    #[cfg(not(target_os = "macos"))]
+    let left_margin = 0.0;
+
+    let available_width =
+        (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
+    let tab_width = available_width / num_tabs.max(1) as f32;
+    TabStripLayout {
+        left_margin,
+        available_width,
+        tab_width,
+    }
+}
 
 pub struct Island {
     pub hide_if_single: bool,
@@ -631,16 +662,11 @@ impl Island {
         self.slide_springs
             .retain(|_, s| s.update(dt, DRAG_ANIMATION_LENGTH));
 
-        // Calculate left margin (macOS needs space for traffic light buttons)
-        #[cfg(target_os = "macos")]
-        let left_margin = ISLAND_MARGIN_LEFT_MACOS;
-        #[cfg(not(target_os = "macos"))]
-        let left_margin = 0.0;
-
-        // Calculate equal width for all tabs
-        let available_width =
-            (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
-        let tab_width = available_width / num_tabs as f32;
+        let TabStripLayout {
+            left_margin,
+            available_width,
+            tab_width,
+        } = tab_strip_layout(window_width, scale_factor, num_tabs);
 
         // Starting from left edge (with margin on macOS for traffic lights)
         let mut x_position = left_margin;
@@ -708,11 +734,13 @@ impl Island {
 
             // UI text always paints in a final pass above every rect,
             // so the floating tab's opaque background can't occlude
-            // titles passing underneath it — skip a title while its
-            // center is covered by the floating tab instead.
+            // titles passing underneath it — skip a title once the
+            // floating tab intrudes past the slot's text padding (the
+            // widest a centered title can reach).
             let hidden_by_drag = floating_left.is_some_and(|fl| {
-                let center = tab_x + tab_width / 2.0;
-                center >= fl && center <= fl + tab_width
+                let overlap =
+                    (tab_x + tab_width).min(fl + tab_width) - tab_x.max(fl);
+                overlap > TAB_PADDING_X
             });
 
             if !hidden_by_drag {
@@ -774,6 +802,22 @@ impl Island {
 
         // Draw the floating (dragged) tab above the slot tabs.
         if let (Some(drag_idx), Some(floating_x)) = (drag_index, floating_left) {
+            // Soft elevation: faint dark bands just outside the lifted
+            // tab so it reads as floating over the strip.
+            const SHADOW_WIDTH: f32 = 3.0;
+            for shadow_x in [floating_x - SHADOW_WIDTH, floating_x + tab_width] {
+                sugarloaf.rect(
+                    None,
+                    shadow_x,
+                    0.0,
+                    SHADOW_WIDTH,
+                    ISLAND_HEIGHT,
+                    [0.0, 0.0, 0.0, 0.18],
+                    0.05,
+                    11,
+                );
+            }
+
             // Opaque elevated background so the floating tab reads as
             // lifted out of the strip while passing over other slots.
             let mut fill = self.tab_colors.get(&drag_idx).copied().unwrap_or(bg_color);
@@ -932,14 +976,11 @@ impl Island {
         let mouse_y_unscaled = mouse_y / scale_factor;
 
         // Compute the same tab layout as render()
-        #[cfg(target_os = "macos")]
-        let left_margin = ISLAND_MARGIN_LEFT_MACOS;
-        #[cfg(not(target_os = "macos"))]
-        let left_margin = 0.0;
-
-        let available_width =
-            (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
-        let tab_width = available_width / num_tabs as f32;
+        let TabStripLayout {
+            left_margin,
+            tab_width,
+            ..
+        } = tab_strip_layout(window_width, scale_factor, num_tabs);
         let tab_x = left_margin + picker_tab as f32 * tab_width;
 
         // Picker is rendered just below the island
@@ -1466,6 +1507,26 @@ mod tests {
     fn title_exact_fit_not_truncated() {
         // Title "abcd" = 4.0, budget 4.0 → fits exactly, no truncation.
         assert_eq!(fit_title_with_widths("abcd", 4.0, fixed_unit_width), "abcd");
+    }
+
+    #[test]
+    fn tab_strip_layout_geometry() {
+        // 1000 physical px @ 2x scale → 500 logical px window.
+        let layout = tab_strip_layout(1000.0, 2.0, 4);
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(layout.left_margin, ISLAND_MARGIN_LEFT_MACOS);
+            assert_eq!(layout.available_width, 500.0 - 8.0 - 76.0);
+            assert_eq!(layout.tab_width, (500.0 - 8.0 - 76.0) / 4.0);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(layout.left_margin, 0.0);
+            assert_eq!(layout.available_width, 492.0);
+            assert_eq!(layout.tab_width, 123.0);
+        }
+        // Zero tabs clamps the divisor.
+        assert!(tab_strip_layout(1000.0, 2.0, 0).tab_width.is_finite());
     }
 
     #[test]
