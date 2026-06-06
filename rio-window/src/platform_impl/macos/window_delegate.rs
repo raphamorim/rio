@@ -54,6 +54,7 @@ pub struct PlatformSpecificWindowAttributes {
     pub disallow_hidpi: bool,
     pub has_shadow: bool,
     pub accepts_first_mouse: bool,
+    pub mouse_down_can_move_window: bool,
     pub tabbing_identifier: Option<String>,
     pub option_as_alt: OptionAsAlt,
     pub unified_titlebar: bool,
@@ -74,6 +75,7 @@ impl Default for PlatformSpecificWindowAttributes {
             disallow_hidpi: false,
             has_shadow: true,
             accepts_first_mouse: true,
+            mouse_down_can_move_window: true,
             tabbing_identifier: None,
             option_as_alt: Default::default(),
             unified_titlebar: false,
@@ -663,6 +665,7 @@ fn new_window(
             app_delegate,
             &window,
             attrs.platform_specific.accepts_first_mouse,
+            attrs.platform_specific.mouse_down_can_move_window,
             attrs.platform_specific.option_as_alt,
         );
 

@@ -141,6 +141,15 @@ pub struct ViewState {
     marked_text: RefCell<Retained<NSMutableAttributedString>>,
     accepts_first_mouse: bool,
 
+    /// Whether mouse-downs on this view may start an AppKit window drag
+    /// (titlebar band of transparent-titlebar windows). AppKit caches
+    /// this value when the view is installed, so it must be static —
+    /// apps that disable it implement their own dragging by calling
+    /// `performWindowDragWithEvent` (`Window::drag_window`) for the
+    /// regions that should move the window, the way Chromium handles
+    /// draggable regions.
+    mouse_down_can_move_window: bool,
+
     // Weak reference because the window keeps a strong reference to the view
     _ns_window: WeakId<WinitWindow>,
 
@@ -827,6 +836,15 @@ declare_class!(
             trace_scope!("acceptsFirstMouse:");
             self.ivars().accepts_first_mouse
         }
+
+        #[method(mouseDownCanMoveWindow)]
+        fn mouse_down_can_move_window(&self) -> bool {
+            trace_scope!("mouseDownCanMoveWindow");
+            // Static answer: AppKit caches it at view-install time, so a
+            // per-click (region-based) value is not honored reliably.
+            // `true` matches the default for a non-opaque NSView.
+            self.ivars().mouse_down_can_move_window
+        }
     }
 );
 
@@ -835,6 +853,7 @@ impl WinitView {
         app_delegate: &ApplicationDelegate,
         window: &WinitWindow,
         accepts_first_mouse: bool,
+        mouse_down_can_move_window: bool,
         option_as_alt: OptionAsAlt,
     ) -> Retained<Self> {
         let mtm = MainThreadMarker::from(window);
@@ -853,6 +872,7 @@ impl WinitView {
             in_key_event: Default::default(),
             marked_text: Default::default(),
             accepts_first_mouse,
+            mouse_down_can_move_window,
             _ns_window: WeakId::new(&window.retain()),
             option_as_alt: Cell::new(option_as_alt),
         });
