@@ -199,6 +199,7 @@ pub struct TrailCursor {
     jumped: bool,
     /// True until the first real destination is set — first frame teleports.
     first_frame: bool,
+    route_id: Option<usize>,
     animating: bool,
 }
 
@@ -220,7 +221,15 @@ impl TrailCursor {
             jump_from_cy: -1e6,
             jumped: false,
             first_frame: true,
+            route_id: None,
             animating: false,
+        }
+    }
+
+    pub fn set_route(&mut self, route_id: usize) {
+        if self.route_id != Some(route_id) {
+            self.route_id = Some(route_id);
+            self.first_frame = true;
         }
     }
 
