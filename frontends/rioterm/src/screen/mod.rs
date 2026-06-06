@@ -75,6 +75,14 @@ pub struct Screen<'screen> {
     last_ime_cursor_pos: Option<(f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
     pub resize_state: Option<crate::layout::ResizeState>,
+    /// Whether this window was CREATED with AppKit titlebar dragging
+    /// disabled (`with_mouse_down_can_move_window(false)`) — i.e. with
+    /// island navigation enabled. The AppKit side is cached at view
+    /// install and cannot change afterwards, so manual `drag_window()`
+    /// restores and drag-reorder arming must follow this creation-time
+    /// value, NOT the live config (which a runtime reload can flip).
+    #[cfg(target_os = "macos")]
+    pub band_drag_manual: bool,
     /// Per-panel `GridRenderer`, keyed by `route_id`. Lazily created
     /// on first render of each panel so construction (which compiles
     /// the Metal/WGSL shaders and builds pipeline states) runs once
@@ -324,6 +332,8 @@ impl Screen<'_> {
             bindings,
             last_ime_cursor_pos: None,
             resize_state: None,
+            #[cfg(target_os = "macos")]
+            band_drag_manual: config.navigation.is_enabled(),
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
         })
@@ -2610,19 +2620,15 @@ impl Screen<'_> {
 
     /// Tab strip layout shared by island hit-testing and drag handling:
     /// `(left_margin, available_width, tab_width)`, all in logical px.
-    /// Mirrors the math in `Island::render`.
+    /// Thin adapter over the single source of truth in
+    /// `island::tab_strip_layout` (the same math `Island::render` uses).
     fn island_tab_layout(&self, num_tabs: usize) -> (f32, f32, f32) {
-        #[cfg(target_os = "macos")]
-        let left_margin = 76.0;
-        #[cfg(not(target_os = "macos"))]
-        let left_margin = 0.0;
-
-        let margin_right = 8.0;
-        let window_width = self.sugarloaf.window_size().width;
-        let scale_factor = self.sugarloaf.scale_factor();
-        let available_width = (window_width / scale_factor) - margin_right - left_margin;
-        let tab_width = available_width / num_tabs.max(1) as f32;
-        (left_margin, available_width, tab_width)
+        let layout = crate::renderer::island::tab_strip_layout(
+            self.sugarloaf.window_size().width,
+            self.sugarloaf.scale_factor(),
+            num_tabs,
+        );
+        (layout.left_margin, layout.available_width, layout.tab_width)
     }
 
     /// Hand the current press to AppKit as a window drag, releasing the
@@ -2715,7 +2721,7 @@ impl Screen<'_> {
         // the band margins outside the tabs hand the drag back to AppKit.
         if mouse_x_unscaled < left_margin {
             #[cfg(target_os = "macos")]
-            if !is_right_click {
+            if !is_right_click && self.band_drag_manual {
                 self.start_window_drag(window);
             }
             return true;
@@ -2726,17 +2732,21 @@ impl Screen<'_> {
 
         if clicked_tab >= num_tabs {
             #[cfg(target_os = "macos")]
-            if !is_right_click {
+            if !is_right_click && self.band_drag_manual {
                 self.start_window_drag(window);
             }
             return true;
         }
 
         // Command + left-drag on a tab moves the window (macOS titlebar
-        // convention) instead of selecting/reordering.
+        // convention) instead of selecting/reordering. When the window
+        // was created without manual band dragging, AppKit's automatic
+        // titlebar drag already handles it — just consume the click.
         #[cfg(target_os = "macos")]
         if !is_right_click && self.modifiers.state().super_key() {
-            self.start_window_drag(window);
+            if self.band_drag_manual {
+                self.start_window_drag(window);
+            }
             return true;
         }
 
@@ -2795,7 +2805,14 @@ impl Screen<'_> {
 
         // Arm a tab drag (reorder) — it only activates once the pointer
         // moves past the drag threshold (see `Island::update_drag`).
-        if num_tabs > 1 {
+        // On macOS this requires the window to have been created with
+        // AppKit titlebar dragging disabled; otherwise AppKit moves the
+        // window on the same gesture and fights the reorder.
+        #[cfg(target_os = "macos")]
+        let can_reorder = self.band_drag_manual;
+        #[cfg(not(target_os = "macos"))]
+        let can_reorder = true;
+        if num_tabs > 1 && can_reorder {
             if let Some(ref mut island) = self.renderer.island {
                 let tab_left = left_margin + clicked_tab as f32 * tab_width;
                 island.start_drag(
