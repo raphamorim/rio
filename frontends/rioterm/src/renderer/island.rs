@@ -7,6 +7,7 @@
 // which is licensed under MIT license.
 
 use crate::context::ContextManager;
+use crate::renderer::spring::Spring;
 use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
 use rio_backend::sugarloaf::text::DrawOpts;
 use rio_backend::sugarloaf::{Attributes, Sugarloaf};
@@ -42,6 +43,31 @@ const TAB_PADDING_X: f32 = 24.0;
 
 /// Suffix used when truncating a title that doesn't fit in its tab.
 const TITLE_ELLIPSIS: char = '…';
+
+/// Horizontal movement (logical px) before a pressed tab becomes a drag.
+const DRAG_THRESHOLD: f32 = 4.0;
+
+/// Animation duration (seconds) for tabs sliding into their slot during
+/// and after a drag.
+const DRAG_ANIMATION_LENGTH: f32 = 0.15;
+
+/// Cap on per-frame dt fed to the slide springs, so a long gap between
+/// frames doesn't make them settle in a single step.
+const DRAG_MAX_DT: f32 = 0.05;
+
+/// State of an in-progress tab drag.
+struct TabDrag {
+    /// Index of the dragged tab — follows the tab as it reorders.
+    tab_index: usize,
+    /// Mouse x at press (unscaled), for the drag threshold.
+    press_x: f32,
+    /// press_x − tab_left_x, keeps the grab point under the cursor.
+    grab_offset: f32,
+    /// Latest unscaled mouse x.
+    current_x: f32,
+    /// True once movement exceeded `DRAG_THRESHOLD`.
+    started: bool,
+}
 
 /// Truncate `title` to fit within `max_width` pixels at the tab font,
 /// appending `…` when characters have to be dropped. Thin adapter that
@@ -165,6 +191,13 @@ pub struct Island {
     rename_input: String,
     /// Caret blink timer
     rename_caret_time: Instant,
+    /// In-progress tab drag (reorder by dragging)
+    drag: Option<TabDrag>,
+    /// Per-tab x-offset springs: displaced tabs sliding into their slot
+    /// and the released tab settling after a drag. Keyed by tab index.
+    slide_springs: FxHashMap<usize, Spring>,
+    /// Timestamp of the last spring advance, for per-frame dt.
+    last_anim_frame: Instant,
 }
 
 impl Island {
@@ -192,6 +225,9 @@ impl Island {
             tab_custom_titles: FxHashMap::default(),
             rename_input: String::new(),
             rename_caret_time: Instant::now(),
+            drag: None,
+            slide_springs: FxHashMap::default(),
+            last_anim_frame: Instant::now(),
         }
     }
 
@@ -238,9 +274,213 @@ impl Island {
         }
     }
 
-    /// Check if the progress bar needs continuous rendering (for animations)
+    /// Check if the island needs continuous rendering (for animations)
     pub fn needs_redraw(&self) -> bool {
         matches!(self.progress_state, Some(ProgressState::Indeterminate))
+            || self.drag.as_ref().is_some_and(|d| d.started)
+            || !self.slide_springs.is_empty()
+    }
+
+    /// Arm a tab drag at mouse press. The drag only `started`s once the
+    /// pointer moves past `DRAG_THRESHOLD`.
+    pub fn start_drag(&mut self, tab_index: usize, grab_offset: f32, x: f32) {
+        self.drag = Some(TabDrag {
+            tab_index,
+            press_x: x,
+            grab_offset,
+            current_x: x,
+            started: false,
+        });
+    }
+
+    /// Feed a mouse move into the armed drag. Returns `true` once the
+    /// drag is active (threshold exceeded).
+    pub fn update_drag(&mut self, x: f32) -> bool {
+        match self.drag.as_mut() {
+            Some(drag) => {
+                drag.current_x = x;
+                if !drag.started && (x - drag.press_x).abs() > DRAG_THRESHOLD {
+                    drag.started = true;
+                }
+                drag.started
+            }
+            None => false,
+        }
+    }
+
+    /// Whether a drag is armed or active.
+    pub fn is_dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
+    /// Index of the dragged tab, if a drag is active.
+    pub fn drag_index(&self) -> Option<usize> {
+        self.drag
+            .as_ref()
+            .filter(|d| d.started)
+            .map(|d| d.tab_index)
+    }
+
+    /// Left edge of the floating (dragged) tab, clamped to the tab strip.
+    fn drag_floating_left(
+        &self,
+        left_margin: f32,
+        available_width: f32,
+        tab_width: f32,
+    ) -> Option<f32> {
+        let drag = self.drag.as_ref().filter(|d| d.started)?;
+        let left = drag.current_x - drag.grab_offset;
+        // `.max(0.0)` keeps the clamp range valid (min ≤ max) even if a
+        // pathologically narrow window makes available_width < tab_width.
+        let max_left = left_margin + (available_width - tab_width).max(0.0);
+        Some(left.clamp(left_margin, max_left))
+    }
+
+    /// Center x of the floating tab — the reference point that decides
+    /// which slot the drag targets.
+    pub fn drag_center(
+        &self,
+        left_margin: f32,
+        available_width: f32,
+        tab_width: f32,
+    ) -> Option<f32> {
+        self.drag_floating_left(left_margin, available_width, tab_width)
+            .map(|left| left + tab_width / 2.0)
+    }
+
+    /// Finish a drag: seed a settle spring from the floating position
+    /// into the slot so the tab slides into place.
+    pub fn end_drag(&mut self, left_margin: f32, available_width: f32, tab_width: f32) {
+        if let (Some(floating_left), Some(drag)) = (
+            self.drag_floating_left(left_margin, available_width, tab_width),
+            self.drag.as_ref().filter(|d| d.started),
+        ) {
+            let slot_x = left_margin + drag.tab_index as f32 * tab_width;
+            let offset = floating_left - slot_x;
+            if offset.abs() > 0.01 {
+                let spring = self
+                    .slide_springs
+                    .entry(drag.tab_index)
+                    .or_insert_with(Spring::new);
+                spring.position = offset;
+            }
+        }
+        self.drag = None;
+    }
+
+    /// Drop an armed/active drag without any settle animation.
+    pub fn cancel_drag(&mut self) {
+        self.drag = None;
+    }
+
+    /// New index of tab `i` after the tab at `from` rotated to `to`.
+    fn remap_index(i: usize, from: usize, to: usize) -> usize {
+        if i == from {
+            to
+        } else if from < to && i > from && i <= to {
+            i - 1
+        } else if to < from && i >= to && i < from {
+            i + 1
+        } else {
+            i
+        }
+    }
+
+    /// Re-key all per-tab-index state after the tab at `from` moved to
+    /// `to` (rotate semantics, matching
+    /// `ContextManager::move_current_tab_to`), then seed slide springs
+    /// on the displaced tabs so they animate into their new slot.
+    pub fn remap_tab_move(&mut self, from: usize, to: usize, tab_width: f32) {
+        if from == to {
+            return;
+        }
+
+        self.tab_colors = self
+            .tab_colors
+            .drain()
+            .map(|(i, v)| (Self::remap_index(i, from, to), v))
+            .collect();
+        self.tab_custom_titles = self
+            .tab_custom_titles
+            .drain()
+            .map(|(i, v)| (Self::remap_index(i, from, to), v))
+            .collect();
+        self.slide_springs = self
+            .slide_springs
+            .drain()
+            .map(|(i, v)| (Self::remap_index(i, from, to), v))
+            .collect();
+        if let Some(picker) = self.color_picker_tab {
+            self.color_picker_tab = Some(Self::remap_index(picker, from, to));
+        }
+        if let Some(ref mut drag) = self.drag {
+            drag.tab_index = Self::remap_index(drag.tab_index, from, to);
+        }
+
+        // Displaced tabs shifted one slot away from `from` toward `to`'s
+        // side; seed (or accumulate into) a spring so each one starts at
+        // its old x and slides to the new slot. The moved tab itself ends
+        // at `to`, which both ranges exclude — while dragging it floats,
+        // and on a keyboard move it jumps (no old position to animate
+        // from that wouldn't fight the selection change).
+        let (range, delta) = if from < to {
+            // Tabs at from+1..=to moved left by one: now at from..to.
+            (from..to, tab_width)
+        } else {
+            // Tabs at to..from moved right by one: now at to+1..=from.
+            (to + 1..from + 1, -tab_width)
+        };
+        for i in range {
+            let spring = self.slide_springs.entry(i).or_insert_with(Spring::new);
+            spring.position += delta;
+        }
+    }
+
+    /// Re-key per-tab state after tabs `a` and `b` swapped places —
+    /// `ContextManager::move_current_to_prev/next` semantics, which swap
+    /// (including the wrap-around end-to-end case) instead of rotating.
+    /// Adjacent swaps get slide springs; wrap-around jumps don't (a
+    /// full-bar slide reads as glitch, not motion).
+    pub fn remap_tab_swap(&mut self, a: usize, b: usize, tab_width: f32) {
+        if a == b {
+            return;
+        }
+
+        let swap_key = |i: usize| {
+            if i == a {
+                b
+            } else if i == b {
+                a
+            } else {
+                i
+            }
+        };
+        self.tab_colors = self
+            .tab_colors
+            .drain()
+            .map(|(i, v)| (swap_key(i), v))
+            .collect();
+        self.tab_custom_titles = self
+            .tab_custom_titles
+            .drain()
+            .map(|(i, v)| (swap_key(i), v))
+            .collect();
+        self.slide_springs = self
+            .slide_springs
+            .drain()
+            .map(|(i, v)| (swap_key(i), v))
+            .collect();
+        if let Some(picker) = self.color_picker_tab {
+            self.color_picker_tab = Some(swap_key(picker));
+        }
+
+        if a.abs_diff(b) == 1 {
+            let delta = (b as f32 - a as f32) * tab_width;
+            let spring = self.slide_springs.entry(a).or_insert_with(Spring::new);
+            spring.position += delta;
+            let spring = self.slide_springs.entry(b).or_insert_with(Spring::new);
+            spring.position -= delta;
+        }
     }
 
     /// Check if the progress bar should be auto-dismissed due to timeout.
@@ -348,6 +588,7 @@ impl Island {
         sugarloaf: &mut Sugarloaf,
         dimensions: (f32, f32, f32),
         context_manager: &ContextManager<EventProxy>,
+        bg_color: [f32; 4],
     ) {
         let (window_width, _window_height, scale_factor) = dimensions;
         let num_tabs = context_manager.len();
@@ -356,9 +597,25 @@ impl Island {
         // Immediate-mode: no cached ids to hide. If we early-return
         // without drawing, the tabs just don't appear this frame.
         if self.hide_if_single && num_tabs == 1 {
+            // No tab strip — drop any leftover drag/slide state so
+            // `needs_redraw` doesn't keep frames alive for invisible
+            // tabs.
+            self.drag = None;
+            self.slide_springs.clear();
             self.render_progress_bar(sugarloaf, window_width, scale_factor);
             return;
         }
+
+        // Advance the slide springs (drag-reorder animation) by this
+        // frame's dt; settled springs drop out of the map.
+        let now = Instant::now();
+        let dt = now
+            .duration_since(self.last_anim_frame)
+            .as_secs_f32()
+            .min(DRAG_MAX_DT);
+        self.last_anim_frame = now;
+        self.slide_springs
+            .retain(|_, s| s.update(dt, DRAG_ANIMATION_LENGTH));
 
         // Calculate left margin (macOS needs space for traffic light buttons)
         #[cfg(target_os = "macos")]
@@ -373,6 +630,12 @@ impl Island {
 
         // Starting from left edge (with margin on macOS for traffic lights)
         let mut x_position = left_margin;
+
+        // Active drag: the dragged tab is skipped in the slot loop and
+        // drawn floating (after the loop, on a higher layer) instead.
+        let drag_index = self.drag_index();
+        let floating_left =
+            self.drag_floating_left(left_margin, available_width, tab_width);
 
         // Draw bottom border for the left margin area (traffic light space on macOS)
         if left_margin > 0.0 {
@@ -390,7 +653,21 @@ impl Island {
 
         // Render each tab
         for tab_index in 0..num_tabs {
+            // The dragged tab floats — drawn after the loop instead.
+            if Some(tab_index) == drag_index {
+                x_position += tab_width;
+                continue;
+            }
+
             let is_active = tab_index == current_tab_index;
+
+            // Slot position plus any slide-spring offset (tab still
+            // animating into its slot after a reorder).
+            let tab_x = x_position
+                + self
+                    .slide_springs
+                    .get(&tab_index)
+                    .map_or(0.0, |s| s.position);
 
             // Get title for this tab, then truncate with a trailing
             // ellipsis so overflowing titles can't bleed into the next
@@ -415,19 +692,30 @@ impl Island {
                 ..DrawOpts::default()
             };
 
-            // Measure → centre → draw. Immediate mode, no cached
-            // text_id bookkeeping.
-            let ui = sugarloaf.text_mut();
-            let text_width = ui.measure(&title, &title_opts);
-            let text_x = x_position + (tab_width - text_width) / 2.0;
-            let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
-            ui.draw(text_x, text_y, &title, &title_opts);
+            // UI text always paints in a final pass above every rect,
+            // so the floating tab's opaque background can't occlude
+            // titles passing underneath it — skip a title while its
+            // center is covered by the floating tab instead.
+            let hidden_by_drag = floating_left.is_some_and(|fl| {
+                let center = tab_x + tab_width / 2.0;
+                center >= fl && center <= fl + tab_width
+            });
+
+            if !hidden_by_drag {
+                // Measure → centre → draw. Immediate mode, no cached
+                // text_id bookkeeping.
+                let ui = sugarloaf.text_mut();
+                let text_width = ui.measure(&title, &title_opts);
+                let text_x = tab_x + (tab_width - text_width) / 2.0;
+                let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
+                ui.draw(text_x, text_y, &title, &title_opts);
+            }
 
             // Draw tab background color if set
             if let Some(bg_color) = self.tab_colors.get(&tab_index) {
                 sugarloaf.rect(
                     None,
-                    x_position,
+                    tab_x,
                     0.0,
                     tab_width,
                     ISLAND_HEIGHT,
@@ -442,7 +730,7 @@ impl Island {
             if tab_index > 0 || (tab_index == 0 && is_active && left_margin > 0.0) {
                 sugarloaf.rect(
                     None,
-                    x_position,
+                    tab_x,
                     0.0, // Start from top
                     0.5, // 1px width
                     ISLAND_HEIGHT,
@@ -456,7 +744,7 @@ impl Island {
             if !is_active {
                 sugarloaf.rect(
                     None,
-                    x_position,
+                    tab_x,
                     ISLAND_HEIGHT - 1.0,
                     tab_width,
                     0.5, // 1px height
@@ -468,6 +756,54 @@ impl Island {
 
             // Move to next tab position
             x_position += tab_width;
+        }
+
+        // Draw the floating (dragged) tab above the slot tabs.
+        if let (Some(drag_idx), Some(floating_x)) = (drag_index, floating_left) {
+            // Opaque elevated background so the floating tab reads as
+            // lifted out of the strip while passing over other slots.
+            let mut fill = self.tab_colors.get(&drag_idx).copied().unwrap_or(bg_color);
+            fill[3] = 1.0;
+            sugarloaf.rect(
+                None,
+                floating_x,
+                0.0,
+                tab_width,
+                ISLAND_HEIGHT,
+                fill,
+                0.05,
+                11,
+            );
+
+            // Left/right edges so the tab keeps its outline mid-flight.
+            for edge_x in [floating_x, floating_x + tab_width - 0.5] {
+                sugarloaf.rect(
+                    None,
+                    edge_x,
+                    0.0,
+                    0.5,
+                    ISLAND_HEIGHT,
+                    self.border_color,
+                    0.1,
+                    11,
+                );
+            }
+
+            let raw_title = self.get_title_for_tab(context_manager, drag_idx);
+            if !raw_title.is_empty() {
+                let max_text_width = (tab_width - TAB_PADDING_X * 2.0).max(0.0);
+                let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
+                let title_opts = DrawOpts {
+                    font_size: TITLE_FONT_SIZE,
+                    color: color_u8(self.active_text_color),
+                    ..DrawOpts::default()
+                };
+                let ui = sugarloaf.text_mut();
+                let text_width = ui.measure(&title, &title_opts);
+                let text_x = floating_x + (tab_width - text_width) / 2.0;
+                let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
+                ui.draw(text_x, text_y, &title, &title_opts);
+            }
         }
 
         // Render color picker if open
@@ -1116,6 +1452,94 @@ mod tests {
     fn title_exact_fit_not_truncated() {
         // Title "abcd" = 4.0, budget 4.0 → fits exactly, no truncation.
         assert_eq!(fit_title_with_widths("abcd", 4.0, fixed_unit_width), "abcd");
+    }
+
+    #[test]
+    fn remap_tab_move_forward_rotates_indices() {
+        // Move tab 1 → 3: tabs 2 and 3 shift left by one.
+        assert_eq!(Island::remap_index(1, 1, 3), 3);
+        assert_eq!(Island::remap_index(2, 1, 3), 1);
+        assert_eq!(Island::remap_index(3, 1, 3), 2);
+        assert_eq!(Island::remap_index(0, 1, 3), 0);
+        assert_eq!(Island::remap_index(4, 1, 3), 4);
+    }
+
+    #[test]
+    fn remap_tab_move_backward_rotates_indices() {
+        // Move tab 3 → 0: tabs 0, 1, 2 shift right by one.
+        assert_eq!(Island::remap_index(3, 3, 0), 0);
+        assert_eq!(Island::remap_index(0, 3, 0), 1);
+        assert_eq!(Island::remap_index(1, 3, 0), 2);
+        assert_eq!(Island::remap_index(2, 3, 0), 3);
+        assert_eq!(Island::remap_index(4, 3, 0), 4);
+    }
+
+    #[test]
+    fn remap_tab_move_carries_colors_titles_and_picker() {
+        let mut island = test_island();
+        let red = [1.0, 0.0, 0.0, 1.0];
+        island.tab_colors.insert(1, red);
+        island.tab_custom_titles.insert(2, "work".into());
+        island.color_picker_tab = Some(3);
+
+        // Tab 1 → 3 (rotate): color follows to 3, "work" shifts 2 → 1,
+        // picker shifts 3 → 2.
+        island.remap_tab_move(1, 3, 100.0);
+        assert_eq!(island.tab_colors.get(&3), Some(&red));
+        assert!(island.tab_colors.get(&1).is_none());
+        assert_eq!(
+            island.tab_custom_titles.get(&1).map(String::as_str),
+            Some("work")
+        );
+        assert_eq!(island.color_picker_tab, Some(2));
+
+        // Displaced tabs (now at 1 and 2) got slide springs of +width.
+        assert_eq!(island.slide_springs.len(), 2);
+        assert_eq!(island.slide_springs.get(&1).unwrap().position, 100.0);
+        assert_eq!(island.slide_springs.get(&2).unwrap().position, 100.0);
+    }
+
+    #[test]
+    fn drag_threshold_gates_start() {
+        let mut island = test_island();
+        island.start_drag(0, 10.0, 50.0);
+        assert!(island.is_dragging());
+        assert_eq!(island.drag_index(), None, "not started below threshold");
+        assert!(!island.update_drag(52.0));
+        assert!(island.update_drag(58.0), "8px exceeds threshold");
+        assert_eq!(island.drag_index(), Some(0));
+        island.cancel_drag();
+        assert!(!island.is_dragging());
+    }
+
+    #[test]
+    fn drag_center_clamps_to_strip() {
+        let mut island = test_island();
+        // Tab 0 grabbed 10px from its left edge, strip spans 0..400 with
+        // 100-wide tabs.
+        island.start_drag(0, 10.0, 50.0);
+        island.update_drag(200.0); // started
+        let center = island.drag_center(0.0, 400.0, 100.0).unwrap();
+        assert_eq!(center, 190.0 + 50.0);
+
+        // Dragged far right: floating left clamps to 300, center 350.
+        island.update_drag(1000.0);
+        assert_eq!(island.drag_center(0.0, 400.0, 100.0), Some(350.0));
+
+        // Far left: clamps to 0, center 50.
+        island.update_drag(-500.0);
+        assert_eq!(island.drag_center(0.0, 400.0, 100.0), Some(50.0));
+    }
+
+    #[test]
+    fn end_drag_seeds_settle_spring() {
+        let mut island = test_island();
+        island.start_drag(2, 0.0, 200.0);
+        island.update_drag(250.0); // floating left = 250, slot x = 200
+        island.end_drag(0.0, 400.0, 100.0);
+        assert!(!island.is_dragging());
+        let spring = island.slide_springs.get(&2).unwrap();
+        assert_eq!(spring.position, 50.0);
     }
 
     #[test]

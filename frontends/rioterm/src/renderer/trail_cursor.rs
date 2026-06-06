@@ -1,5 +1,6 @@
 // This file was heavily inspired by neovide implementation.
 
+use crate::renderer::spring::Spring;
 use rio_backend::sugarloaf::Sugarloaf;
 use std::time::Instant;
 
@@ -14,60 +15,6 @@ const SHORT_ANIMATION_LENGTH: f32 = 0.04;
 /// trailing edge lags most).
 const TRAIL_SIZE: f32 = 1.0;
 const DEPTH: f32 = 0.0;
-
-#[derive(Clone)]
-struct Spring {
-    position: f32,
-    velocity: f32,
-}
-
-impl Spring {
-    #[inline]
-    fn new() -> Self {
-        Self {
-            position: 0.0,
-            velocity: 0.0,
-        }
-    }
-
-    #[inline]
-    fn reset(&mut self) {
-        self.position = 0.0;
-        self.velocity = 0.0;
-    }
-
-    /// Advance by variable `dt`. Returns `true` while still moving.
-    #[inline]
-    fn update(&mut self, dt: f32, animation_length: f32) -> bool {
-        if animation_length <= dt {
-            self.reset();
-            return false;
-        }
-        if self.position == 0.0 {
-            return false;
-        }
-
-        // Critically-damped spring (zeta = 1.0).
-        // omega chosen so destination is reached within ~2% tolerance in
-        // `animation_length` time.
-        let omega = 4.0 / animation_length;
-
-        // Analytical solution for critically-damped harmonic oscillation.
-        let a = self.position;
-        let b = a * omega + self.velocity;
-        let c = (-omega * dt).exp();
-
-        self.position = (a + b * dt) * c;
-        self.velocity = c * (-a * omega - b * dt * omega + b);
-
-        if self.position.abs() < 0.01 {
-            self.reset();
-            false
-        } else {
-            true
-        }
-    }
-}
 
 #[derive(Clone)]
 struct Corner {

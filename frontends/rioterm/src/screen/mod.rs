@@ -1397,6 +1397,12 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
+                        let (_, _, tab_width) =
+                            self.island_tab_layout(self.context_manager.len());
+                        if let Some(ref mut island) = self.renderer.island {
+                            island.remap_tab_swap(old_index, new_index, tab_width);
+                        }
+                        self.context_manager.titles.last_title_update = None;
                         self.mark_dirty();
                     }
                     Act::MoveCurrentTabToNext => {
@@ -1410,6 +1416,12 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
+                        let (_, _, tab_width) =
+                            self.island_tab_layout(self.context_manager.len());
+                        if let Some(ref mut island) = self.renderer.island {
+                            island.remap_tab_swap(old_index, new_index, tab_width);
+                        }
+                        self.context_manager.titles.last_title_update = None;
                         self.mark_dirty();
                     }
                     Act::SelectPrevTab => {
@@ -2598,6 +2610,23 @@ impl Screen<'_> {
             .is_some()
     }
 
+    /// Tab strip layout shared by island hit-testing and drag handling:
+    /// `(left_margin, available_width, tab_width)`, all in logical px.
+    /// Mirrors the math in `Island::render`.
+    fn island_tab_layout(&self, num_tabs: usize) -> (f32, f32, f32) {
+        #[cfg(target_os = "macos")]
+        let left_margin = 76.0;
+        #[cfg(not(target_os = "macos"))]
+        let left_margin = 0.0;
+
+        let margin_right = 8.0;
+        let window_width = self.sugarloaf.window_size().width;
+        let scale_factor = self.sugarloaf.scale_factor();
+        let available_width = (window_width / scale_factor) - margin_right - left_margin;
+        let tab_width = available_width / num_tabs.max(1) as f32;
+        (left_margin, available_width, tab_width)
+    }
+
     pub fn handle_island_click(
         &mut self,
         window: &rio_window::window::Window,
@@ -2667,18 +2696,15 @@ impl Screen<'_> {
             }
         }
 
-        #[cfg(target_os = "macos")]
-        let left_margin = 76.0;
-        #[cfg(not(target_os = "macos"))]
-        let left_margin = 0.0;
-
-        let margin_right = 8.0;
-        let available_width = (window_width / scale_factor) - margin_right - left_margin;
-        let tab_width = available_width / num_tabs as f32;
+        let (left_margin, _available_width, tab_width) = self.island_tab_layout(num_tabs);
 
         let mouse_x_unscaled = mouse_x as f32 / scale_factor;
 
+        // Automatic titlebar dragging is disabled for island windows
+        // (`with_mouse_down_can_move_window(false)`), so presses on the
+        // band margins outside the tabs hand the drag back to AppKit.
         if mouse_x_unscaled < left_margin {
+            let _ = window.drag_window();
             return true;
         }
 
@@ -2686,6 +2712,15 @@ impl Screen<'_> {
         let clicked_tab = (x_in_tabs / tab_width) as usize;
 
         if clicked_tab >= num_tabs {
+            let _ = window.drag_window();
+            return true;
+        }
+
+        // Command + left-drag on a tab moves the window (macOS titlebar
+        // convention) instead of selecting/reordering.
+        #[cfg(target_os = "macos")]
+        if !is_right_click && self.modifiers.state().super_key() {
+            let _ = window.drag_window();
             return true;
         }
 
@@ -2742,7 +2777,101 @@ impl Screen<'_> {
             }
         }
 
+        // Arm a tab drag (reorder) — it only activates once the pointer
+        // moves past the drag threshold (see `Island::update_drag`).
+        if num_tabs > 1 {
+            if let Some(ref mut island) = self.renderer.island {
+                let tab_left = left_margin + clicked_tab as f32 * tab_width;
+                island.start_drag(
+                    clicked_tab,
+                    mouse_x_unscaled - tab_left,
+                    mouse_x_unscaled,
+                );
+            }
+        }
+
         true
+    }
+
+    /// Drive an in-progress island tab drag: update the floating tab's
+    /// position and live-reorder the moment its center crosses into
+    /// another slot (Chrome-style commit-as-you-go).
+    pub fn handle_tab_drag_move(&mut self, x_unscaled: f32) {
+        let num_tabs = self.context_manager.len();
+
+        // A tab closed mid-drag invalidates the armed indices.
+        if num_tabs < 2 {
+            if let Some(ref mut island) = self.renderer.island {
+                island.cancel_drag();
+            }
+            return;
+        }
+
+        let (left_margin, available_width, tab_width) = self.island_tab_layout(num_tabs);
+
+        let (drag_idx, center) = match self.renderer.island.as_mut() {
+            Some(island) => {
+                if !island.update_drag(x_unscaled) {
+                    return; // armed but still below the drag threshold
+                }
+                match (
+                    island.drag_index(),
+                    island.drag_center(left_margin, available_width, tab_width),
+                ) {
+                    (Some(idx), Some(center)) => (idx, center),
+                    _ => return,
+                }
+            }
+            None => return,
+        };
+
+        let old_index = self.context_manager.current_index();
+
+        // Keyboard activity mid-drag (new tab, keybinding reorder) makes
+        // the armed index stale — drop the drag rather than move the
+        // wrong tab.
+        if drag_idx != old_index {
+            if let Some(ref mut island) = self.renderer.island {
+                island.cancel_drag();
+            }
+            self.mark_dirty();
+            return;
+        }
+
+        let target = (((center - left_margin) / tab_width) as usize).min(num_tabs - 1);
+        if target != old_index {
+            self.context_manager.move_current_tab_to(target);
+            let new_index = self.context_manager.current_index();
+            self.context_manager.switch_context_visibility(
+                &mut self.sugarloaf,
+                old_index,
+                new_index,
+            );
+            if let Some(ref mut island) = self.renderer.island {
+                island.remap_tab_move(old_index, new_index, tab_width);
+            }
+            // Force titles to re-sync to the new order on the next pass.
+            self.context_manager.titles.last_title_update = None;
+        }
+        self.mark_dirty();
+    }
+
+    /// Finish (or disarm) an island tab drag on mouse release. Returns
+    /// `true` if a drag had actually started — a sub-threshold press
+    /// stays a plain click and isn't consumed here.
+    pub fn handle_tab_drag_release(&mut self) -> bool {
+        let num_tabs = self.context_manager.len();
+        let (left_margin, available_width, tab_width) = self.island_tab_layout(num_tabs);
+
+        if let Some(ref mut island) = self.renderer.island {
+            let started = island.drag_index().is_some();
+            island.end_drag(left_margin, available_width, tab_width);
+            if started {
+                self.mark_dirty();
+            }
+            return started;
+        }
+        false
     }
 
     #[inline]
