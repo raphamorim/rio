@@ -40,6 +40,19 @@ const TITLE_FONT_SIZE: f32 = 12.0;
 /// title text so it never butts against the tab separator lines.
 const TAB_PADDING_X: f32 = 24.0;
 
+/// Glyph shown at the left of a tab whose grid has a maximized (zoomed)
+/// pane, mirroring Ghostty's tab zoom indicator. This is the Nerd Font
+/// `nf-fa-search` magnifier (U+F002): the UI text layer can't render the
+/// astral emoji 🔍 (U+1F50D), and plain BMP symbols like ⌕ (U+2315) need
+/// on-demand fontconfig fallback that the tab bar's read-only font
+/// resolution doesn't trigger. U+F002 lives in the bundled Nerd-patched
+/// CascadiaCodeNF, so the resolver picks that font for this glyph and it
+/// always renders. Monochrome, so it also takes the tab text color.
+const ZOOM_INDICATOR: &str = "\u{f002}";
+
+/// Inset from the tab's left edge to the zoom indicator.
+const ZOOM_INDICATOR_PADDING_X: f32 = 8.0;
+
 /// Suffix used when truncating a title that doesn't fit in its tab.
 const TITLE_ELLIPSIS: char = '…';
 
@@ -352,10 +365,13 @@ impl Island {
         let (window_width, _window_height, scale_factor) = dimensions;
         let num_tabs = context_manager.len();
         let current_tab_index = context_manager.current_index();
+        // A maximized pane keeps the strip visible even for a single tab
+        // so it can carry the zoom indicator.
+        let current_zoomed = context_manager.grid_is_zoomed(current_tab_index);
 
         // Immediate-mode: no cached ids to hide. If we early-return
         // without drawing, the tabs just don't appear this frame.
-        if self.hide_if_single && num_tabs == 1 {
+        if self.hide_if_single && num_tabs == 1 && !current_zoomed {
             self.render_progress_bar(sugarloaf, window_width, scale_factor);
             return;
         }
@@ -422,6 +438,18 @@ impl Island {
             let text_x = x_position + (tab_width - text_width) / 2.0;
             let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
             ui.draw(text_x, text_y, &title, &title_opts);
+
+            // Zoom indicator: a magnifier at the tab's left edge when
+            // this tab's grid has a maximized pane (Ghostty-style). Sits
+            // in the left padding zone, clear of the centered title.
+            if context_manager.grid_is_zoomed(tab_index) {
+                ui.draw(
+                    x_position + ZOOM_INDICATOR_PADDING_X,
+                    text_y,
+                    ZOOM_INDICATOR,
+                    &title_opts,
+                );
+            }
 
             // Draw tab background color if set
             if let Some(bg_color) = self.tab_colors.get(&tab_index) {
