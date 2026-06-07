@@ -2,7 +2,7 @@
 
 **Author:** Raphael Amorim
 **Year:** 2026
-**Last updated:** 2026-05-03
+**Last updated:** 2026-06-07
 
 **See also:**
 - Blog post introducing the protocol and its rationale:
