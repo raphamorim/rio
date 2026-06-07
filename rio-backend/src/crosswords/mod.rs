@@ -533,6 +533,7 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+
     #[inline]
     pub fn is_fully_damaged(&self) -> bool {
         self.damage.full
@@ -2618,6 +2619,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline(never)]
     fn input(&mut self, c: char) {
+        // A Glyph Protocol registration does NOT change a codepoint's
+        // logical width: the cell layout stays consistent with system
+        // `wcwidth` so the cursor / selection / copy never desync with a
+        // width-unaware consumer (a shell line editor, etc.). The
+        // declared `width` is honoured purely at render time, where the
+        // glyph overflows into the following cell(s) in pixels.
         let width = match crate::codepoint_width::codepoint_width(c as u32) {
             Some(w) => w as usize,
             None => return,
@@ -2740,6 +2747,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         for &cp in codepoints {
             let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+            // Registered glyphs keep their system `wcwidth` here (see the
+            // note in `input`); the declared width is a render-time hint
+            // only, applied as pixel overflow in the renderer.
             let width = match crate::codepoint_width::codepoint_width(cp) {
                 Some(w) => w,
                 None => continue,
@@ -4115,6 +4125,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         &mut self,
         cp: u32,
         payload: crate::ansi::glyph_protocol::GlyphPayload,
+        width: u8,
     ) -> Result<(), crate::ansi::glyph_protocol::RegisterError> {
         use crate::ansi::glyph_protocol::{is_pua, GlyphPayload, RegisterError};
         use sugarloaf::font::glyf_decode;
@@ -4181,7 +4192,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let was_uninitialised = self.glyph_registry.is_none();
         let registry = self.glyph_registry.get_or_insert_with(GlyphRegistry::new);
 
-        let result = match registry.register(cp, stored, upm) {
+        let result = match registry.register_with_width(cp, stored, upm, width) {
             Ok(_evicted) => Ok(()),
             Err(RegisterRejection::OutOfNamespace) => {
                 // Unreachable given the is_pua check above, but the
@@ -4201,6 +4212,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
             );
         }
 
+        // §7.3: re-registering a codepoint must repaint cells already
+        // showing it — partial damage can't know which rows hold the
+        // codepoint, so a register is a full-screen invalidation.
+        if result.is_ok() {
+            self.mark_fully_damaged();
+        }
+
         result
     }
 
@@ -4213,6 +4231,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             None => registry.clear_all(),
             Some(cp) => registry.clear_one(cp),
         }
+        // §7.3: cleared codepoints fall back to font rendering on the
+        // next frame — repaint everything that might show them.
+        self.mark_fully_damaged();
     }
 
     fn glyph_query(&mut self, cp: u32) {
@@ -4605,7 +4626,7 @@ mod tests {
 
         let glyf = minimal_glyf_bytes();
         // E0A0 is the Powerline branch codepoint — in basic PUA.
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(glyf, 1000));
+        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(glyf, 1000), 1);
         assert!(res.is_ok());
         assert!(cw.glyph_registry.is_some());
         assert!(registry_contains(&cw, 0xE0A0));
@@ -4621,6 +4642,7 @@ mod tests {
             &mut cw,
             0x61,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
         );
         assert_eq!(res, Err(RegisterError::OutOfNamespace));
         assert!(cw.glyph_registry.is_none());
@@ -4641,7 +4663,7 @@ mod tests {
         v.extend_from_slice(&0i16.to_be_bytes());
         v.extend_from_slice(&0i16.to_be_bytes());
 
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(v, 1000));
+        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(v, 1000), 1);
         assert_eq!(res, Err(RegisterError::HintingUnsupported));
         // Decode failed before the registry was touched, so it stays
         // uninitialised.
@@ -4663,12 +4685,14 @@ mod tests {
             &mut cw,
             0xE0A0,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
         )
         .unwrap();
         Handler::glyph_register(
             &mut cw,
             0xE0A1,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
         )
         .unwrap();
         assert_eq!(registry_len(&cw), 2);
@@ -4681,18 +4705,69 @@ mod tests {
     }
 
     #[test]
+    fn glyph_protocol_width_does_not_change_layout() {
+        use crate::crosswords::square::Wide;
+        let mut cw = make_crosswords();
+
+        // A width=2 registration must NOT reserve two cells: the
+        // declared width is a render-time hint only, so the logical
+        // layout stays consistent with system wcwidth (PUA = 1). This
+        // keeps the cursor / selection / copy in sync with width-unaware
+        // consumers; the glyph overflows into the next cell in pixels at
+        // render time.
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+            2,
+        )
+        .unwrap();
+        Handler::input(&mut cw, '\u{E0A0}');
+
+        let row = cw.grid.cursor.pos.row;
+        assert!(matches!(cw.grid[row][Column(0)].wide(), Wide::Narrow));
+        assert_eq!(
+            cw.grid.cursor.pos.col,
+            Column(1),
+            "registered glyph advances the cursor by one cell"
+        );
+    }
+
+    #[test]
+    fn glyph_protocol_register_and_clear_mark_full_damage() {
+        let mut cw = make_crosswords();
+        cw.reset_damage();
+        assert!(!cw.is_fully_damaged());
+
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
+        )
+        .unwrap();
+        assert!(cw.is_fully_damaged(), "register must repaint (§7.3)");
+
+        cw.reset_damage();
+        Handler::glyph_clear(&mut cw, Some(0xE0A0));
+        assert!(cw.is_fully_damaged(), "clear must repaint (§7.3)");
+    }
+
+    #[test]
     fn glyph_protocol_clear_one_leaves_others_intact() {
         let mut cw = make_crosswords();
         Handler::glyph_register(
             &mut cw,
             0xE0A0,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
         )
         .unwrap();
         Handler::glyph_register(
             &mut cw,
             0xE0A1,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
         )
         .unwrap();
 

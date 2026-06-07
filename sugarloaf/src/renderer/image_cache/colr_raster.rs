@@ -59,39 +59,112 @@ pub struct RasterizedPayload {
 /// output) and the colour `colrv0`/`colrv1` paths through the COLR
 /// painter graph (RGBA8 output). Returns `None` on malformed payload
 /// or degenerate sizing.
+///
+/// The scale fits the authored em square inside ONE cell box
+/// (`min(cell_w, cell_h) / upm`) — registered codepoints occupy a
+/// single cell unless declared otherwise, so scaling by font size
+/// (which is ~2× the cell width in a monospace grid) would bleed
+/// every full-em icon into the neighbouring cell.
 pub fn rasterize_payload(
     payload: &crate::font::glyph_registry::StoredPayload,
     upm: u16,
-    pixel_size: u16,
+    cell_width_px: u16,
+    cell_height_px: u16,
     foreground_rgba: [u8; 4],
 ) -> Option<RasterizedPayload> {
     use crate::font::glyph_registry::StoredPayload;
     match payload {
-        StoredPayload::Glyf { glyf } => rasterize_mono(glyf, upm, pixel_size),
-        StoredPayload::ColrV0 { glyphs, colr, cpal }
-        | StoredPayload::ColrV1 { glyphs, colr, cpal } => {
-            rasterize(glyphs, colr, cpal, upm, pixel_size, foreground_rgba)
+        StoredPayload::Glyf { glyf } => {
+            rasterize_mono(glyf, upm, cell_width_px, cell_height_px)
         }
+        StoredPayload::ColrV0 { glyphs, colr, cpal }
+        | StoredPayload::ColrV1 { glyphs, colr, cpal } => rasterize(
+            glyphs,
+            colr,
+            cpal,
+            upm,
+            cell_width_px,
+            cell_height_px,
+            foreground_rgba,
+        ),
     }
 }
+
+/// Glyph→cell scale shared by the mono and COLR paths.
+///
+/// Two constraints, whichever is tighter:
+/// * **em-proportional** (`min(cell_w, cell_h) / upm`) — sizes the glyph
+///   against the authored em so a coordinated icon set stays visually
+///   consistent (every glyph the same fraction of its declared em).
+/// * **contain the outline bbox** (`min(cell_w / bbox_w, cell_h / bbox_h)`)
+///   — a hard cap so a glyph whose actual geometry exceeds the em can
+///   never bleed past its cell. `bbox_*` are the outline extents in
+///   design units.
+///
+/// Taking the `min` of the two means well-behaved glyphs keep their
+/// em-relative size while oversized outlines are shrunk to fit. Because
+/// the result is always ≤ the contain factor, `bbox × scale ≤ cell` on
+/// both axes — the rasterised pixmap can never exceed the cell, which
+/// also makes a hostile `upm` (e.g. `upm=1`) harmless.
+#[inline]
+fn glyph_cell_scale(
+    upm: u16,
+    bbox_w: f32,
+    bbox_h: f32,
+    cell_width_px: u16,
+    cell_height_px: u16,
+) -> Option<f32> {
+    if upm == 0 || cell_width_px == 0 || cell_height_px == 0 {
+        return None;
+    }
+    if bbox_w <= 0.0 || bbox_h <= 0.0 {
+        return None;
+    }
+    let em_fit = cell_width_px.min(cell_height_px) as f32 / upm as f32;
+    let contain =
+        (cell_width_px as f32 / bbox_w).min(cell_height_px as f32 / bbox_h);
+    Some(em_fit.min(contain))
+}
+
+/// Hard ceiling on a rasterised glyph's pixel dimensions, matching the
+/// atlas's `ATLAS_MAX_SIZE` (a bitmap larger than the atlas page can
+/// never be stored anyway). A registered glyph spans at most two cells,
+/// so this is orders of magnitude above any legitimate raster — its job
+/// is to reject hostile payloads. `upm` is only floored at 0 by the
+/// wire parser, so `upm=1` with an outline spanning the i16 coordinate
+/// range yields a multi-million-pixel pixmap (gigabytes to terabytes)
+/// without this guard.
+const MAX_RASTER_DIM: u32 = 4096;
 
 /// Walk a `glyf` simple-glyph outline and rasterise it as an A8 alpha
 /// mask sized to fit `pixel_size`. The atlas-bound caller uploads
 /// the bytes straight into the grayscale atlas, same shape as the
 /// swash/CT mono path produces.
-fn rasterize_mono(glyf: &[u8], upm: u16, pixel_size: u16) -> Option<RasterizedPayload> {
-    if pixel_size == 0 || upm == 0 {
-        return None;
-    }
-
+fn rasterize_mono(
+    glyf: &[u8],
+    upm: u16,
+    cell_width_px: u16,
+    cell_height_px: u16,
+) -> Option<RasterizedPayload> {
     let outline = glyf_decode::decode(glyf).ok()?;
-    let scale = pixel_size as f32 / upm as f32;
+    let scale = glyph_cell_scale(
+        upm,
+        (outline.x_max - outline.x_min) as f32,
+        (outline.y_max - outline.y_min) as f32,
+        cell_width_px,
+        cell_height_px,
+    )?;
 
     let pad = 1.0_f32;
     let pix_w = (((outline.x_max - outline.x_min) as f32 * scale).ceil() + pad * 2.0)
         .max(1.0) as u32;
     let pix_h = (((outline.y_max - outline.y_min) as f32 * scale).ceil() + pad * 2.0)
         .max(1.0) as u32;
+    // Reject degenerate / hostile dimensions before allocating the
+    // pixmap (see `MAX_RASTER_DIM`).
+    if pix_w > MAX_RASTER_DIM || pix_h > MAX_RASTER_DIM {
+        return None;
+    }
 
     // `glyf_decode::Outline::walk` flips Y so its output is Y-down
     // with origin at the top of the bbox (y=0 → top, y increases
@@ -162,10 +235,13 @@ pub(super) fn rasterize(
     colr_bytes: &[u8],
     cpal_bytes: &[u8],
     upm: u16,
-    pixel_size: u16,
+    cell_width_px: u16,
+    cell_height_px: u16,
     foreground: [u8; 4],
 ) -> Option<RasterizedPayload> {
-    if pixel_size == 0 || upm == 0 {
+    // Cheap guard before the COLR parse; the real scale needs the bbox
+    // (computed below) so it can contain the outline.
+    if upm == 0 || cell_width_px == 0 || cell_height_px == 0 {
         return None;
     }
 
@@ -210,11 +286,22 @@ pub(super) fn rasterize(
                 (a as i32, b as i32, c as i32, d as i32)
             }
         };
-    let scale = pixel_size as f32 / upm as f32;
-
+    let scale = glyph_cell_scale(
+        upm,
+        (x_max - x_min) as f32,
+        (y_max - y_min) as f32,
+        cell_width_px,
+        cell_height_px,
+    )?;
     let pad = 1.0_f32;
     let pix_w = (((x_max - x_min) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
     let pix_h = (((y_max - y_min) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
+    // Reject degenerate / hostile dimensions before allocating the
+    // pixmap (see `MAX_RASTER_DIM`). A COLR ClipBox is f32-sourced and
+    // can exceed even the i16 range, so this guard is load-bearing.
+    if pix_w > MAX_RASTER_DIM || pix_h > MAX_RASTER_DIM {
+        return None;
+    }
 
     let base_pixmap = Pixmap::new(pix_w, pix_h)?;
 
@@ -825,7 +912,7 @@ mod tests {
         // earlier (where the strip rendered at the bottom instead).
         let upm = 100i16;
         let bytes = glyf_top_strip(upm, upm / 4);
-        let r = rasterize_mono(&bytes, upm as u16, upm as u16)
+        let r = rasterize_mono(&bytes, upm as u16, upm as u16, upm as u16)
             .expect("rasterize succeeds for valid simple glyph");
 
         let w = r.width as usize;
@@ -853,10 +940,70 @@ mod tests {
     }
 
     #[test]
-    fn rasterize_mono_rejects_zero_pixel_size() {
+    fn rasterize_mono_contains_outline_larger_than_em() {
+        // The outline bbox (200 design units) is twice the declared em
+        // (upm=100). Naive em-proportional scaling (min(cell)/upm) would
+        // render it at 2× the cell and bleed into the neighbour; the
+        // contain clamp keeps the pixmap within the cell on both axes.
+        let bytes = glyf_top_strip(200, 50);
+        let r = rasterize_mono(&bytes, 100, 20, 40).expect("rasterizes");
+        assert!(
+            r.width as u32 <= 20 + 2,
+            "width {} must stay within the 20px cell (+AA pad)",
+            r.width
+        );
+        assert!(
+            r.height as u32 <= 40 + 2,
+            "height {} must stay within the 40px cell (+AA pad)",
+            r.height
+        );
+    }
+
+    #[test]
+    fn rasterize_mono_contains_hostile_upm() {
+        // upm=1 is wire-legal (only upm=0 is rejected by the parser).
+        // Under naive em-scaling, an outline spanning ~30000 design
+        // units at upm=1 would scale by 16/1 → a ~480000px-wide pixmap
+        // (multi-gigabyte allocation / DoS). The contain clamp bounds
+        // the raster to the cell regardless of upm or outline span, so
+        // the glyph rasterises safely instead.
+        let bytes = glyf_top_strip(30000, 7500);
+        let r = rasterize_mono(&bytes, 1, 16, 32)
+            .expect("hostile upm should be contained, not rejected");
+        assert!(
+            r.width as u32 <= 16 + 2 && r.height as u32 <= 32 + 2,
+            "raster {}x{} must stay within the cell (+AA pad)",
+            r.width,
+            r.height
+        );
+    }
+
+    #[test]
+    fn rasterize_mono_rejects_zero_cell_or_upm() {
         let bytes = glyf_top_strip(100, 25);
-        assert!(rasterize_mono(&bytes, 100, 0).is_none());
-        assert!(rasterize_mono(&bytes, 0, 16).is_none());
+        assert!(rasterize_mono(&bytes, 100, 0, 16).is_none());
+        assert!(rasterize_mono(&bytes, 100, 16, 0).is_none());
+        assert!(rasterize_mono(&bytes, 0, 16, 16).is_none());
+    }
+
+    #[test]
+    fn rasterize_mono_fits_em_square_into_cell_box() {
+        // A full-em-wide strip must rasterise no wider than the
+        // narrow cell axis (+ the 2px AA pad): the em square is
+        // contained in the cell, so a 10×20 cell yields a ≤10px-wide
+        // bitmap — NOT a font-size-wide one that would bleed into the
+        // neighbouring cell.
+        let upm = 100i16;
+        let bytes = glyf_top_strip(upm, upm / 4);
+        let (cell_w, cell_h) = (10u16, 20u16);
+        let r = rasterize_mono(&bytes, upm as u16, cell_w, cell_h)
+            .expect("rasterize succeeds for valid simple glyph");
+        assert!(
+            r.width <= cell_w + 2,
+            "width {} must fit the cell width {} (+2px AA pad)",
+            r.width,
+            cell_w
+        );
     }
 
     #[test]

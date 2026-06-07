@@ -106,6 +106,10 @@ impl StoredPayload {
 pub struct RegisteredGlyph {
     pub payload: Arc<StoredPayload>,
     pub upm: u16,
+    /// Declared Unicode width (spec §8.5): `1` (narrow) or `2` (wide).
+    /// Authoritative for all terminal layout decisions — UAX #11 is
+    /// never consulted for a registered codepoint.
+    pub width: u8,
     /// Stable render-side index in `0..GLOSSARY_CAPACITY`. The
     /// renderer's glyph-id field is u16, so the slot id fits directly.
     /// Indices are reused after eviction or explicit clear, so the
@@ -194,6 +198,19 @@ impl GlyphRegistry {
         payload: StoredPayload,
         upm: u16,
     ) -> Result<Option<u32>, RegisterRejection> {
+        self.register_with_width(cp, payload, upm, 1)
+    }
+
+    /// Register a glyph with an explicit declared Unicode width
+    /// (spec §8.5: `1` or `2`). See [`GlyphRegistry::register`] for
+    /// overwrite / eviction semantics.
+    pub fn register_with_width(
+        &self,
+        cp: u32,
+        payload: StoredPayload,
+        upm: u16,
+        width: u8,
+    ) -> Result<Option<u32>, RegisterRejection> {
         if !is_pua(cp) {
             return Err(RegisterRejection::OutOfNamespace);
         }
@@ -214,6 +231,7 @@ impl GlyphRegistry {
             existing.payload = payload;
             existing.upm = upm;
             existing.version = version;
+            existing.width = width;
             return Ok(None);
         }
 
@@ -243,6 +261,7 @@ impl GlyphRegistry {
             RegisteredGlyph {
                 payload,
                 upm,
+                width,
                 index: slot_index,
                 insertion_id: id,
                 version,
@@ -280,6 +299,15 @@ impl GlyphRegistry {
     /// Look up a registration.
     pub fn get(&self, cp: u32) -> Option<RegisteredGlyph> {
         self.inner.read().by_cp.get(&cp).cloned()
+    }
+
+    /// Declared cell width (`1` or `2`) of a live registration, or
+    /// `None` if `cp` is not registered. Cheaper than [`get`] for the
+    /// per-codepoint input hot path: it reads the width under the lock
+    /// without cloning the payload `Arc`.
+    #[inline]
+    pub fn width_of(&self, cp: u32) -> Option<u8> {
+        self.inner.read().by_cp.get(&cp).map(|g| g.width)
     }
 
     /// True iff `cp` has a live custom registration.
@@ -503,6 +531,22 @@ mod tests {
         let r2 = r1.clone();
         r1.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
         assert!(r2.contains(0xE0A0));
+    }
+
+    #[test]
+    fn register_with_width_stores_render_hint() {
+        let r = GlyphRegistry::new();
+        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap(); // default narrow
+        assert_eq!(r.get(0xE0A0).unwrap().width, 1);
+
+        r.register_with_width(0xE0A1, glyf(vec![2]), 1000, 2)
+            .unwrap();
+        assert_eq!(r.get(0xE0A1).unwrap().width, 2);
+
+        // Overwrite narrows it back; the stored render hint follows.
+        r.register_with_width(0xE0A1, glyf(vec![3]), 1000, 1)
+            .unwrap();
+        assert_eq!(r.get(0xE0A1).unwrap().width, 1);
     }
 
     #[test]
