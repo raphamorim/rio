@@ -990,16 +990,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::MouseInput { state, button, .. } => {
                 if route.path != RoutePath::Terminal {
-                    // Welcome / dialog routes: restore titlebar-band
-                    // window dragging — it's disabled statically on
-                    // island windows (`mouse_down_can_move_window`) so
-                    // tab drags can reorder. Gated on the CREATION-time
-                    // flag: the AppKit side can't change on config
-                    // reload.
                     #[cfg(target_os = "macos")]
                     if state == ElementState::Pressed
                         && button == MouseButton::Left
-                        && route.window.screen.band_drag_manual
+                        && route.window.screen.allow_manual_dragging
                     {
                         use crate::renderer::island::ISLAND_HEIGHT;
                         let scale = route.window.screen.sugarloaf.scale_factor();
@@ -1115,22 +1109,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 );
 
                             if handled_by_island {
-                                // Island handled the click, don't process further
                                 route.request_redraw();
                                 return;
                             }
 
-                            // Band press the island didn't claim (island
-                            // hidden with a single tab): restore the
-                            // titlebar drag AppKit would have done —
-                            // it's disabled statically for island
-                            // windows, so this follows the CREATION-time
-                            // flag (a config reload can't re-teach
-                            // AppKit). Deliberately no `return`: the
-                            // press also flows to the grid below,
-                            // matching AppKit's old dual behavior.
                             #[cfg(target_os = "macos")]
-                            if route.window.screen.band_drag_manual {
+                            if route.window.screen.allow_manual_dragging {
                                 use crate::renderer::island::ISLAND_HEIGHT;
                                 let scale = route.window.screen.sugarloaf.scale_factor();
                                 if route.window.screen.mouse.y
@@ -1307,9 +1291,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let x = position.x.clamp(0.0, (layout.width as i32 - 1) as f64);
                 let y = position.y.clamp(0.0, (layout.height as i32 - 1) as f64);
 
-                // Stored before the route check so non-terminal routes
-                // (welcome / dialogs) know the press position for
-                // titlebar-band window dragging.
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
                 route.window.screen.mouse.raw_y = position.y;
@@ -1401,9 +1382,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
 
-                // Drive an active island tab drag. Deliberately not
-                // gated on the island's y-range: vertical wander while
-                // the button is held must not drop the drag.
                 if route.window.screen.mouse.left_button_state == ElementState::Pressed
                     && route
                         .window

@@ -709,8 +709,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.contexts.get(index).map(|grid| &grid.current().title)
     }
 
-    /// User-set title override for the tab at `index`, if any. Lives on
-    /// the tab, so it rides along on reorder/close like the panel title.
     #[inline]
     pub fn custom_title(&self, index: usize) -> Option<&str> {
         self.contexts
@@ -718,7 +716,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             .and_then(|grid| grid.custom_title.as_deref())
     }
 
-    /// Set (or clear, with `None`) the custom title for the tab at `index`.
     #[inline]
     pub fn set_custom_title(&mut self, index: usize, title: Option<String>) {
         if let Some(grid) = self.contexts.get_mut(index) {
@@ -799,13 +796,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &self.contexts[self.current_index]
     }
 
-    /// Get panel borders for the current grid (returns empty vec if single panel)
     #[inline]
     pub fn get_panel_borders(&self) -> Vec<Rect> {
         self.contexts[self.current_index].get_panel_borders()
     }
 
-    /// Get the scaled margin of the current grid (in physical pixels, for border positioning)
     #[inline]
     pub fn get_current_grid_scaled_margin(&self) -> rio_backend::config::layout::Margin {
         self.contexts[self.current_index].get_scaled_margin()

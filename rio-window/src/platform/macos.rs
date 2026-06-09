@@ -302,13 +302,6 @@ pub trait WindowAttributesExtMacOS {
     /// Sets the position of the traffic light buttons (close, minimize, maximize).
     /// The position is specified as (x, y) coordinates in points from the top-left corner.
     fn with_traffic_light_position(self, x: f64, y: f64) -> Self;
-    /// Whether mouse-downs on the content view may start an AppKit
-    /// window drag (the titlebar band of a transparent-titlebar window).
-    /// Defaults to `true`. AppKit caches the value when the view is
-    /// installed, so it can only be set at window creation. Apps that
-    /// disable it (e.g. to draw a draggable tab strip in the titlebar)
-    /// should call [`crate::window::Window::drag_window`] themselves for
-    /// the areas that should still move the window.
     fn with_mouse_down_can_move_window(self, can_move: bool) -> Self;
 }
 
