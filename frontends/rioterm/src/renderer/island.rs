@@ -167,8 +167,6 @@ pub struct Island {
     pub progress_bar_error_color: [f32; 4],
     /// Which tab has the color picker open (None = closed)
     color_picker_tab: Option<usize>,
-    /// Per-tab background colors
-    tab_colors: FxHashMap<usize, [f32; 4]>,
     /// Current rename input text while picker is open
     rename_input: String,
     /// Caret blink timer
@@ -203,7 +201,6 @@ impl Island {
             // Default error color (red-ish)
             progress_bar_error_color: [1.0, 0.3, 0.3, 1.0],
             color_picker_tab: None,
-            tab_colors: FxHashMap::default(),
             rename_input: String::new(),
             rename_caret_time: Instant::now(),
             drag: None,
@@ -378,11 +375,6 @@ impl Island {
             return;
         }
 
-        self.tab_colors = self
-            .tab_colors
-            .drain()
-            .map(|(i, v)| (Self::remap_index(i, from, to), v))
-            .collect();
         self.slide_springs = self
             .slide_springs
             .drain()
@@ -433,11 +425,6 @@ impl Island {
                 i
             }
         };
-        self.tab_colors = self
-            .tab_colors
-            .drain()
-            .map(|(i, v)| (swap_key(i), v))
-            .collect();
         self.slide_springs = self
             .slide_springs
             .drain()
@@ -694,14 +681,14 @@ impl Island {
             }
 
             // Draw tab background color if set
-            if let Some(bg_color) = self.tab_colors.get(&tab_index) {
+            if let Some(bg_color) = context_manager.custom_color(tab_index) {
                 sugarloaf.rect(
                     None,
                     tab_x,
                     0.0,
                     tab_width,
                     ISLAND_HEIGHT,
-                    *bg_color,
+                    bg_color,
                     0.05,
                     0,
                 );
@@ -760,7 +747,7 @@ impl Island {
 
             // Opaque elevated background so the floating tab reads as
             // lifted out of the strip while passing over other slots.
-            let mut fill = self.tab_colors.get(&drag_idx).copied().unwrap_or(bg_color);
+            let mut fill = context_manager.custom_color(drag_idx).unwrap_or(bg_color);
             fill[3] = 1.0;
             sugarloaf.rect(
                 None,
@@ -808,7 +795,8 @@ impl Island {
         if let Some(picker_tab) = self.color_picker_tab {
             if picker_tab < num_tabs {
                 let picker_tab_x = left_margin + picker_tab as f32 * tab_width;
-                self.render_color_picker(sugarloaf, picker_tab_x, tab_width);
+                let selected = context_manager.custom_color(picker_tab);
+                self.render_color_picker(sugarloaf, picker_tab_x, tab_width, selected);
             }
         }
 
@@ -845,6 +833,13 @@ impl Island {
         if self.color_picker_tab.is_some() {
             self.apply_rename(context_manager);
         }
+        self.color_picker_tab = None;
+    }
+
+    /// Dismiss the picker WITHOUT committing a pending rename. Used when the
+    /// tab set changes underneath it (e.g. a tab close), where the anchored
+    /// index may no longer point at the same tab.
+    pub fn dismiss_color_picker(&mut self) {
         self.color_picker_tab = None;
     }
 
@@ -957,7 +952,7 @@ impl Island {
                 && mouse_y_unscaled >= swatch_y
                 && mouse_y_unscaled <= swatch_y_end
             {
-                self.tab_colors.insert(picker_tab, *color);
+                context_manager.set_custom_color(picker_tab, Some(*color));
                 self.apply_rename(context_manager);
                 self.color_picker_tab = None;
                 return true;
@@ -972,7 +967,7 @@ impl Island {
             && mouse_y_unscaled >= swatch_y
             && mouse_y_unscaled <= swatch_y_end
         {
-            self.tab_colors.remove(&picker_tab);
+            context_manager.set_custom_color(picker_tab, None);
             self.apply_rename(context_manager);
             self.color_picker_tab = None;
             return true;
@@ -988,6 +983,7 @@ impl Island {
         sugarloaf: &mut Sugarloaf,
         tab_x: f32,
         tab_width: f32,
+        selected_color: Option<[f32; 4]>,
     ) {
         let padding = PICKER_PADDING;
         let bg_y = ISLAND_HEIGHT;
@@ -1017,11 +1013,9 @@ impl Island {
 
         // Swatches — aligned to content_x
         let swatch_y = bg_y + padding + PICKER_TOP_PADDING;
-        let picker_tab = self.color_picker_tab.unwrap_or(0);
-        let selected_color = self.tab_colors.get(&picker_tab);
         for (i, color) in PICKER_COLORS.iter().enumerate() {
             let sx = content_x + i as f32 * (PICKER_SWATCH_SIZE + PICKER_SWATCH_GAP);
-            let is_selected = selected_color == Some(color);
+            let is_selected = selected_color == Some(*color);
 
             // Draw white border behind selected swatch
             if is_selected {
@@ -1506,18 +1500,15 @@ mod tests {
     }
 
     #[test]
-    fn remap_tab_move_carries_colors_and_picker() {
+    fn remap_tab_move_carries_picker_and_springs() {
         let mut island = test_island();
-        let red = [1.0, 0.0, 0.0, 1.0];
-        island.tab_colors.insert(1, red);
         island.color_picker_tab = Some(3);
 
-        // Tab 1 → 3 (rotate): color follows to 3, picker shifts 3 → 2.
-        // (Custom titles now live on the tab itself, so they ride along in
-        // ContextManager, not here — see context::test::test_custom_title_*.)
+        // Tab 1 → 3 (rotate): the open picker shifts 3 → 2. Per-tab colors
+        // and titles now live on the tab in ContextManager (see
+        // context::test::test_custom_color_* / test_custom_title_*), so they
+        // no longer need remapping here.
         island.remap_tab_move(1, 3, 100.0);
-        assert_eq!(island.tab_colors.get(&3), Some(&red));
-        assert!(island.tab_colors.get(&1).is_none());
         assert_eq!(island.color_picker_tab, Some(2));
 
         // Displaced tabs (now at 1 and 2) got slide springs of +width.

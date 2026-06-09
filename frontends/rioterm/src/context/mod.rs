@@ -724,6 +724,18 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn custom_color(&self, index: usize) -> Option<[f32; 4]> {
+        self.contexts.get(index).and_then(|grid| grid.custom_color)
+    }
+
+    #[inline]
+    pub fn set_custom_color(&mut self, index: usize, color: Option<[f32; 4]>) {
+        if let Some(grid) = self.contexts.get_mut(index) {
+            grid.custom_color = color;
+        }
+    }
+
+    #[inline]
     pub fn resize_all_grids(
         &mut self,
         width: f32,
@@ -1366,6 +1378,28 @@ pub mod test {
         // Clearing with None removes the override.
         cm.set_custom_title(1, None);
         assert_eq!(cm.custom_title(1), None);
+    }
+
+    #[test]
+    fn test_custom_color_follows_tab_move() {
+        let window_id = WindowId::from(0);
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        for _ in 0..3 {
+            cm.add_context(false, 0);
+        }
+        let red = [1.0, 0.0, 0.0, 1.0];
+        cm.set_custom_color(2, Some(red));
+
+        // Move tab 1 → 3 (rotate): the color on tab 2 shifts to slot 1.
+        cm.set_current(1);
+        cm.move_current_tab_to(3);
+
+        assert_eq!(cm.custom_color(1), Some(red));
+        assert_eq!(cm.custom_color(2), None);
+
+        cm.set_custom_color(1, None);
+        assert_eq!(cm.custom_color(1), None);
     }
 
     #[test]
