@@ -35,7 +35,12 @@ pub struct TextInstance {
     pub color: [u8; 4],
     /// `0` = grayscale atlas; `1` = color atlas.
     pub atlas: u8,
-    pub _pad: [u8; 3],
+    /// Index of the atlas page this glyph lives in. Used host-side by
+    /// the Vulkan overlay to bucket instances per (kind, page) and
+    /// bind the right page's descriptor set per draw; other backends
+    /// use a single texture and leave this at 0.
+    pub page: u8,
+    pub _pad: [u8; 2],
 }
 
 // 36 bytes (4-aligned). f32 pos (vs grid's u16 grid_pos) adds 4 bytes.
@@ -183,10 +188,13 @@ struct TextVulkanState {
     instance_capacity: [usize; crate::context::vulkan::FRAMES_IN_FLIGHT],
     descriptor_pool: ash::vk::DescriptorPool,
     uniform_descriptor_set_layout: ash::vk::DescriptorSetLayout,
+    /// Layout for one atlas page's descriptor set (a single combined
+    /// image+sampler at binding 0). Shared across all pages of both
+    /// atlases — atlases allocate per-page sets from `descriptor_pool`
+    /// against this layout on demand inside `insert`.
     atlas_descriptor_set_layout: ash::vk::DescriptorSetLayout,
     uniform_descriptor_sets:
         [ash::vk::DescriptorSet; crate::context::vulkan::FRAMES_IN_FLIGHT],
-    atlas_descriptor_set: ash::vk::DescriptorSet,
 
     pipeline_layout: ash::vk::PipelineLayout,
     pipeline: ash::vk::Pipeline,
@@ -538,12 +546,10 @@ impl Text {
         let color = opts.color;
 
         for glyph in &run.glyphs {
-            let Some((slot_x, slot_y, slot_w, slot_h, bearing_x, bearing_y, is_color)) =
-                self.rasterize_slot(run, glyph.id)
-            else {
+            let Some((slot, is_color)) = self.rasterize_slot(run, glyph.id) else {
                 continue;
             };
-            if slot_w == 0 || slot_h == 0 {
+            if slot.w == 0 || slot.h == 0 {
                 pen_x += glyph.advance;
                 continue;
             }
@@ -557,12 +563,13 @@ impl Text {
 
             self.instances.push(TextInstance {
                 pos: [pen_x + glyph.x, py + glyph.y.max(0.0)],
-                glyph_pos: [slot_x as u32, slot_y as u32],
-                glyph_size: [slot_w as u32, slot_h as u32],
-                bearings: [bearing_x, bearing_y],
+                glyph_pos: [slot.x as u32, slot.y as u32],
+                glyph_size: [slot.w as u32, slot.h as u32],
+                bearings: [slot.bearing_x, slot.bearing_y],
                 color: instance_color,
                 atlas: atlas_tag,
-                _pad: [0; 3],
+                page: slot.page,
+                _pad: [0; 2],
             });
 
             pen_x += glyph.advance;
@@ -577,7 +584,7 @@ impl Text {
         &mut self,
         run: &ShapedRun,
         glyph_id: u16,
-    ) -> Option<(u16, u16, u16, u16, i16, i16, bool)> {
+    ) -> Option<(crate::grid::atlas::AtlasSlot, bool)> {
         let key = crate::grid::GlyphKey {
             font_id: run.font_id,
             glyph_id: glyph_id as u32,
@@ -598,10 +605,10 @@ impl Text {
             let state = self.metal.as_mut()?;
 
             if let Some(s) = state.atlas_grayscale.lookup(key) {
-                return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, false));
+                return Some((s, false));
             }
             if let Some(s) = state.atlas_color.lookup(key) {
-                return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, true));
+                return Some((s, true));
             }
 
             let handle = self.handle_cache.get(&run.font_id)?.clone();
@@ -650,15 +657,7 @@ impl Text {
                     }
                 }
             };
-            Some((
-                slot.x,
-                slot.y,
-                slot.w,
-                slot.h,
-                slot.bearing_x,
-                slot.bearing_y,
-                is_color,
-            ))
+            Some((slot, is_color))
         }
 
         // non-macOS (swash → VulkanGlyphAtlas or WgpuGlyphAtlas)
@@ -672,10 +671,10 @@ impl Text {
             if self.vulkan.is_some() {
                 let state = self.vulkan.as_mut()?;
                 if let Some(s) = state.atlas_grayscale.lookup(key) {
-                    return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, false));
+                    return Some((s, false));
                 }
                 if let Some(s) = state.atlas_color.lookup(key) {
-                    return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, true));
+                    return Some((s, true));
                 }
 
                 let font_entry = self.font_data_cache.get(&run.font_id)?.clone();
@@ -701,20 +700,15 @@ impl Text {
                     },
                     bytes: &raw.bytes,
                 };
+                // The atlas's own `insert` walks existing pages and
+                // appends a new one when none fit, so the overlay
+                // doesn't need to retry on grow.
                 let slot = if is_color {
                     state.atlas_color.insert(key, raster)?
                 } else {
                     state.atlas_grayscale.insert(key, raster)?
                 };
-                return Some((
-                    slot.x,
-                    slot.y,
-                    slot.w,
-                    slot.h,
-                    slot.bearing_x,
-                    slot.bearing_y,
-                    is_color,
-                ));
+                return Some((slot, is_color));
             }
 
             #[cfg(feature = "wgpu")]
@@ -722,10 +716,10 @@ impl Text {
                 let state = self.wgpu.as_mut()?;
 
                 if let Some(s) = state.atlas_grayscale.lookup(key) {
-                    return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, false));
+                    return Some((s, false));
                 }
                 if let Some(s) = state.atlas_color.lookup(key) {
-                    return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, true));
+                    return Some((s, true));
                 }
 
                 let font_entry = self.font_data_cache.get(&run.font_id)?.clone();
@@ -757,15 +751,7 @@ impl Text {
                 } else {
                     state.atlas_grayscale.insert(key, raster)?
                 };
-                Some((
-                    slot.x,
-                    slot.y,
-                    slot.w,
-                    slot.h,
-                    slot.bearing_x,
-                    slot.bearing_y,
-                    is_color,
-                ))
+                Some((slot, is_color))
             }
             #[cfg(not(feature = "wgpu"))]
             {
@@ -787,15 +773,15 @@ impl Text {
         run: &ShapedRun,
         glyph_id: u16,
         key: crate::grid::GlyphKey,
-    ) -> Option<(u16, u16, u16, u16, i16, i16, bool)> {
+    ) -> Option<(crate::grid::atlas::AtlasSlot, bool)> {
         // Lookup first — both atlases.
         {
             let state = self.cpu.as_ref()?;
             if let Some(s) = state.atlas_grayscale.lookup(key) {
-                return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, false));
+                return Some((s, false));
             }
             if let Some(s) = state.atlas_color.lookup(key) {
-                return Some((s.x, s.y, s.w, s.h, s.bearing_x, s.bearing_y, true));
+                return Some((s, true));
             }
         }
 
@@ -873,15 +859,7 @@ impl Text {
                 }
             })?
         };
-        Some((
-            slot.x,
-            slot.y,
-            slot.w,
-            slot.h,
-            slot.bearing_x,
-            slot.bearing_y,
-            raw_is_color,
-        ))
+        Some((slot, raw_is_color))
     }
 
     /// Paint the queued UI text instances into the caller-supplied
@@ -1061,8 +1039,11 @@ impl Text {
             atlas_color.view(),
         );
 
-        let pipeline =
-            build_text_pipeline_wgpu(device, format, &[&uniform_bgl, &atlas_bgl]);
+        let pipeline = build_text_pipeline_wgpu(
+            device,
+            format,
+            &[Some(&uniform_bgl), Some(&atlas_bgl)],
+        );
         let instance_capacity: usize = 256;
         let instance_buffer = alloc_instance_buffer_wgpu(device, instance_capacity);
 
@@ -1168,8 +1149,7 @@ impl Text {
         slot: usize,
         viewport: [f32; 2],
     ) {
-        let instance_count = self.instances.len();
-        if instance_count == 0 {
+        if self.instances.is_empty() {
             return;
         }
         let Some(state) = self.vulkan.as_mut() else {
@@ -1183,7 +1163,31 @@ impl Text {
             std::ptr::write(dst, uniforms);
         }
 
+        // Bucket instances by (atlas_kind, page) into contiguous
+        // ranges of the per-slot vertex buffer. Each `cmd_draw` binds
+        // one page's descriptor set + one kind via push constant, so
+        // mismatched instances can't share a draw. Typical overlay:
+        // 1–2 buckets (a few glyphs on page 0, both kinds at most),
+        // so the linear-search grouping is cheap.
+        let mut groups: Vec<((u8, u8), Vec<TextInstance>)> = Vec::with_capacity(4);
+        for inst in &self.instances {
+            let key = (inst.atlas, inst.page);
+            match groups.iter_mut().find(|(k, _)| *k == key) {
+                Some(g) => g.1.push(*inst),
+                None => groups.push((key, vec![*inst])),
+            }
+        }
+        let mut bucketed: Vec<TextInstance> = Vec::with_capacity(self.instances.len());
+        let mut buckets: Vec<((u8, u8), u32, u32)> = Vec::with_capacity(groups.len());
+        for ((kind, page), insts) in groups.into_iter() {
+            let start = bucketed.len() as u32;
+            let count = insts.len() as u32;
+            bucketed.extend_from_slice(&insts);
+            buckets.push(((kind, page), start, count));
+        }
+
         // Grow per-slot instance buffer if needed.
+        let instance_count = bucketed.len();
         let needed_bytes = instance_count * std::mem::size_of::<TextInstance>();
         if instance_count > state.instance_capacity[slot] {
             let new_cap = instance_count.next_power_of_two().max(256);
@@ -1198,7 +1202,7 @@ impl Text {
         let instance_buf = state.instance_buffers[slot].as_ref().unwrap();
         unsafe {
             std::ptr::copy_nonoverlapping(
-                self.instances.as_ptr() as *const u8,
+                bucketed.as_ptr() as *const u8,
                 instance_buf.as_mut_ptr(),
                 needed_bytes,
             );
@@ -1210,21 +1214,44 @@ impl Text {
                 ash::vk::PipelineBindPoint::GRAPHICS,
                 state.pipeline,
             );
+            // Uniform set at slot 0 is the same across all buckets.
             state.shared.cmd_bind_descriptor_sets(
                 cmd,
                 ash::vk::PipelineBindPoint::GRAPHICS,
                 state.pipeline_layout,
                 0,
-                &[
-                    state.uniform_descriptor_sets[slot],
-                    state.atlas_descriptor_set,
-                ],
+                &[state.uniform_descriptor_sets[slot]],
                 &[],
             );
             state
                 .shared
                 .cmd_bind_vertex_buffers(cmd, 0, &[instance_buf.handle()], &[0]);
-            state.shared.cmd_draw(cmd, 4, instance_count as u32, 0, 0);
+
+            // One draw per (kind, page) bucket.
+            for &((kind, page), start, count) in &buckets {
+                let set = if kind == 1 {
+                    state.atlas_color.page_descriptor_set(page)
+                } else {
+                    state.atlas_grayscale.page_descriptor_set(page)
+                };
+                state.shared.cmd_bind_descriptor_sets(
+                    cmd,
+                    ash::vk::PipelineBindPoint::GRAPHICS,
+                    state.pipeline_layout,
+                    1,
+                    &[set],
+                    &[],
+                );
+                let is_color: u32 = if kind == 1 { 1 } else { 0 };
+                state.shared.cmd_push_constants(
+                    cmd,
+                    state.pipeline_layout,
+                    ash::vk::ShaderStageFlags::FRAGMENT,
+                    0,
+                    &is_color.to_ne_bytes(),
+                );
+                state.shared.cmd_draw(cmd, 4, count, 0, start);
+            }
         }
     }
 }
@@ -1263,6 +1290,7 @@ struct SwashRawGlyph {
 }
 
 #[cfg(not(target_os = "macos"))]
+#[allow(clippy::too_many_arguments)]
 fn rasterize_swash_glyph(
     scale_ctx: &mut swash::scale::ScaleContext,
     font_entry: &(crate::font::SharedData, u32, swash::CacheKey),
@@ -1502,7 +1530,7 @@ fn alloc_instance_buffer_wgpu(device: &wgpu::Device, capacity: usize) -> wgpu::B
 fn build_text_pipeline_wgpu(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
-    bind_group_layouts: &[&wgpu::BindGroupLayout],
+    bind_group_layouts: &[Option<&wgpu::BindGroupLayout>],
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("sugarloaf.text.wgsl"),
@@ -1628,15 +1656,15 @@ fn build_text_vulkan_state(
     let shared = ctx.shared().clone();
     let device = &shared.raw;
 
-    let atlas_grayscale = crate::grid::vulkan::VulkanGlyphAtlas::new_grayscale(ctx);
-    let atlas_color = crate::grid::vulkan::VulkanGlyphAtlas::new_color(ctx);
     let sampler = create_text_sampler(device);
 
     let uniform_buffers = std::array::from_fn(|_| {
         ctx.allocate_host_visible_buffer(16, vk::BufferUsageFlags::UNIFORM_BUFFER)
     });
 
-    // Layouts: set 0 = uniform (per slot), set 1 = atlases (shared).
+    // Layouts: set 0 = uniform (per slot), set 1 = one atlas page
+    // (combined image+sampler at binding 0). Each `(kind, page)`
+    // bucket of instances binds a different set 1 at draw time.
     let uniform_descriptor_set_layout = unsafe {
         let bindings = [vk::DescriptorSetLayoutBinding::default()
             .binding(0)
@@ -1649,25 +1677,23 @@ fn build_text_vulkan_state(
             .expect("create_descriptor_set_layout(ui_text uniform)")
     };
     let atlas_descriptor_set_layout = unsafe {
-        let bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-        ];
+        let bindings = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
         let info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
         device
             .create_descriptor_set_layout(&info, None)
             .expect("create_descriptor_set_layout(ui_text atlas)")
     };
 
-    // Pool sized for FRAMES_IN_FLIGHT uniform sets + 1 atlas set.
+    // Pool sized for the uniform sets + one descriptor set per atlas
+    // page either kind can ever allocate (`MAX_PAGES × 2`). Pages are
+    // never freed for the renderer's lifetime, so the pool is sized
+    // once and never grown.
+    const MAX_PAGES_PER_KIND: u32 = 16;
+    let max_atlas_sets = MAX_PAGES_PER_KIND * 2;
     let descriptor_pool = unsafe {
         let sizes = [
             vk::DescriptorPoolSize {
@@ -1676,11 +1702,11 @@ fn build_text_vulkan_state(
             },
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: 2,
+                descriptor_count: max_atlas_sets,
             },
         ];
         let info = vk::DescriptorPoolCreateInfo::default()
-            .max_sets((FRAMES_IN_FLIGHT + 1) as u32)
+            .max_sets(FRAMES_IN_FLIGHT as u32 + max_atlas_sets)
             .pool_sizes(&sizes);
         device
             .create_descriptor_pool(&info, None)
@@ -1699,17 +1725,8 @@ fn build_text_vulkan_state(
         out.copy_from_slice(&sets);
         out
     };
-    let atlas_descriptor_set = unsafe {
-        let layouts = [atlas_descriptor_set_layout];
-        let info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(descriptor_pool)
-            .set_layouts(&layouts);
-        device
-            .allocate_descriptor_sets(&info)
-            .expect("allocate_descriptor_sets(ui_text atlas)")[0]
-    };
 
-    // Update descriptor sets.
+    // Update uniform descriptor sets.
     for slot in 0..FRAMES_IN_FLIGHT {
         let uniform_info = vk::DescriptorBufferInfo::default()
             .buffer(uniform_buffers[slot].handle())
@@ -1725,37 +1742,35 @@ fn build_text_vulkan_state(
             device.update_descriptor_sets(&[write], &[]);
         }
     }
-    {
-        let gray_info = vk::DescriptorImageInfo::default()
-            .sampler(sampler)
-            .image_view(atlas_grayscale.image_view())
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        let gray_infos = [gray_info];
-        let color_info = vk::DescriptorImageInfo::default()
-            .sampler(sampler)
-            .image_view(atlas_color.image_view())
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        let color_infos = [color_info];
-        let writes = [
-            vk::WriteDescriptorSet::default()
-                .dst_set(atlas_descriptor_set)
-                .dst_binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&gray_infos),
-            vk::WriteDescriptorSet::default()
-                .dst_set(atlas_descriptor_set)
-                .dst_binding(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&color_infos),
-        ];
-        unsafe {
-            device.update_descriptor_sets(&writes, &[]);
-        }
-    }
 
+    // Atlases — each allocates its initial page's descriptor set from
+    // the pool we just built, and any further pages will allocate
+    // from the same pool on demand. Set layout + sampler are shared
+    // by both atlases.
+    let atlas_grayscale = crate::grid::vulkan::VulkanGlyphAtlas::new_grayscale(
+        ctx,
+        descriptor_pool,
+        atlas_descriptor_set_layout,
+        sampler,
+    );
+    let atlas_color = crate::grid::vulkan::VulkanGlyphAtlas::new_color(
+        ctx,
+        descriptor_pool,
+        atlas_descriptor_set_layout,
+        sampler,
+    );
+
+    // Push constant `is_color: u32` switches sampling mode per draw —
+    // see `grid_text.frag.glsl` (shared with the grid text pass).
     let pipeline_layout = unsafe {
         let set_layouts = [uniform_descriptor_set_layout, atlas_descriptor_set_layout];
-        let info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
+        let push_constants = [vk::PushConstantRange::default()
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .offset(0)
+            .size(4)];
+        let info = vk::PipelineLayoutCreateInfo::default()
+            .set_layouts(&set_layouts)
+            .push_constant_ranges(&push_constants);
         device
             .create_pipeline_layout(&info, None)
             .expect("create_pipeline_layout(ui_text)")
@@ -1779,7 +1794,6 @@ fn build_text_vulkan_state(
         uniform_descriptor_set_layout,
         atlas_descriptor_set_layout,
         uniform_descriptor_sets,
-        atlas_descriptor_set,
         pipeline_layout,
         pipeline,
     }
@@ -1861,12 +1875,11 @@ fn build_ui_text_pipeline_vulkan(
             .binding(0)
             .format(vk::Format::R8G8B8A8_UNORM)
             .offset(28),
-        // 5: atlas u8 @ 32
-        vk::VertexInputAttributeDescription::default()
-            .location(5)
-            .binding(0)
-            .format(vk::Format::R8_UINT)
-            .offset(32),
+        // `atlas` (offset 32) and `page` (offset 33) live in the
+        // host-side struct so `render_vulkan` can bucket instances,
+        // but the shader doesn't read either — the bound descriptor
+        // set already implies which page is sampled, and a push
+        // constant carries the kind.
     ];
     let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()
         .vertex_binding_descriptions(&bindings)

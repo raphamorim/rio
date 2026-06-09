@@ -144,8 +144,8 @@ impl VulkanRenderer {
             crate::sugarloaf::Colorspace::Rec2020 => 2u32,
         };
 
-        let vert_module = create_shader_module(&device, CLEAR_VERT_SPV);
-        let frag_module = create_shader_module(&device, CLEAR_FRAG_SPV);
+        let vert_module = create_shader_module(device, CLEAR_VERT_SPV);
+        let frag_module = create_shader_module(device, CLEAR_FRAG_SPV);
 
         // Push constant: vec4 color, fragment stage, offset 0 — matches
         // `layout(push_constant) uniform PC { vec4 color; }` in
@@ -166,7 +166,7 @@ impl VulkanRenderer {
 
         let pipeline_cache = ctx.pipeline_cache();
         let bootstrap_pipeline = build_bootstrap_pipeline(
-            &device,
+            device,
             pipeline_cache,
             bootstrap_layout,
             vert_module,
@@ -196,24 +196,24 @@ impl VulkanRenderer {
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
             )
         });
-        let quad_descriptor_set_layout = create_quad_descriptor_set_layout(&device);
-        let quad_descriptor_pool = create_quad_descriptor_pool(&device);
+        let quad_descriptor_set_layout = create_quad_descriptor_set_layout(device);
+        let quad_descriptor_pool = create_quad_descriptor_pool(device);
         let quad_descriptor_sets = allocate_quad_descriptor_sets(
-            &device,
+            device,
             quad_descriptor_pool,
             quad_descriptor_set_layout,
         );
         for slot in 0..FRAMES_IN_FLIGHT {
             update_quad_descriptor_set(
-                &device,
+                device,
                 quad_descriptor_sets[slot],
                 &quad_uniform_buffers[slot],
             );
         }
         let quad_pipeline_layout =
-            create_quad_pipeline_layout(&device, quad_descriptor_set_layout);
+            create_quad_pipeline_layout(device, quad_descriptor_set_layout);
         let quad_pipeline = build_quad_pipeline(
-            &device,
+            device,
             pipeline_cache,
             quad_pipeline_layout,
             color_format,
@@ -222,7 +222,7 @@ impl VulkanRenderer {
         // uniform buffers + fragment shader; just a different
         // vertex shader + input layout + topology.
         let geometry_pipeline = build_geometry_pipeline(
-            &device,
+            device,
             pipeline_cache,
             quad_pipeline_layout,
             color_format,
@@ -230,12 +230,12 @@ impl VulkanRenderer {
 
         // Image pipeline construction.
         let image_uniform_descriptor_set_layout =
-            create_image_uniform_descriptor_set_layout(&device);
+            create_image_uniform_descriptor_set_layout(device);
         let image_texture_descriptor_set_layout =
-            create_image_texture_descriptor_set_layout(&device);
-        let image_uniform_descriptor_pool = create_image_uniform_descriptor_pool(&device);
+            create_image_texture_descriptor_set_layout(device);
+        let image_uniform_descriptor_pool = create_image_uniform_descriptor_pool(device);
         let image_uniform_descriptor_sets = allocate_quad_descriptor_sets(
-            &device,
+            device,
             image_uniform_descriptor_pool,
             image_uniform_descriptor_set_layout,
         );
@@ -247,18 +247,18 @@ impl VulkanRenderer {
         });
         for slot in 0..FRAMES_IN_FLIGHT {
             update_quad_descriptor_set(
-                &device,
+                device,
                 image_uniform_descriptor_sets[slot],
                 &image_uniform_buffers[slot],
             );
         }
         let image_pipeline_layout = create_image_pipeline_layout(
-            &device,
+            device,
             image_uniform_descriptor_set_layout,
             image_texture_descriptor_set_layout,
         );
         let image_pipeline = build_image_pipeline(
-            &device,
+            device,
             pipeline_cache,
             image_pipeline_layout,
             color_format,
@@ -270,7 +270,7 @@ impl VulkanRenderer {
                 vk::BufferUsageFlags::VERTEX_BUFFER,
             )
         });
-        let image_sampler = create_image_sampler(&device);
+        let image_sampler = create_image_sampler(device);
 
         Self {
             bootstrap_pipeline,

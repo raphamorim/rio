@@ -302,6 +302,7 @@ pub trait WindowAttributesExtMacOS {
     /// Sets the position of the traffic light buttons (close, minimize, maximize).
     /// The position is specified as (x, y) coordinates in points from the top-left corner.
     fn with_traffic_light_position(self, x: f64, y: f64) -> Self;
+    fn with_mouse_down_can_move_window(self, can_move: bool) -> Self;
 }
 
 impl WindowAttributesExtMacOS for WindowAttributes {
@@ -392,6 +393,12 @@ impl WindowAttributesExtMacOS for WindowAttributes {
     #[inline]
     fn with_traffic_light_position(mut self, x: f64, y: f64) -> Self {
         self.platform_specific.traffic_light_position = Some((x, y));
+        self
+    }
+
+    #[inline]
+    fn with_mouse_down_can_move_window(mut self, can_move: bool) -> Self {
+        self.platform_specific.mouse_down_can_move_window = can_move;
         self
     }
 }

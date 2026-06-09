@@ -1,6 +1,7 @@
 pub mod assistant;
 pub mod command_palette;
 pub mod custom_cursor;
+pub mod helpers;
 pub mod island;
 pub mod scrollbar;
 pub mod search;
@@ -438,8 +439,13 @@ impl Renderer {
                         }
                         overlays.push(rio_backend::sugarloaf::GraphicOverlay {
                             image_id: p.image_id,
-                            x: origin_x + p.dest_col as f32 * cell_width,
-                            y: origin_y + screen_row as f32 * cell_height,
+                            // kitty X=/Y= offset, supports sub-cell positioning
+                            x: origin_x
+                                + p.dest_col as f32 * cell_width
+                                + p.cell_x_offset as f32,
+                            y: origin_y
+                                + screen_row as f32 * cell_height
+                                + p.cell_y_offset as f32,
                             width: p.pixel_width as f32,
                             height: p.pixel_height as f32,
                             z_index: p.z_index,
@@ -561,10 +567,18 @@ impl Renderer {
         }
 
         if let Some(island) = &mut self.island {
+            // The floating-drag tab needs an opaque fill matching what
+            // the window actually shows: the last effective bg (follows
+            // OSC 11), falling back to the theme bg on the first frame.
+            let island_bg = self
+                .last_window_bg
+                .map(|c| [c.r as f32, c.g as f32, c.b as f32, 1.0])
+                .unwrap_or(self.named_colors.background.0);
             island.render(
                 sugarloaf,
                 (window_size.width, window_size.height, scale_factor),
                 context_manager,
+                island_bg,
             );
         }
 

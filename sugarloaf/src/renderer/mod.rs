@@ -1048,8 +1048,7 @@ impl Renderer {
         // overlays for hidden panels (callers `clear_image_overlays_for`
         // on hide / panel removal). The renderer just drains whatever
         // `image_overlays` currently holds.
-        let overlays: Vec<_> =
-            image_overlays.iter().flat_map(|(_, v)| v.iter()).collect();
+        let overlays: Vec<_> = image_overlays.values().flat_map(|v| v.iter()).collect();
         if !overlays.is_empty() {
             self.render_graphic_overlays(context, image_data, &overlays);
         } else {
@@ -2349,12 +2348,12 @@ impl Renderer {
     /// pass that `Sugarloaf::render_vulkan` opens. Order:
     /// 1. Background image (full-screen quad).
     /// 2. BelowText image overlays (kitty / sixel placements with
-    /// `dest_pos.z < 0`).
+    ///    `dest_pos.z < 0`).
     /// 3. Rich-text quad pass — `quad()` / `rect()` calls + cell
-    /// underline decorations (dashed/dotted/curly handled in
-    /// `quad.frag.glsl`).
+    ///    underline decorations (dashed/dotted/curly handled in
+    ///    `quad.frag.glsl`).
     /// 4. Non-quad geometry — `polygon()` / `line()` / `triangle()`
-    /// / `arc()` calls (cursor underline shape, hint highlights).
+    ///    / `arc()` calls (cursor underline shape, hint highlights).
     /// 5. AboveText image overlays.
     /// 6. Optional bootstrap rect (`RIO_VULKAN_BOOTSTRAP=1`).
     ///

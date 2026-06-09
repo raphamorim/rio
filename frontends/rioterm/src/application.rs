@@ -990,6 +990,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::MouseInput { state, button, .. } => {
                 if route.path != RoutePath::Terminal {
+                    #[cfg(target_os = "macos")]
+                    if state == ElementState::Pressed
+                        && button == MouseButton::Left
+                        && route.window.screen.allow_manual_dragging
+                    {
+                        use crate::renderer::island::ISLAND_HEIGHT;
+                        let scale = route.window.screen.sugarloaf.scale_factor();
+                        if route.window.screen.mouse.y <= (ISLAND_HEIGHT * scale) as f64 {
+                            let _ = route.window.winit_window.drag_window();
+                        }
+                    }
                     return;
                 }
 
@@ -1098,9 +1109,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 );
 
                             if handled_by_island {
-                                // Island handled the click, don't process further
                                 route.request_redraw();
                                 return;
+                            }
+
+                            #[cfg(target_os = "macos")]
+                            if route.window.screen.allow_manual_dragging {
+                                use crate::renderer::island::ISLAND_HEIGHT;
+                                let scale = route.window.screen.sugarloaf.scale_factor();
+                                if route.window.screen.mouse.y
+                                    <= (ISLAND_HEIGHT * scale) as f64
+                                {
+                                    route
+                                        .window
+                                        .screen
+                                        .start_window_drag(&route.window.winit_window);
+                                }
                             }
 
                             if route.window.screen.handle_scrollbar_click() {
@@ -1185,6 +1209,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             self.scheduler.unschedule(timer_id);
                         }
 
+                        if button == MouseButton::Left
+                            && route
+                                .window
+                                .screen
+                                .renderer
+                                .island
+                                .as_ref()
+                                .is_some_and(|i| i.is_dragging())
+                        {
+                            let started = route.window.screen.handle_tab_drag_release();
+                            if started {
+                                route.request_redraw();
+                                return;
+                            }
+                        }
+
                         if route.window.screen.renderer.scrollbar.is_dragging() {
                             route.window.screen.handle_scrollbar_release();
                             route.request_redraw();
@@ -1243,25 +1283,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.winit_window.set_cursor_visible(true);
                 }
 
-                if route.path != RoutePath::Terminal {
-                    route.window.winit_window.set_cursor(CursorIcon::Default);
-                    return;
-                }
-
-                let x = position.x;
-                let y = position.y;
-
                 let layout = route.window.screen.sugarloaf.window_size();
 
                 // Keep f64 precision all the way to the cell-grid
                 // divide. The old `as usize` cast here dropped
                 // subpixel info from HiDPI events.
-                let x = x.clamp(0.0, (layout.width as i32 - 1) as f64);
-                let y = y.clamp(0.0, (layout.height as i32 - 1) as f64);
+                let x = position.x.clamp(0.0, (layout.width as i32 - 1) as f64);
+                let y = position.y.clamp(0.0, (layout.height as i32 - 1) as f64);
 
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
                 route.window.screen.mouse.raw_y = position.y;
+
+                if route.path != RoutePath::Terminal {
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    return;
+                }
 
                 // Handle assistant overlay hover
                 if route.window.screen.renderer.assistant.is_active() {
@@ -1343,6 +1380,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .set_dirty();
                         route.request_redraw();
                     }
+                }
+
+                if route.window.screen.mouse.left_button_state == ElementState::Pressed
+                    && route
+                        .window
+                        .screen
+                        .renderer
+                        .island
+                        .as_ref()
+                        .is_some_and(|i| i.is_dragging())
+                {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    route.window.screen.handle_tab_drag_move(x as f32 / scale);
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    route.request_redraw();
+                    return;
                 }
 
                 // Only force the default cursor while the island is
