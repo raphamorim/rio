@@ -7,7 +7,7 @@
 // which is licensed under MIT license.
 
 use crate::context::ContextManager;
-use crate::renderer::spring::Spring;
+use crate::renderer::helpers::spring::Spring;
 use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
 use rio_backend::sugarloaf::text::DrawOpts;
 use rio_backend::sugarloaf::{Attributes, Sugarloaf};

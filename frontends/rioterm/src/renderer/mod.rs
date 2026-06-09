@@ -1,10 +1,10 @@
 pub mod assistant;
 pub mod command_palette;
 pub mod custom_cursor;
+pub mod helpers;
 pub mod island;
 pub mod scrollbar;
 pub mod search;
-pub mod spring;
 pub mod trail_cursor;
 pub mod utils;
 
