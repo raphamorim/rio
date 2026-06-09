@@ -717,6 +717,23 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.contexts.get(index).map(|grid| &grid.current().title)
     }
 
+    /// User-set title override for the tab at `index`, if any. Lives on
+    /// the tab, so it rides along on reorder/close like the panel title.
+    #[inline]
+    pub fn custom_title(&self, index: usize) -> Option<&str> {
+        self.contexts
+            .get(index)
+            .and_then(|grid| grid.custom_title.as_deref())
+    }
+
+    /// Set (or clear, with `None`) the custom title for the tab at `index`.
+    #[inline]
+    pub fn set_custom_title(&mut self, index: usize, title: Option<String>) {
+        if let Some(grid) = self.contexts.get_mut(index) {
+            grid.custom_title = title;
+        }
+    }
+
     #[inline]
     pub fn resize_all_grids(
         &mut self,
@@ -740,8 +757,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // Only the active split of each tab is ever displayed, so we
             // refresh just `current()` and store the title on that panel.
             for grid in self.contexts.iter_mut() {
-                let content =
-                    update_title(&self.config.title.content, grid.current());
+                let content = update_title(&self.config.title.content, grid.current());
 
                 self.event_proxy
                     .send_event(RioEvent::Title(content.to_owned()), self.window_id);
@@ -1342,6 +1358,29 @@ pub mod test {
         cm.move_current_to_next();
 
         assert_eq!(tab_titles(&cm), ["b", "a", "c", "d"]);
+    }
+
+    #[test]
+    fn test_custom_title_follows_tab_move() {
+        let window_id = WindowId::from(0);
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        for _ in 0..3 {
+            cm.add_context(false, 0);
+        }
+        cm.set_custom_title(2, Some("work".to_string()));
+
+        // Move tab 1 → 3 (rotate): the override on tab 2 shifts to slot 1,
+        // with no remap bookkeeping.
+        cm.set_current(1);
+        cm.move_current_tab_to(3);
+
+        assert_eq!(cm.custom_title(1), Some("work"));
+        assert_eq!(cm.custom_title(2), None);
+
+        // Clearing with None removes the override.
+        cm.set_custom_title(1, None);
+        assert_eq!(cm.custom_title(1), None);
     }
 
     #[test]

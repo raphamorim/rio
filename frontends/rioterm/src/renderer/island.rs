@@ -216,8 +216,6 @@ pub struct Island {
     color_picker_tab: Option<usize>,
     /// Per-tab background colors
     tab_colors: FxHashMap<usize, [f32; 4]>,
-    /// Per-tab custom titles (user overrides)
-    tab_custom_titles: FxHashMap<usize, String>,
     /// Current rename input text while picker is open
     rename_input: String,
     /// Caret blink timer
@@ -253,7 +251,6 @@ impl Island {
             progress_bar_error_color: [1.0, 0.3, 0.3, 1.0],
             color_picker_tab: None,
             tab_colors: FxHashMap::default(),
-            tab_custom_titles: FxHashMap::default(),
             rename_input: String::new(),
             rename_caret_time: Instant::now(),
             drag: None,
@@ -433,11 +430,6 @@ impl Island {
             .drain()
             .map(|(i, v)| (Self::remap_index(i, from, to), v))
             .collect();
-        self.tab_custom_titles = self
-            .tab_custom_titles
-            .drain()
-            .map(|(i, v)| (Self::remap_index(i, from, to), v))
-            .collect();
         self.slide_springs = self
             .slide_springs
             .drain()
@@ -490,11 +482,6 @@ impl Island {
         };
         self.tab_colors = self
             .tab_colors
-            .drain()
-            .map(|(i, v)| (swap_key(i), v))
-            .collect();
-        self.tab_custom_titles = self
-            .tab_custom_titles
             .drain()
             .map(|(i, v)| (swap_key(i), v))
             .collect();
@@ -877,39 +864,43 @@ impl Island {
     }
 
     /// Toggle the color picker for a given tab index
-    pub fn toggle_color_picker(&mut self, tab_index: usize, current_title: &str) {
+    pub fn toggle_color_picker(
+        &mut self,
+        tab_index: usize,
+        current_title: &str,
+        context_manager: &mut ContextManager<EventProxy>,
+    ) {
         if self.color_picker_tab == Some(tab_index) {
-            self.apply_rename();
+            self.apply_rename(context_manager);
             self.color_picker_tab = None;
         } else {
             self.color_picker_tab = Some(tab_index);
             // Initialize rename input with custom title or current displayed title
-            self.rename_input = self
-                .tab_custom_titles
-                .get(&tab_index)
-                .cloned()
+            self.rename_input = context_manager
+                .custom_title(tab_index)
+                .map(str::to_string)
                 .unwrap_or_else(|| current_title.to_string());
             self.rename_caret_time = Instant::now();
         }
     }
 
     /// Close the color picker, applying any pending rename
-    pub fn close_color_picker(&mut self) {
+    pub fn close_color_picker(
+        &mut self,
+        context_manager: &mut ContextManager<EventProxy>,
+    ) {
         if self.color_picker_tab.is_some() {
-            self.apply_rename();
+            self.apply_rename(context_manager);
         }
         self.color_picker_tab = None;
     }
 
     /// Apply the rename input as a custom title for the current picker tab
-    fn apply_rename(&mut self) {
+    fn apply_rename(&mut self, context_manager: &mut ContextManager<EventProxy>) {
         if let Some(tab) = self.color_picker_tab {
             let trimmed = self.rename_input.trim().to_string();
-            if trimmed.is_empty() {
-                self.tab_custom_titles.remove(&tab);
-            } else {
-                self.tab_custom_titles.insert(tab, trimmed);
-            }
+            let title = (!trimmed.is_empty()).then_some(trimmed);
+            context_manager.set_custom_title(tab, title);
         }
     }
 
@@ -918,6 +909,7 @@ impl Island {
     pub fn handle_rename_input(
         &mut self,
         key_event: &rio_window::event::KeyEvent,
+        context_manager: &mut ContextManager<EventProxy>,
     ) -> bool {
         use rio_window::event::ElementState;
         use rio_window::keyboard::{Key, NamedKey};
@@ -937,7 +929,7 @@ impl Island {
             }
             Key::Named(NamedKey::Enter) => {
                 // Confirm — apply rename and close
-                self.apply_rename();
+                self.apply_rename(context_manager);
                 self.color_picker_tab = None;
             }
             Key::Named(NamedKey::Backspace) => {
@@ -966,6 +958,7 @@ impl Island {
         scale_factor: f32,
         window_width: f32,
         num_tabs: usize,
+        context_manager: &mut ContextManager<EventProxy>,
     ) -> bool {
         let picker_tab = match self.color_picker_tab {
             Some(t) => t,
@@ -989,7 +982,7 @@ impl Island {
         // Check if click is within picker vertical range
         if mouse_y_unscaled < picker_y || mouse_y_unscaled > picker_y + PICKER_HEIGHT {
             // Click outside picker — apply rename and close
-            self.apply_rename();
+            self.apply_rename(context_manager);
             self.color_picker_tab = None;
             return false;
         }
@@ -1012,7 +1005,7 @@ impl Island {
                 && mouse_y_unscaled <= swatch_y_end
             {
                 self.tab_colors.insert(picker_tab, *color);
-                self.apply_rename();
+                self.apply_rename(context_manager);
                 self.color_picker_tab = None;
                 return true;
             }
@@ -1027,7 +1020,7 @@ impl Island {
             && mouse_y_unscaled <= swatch_y_end
         {
             self.tab_colors.remove(&picker_tab);
-            self.apply_rename();
+            self.apply_rename(context_manager);
             self.color_picker_tab = None;
             return true;
         }
@@ -1250,8 +1243,8 @@ impl Island {
         tab_index: usize,
     ) -> String {
         // Custom user-set title takes priority
-        if let Some(custom) = self.tab_custom_titles.get(&tab_index) {
-            return custom.clone();
+        if let Some(custom) = context_manager.custom_title(tab_index) {
+            return custom.to_string();
         }
 
         if let Some(context_title) = context_manager.title(tab_index) {
@@ -1550,22 +1543,18 @@ mod tests {
     }
 
     #[test]
-    fn remap_tab_move_carries_colors_titles_and_picker() {
+    fn remap_tab_move_carries_colors_and_picker() {
         let mut island = test_island();
         let red = [1.0, 0.0, 0.0, 1.0];
         island.tab_colors.insert(1, red);
-        island.tab_custom_titles.insert(2, "work".into());
         island.color_picker_tab = Some(3);
 
-        // Tab 1 → 3 (rotate): color follows to 3, "work" shifts 2 → 1,
-        // picker shifts 3 → 2.
+        // Tab 1 → 3 (rotate): color follows to 3, picker shifts 3 → 2.
+        // (Custom titles now live on the tab itself, so they ride along in
+        // ContextManager, not here — see context::test::test_custom_title_*.)
         island.remap_tab_move(1, 3, 100.0);
         assert_eq!(island.tab_colors.get(&3), Some(&red));
         assert!(island.tab_colors.get(&1).is_none());
-        assert_eq!(
-            island.tab_custom_titles.get(&1).map(String::as_str),
-            Some("work")
-        );
         assert_eq!(island.color_picker_tab, Some(2));
 
         // Displaced tabs (now at 1 and 2) got slide springs of +width.
