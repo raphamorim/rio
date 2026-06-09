@@ -357,6 +357,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "baremetal"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9cac49f90014f62132579bce49ad56aeaba4ae582174dade1420e24ee01279b"
+dependencies = [
+ "bitflags 2.12.1",
+ "block-rs",
+ "core-graphics-types 0.2.0",
+ "foreign-types",
+ "log 0.4.32",
+ "objc",
+ "paste",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -465,12 +480,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "block"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a"
-
-[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -478,6 +487,12 @@ checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
 ]
+
+[[package]]
+name = "block-rs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be18a19ad1a48c5619f06160be5885df75586ecf17b61410bcfe94532fd8b53a"
 
 [[package]]
 name = "block2"
@@ -2658,21 +2673,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metal"
-version = "0.32.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00c15a6f673ff72ddcc22394663290f870fb224c1bfce55734a75c414150e605"
-dependencies = [
- "bitflags 2.12.1",
- "block",
- "core-graphics-types 0.2.0",
- "foreign-types",
- "log 0.4.32",
- "objc",
- "paste",
-]
-
-[[package]]
 name = "minicov"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4573,7 +4573,8 @@ version = "0.4.7"
 dependencies = [
  "approx",
  "ash",
- "block",
+ "baremetal",
+ "block-rs",
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
@@ -4602,7 +4603,6 @@ dependencies = [
  "librashader-runtime",
  "lru",
  "memmap2",
- "metal",
  "num-traits",
  "objc-rs 0.2.8",
  "parking_lot",
