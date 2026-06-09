@@ -1,94 +1,14 @@
 use crate::context::Context;
-use rustc_hash::FxHashMap;
 use std::path::Path;
-use std::time::Instant;
 
 pub struct ContextTitleExtra {
     pub program: String,
 }
 
+#[derive(Default)]
 pub struct ContextTitle {
     pub content: String,
     pub extra: Option<ContextTitleExtra>,
-}
-
-pub struct ContextManagerTitles {
-    pub last_title_update: Option<Instant>,
-    pub titles: FxHashMap<usize, ContextTitle>,
-    pub key: String,
-}
-
-impl ContextManagerTitles {
-    pub fn new(
-        idx: usize,
-        content: String,
-        extra: Option<ContextTitleExtra>,
-    ) -> ContextManagerTitles {
-        let key = format!("{idx}{content};");
-        let mut map = FxHashMap::default();
-        map.insert(idx, ContextTitle { content, extra });
-        ContextManagerTitles {
-            key,
-            titles: map,
-            last_title_update: None,
-        }
-    }
-
-    #[inline]
-    pub fn set_key_val(
-        &mut self,
-        idx: usize,
-        content: String,
-        extra: Option<ContextTitleExtra>,
-    ) {
-        self.titles.insert(idx, ContextTitle { content, extra });
-    }
-
-    #[inline]
-    pub fn set_key(&mut self, key: String) {
-        self.key = key;
-    }
-
-    #[inline]
-    pub fn swap_indices(&mut self, a: usize, b: usize) {
-        if a == b {
-            return;
-        }
-        let title_a = self.titles.remove(&a);
-        let title_b = self.titles.remove(&b);
-        if let Some(t) = title_a {
-            self.titles.insert(b, t);
-        }
-        if let Some(t) = title_b {
-            self.titles.insert(a, t);
-        }
-    }
-
-    #[inline]
-    pub fn move_index(&mut self, from: usize, to: usize) {
-        if from == to {
-            return;
-        }
-        let moved = self.titles.remove(&from);
-        if from < to {
-            // Tabs at from+1..=to shifted left by one.
-            for i in from + 1..=to {
-                if let Some(t) = self.titles.remove(&i) {
-                    self.titles.insert(i - 1, t);
-                }
-            }
-        } else {
-            // Tabs at to..from shifted right by one.
-            for i in (to..from).rev() {
-                if let Some(t) = self.titles.remove(&i) {
-                    self.titles.insert(i + 1, t);
-                }
-            }
-        }
-        if let Some(t) = moved {
-            self.titles.insert(to, t);
-        }
-    }
 }
 
 pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
@@ -459,58 +379,6 @@ pub mod test {
             update_title("{{ relative_path || title }}", &context),
             String::from("/rio-sandbox-test-dir"),
         );
-    }
-
-    fn titles_with(entries: &[(usize, &str)]) -> ContextManagerTitles {
-        let mut titles = ContextManagerTitles::new(0, String::new(), None);
-        titles.titles.clear();
-        for (idx, content) in entries {
-            titles.set_key_val(*idx, content.to_string(), None);
-        }
-        titles
-    }
-
-    fn contents(titles: &ContextManagerTitles, len: usize) -> Vec<String> {
-        (0..len)
-            .map(|i| {
-                titles
-                    .titles
-                    .get(&i)
-                    .map(|t| t.content.clone())
-                    .unwrap_or_default()
-            })
-            .collect()
-    }
-
-    #[test]
-    fn test_swap_indices() {
-        let mut titles = titles_with(&[(0, "a"), (1, "b"), (2, "c")]);
-        titles.swap_indices(0, 2);
-        assert_eq!(contents(&titles, 3), vec!["c", "b", "a"]);
-
-        // Swap with a missing entry moves the present one and clears the
-        // other slot.
-        let mut titles = titles_with(&[(0, "a")]);
-        titles.swap_indices(0, 1);
-        assert_eq!(contents(&titles, 2), vec!["", "a"]);
-    }
-
-    #[test]
-    fn test_move_index_forward_and_backward() {
-        // Rotate forward: 1 → 3 shifts 2 and 3 left by one.
-        let mut titles = titles_with(&[(0, "a"), (1, "b"), (2, "c"), (3, "d")]);
-        titles.move_index(1, 3);
-        assert_eq!(contents(&titles, 4), vec!["a", "c", "d", "b"]);
-
-        // Rotate backward: 3 → 0 shifts 0..3 right by one.
-        let mut titles = titles_with(&[(0, "a"), (1, "b"), (2, "c"), (3, "d")]);
-        titles.move_index(3, 0);
-        assert_eq!(contents(&titles, 4), vec!["d", "a", "b", "c"]);
-
-        // No-op.
-        let mut titles = titles_with(&[(0, "a"), (1, "b")]);
-        titles.move_index(1, 1);
-        assert_eq!(contents(&titles, 2), vec!["a", "b"]);
     }
 
     #[test]

@@ -1254,7 +1254,7 @@ impl Island {
             return custom.clone();
         }
 
-        if let Some(context_title) = context_manager.titles.titles.get(&tab_index) {
+        if let Some(context_title) = context_manager.title(tab_index) {
             if !context_title.content.is_empty() {
                 return context_title.content.clone();
             }
