@@ -3,28 +3,13 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-//! `text` — minimal immediate-mode text primitive for UI overlays.
-//!
-//! Replacement for sugarloaf's `Content` / `BuilderState` used by
-//! tab titles, command palette, search input, assistant, etc.
-//!
-//! Public API (`draw` / `measure`) is identical across platforms.
-//! On macOS the shape + rasterize backends are CoreText; everywhere
-//! else they're swash (ShapeContext / ScaleContext + Render).
-//! GPU backend is Metal on macOS and wgpu on other platforms.
-
+use crate::font::FontLibrary;
 use rustc_hash::FxHashMap;
 
-use crate::font::FontLibrary;
-
-//  GPU vertex data (platform-agnostic)
-
-/// Per-instance GPU vertex data for a UI text glyph.
-///
-/// `pos` is **pixel-space top-left** of the glyph's text bounding box.
-/// `bearings.x` shifts it right to the glyph bitmap's left edge;
-/// `bearings.y` shifts it down to the bitmap top. The vertex shader
-/// writes: `out_px = pos + bearings + quad_corner * glyph_size`.
+// `pos` is **pixel-space top-left** of the glyph's text bounding box.
+// `bearings.x` shifts it right to the glyph bitmap's left edge;
+// `bearings.y` shifts it down to the bitmap top. The vertex shader
+// writes: `out_px = pos + bearings + quad_corner * glyph_size`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TextInstance {
@@ -33,12 +18,12 @@ pub struct TextInstance {
     pub glyph_size: [u32; 2],
     pub bearings: [i16; 2],
     pub color: [u8; 4],
-    /// `0` = grayscale atlas; `1` = color atlas.
+    // `0` = grayscale atlas; `1` = color atlas.
     pub atlas: u8,
-    /// Index of the atlas page this glyph lives in. Used host-side by
-    /// the Vulkan overlay to bucket instances per (kind, page) and
-    /// bind the right page's descriptor set per draw; other backends
-    /// use a single texture and leave this at 0.
+    // Index of the atlas page this glyph lives in. Used host-side by
+    // the Vulkan overlay to bucket instances per (kind, page) and
+    // bind the right page's descriptor set per draw; other backends
+    // use a single texture and leave this at 0.
     pub page: u8,
     pub _pad: [u8; 2],
 }
@@ -46,18 +31,16 @@ pub struct TextInstance {
 // 36 bytes (4-aligned). f32 pos (vs grid's u16 grid_pos) adds 4 bytes.
 const _: () = assert!(std::mem::size_of::<TextInstance>() == 36);
 
-//  Public draw options
-
 #[derive(Clone, Copy, Debug)]
 pub struct DrawOpts {
-    /// **Logical** (unscaled) font size. Text multiplies by its
-    /// stored `scale_factor` internally before shaping / rasterizing.
+    // unscaled font size. Text multiplies by its
+    // stored `scale_factor` internally before shaping / rasterizing.
     pub font_size: f32,
-    /// Non-premultiplied RGBA. Shader premultiplies.
+    // non-premultiplied RGBA. Shader premultiplies.
     pub color: [u8; 4],
     pub bold: bool,
     pub italic: bool,
-    /// `None` → primary font.
+    // if doesn't have, should use primary font.
     pub font_id: Option<usize>,
 }
 
@@ -73,15 +56,8 @@ impl Default for DrawOpts {
     }
 }
 
-//  Shape result — unified across platforms
-
-/// One shaped glyph in a run. Same shape on macOS (CoreText) and
-/// non-macOS (swash) so the emit loop doesn't care which backend
-/// produced it. `cluster` is a UTF-8 byte offset into the run string —
-/// held for a future ligature / multi-cell mapping pass (current emit
-/// just walks glyphs linearly with a pen-x advance).
 #[derive(Clone, Copy, Debug)]
-#[allow(dead_code)]
+#[allow(unused)]
 struct ShapedGlyph {
     id: u16,
     x: f32,
@@ -90,9 +66,8 @@ struct ShapedGlyph {
     cluster: u32,
 }
 
-/// A fully-shaped run with everything the emit step needs.
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // Some fields only read from one cfg path.
+#[allow(unused)]
 struct ShapedRun {
     font_id: u32,
     size_u16: u16,
@@ -120,8 +95,6 @@ fn shape_hash(font_id: u32, size_bucket: u16, style_flags: u8, text: &str) -> u6
     h.finish()
 }
 
-//  Per-OS GPU state
-
 #[cfg(target_os = "macos")]
 struct TextMetalState {
     device: metal::Device,
@@ -133,10 +106,6 @@ struct TextMetalState {
     instance_capacity: usize,
 }
 
-// On macOS the wgpu text path is never selected (we always go through
-// Metal — see `sugarloaf.rs:1399`'s `cfg(not(target_os = "macos"))`).
-// Excluding the struct from the macOS build keeps the unused atlases
-// from tripping `dead_code` and shrinks `Text` by one Option field.
 #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
 struct TextWgpuState {
     device: wgpu::Device,
@@ -153,11 +122,6 @@ struct TextWgpuState {
     instance_capacity: usize,
 }
 
-/// Software backend state for the UI text overlay. Mirrors the
-/// shape of `TextMetalState` / `TextWgpuState` / `TextVulkanState`
-/// (two atlases — grayscale + color) but the atlases are RAM-backed.
-/// Always available; populated by `Text::init_cpu` when the active
-/// sugarloaf context is `ContextType::Cpu`.
 struct TextCpuState {
     atlas_grayscale: crate::grid::cpu::CpuGridAtlas,
     atlas_color: crate::grid::cpu::CpuGridAtlas,
@@ -165,33 +129,17 @@ struct TextCpuState {
 
 #[cfg(target_os = "linux")]
 struct TextVulkanState {
-    /// Shared device handle. See `crate::context::vulkan::VkShared`
-    /// — the Arc keeps `vkDestroyDevice` from running until every
-    /// per-resource holder (this state, atlases, buffers, the
-    /// per-panel grid renderers in `Screen.grids`) is dropped.
     shared: std::sync::Arc<crate::context::vulkan::VkShared>,
-    /// Independent atlases owned by the UI text overlay — separate
-    /// from each `VulkanGridRenderer`'s atlases so an overlay glyph
-    /// doesn't have to compete for grid atlas space (and vice versa).
-    /// Same shape as the macOS / wgpu paths.
     atlas_grayscale: crate::grid::vulkan::VulkanGlyphAtlas,
     atlas_color: crate::grid::vulkan::VulkanGlyphAtlas,
-    /// Single sampler shared by both atlases. We only `texelFetch`,
-    /// so the sampler's filter / address mode don't matter — it just
-    /// has to exist for the COMBINED_IMAGE_SAMPLER descriptor.
     sampler: ash::vk::Sampler,
     uniform_buffers:
         [crate::context::vulkan::VulkanBuffer; crate::context::vulkan::FRAMES_IN_FLIGHT],
-    /// Per-slot ring of instance buffers. Grow on demand, never shrink.
     instance_buffers: [Option<crate::context::vulkan::VulkanBuffer>;
         crate::context::vulkan::FRAMES_IN_FLIGHT],
     instance_capacity: [usize; crate::context::vulkan::FRAMES_IN_FLIGHT],
     descriptor_pool: ash::vk::DescriptorPool,
     uniform_descriptor_set_layout: ash::vk::DescriptorSetLayout,
-    /// Layout for one atlas page's descriptor set (a single combined
-    /// image+sampler at binding 0). Shared across all pages of both
-    /// atlases — atlases allocate per-page sets from `descriptor_pool`
-    /// against this layout on demand inside `insert`.
     atlas_descriptor_set_layout: ash::vk::DescriptorSetLayout,
     uniform_descriptor_sets:
         [ash::vk::DescriptorSet; crate::context::vulkan::FRAMES_IN_FLIGHT],
@@ -200,43 +148,15 @@ struct TextVulkanState {
     pipeline: ash::vk::Pipeline,
 }
 
-//  Text — the immediate-mode recorder owned by Sugarloaf
-
 pub struct Text {
-    /// Per-frame GPU instances, assembled inside `draw()` and drawn
-    /// by the render-pass hook.
     instances: Vec<TextInstance>,
-
-    /// Scale factor used to convert caller-supplied logical coords /
-    /// font sizes to device pixels. Updated by `Sugarloaf::new` /
-    /// `rescale`; defaults to 1.0.
     scale_factor: f32,
-
-    // shared state across both OS paths
     font_library: FontLibrary,
-
-    /// `(char, style_flags) → (font_id, is_emoji)` — first-char font
-    /// resolution for a run.
     font_resolve: FxHashMap<(char, u8), (u32, bool)>,
-
-    /// `font_id → (should_embolden, should_italicize)` from
-    /// `FontData` load-time synthesis flags (parallel to the rich-text
-    /// rasterizer's use of the same fields).
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
-
-    /// `font_id → wght axis value` for variable-font fallback faces.
-    /// On macOS the variation is baked into the CTFont handle directly,
-    /// so this cache is only consulted on the swash path. `None` (cache
-    /// miss or stored `None`) means "use the default instance".
     #[cfg(not(target_os = "macos"))]
     wght_variation_cache: FxHashMap<u32, Option<f32>>,
-
-    /// `(font_id, size_bucket) → ascent_px`. Used to compute
-    /// `bearing_y` at rasterize time.
     ascent_cache: FxHashMap<(u32, u16), i16>,
-
-    /// Position-independent shape cache. Hash of
-    /// `(font_id, size_bucket, style_flags, text)` → shaped run.
     shape_cache: FxHashMap<u64, ShapedRun>,
 
     #[cfg(target_os = "macos")]
@@ -248,16 +168,12 @@ pub struct Text {
     shape_ctx: swash::shape::ShapeContext,
     #[cfg(not(target_os = "macos"))]
     scale_ctx: swash::scale::ScaleContext,
-    /// Cached `(shared_data, offset, cache_key)` per font_id so the
-    /// `FontLibraryData` read-lock isn't re-acquired per shape.
     #[cfg(not(target_os = "macos"))]
     font_data_cache: FxHashMap<u32, (crate::font::SharedData, u32, swash::CacheKey)>,
     #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
     wgpu: Option<TextWgpuState>,
     #[cfg(target_os = "linux")]
     vulkan: Option<TextVulkanState>,
-    /// Software backend. Initialised by `init_cpu` when the
-    /// surrounding sugarloaf context is `ContextType::Cpu`.
     cpu: Option<TextCpuState>,
 }
 
@@ -325,8 +241,6 @@ impl Text {
         &self.instances
     }
 
-    //  Public draw API
-
     /// Draw `text` at logical top-left `(x, y)` with `opts`. Returns
     /// rendered width in **logical** pixels.
     pub fn draw(&mut self, x: f32, y: f32, text: &str, opts: &DrawOpts) -> f32 {
@@ -351,8 +265,6 @@ impl Text {
             .map(|r| shaped_width(&r) / self.scale_factor)
             .unwrap_or(0.0)
     }
-
-    //  Shape pipeline — shared cache + cfg-gated backend call
 
     fn shape_for(&mut self, text: &str, opts: &DrawOpts) -> Option<ShapedRun> {
         use crate::{Attributes, SpanStyle, Stretch, Style as FontStyle, Weight};
@@ -380,16 +292,8 @@ impl Text {
                     FontStyle::Normal
                 };
                 ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
-                #[cfg(target_os = "macos")]
                 let resolved =
                     self.font_library.resolve_font_for_char(first_ch, &ss, None);
-
-                #[cfg(not(target_os = "macos"))]
-                let resolved = {
-                    let lib = self.font_library.inner.read();
-                    lib.find_best_font_match(first_ch, &ss, None)
-                        .unwrap_or((0, false))
-                };
                 let v = (resolved.0 as u32, resolved.1);
                 e.insert(v);
                 v
