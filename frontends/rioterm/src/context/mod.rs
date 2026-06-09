@@ -347,7 +347,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         scaled_margin: Margin,
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
-        let mut initial_context = match ContextManager::create_context(
+        let initial_context = match ContextManager::create_context(
             cursor_state,
             event_proxy.clone(),
             window_id,
@@ -378,10 +378,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 )
             }
         };
-
-        // First tab shows a placeholder until the shell sets a title (or
-        // the first `update_titles` tick computes one).
-        initial_context.title.content = String::from("tab");
 
         // Sugarloaf has found errors and context need to notify it for the user
         if let Some(errors) = sugarloaf_errors {
@@ -708,10 +704,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.contexts.len()
     }
 
-    /// Title of the tab at `index`, read from its active split panel
-    /// (`current()`). Tracks tab position automatically: the title lives
-    /// on the panel, so it rides along on every reorder/close with no
-    /// separate bookkeeping.
     #[inline]
     pub fn title(&self, index: usize) -> Option<&ContextTitle> {
         self.contexts.get(index).map(|grid| &grid.current().title)
@@ -754,8 +746,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             .unwrap_or(true)
         {
             self.last_title_update = Some(Instant::now());
-            // Only the active split of each tab is ever displayed, so we
-            // refresh just `current()` and store the title on that panel.
             for grid in self.contexts.iter_mut() {
                 let content = update_title(&self.config.title.content, grid.current());
 
