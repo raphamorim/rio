@@ -16,8 +16,8 @@ use std::io;
 pub struct Winsize {
     ws_row: libc::c_ushort,
     ws_col: libc::c_ushort,
-    ws_width: libc::c_ushort,
-    ws_height: libc::c_ushort,
+    ws_xpixel: libc::c_ushort,
+    ws_ypixel: libc::c_ushort,
 }
 
 pub trait ProcessReadWrite {
@@ -72,14 +72,14 @@ impl WinsizeBuilder {
     fn build(&self) -> Winsize {
         let ws_row = self.rows as libc::c_ushort;
         let ws_col = self.cols as libc::c_ushort;
-        let ws_width = self.width as libc::c_ushort;
-        let ws_height = self.height as libc::c_ushort;
+        let ws_xpixel = self.width as libc::c_ushort;
+        let ws_ypixel = self.height as libc::c_ushort;
 
         Winsize {
             ws_row,
             ws_col,
-            ws_width,
-            ws_height,
+            ws_xpixel,
+            ws_ypixel,
         }
     }
 }

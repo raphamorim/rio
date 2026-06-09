@@ -122,8 +122,8 @@ pub fn new(
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
         ws_col: columns as libc::c_ushort,
-        ws_width: 0 as libc::c_ushort,
-        ws_height: 0 as libc::c_ushort,
+        ws_xpixel: 0 as libc::c_ushort,
+        ws_ypixel: 0 as libc::c_ushort,
     };
 
     // Create the Pseudo Console, using the pipes.
