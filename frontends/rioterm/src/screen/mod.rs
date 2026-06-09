@@ -1106,6 +1106,9 @@ impl Screen<'_> {
                             return true;
                         }
                         self.context_manager.close_unfocused_tabs();
+                        if let Some(ref mut island) = self.renderer.island {
+                            island.dismiss_color_picker();
+                        }
                         self.resize_top_or_bottom_line(1);
                         self.mark_dirty();
                     }
@@ -1502,6 +1505,9 @@ impl Screen<'_> {
         self.clear_selection();
         self.context_manager
             .close_current_context(&mut self.sugarloaf);
+        if let Some(ref mut island) = self.renderer.island {
+            island.dismiss_color_picker();
+        }
 
         self.cancel_search(clipboard);
         if self.ctx().len() <= 1 {
@@ -3378,6 +3384,9 @@ impl Screen<'_> {
             PaletteAction::TabCloseUnfocused => {
                 if self.ctx().len() > 1 {
                     self.context_manager.close_unfocused_tabs();
+                    if let Some(ref mut island) = self.renderer.island {
+                        island.dismiss_color_picker();
+                    }
                     self.resize_top_or_bottom_line(1);
                 }
             }
