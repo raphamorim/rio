@@ -130,13 +130,6 @@ pub fn create_window_builder(
                         TRAFFIC_LIGHT_PADDING,
                         TRAFFIC_LIGHT_PADDING,
                     )
-                    // The island tab strip lives inside the transparent
-                    // titlebar band; AppKit's automatic titlebar dragging
-                    // would swallow tab drag-reorder there (the value is
-                    // cached at view install, so it can't be toggled per
-                    // press). Window dragging in the band is re-added
-                    // manually via `drag_window()` for the areas outside
-                    // the tabs.
                     .with_mouse_down_can_move_window(false);
             }
         }

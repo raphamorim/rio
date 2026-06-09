@@ -110,8 +110,7 @@ pub struct ContextGrid<T: EventListener> {
     pub height: f32,
     pub current: NodeId,
     pub scaled_margin: Margin,
-    /// User-set title override for this tab (renamed via the tab strip).
-    /// Takes priority over the active panel's computed title.
+    // custom_title has priority over the active panel's computed title.
     pub custom_title: Option<String>,
     scale: f32,
     inner: FxHashMap<NodeId, ContextGridItem<T>>,

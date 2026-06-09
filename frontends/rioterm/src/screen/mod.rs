@@ -75,28 +75,9 @@ pub struct Screen<'screen> {
     last_ime_cursor_pos: Option<(f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
     pub resize_state: Option<crate::layout::ResizeState>,
-    /// Whether this window was CREATED with AppKit titlebar dragging
-    /// disabled (`with_mouse_down_can_move_window(false)`) — i.e. with
-    /// island navigation enabled. The AppKit side is cached at view
-    /// install and cannot change afterwards, so manual `drag_window()`
-    /// restores and drag-reorder arming must follow this creation-time
-    /// value, NOT the live config (which a runtime reload can flip).
     #[cfg(target_os = "macos")]
-    pub band_drag_manual: bool,
-    /// Per-panel `GridRenderer`, keyed by `route_id`. Lazily created
-    /// on first render of each panel so construction (which compiles
-    /// the Metal/WGSL shaders and builds pipeline states) runs once
-    /// per panel lifetime. Removed when the panel closes.
-    ///
-    /// Phase 2.0: the grids are constructed and kept in sync with
-    /// panel layout, but `sugarloaf.render_with_grids` is still
-    /// called with an empty slice — so behavior is unchanged and
-    /// this only validates that the shaders compile on real
-    /// hardware. Phase 2.1/2.2 flip the switch.
+    pub allow_manual_dragging: bool,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
-    /// Per-window glyph rasterizer shared across panels. Owns a
-    /// char → font resolution cache; the per-panel atlas lives on
-    /// each `GridRenderer`.
     pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
 }
 
@@ -108,13 +89,6 @@ pub struct ScreenWindowProperties {
     pub window_id: rio_window::window::WindowId,
 }
 
-/// Whether the render surface should run in macOS compositor's
-/// opaque-window fast path. Non-opaque iff the user actually
-/// configured transparency (`window.opacity < 1`) or a glass
-/// background effect — system blur on its own is not enough, since
-/// without `opacity < 1` there's nothing transparent for the blur to
-/// read through, so we keep the fast path for that case. Default =
-/// opaque.
 #[inline]
 fn window_should_be_opaque(config: &rio_backend::config::Config) -> bool {
     config.window.opacity >= 1.0 && !config.window.blur.is_glass()
@@ -238,20 +212,13 @@ impl Screen<'_> {
             scrollback_history_limit: config.scrollback_history_limit,
         };
 
-        // Allocate a rich_text_id for the new panel. Sugarloaf no
-        // longer tracks per-id panel metadata — position/bounds live
-        // on `ContextDimension` via rio's layout system; the id is
-        // still useful as a key for image_overlays + grid renderers.
         let rich_text_id = next_rich_text_id();
-
-        // Create unscaled margin for ContextDimension (compute() will scale it)
         let margin = Margin::new(
             padding_y_top,
             config.margin.right,
             padding_y_bottom,
             config.margin.left,
         );
-        // Create scaled margin for ContextGrid (already in physical pixels)
         let scaled_margin = Margin::new(
             padding_y_top * scale as f32,
             config.margin.right * scale as f32,
@@ -293,13 +260,7 @@ impl Screen<'_> {
             sugarloaf_errors,
         )?;
 
-        // Window is opaque (compositor fast path) unless the user
-        // actually configured transparency. The render surface can
-        // hold per-pixel alpha either way — see `cell_bg` in
-        // `grid_emit.rs` — but flipping the layer to non-opaque is
-        // what makes the OS treat those alpha bits as see-through.
         sugarloaf.set_window_opaque(window_should_be_opaque(config));
-
         sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
 
         if let Some(image) = &config.window.background_image {
@@ -333,18 +294,13 @@ impl Screen<'_> {
             last_ime_cursor_pos: None,
             resize_state: None,
             #[cfg(target_os = "macos")]
-            band_drag_manual: config.navigation.is_enabled(),
+            allow_manual_dragging: config.navigation.is_enabled(),
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
         })
     }
 
-    /// Ensure a `GridRenderer` exists for `route_id` with the given
-    /// dimensions. Lazily constructs on first call, resizes on
-    /// subsequent calls when `(cols, rows)` change. Phase 2.0: the
-    /// returned grid isn't yet bound into `render_with_grids`, so
-    /// this is a smoke-test for shader compilation and pipeline
-    /// creation on real hardware.
+    #[inline]
     pub fn ensure_grid(&mut self, route_id: usize, cols: u32, rows: u32) {
         use std::collections::hash_map::Entry;
         match self.grids.entry(route_id) {
@@ -359,19 +315,6 @@ impl Screen<'_> {
         }
     }
 
-    /// Discard the grid for a panel that has closed. Frees the GPU
-    /// buffers + pipeline state. Wired into the context-close path
-    /// in Phase 2.1; kept `#[allow(dead_code)]` for Phase 2.0 so the
-    /// method is available without failing the warnings-as-errors
-    /// build.
-    #[allow(dead_code)]
-    pub fn drop_grid(&mut self, route_id: usize) {
-        self.grids.remove(&route_id);
-        // The per-context viewport buffers (visible_rows, style_table,
-        // extras_table) live on `RenderableContent` and drop with the
-        // context itself.
-    }
-
     #[inline]
     pub fn ctx(&self) -> &ContextManager<EventProxy> {
         &self.context_manager
@@ -382,19 +325,6 @@ impl Screen<'_> {
         &mut self.context_manager
     }
 
-    /// Mark the active context dirty. Replaces synchronous
-    /// `self.render()` calls scattered through keyboard / mouse / VI /
-    /// search / hint handlers — those used to force an immediate
-    /// render, which bypassed vsync. With the damage system, the
-    /// caller in `application.rs` already requests a redraw after the
-    /// handler returns, and the next vsync fires `RedrawRequested`
-    /// which consumes the dirty flag. UI-only: terminal cells didn't
-    /// change, so no row rebuild is needed — the `(None, None) =>
-    /// TerminalDamage::Noop` branch in `Renderer::run` keeps the
-    /// panel in the render set without re-emitting rows.
-    ///
-    /// Terminal-content changes (scroll, selection band, PTY output)
-    /// still flow through `set_terminal_damage` on their own paths.
     #[inline]
     pub fn mark_dirty(&mut self) {
         self.context_manager
@@ -437,9 +367,6 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (context, margin) = current_grid.current_context_with_computed_dimension();
         let context_dimension = context.dimension;
-        // Canonical integer cell stride — `cell.cell_height` already
-        // has line_height baked in by sugarloaf, do NOT re-multiply.
-        // Single source of truth shared with the GPU grid uniform.
         calculate_mouse_position(
             &self.mouse,
             display_offset,
@@ -2618,10 +2545,7 @@ impl Screen<'_> {
             .is_some()
     }
 
-    /// Tab strip layout shared by island hit-testing and drag handling:
-    /// `(left_margin, available_width, tab_width)`, all in logical px.
-    /// Thin adapter over the single source of truth in
-    /// `island::tab_strip_layout` (the same math `Island::render` uses).
+    #[inline]
     fn island_tab_layout(&self, num_tabs: usize) -> (f32, f32, f32) {
         let layout = crate::renderer::island::tab_strip_layout(
             self.sugarloaf.window_size().width,
@@ -2631,12 +2555,6 @@ impl Screen<'_> {
         (layout.left_margin, layout.available_width, layout.tab_width)
     }
 
-    /// Hand the current press to AppKit as a window drag, releasing the
-    /// latched button state first — `performWindowDragWithEvent` may
-    /// swallow the matching mouse-up (winit: "macOS: May prevent the
-    /// button release event to be triggered"), which would otherwise
-    /// leave `left_button_state` stuck at `Pressed` and spuriously arm
-    /// selection auto-scroll later.
     #[cfg(target_os = "macos")]
     pub fn start_window_drag(&mut self, window: &rio_window::window::Window) {
         self.mouse.left_button_state = ElementState::Released;
@@ -2717,12 +2635,12 @@ impl Screen<'_> {
 
         let mouse_x_unscaled = mouse_x as f32 / scale_factor;
 
-        // Automatic titlebar dragging is disabled for island windows
+        // Note: automatic titlebar dragging is disabled for island windows
         // (`with_mouse_down_can_move_window(false)`), so left presses on
         // the band margins outside the tabs hand the drag back to AppKit.
         if mouse_x_unscaled < left_margin {
             #[cfg(target_os = "macos")]
-            if !is_right_click && self.band_drag_manual {
+            if !is_right_click && self.allow_manual_dragging {
                 self.start_window_drag(window);
             }
             return true;
@@ -2733,19 +2651,15 @@ impl Screen<'_> {
 
         if clicked_tab >= num_tabs {
             #[cfg(target_os = "macos")]
-            if !is_right_click && self.band_drag_manual {
+            if !is_right_click && self.allow_manual_dragging {
                 self.start_window_drag(window);
             }
             return true;
         }
 
-        // Command + left-drag on a tab moves the window (macOS titlebar
-        // convention) instead of selecting/reordering. When the window
-        // was created without manual band dragging, AppKit's automatic
-        // titlebar drag already handles it — just consume the click.
         #[cfg(target_os = "macos")]
         if !is_right_click && self.modifiers.state().super_key() {
-            if self.band_drag_manual {
+            if self.allow_manual_dragging {
                 self.start_window_drag(window);
             }
             return true;
@@ -2806,13 +2720,8 @@ impl Screen<'_> {
             }
         }
 
-        // Arm a tab drag (reorder) — it only activates once the pointer
-        // moves past the drag threshold (see `Island::update_drag`).
-        // On macOS this requires the window to have been created with
-        // AppKit titlebar dragging disabled; otherwise AppKit moves the
-        // window on the same gesture and fights the reorder.
         #[cfg(target_os = "macos")]
-        let can_reorder = self.band_drag_manual;
+        let can_reorder = self.allow_manual_dragging;
         #[cfg(not(target_os = "macos"))]
         let can_reorder = true;
         if num_tabs > 1 && can_reorder {
@@ -2829,9 +2738,6 @@ impl Screen<'_> {
         true
     }
 
-    /// Drive an in-progress island tab drag: update the floating tab's
-    /// position and live-reorder the moment its center crosses into
-    /// another slot (Chrome-style commit-as-you-go).
     pub fn handle_tab_drag_move(&mut self, x_unscaled: f32) {
         let num_tabs = self.context_manager.len();
 
@@ -2848,7 +2754,8 @@ impl Screen<'_> {
         let (drag_idx, center) = match self.renderer.island.as_mut() {
             Some(island) => {
                 if !island.update_drag(x_unscaled) {
-                    return; // armed but still below the drag threshold
+                    // armed but still below the drag threshold
+                    return;
                 }
                 match (
                     island.drag_index(),
@@ -2862,10 +2769,6 @@ impl Screen<'_> {
         };
 
         let old_index = self.context_manager.current_index();
-
-        // Keyboard activity mid-drag (new tab, keybinding reorder) makes
-        // the armed index stale — drop the drag rather than move the
-        // wrong tab.
         if drag_idx != old_index {
             if let Some(ref mut island) = self.renderer.island {
                 island.cancel_drag();
@@ -2890,9 +2793,6 @@ impl Screen<'_> {
         self.mark_dirty();
     }
 
-    /// Finish (or disarm) an island tab drag on mouse release. Returns
-    /// `true` if a drag had actually started — a sub-threshold press
-    /// stays a plain click and isn't consumed here.
     pub fn handle_tab_drag_release(&mut self) -> bool {
         let num_tabs = self.context_manager.len();
         let (left_margin, available_width, tab_width) = self.island_tab_layout(num_tabs);
@@ -3298,10 +3198,6 @@ impl Screen<'_> {
     #[inline]
     pub fn on_focus_change(&mut self, is_focused: bool) {
         if !is_focused {
-            // The matching mouse-up goes to whoever stole focus — drop
-            // any armed/active tab drag and the latched button state so
-            // re-entry doesn't keep dragging (or auto-scrolling) with no
-            // button held.
             if let Some(ref mut island) = self.renderer.island {
                 if island.is_dragging() {
                     island.cancel_drag();
@@ -3577,26 +3473,7 @@ impl Screen<'_> {
         }
     }
 
-    /// The single entry point that actually draws to the GPU.
-    ///
-    /// Only `WindowEvent::RedrawRequested` in `application.rs` is
-    /// allowed to call this — everything else in the crate goes
-    /// through the damage system: mark `pending_update` via
-    /// `mark_dirty` / `set_terminal_damage` and call
-    /// `route.request_redraw()`. The next CVDisplayLink tick fires
-    /// `RedrawRequested` which consumes the damage here. `pub(crate)`
-    /// enforces that contract — external callers (plugins, tests)
-    /// can't force a render outside the vsync-paced path.
     pub(crate) fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
-        // Phase 2.0 smoke test: ensure the active panel has a
-        // `GridRenderer`. This forces `MetalGridRenderer::new` /
-        // `WgpuGridRenderer::new` to actually run on real hardware,
-        // which is when the Metal shader compiler + wgpu pipeline
-        // creator first see our shader source. Any shader syntax
-        // error here becomes a startup panic rather than a silent
-        // failure later. Nothing is rendered *through* the grid yet
-        // — `sugarloaf.render()` is still called with no grids
-        // slice below.
         let current_route = self.context_manager.current_route();
         let (grid_cols, grid_rows) = {
             let terminal = self.context_manager.current().terminal.lock();
