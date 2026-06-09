@@ -665,8 +665,7 @@ impl Island {
             // floating tab intrudes past the slot's text padding (the
             // widest a centered title can reach).
             let hidden_by_drag = floating_left.is_some_and(|fl| {
-                let overlap =
-                    (tab_x + tab_width).min(fl + tab_width) - tab_x.max(fl);
+                let overlap = (tab_x + tab_width).min(fl + tab_width) - tab_x.max(fl);
                 overlap > TAB_PADDING_X
             });
 
