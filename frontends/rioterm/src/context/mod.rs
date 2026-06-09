@@ -233,6 +233,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let route_id = ROUTE_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
         let cols: u16 = dimension.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
         let rows: u16 = dimension.lines.try_into().unwrap_or(MIN_LINES as u16);
+        #[cfg(not(target_os = "windows"))]
+        let initial_winsize = crate::renderer::utils::terminal_dimensions(&dimension);
 
         let mut terminal = Crosswords::new(
             dimension,
@@ -254,6 +256,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     &Cow::Borrowed(&config.shell.program),
                     cols,
                     rows,
+                    initial_winsize.width,
+                    initial_winsize.height,
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
@@ -269,6 +273,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     &config.working_dir,
                     cols,
                     rows,
+                    initial_winsize.width,
+                    initial_winsize.height,
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
