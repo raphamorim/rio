@@ -2677,6 +2677,7 @@ impl Screen<'_> {
                     scale_factor,
                     window_width,
                     num_tabs,
+                    &mut self.context_manager,
                 );
                 if consumed {
                     self.mark_dirty();
@@ -2690,7 +2691,7 @@ impl Screen<'_> {
             // Close picker if clicking outside
             if let Some(ref mut island) = self.renderer.island {
                 if island.is_color_picker_open() {
-                    island.close_color_picker();
+                    island.close_color_picker(&mut self.context_manager);
                     self.mark_dirty();
                 }
             }
@@ -2771,7 +2772,11 @@ impl Screen<'_> {
                 })
                 .unwrap_or_else(|| String::from("~"));
             if let Some(ref mut island) = self.renderer.island {
-                island.toggle_color_picker(clicked_tab, &current_title);
+                island.toggle_color_picker(
+                    clicked_tab,
+                    &current_title,
+                    &mut self.context_manager,
+                );
                 self.mark_dirty();
             }
             return true;
@@ -2796,7 +2801,7 @@ impl Screen<'_> {
         // Close picker on normal click
         if let Some(ref mut island) = self.renderer.island {
             if island.is_color_picker_open() {
-                island.close_color_picker();
+                island.close_color_picker(&mut self.context_manager);
                 self.mark_dirty();
             }
         }
