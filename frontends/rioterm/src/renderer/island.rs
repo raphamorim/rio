@@ -15,65 +15,65 @@ use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::time::Instant;
 
-/// Convert `[f32; 4]` colour to `[u8; 4]` for the `Text` API.
-#[inline]
-fn color_u8(c: [f32; 4]) -> [u8; 4] {
-    [
-        (c[0].clamp(0.0, 1.0) * 255.0) as u8,
-        (c[1].clamp(0.0, 1.0) * 255.0) as u8,
-        (c[2].clamp(0.0, 1.0) * 255.0) as u8,
-        (c[3].clamp(0.0, 1.0) * 255.0) as u8,
-    ]
-}
-
-/// Height of the tab bar in pixels
 pub const ISLAND_HEIGHT: f32 = 34.0;
-
-/// Height of the progress bar in pixels
 const PROGRESS_BAR_HEIGHT: f32 = 3.0;
 
-/// Timeout in seconds for auto-dismissing stale progress bars
 const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
-
 const TITLE_FONT_SIZE: f32 = 12.0;
 
-/// Left/right padding inside each tab — kept as breathing room around the
-/// title text so it never butts against the tab separator lines.
 const TAB_PADDING_X: f32 = 24.0;
-
-/// Suffix used when truncating a title that doesn't fit in its tab.
 const TITLE_ELLIPSIS: char = '…';
-
-/// Horizontal movement (logical px) before a pressed tab becomes a drag.
 const DRAG_THRESHOLD: f32 = 4.0;
-
-/// Animation duration (seconds) for tabs sliding into their slot during
-/// and after a drag.
 const DRAG_ANIMATION_LENGTH: f32 = 0.15;
-
-/// Cap on per-frame dt fed to the slide springs, so a long gap between
-/// frames doesn't make them settle in a single step.
 const DRAG_MAX_DT: f32 = 0.05;
+pub const ISLAND_MARGIN_RIGHT: f32 = 8.0;
 
-/// State of an in-progress tab drag.
+/// Color picker constants
+const PICKER_SWATCH_SIZE: f32 = 18.0;
+const PICKER_SWATCH_GAP: f32 = 4.0;
+const PICKER_PADDING: f32 = 6.0;
+const PICKER_INPUT_HEIGHT: f32 = 26.0;
+const PICKER_INPUT_FONT_SIZE: f32 = 12.0;
+const PICKER_INPUT_MARGIN_TOP: f32 = 8.0;
+const PICKER_TOP_PADDING: f32 = 4.0;
+const PICKER_HEIGHT: f32 = PICKER_TOP_PADDING
+    + PICKER_SWATCH_SIZE
+    + PICKER_PADDING * 2.0
+    + PICKER_INPUT_MARGIN_TOP
+    + PICKER_INPUT_HEIGHT
+    + PICKER_PADDING;
+const PICKER_COLORS: [[f32; 4]; 6] = [
+    // red
+    [0.86, 0.26, 0.27, 1.0],
+    // orange
+    [0.90, 0.57, 0.22, 1.0],
+    // yellow
+    [0.85, 0.78, 0.25, 1.0],
+    // green
+    [0.34, 0.70, 0.38, 1.0],
+    // blue
+    [0.30, 0.55, 0.85, 1.0],
+    // purple
+    [0.68, 0.40, 0.80, 1.0],
+];
+
+/// Left margin on macOS to account for traffic light buttons
+#[cfg(target_os = "macos")]
+pub const ISLAND_MARGIN_LEFT_MACOS: f32 = 76.0;
+
 struct TabDrag {
-    /// Index of the dragged tab — follows the tab as it reorders.
+    // Index of the dragged tab, follows the tab as it reorders.
     tab_index: usize,
-    /// Mouse x at press (unscaled), for the drag threshold.
+    // Mouse x at press (unscaled), for the drag threshold.
     press_x: f32,
-    /// press_x − tab_left_x, keeps the grab point under the cursor.
+    // press_x − tab_left_x, keeps the grab point under the cursor.
     grab_offset: f32,
-    /// Latest unscaled mouse x.
+    // Latest unscaled mouse x.
     current_x: f32,
-    /// True once movement exceeded `DRAG_THRESHOLD`.
+    // True once movement exceeded `DRAG_THRESHOLD`.
     started: bool,
 }
 
-/// Truncate `title` to fit within `max_width` pixels at the tab font,
-/// appending `…` when characters have to be dropped. Thin adapter that
-/// asks sugarloaf's cached glyph advance for each char. Returns
-/// `Cow::Borrowed(title)` when the full string fits so the common
-/// "no truncation needed" path avoids allocating.
 fn fit_title_to_width<'a>(
     sugarloaf: &mut Sugarloaf,
     title: &'a str,
@@ -85,23 +85,6 @@ fn fit_title_to_width<'a>(
     })
 }
 
-/// Pure-logic truncation: walks `title` left to right, summing per-char
-/// widths from the supplied closure, appending `…` the first moment the
-/// running total would exceed `max_width`. Separated from sugarloaf so
-/// tests can feed synthetic widths without a GPU context.
-///
-/// Returns `Cow::Borrowed(title)` when the full string fits, so the
-/// hot "no truncation needed" path does zero allocation.
-///
-/// `max_width <= 0.0` falls through the loop naturally: the first
-/// char's accumulated width already exceeds the budget, `truncate_ix`
-/// stays 0, and we return just `"…"` — a consistent sentinel that
-/// at least signals "there was content here". Empty input returns
-/// `Cow::Borrowed("")`.
-///
-/// Approximate (isolated per-char advances — no kerning, no ligatures,
-/// no emoji cluster formation). Fine for short labels where a pixel or
-/// two of slack is invisible.
 fn fit_title_with_widths<'a>(
     title: &'a str,
     max_width: f32,
@@ -129,36 +112,6 @@ fn fit_title_with_widths<'a>(
     }
     Cow::Borrowed(title)
 }
-
-/// Color picker constants
-const PICKER_SWATCH_SIZE: f32 = 18.0;
-const PICKER_SWATCH_GAP: f32 = 4.0;
-const PICKER_PADDING: f32 = 6.0;
-const PICKER_INPUT_HEIGHT: f32 = 26.0;
-const PICKER_INPUT_FONT_SIZE: f32 = 12.0;
-const PICKER_INPUT_MARGIN_TOP: f32 = 8.0;
-const PICKER_TOP_PADDING: f32 = 4.0;
-const PICKER_HEIGHT: f32 = PICKER_TOP_PADDING
-    + PICKER_SWATCH_SIZE
-    + PICKER_PADDING * 2.0
-    + PICKER_INPUT_MARGIN_TOP
-    + PICKER_INPUT_HEIGHT
-    + PICKER_PADDING;
-const PICKER_COLORS: [[f32; 4]; 6] = [
-    [0.86, 0.26, 0.27, 1.0], // red
-    [0.90, 0.57, 0.22, 1.0], // orange
-    [0.85, 0.78, 0.25, 1.0], // yellow
-    [0.34, 0.70, 0.38, 1.0], // green
-    [0.30, 0.55, 0.85, 1.0], // blue
-    [0.68, 0.40, 0.80, 1.0], // purple
-];
-
-/// Right margin after last tab
-pub const ISLAND_MARGIN_RIGHT: f32 = 8.0;
-
-/// Left margin on macOS to account for traffic light buttons
-#[cfg(target_os = "macos")]
-pub const ISLAND_MARGIN_LEFT_MACOS: f32 = 76.0;
 
 /// Equal-width tab strip geometry, in logical px. Single source of
 /// truth shared by rendering, hit-testing, the color picker, and the
@@ -1263,6 +1216,16 @@ impl Island {
         // Default fallback - show tab number
         String::from("~")
     }
+}
+
+#[inline]
+fn color_u8(c: [f32; 4]) -> [u8; 4] {
+    [
+        (c[0].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[1].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[2].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[3].clamp(0.0, 1.0) * 255.0) as u8,
+    ]
 }
 
 #[cfg(test)]
