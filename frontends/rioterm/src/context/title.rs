@@ -5,10 +5,18 @@ pub struct ContextTitleExtra {
     pub program: String,
 }
 
-#[derive(Default)]
 pub struct ContextTitle {
     pub content: String,
     pub extra: Option<ContextTitleExtra>,
+}
+
+impl Default for ContextTitle {
+    fn default() -> Self {
+        Self {
+            content: String::from("~"),
+            extra: None,
+        }
+    }
 }
 
 pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
