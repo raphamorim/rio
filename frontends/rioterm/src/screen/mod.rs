@@ -2755,9 +2755,7 @@ impl Screen<'_> {
             // Get current displayed title for the rename input
             let current_title = self
                 .context_manager
-                .titles
-                .titles
-                .get(&clicked_tab)
+                .title(clicked_tab)
                 .and_then(|t| {
                     if !t.content.is_empty() {
                         Some(t.content.clone())
