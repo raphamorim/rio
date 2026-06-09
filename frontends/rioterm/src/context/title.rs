@@ -49,7 +49,7 @@ impl ContextManagerTitles {
         self.key = key;
     }
 
-    /// Re-key titles after the tabs at `a` and `b` swapped places.
+    #[inline]
     pub fn swap_indices(&mut self, a: usize, b: usize) {
         if a == b {
             return;
@@ -64,9 +64,7 @@ impl ContextManagerTitles {
         }
     }
 
-    /// Re-key titles after the tab at `from` moved to `to`, shifting the
-    /// titles in between by one (rotate — mirrors
-    /// `ContextManager::move_current_tab_to`).
+    #[inline]
     pub fn move_index(&mut self, from: usize, to: usize) {
         if from == to {
             return;
