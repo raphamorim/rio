@@ -928,8 +928,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.select_tab(target_index);
     }
 
-    /// Move the current tab to an arbitrary index, shifting the tabs in
-    /// between by one (rotate, not swap) so their relative order is kept.
+    #[inline]
     pub fn move_current_tab_to(&mut self, target: usize) {
         if self.config.is_native {
             return;
