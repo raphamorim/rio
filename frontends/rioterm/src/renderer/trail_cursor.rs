@@ -1,6 +1,6 @@
 // This file was heavily inspired by neovide implementation.
 
-use crate::renderer::spring::Spring;
+use crate::renderer::helpers::spring::Spring;
 use rio_backend::sugarloaf::Sugarloaf;
 use std::time::Instant;
 
