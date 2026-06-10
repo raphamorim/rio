@@ -165,11 +165,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             return;
         }
 
+        #[cfg(all(
+            any(feature = "x11", feature = "wayland"),
+            unix,
+            not(any(target_os = "redox", target_family = "wasm", target_os = "macos"))
+        ))]
+        if cause == StartCause::Init
+            && self.config.adaptive_colors.is_some()
+            && self.config.force_theme.is_none()
+        {
+            use rio_window::platform::linux::ActiveEventLoopExtLinux;
+            event_loop.start_system_theme_monitor();
+        }
+
         let theme = self
             .config
             .force_theme
             .map(|t| t.to_window_theme())
-            .or(event_loop.system_theme());
+            .or_else(|| event_loop.system_theme());
         update_colors_based_on_theme(&mut self.config, theme);
 
         self.router.create_window(
@@ -383,7 +396,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 for (_id, route) in self.router.routes.iter_mut() {
                     // Apply system theme to ensure colors are consistent
                     if !has_checked_adaptive_colors {
-                        let system_theme = route.window.winit_window.theme();
+                        let system_theme = event_loop.system_theme();
                         let theme = self
                             .config
                             .force_theme
