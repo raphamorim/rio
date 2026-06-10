@@ -162,6 +162,7 @@ impl<T: 'static> EventLoop<T> {
                 move |_, _, winit_state: &mut WinitState| {
                     // Mark that we have something to dispatch.
                     winit_state.dispatched_events = true;
+                    winit_state.update_system_theme();
                 },
             )
             .map_err(|error| error.error);
@@ -735,7 +736,14 @@ impl ActiveEventLoop {
     }
 
     pub(crate) fn system_theme(&self) -> Option<Theme> {
-        None
+        // Last value observed by the adaptive-theme portal monitor, if running.
+        super::super::common::theme_monitor::get_cached_theme()
+    }
+
+    pub(crate) fn start_system_theme_monitor(&self) {
+        super::super::common::theme_monitor::start_theme_monitor(
+            self.event_loop_awakener.clone(),
+        );
     }
 
     #[inline]
