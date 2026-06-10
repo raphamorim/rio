@@ -182,6 +182,10 @@ pub struct EventLoop<T: 'static> {
 
     /// The current state of the event loop.
     state: EventLoopState,
+
+    /// Last system color-scheme delivered to windows as `ThemeChanged`. Kept to
+    /// avoid emitting duplicate events; updated in `single_iteration`.
+    last_system_theme: Option<Theme>,
 }
 
 type ActivationToken = (WindowId, crate::event_loop::AsyncRequestSerial);
@@ -442,6 +446,7 @@ impl<T: 'static> EventLoop<T> {
             state: EventLoopState {
                 x11_readiness: Readiness::EMPTY,
             },
+            last_system_theme: None,
         }
     }
 
@@ -654,6 +659,35 @@ impl<T: 'static> EventLoop<T> {
         {
             while let Ok(event) = self.user_receiver.try_recv() {
                 callback(Event::UserEvent(event), &self.event_processor.target);
+            }
+        }
+
+        // Emit ThemeChanged for every window when the system color-scheme
+        // changed. The adaptive-theme monitor (if running) wakes us through
+        // `waker`; here we compare its cached value against the last one we
+        // delivered, so unrelated wakeups are a cheap no-op.
+        {
+            let theme =
+                crate::platform_impl::common::theme_monitor::get_cached_theme();
+            if theme != self.last_system_theme {
+                self.last_system_theme = theme;
+                if let Some(theme) = theme {
+                    let window_ids: Vec<WindowId> = {
+                        let wt = EventProcessor::window_target(
+                            &self.event_processor.target,
+                        );
+                        wt.windows.borrow().keys().copied().collect()
+                    };
+                    for window_id in window_ids {
+                        callback(
+                            Event::WindowEvent {
+                                window_id: crate::window::WindowId(window_id),
+                                event: WindowEvent::ThemeChanged(theme),
+                            },
+                            &self.event_processor.target,
+                        );
+                    }
+                }
             }
         }
 
@@ -1029,7 +1063,12 @@ impl ActiveEventLoop {
     }
 
     pub(crate) fn system_theme(&self) -> Option<Theme> {
-        None
+        // Last value observed by the adaptive-theme portal monitor, if running.
+        super::common::theme_monitor::get_cached_theme()
+    }
+
+    pub(crate) fn start_system_theme_monitor(&self) {
+        super::common::theme_monitor::start_theme_monitor(self.waker.clone());
     }
 
     pub(crate) fn exit_code(&self) -> Option<i32> {

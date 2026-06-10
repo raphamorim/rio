@@ -36,6 +36,7 @@ use crate::platform_impl::wayland::types::xdg_activation::XdgActivationState;
 use crate::platform_impl::wayland::window::{WindowRequests, WindowState};
 use crate::platform_impl::wayland::{WaylandError, WindowId};
 use crate::platform_impl::OsError;
+use crate::window::Theme;
 
 /// Winit's Wayland state.
 pub struct WinitState {
@@ -122,9 +123,31 @@ pub struct WinitState {
     /// `platform_impl::input_rate`.
     pub input_rate_tracker:
         std::cell::RefCell<crate::platform_impl::input_rate::InputRateTracker>,
+
+    /// Last system color-scheme delivered to windows as `ThemeChanged`. Kept to
+    /// avoid emitting duplicate events; updated by [`WinitState::update_system_theme`].
+    pub last_system_theme: Option<Theme>,
 }
 
 impl WinitState {
+    pub fn update_system_theme(&mut self) {
+        let theme = crate::platform_impl::common::theme_monitor::get_cached_theme();
+        if theme == self.last_system_theme {
+            return;
+        }
+        self.last_system_theme = theme;
+        if let Some(theme) = theme {
+            let window_ids: Vec<WindowId> =
+                self.windows.borrow().keys().copied().collect();
+            for window_id in window_ids {
+                self.events_sink.push_window_event(
+                    crate::event::WindowEvent::ThemeChanged(theme),
+                    window_id,
+                );
+            }
+        }
+    }
+
     #[inline]
     pub fn mark_input_received(&self) {
         self.input_rate_tracker.borrow_mut().record_input();
@@ -217,6 +240,7 @@ impl WinitState {
             input_rate_tracker: std::cell::RefCell::new(
                 crate::platform_impl::input_rate::InputRateTracker::new(),
             ),
+            last_system_theme: None,
         })
     }
 
