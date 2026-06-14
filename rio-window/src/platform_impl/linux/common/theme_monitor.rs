@@ -67,9 +67,10 @@ fn run(waker: &Ping) -> Result<(), zbus::Error> {
 
     // Block on the SettingChanged signal stream for the rest of the process.
     for message in proxy.receive_signal("SettingChanged")? {
-        let Ok((namespace, key, value)) = message
-            .body()
-            .deserialize::<(String, String, zbus::zvariant::OwnedValue)>()
+        let Ok((namespace, key, value)) =
+            message
+                .body()
+                .deserialize::<(String, String, zbus::zvariant::OwnedValue)>()
         else {
             continue;
         };

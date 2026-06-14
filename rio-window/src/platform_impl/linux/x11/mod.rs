@@ -667,15 +667,13 @@ impl<T: 'static> EventLoop<T> {
         // `waker`; here we compare its cached value against the last one we
         // delivered, so unrelated wakeups are a cheap no-op.
         {
-            let theme =
-                crate::platform_impl::common::theme_monitor::get_cached_theme();
+            let theme = crate::platform_impl::common::theme_monitor::get_cached_theme();
             if theme != self.last_system_theme {
                 self.last_system_theme = theme;
                 if let Some(theme) = theme {
                     let window_ids: Vec<WindowId> = {
-                        let wt = EventProcessor::window_target(
-                            &self.event_processor.target,
-                        );
+                        let wt =
+                            EventProcessor::window_target(&self.event_processor.target);
                         wt.windows.borrow().keys().copied().collect()
                     };
                     for window_id in window_ids {
