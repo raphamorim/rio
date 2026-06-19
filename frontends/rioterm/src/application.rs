@@ -432,7 +432,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::Exit) => {
+            RioEventType::Rio(RioEvent::Exit | RioEvent::Quit) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if self.config.confirm_before_quit {
                         route.confirm_quit();
@@ -1678,6 +1678,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             route.window.screen.ctx().current_route(),
                         ));
                     }
+                    route.request_redraw();
                     return;
                 }
 
@@ -1902,16 +1903,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.request_redraw();
                     event_loop.set_control_flow(ControlFlow::Poll);
                 } else {
-                    if route.path == RoutePath::Welcome
-                        || route.path == RoutePath::ConfirmQuit
-                        || route
-                            .window
-                            .screen
-                            .ctx()
-                            .current()
-                            .renderable_content
-                            .pending_update
-                            .is_dirty()
+                    if route
+                        .window
+                        .screen
+                        .ctx()
+                        .current()
+                        .renderable_content
+                        .pending_update
+                        .is_dirty()
                     {
                         route.request_redraw();
                     }
