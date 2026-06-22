@@ -2702,6 +2702,12 @@ impl Screen<'_> {
             return true;
         }
 
+        #[cfg(target_os = "macos")]
+        if num_tabs == 1 && self.allow_manual_dragging {
+            self.start_window_drag(window);
+            return true;
+        }
+
         // Normal click → switch tab
         if clicked_tab != self.context_manager.current_index() {
             self.cancel_search(clipboard);
