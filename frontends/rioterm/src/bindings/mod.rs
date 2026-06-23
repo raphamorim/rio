@@ -731,7 +731,7 @@ pub fn default_key_bindings(config: &rio_backend::config::Config) -> Vec<KeyBind
     bindings.extend(platform_key_bindings(
         config.navigation.has_navigation_key_bindings(),
         config.navigation.use_split,
-        config.keyboard,
+        config.keyboard.clone(),
     ));
 
     // Add hint bindings
