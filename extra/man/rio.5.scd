@@ -315,6 +315,41 @@ This section documents the *[scroll]* table of the configuration file.
 
 	Default: _1.0_
 
+# BELL
+
+This section documents the *[bell]* table of the configuration file, which
+controls how the terminal bell (BEL, _\\a_) signals attention.
+
+*audio* = _false_ | _true_ | _"system"_
+
+	Audible bell.
+
+	- _false_ — no sound.
+	- _true_ — a self-synthesized tone (on macOS/Windows the native system beep).
+	- _"system"_ — the desktop environment's event sound. On Linux this uses the
+	  freedesktop sound theme via libcanberra (loaded at runtime; no-op if
+	  unavailable), respecting the configured sound theme, output routing,
+	  volume, mute and Do-Not-Disturb. On macOS/Windows this is the native
+	  system beep.
+
+	Default: _"system"_ on Linux/BSD, _true_ on macOS/Windows
+
+*urgency* = _true_ | _false_
+
+	Set the window urgency / attention hint when the bell fires in an unfocused
+	window, flashing the taskbar/dock entry. Uses the X11 _WM_HINTS_ urgency
+	flag or the Wayland _xdg-activation_ protocol. The hint is cleared when the
+	window regains focus.
+
+	Default: _true_ on Linux/BSD, _false_ on macOS/Windows
+
+*notification* = _true_ | _false_
+
+	Raise a desktop notification (_org.freedesktop.Notifications_) when the bell
+	fires in an unfocused window.
+
+	Default: _false_
+
 # NAVIGATION
 
 This section documents the *[navigation]* table of the configuration file.
