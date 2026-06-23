@@ -1,3 +1,4 @@
+use crate::bindings::FontSizeAction;
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::renderer::utils::update_colors_based_on_theme;
@@ -1626,6 +1627,34 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match delta {
                     MouseScrollDelta::LineDelta(columns, lines) => {
+                        // Ctrl+wheel zooms font size (matches WezTerm, Windows
+                        // Terminal, iTerm). Skipped when the app is in
+                        // mouse-reporting mode so tmux mouse-on / vim mouse
+                        // keep working, or when the user opted out via config.
+                        // Touchpad (PixelDelta) is intentionally not handled
+                        // here to avoid a single gesture firing many zoom
+                        // steps; mouse wheels emit LineDelta.
+                        let mods = route.window.screen.modifiers.state();
+                        if self.config.mouse.wheel_zoom
+                            && mods.control_key()
+                            && !mods.shift_key()
+                            && !route.window.screen.mouse_mode()
+                        {
+                            if lines > 0.0 {
+                                route
+                                    .window
+                                    .screen
+                                    .change_font_size(FontSizeAction::Increase);
+                            } else if lines < 0.0 {
+                                route
+                                    .window
+                                    .screen
+                                    .change_font_size(FontSizeAction::Decrease);
+                            }
+                            route.request_redraw();
+                            return;
+                        }
+
                         let font_size =
                             route.window.screen.ctx().current().dimension.font_size;
                         if font_size > 0.0 {
