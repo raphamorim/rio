@@ -232,8 +232,7 @@ impl HintState {
             // `Column(byte)` drifted the match right by the cumulative
             // UTF-8 width surplus.
             for (start, end) in regex.find_iter(&line_text) {
-                let start_col =
-                    Column(line_text[..start].chars().count());
+                let start_col = Column(line_text[..start].chars().count());
                 let mut match_text = line_text[start..end].to_string();
 
                 // Apply post-processing if enabled
@@ -244,10 +243,8 @@ impl HintState {
                 // End column tracks the post-processed text length in
                 // chars (post-processing only trims trailing
                 // punctuation, so the start is unaffected).
-                let end_col = Column(
-                    start_col.0
-                        + match_text.chars().count().saturating_sub(1),
-                );
+                let end_col =
+                    Column(start_col.0 + match_text.chars().count().saturating_sub(1));
 
                 let hint_match = HintMatch {
                     text: match_text,
