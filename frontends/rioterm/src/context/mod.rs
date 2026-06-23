@@ -753,6 +753,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
+    pub fn current_title(&self) -> String {
+        self.titles
+            .titles
+            .get(&self.current_index)
+            .map(|title| title.content.clone())
+            .unwrap_or_default()
+    }
+
     pub fn update_titles(&mut self) {
         let interval_time = Duration::from_secs(2);
         if self

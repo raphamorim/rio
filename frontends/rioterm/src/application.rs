@@ -5,14 +5,9 @@ use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
-#[cfg(all(
-    feature = "audio",
-    not(target_os = "macos"),
-    not(target_os = "windows")
-))]
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use raw_window_handle::HasDisplayHandle;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
+use rio_backend::config::bell::AudioBell;
 use rio_backend::config::colors::{ColorRgb, NamedColor};
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
@@ -26,7 +21,7 @@ use rio_window::platform::macos::ActiveEventLoopExtMacOS;
 #[cfg(target_os = "macos")]
 use rio_window::platform::macos::WindowExtMacOS;
 use rio_window::window::WindowId;
-use rio_window::window::{CursorIcon, Fullscreen};
+use rio_window::window::{CursorIcon, Fullscreen, UserAttentionType};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
@@ -99,41 +94,40 @@ impl Application<'_> {
         )
     }
 
-    fn handle_audio_bell(&mut self) {
-        #[cfg(target_os = "macos")]
-        {
-            // Use system bell sound on macOS
-            unsafe {
-                #[link(name = "AppKit", kind = "framework")]
-                extern "C" {
-                    fn NSBeep();
-                }
-                NSBeep();
-            }
+    fn handle_bell(&mut self, window_id: WindowId) {
+        tracing::debug!("bell fired: audio={:?}", self.config.bell.audio);
+        match self.config.bell.audio {
+            AudioBell::Off => {}
+            AudioBell::Beep => crate::bell::beep(),
+            AudioBell::System => crate::bell::system_sound(),
         }
 
-        #[cfg(target_os = "windows")]
-        {
-            // Use MessageBeep on Windows with MB_OK (0x00000000) for default beep
-            unsafe {
-                windows_sys::Win32::System::Diagnostics::Debug::MessageBeep(0x00000000);
-            }
+        let urgency = self.config.bell.urgency.is_enabled();
+        let notify = self.config.bell.notification.is_enabled();
+        if !urgency && !notify {
+            return;
         }
 
-        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-        {
-            #[cfg(feature = "audio")]
-            {
-                std::thread::spawn(|| {
-                    if let Err(e) = play_bell_sound() {
-                        tracing::warn!("Failed to play bell sound: {}", e);
-                    }
-                });
-            }
-            #[cfg(not(feature = "audio"))]
-            {
-                tracing::debug!("Audio bell requested but audio feature is not enabled");
-            }
+        let Some(route) = self.router.routes.get(&window_id) else {
+            return;
+        };
+        // Urgency and notifications only matter when the window is unfocused;
+        // that is the case where a background bell would otherwise be missed.
+        if route.window.is_focused {
+            return;
+        }
+
+        if urgency {
+            route
+                .window
+                .winit_window
+                .request_user_attention(Some(UserAttentionType::Informational));
+        }
+
+        if notify {
+            let title = route.window.screen.ctx().current_title();
+            let title = if title.is_empty() { "Rio" } else { &title };
+            self.handle_desktop_notification(title, "Terminal bell");
         }
     }
 
@@ -558,10 +552,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::Bell) => {
-                // Handle audio bell
-                if self.config.bell.audio {
-                    self.handle_audio_bell();
-                }
+                self.handle_bell(window_id);
             }
             RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {
                 self.handle_desktop_notification(&title, &body);
@@ -1765,6 +1756,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.is_focused = focused;
 
                 if has_regained_focus {
+                    // Clear any bell urgency hint now that the user is back; X11
+                    // only clears it on request (Wayland treats `None` as a no-op).
+                    route.window.winit_window.request_user_attention(None);
                     route.request_redraw();
                 }
 
@@ -1989,76 +1983,4 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         std::process::exit(0);
     }
-}
-
-#[cfg(all(
-    feature = "audio",
-    not(target_os = "macos"),
-    not(target_os = "windows")
-))]
-fn play_bell_sound() -> Result<(), Box<dyn Error>> {
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or("No output device available")?;
-
-    let config = device.default_output_config()?;
-
-    match config.sample_format() {
-        cpal::SampleFormat::F32 => run_bell::<f32>(&device, &config.into()),
-        cpal::SampleFormat::I16 => run_bell::<i16>(&device, &config.into()),
-        cpal::SampleFormat::U16 => run_bell::<u16>(&device, &config.into()),
-        _ => Err("Unsupported sample format".into()),
-    }
-}
-
-#[cfg(all(
-    feature = "audio",
-    not(target_os = "macos"),
-    not(target_os = "windows")
-))]
-fn run_bell<T>(
-    device: &cpal::Device,
-    config: &cpal::StreamConfig,
-) -> Result<(), Box<dyn Error>>
-where
-    T: cpal::Sample + cpal::SizedSample + cpal::FromSample<f32>,
-{
-    let sample_rate = config.sample_rate.0 as f32;
-    let channels = config.channels as usize;
-    let duration_secs = crate::constants::BELL_DURATION.as_secs_f32();
-    let total_samples = (sample_rate * duration_secs) as usize;
-
-    let mut sample_clock = 0f32;
-    let mut samples_played = 0usize;
-
-    let stream = device.build_output_stream(
-        config,
-        move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-            for frame in data.chunks_mut(channels) {
-                if samples_played >= total_samples {
-                    for sample in frame.iter_mut() {
-                        *sample = T::from_sample(0.0);
-                    }
-                } else {
-                    let value = (sample_clock * 440.0 * 2.0 * std::f32::consts::PI
-                        / sample_rate)
-                        .sin()
-                        * 0.2;
-                    for sample in frame.iter_mut() {
-                        *sample = T::from_sample(value);
-                    }
-                    sample_clock += 1.0;
-                    samples_played += 1;
-                }
-            }
-        },
-        |err| tracing::error!("Audio stream error: {}", err),
-        None,
-    )?;
-
-    stream.play()?;
-    std::thread::sleep(crate::constants::BELL_DURATION);
-
-    Ok(())
 }
