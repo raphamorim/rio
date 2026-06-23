@@ -2049,10 +2049,17 @@ impl Screen<'_> {
         let line_text = line_text.trim_end();
 
         // Find all matches in this line and check if point is within any of them.
-        // Onig yields (byte_start, byte_end); we slice the source ourselves.
+        // Onig yields (byte_start, byte_end); convert to column via char count
+        // (`line_text` is built one char per cell, so char count == column).
+        // Non-ASCII cells (nerd-font icons etc.) make byte offset > column, so
+        // the naive `Column(byte)` mis-positioned both the hit-test and the
+        // returned match span.
         for (start, end) in regex.find_iter(line_text) {
-            let start_col = rio_backend::crosswords::pos::Column(start);
-            let end_col = rio_backend::crosswords::pos::Column(end.saturating_sub(1));
+            let start_col =
+                rio_backend::crosswords::pos::Column(line_text[..start].chars().count());
+            let end_col = rio_backend::crosswords::pos::Column(
+                line_text[..end].chars().count().saturating_sub(1),
+            );
 
             // Check if the point is within this match
             if point.col >= start_col && point.col <= end_col {
@@ -3681,6 +3688,13 @@ impl Screen<'_> {
                     rio_backend::crosswords::pos::Pos,
                     rio_backend::crosswords::pos::Pos,
                 )>,
+                /// Hint labels to overlay on this panel's cells.
+                /// Populated only while hint mode is active. Each
+                /// `HintLabel` is a single character at a single grid
+                /// position; `build_row_bg` paints `hint_background`
+                /// on labeled cells and `build_row_fg` overlays the
+                /// label glyph in `hint_foreground`.
+                hint_labels: Vec<crate::context::renderable::HintLabel>,
             }
 
             let (active_key, scaled_margin) = {
@@ -3745,6 +3759,7 @@ impl Screen<'_> {
                     rio_backend::event::TerminalDamage::Noop,
                 );
                 let hint_matches = ctx.renderable_content.hint_matches.clone();
+                let hint_labels = ctx.renderable_content.hint_labels.clone();
                 let is_active = *key == active_key;
                 // `focused_match` lives on `Screen::search_state` — it's
                 // a per-window state tied to whichever panel has search
@@ -3807,6 +3822,7 @@ impl Screen<'_> {
                     hint_matches,
                     focused_match,
                     hovered_hyperlink,
+                    hint_labels,
                 });
             }
 
@@ -3914,6 +3930,28 @@ impl Screen<'_> {
                             p.display_offset,
                             &mut hint_scratch,
                         );
+                        // Collect the hint labels that fall on this
+                        // visible row. `HintLabel.position.row` is an
+                        // absolute grid line; viewport row `y` maps to
+                        // `(y as i32) - display_offset` (same convention
+                        // as `row_hints_for`). Each `HintLabel` carries
+                        // exactly one label char, so we flatten to
+                        // `(col, char)` for the fg overlay and to just
+                        // `col` for the bg tint.
+                        let absolute_line = (y as i32) - p.display_offset;
+                        let mut label_cols_with_char: Vec<(u16, char)> = Vec::new();
+                        for hl in &p.hint_labels {
+                            if hl.position.row.0 == absolute_line {
+                                if let Some(&ch) = hl.label.first() {
+                                    label_cols_with_char
+                                        .push((hl.position.col.0 as u16, ch));
+                                }
+                            }
+                        }
+                        let label_cols: Vec<u16> = label_cols_with_char
+                            .iter()
+                            .map(|(c, _)| *c)
+                            .collect();
                         crate::grid_emit::build_row_bg(
                             row,
                             cols,
@@ -3922,6 +3960,7 @@ impl Screen<'_> {
                             &p.term_colors,
                             row_sel,
                             &hint_scratch,
+                            &label_cols,
                             &mut bg_scratch,
                         );
                         let cursor_col_for_row = if p.cursor_visible
@@ -3947,6 +3986,7 @@ impl Screen<'_> {
                             p.cell_h,
                             row_sel,
                             &hint_scratch,
+                            &label_cols_with_char,
                             &font_library,
                             p.route_id,
                             cursor_col_for_row,
@@ -4405,24 +4445,39 @@ impl Screen<'_> {
                         TerminalDamage::Full
                     });
             }
-        } else if !self.search_active() {
-            // Clear hint state only if search is not active,
-            // since search also uses hint_matches for highlighting
-            self.context_manager
-                .current_mut()
-                .renderable_content
-                .hint_matches = None;
-            self.context_manager
-                .current_mut()
-                .renderable_content
-                .hint_labels
-                .clear();
-            // Force full damage to clear all hint highlights
-            let current = self.context_manager.current_mut();
-            current
-                .renderable_content
-                .pending_update
-                .set_terminal_damage(TerminalDamage::Full);
+        } else {
+            // Hint mode is inactive. `hint_labels` is never used by
+            // search (only `hint_matches` is), so clear it unconditionally
+            // — otherwise leftover labels from a just-exited hint session
+            // get rendered over search results now that the label glyphs
+            // are actually drawn.
+            let had_labels = {
+                let current = self.context_manager.current_mut();
+                let had = !current.renderable_content.hint_labels.is_empty();
+                current.renderable_content.hint_labels.clear();
+                had
+            };
+
+            if !self.search_active() {
+                // Search isn't active either: also drop hint_matches and
+                // force a full repaint to clear all hint highlighting.
+                let current = self.context_manager.current_mut();
+                current.renderable_content.hint_matches = None;
+                current
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(TerminalDamage::Full);
+            } else if had_labels {
+                // Search is still active, so keep hint_matches (search
+                // uses them for highlighting). But we just cleared
+                // labels — trigger a partial repaint so any previously
+                // drawn label glyphs get wiped from the grid buffers.
+                self.context_manager
+                    .current_mut()
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(TerminalDamage::Partial);
+            }
         }
     }
 
