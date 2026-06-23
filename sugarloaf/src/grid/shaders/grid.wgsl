@@ -33,6 +33,8 @@ struct Uniforms {
     flags:            u32,           //       148
     padding_extend:   u32,           //       152
     input_colorspace: u32,           //       156
+    scroll_offset_y:  f32,           //       160
+    _pad_scroll:      vec3<u32>,     //       164
 };
 
 // Color space / transfer curve helpers. Matrices match the Metal
@@ -126,7 +128,7 @@ fn load_cell_bg(idx: u32) -> vec4<f32> {
 fn grid_bg_fragment(in: VsOut) -> @location(0) vec4<f32> {
  // `grid_padding` is (top, right, bottom, left).
  // Use .w (left) + .x (top) to find the grid origin, same as Metal port.
-    let cell_fx = (in.position.xy - vec2<f32>(uniforms.grid_padding.w, uniforms.grid_padding.x))
+    let cell_fx = (in.position.xy - vec2<f32>(uniforms.grid_padding.w, uniforms.grid_padding.x + uniforms.scroll_offset_y))
                     / uniforms.cell_size;
     let orig_grid_pos = vec2<i32>(floor(cell_fx));
     var grid_pos = orig_grid_pos;
@@ -257,9 +259,9 @@ fn grid_text_vertex(
 
     var quad = cell_pos + size * corner + offset;
 
- // Shift by grid_padding (top/left).
+ // Shift by grid_padding (top/left). Subtract scroll_offset_y for smooth scroll.
     quad.x += uniforms.grid_padding.w;
-    quad.y += uniforms.grid_padding.x;
+    quad.y += uniforms.grid_padding.x + uniforms.scroll_offset_y;
 
     var out: TextVsOut;
     out.position = uniforms.projection * vec4<f32>(quad, 0.0, 1.0);

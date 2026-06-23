@@ -52,6 +52,8 @@ pub struct Shell {
 pub struct Scroll {
     pub multiplier: f64,
     pub divider: f64,
+    #[serde(default)]
+    pub smooth: bool,
 }
 
 impl Default for Scroll {
@@ -59,6 +61,7 @@ impl Default for Scroll {
         Scroll {
             multiplier: 3.0,
             divider: 1.0,
+            smooth: false,
         }
     }
 }

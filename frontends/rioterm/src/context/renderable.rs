@@ -99,6 +99,10 @@ pub struct RenderableContent {
     pub kitty_images: FxHashMap<u32, StoredImage>,
     pub kitty_placements: Vec<KittyPlacement>,
     pub kitty_graphics_dirty: bool,
+    /// Number of extra rows fetched above the viewport for smooth scroll
+    /// partial reveal. 0 when not animating, 1 when a fractional scroll
+    /// offset is active.
+    pub extra_rows: usize,
 }
 
 impl RenderableContent {
@@ -130,6 +134,7 @@ impl RenderableContent {
             kitty_images: FxHashMap::default(),
             kitty_placements: Vec::new(),
             kitty_graphics_dirty: false,
+            extra_rows: 0,
         }
     }
 

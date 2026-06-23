@@ -36,7 +36,9 @@ struct Uniforms {
     float    min_contrast;     //       144
     uint     flags;            //       148
     uint     padding_extend;   //       152
-    uint     input_colorspace; //       156 → total 160
+    uint     input_colorspace; //       156
+    float    scroll_offset_y;  //       160
+    uint3    _pad_scroll;      //       164 → total 176
 };
 
 //-------------------------------------------------------------------
@@ -142,7 +144,7 @@ fragment float4 grid_bg_fragment(
  // `grid_padding` is (top, right, bottom, left) — we only need
  // left (.w) and top (.x) to locate the grid origin.
     int2 orig_grid_pos = int2(
-        floor((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size)
+        floor((in.position.xy - float2(uniforms.grid_padding.w, uniforms.grid_padding.x + uniforms.scroll_offset_y)) / uniforms.cell_size)
     );
     int2 grid_pos = orig_grid_pos;
 
@@ -272,8 +274,9 @@ vertex CellTextVertexOut grid_text_vertex(
 
  // Also shift by grid_padding (top/left) to position the whole grid
  // inside the drawable — `grid_padding` is (top, right, bottom, left).
+ // Subtract scroll_offset_y for smooth scrolling (shifts grid upward).
     quad.x += uniforms.grid_padding.w;
-    quad.y += uniforms.grid_padding.x;
+    quad.y += uniforms.grid_padding.x + uniforms.scroll_offset_y;
 
     CellTextVertexOut out;
     out.position = uniforms.projection * float4(quad.x, quad.y, 0.0, 1.0);

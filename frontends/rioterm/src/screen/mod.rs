@@ -599,8 +599,11 @@ impl Screen<'_> {
         let mut terminal = self.ctx_mut().current_mut().terminal.lock();
         if terminal.display_offset() != 0 {
             terminal.scroll_display(Scroll::Bottom);
+            drop(terminal);
+            self.renderer.smooth_scroll.reset();
+        } else {
+            drop(terminal);
         }
-        drop(terminal);
     }
 
     #[inline]
@@ -1125,6 +1128,7 @@ impl Screen<'_> {
                         self.change_font_size(FontSizeAction::Reset);
                     }
                     Act::ScrollPageUp => {
+                        self.renderer.smooth_scroll.reset();
                         // Move vi mode cursor.
                         let current = self.context_manager.current_mut();
                         let rtid = current.rich_text_id;
@@ -1138,6 +1142,7 @@ impl Screen<'_> {
                         self.mark_dirty();
                     }
                     Act::ScrollPageDown => {
+                        self.renderer.smooth_scroll.reset();
                         // Move vi mode cursor.
                         let current = self.context_manager.current_mut();
                         let rtid = current.rich_text_id;
@@ -1183,6 +1188,7 @@ impl Screen<'_> {
                         self.mark_dirty();
                     }
                     Act::ScrollToTop => {
+                        self.renderer.smooth_scroll.reset();
                         let current = self.context_manager.current_mut();
                         let rtid = current.rich_text_id;
                         let mut terminal = current.terminal.lock();
@@ -1196,6 +1202,7 @@ impl Screen<'_> {
                         self.mark_dirty();
                     }
                     Act::ScrollToBottom => {
+                        self.renderer.smooth_scroll.reset();
                         let current = self.context_manager.current_mut();
                         let rtid = current.rich_text_id;
                         let mut terminal = current.terminal.lock();
@@ -3300,7 +3307,47 @@ impl Screen<'_> {
             if !content.is_empty() {
                 self.ctx_mut().current_mut().messenger.send_write(content);
             }
+        } else if self.renderer.smooth_scroll_enabled {
+            // Smooth scroll: feed pixel delta through SmoothScroll for
+            // sub-line animation.
+            let pixel_y = (new_scroll_y_px * self.mouse.multiplier) / self.mouse.divider;
+            let lines = self
+                .renderer
+                .smooth_scroll
+                .feed_pixel_delta(pixel_y, height as f32);
+
+            if lines != 0 {
+                let current = self.context_manager.current_mut();
+                let rich_text_id = current.rich_text_id;
+                let mut terminal = current.terminal.lock();
+                terminal.scroll_display(Scroll::Delta(lines));
+                self.renderer.smooth_scroll.clamp_at_boundary(
+                    terminal.display_offset() == 0,
+                    terminal.display_offset() == terminal.history_size(),
+                );
+                drop(terminal);
+                self.renderer.scrollbar.notify_scroll(rich_text_id);
+            } else {
+                // No integer scroll, but still check boundaries to prevent
+                // the fractional offset from accumulating past the edges.
+                let terminal = self.context_manager.current().terminal.lock();
+                self.renderer.smooth_scroll.clamp_at_boundary(
+                    terminal.display_offset() == 0,
+                    terminal.display_offset() == terminal.history_size(),
+                );
+            }
+            // Mark dirty so the render loop picks up the smooth scroll offset.
+            if self.renderer.smooth_scroll.is_animating()
+                || self.renderer.smooth_scroll.needs_extra_row()
+            {
+                self.context_manager
+                    .current_mut()
+                    .renderable_content
+                    .pending_update
+                    .set_dirty();
+            }
         } else {
+            // Original direct scroll (no smooth animation).
             self.mouse.accumulated_scroll.y +=
                 (new_scroll_y_px * self.mouse.multiplier) / self.mouse.divider;
             let lines = (self.mouse.accumulated_scroll.y / height) as i32;
@@ -3313,10 +3360,14 @@ impl Screen<'_> {
                 drop(terminal);
                 self.renderer.scrollbar.notify_scroll(rich_text_id);
             }
+
+            self.mouse.accumulated_scroll.x %= width;
+            self.mouse.accumulated_scroll.y %= height;
+            return;
         }
 
         self.mouse.accumulated_scroll.x %= width;
-        self.mouse.accumulated_scroll.y %= height;
+        // Y scroll remainder is managed by SmoothScroll now.
     }
 
     #[inline]
@@ -3496,6 +3547,18 @@ impl Screen<'_> {
         };
         if grid_cols > 0 && grid_rows > 0 {
             self.ensure_grid(current_route, grid_cols, grid_rows);
+        }
+
+        // Advance smooth scroll animation for this frame.
+        if self.renderer.smooth_scroll_enabled {
+            self.renderer.smooth_scroll.update();
+            if self.renderer.smooth_scroll.is_animating() {
+                self.context_manager
+                    .current_mut()
+                    .renderable_content
+                    .pending_update
+                    .set_dirty();
+            }
         }
 
         let is_search_active = self.search_active();
@@ -3681,6 +3744,9 @@ impl Screen<'_> {
                     rio_backend::crosswords::pos::Pos,
                     rio_backend::crosswords::pos::Pos,
                 )>,
+                /// Number of extra rows fetched above the viewport for
+                /// smooth scroll partial reveal.
+                extra_rows: u32,
             }
 
             let (active_key, scaled_margin) = {
@@ -3736,6 +3802,15 @@ impl Screen<'_> {
                 let extras = std::mem::take(&mut ctx.renderable_content.extras);
                 let term_colors = ctx.renderable_content.term_colors;
                 let display_offset = ctx.renderable_content.display_offset as i32;
+                // When extra rows are fetched above the viewport (for smooth
+                // scroll), adjust display_offset so that row_selection_for
+                // and other y-indexed math still maps correctly. The extra
+                // row is at y=0, so the viewport starts at y=extra_rows.
+                let extra_rows_count = ctx.renderable_content.extra_rows;
+                let adjusted_display_offset = display_offset + extra_rows_count as i32;
+                // Cursor row is relative to the viewport start. With extra
+                // rows at the top, the cursor shifts down by extra_rows_count.
+                let cursor_row_offset = extra_rows_count as u16;
                 let selection = ctx.renderable_content.selection_range;
                 let cursor = &ctx.renderable_content.cursor;
                 // Take + reset so next frame sees fresh damage only
@@ -3793,7 +3868,7 @@ impl Screen<'_> {
                     extras,
                     term_colors,
                     cursor_col: cursor.state.pos.col.0 as u16,
-                    cursor_row: cursor.state.pos.row.0 as u16,
+                    cursor_row: cursor.state.pos.row.0 as u16 + cursor_row_offset,
                     cursor_visible: cursor.state.is_visible(),
                     cursor_shape,
                     cursor_blinking,
@@ -3803,16 +3878,17 @@ impl Screen<'_> {
                     is_active,
                     damage,
                     selection,
-                    display_offset,
+                    display_offset: adjusted_display_offset,
                     hint_matches,
                     focused_match,
                     hovered_hyperlink,
+                    extra_rows: ctx.renderable_content.extra_rows as u32,
                 });
             }
 
             // --- ensure every panel has a matching GridRenderer ---
             for p in &panels {
-                self.ensure_grid(p.route_id, p.cols, p.rows);
+                self.ensure_grid(p.route_id, p.cols, p.rows + p.extra_rows);
             }
 
             // --- emit cells + build uniforms per panel ---
@@ -4077,17 +4153,31 @@ impl Screen<'_> {
                     // painted by this grid. The full-window bg fill
                     // (re-enabled in sugarloaf's render_metal) now
                     // handles the space outside all panels.
-                    grid_padding: [panel_top, 0.0, 0.0, panel_left],
+                    // When an extra row is fetched for smooth scroll, shift
+                    // the grid origin UP by one cell so the extra row peeks
+                    // into the viewport from above. Without this the grid
+                    // starts at panel_top + offset_y, leaving a gap at the
+                    // top instead of showing the partially-visible history row.
+                    grid_padding: [
+                        panel_top - p.extra_rows as f32 * p.cell_h,
+                        0.0,
+                        0.0,
+                        panel_left,
+                    ],
                     cursor_color: cursor_col_u,
                     cursor_bg_color: cursor_bg_u,
                     cell_size: [p.cell_w, p.cell_h],
-                    grid_size: [p.cols, p.rows],
+                    // Include extra rows for smooth scroll partial reveal.
+                    grid_size: [p.cols, p.rows + p.extra_rows],
                     cursor_pos,
                     _pad_cursor: [0; 2],
                     min_contrast: 0.0,
                     flags: 0,
                     padding_extend: 0,
                     input_colorspace,
+                    // Smooth scroll sub-pixel offset (physical pixels).
+                    scroll_offset_y: self.renderer.smooth_scroll.offset_y(),
+                    _pad_scroll: [0.0; 3],
                 };
 
                 frame_grids.push((grid, uniforms));

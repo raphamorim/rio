@@ -37,6 +37,8 @@ layout(set = 0, binding = 0, std140) uniform Uniforms {
     uint flags;
     uint padding_extend;
     uint input_colorspace;
+    float scroll_offset_y;
+    uvec3 _pad_scroll;
 } uniforms;
 
 layout(location = 0) in uvec2 in_glyph_pos;
@@ -105,7 +107,7 @@ void main() {
 
     vec2 quad = cell_pos + size * corner + offset;
     quad.x += uniforms.grid_padding.w; // left
-    quad.y += uniforms.grid_padding.x; // top
+    quad.y += uniforms.grid_padding.x + uniforms.scroll_offset_y; // top + smooth scroll
 
     gl_Position = uniforms.projection * vec4(quad, 0.0, 1.0);
 

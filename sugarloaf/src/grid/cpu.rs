@@ -361,7 +361,7 @@ impl CpuGridRenderer {
         if cols == 0 || rows == 0 {
             return;
         }
-        let pad_top = uniforms.grid_padding[0];
+        let pad_top = uniforms.grid_padding[0] + uniforms.scroll_offset_y;
         let pad_left = uniforms.grid_padding[3];
 
         let buf_w_i = buf_w as i32;
@@ -414,7 +414,7 @@ impl CpuGridRenderer {
         if cols == 0 || rows == 0 {
             return;
         }
-        let pad_top = uniforms.grid_padding[0];
+        let pad_top = uniforms.grid_padding[0] + uniforms.scroll_offset_y;
         let pad_left = uniforms.grid_padding[3];
 
         let buf_w_i = buf_w as i32;

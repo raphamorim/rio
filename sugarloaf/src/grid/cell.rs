@@ -106,7 +106,7 @@ const _: () = {
 /// - Group scalars into 16-byte blocks or add explicit `_pad` fields.
 /// - Struct size must be a multiple of 16 bytes.
 ///
-/// Current layout: 144 bytes, 16-byte aligned.
+/// Current layout: 176 bytes, 16-byte aligned.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct GridUniforms {
@@ -164,6 +164,14 @@ pub struct GridUniforms {
     /// `Uniforms.use_display_p3` + `load_color` pair at
     /// `ghostty/src/renderer/shaders/shaders.metal:224`.
     pub input_colorspace: u32,
+    // --- 16-byte block at offset 160 ---
+    /// Fractional vertical scroll offset in physical pixels. Positive values
+    /// shift the grid content upward (revealing older content at the top).
+    /// The integer part is baked into `display_offset` on the CPU; this
+    /// carries only the sub-pixel remainder for smooth scrolling.
+    pub scroll_offset_y: f32,
+    /// Explicit padding to maintain 16-byte alignment.
+    pub _pad_scroll: [f32; 3],
 }
 
 impl GridUniforms {

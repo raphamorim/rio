@@ -27,6 +27,8 @@ layout(set = 0, binding = 0, std140) uniform Uniforms {
     uint flags;             // offset 148
     uint padding_extend;    // offset 152
     uint input_colorspace;  // offset 156
+    float scroll_offset_y;  // offset 160
+    uvec3 _pad_scroll;      // offset 164
 } uniforms;
 
 // `CellBg` is 4 bytes (uchar4 rgba) in cell.rs. We expose the storage
@@ -89,7 +91,7 @@ void main() {
     // Locate the owning grid cell relative to the grid origin
     // (top-left = grid_padding.w / .x).
     ivec2 orig_grid_pos = ivec2(
-        floor((gl_FragCoord.xy - uniforms.grid_padding.wx) / uniforms.cell_size)
+        floor((gl_FragCoord.xy - vec2(uniforms.grid_padding.w, uniforms.grid_padding.x + uniforms.scroll_offset_y)) / uniforms.cell_size)
     );
     ivec2 grid_pos = orig_grid_pos;
 

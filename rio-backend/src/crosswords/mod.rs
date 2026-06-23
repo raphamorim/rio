@@ -1335,6 +1335,7 @@ impl<U: EventListener> Crosswords<U> {
         dst: &mut Vec<Row<Square>>,
         style_table: &mut Vec<crate::crosswords::style::Style>,
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
+        extra_rows: usize,
     ) {
         use crate::event::TerminalDamage;
         let mut start = self.scroll_region.start.0;
@@ -1343,6 +1344,14 @@ impl<U: EventListener> Crosswords<U> {
         if scroll != 0 {
             start -= scroll;
             end -= scroll;
+        }
+        // Extend range upward by extra_rows to fetch the partially-visible
+        // row above the viewport during smooth scroll animation. Clamp to
+        // the grid's topmost line to avoid out-of-bounds access when
+        // display_offset is 0 and there is no scrollback history.
+        if extra_rows > 0 {
+            let topmost = self.grid.topmost_line().0;
+            start = (start - extra_rows as i32).max(topmost);
         }
         let count = (end - start) as usize;
 

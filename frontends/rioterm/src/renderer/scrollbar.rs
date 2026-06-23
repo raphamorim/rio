@@ -153,6 +153,8 @@ pub struct PanelScrollState {
     pub display_offset: usize,
     pub history_size: usize,
     pub screen_lines: usize,
+    /// Fractional scroll offset in pixels for smooth scrollbar positioning.
+    pub scroll_sub_offset: f32,
 }
 
 pub struct Scrollbar {
