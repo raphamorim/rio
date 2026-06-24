@@ -2622,9 +2622,18 @@ impl Screen<'_> {
             return false;
         }
 
-        // Island isn't painted (hide_if_single + single tab on macOS).
-        // Nothing to click on, so let the caller route the event to the
-        // grid for selection / double-click maximize at the OS title bar.
+        #[cfg(target_os = "macos")]
+        if !island_visible && !is_right_click {
+            if let ClickState::DoubleClick = self.mouse.click_state {
+                let is_maximized = window.is_maximized();
+                window.set_maximized(!is_maximized);
+                return true;
+            }
+        }
+
+        // Island isn't painted (hide_if_single + single tab). On macOS,
+        // single clicks still fall through to the manual titlebar drag
+        // path in the caller.
         if !island_visible {
             return false;
         }
