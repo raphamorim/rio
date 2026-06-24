@@ -589,12 +589,23 @@ pub fn find_font_path(
             unsafe { CFString::wrap_under_get_rule(kCTFontStyleNameAttribute) };
         pairs.push((style_key, CFString::new(name).as_CFType()));
     }
-    let attrs: CFDictionary<CFString, CFType> = CFDictionary::from_CFType_pairs(&pairs);
-    let desc = font_descriptor::new_from_attributes(&attrs);
+    let resolve_candidates = |pairs: &[(CFString, CFType)]| {
+        let attrs: CFDictionary<CFString, CFType> =
+            CFDictionary::from_CFType_pairs(pairs);
+        let desc = font_descriptor::new_from_attributes(&attrs);
+        let descs_arr = CFArray::from_CFTypes(&[desc]);
+        let collection = font_collection::new_from_descriptors(&descs_arr);
+        collection.get_descriptors()
+    };
 
-    let descs_arr = CFArray::from_CFTypes(&[desc]);
-    let collection = font_collection::new_from_descriptors(&descs_arr);
-    let candidates = collection.get_descriptors()?;
+    let mut candidates = resolve_candidates(&pairs);
+    if candidates.as_ref().is_none_or(|descs| descs.is_empty()) && symbolic != 0 {
+        let family_key =
+            unsafe { CFString::wrap_under_get_rule(kCTFontFamilyNameAttribute) };
+        let family_only = vec![(family_key, CFString::new(family).as_CFType())];
+        candidates = resolve_candidates(&family_only);
+    }
+    let candidates = candidates?;
 
     let desired_styles = derive_desired_styles(bold, italic, style_name);
 
