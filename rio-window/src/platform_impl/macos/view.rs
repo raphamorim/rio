@@ -140,6 +140,7 @@ pub struct ViewState {
 
     marked_text: RefCell<Retained<NSMutableAttributedString>>,
     accepts_first_mouse: bool,
+    mouse_down_can_move_window: bool,
 
     // Weak reference because the window keeps a strong reference to the view
     _ns_window: WeakId<WinitWindow>,
@@ -827,6 +828,12 @@ declare_class!(
             trace_scope!("acceptsFirstMouse:");
             self.ivars().accepts_first_mouse
         }
+
+        #[method(mouseDownCanMoveWindow)]
+        fn mouse_down_can_move_window(&self) -> bool {
+            trace_scope!("mouseDownCanMoveWindow");
+            self.ivars().mouse_down_can_move_window
+        }
     }
 );
 
@@ -835,6 +842,7 @@ impl WinitView {
         app_delegate: &ApplicationDelegate,
         window: &WinitWindow,
         accepts_first_mouse: bool,
+        mouse_down_can_move_window: bool,
         option_as_alt: OptionAsAlt,
     ) -> Retained<Self> {
         let mtm = MainThreadMarker::from(window);
@@ -853,6 +861,7 @@ impl WinitView {
             in_key_event: Default::default(),
             marked_text: Default::default(),
             accepts_first_mouse,
+            mouse_down_can_move_window,
             _ns_window: WeakId::new(&window.retain()),
             option_as_alt: Cell::new(option_as_alt),
         });
