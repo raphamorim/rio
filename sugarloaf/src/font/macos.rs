@@ -599,12 +599,7 @@ pub fn find_font_path(
     };
 
     let mut candidates = resolve_candidates(&pairs);
-    if candidates
-        .as_ref()
-        .is_none_or(|descs| descs.iter().next().is_none())
-        && symbolic != 0
-        && style_name.is_none()
-    {
+    if candidates.as_ref().is_none_or(|descs| descs.is_empty()) && symbolic != 0 {
         let family_key =
             unsafe { CFString::wrap_under_get_rule(kCTFontFamilyNameAttribute) };
         let family_only = vec![(family_key, CFString::new(family).as_CFType())];
