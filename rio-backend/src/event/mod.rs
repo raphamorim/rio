@@ -197,9 +197,6 @@ pub enum RioEvent {
         body: String,
     },
 
-    /// Shutdown request.
-    Exit,
-
     /// Quit request.
     Quit,
 
@@ -279,7 +276,6 @@ impl Debug for RioEvent {
             RioEvent::DesktopNotification { title, body } => {
                 write!(f, "DesktopNotification({title}, {body})")
             }
-            RioEvent::Exit => write!(f, "Exit"),
             RioEvent::Quit => write!(f, "Quit"),
             RioEvent::CloseTerminal(route) => write!(f, "CloseTerminal {route}"),
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
