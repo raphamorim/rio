@@ -5,6 +5,45 @@ use rio_backend::event::EventListener;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+/// Extract the visible text of `line` together with a byte-offset → grid
+/// column mapping. Spacer cells (the trailing half of a wide glyph, and
+/// the `LeadingSpacer` placed at the soft-wrap boundary) are skipped:
+/// they carry a placeholder `' '` that is not a separate visible
+/// character and would otherwise desynchronize the byte-to-column map.
+///
+/// `byte_to_col[i]` is the grid column of the cell whose codepoint's
+/// UTF-8 encoding contains byte `i` of the returned string. Trailing
+/// whitespace is left intact so the mapping stays aligned across the
+/// full row.
+///
+/// Used by the regex hint pipeline to convert onig's byte offsets
+/// (which would otherwise mis-locate the click target when emoji or
+/// CJK glyphs precede a URL) back into grid columns.
+pub(crate) fn extract_line_text_with_cols<T: EventListener>(
+    term: &rio_backend::crosswords::Crosswords<T>,
+    line: Line,
+) -> (String, Vec<usize>) {
+    let grid = &term.grid;
+    let cols = grid.columns();
+    let mut text = String::with_capacity(cols);
+    let mut byte_to_col: Vec<usize> = Vec::with_capacity(cols);
+
+    for col in 0..cols {
+        let cell = &grid[line][Column(col)];
+        if cell.is_spacer() || cell.is_leading_spacer() {
+            continue;
+        }
+        let c = cell.c();
+        let len = c.len_utf8();
+        for _ in 0..len {
+            byte_to_col.push(col);
+        }
+        text.push(c);
+    }
+
+    (text, byte_to_col)
+}
+
 /// State for hint selection mode
 pub struct HintState {
     /// Currently active hint configuration
@@ -219,27 +258,40 @@ impl HintState {
                 continue;
             }
 
-            // Extract text from the line
-            let line_text = self.extract_line_text(term, line);
+            // Extract text plus a byte→grid-column mapping so regex byte
+            // offsets translate back to the right cells when the line
+            // contains wide glyphs or multibyte codepoints.
+            let (line_text, byte_to_col) = extract_line_text_with_cols(term, line);
 
             // Find all matches in this line. Onig yields (byte_start, byte_end);
             // we slice the source ourselves.
             for (start, end) in regex.find_iter(&line_text) {
-                let start_col = Column(start);
                 let mut match_text = line_text[start..end].to_string();
 
                 // Apply post-processing if enabled
                 if hint.post_processing {
                     match_text = post_process_hyperlink_uri(&match_text);
                 }
+                if match_text.is_empty() {
+                    continue;
+                }
 
-                // Calculate the correct end position based on the processed text length
-                let end_col = Column(start + match_text.len().saturating_sub(1));
+                let last_byte = start + match_text.len() - 1;
+                let start_col_idx = byte_to_col[start];
+                let last_col_idx = byte_to_col[last_byte];
+                // If the match ends on a wide glyph, extend the
+                // highlight to its spacer cell so the click target
+                // covers the full visible glyph.
+                let end_col_idx = if grid[line][Column(last_col_idx)].is_wide() {
+                    last_col_idx + 1
+                } else {
+                    last_col_idx
+                };
 
                 let hint_match = HintMatch {
                     text: match_text,
-                    start: Pos::new(line, start_col),
-                    end: Pos::new(line, end_col),
+                    start: Pos::new(line, Column(start_col_idx)),
+                    end: Pos::new(line, Column(end_col_idx)),
                     hint: hint.clone(),
                 };
 
@@ -308,22 +360,6 @@ impl HintState {
                 col = end_col;
             }
         }
-    }
-
-    fn extract_line_text<T: EventListener>(
-        &self,
-        term: &rio_backend::crosswords::Crosswords<T>,
-        line: Line,
-    ) -> String {
-        let grid = &term.grid;
-        let mut text = String::new();
-
-        for col in 0..grid.columns() {
-            let cell = &grid[line][Column(col)];
-            text.push(cell.c());
-        }
-
-        text.trim_end().to_string()
     }
 
     fn generate_labels(&mut self) {
@@ -761,6 +797,252 @@ mod tests {
     fn test_resolve_path_requires_cwd_for_relative() {
         // With no cwd and a relative path, we can't resolve; return None.
         assert!(resolve_path_for_opening("foo/bar.txt", None).is_none());
+    }
+
+    // -----------------------------------------------------------------
+    // Regression tests for issue #1619.
+    //
+    // The bug: regex hint matching mapped onig's byte offsets directly
+    // to grid columns, so any wide (display-width-2) glyph or multibyte
+    // codepoint *before* a URL on the same line shifted the underline
+    // and click hit-box right by (byte_count - cell_count) cells. On a
+    // line like "😀 https://example.com" the underline started a few
+    // cells inside the URL, and clicking the visible URL landed in the
+    // gap and did nothing.
+    //
+    // These tests build small terminal grids, run `find_regex_matches`
+    // against the default URL regex, and assert that the resulting
+    // (start_col, end_col) are the *grid columns* of the visible URL's
+    // first and last cells.
+    // -----------------------------------------------------------------
+    use rio_backend::ansi::CursorShape;
+    use rio_backend::config::hints::DEFAULT_URL_REGEX;
+    use rio_backend::crosswords::square::Wide;
+    use rio_backend::crosswords::Crosswords;
+    use rio_backend::crosswords::CrosswordsSize;
+    use rio_backend::event::{VoidListener, WindowId};
+    use unicode_width::UnicodeWidthChar;
+
+    /// Build a tiny `Crosswords` whose first row contains `content`.
+    /// Mirrors `rio_backend::crosswords::search::tests::mock_term` —
+    /// duplicated here because that helper is `pub(crate)` to its own
+    /// crate. Wide glyphs occupy two cells (`Wide` + `Spacer`) just
+    /// like a real PTY write would produce.
+    fn mock_term_with_line(content: &str) -> Crosswords<VoidListener> {
+        let num_cols: usize = content.chars().map(|c| c.width().unwrap_or(1)).sum();
+        // Always leave at least a couple of trailing cells so callers
+        // can append more text in a future iteration without resizing.
+        let num_cols = num_cols.max(1) + 4;
+        let size = CrosswordsSize::new(num_cols, 1);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 0);
+
+        let line = Line(0);
+        let mut col = 0usize;
+        for c in content.chars() {
+            term.grid[line][Column(col)].set_c(c);
+            let width = c.width().unwrap_or(1);
+            if width == 2 {
+                term.grid[line][Column(col)].set_wide(Wide::Wide);
+                term.grid[line][Column(col + 1)].set_c(' ');
+                term.grid[line][Column(col + 1)].set_wide(Wide::Spacer);
+            }
+            col += width.max(1);
+        }
+        term
+    }
+
+    /// Run the URL regex against the first line of `term` and return
+    /// every (start_col, end_col, text) match in column order.
+    fn url_matches(term: &Crosswords<VoidListener>) -> Vec<(usize, usize, String)> {
+        let regex = onig::Regex::new(DEFAULT_URL_REGEX).expect("default regex compiles");
+        let hint = Rc::new(Hint {
+            regex: Some(DEFAULT_URL_REGEX.to_string()),
+            hyperlinks: false,
+            post_processing: true,
+            persist: false,
+            action: HintAction::Action {
+                action: HintInternalAction::Copy,
+            },
+            mouse: Default::default(),
+            binding: None,
+        });
+        let mut state = HintState::new("abc".to_string());
+        state.find_regex_matches(term, &regex, hint);
+        let mut out: Vec<(usize, usize, String)> = state
+            .matches
+            .into_iter()
+            .map(|m| (m.start.col.0, m.end.col.0, m.text))
+            .collect();
+        out.sort_by_key(|(s, _, _)| *s);
+        out
+    }
+
+    // The visible-cell column of every byte in `content`'s display
+    // layout, used to derive expected start/end columns from a literal
+    // substring. A simple model: walk chars, assign each char's bytes
+    // to the cell it starts in.
+    fn col_of_substr(content: &str, needle: &str) -> (usize, usize) {
+        let byte_start = content.find(needle).expect("needle in content");
+        let mut col = 0usize;
+        let mut byte = 0usize;
+        let mut start_col = None;
+        let mut end_col = 0usize;
+        let needle_end = byte_start + needle.len();
+        for c in content.chars() {
+            let len = c.len_utf8();
+            if start_col.is_none() && byte >= byte_start {
+                start_col = Some(col);
+            }
+            if byte < needle_end {
+                let width = c.width().unwrap_or(1).max(1);
+                end_col = col + width - 1;
+            }
+            byte += len;
+            col += c.width().unwrap_or(1).max(1);
+        }
+        (start_col.expect("needle found"), end_col)
+    }
+
+    fn assert_single_url(content: &str, expected_url: &str) {
+        let term = mock_term_with_line(content);
+        let matches = url_matches(&term);
+        assert_eq!(
+            matches.len(),
+            1,
+            "expected exactly one URL match for line {:?}, got {:?}",
+            content,
+            matches
+        );
+        let (start_col, end_col, text) = &matches[0];
+        let (expected_start, expected_end) = col_of_substr(content, expected_url);
+        assert_eq!(
+            text, expected_url,
+            "matched text mismatch for line {:?}",
+            content
+        );
+        assert_eq!(
+            *start_col, expected_start,
+            "start column mismatch for line {:?}: got {}, expected {}",
+            content, start_col, expected_start
+        );
+        assert_eq!(
+            *end_col, expected_end,
+            "end column mismatch for line {:?}: got {}, expected {}",
+            content, end_col, expected_end
+        );
+    }
+
+    #[test]
+    fn issue_1619_plain_ascii_url_unchanged() {
+        // Control: bare URL with no prefix. Must already work and
+        // continue working. Underline covers cols 0..=18.
+        assert_single_url("https://example.com", "https://example.com");
+    }
+
+    #[test]
+    fn issue_1619_ascii_prefix_unchanged() {
+        // Control: ASCII text before the URL. Byte offset == cell
+        // offset, so the pre-fix path also produced the right answer.
+        assert_single_url("ab https://example.com/ascii", "https://example.com/ascii");
+    }
+
+    #[test]
+    fn issue_1619_emoji_prefix_aligns() {
+        // Reproduces the canonical failure: one wide emoji before the
+        // URL. The pre-fix code mapped byte offset 6 (4 bytes for 😀
+        // + 2 spaces) to Column(6), but the URL actually starts at
+        // grid column 3.
+        assert_single_url("😀 https://example.com/emoji", "https://example.com/emoji");
+    }
+
+    #[test]
+    fn issue_1619_cjk_prefix_aligns() {
+        // Two CJK glyphs before the URL — each is width-2 and 3 bytes
+        // in UTF-8, compounding the shift. The pre-fix code computed
+        // start_col = 11; the correct grid column is 5.
+        assert_single_url("世界 https://example.com/cjk", "https://example.com/cjk");
+    }
+
+    #[test]
+    fn issue_1619_real_world_bullet_trigger() {
+        // The exact pattern from the bug report: Claude Code's "⏺ "
+        // bullet (U+25CF, width 1 but 3 bytes in UTF-8) prefixing a
+        // URL. Pre-fix: byte-offset URL start = 4, but its grid
+        // column is 2. Tests the "multibyte but NOT wide" branch.
+        assert_single_url("⏺ https://linear.app/ENG-993", "https://linear.app/ENG-993");
+    }
+
+    #[test]
+    fn issue_1619_multiple_emoji_prefix_aligns() {
+        // Multiple wide glyphs stack the shift. Demonstrates the
+        // mapping handles repeated wide cells correctly.
+        assert_single_url(
+            "🎉🎉🎉 https://example.com/party",
+            "https://example.com/party",
+        );
+    }
+
+    #[test]
+    fn issue_1619_mixed_wide_and_narrow_prefix() {
+        // Mix of wide emoji and narrow multibyte glyphs before the
+        // URL, exercising every branch of the byte→col map in one
+        // line.
+        assert_single_url("a😀b⏺c https://example.com/mix", "https://example.com/mix");
+    }
+
+    #[test]
+    fn issue_1619_url_after_wide_in_paren_post_processed() {
+        // Wide-prefix + post_processing trailing-delimiter strip.
+        // The trailing ')' is unmatched, so post_process_hyperlink_uri
+        // truncates it. The end_col must point at the last cell of
+        // the *trimmed* URL, not the original byte length.
+        assert_single_url("(😀 https://example.com/end)", "https://example.com/end");
+    }
+
+    #[test]
+    fn issue_1619_no_wide_chars_post_processing_trim() {
+        // Control for the post-processing path with no wide chars:
+        // trailing '.' should be trimmed and end_col adjusted.
+        assert_single_url("see https://example.com/page.", "https://example.com/page");
+    }
+
+    #[test]
+    fn issue_1619_extract_line_text_skips_spacer_cells() {
+        // Direct test of the helper: a wide glyph followed by text
+        // produces a buffer with the wide char once (not the spacer
+        // placeholder space) and a byte→col map that points at the
+        // wide cell's column for every byte of the codepoint.
+        let term = mock_term_with_line("😀ab");
+        let (text, byte_to_col) = extract_line_text_with_cols(&term, Line(0));
+        // After the trailing reserve cells in `mock_term_with_line`,
+        // the line text includes trailing '\0' chars; assert only the
+        // leading content.
+        assert!(text.starts_with("😀ab"), "got text {:?}", text);
+        // 😀 is 4 UTF-8 bytes, all mapping to grid column 0.
+        assert_eq!(&byte_to_col[..4], &[0, 0, 0, 0]);
+        // 'a' is at grid column 2 (col 1 is the spacer, skipped).
+        assert_eq!(byte_to_col[4], 2);
+        // 'b' is at grid column 3.
+        assert_eq!(byte_to_col[5], 3);
+    }
+
+    #[test]
+    fn issue_1619_byte_to_col_map_handles_leading_wide_chain() {
+        // A chain of three wide CJK glyphs: each is 3 UTF-8 bytes and
+        // 2 grid cells. Verifies the map walks cells correctly.
+        let term = mock_term_with_line("世界好x");
+        let (text, byte_to_col) = extract_line_text_with_cols(&term, Line(0));
+        assert!(text.starts_with("世界好x"));
+        // 世 → cols 0..2 (cell 0 + spacer 1)
+        assert_eq!(&byte_to_col[..3], &[0, 0, 0]);
+        // 界 → cols 2..4
+        assert_eq!(&byte_to_col[3..6], &[2, 2, 2]);
+        // 好 → cols 4..6
+        assert_eq!(&byte_to_col[6..9], &[4, 4, 4]);
+        // x → col 6
+        assert_eq!(byte_to_col[9], 6);
     }
 
     #[test]
