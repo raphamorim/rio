@@ -19,7 +19,6 @@ pub const ISLAND_HEIGHT: f32 = 34.0;
 const PROGRESS_BAR_HEIGHT: f32 = 3.0;
 
 const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
-const TITLE_FONT_SIZE: f32 = 12.0;
 
 const TAB_PADDING_X: f32 = 24.0;
 const TITLE_ELLIPSIS: char = '…';
@@ -78,10 +77,11 @@ fn fit_title_to_width<'a>(
     sugarloaf: &mut Sugarloaf,
     title: &'a str,
     max_width: f32,
+    font_size: f32,
 ) -> Cow<'a, str> {
     let attrs = Attributes::default();
     fit_title_with_widths(title, max_width, |c| {
-        sugarloaf.char_advance(c, attrs, TITLE_FONT_SIZE)
+        sugarloaf.char_advance(c, attrs, font_size)
     })
 }
 
@@ -146,6 +146,8 @@ pub fn tab_strip_layout(
 
 pub struct Island {
     pub hide_if_single: bool,
+    /// Tab-title font size in logical pixels (`navigation.tab-font-size`).
+    pub title_font_size: f32,
     pub inactive_text_color: [f32; 4],
     pub active_text_color: [f32; 4],
     pub border_color: [f32; 4],
@@ -186,9 +188,11 @@ impl Island {
         active_text_color: [f32; 4],
         border_color: [f32; 4],
         hide_if_single: bool,
+        title_font_size: f32,
     ) -> Self {
         Self {
             hide_if_single,
+            title_font_size,
             inactive_text_color,
             active_text_color,
             border_color,
@@ -645,7 +649,12 @@ impl Island {
                 continue;
             }
             let max_text_width = (tab_width - TAB_PADDING_X * 2.0).max(0.0);
-            let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
+            let title = fit_title_to_width(
+                sugarloaf,
+                &raw_title,
+                max_text_width,
+                self.title_font_size,
+            );
 
             let text_color = if is_active {
                 self.active_text_color
@@ -654,7 +663,7 @@ impl Island {
             };
 
             let title_opts = DrawOpts {
-                font_size: TITLE_FONT_SIZE,
+                font_size: self.title_font_size,
                 color: color_u8(text_color),
                 ..DrawOpts::default()
             };
@@ -675,7 +684,7 @@ impl Island {
                 let ui = sugarloaf.text_mut();
                 let text_width = ui.measure(&title, &title_opts);
                 let text_x = tab_x + (tab_width - text_width) / 2.0;
-                let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
+                let text_y = (ISLAND_HEIGHT / 2.0) - (self.title_font_size / 2.);
                 ui.draw(text_x, text_y, &title, &title_opts);
             }
 
@@ -776,16 +785,21 @@ impl Island {
             let raw_title = self.get_title_for_tab(context_manager, drag_idx);
             if !raw_title.is_empty() {
                 let max_text_width = (tab_width - TAB_PADDING_X * 2.0).max(0.0);
-                let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
+                let title = fit_title_to_width(
+                    sugarloaf,
+                    &raw_title,
+                    max_text_width,
+                    self.title_font_size,
+                );
                 let title_opts = DrawOpts {
-                    font_size: TITLE_FONT_SIZE,
+                    font_size: self.title_font_size,
                     color: color_u8(self.active_text_color),
                     ..DrawOpts::default()
                 };
                 let ui = sugarloaf.text_mut();
                 let text_width = ui.measure(&title, &title_opts);
                 let text_x = floating_x + (tab_width - text_width) / 2.0;
-                let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
+                let text_y = (ISLAND_HEIGHT / 2.0) - (self.title_font_size / 2.);
                 ui.draw(text_x, text_y, &title, &title_opts);
             }
         }
@@ -1229,7 +1243,6 @@ mod tests {
     fn test_island_constants() {
         // Verify all constants are set correctly
         assert_eq!(ISLAND_HEIGHT, 34.0);
-        assert_eq!(TITLE_FONT_SIZE, 12.0);
         assert_eq!(TAB_PADDING_X, 24.0);
         assert_eq!(ISLAND_MARGIN_RIGHT, 8.0);
         #[cfg(target_os = "macos")]
@@ -1242,7 +1255,7 @@ mod tests {
         let active_color = [0.9, 0.9, 0.9, 1.0];
         let border_color = [0.7, 0.7, 0.7, 1.0];
 
-        let island = Island::new(inactive_color, active_color, border_color, true);
+        let island = Island::new(inactive_color, active_color, border_color, true, 12.0);
 
         assert_eq!(island.inactive_text_color, inactive_color);
         assert_eq!(island.active_text_color, active_color);
@@ -1257,6 +1270,7 @@ mod tests {
             [1.0, 1.0, 1.0, 1.0],
             [0.8, 0.8, 0.8, 1.0],
             false,
+            12.0,
         );
         assert_eq!(island.height(), ISLAND_HEIGHT);
     }
@@ -1267,6 +1281,7 @@ mod tests {
             [0.9, 0.9, 0.9, 1.0],
             [0.7, 0.7, 0.7, 1.0],
             false,
+            12.0,
         )
     }
 
