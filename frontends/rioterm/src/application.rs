@@ -1842,7 +1842,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             );
                         }
 
-                        if let Some(window_update) = route.window.screen.render() {
+                        let force_present = route.path == RoutePath::ConfirmQuit;
+                        if let Some(window_update) =
+                            route.window.screen.render(force_present)
+                        {
                             use crate::context::renderable::{
                                 BackgroundState, WindowUpdate,
                             };

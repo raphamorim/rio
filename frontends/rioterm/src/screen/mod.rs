@@ -3488,7 +3488,10 @@ impl Screen<'_> {
         }
     }
 
-    pub(crate) fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
+    pub(crate) fn render(
+        &mut self,
+        force_present: bool,
+    ) -> Option<crate::context::renderable::WindowUpdate> {
         let current_route = self.context_manager.current_route();
         let (grid_cols, grid_rows) = {
             let terminal = self.context_manager.current().terminal.lock();
@@ -3537,7 +3540,11 @@ impl Screen<'_> {
             .renderer
             .run(&mut self.sugarloaf, &mut self.context_manager);
         let has_animation = self.renderer.needs_redraw();
-        let should_present = any_panel_dirty || has_animation;
+        // `force_present` keeps immediate-mode overlays (e.g. the quit
+        // confirmation dialog) on screen: without it an idle terminal has
+        // no panel damage / animation, so the frame would be discarded and
+        // the overlay would flicker out.
+        let should_present = force_present || any_panel_dirty || has_animation;
 
         if self.renderer.custom_mouse_cursor {
             let scale = self.sugarloaf.scale_factor();
