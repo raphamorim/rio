@@ -11,6 +11,7 @@ pub mod platform;
 pub mod renderer;
 pub mod theme;
 pub mod title;
+pub mod triggers;
 pub mod window;
 
 use crate::ansi::CursorShape;
@@ -24,6 +25,7 @@ use crate::config::navigation::Navigation;
 use crate::config::platform::{Platform, PlatformConfig};
 use crate::config::renderer::Renderer;
 use crate::config::title::Title;
+use crate::config::triggers::Triggers;
 use crate::config::window::Window;
 use colors::Colors;
 use serde::{Deserialize, Serialize};
@@ -38,6 +40,7 @@ use tracing::warn;
 pub enum ConfigError {
     ErrLoadingConfig(String),
     ErrLoadingTheme(String),
+    ErrLoadingTriggers(String),
     PathNotFound,
 }
 
@@ -158,6 +161,9 @@ pub struct Config {
     pub draw_bold_text_with_light_colors: bool,
     #[serde(default = "Hints::default")]
     pub hints: Hints,
+    /// Loaded from the dedicated `triggers.toml`, never from `config.toml`.
+    #[serde(skip)]
+    pub triggers: Triggers,
     #[serde(default = "Bell::default")]
     pub bell: Bell,
     #[serde(default = "default_bool_true", rename = "enable-scroll-bar")]
@@ -219,6 +225,11 @@ pub fn config_dir_path() -> PathBuf {
 #[inline]
 pub fn config_file_path() -> PathBuf {
     config_dir_path().join("config.toml")
+}
+
+#[inline]
+pub fn triggers_file_path() -> PathBuf {
+    config_dir_path().join("triggers.toml")
 }
 
 #[inline]
@@ -353,6 +364,18 @@ impl Config {
         }
     }
 
+    fn load_triggers(path: &PathBuf) -> Result<Triggers, String> {
+        if path.exists() {
+            let content = std::fs::read_to_string(path).unwrap();
+            match toml::from_str::<Triggers>(&content) {
+                Ok(decoded) => Ok(decoded),
+                Err(err_message) => Err(format!("error parsing: {err_message:?}")),
+            }
+        } else {
+            Err(String::from("filepath does not exist"))
+        }
+    }
+
     pub fn to_string(&self) -> Result<String, toml::ser::Error> {
         toml::to_string(self)
     }
@@ -453,6 +476,18 @@ impl Config {
                                 && adaptive_colors.dark.is_some()
                             {
                                 decoded.adaptive_colors = Some(adaptive_colors);
+                            }
+                        }
+
+                        let triggers_path = triggers_file_path();
+                        if triggers_path.exists() {
+                            match Config::load_triggers(&triggers_path) {
+                                Ok(loaded) => decoded.triggers = loaded,
+                                Err(err_message) => {
+                                    return Err(ConfigError::ErrLoadingTriggers(
+                                        err_message,
+                                    ));
+                                }
                             }
                         }
 
@@ -660,6 +695,7 @@ impl Default for Config {
             hide_cursor_when_typing: false,
             draw_bold_text_with_light_colors: false,
             hints: Hints::default(),
+            triggers: Triggers::default(),
             bell: Bell::default(),
             enable_scroll_bar: true,
             scrollback_history_limit: default_scrollback_history_limit(),
