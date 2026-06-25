@@ -470,6 +470,10 @@ impl Screen<'_> {
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
 
+        // Rebuild key bindings so binding edits hot-reload like the rest
+        // of the config (default bindings + user `[bindings]` overrides).
+        self.bindings = crate::bindings::default_key_bindings(config);
+
         // Re-evaluate the opaque flag — toggling `window.opacity` /
         // `window.blur` at runtime should flip the compositor mode.
         self.sugarloaf
