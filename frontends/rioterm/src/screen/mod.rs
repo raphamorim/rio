@@ -1228,6 +1228,7 @@ impl Screen<'_> {
                         self.mark_dirty();
                     }
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
+                    Act::ToggleMaximized => self.context_manager.toggle_maximize_window(),
                     Act::ToggleAppearanceTheme => {
                         self.context_manager.toggle_appearance_theme();
                     }
