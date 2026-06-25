@@ -512,6 +512,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     } else {
                         let size = route.window.screen.context_manager.len();
                         route.window.screen.resize_top_or_bottom_line(size);
+                        // Force a repaint of the post-close state. The PTY
+                        // thread also queues a separate Render, but if that is
+                        // processed before this CloseTerminal (or coalesced),
+                        // the closed tab lingers on screen until some later
+                        // event — looking "frozen" until you click another
+                        // tab. mark_dirty + redraw makes the close show now.
+                        route.window.screen.mark_dirty();
+                        route.request_redraw();
                     }
                 }
             }
