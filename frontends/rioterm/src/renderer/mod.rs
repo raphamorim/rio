@@ -120,6 +120,7 @@ impl Renderer {
                 named_colors.tab_border,
                 config.navigation.hide_if_single,
                 config.navigation.tab_font_size,
+                config.navigation.tab_bar_height,
             ))
         } else {
             None

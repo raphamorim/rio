@@ -12,6 +12,11 @@ pub fn default_tab_font_size() -> f32 {
     12.0
 }
 
+#[inline]
+pub fn default_tab_bar_height() -> f32 {
+    34.0
+}
+
 /// Clamp `unfocused_split_opacity` to `[0.15, 1.0]`.
 ///
 /// A value of `0.0` makes the inactive pane invisible, which is never what
@@ -158,6 +163,9 @@ pub struct Navigation {
     /// Font size (in logical pixels) for the tab-strip titles.
     #[serde(default = "default_tab_font_size", rename = "tab-font-size")]
     pub tab_font_size: f32,
+    /// Height (in logical pixels) of the tab strip / island bar.
+    #[serde(default = "default_tab_bar_height", rename = "tab-bar-height")]
+    pub tab_bar_height: f32,
 }
 
 impl Default for Navigation {
@@ -174,6 +182,7 @@ impl Default for Navigation {
             unfocused_split_fill: None,
             open_config_with_split: true,
             tab_font_size: default_tab_font_size(),
+            tab_bar_height: default_tab_bar_height(),
         }
     }
 }
