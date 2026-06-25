@@ -334,9 +334,16 @@ impl Route<'_> {
                 match &key_event.logical_key {
                     Key::Character(c) if c.as_str() == "n" || c.as_str() == "N" => {
                         self.path = RoutePath::Terminal;
+                        // Repaint so the dialog clears on this keypress.
+                        // Otherwise the terminal is idle, the frame is
+                        // discarded (should_present == false), and the stale
+                        // dialog lingers until some later event forces a
+                        // redraw -- making it look like `n` needs two presses.
+                        self.request_overlay_redraw();
                     }
                     Key::Named(NamedKey::Escape) => {
                         self.path = RoutePath::Terminal;
+                        self.request_overlay_redraw();
                     }
                     Key::Character(c) if c.as_str() == "y" || c.as_str() == "Y" => {
                         self.quit();
