@@ -817,6 +817,20 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
 
             // Special cases
             "tab" => (Key::Named(Tab), KeyLocation::Standard),
+            "enter" => (Key::Named(Enter), KeyLocation::Standard),
+            "backspace" => (Key::Named(Backspace), KeyLocation::Standard),
+            "f1" => (Key::Named(F1), KeyLocation::Standard),
+            "f2" => (Key::Named(F2), KeyLocation::Standard),
+            "f3" => (Key::Named(F3), KeyLocation::Standard),
+            "f4" => (Key::Named(F4), KeyLocation::Standard),
+            "f5" => (Key::Named(F5), KeyLocation::Standard),
+            "f6" => (Key::Named(F6), KeyLocation::Standard),
+            "f7" => (Key::Named(F7), KeyLocation::Standard),
+            "f8" => (Key::Named(F8), KeyLocation::Standard),
+            "f9" => (Key::Named(F9), KeyLocation::Standard),
+            "f10" => (Key::Named(F10), KeyLocation::Standard),
+            "f11" => (Key::Named(F11), KeyLocation::Standard),
+            "f12" => (Key::Named(F12), KeyLocation::Standard),
             _ => return Err("Unable to find defined 'keycode'".to_string()),
         }
     };
