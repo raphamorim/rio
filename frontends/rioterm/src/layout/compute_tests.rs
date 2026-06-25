@@ -647,3 +647,73 @@ fn test_split_inside_resized_panel_preserves_proportions() {
         "Bottom (bottom half) should be ~400px tall, got {bottom_h}"
     );
 }
+
+// --- update_scaled_margin ------------------------------------------------
+
+fn margin_test_dimension() -> ContextDimension {
+    let dims = TextDimensions {
+        width: 8.0,
+        height: 16.0,
+        scale: 1.0,
+    };
+    ContextDimension::build(
+        800.0,
+        600.0,
+        dims,
+        cell_for(dims),
+        1.0,
+        14.0,
+        Margin::all(0.0),
+    )
+}
+
+/// Build a single-panel grid off sugarloaf (positions come from
+/// `calculate_positions`, not `apply_taffy_layout`).
+fn single_panel_grid() -> ContextGrid<rio_backend::event::VoidListener> {
+    use crate::context::create_mock_context;
+    use rio_backend::event::VoidListener;
+    use rio_window::window::WindowId;
+
+    let first = create_mock_context(
+        VoidListener {},
+        WindowId::from(0),
+        0,
+        margin_test_dimension(),
+    );
+    ContextGrid::new(
+        first,
+        Margin::all(0.0),
+        [0.0; 4],
+        [0.0; 4],
+        rio_backend::config::layout::Panel::default(),
+    )
+}
+
+/// Regression: when the top window margin grows (e.g. the tab bar
+/// becomes visible after a second tab is created), `update_scaled_margin`
+/// must refresh Taffy's root size. Otherwise the next layout pass uses
+/// the stale available area and the panel keeps its old height — leaving
+/// the bottom rows clipped behind the tab bar.
+#[test]
+fn test_update_scaled_margin_shrinks_panel_when_top_margin_grows() {
+    let mut grid = single_panel_grid();
+    let panel = grid.current;
+
+    let initial_height = grid.inner[&panel].layout_rect[3];
+    assert!(
+        initial_height > 0.0,
+        "panel should have a positive initial height"
+    );
+
+    let tab_bar_height = 34.0;
+    grid.update_scaled_margin(Margin::new(tab_bar_height, 0.0, 0.0, 0.0));
+    grid.calculate_positions();
+
+    let new_height = grid.inner[&panel].layout_rect[3];
+    assert!(
+        (initial_height - new_height - tab_bar_height).abs() < 1.0,
+        "panel height should shrink by the new top margin: was {initial_height}, \
+         now {new_height}, expected ~{}",
+        initial_height - tab_bar_height
+    );
+}

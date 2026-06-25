@@ -1175,6 +1175,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     pub fn update_scaled_margin(&mut self, scaled_margin: Margin) {
         self.scaled_margin = scaled_margin;
+        // The Taffy root size is `window - scaled_margin`. Changing the
+        // margin without refreshing it leaves the next `compute_layout`
+        // running against a stale available area, so panels keep their
+        // old size (e.g. the tab bar appearing eats into the terminal
+        // height but the PTY never shrinks).
+        let _ = self.try_update_size(self.width, self.height);
     }
 
     pub fn update_line_height(&mut self, line_height: f32) {
