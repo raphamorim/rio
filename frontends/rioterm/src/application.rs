@@ -1280,6 +1280,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
 
                         if let MouseButton::Left | MouseButton::Right = button {
+                            // Always mirror the selection into the primary
+                            // buffer so middle-click paste works (standard
+                            // X11/Wayland behavior). copy_selection is a
+                            // no-op when the selection is empty.
+                            route.window.screen.copy_selection(
+                                ClipboardType::Selection,
+                                &mut self.router.clipboard,
+                            );
                             if self.config.copy_on_select {
                                 route.window.screen.copy_selection(
                                     ClipboardType::Clipboard,
