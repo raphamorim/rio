@@ -5,6 +5,20 @@ use rio_backend::event::EventListener;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+/// Extract the trimmed text of a single grid line. Shared by hint matching
+/// and trigger scanning.
+pub(crate) fn extract_line_text<T: EventListener>(
+    term: &rio_backend::crosswords::Crosswords<T>,
+    line: Line,
+) -> String {
+    let grid = &term.grid;
+    let mut text = String::new();
+    for col in 0..grid.columns() {
+        text.push(grid[line][Column(col)].c());
+    }
+    text.trim_end().to_string()
+}
+
 /// State for hint selection mode
 pub struct HintState {
     /// Currently active hint configuration
@@ -220,7 +234,7 @@ impl HintState {
             }
 
             // Extract text from the line
-            let line_text = self.extract_line_text(term, line);
+            let line_text = extract_line_text(term, line);
 
             // Find all matches in this line. Onig yields (byte_start, byte_end);
             // we slice the source ourselves.
@@ -308,22 +322,6 @@ impl HintState {
                 col = end_col;
             }
         }
-    }
-
-    fn extract_line_text<T: EventListener>(
-        &self,
-        term: &rio_backend::crosswords::Crosswords<T>,
-        line: Line,
-    ) -> String {
-        let grid = &term.grid;
-        let mut text = String::new();
-
-        for col in 0..grid.columns() {
-            let cell = &grid[line][Column(col)];
-            text.push(cell.c());
-        }
-
-        text.trim_end().to_string()
     }
 
     fn generate_labels(&mut self) {
