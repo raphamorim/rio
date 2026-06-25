@@ -1,5 +1,6 @@
 pub mod assistant;
 pub mod command_palette;
+pub mod confirm_quit;
 pub mod custom_cursor;
 pub mod helpers;
 pub mod island;
@@ -66,6 +67,7 @@ pub struct Renderer {
     pub(crate) ignore_selection_fg_color: bool,
     pub search: search::SearchOverlay,
     pub assistant: assistant::AssistantOverlay,
+    pub confirm_quit: confirm_quit::ConfirmQuit,
     pub scrollbar: scrollbar::Scrollbar,
     #[allow(unused)]
     pub option_as_alt: String,
@@ -153,6 +155,7 @@ impl Renderer {
             window_bg_alpha: target_bg_alpha,
             search: search::SearchOverlay::default(),
             assistant: assistant::AssistantOverlay::default(),
+            confirm_quit: confirm_quit::ConfirmQuit::default(),
             scrollbar: scrollbar::Scrollbar::new(config.enable_scroll_bar),
             is_game_mode_enabled: config.renderer.strategy.is_game(),
             custom_mouse_cursor: config.effects.custom_mouse_cursor,
@@ -593,6 +596,11 @@ impl Renderer {
         );
 
         self.command_palette.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
+
+        self.confirm_quit.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
         );
