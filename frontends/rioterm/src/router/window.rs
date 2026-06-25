@@ -257,4 +257,10 @@ pub fn configure_window(winit_window: &Window, config: &Config) {
     }
 
     winit_window.set_blur(config.window.blur.into());
+
+    // Toggle decorations at runtime so `window.decorations` hot-reloads
+    // without a restart. Mirrors the build-time mapping: only `Disabled`
+    // turns the server-side decorations off.
+    winit_window
+        .set_decorations(!matches!(config.window.decorations, Decorations::Disabled));
 }
