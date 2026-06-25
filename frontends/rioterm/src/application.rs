@@ -36,6 +36,8 @@ pub struct Application<'a> {
     router: Router<'a>,
     scheduler: Scheduler,
     app_id: Option<String>,
+    // Used for IPC Single-Instance handy window creation
+    last_working_dir: Option<std::path::PathBuf>,
 }
 
 impl Application<'_> {
@@ -75,6 +77,7 @@ impl Application<'_> {
             router,
             scheduler,
             app_id,
+            last_working_dir: None,
         }
     }
 
@@ -365,6 +368,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         timer_id,
                     );
                 }
+            }
+            RioEventType::Rio(RioEvent::UpdateLastWorkingDirectory(working_dir)) => {
+                tracing::info!("Updated last working directory: {:?}", working_dir);
+                self.last_working_dir = Some(working_dir);
             }
             RioEventType::Rio(RioEvent::ReportToAssistant(error)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
@@ -748,6 +755,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::CreateWindow) => {
+                // println!("Working Dir: {:?}", self.);
+                // self.config.curr
                 self.router.create_window(
                     event_loop,
                     self.event_proxy.clone(),

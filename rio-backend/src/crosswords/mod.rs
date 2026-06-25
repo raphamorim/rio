@@ -2553,6 +2553,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn set_current_directory(&mut self, path: std::path::PathBuf) {
+        // Update last working direcotry in Application Singleton (need for IPC)
+        self.event_proxy.send_event(
+            RioEvent::UpdateLastWorkingDirectory(path.clone()),
+            self.window_id,
+        );
         trace!("Setting working directory {:?}", path);
         self.current_directory = Some(path);
     }

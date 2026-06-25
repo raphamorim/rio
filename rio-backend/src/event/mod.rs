@@ -126,6 +126,8 @@ pub enum RioEvent {
     SelectNativeTabNext,
     SelectNativeTabPrev,
 
+    UpdateLastWorkingDirectory(std::path::PathBuf),
+
     ReportToAssistant(RioError),
 
     /// Grid has changed possibly requiring a mouse cursor shape change.
@@ -293,6 +295,9 @@ impl Debug for RioEvent {
             RioEvent::SelectNativeTabPrev => write!(f, "SelectNativeTabPrev"),
             RioEvent::CreateConfigEditor => write!(f, "CreateConfigEditor"),
             RioEvent::UpdateConfig => write!(f, "ReloadConfiguration"),
+            RioEvent::UpdateLastWorkingDirectory(working_dir) => {
+                write!(f, "UpdateLastWorkingDirectory({:?})", working_dir)
+            }
             RioEvent::ReportToAssistant(error_report) => {
                 write!(f, "ReportToAssistant({})", error_report.report)
             }
