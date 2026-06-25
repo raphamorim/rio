@@ -48,6 +48,9 @@ pub struct RenderableContent {
     pub hint_labels: Vec<HintLabel>,
     pub highlighted_hint: Option<crate::hints::HintMatch>,
     pub hint_matches: Option<Vec<rio_backend::crosswords::search::Match>>,
+    /// Trigger highlight ranges with their per-rule background color.
+    pub trigger_highlights:
+        Option<Vec<(rio_backend::crosswords::search::Match, [u8; 4])>>,
     pub last_typing: Option<Instant>,
     pub last_blink_toggle: Option<Instant>,
     pub pending_update: PendingUpdate,
@@ -110,6 +113,7 @@ impl RenderableContent {
             hint_labels: Vec::new(),
             highlighted_hint: None,
             hint_matches: None,
+            trigger_highlights: None,
             last_typing: None,
             last_blink_toggle: None,
             hyperlink_range: None,

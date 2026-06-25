@@ -69,6 +69,7 @@ pub struct Screen<'screen> {
     pub touchpurpose: TouchPurpose,
     pub search_state: SearchState,
     pub hint_state: HintState,
+    pub triggers: crate::triggers::Triggers,
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
@@ -277,6 +278,7 @@ impl Screen<'_> {
         Ok(Screen {
             search_state: SearchState::default(),
             hint_state: HintState::new(config.hints.alphabet.clone()),
+            triggers: crate::triggers::Triggers::new(&config.triggers),
             hints_config: config
                 .hints
                 .rules
@@ -401,6 +403,8 @@ impl Screen<'_> {
             config.window.macos_use_unified_titlebar,
         );
         let padding_y_bottom = config.margin.bottom;
+
+        self.triggers.rebuild(&config.triggers);
 
         if should_update_font_library {
             self.sugarloaf.update_font(font_library);
@@ -3488,8 +3492,64 @@ impl Screen<'_> {
         }
     }
 
+    /// Scan the focused route's new output against the configured triggers
+    /// and dispatch their actions. No-op when no triggers are configured.
+    fn run_triggers(&mut self) {
+        if self.triggers.is_empty() {
+            return;
+        }
+
+        // The focused context's real route id (the value get_by_route_id
+        // matches), not the cached current_route which is unset until the
+        // first tab switch.
+        let route_id = self.context_manager.current().route_id;
+
+        let (actions, highlights) = {
+            let terminal = self.context_manager.current().terminal.lock();
+            let actions = self.triggers.scan(route_id, &terminal);
+            let highlights = self.triggers.highlights(&terminal);
+            (actions, highlights)
+        };
+
+        self.context_manager
+            .current_mut()
+            .renderable_content
+            .trigger_highlights = if highlights.is_empty() {
+            None
+        } else {
+            Some(highlights)
+        };
+
+        use crate::triggers::ResolvedAction as Action;
+        use rio_backend::event::{RioEvent, TriggerEventAction as Event};
+        let window_id = self.context_manager.window_id();
+        let tab_index = self.context_manager.current_index();
+        for action in actions {
+            let event = match action {
+                Action::Notify { title, body } => Event::Notify { title, body },
+                Action::Run { program, args } => Event::Run { program, args },
+                Action::SendText(text) => Event::SendText { text },
+                Action::Coprocess { program, args } => Event::Coprocess { program, args },
+                Action::TabColor(color) => {
+                    self.context_manager
+                        .set_custom_color(tab_index, Some(color));
+                    continue;
+                }
+            };
+            self.context_manager.event_proxy().send_event(
+                RioEvent::TriggerFired {
+                    route_id,
+                    action: event,
+                }
+                .into(),
+                window_id,
+            );
+        }
+    }
+
     pub(crate) fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
         let current_route = self.context_manager.current_route();
+        self.run_triggers();
         let (grid_cols, grid_rows) = {
             let terminal = self.context_manager.current().terminal.lock();
             (terminal.columns() as u32, terminal.screen_lines() as u32)
@@ -3681,6 +3741,9 @@ impl Screen<'_> {
                     rio_backend::crosswords::pos::Pos,
                     rio_backend::crosswords::pos::Pos,
                 )>,
+                /// Trigger highlight ranges with their per-rule bg color.
+                trigger_highlights:
+                    Option<Vec<(rio_backend::crosswords::search::Match, [u8; 4])>>,
             }
 
             let (active_key, scaled_margin) = {
@@ -3745,6 +3808,8 @@ impl Screen<'_> {
                     rio_backend::event::TerminalDamage::Noop,
                 );
                 let hint_matches = ctx.renderable_content.hint_matches.clone();
+                let trigger_highlights =
+                    ctx.renderable_content.trigger_highlights.clone();
                 let is_active = *key == active_key;
                 // `focused_match` lives on `Screen::search_state` — it's
                 // a per-window state tied to whichever panel has search
@@ -3807,6 +3872,7 @@ impl Screen<'_> {
                     hint_matches,
                     focused_match,
                     hovered_hyperlink,
+                    trigger_highlights,
                 });
             }
 
@@ -3909,6 +3975,7 @@ impl Screen<'_> {
                             p.hint_matches.as_deref(),
                             p.focused_match.as_ref(),
                             p.hovered_hyperlink,
+                            p.trigger_highlights.as_deref(),
                             y,
                             cols,
                             p.display_offset,

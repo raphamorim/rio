@@ -565,6 +565,57 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {
                 self.handle_desktop_notification(&title, &body);
             }
+            RioEventType::Rio(RioEvent::TriggerFired { route_id, action }) => {
+                use rio_backend::event::TriggerEventAction as Action;
+                match action {
+                    Action::Notify { title, body } => {
+                        self.handle_desktop_notification(&title, &body);
+                    }
+                    Action::Run { program, args } => {
+                        if let Some(route) = self.router.routes.get(&window_id) {
+                            route.window.screen.exec(&program, &args);
+                        }
+                    }
+                    Action::SendText { text } => {
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            if let Some(item) = route
+                                .window
+                                .screen
+                                .context_manager
+                                .get_by_route_id(route_id)
+                            {
+                                item.val.messenger.send_bytes(text.into_bytes());
+                            }
+                        }
+                    }
+                    Action::Coprocess { program, args } => {
+                        // Capture stdout off-thread so a slow command never
+                        // blocks the UI, then write it into the PTY.
+                        let proxy = self.event_proxy.clone();
+                        std::thread::spawn(move || {
+                            match std::process::Command::new(&program)
+                                .args(&args)
+                                .output()
+                            {
+                                Ok(output) if !output.stdout.is_empty() => {
+                                    let text = String::from_utf8_lossy(&output.stdout)
+                                        .into_owned();
+                                    proxy.send_event(
+                                        RioEvent::PtyWrite(route_id, text).into(),
+                                        window_id,
+                                    );
+                                }
+                                Ok(_) => {}
+                                Err(err) => {
+                                    tracing::warn!(
+                                        "trigger coprocess {program:?} failed: {err}"
+                                    );
+                                }
+                            }
+                        });
+                    }
+                }
+            }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
                 if let Some(route) = self.router.routes.get(&window_id) {
                     let timer_id = TimerId::new(

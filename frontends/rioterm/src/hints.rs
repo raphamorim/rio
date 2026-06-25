@@ -16,7 +16,9 @@ pub(crate) fn extract_line_text<T: EventListener>(
     for col in 0..grid.columns() {
         text.push(grid[line][Column(col)].c());
     }
-    text.trim_end().to_string()
+    // Unwritten cells read back as NUL, which `trim_end` leaves in place.
+    text.trim_end_matches(|c: char| c == '\0' || c.is_whitespace())
+        .to_string()
 }
 
 /// State for hint selection mode
