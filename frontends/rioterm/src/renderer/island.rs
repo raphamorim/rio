@@ -613,12 +613,16 @@ impl Island {
 
         // Draw bottom border for the left margin area (traffic light space on macOS)
         if left_margin > 0.0 {
+            // Pixel-snap: a 1-physical-px line at the bottom edge (see the
+            // separator below — sub-pixel thin rects get dropped).
+            let line_h = 1.0 / scale_factor;
+            let border_y = (self.height * scale_factor).round() / scale_factor - line_h;
             sugarloaf.rect(
                 None,
                 0.0,
-                self.height - 1.0,
+                border_y,
                 left_margin,
-                0.5,
+                line_h,
                 self.border_color,
                 0.1,
                 0,
@@ -708,11 +712,18 @@ impl Island {
             // Draw vertical left border (separator between tabs)
             // Skip for first tab UNLESS it's active (then draw to separate from traffic lights)
             if tab_index > 0 || (tab_index == 0 && is_active && left_margin > 0.0) {
+                // Pixel-snap: rect() scales logical coords by scale_factor
+                // without rounding, so a fractional x and sub-pixel width
+                // make the separator land between physical pixels and drop
+                // out (reappearing only when a resize realigns it). Snap x
+                // to a whole physical pixel and use a 1-physical-px width.
+                let snapped_x = (tab_x * scale_factor).round() / scale_factor;
+                let line_width = 1.0 / scale_factor;
                 sugarloaf.rect(
                     None,
-                    tab_x,
+                    snapped_x,
                     0.0, // Start from top
-                    0.5, // 1px width
+                    line_width,
                     self.height,
                     self.border_color,
                     0.1, // Same depth as other island elements
@@ -722,12 +733,16 @@ impl Island {
 
             // Draw bottom border for inactive tabs (active tabs have no border)
             if !is_active {
+                // Pixel-snap to a 1-physical-px line at the bottom edge.
+                let line_h = 1.0 / scale_factor;
+                let border_y =
+                    (self.height * scale_factor).round() / scale_factor - line_h;
                 sugarloaf.rect(
                     None,
                     tab_x,
-                    self.height - 1.0,
+                    border_y,
                     tab_width,
-                    0.5, // 1px height
+                    line_h,
                     self.border_color,
                     0.1, // Same depth as other island elements
                     0,
