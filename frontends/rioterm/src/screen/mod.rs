@@ -1691,6 +1691,16 @@ impl Screen<'_> {
         clipboard.set(ty, text);
     }
 
+    pub fn copy_selection_on_pointer_release(
+        &mut self,
+        copy_on_select: bool,
+        clipboard: &mut Clipboard,
+    ) {
+        for &ty in pointer_release_clipboard_targets(copy_on_select) {
+            self.copy_selection(ty, clipboard);
+        }
+    }
+
     #[inline]
     pub fn clear_selection(&mut self) {
         // Clear the selection on the terminal.
@@ -4555,6 +4565,18 @@ impl Screen<'_> {
     }
 }
 
+// Clipboard slots that receive the current selection when a pointer button is
+// released after a text drag. PRIMARY is unconditional — middle-click and
+// Shift+Insert paste it, and other terminals all populate it on mouse
+// selection. `copy_on_select` additionally mirrors into the system clipboard.
+fn pointer_release_clipboard_targets(copy_on_select: bool) -> &'static [ClipboardType] {
+    if copy_on_select {
+        &[ClipboardType::Selection, ClipboardType::Clipboard]
+    } else {
+        &[ClipboardType::Selection]
+    }
+}
+
 /// Apply post-processing to hyperlink URIs to remove trailing delimiters and handle uneven brackets.
 fn post_process_hyperlink_uri(uri: &str) -> String {
     let chars: Vec<char> = uri.chars().collect();
@@ -4664,6 +4686,21 @@ mod tests {
         assert_eq!(
             post_process_hyperlink_uri("https://example.com/path[with]brackets"),
             "https://example.com/path[with]brackets"
+        );
+    }
+
+    // Regression test for #1620: mouse selection must claim the PRIMARY
+    // selection regardless of copy_on_select, so middle-click / Shift+Insert
+    // paste the text just selected in Rio.
+    #[test]
+    fn pointer_release_always_claims_primary() {
+        assert_eq!(
+            pointer_release_clipboard_targets(false),
+            &[ClipboardType::Selection],
+        );
+        assert_eq!(
+            pointer_release_clipboard_targets(true),
+            &[ClipboardType::Selection, ClipboardType::Clipboard],
         );
     }
 }
