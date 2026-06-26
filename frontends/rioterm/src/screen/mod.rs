@@ -3526,7 +3526,15 @@ impl Screen<'_> {
         let tab_index = self.context_manager.current_index();
         for action in actions {
             let event = match action {
-                Action::Notify { title, body } => Event::Notify { title, body },
+                Action::Notify {
+                    title,
+                    body,
+                    urgency,
+                } => Event::Notify {
+                    title,
+                    body,
+                    urgency,
+                },
                 Action::Run { program, args } => Event::Run { program, args },
                 Action::SendText(text) => Event::SendText { text },
                 Action::Coprocess { program, args } => Event::Coprocess { program, args },

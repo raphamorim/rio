@@ -72,10 +72,23 @@ pub enum TerminalDamage {
 /// actions — tab color and highlight — are applied directly by the scanner).
 #[derive(Debug, Clone)]
 pub enum TriggerEventAction {
-    Notify { title: String, body: String },
-    Run { program: String, args: Vec<String> },
-    SendText { text: String },
-    Coprocess { program: String, args: Vec<String> },
+    Notify {
+        title: String,
+        body: String,
+        /// freedesktop urgency level (0 low, 1 normal, 2 critical).
+        urgency: u8,
+    },
+    Run {
+        program: String,
+        args: Vec<String>,
+    },
+    SendText {
+        text: String,
+    },
+    Coprocess {
+        program: String,
+        args: Vec<String>,
+    },
 }
 
 #[derive(Clone)]

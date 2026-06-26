@@ -26,6 +26,30 @@ pub struct Trigger {
     pub action: TriggerAction,
 }
 
+/// Desktop-notification urgency. `critical` banners even while rio is the
+/// focused window — GNOME suppresses normal banners from the focused app and
+/// only files them in the notification list — at the cost of GNOME keeping
+/// critical notifications on screen until dismissed.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Urgency {
+    Low,
+    #[default]
+    Normal,
+    Critical,
+}
+
+impl Urgency {
+    /// freedesktop `urgency` hint level.
+    pub fn level(self) -> u8 {
+        match self {
+            Urgency::Low => 0,
+            Urgency::Normal => 1,
+            Urgency::Critical => 2,
+        }
+    }
+}
+
 /// `\0..\9` in textual parameters expand to the whole match and capture
 /// groups, respectively.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -36,6 +60,8 @@ pub enum TriggerAction {
         title: String,
         #[serde(default)]
         body: String,
+        #[serde(default)]
+        urgency: Urgency,
     },
 
     /// Set the tab color.
@@ -94,7 +120,7 @@ mod tests {
             [[triggers.rules]]
             regex = "error: (.*)"
             [triggers.rules.action]
-            notify = { title = "Error", body = "\\1" }
+            notify = { title = "Error", body = "\\1", urgency = "critical" }
 
             [[triggers.rules]]
             regex = "(?i)warn"
@@ -127,7 +153,10 @@ mod tests {
         assert_eq!(triggers.rules.len(), 6);
         assert!(matches!(
             triggers.rules[0].action,
-            TriggerAction::Notify { .. }
+            TriggerAction::Notify {
+                urgency: Urgency::Critical,
+                ..
+            }
         ));
         assert!(triggers.rules[1].instant);
         assert!(matches!(

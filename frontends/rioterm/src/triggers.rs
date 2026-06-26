@@ -32,11 +32,21 @@ pub struct Triggers {
 
 /// A one-shot trigger action with captures already substituted.
 pub enum ResolvedAction {
-    Notify { title: String, body: String },
+    Notify {
+        title: String,
+        body: String,
+        urgency: u8,
+    },
     TabColor([f32; 4]),
-    Run { program: String, args: Vec<String> },
+    Run {
+        program: String,
+        args: Vec<String>,
+    },
     SendText(String),
-    Coprocess { program: String, args: Vec<String> },
+    Coprocess {
+        program: String,
+        args: Vec<String>,
+    },
 }
 
 #[inline]
@@ -205,9 +215,14 @@ fn span(text: &str, caps: &onig::Captures) -> Option<(Column, Column)> {
 
 fn resolve(action: &TriggerAction, caps: &onig::Captures) -> ResolvedAction {
     match action {
-        TriggerAction::Notify { title, body } => ResolvedAction::Notify {
+        TriggerAction::Notify {
+            title,
+            body,
+            urgency,
+        } => ResolvedAction::Notify {
             title: substitute(title, caps),
             body: substitute(body, caps),
+            urgency: urgency.level(),
         },
         TriggerAction::TabColor { color } => ResolvedAction::TabColor(*color),
         TriggerAction::Run { program, args } => ResolvedAction::Run {

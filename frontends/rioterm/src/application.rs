@@ -137,8 +137,8 @@ impl Application<'_> {
         }
     }
 
-    fn handle_desktop_notification(&self, title: &str, body: &str) {
-        rio_notifier::send_notification(title, body);
+    fn handle_desktop_notification(&self, title: &str, body: &str, urgency: u8) {
+        rio_notifier::send_notification(title, body, urgency);
     }
 
     pub fn run(
@@ -563,13 +563,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {
-                self.handle_desktop_notification(&title, &body);
+                self.handle_desktop_notification(&title, &body, 1);
             }
             RioEventType::Rio(RioEvent::TriggerFired { route_id, action }) => {
                 use rio_backend::event::TriggerEventAction as Action;
                 match action {
-                    Action::Notify { title, body } => {
-                        self.handle_desktop_notification(&title, &body);
+                    Action::Notify {
+                        title,
+                        body,
+                        urgency,
+                    } => {
+                        self.handle_desktop_notification(&title, &body, urgency);
                     }
                     Action::Run { program, args } => {
                         if let Some(route) = self.router.routes.get(&window_id) {
