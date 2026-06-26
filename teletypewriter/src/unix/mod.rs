@@ -32,6 +32,8 @@ const TIOCSWINSZ: libc::c_ulong = 0x5414;
 const TIOCSWINSZ: libc::c_int = 0x5414;
 #[cfg(target_os = "freebsd")]
 const TIOCSWINSZ: libc::c_ulong = 0x80087467;
+#[cfg(target_os = "netbsd")]
+const TIOCSWINSZ: libc::c_ulong = 0x80087467;
 #[cfg(target_os = "macos")]
 const TIOCSWINSZ: libc::c_ulong = 2148037735;
 
@@ -289,7 +291,7 @@ pub fn create_termp(utf8: bool) -> libc::termios {
         c_line: 0,
     };
 
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "netbsd"))]
     let mut term = libc::termios {
         c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
         c_oflag: libc::OPOST | libc::ONLCR,
@@ -307,7 +309,14 @@ pub fn create_termp(utf8: bool) -> libc::termios {
         c_ospeed: Default::default(),
     };
 
-    #[cfg(not(target_os = "freebsd"))]
+    #[cfg(target_os = "netbsd")]
+    {
+        // B0 (c_ospeed=0) triggers SIGHUP via NetBSD PTY path; set B38400
+        term.c_ispeed = libc::B38400 as _;
+        term.c_ospeed = libc::B38400 as _;
+    }
+
+    #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
     {
         // Enable utf8 support if requested
         if utf8 {
@@ -380,6 +389,26 @@ impl ShellUser {
                 Err(err) => return Err(err),
             },
         };
+
+        // On NetBSD graphical sessions, the display manager often sets
+        // $SHELL=/bin/ksh regardless of /etc/passwd. Override with the
+        // password-database shell so rio starts the configured login shell.
+        #[cfg(target_os = "netbsd")]
+        if let Ok(ref pw) = pw {
+            if !pw.shell.is_empty() {
+                shell = pw.shell.to_owned();
+            }
+        }
+
+        // On NetBSD graphical sessions, the display manager often sets
+        // /usr/pkg/bin/zsh=/bin/ksh regardless of /etc/passwd. Override with the
+        // password-database shell so rio starts the configured login shell.
+        #[cfg(target_os = "netbsd")]
+        if let Ok(ref pw) = pw {
+            if !pw.shell.is_empty() {
+                shell = pw.shell.to_owned();
+            }
+        }
 
         Ok(Self { user, home, shell })
     }
