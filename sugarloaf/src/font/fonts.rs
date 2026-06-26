@@ -82,6 +82,14 @@ pub struct SugarloafFont {
     pub family: String,
     #[serde(default)]
     pub style: FontStyle,
+    /// `wght` axis override for this slot. Only takes effect when the slot
+    /// is served by the bundled Cascadia Code variable font — i.e. when
+    /// `family` is the default and no system face was matched. Lets users
+    /// dial the regular face below its 400 default (e.g. 350 for a lighter
+    /// look) or pull the bold face below 700. For a non-bundled family,
+    /// pick the weight via `style = "Light"` / `"SemiBold"` instead.
+    #[serde(default)]
+    pub weight: Option<f32>,
 }
 
 impl Default for SugarloafFont {
@@ -89,6 +97,7 @@ impl Default for SugarloafFont {
         Self {
             family: default_font_family(),
             style: FontStyle::Default,
+            weight: None,
         }
     }
 }
@@ -149,6 +158,32 @@ pub struct SugarloafFonts {
     pub disable_warnings_not_found: bool,
     #[serde(default = "Option::default", rename = "additional-dirs")]
     pub additional_dirs: Option<Vec<String>>,
+}
+
+#[cfg(test)]
+mod toml_tests {
+    use super::*;
+
+    /// User-facing TOML snippet must round-trip into `weight` field as
+    /// `Some(f32)`, regardless of integer vs float spelling and whether
+    /// `style` is also set on the same slot.
+    #[test]
+    fn weight_field_parses_from_toml() {
+        let snippet = r#"
+[regular]
+weight = 300
+style = "Light"
+
+[bold]
+weight = 600
+style = "SemiBold"
+"#;
+        let fonts: SugarloafFonts = toml::from_str(snippet).unwrap();
+        assert_eq!(fonts.regular.weight, Some(300.0));
+        assert_eq!(fonts.regular.style, FontStyle::Named("Light".into()));
+        assert_eq!(fonts.bold.weight, Some(600.0));
+        assert_eq!(fonts.bold.style, FontStyle::Named("SemiBold".into()));
+    }
 }
 
 pub fn parse_unicode(input: &str) -> Option<char> {

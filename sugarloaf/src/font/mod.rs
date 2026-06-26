@@ -886,7 +886,7 @@ impl FontLibraryData {
                     fonts_not_fount.push(spec.to_owned());
                 }
 
-                self.insert(load_fallback_from_memory(Slot::Regular));
+                self.insert(load_fallback_from_memory(Slot::Regular, spec.weight));
             }
         }
 
@@ -914,7 +914,7 @@ impl FontLibraryData {
                         // forces a cascade-discovery fallback at shape
                         // time — which can resolve bold to a system font
                         // with mismatched metrics.
-                        self.insert(load_fallback_from_memory(slot));
+                        self.insert(load_fallback_from_memory(slot, spec.weight));
                     } else {
                         // Family resolved but the requested style/weight
                         // didn't — log-only, no UI warning. Alias to the
@@ -1160,7 +1160,7 @@ impl PartialEq for FontData {
 impl FontData {
     #[inline]
     pub fn is_bold(&self) -> bool {
-        self.weight >= Weight(700)
+        self.weight >= Weight::BOLD
     }
 
     #[inline]
@@ -1317,7 +1317,7 @@ impl FontData {
         let (should_embolden, should_italicize) = synth_decisions(
             slot,
             font_spec,
-            weight >= Weight(700),
+            weight >= Weight::BOLD,
             style == Style::Italic,
         );
 
@@ -1451,33 +1451,34 @@ impl FontData {
     pub fn from_static_slice(
         data: &'static [u8],
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::from_static_slice_with_wght(data, None)
+        Self::from_static_slice_with_wght(data, None, None)
     }
 
-    /// Like [`from_static_slice`] but optionally bakes a `wght` axis
-    /// value into the loaded face. Mirrors ghostty's `Face.setVariations`
-    /// pattern: load the same variable-font bytes for every weight slot,
-    /// then set the `wght` axis post-construction so the rasterizer pulls
-    /// the right outlines (regular vs. bold) from a single source file.
+    /// Like [`from_static_slice`] but lets the caller bake a `wght` axis
+    /// value into the loaded face and/or override the logical weight
+    /// metadata. Mirrors ghostty's `Face.setVariations` pattern: load the
+    /// same variable-font bytes for every weight slot, then set the `wght`
+    /// axis post-construction so the rasterizer pulls the right outlines
+    /// from a single source file.
     ///
-    /// `wght = None` leaves the font at its default instance. Pass
-    /// `Some(700.0)` for the bold slot, etc.
+    /// The two parameters intentionally drive different things:
+    ///   - `wght` is the variable-font axis value used at rasterization
+    ///     time. `None` leaves the font at its default instance.
+    ///   - `logical_weight` is the CSS-style category used for cascade
+    ///     matching and `is_bold()`. `None` lets the font report its
+    ///     attribute-table weight (typically 400 for a variable file's
+    ///     default instance). Pass `Some(Weight::BOLD)` to mark the face
+    ///     as the bold slot regardless of the axis value the user picked.
     pub fn from_static_slice_with_wght(
         data: &'static [u8],
         wght: Option<f32>,
+        logical_weight: Option<swash::Weight>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let font = FontRef::from_index(data, 0).unwrap();
         let (offset, key) = (font.offset, font.key);
         let attributes = font.attributes();
         let style = attributes.style();
-        // The default instance of a variable font reports the regular
-        // weight (e.g. 400). When the caller asks for a specific `wght`
-        // value we override the reported weight so `is_bold()` and the
-        // bold-spec lookup walk match the slot's intent.
-        let weight = match wght {
-            Some(v) => swash::Weight(v.round().clamp(0.0, u16::MAX as f32) as u16),
-            None => attributes.weight(),
-        };
+        let weight = logical_weight.unwrap_or_else(|| attributes.weight());
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
         let is_emoji = has_color_tables(&font);
@@ -1816,17 +1817,28 @@ fn find_font(
 /// `ghostty/src/font/SharedGridSet.zig:264-317`): regular and bold load
 /// the same upright variable file, italic and bold-italic load the same
 /// italic variable file, and the bold slots set the `wght` axis to 700.
-fn load_fallback_from_memory(slot: Slot) -> FontData {
+///
+/// `weight_override` lets the user dial the `wght` axis (config field
+/// `fonts.<slot>.weight`). When set, it replaces the slot's default
+/// rendering value (400-ish for regular, 700 for bold). The logical
+/// weight reported to the cascade walk is decided separately from the
+/// axis value: bold slots always mark the face as `Weight::BOLD` so
+/// `is_bold()` and the bold-text lookup walk match the slot's intent,
+/// even when the user picked a lighter rendering axis (e.g. 500).
+fn load_fallback_from_memory(slot: Slot, weight_override: Option<f32>) -> FontData {
     use constants::{FONT_CASCADIA_CODE_NF, FONT_CASCADIA_CODE_NF_ITALIC, WGHT_BOLD};
 
-    let (data, wght) = match slot {
+    let (data, slot_default_wght) = match slot {
         Slot::Regular => (FONT_CASCADIA_CODE_NF, None),
         Slot::Bold => (FONT_CASCADIA_CODE_NF, Some(WGHT_BOLD)),
         Slot::Italic => (FONT_CASCADIA_CODE_NF_ITALIC, None),
         Slot::BoldItalic => (FONT_CASCADIA_CODE_NF_ITALIC, Some(WGHT_BOLD)),
     };
 
-    FontData::from_static_slice_with_wght(data, wght).unwrap()
+    let wght = weight_override.or(slot_default_wght);
+    let logical_weight = slot.is_bold().then_some(Weight::BOLD);
+
+    FontData::from_static_slice_with_wght(data, wght, logical_weight).unwrap()
 }
 
 #[cfg(test)]
@@ -1882,10 +1894,10 @@ mod alias_tests {
     /// embedded bold slot unloaded with default config.
     #[test]
     fn fallback_bold_slot_reports_is_bold() {
-        let regular = load_fallback_from_memory(Slot::Regular);
-        let bold = load_fallback_from_memory(Slot::Bold);
-        let italic = load_fallback_from_memory(Slot::Italic);
-        let bold_italic = load_fallback_from_memory(Slot::BoldItalic);
+        let regular = load_fallback_from_memory(Slot::Regular, None);
+        let bold = load_fallback_from_memory(Slot::Bold, None);
+        let italic = load_fallback_from_memory(Slot::Italic, None);
+        let bold_italic = load_fallback_from_memory(Slot::BoldItalic, None);
 
         assert!(!regular.is_bold(), "regular slot must not be bold");
         assert!(bold.is_bold(), "bold slot must report is_bold");
@@ -1907,6 +1919,72 @@ mod alias_tests {
         assert_eq!(bold_italic.wght_variation, Some(constants::WGHT_BOLD));
         assert_eq!(regular.wght_variation, None);
         assert_eq!(italic.wght_variation, None);
+    }
+
+    /// End-to-end: a `SugarloafFonts` spec with per-slot `weight`
+    /// overrides flows through `FontLibrary::load` into the right
+    /// `wght_variation` on each slot's `FontData`. Pins the path
+    /// `fonts.<slot>.weight` config → bundled Cascadia Code → swash
+    /// variable axis at shape/rasterize time.
+    #[test]
+    fn load_applies_per_slot_weight_overrides() {
+        use crate::font::fonts::{SugarloafFont, SugarloafFonts};
+
+        let spec = SugarloafFonts {
+            regular: SugarloafFont {
+                weight: Some(300.0),
+                ..SugarloafFont::default()
+            },
+            bold: SugarloafFont {
+                weight: Some(600.0),
+                ..SugarloafFont::default()
+            },
+            ..SugarloafFonts::default()
+        };
+
+        let mut lib = FontLibraryData::default();
+        let _ = lib.load(spec);
+
+        assert_eq!(lib.get(&0).wght_variation, Some(300.0));
+        assert!(!lib.get(&0).is_bold(), "regular stays non-bold");
+
+        assert_eq!(lib.get(&1).wght_variation, None);
+        assert!(!lib.get(&1).is_bold());
+
+        assert_eq!(lib.get(&2).wght_variation, Some(600.0));
+        assert!(
+            lib.get(&2).is_bold(),
+            "bold slot keeps is_bold() even at user-set 600"
+        );
+
+        assert_eq!(
+            lib.get(&3).wght_variation,
+            Some(constants::WGHT_BOLD),
+            "bold-italic without override falls back to slot default"
+        );
+        assert!(lib.get(&3).is_bold());
+    }
+
+    /// User-supplied `weight` override drives only the variable-font
+    /// `wght` axis. The cascade-match weight (`is_bold()`) is decided by
+    /// the slot, so a user asking for a less-heavy bold (e.g. 500) still
+    /// gets a face that satisfies bold-text requests in the lookup walk.
+    #[test]
+    fn fallback_user_weight_decouples_axis_from_logical_weight() {
+        let light_regular = load_fallback_from_memory(Slot::Regular, Some(350.0));
+        let light_bold = load_fallback_from_memory(Slot::Bold, Some(500.0));
+
+        assert_eq!(light_regular.wght_variation, Some(350.0));
+        assert!(
+            !light_regular.is_bold(),
+            "lighter regular must not register as bold"
+        );
+
+        assert_eq!(light_bold.wght_variation, Some(500.0));
+        assert!(
+            light_bold.is_bold(),
+            "bold slot must keep is_bold() even when the user picks a lighter wght"
+        );
     }
 
     /// Aliases share the target's `metrics_cache`, so requesting

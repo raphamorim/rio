@@ -147,29 +147,32 @@ This section documents the *[fonts]* table of the configuration file.
 
 	Additional directories to search for fonts.
 
-*regular* = { family = _"<string>"_, style = _"<string>"_, width = _"<string>"_, weight = _<integer>_ }
+*regular* = { family = _"<string>"_, style = _"<string>"_, weight = _<float>_ }
 
-	Regular font configuration.
+	Regular font configuration. _weight_ sets the variable-font *wght*
+	axis at render time and only takes effect for the bundled Cascadia
+	Code (axis range 200–700); for a system-installed family pick the
+	face via _style_ = _"Light"_ / _"SemiBold"_ / etc.
 
-	Default: { family = _"cascadiacode"_, style = _"Normal"_, width = _"Normal"_, weight = _400_ }
+	Default: { family = _"cascadiacode"_, style = _"Normal"_, weight = _400_ }
 
-*bold* = { family = _"<string>"_, style = _"<string>"_, width = _"<string>"_, weight = _<integer>_ }
+*bold* = { family = _"<string>"_, style = _"<string>"_, weight = _<float>_ }
 
-	Bold font configuration.
+	Bold font configuration. See _regular_ for _weight_ semantics.
 
-	Default: { family = _"cascadiacode"_, style = _"Normal"_, width = _"Normal"_, weight = _800_ }
+	Default: { family = _"cascadiacode"_, style = _"Normal"_, weight = _700_ }
 
-*italic* = { family = _"<string>"_, style = _"<string>"_, width = _"<string>"_, weight = _<integer>_ }
+*italic* = { family = _"<string>"_, style = _"<string>"_, weight = _<float>_ }
 
-	Italic font configuration.
+	Italic font configuration. See _regular_ for _weight_ semantics.
 
-	Default: { family = _"cascadiacode"_, style = _"Italic"_, width = _"Normal"_, weight = _400_ }
+	Default: { family = _"cascadiacode"_, style = _"Italic"_, weight = _400_ }
 
-*bold-italic* = { family = _"<string>"_, style = _"<string>"_, width = _"<string>"_, weight = _<integer>_ }
+*bold-italic* = { family = _"<string>"_, style = _"<string>"_, weight = _<float>_ }
 
-	Bold italic font configuration.
+	Bold italic font configuration. See _regular_ for _weight_ semantics.
 
-	Default: { family = _"cascadiacode"_, style = _"Italic"_, width = _"Normal"_, weight = _800_ }
+	Default: { family = _"cascadiacode"_, style = _"Italic"_, weight = _700_ }
 
 *extras* = [{ family = _"<string>"_ },]
 

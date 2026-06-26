@@ -430,6 +430,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     } else {
                         route.clear_errors();
                     }
+
+                    // Config reloads mutate damage state and (for font
+                    // changes) the FontLibrary and per-panel atlases, but
+                    // nothing else in this handler schedules a redraw —
+                    // the window stays idle until a later focus/input
+                    // event triggers a frame. Ask for one now so the
+                    // updated config takes effect immediately.
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::Exit | RioEvent::Quit) => {
