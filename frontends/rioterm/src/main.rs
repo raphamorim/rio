@@ -12,6 +12,7 @@ mod context;
 mod grid_emit;
 mod hints;
 mod ime;
+#[cfg(unix)]
 mod ipc;
 mod layout;
 mod messenger;
