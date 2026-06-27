@@ -609,7 +609,18 @@ impl FontLibraryData {
         if let Some(symbol_maps) = &self.symbol_maps {
             for symbol_map in symbol_maps {
                 if symbol_map.range.contains(&ch) {
-                    return Some((symbol_map.font_index, false));
+                    // Inherit `is_emoji` from the mapped font's color-table
+                    // detection so config-pinned emoji families (e.g.
+                    // `Segoe UI Emoji` via `[fonts.symbol-map]`) flow into
+                    // the wide-cell rasterization / centering path in
+                    // `grid_emit::ensure_glyph_by_id`. Hardcoding `false`
+                    // here was a bug — it bypassed all the emoji-specific
+                    // placement.
+                    let is_emoji = self
+                        .try_get(&symbol_map.font_index)
+                        .map(|fd| fd.is_emoji)
+                        .unwrap_or(false);
+                    return Some((symbol_map.font_index, is_emoji));
                 }
             }
         }
@@ -672,7 +683,18 @@ impl FontLibraryData {
         if let Some(symbol_maps) = &self.symbol_maps {
             for symbol_map in symbol_maps {
                 if symbol_map.range.contains(&ch) {
-                    return Some((symbol_map.font_index, false));
+                    // Inherit `is_emoji` from the mapped font's color-table
+                    // detection so config-pinned emoji families (e.g.
+                    // `Segoe UI Emoji` via `[fonts.symbol-map]`) flow into
+                    // the wide-cell rasterization / centering path in
+                    // `grid_emit::ensure_glyph_by_id`. Hardcoding `false`
+                    // here was a bug — it bypassed all the emoji-specific
+                    // placement.
+                    let is_emoji = self
+                        .try_get(&symbol_map.font_index)
+                        .map(|fd| fd.is_emoji)
+                        .unwrap_or(false);
+                    return Some((symbol_map.font_index, is_emoji));
                 }
             }
         }
