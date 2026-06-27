@@ -81,6 +81,10 @@ impl Application<'_> {
         }
     }
 
+    pub fn get_event_proxy(&self) -> EventProxy {
+        self.event_proxy.clone()
+    }
+
     fn skip_window_event(event: &WindowEvent) -> bool {
         matches!(
             event,
@@ -755,8 +759,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::CreateWindow) => {
-                // println!("Working Dir: {:?}", self.);
-                // self.config.curr
                 self.router.create_window(
                     event_loop,
                     self.event_proxy.clone(),
@@ -911,6 +913,29 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::IpcCreateWindow(working_dir)) => {
+                let mut config = self.config.clone();
+
+                config.working_dir = working_dir
+                    .or(self.last_working_dir.clone())
+                    .map(|wd| wd.to_string_lossy().into_owned())
+                    .or(config.working_dir);
+
+                // A new window in a different working directory requires spawning a new process
+                // This may be dirty hack
+                if config.working_dir.is_some() {
+                    config.use_fork = false;
+                }
+
+                self.router.create_window(
+                    event_loop,
+                    self.event_proxy.clone(),
+                    &config,
+                    None,
+                    self.app_id.as_deref(),
+                );
+            }
+
             _ => {}
         }
     }

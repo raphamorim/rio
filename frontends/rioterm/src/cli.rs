@@ -46,6 +46,10 @@ pub struct TerminalOptions {
     /// Set the Wayland app_id or X11 WM_CLASS (Linux/BSD only)
     #[clap(long)]
     pub app_id: Option<String>,
+
+    /// Disable IPC single-instance mode (always launch a new process)
+    #[clap(long)]
+    pub no_ipc: bool,
 }
 
 impl TerminalOptions {

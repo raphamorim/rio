@@ -12,6 +12,7 @@ mod context;
 mod grid_emit;
 mod hints;
 mod ime;
+mod ipc;
 mod layout;
 mod messenger;
 mod mouse;
@@ -186,7 +187,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             config.use_fork = false;
         }
 
-        if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
+        if let Some(working_dir_cli) =
+            args.window_options.terminal_options.working_dir.clone()
+        {
             // Use dunce::canonicalize on Windows to avoid UNC paths (\\?\)
             // which break many tools like Neovim and Bun
             #[cfg(target_os = "windows")]
@@ -239,11 +242,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_id = args.window_options.terminal_options.app_id;
 
     let mut application = crate::application::Application::new(
-        config,
+        config.clone(),
         config_error,
         &window_event_loop,
         app_id,
     );
+
+    // IPC
+    // First, try to create a window in an already running instance via IPC
+    // Otherwise, start an IPC server
+    #[cfg(unix)]
+    {
+        if !args.window_options.terminal_options.no_ipc && config.enable_ipc {
+            if let Some(mut client) = ipc::Client::try_connect() {
+                let working_dir = args
+                    .window_options
+                    .terminal_options
+                    .working_dir
+                    .as_ref()
+                    .map(|p| std::path::PathBuf::from(p.clone()));
+
+                if let Err(e) = client.create_window(working_dir) {
+                    tracing::error!("IPC sending request error: {}", e);
+                }
+
+                return Ok(());
+            } else {
+                // Start IPC server
+                ipc::server::start(application.get_event_proxy()).unwrap_or_else(|err| {
+                    tracing::error!("IPC server creation error: {}", err);
+                });
+
+                tracing::info!("IPC server successfully started!")
+            }
+        }
+    }
+
     let _ = application.run(window_event_loop);
 
     #[cfg(windows)]

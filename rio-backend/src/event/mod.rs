@@ -222,6 +222,9 @@ pub enum RioEvent {
     /// Color index: 0 for foreground, 1 for background, 2 for cursor color.
     ColorChange(usize, usize, Option<ColorRgb>),
 
+    // IPC
+    IpcCreateWindow(Option<std::path::PathBuf>),
+
     // No operation
     Noop,
 }
@@ -317,6 +320,9 @@ impl Debug for RioEvent {
             }
             RioEvent::ColorChange(route_id, color, rgb) => {
                 write!(f, "ColorChange({route_id}, {color:?}, {rgb:?})")
+            }
+            RioEvent::IpcCreateWindow(working_dir) => {
+                write!(f, "IpcCreateWindow({:?})", working_dir)
             }
         }
     }
