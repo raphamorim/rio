@@ -97,6 +97,8 @@ pub struct Config {
     pub platform: Platform,
     #[serde(default = "default_use_fork", rename = "use-fork")]
     pub use_fork: bool,
+    #[serde(default = "default_enable_ipc", rename = "enable-ipc")]
+    pub enable_ipc: bool,
     #[serde(default = "Keyboard::default")]
     pub keyboard: Keyboard,
     #[serde(default = "Title::default")]
@@ -652,6 +654,7 @@ impl Default for Config {
             platform: Platform::default(),
             theme: String::default(),
             use_fork: default_use_fork(),
+            enable_ipc: default_enable_ipc(),
             window: Window::default(),
             working_dir: default_working_dir(),
             ignore_selection_fg_color: false,
