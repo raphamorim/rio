@@ -112,6 +112,7 @@ pub enum RioEvent {
     UpdateFontSize(u8),
     Scroll(Scroll),
     ToggleFullScreen,
+    ToggleMaximized,
     ToggleAppearanceTheme,
     Minimize(bool),
     Hide,
@@ -297,6 +298,7 @@ impl Debug for RioEvent {
                 write!(f, "ReportToAssistant({})", error_report.report)
             }
             RioEvent::ToggleFullScreen => write!(f, "FullScreen"),
+            RioEvent::ToggleMaximized => write!(f, "ToggleMaximized"),
             RioEvent::ToggleAppearanceTheme => write!(f, "ToggleAppearanceTheme"),
             RioEvent::BlinkCursor(timeout, route_id) => {
                 write!(f, "BlinkCursor {timeout} {route_id}")

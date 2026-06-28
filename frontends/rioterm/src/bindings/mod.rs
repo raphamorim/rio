@@ -265,6 +265,7 @@ impl From<String> for Action {
             "togglevimode" => Some(Action::ToggleViMode),
             "toggleappearancetheme" => Some(Action::ToggleAppearanceTheme),
             "togglefullscreen" => Some(Action::ToggleFullscreen),
+            "togglemaximized" => Some(Action::ToggleMaximized),
             "opencommandpalette" => Some(Action::OpenCommandPalette),
             "none" => Some(Action::None),
             _ => None,

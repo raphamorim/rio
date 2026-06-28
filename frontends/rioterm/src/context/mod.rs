@@ -655,6 +655,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn toggle_maximize_window(&mut self) {
+        self.event_proxy
+            .send_event(RioEvent::ToggleMaximized, self.window_id);
+    }
+
+    #[inline]
     pub fn toggle_appearance_theme(&mut self) {
         self.event_proxy
             .send_event(RioEvent::ToggleAppearanceTheme, self.window_id);
