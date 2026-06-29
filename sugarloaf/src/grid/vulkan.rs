@@ -271,6 +271,17 @@ impl VulkanGlyphAtlas {
         self.slots.get(&key).copied()
     }
 
+    /// Drop all cached glyphs and free the packing space in every
+    /// page. The GPU page textures stay allocated — their texels are
+    /// overwritten as new glyphs repack from the reset allocators.
+    /// Called on a font swap, where `GlyphKey`'s `font_id` is reused.
+    pub fn clear(&mut self) {
+        for page in &mut self.pages {
+            page.allocator.clear();
+        }
+        self.slots.clear();
+    }
+
     /// Descriptor set for the given page index. Bound to set=1 by
     /// `render_text` for each `(kind, page)` bucket of cells.
     #[inline]
@@ -932,6 +943,12 @@ impl VulkanGridRenderer {
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
         self.atlas_color.insert(key, glyph)
+    }
+
+    /// Drop both atlases' cached glyphs. See [`GridRenderer::clear_glyph_cache`].
+    pub fn clear_glyph_cache(&mut self) {
+        self.atlas_grayscale.clear();
+        self.atlas_color.clear();
     }
 
     /// Drain pending atlas uploads into `cmd`. MUST be called BEFORE
