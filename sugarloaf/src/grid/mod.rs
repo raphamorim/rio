@@ -347,6 +347,22 @@ impl GridRenderer {
         }
     }
 
+    /// Drop every cached glyph from both atlases. Call on a font swap:
+    /// the glyph cache is keyed by `(font_id, glyph_id, size_bucket)`
+    /// and the new font library reuses the same `font_id` slots, so
+    /// stale entries would serve old-font bitmaps for reused glyph_ids.
+    pub fn clear_glyph_cache(&mut self) {
+        match self {
+            #[cfg(target_os = "macos")]
+            GridRenderer::Metal(r) => r.clear_glyph_cache(),
+            #[cfg(feature = "wgpu")]
+            GridRenderer::Wgpu(r) => r.clear_glyph_cache(),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.clear_glyph_cache(),
+            GridRenderer::Cpu(r) => r.clear_glyph_cache(),
+        }
+    }
+
     /// `true` on the first frame after `new` or `resize`. Callers
     /// should treat this as "force full rebuild regardless of
     /// per-row damage" since the underlying CPU buffers are zeroed.

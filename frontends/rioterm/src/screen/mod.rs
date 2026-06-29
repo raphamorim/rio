@@ -424,6 +424,16 @@ impl Screen<'_> {
 
         if should_update_font_library {
             self.sugarloaf.update_font(font_library);
+            // Drop the grid rasterizer's font_id-keyed caches —
+            // the new library reuses the same ids, so stale handles
+            // and ascents would survive the swap.
+            self.grid_rasterizer.reset_font_caches();
+            // Each panel's grid atlas caches glyph bitmaps by
+            // (font_id, glyph_id, size); the new font reuses font_ids,
+            // so stale slots would serve the wrong glyph. Flush them.
+            for grid in self.grids.values_mut() {
+                grid.clear_glyph_cache();
+            }
         }
         let s = self.sugarloaf.style_mut();
         s.font_size = config.fonts.size;

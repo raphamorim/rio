@@ -1264,6 +1264,23 @@ impl GridGlyphRasterizer {
         }
     }
 
+    /// Drop every `font_id`-keyed cache. Called on a font-library
+    /// swap: the new library reuses the same `font_id` slots, so
+    /// stale entries would otherwise feed shaping (advances) and
+    /// `ascent_px` (vertical placement) from the old font.
+    pub fn reset_font_caches(&mut self) {
+        self.font_resolve.clear();
+        self.ascent_cache.clear();
+        self.synthesis_cache.clear();
+        for bucket in &mut self.run_cache {
+            bucket.clear();
+        }
+        #[cfg(target_os = "macos")]
+        self.handle_cache.clear();
+        #[cfg(not(target_os = "macos"))]
+        self.font_data_cache.clear();
+    }
+
     #[inline]
     fn resolve_font(
         &mut self,

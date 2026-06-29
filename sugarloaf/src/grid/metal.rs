@@ -481,6 +481,14 @@ impl MetalGridRenderer {
         }
     }
 
+    /// Drop both atlases' cached glyphs. See [`GridRenderer::clear_glyph_cache`].
+    pub fn clear_glyph_cache(&mut self) {
+        self.atlas_grayscale.clear();
+        if let Some(atlas) = &mut self.atlas_color {
+            atlas.clear();
+        }
+    }
+
     pub fn resize(&mut self, cols: u32, rows: u32) {
         if cols == self.cols && rows == self.rows {
             return;
