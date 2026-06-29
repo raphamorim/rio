@@ -9,6 +9,7 @@ use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::clipboard::Clipboard;
+use rio_backend::config::theme::AppearanceTheme;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 
@@ -89,10 +90,11 @@ impl Route<'_> {
         config: &RioConfig,
         db: &rio_backend::sugarloaf::font::FontLibrary,
         should_update_font: bool,
+        color_scheme: Option<AppearanceTheme>,
     ) {
         self.window
             .screen
-            .update_config(config, db, should_update_font);
+            .update_config(config, db, should_update_font, color_scheme);
     }
 
     #[inline]
@@ -703,8 +705,18 @@ impl<'a> RouteWindow<'a> {
             window_id: winit_window.id(),
         };
 
-        let screen = Screen::new(properties, config, event_proxy, font_library, open_url)
-            .expect("Screen not created");
+        let color_scheme = config
+            .force_theme
+            .or_else(|| winit_window.theme().map(AppearanceTheme::from_window_theme));
+        let screen = Screen::new(
+            properties,
+            config,
+            event_proxy,
+            font_library,
+            open_url,
+            color_scheme,
+        )
+        .expect("Screen not created");
 
         if config.window.columns.is_some() || config.window.rows.is_some() {
             let (physical_width, physical_height) = compute_window_size_from_grid(

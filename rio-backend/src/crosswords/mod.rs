@@ -98,6 +98,7 @@ bitflags! {
         const REPORT_ALTERNATE_KEYS   = 1 << 20;
         const REPORT_ALL_KEYS_AS_ESC  = 1 << 21;
         const REPORT_ASSOCIATED_TEXT  = 1 << 22;
+        const COLOR_SCHEME_UPDATES    = 1 << 23;
         const MOUSE_MODE = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits();
         const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
                                       | Self::REPORT_EVENT_TYPES.bits()
@@ -464,6 +465,10 @@ where
     keyboard_mode_idx: usize,
     inactive_keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
     inactive_keyboard_mode_idx: usize,
+
+    /// Last-known color scheme polarity, kept current by the frontend on
+    /// every config update. Answers the DSR `CSI ? 996 n` query.
+    color_scheme_is_dark: bool,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -518,6 +523,7 @@ impl<U: EventListener> Crosswords<U> {
             keyboard_mode_idx: 0,
             inactive_keyboard_mode_stack: Default::default(),
             inactive_keyboard_mode_idx: 0,
+            color_scheme_is_dark: true,
         }
     }
 
@@ -1512,6 +1518,10 @@ impl<U: EventListener> Crosswords<U> {
 
             // Reset alternate screen contents.
             self.inactive_grid.reset_region(..);
+        } else {
+            // Leaving alt screen: the full-screen app that set any OSC
+            // color overrides is exiting, so drop them.
+            self.reset_all_colors();
         }
 
         mem::swap(
@@ -1535,10 +1545,56 @@ impl<U: EventListener> Crosswords<U> {
         self.mark_fully_damaged();
     }
 
+    /// Drop every per-pane OSC color override. The bg reset is pushed
+    /// to the frontend so the window background (derived from OSC 11)
+    /// follows. Caller is responsible for damage.
+    fn reset_all_colors(&mut self) {
+        let bg = NamedColor::Background as usize;
+        let had_bg_override = self.colors[bg].is_some();
+
+        self.colors = TermColors::default();
+
+        if had_bg_override {
+            self.event_proxy.send_event(
+                RioEvent::ColorChange(self.route_id, bg, None),
+                self.window_id,
+            );
+        }
+    }
+
     #[inline]
     pub fn mark_line_damaged(&mut self, line: Line) {
         let line_idx = line.0 as usize;
         self.damage.damage_line(line_idx);
+    }
+
+    /// Record the current color scheme so a later `CSI ? 996 n` query
+    /// gets the right answer. Does not notify the app.
+    pub fn set_color_scheme(&mut self, is_dark: bool) {
+        self.color_scheme_is_dark = is_dark;
+    }
+
+    /// If an app subscribed via DECSET 2031, push an unsolicited
+    /// scheme-change DSR so it re-queries colors without a restart.
+    pub fn report_color_scheme(&self, is_dark: bool) {
+        if !self.mode.contains(Mode::COLOR_SCHEME_UPDATES) {
+            return;
+        }
+        self.send_color_scheme_dsr(is_dark);
+    }
+
+    /// Reply to the DSR query `CSI ? 996 n` with the current scheme.
+    /// Not gated by DECSET 2031 — it's a direct request.
+    fn reply_color_scheme_query(&self) {
+        self.send_color_scheme_dsr(self.color_scheme_is_dark);
+    }
+
+    fn send_color_scheme_dsr(&self, is_dark: bool) {
+        let polarity = if is_dark { 1 } else { 2 };
+        self.event_proxy.send_event(
+            RioEvent::PtyWrite(self.route_id, format!("\x1b[?997;{polarity}n")),
+            self.window_id,
+        );
     }
 
     pub fn selection_to_string(&self) -> Option<String> {
@@ -2013,6 +2069,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
+            NamedPrivateMode::ColorSchemeUpdates => {
+                self.mode.insert(Mode::COLOR_SCHEME_UPDATES)
+            }
             NamedPrivateMode::SyncUpdate => (),
         }
     }
@@ -2085,6 +2144,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
+            NamedPrivateMode::ColorSchemeUpdates => {
+                self.mode.remove(Mode::COLOR_SCHEME_UPDATES)
+            }
             NamedPrivateMode::SyncUpdate => (),
         }
     }
@@ -2130,6 +2192,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
                 NamedPrivateMode::BracketedPaste => {
                     self.mode.contains(Mode::BRACKETED_PASTE).into()
+                }
+                NamedPrivateMode::ColorSchemeUpdates => {
+                    self.mode.contains(Mode::COLOR_SCHEME_UPDATES).into()
                 }
                 NamedPrivateMode::SyncUpdate => ModeState::Reset,
                 NamedPrivateMode::ColumnMode => ModeState::NotSupported,
@@ -2967,6 +3032,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             _ => debug!("unknown device status query: {}", arg),
         };
+    }
+
+    #[inline]
+    fn report_color_scheme_query(&mut self) {
+        self.reply_color_scheme_query();
     }
 
     #[inline]
@@ -6683,5 +6753,72 @@ mod tests {
 
         // Cursor must be untouched.
         assert_eq!(cw.grid.cursor.pos, cursor_before);
+    }
+
+    #[test]
+    fn test_color_scheme_notification() {
+        use crate::performer::handler::Handler;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        #[derive(Clone)]
+        struct TestListener {
+            events: Rc<RefCell<Vec<RioEvent>>>,
+        }
+
+        impl EventListener for TestListener {
+            fn event(&self) -> (Option<RioEvent>, bool) {
+                (None, false)
+            }
+
+            fn send_event(&self, event: RioEvent, _id: WindowId) {
+                self.events.borrow_mut().push(event);
+            }
+        }
+
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let listener = TestListener {
+            events: events.clone(),
+        };
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, listener, window_id, 0, 10_000);
+
+        let collect_writes = |events: &Rc<RefCell<Vec<RioEvent>>>| {
+            let writes: Vec<String> = events
+                .borrow()
+                .iter()
+                .filter_map(|e| match e {
+                    RioEvent::PtyWrite(_, text) => Some(text.clone()),
+                    _ => None,
+                })
+                .collect();
+            events.borrow_mut().clear();
+            writes
+        };
+
+        // Not subscribed: no unsolicited notification.
+        term.report_color_scheme(true);
+        assert!(events.borrow().is_empty(), "no event without DECSET 2031");
+
+        // Subscribe via DECSET 2031, then notify dark, then light.
+        term.set_private_mode(NamedPrivateMode::ColorSchemeUpdates.into());
+        term.report_color_scheme(true);
+        term.report_color_scheme(false);
+        assert_eq!(
+            collect_writes(&events),
+            vec!["\x1b[?997;1n", "\x1b[?997;2n"]
+        );
+
+        // DSR query `CSI ? 996 n` replies with the stored scheme,
+        // regardless of DECSET 2031.
+        term.unset_private_mode(NamedPrivateMode::ColorSchemeUpdates.into());
+        term.set_color_scheme(false);
+        term.report_color_scheme_query();
+        assert_eq!(collect_writes(&events), vec!["\x1b[?997;2n"]);
+        term.set_color_scheme(true);
+        term.report_color_scheme_query();
+        assert_eq!(collect_writes(&events), vec!["\x1b[?997;1n"]);
     }
 }

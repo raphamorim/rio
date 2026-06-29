@@ -76,6 +76,14 @@ impl CpuGridAtlas {
         self.slots.get(&key).copied()
     }
 
+    /// Drop all cached glyphs and free the packing space. Stale
+    /// pixels are left in `pixels` — harmless, since every slot is
+    /// overwritten when its region is reallocated.
+    pub fn clear(&mut self) {
+        self.allocator.clear();
+        self.slots.clear();
+    }
+
     pub fn insert(
         &mut self,
         key: GlyphKey,
@@ -312,6 +320,13 @@ impl CpuGridRenderer {
         } else {
             None
         }
+    }
+
+    /// Drop both atlases' cached glyphs. See [`GridRenderer::clear_glyph_cache`].
+    pub fn clear_glyph_cache(&mut self) {
+        self.atlas_grayscale.clear();
+        self.atlas_color.clear();
+        self.needs_full_rebuild = true;
     }
 
     #[inline]
