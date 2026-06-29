@@ -222,10 +222,17 @@ impl HintState {
             // Extract text from the line
             let line_text = self.extract_line_text(term, line);
 
-            // Find all matches in this line. Onig yields (byte_start, byte_end);
-            // we slice the source ourselves.
+            // Find all matches in this line. Onig yields (byte_start,
+            // byte_end); we slice the source ourselves. The byte
+            // offsets must be converted to column indices via char
+            // count — `extract_line_text` pushes one char per cell, so
+            // `line_text[..byte].chars().count()` == column. Non-ASCII
+            // cells (e.g. nerd-font PUA icons in oh-my-posh prompts)
+            // make the byte offset exceed the column, so the naive
+            // `Column(byte)` drifted the match right by the cumulative
+            // UTF-8 width surplus.
             for (start, end) in regex.find_iter(&line_text) {
-                let start_col = Column(start);
+                let start_col = Column(line_text[..start].chars().count());
                 let mut match_text = line_text[start..end].to_string();
 
                 // Apply post-processing if enabled
@@ -233,8 +240,11 @@ impl HintState {
                     match_text = post_process_hyperlink_uri(&match_text);
                 }
 
-                // Calculate the correct end position based on the processed text length
-                let end_col = Column(start + match_text.len().saturating_sub(1));
+                // End column tracks the post-processed text length in
+                // chars (post-processing only trims trailing
+                // punctuation, so the start is unaffected).
+                let end_col =
+                    Column(start_col.0 + match_text.chars().count().saturating_sub(1));
 
                 let hint_match = HintMatch {
                     text: match_text,

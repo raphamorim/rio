@@ -1006,18 +1006,26 @@ pub fn build_row_bg(
     term_colors: &TermColors,
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
+    // Columns on this row that carry a hint label glyph. These cells
+    // get `hint_background` painted over the match highlight so the
+    // label letter (overlaid in `build_row_fg`) stays readable. Sorted
+    // is not required — scanned linearly, matches the small-N case
+    // (hint labels are bounded by visible matches).
+    row_label_cols: &[u16],
     bg_scratch: &mut Vec<CellBg>,
 ) {
     bg_scratch.clear();
 
-    // Fast path: row has no selection and no color-changing hints
-    // (HyperlinkHover only contributes an underline, never bg). The
-    // overwhelming majority of rows in idle terminals hit this path —
-    // strip the per-cell `cell_in_row_sel` / `cell_in_row_hints`
-    // checks and just walk cells.
+    // Fast path: row has no selection, no color-changing hints, and no
+    // hint labels (HyperlinkHover only contributes an underline, never
+    // bg). The overwhelming majority of rows in idle terminals hit this
+    // path — strip the per-cell `cell_in_row_sel` /
+    // `cell_in_row_hints` / `cell_in_label_cols` checks and just walk
+    // cells.
     let has_sel = row_sel.is_some();
     let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
-    if !has_sel && !has_color_hints {
+    let has_labels = !row_label_cols.is_empty();
+    if !has_sel && !has_color_hints && !has_labels {
         bg_scratch.reserve(cols);
         for x in 0..cols {
             let sq = row[Column(x)];
@@ -1046,6 +1054,11 @@ pub fn build_row_bg(
     } else {
         (None, None)
     };
+    let label_bg = if has_labels {
+        Some(normalized_to_u8(renderer.named_colors.hint_background))
+    } else {
+        None
+    };
     for x in 0..cols {
         let sq = row[Column(x)];
         let style = resolve_style(style_table, sq);
@@ -1055,6 +1068,10 @@ pub fn build_row_bg(
             // matching `generic.zig:2775-2800` (selection check
             // runs before highlight check).
             sel_bg.unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors))
+        } else if cell_in_label_cols(row_label_cols, col) {
+            // Hint label bg wins over the match-highlight bg so the
+            // overlaid label letter has its configured background.
+            label_bg.unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors))
         } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
             match tag {
                 HintTag::Focused => focused_bg
@@ -1072,6 +1089,11 @@ pub fn build_row_bg(
         };
         bg_scratch.push(CellBg { rgba });
     }
+}
+
+#[inline]
+fn cell_in_label_cols(row_label_cols: &[u16], col: u16) -> bool {
+    row_label_cols.contains(&col)
 }
 
 // Run-shaping infrastructure (platform-agnostic types)
@@ -1502,6 +1524,10 @@ pub fn build_row_fg(
     cell_h: f32,
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
+    // Hint labels whose glyph should overlay cells on this row. Each
+    // entry is `(column, label_char)`. Drawn as the final fg phase so
+    // the label letter paints over the underlying matched text.
+    row_label_cols: &[(u16, char)],
     font_library: &FontLibrary,
     route_id: usize,
     // Column of the cursor on this row, or `None` if the cursor isn't
@@ -2089,6 +2115,25 @@ pub fn build_row_fg(
         row_hints,
         fg_scratch,
     );
+
+    // Phase 4: hint label overlay. Drawn on top of everything so the
+    // label letter replaces the underlying cell glyph. The label cells
+    // already received `hint_background` in `build_row_bg`; here we
+    // shape each label char as a one-cell run and emit its glyph with
+    // `hint_foreground`.
+    emit_hint_label_glyphs(
+        row_label_cols,
+        y,
+        cols,
+        renderer,
+        rasterizer,
+        grid,
+        size_px,
+        cell_h,
+        font_library,
+        route_id,
+        fg_scratch,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2217,6 +2262,121 @@ fn emit_strikethroughs(
             page: slot.page,
             _pad: 0,
         });
+    }
+}
+
+/// Final fg phase: overlay hint label glyphs on top of the matched
+/// cells. Each entry in `row_label_cols` is `(column, label_char)` for
+/// a label falling on visible row `y`.
+///
+/// The label cells already received `hint_background` via
+/// `build_row_bg`; here we shape each label char as a one-cell run and
+/// emit its glyph at the cell's grid position with `hint_foreground`.
+/// This runs after the main glyph + strikethrough passes so the label
+/// letter visually replaces the underlying text.
+///
+/// Reuses the rasterizer's per-run scratch buffers (`run_str_scratch`
+/// on non-macOS, `run_utf16_scratch` on macOS). Safe because the main
+/// `build_row_fg` run loop has finished by the time this is called —
+/// nothing upstream reads those buffers afterwards in this row.
+#[allow(clippy::too_many_arguments)]
+fn emit_hint_label_glyphs(
+    row_label_cols: &[(u16, char)],
+    y: u16,
+    cols: usize,
+    renderer: &Renderer,
+    rasterizer: &mut GridGlyphRasterizer,
+    grid: &mut GridRenderer,
+    size_px: f32,
+    cell_h: f32,
+    font_library: &FontLibrary,
+    route_id: usize,
+    fg_scratch: &mut Vec<CellText>,
+) {
+    if row_label_cols.is_empty() {
+        return;
+    }
+    let size_bucket = (size_px * 4.0).round().clamp(0.0, u16::MAX as f32) as u16;
+    let size_u16 = size_px.round().clamp(1.0, u16::MAX as f32) as u16;
+    let label_fg = normalized_to_u8(renderer.named_colors.hint_foreground);
+
+    for &(col, ch) in row_label_cols {
+        if col as usize >= cols {
+            continue;
+        }
+        let (font_id, is_emoji) = rasterizer.resolve_font(ch, 0, font_library, route_id);
+
+        // Shape a single-character run into the scratch buffers.
+        #[cfg(target_os = "macos")]
+        {
+            rasterizer.run_utf16_scratch.clear();
+            let mut buf = [0u16; 2];
+            rasterizer
+                .run_utf16_scratch
+                .extend_from_slice(ch.encode_utf16(&mut buf));
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            rasterizer.run_str_scratch.clear();
+            rasterizer.run_str_scratch.push(ch);
+        }
+
+        let shaped_opt = {
+            #[cfg(target_os = "macos")]
+            {
+                shape_run_ct(rasterizer, font_id, size_u16, size_bucket, font_library)
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                shape_run_swash(rasterizer, font_id, size_u16, size_bucket, font_library)
+            }
+        };
+        let Some((glyphs, ascent_px)) = shaped_opt else {
+            continue;
+        };
+        let (synthetic_bold, synthetic_italic) =
+            rasterizer.get_synthesis(font_id, font_library);
+
+        // Emit every shaped glyph for the label char at the same
+        // column. A single ASCII codepoint typically yields one glyph,
+        // but the shaper can split a codepoint into multiple glyphs
+        // (rare for alphabet chars); all of them belong at `col`.
+        for g in glyphs {
+            let Some((_, slot, is_color)) = ensure_glyph_by_id(
+                rasterizer,
+                grid,
+                font_id,
+                g.id,
+                size_bucket,
+                size_u16,
+                cell_h,
+                ascent_px,
+                is_emoji,
+                synthetic_italic,
+                synthetic_bold,
+            ) else {
+                continue;
+            };
+            if slot.w == 0 || slot.h == 0 {
+                continue;
+            }
+            let (atlas, color) = if is_color {
+                (CellText::ATLAS_COLOR, [255, 255, 255, 255])
+            } else {
+                (CellText::ATLAS_GRAYSCALE, label_fg)
+            };
+            fg_scratch.push(CellText {
+                glyph_pos: [slot.x as u32, slot.y as u32],
+                glyph_size: [slot.w as u32, slot.h as u32],
+                bearings: [slot.bearing_x, slot.bearing_y],
+                grid_pos: [col, y],
+                color,
+                atlas,
+                bools: 0,
+                page: slot.page,
+                _pad: 0,
+            });
+        }
     }
 }
 
