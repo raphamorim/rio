@@ -592,15 +592,42 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             }
                         }
                     }
-                    Action::Coprocess { program, args } => {
+                    Action::Coprocess {
+                        program,
+                        args,
+                        stdin,
+                    } => {
                         // Capture stdout off-thread so a slow command never
-                        // blocks the UI, then write it into the PTY.
+                        // blocks the UI, then write it into the PTY. When
+                        // `stdin` is set, the visible screen is piped to the
+                        // command (small payload, no deadlock risk).
                         let proxy = self.event_proxy.clone();
                         std::thread::spawn(move || {
-                            match std::process::Command::new(&program)
+                            use std::io::Write;
+                            use std::process::Stdio;
+                            let mut command = std::process::Command::new(&program);
+                            command
                                 .args(&args)
-                                .output()
-                            {
+                                .stdout(Stdio::piped())
+                                .stderr(Stdio::null());
+                            if stdin.is_some() {
+                                command.stdin(Stdio::piped());
+                            }
+                            let mut child = match command.spawn() {
+                                Ok(child) => child,
+                                Err(err) => {
+                                    tracing::warn!(
+                                        "trigger coprocess {program:?} failed: {err}"
+                                    );
+                                    return;
+                                }
+                            };
+                            if let Some(input) = stdin {
+                                if let Some(mut pipe) = child.stdin.take() {
+                                    let _ = pipe.write_all(input.as_bytes());
+                                }
+                            }
+                            match child.wait_with_output() {
                                 Ok(output) if !output.stdout.is_empty() => {
                                     let text = String::from_utf8_lossy(&output.stdout)
                                         .into_owned();

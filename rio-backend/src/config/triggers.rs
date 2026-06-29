@@ -21,6 +21,12 @@ pub struct Trigger {
     #[serde(default)]
     pub instant: bool,
 
+    /// Fire at most once until the config is reloaded. Lets a rule drive one
+    /// step of a sequence (e.g. a login probe) without re-firing when the
+    /// same prompt reappears.
+    #[serde(default)]
+    pub once: bool,
+
     /// The action to perform. Externally tagged so the action's key names
     /// it, mirroring the `[hints]` config style.
     pub action: TriggerAction,
@@ -91,6 +97,11 @@ pub enum TriggerAction {
         program: String,
         #[serde(default)]
         args: Vec<String>,
+        /// Pipe the visible screen to the command's stdin. Lets the command
+        /// see multi-line context (e.g. a wrapped block) that a single
+        /// per-line capture group can't carry.
+        #[serde(default)]
+        feed_screen: bool,
     },
 }
 
@@ -140,6 +151,7 @@ mod tests {
 
             [[triggers.rules]]
             regex = "password:"
+            once = true
             [triggers.rules.action]
             send_text = { text = "hunter2\n" }
 
@@ -163,6 +175,7 @@ mod tests {
             triggers.rules[1].action,
             TriggerAction::Highlight { .. }
         ));
+        assert!(triggers.rules[4].once);
         assert!(matches!(
             triggers.rules[5].action,
             TriggerAction::Coprocess { .. }

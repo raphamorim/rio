@@ -231,6 +231,7 @@ impl From<String> for Action {
                 Some(Action::Search(SearchAction::SearchHistoryPrevious))
             }
             "clearhistory" => Some(Action::ClearHistory),
+            "resettriggers" => Some(Action::ResetTriggers),
             "resetfontsize" => Some(Action::ResetFontSize),
             "increasefontsize" => Some(Action::IncreaseFontSize),
             "decreasefontsize" => Some(Action::DecreaseFontSize),
@@ -385,6 +386,12 @@ pub enum Action {
 
     /// Clear the display buffer(s) to remove history.
     ClearHistory,
+
+    /// Re-arm `once` terminal triggers so one-shot rules can fire again on
+    /// the next fresh occurrence (e.g. to re-run a login automation) without
+    /// reloading the config. The per-line dedup is kept so stale on-screen
+    /// content is not re-fired.
+    ResetTriggers,
 
     /// Hide the Rio window.
     #[allow(dead_code)]

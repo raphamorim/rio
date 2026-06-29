@@ -88,6 +88,8 @@ pub enum TriggerEventAction {
     Coprocess {
         program: String,
         args: Vec<String>,
+        /// Visible screen to pipe to the command's stdin, if requested.
+        stdin: Option<String>,
     },
 }
 
