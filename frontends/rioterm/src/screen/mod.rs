@@ -36,6 +36,7 @@ use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::layout::Margin;
 use rio_backend::config::renderer::Backend;
+use rio_backend::config::theme::AppearanceTheme;
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
@@ -101,6 +102,7 @@ impl Screen<'_> {
         event_proxy: EventProxy,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
+        color_scheme: Option<AppearanceTheme>,
     ) -> Result<Screen<'screen>, Box<dyn Error>> {
         let size = window_properties.size;
         let scale = window_properties.scale;
@@ -210,6 +212,7 @@ impl Screen<'_> {
             title: config.title.clone(),
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
+            color_scheme_is_dark: !matches!(color_scheme, Some(AppearanceTheme::Light)),
         };
 
         let rich_text_id = next_rich_text_id();
@@ -392,6 +395,7 @@ impl Screen<'_> {
         config: &rio_backend::config::Config,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         should_update_font_library: bool,
+        color_scheme: Option<AppearanceTheme>,
     ) {
         let num_tabs = self.ctx().len();
         let padding_y_top = padding_top_from_config(
@@ -402,15 +406,16 @@ impl Screen<'_> {
         );
         let padding_y_bottom = config.margin.bottom;
 
+        // Resolved OS/adaptive scheme drives the DECSET 2031 notify.
+        let scheme_is_dark = !matches!(color_scheme, Some(AppearanceTheme::Light));
+        let color_scheme_changed =
+            self.context_manager.config.color_scheme_is_dark != scheme_is_dark;
+
         if should_update_font_library {
             self.sugarloaf.update_font(font_library);
-            // Drop the grid rasterizer's font_id-keyed caches —
-            // the new library reuses the same ids, so stale handles
-            // and ascents would survive the swap.
+            // New library reuses the same font_ids, so font_id-keyed
+            // caches must be dropped or they serve old-font data.
             self.grid_rasterizer.reset_font_caches();
-            // Each panel's grid atlas caches glyph bitmaps by
-            // (font_id, glyph_id, size); the new font reuses font_ids,
-            // so stale slots would serve the wrong glyph. Flush them.
             for grid in self.grids.values_mut() {
                 grid.clear_glyph_cache();
             }
@@ -466,12 +471,8 @@ impl Screen<'_> {
                 let mut terminal = current_context.terminal.lock();
                 current_context.renderable_content =
                     RenderableContent::from_cursor_config(&config.cursor);
-                // Resetting renderable_content clears term_colors and
-                // the dirty flag. Force a full repaint per pane so every
-                // pane (not just the focused one) picks up the new theme
-                // — the render loop skips non-dirty panes, and
-                // resize_all_contexts only repaints via the PTY wakeup,
-                // which idle panes never get.
+                // Idle panes are skipped by the render loop, so force a
+                // full repaint or they keep the old theme.
                 current_context
                     .renderable_content
                     .pending_update
@@ -480,6 +481,10 @@ impl Screen<'_> {
                 terminal.cursor_shape = shape;
                 terminal.default_cursor_shape = shape;
                 terminal.blinking_cursor = config.cursor.blinking;
+                terminal.set_color_scheme(scheme_is_dark);
+                if color_scheme_changed {
+                    terminal.report_color_scheme(scheme_is_dark);
+                }
                 drop(terminal);
             }
         }
@@ -489,6 +494,9 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
+        // Panes spawned after a theme change must start with the new
+        // scheme so their `CSI ? 996 n` query answers correctly.
+        self.context_manager.config.color_scheme_is_dark = scheme_is_dark;
 
         // Re-evaluate the opaque flag — toggling `window.opacity` /
         // `window.blur` at runtime should flip the compositor mode.

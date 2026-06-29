@@ -14,6 +14,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use raw_window_handle::HasDisplayHandle;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::colors::{ColorRgb, NamedColor};
+use rio_backend::config::theme::AppearanceTheme;
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
     ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase, WindowEvent,
@@ -392,17 +393,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 self.config = config;
 
+                let color_scheme = self.config.force_theme.or_else(|| {
+                    event_loop
+                        .system_theme()
+                        .map(AppearanceTheme::from_window_theme)
+                });
                 let mut has_checked_adaptive_colors = false;
                 for (_id, route) in self.router.routes.iter_mut() {
                     // Apply system theme to ensure colors are consistent
                     if !has_checked_adaptive_colors {
-                        let system_theme = event_loop.system_theme();
-                        let theme = self
-                            .config
-                            .force_theme
-                            .map(|t| t.to_window_theme())
-                            .or(system_theme);
-                        update_colors_based_on_theme(&mut self.config, theme);
+                        update_colors_based_on_theme(
+                            &mut self.config,
+                            color_scheme.map(AppearanceTheme::to_window_theme),
+                        );
                         has_checked_adaptive_colors = true;
                     }
 
@@ -422,6 +425,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         &self.config,
                         &self.router.font_library,
                         has_font_updates,
+                        color_scheme,
                     );
                     route.window.configure_window(&self.config);
 
@@ -853,7 +857,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::ToggleAppearanceTheme) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    use rio_backend::config::theme::AppearanceTheme;
                     let current = self
                         .config
                         .force_theme
@@ -875,6 +878,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         &self.config,
                         &self.router.font_library,
                         false,
+                        Some(toggled),
                     );
                     route.window.configure_window(&self.config);
                 }
@@ -1800,6 +1804,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     &self.config,
                     &self.router.font_library,
                     false,
+                    Some(AppearanceTheme::from_window_theme(new_theme)),
                 );
                 route.window.configure_window(&self.config);
             }

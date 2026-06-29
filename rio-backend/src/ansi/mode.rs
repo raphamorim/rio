@@ -69,6 +69,7 @@ impl PrivateMode {
             1049 => Self::Named(NamedPrivateMode::SwapScreenAndSetRestoreCursor),
             2004 => Self::Named(NamedPrivateMode::BracketedPaste),
             2026 => Self::Named(NamedPrivateMode::SyncUpdate),
+            2031 => Self::Named(NamedPrivateMode::ColorSchemeUpdates),
             _ => Self::Unknown(mode),
         }
     }
@@ -120,6 +121,9 @@ pub enum NamedPrivateMode {
     BracketedPaste = 2004,
     /// The mode is handled automatically by [`Processor`].
     SyncUpdate = 2026,
+    /// App opts in to unsolicited DSR `CSI ? 997 n` light/dark
+    /// color-scheme notifications (DECSET 2031).
+    ColorSchemeUpdates = 2031,
 }
 
 /// Mode for clearing line.
