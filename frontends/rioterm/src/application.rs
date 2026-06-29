@@ -1162,7 +1162,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // targets a different panel, switch to it regardless
                         // of mouse mode (e.g. neovim capturing clicks).
                         if route.window.screen.select_current_based_on_mouse() {
+                            // Focus-switch click: clear the now-focused pane's
+                            // stale selection and reset click_state so the
+                            // in-flight press can't drag-extend the old anchor.
+                            route.window.screen.clear_selection();
+                            route.window.screen.mouse.click_state = ClickState::Click;
                             route.request_redraw();
+                            return;
                         } else if !route.window.screen.modifiers.state().shift_key()
                             && route.window.screen.mouse_mode()
                         {
