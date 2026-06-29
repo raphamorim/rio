@@ -125,6 +125,9 @@ pub struct ContextManagerConfig {
     pub keyboard: rio_backend::config::keyboard::Keyboard,
     pub scrollback_history_limit: usize,
     pub grapheme_clustering: bool,
+    /// Initial color-scheme polarity for new panes, so the
+    /// `CSI ? 996 n` query answers correctly before any theme change.
+    pub color_scheme_is_dark: bool,
 }
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
@@ -253,6 +256,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         );
         terminal.set_grapheme_clustering(config.grapheme_clustering);
         terminal.blinking_cursor = cursor_state.1;
+        terminal.set_color_scheme(config.color_scheme_is_dark);
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
         let pty;
@@ -1085,6 +1089,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
+            color_scheme_is_dark: self.config.color_scheme_is_dark,
         };
 
         let current = self.current();
