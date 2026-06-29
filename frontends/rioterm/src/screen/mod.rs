@@ -484,6 +484,16 @@ impl Screen<'_> {
                 let mut terminal = current_context.terminal.lock();
                 current_context.renderable_content =
                     RenderableContent::from_cursor_config(&config.cursor);
+                // Resetting renderable_content clears term_colors and
+                // the dirty flag. Force a full repaint per pane so every
+                // pane (not just the focused one) picks up the new theme
+                // — the render loop skips non-dirty panes, and
+                // resize_all_contexts only repaints via the PTY wakeup,
+                // which idle panes never get.
+                current_context
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
                 let shape = config.cursor.shape;
                 terminal.cursor_shape = shape;
                 terminal.default_cursor_shape = shape;
