@@ -2425,7 +2425,6 @@ impl<U: EventListener> Crosswords<U> {
             // Reset alternate screen contents.
             self.inactive_grid.sync_template_style();
             self.inactive_grid.reset_region(..);
-
             // The alt screen starts blank: sixel/iTerm2 placements
             // stashed from a previous alt session die with its
             // contents (DEC grid-plane semantics; kitty state
@@ -2443,6 +2442,10 @@ impl<U: EventListener> Crosswords<U> {
                 self.graphics.untrack_atlas_keys(&keys);
                 self.send_graphics_updates();
             }
+        } else {
+            // Leaving alt screen: the full-screen app that set any OSC
+            // color overrides is exiting, so drop them.
+            self.reset_all_colors();
         }
 
         mem::swap(
@@ -2466,6 +2469,23 @@ impl<U: EventListener> Crosswords<U> {
             self.send_graphics_updates();
         }
         self.mark_fully_damaged();
+    }
+
+    /// Drop every per-pane OSC color override. The bg reset is pushed
+    /// to the frontend so the window background (derived from OSC 11)
+    /// follows. Caller is responsible for damage.
+    fn reset_all_colors(&mut self) {
+        let bg = NamedColor::Background as usize;
+        let had_bg_override = self.colors[bg].is_some();
+
+        self.colors = TermColors::default();
+
+        if had_bg_override {
+            self.event_proxy.send_event(
+                RioEvent::ColorChange(self.route_id, bg, None),
+                self.window_id,
+            );
+        }
     }
 
     #[inline]
