@@ -1512,6 +1512,10 @@ impl<U: EventListener> Crosswords<U> {
 
             // Reset alternate screen contents.
             self.inactive_grid.reset_region(..);
+        } else {
+            // Leaving alt screen: the full-screen app that set any OSC
+            // color overrides is exiting, so drop them.
+            self.reset_all_colors();
         }
 
         mem::swap(
@@ -1533,6 +1537,23 @@ impl<U: EventListener> Crosswords<U> {
         // rebuilds against the new active screen.)
         self.graphics.swap_kitty_screen_state();
         self.mark_fully_damaged();
+    }
+
+    /// Drop every per-pane OSC color override. The bg reset is pushed
+    /// to the frontend so the window background (derived from OSC 11)
+    /// follows. Caller is responsible for damage.
+    fn reset_all_colors(&mut self) {
+        let bg = NamedColor::Background as usize;
+        let had_bg_override = self.colors[bg].is_some();
+
+        self.colors = TermColors::default();
+
+        if had_bg_override {
+            self.event_proxy.send_event(
+                RioEvent::ColorChange(self.route_id, bg, None),
+                self.window_id,
+            );
+        }
     }
 
     #[inline]
