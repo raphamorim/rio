@@ -33,6 +33,10 @@ impl From<ConfigError> for RioError {
                 report: RioErrorType::InvalidConfigurationTheme(message),
                 level: RioErrorLevel::Warning,
             },
+            ConfigError::ErrLoadingTriggers(message) => RioError {
+                report: RioErrorType::InvalidConfigurationFormat(message),
+                level: RioErrorLevel::Warning,
+            },
             ConfigError::PathNotFound => RioError {
                 report: RioErrorType::ConfigurationNotFound,
                 level: RioErrorLevel::Warning,

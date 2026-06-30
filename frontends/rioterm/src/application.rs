@@ -137,8 +137,8 @@ impl Application<'_> {
         }
     }
 
-    fn handle_desktop_notification(&self, title: &str, body: &str) {
-        rio_notifier::send_notification(title, body);
+    fn handle_desktop_notification(&self, title: &str, body: &str, urgency: u8) {
+        rio_notifier::send_notification(title, body, urgency);
     }
 
     pub fn run(
@@ -563,7 +563,89 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {
-                self.handle_desktop_notification(&title, &body);
+                self.handle_desktop_notification(&title, &body, 1);
+            }
+            RioEventType::Rio(RioEvent::TriggerFired { route_id, action }) => {
+                use rio_backend::event::TriggerEventAction as Action;
+                match action {
+                    Action::Notify {
+                        title,
+                        body,
+                        urgency,
+                    } => {
+                        self.handle_desktop_notification(&title, &body, urgency);
+                    }
+                    Action::Run { program, args } => {
+                        if let Some(route) = self.router.routes.get(&window_id) {
+                            route.window.screen.exec(&program, &args);
+                        }
+                    }
+                    Action::SendText { text } => {
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            if let Some(item) = route
+                                .window
+                                .screen
+                                .context_manager
+                                .get_by_route_id(route_id)
+                            {
+                                item.val.messenger.send_bytes(text.into_bytes());
+                            }
+                        }
+                    }
+                    Action::Coprocess {
+                        program,
+                        args,
+                        stdin,
+                    } => {
+                        // Capture stdout off-thread so a slow command never
+                        // blocks the UI, then write it into the PTY. When
+                        // `stdin` is set, the visible screen is piped to the
+                        // command (small payload, no deadlock risk).
+                        let proxy = self.event_proxy.clone();
+                        std::thread::spawn(move || {
+                            use std::io::Write;
+                            use std::process::Stdio;
+                            let mut command = std::process::Command::new(&program);
+                            command
+                                .args(&args)
+                                .stdout(Stdio::piped())
+                                .stderr(Stdio::null());
+                            if stdin.is_some() {
+                                command.stdin(Stdio::piped());
+                            }
+                            let mut child = match command.spawn() {
+                                Ok(child) => child,
+                                Err(err) => {
+                                    tracing::warn!(
+                                        "trigger coprocess {program:?} failed: {err}"
+                                    );
+                                    return;
+                                }
+                            };
+                            if let Some(input) = stdin {
+                                if let Some(mut pipe) = child.stdin.take() {
+                                    let _ = pipe.write_all(input.as_bytes());
+                                }
+                            }
+                            match child.wait_with_output() {
+                                Ok(output) if !output.stdout.is_empty() => {
+                                    let text = String::from_utf8_lossy(&output.stdout)
+                                        .into_owned();
+                                    proxy.send_event(
+                                        RioEvent::PtyWrite(route_id, text).into(),
+                                        window_id,
+                                    );
+                                }
+                                Ok(_) => {}
+                                Err(err) => {
+                                    tracing::warn!(
+                                        "trigger coprocess {program:?} failed: {err}"
+                                    );
+                                }
+                            }
+                        });
+                    }
+                }
             }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
                 if let Some(route) = self.router.routes.get(&window_id) {

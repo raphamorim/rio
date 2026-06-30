@@ -68,6 +68,31 @@ pub enum TerminalDamage {
     CursorOnly,
 }
 
+/// Trigger actions that are dispatched through the event loop (the in-grid
+/// actions — tab color and highlight — are applied directly by the scanner).
+#[derive(Debug, Clone)]
+pub enum TriggerEventAction {
+    Notify {
+        title: String,
+        body: String,
+        /// freedesktop urgency level (0 low, 1 normal, 2 critical).
+        urgency: u8,
+    },
+    Run {
+        program: String,
+        args: Vec<String>,
+    },
+    SendText {
+        text: String,
+    },
+    Coprocess {
+        program: String,
+        args: Vec<String>,
+        /// Visible screen to pipe to the command's stdin, if requested.
+        stdin: Option<String>,
+    },
+}
+
 #[derive(Clone)]
 pub enum RioEvent {
     PrepareRender(u64),
@@ -197,6 +222,13 @@ pub enum RioEvent {
         body: String,
     },
 
+    /// A trigger rule matched output on `route_id`; the action is already
+    /// capture-substituted, ready to dispatch.
+    TriggerFired {
+        route_id: usize,
+        action: TriggerEventAction,
+    },
+
     /// Shutdown request.
     Exit,
 
@@ -276,6 +308,9 @@ impl Debug for RioEvent {
             }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
+            RioEvent::TriggerFired { route_id, .. } => {
+                write!(f, "TriggerFired(route {route_id})")
+            }
             RioEvent::DesktopNotification { title, body } => {
                 write!(f, "DesktopNotification({title}, {body})")
             }

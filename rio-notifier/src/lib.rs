@@ -12,8 +12,11 @@ pub fn request_authorization() {
 /// - **Linux**: D-Bus `org.freedesktop.Notifications`.
 /// - **Windows**: Toast notifications via `windows` crate.
 ///
+/// `urgency` is the freedesktop level (0 low, 1 normal, 2 critical); it only
+/// affects the Linux backend.
+///
 /// Spawns a background thread so the caller is never blocked.
-pub fn send_notification(title: &str, body: &str) {
+pub fn send_notification(title: &str, body: &str, urgency: u8) {
     let title = if title.is_empty() {
         "Rio".to_string()
     } else {
@@ -22,7 +25,7 @@ pub fn send_notification(title: &str, body: &str) {
     let body = body.to_string();
 
     std::thread::spawn(move || {
-        platform::notify(&title, &body);
+        platform::notify(&title, &body, urgency);
     });
 }
 
@@ -60,7 +63,7 @@ mod platform {
         });
     }
 
-    pub fn notify(title: &str, body: &str) {
+    pub fn notify(title: &str, body: &str, _urgency: u8) {
         unsafe {
             // UNUserNotificationCenter crashes if the app has no bundle
             // identifier (e.g. cargo run). Guard like Kitty does.
@@ -95,7 +98,24 @@ mod platform {
 mod platform {
     use std::collections::HashMap;
 
-    pub fn notify(title: &str, body: &str) {
+    pub fn notify(title: &str, body: &str, urgency: u8) {
+        let level = match urgency {
+            0 => "low",
+            2 => "critical",
+            _ => "normal",
+        };
+        // GNOME won't banner a notification it attributes to the focused
+        // window's own process (rio), so a direct D-Bus call from rio is
+        // filed silently while rio is focused. notify-send runs as a
+        // separate process and banners regardless. Fall back to D-Bus when
+        // notify-send isn't installed.
+        if std::process::Command::new("notify-send")
+            .args(["-a", "Rio", "-u", level, "--", title, body])
+            .status()
+            .is_ok()
+        {
+            return;
+        }
         let Ok(connection) = zbus::blocking::Connection::session() else {
             return;
         };
@@ -107,7 +127,8 @@ mod platform {
         ) else {
             return;
         };
-        let hints: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::new();
+        let mut hints: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::new();
+        hints.insert("urgency", zbus::zvariant::Value::U8(urgency));
         let _: Result<u32, _> = proxy.call(
             "Notify",
             &(
@@ -126,7 +147,7 @@ mod platform {
 
 #[cfg(target_os = "windows")]
 mod platform {
-    pub fn notify(title: &str, body: &str) {
+    pub fn notify(title: &str, body: &str, _urgency: u8) {
         use windows::core::HSTRING;
         use windows::Data::Xml::Dom::XmlDocument;
         use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};

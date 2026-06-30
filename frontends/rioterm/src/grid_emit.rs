@@ -126,6 +126,7 @@ pub enum HintTag {
     Match,
     Focused,
     HyperlinkHover,
+    TriggerHighlight,
 }
 
 /// Per-row hint interval, closed on both ends. Several `RowHint`s may
@@ -135,6 +136,9 @@ pub struct RowHint {
     pub lo: u16,
     pub hi: u16,
     pub tag: HintTag,
+    /// Per-hint background override (trigger highlights carry their own
+    /// color); `None` means use the tag's configured color.
+    pub color: Option<[u8; 4]>,
 }
 
 /// Compute the hint-match intervals (if any) for visible row `y`.
@@ -146,10 +150,12 @@ pub struct RowHint {
 /// iteration order when it overlaps another match — same precedence
 /// as (`generic.zig:1330-1353`: "The order below matters.
 /// Highlights added earlier will take priority").
+#[allow(clippy::too_many_arguments)]
 pub fn row_hints_for(
     hint_matches: Option<&[Match]>,
     focused_match: Option<&Match>,
     hover_hyperlink: Option<(Pos, Pos)>,
+    trigger_highlights: Option<&[(Match, [u8; 4])]>,
     y: usize,
     cols: usize,
     display_offset: i32,
@@ -180,6 +186,7 @@ pub fn row_hints_for(
             lo: lo.min(cols_max),
             hi: hi.min(cols_max),
             tag,
+            color: None,
         })
     };
 
@@ -200,6 +207,19 @@ pub fn row_hints_for(
     if let Some((start, end)) = hover_hyperlink {
         if let Some(rh) = pos_pair_to_row_hint(start, end, HintTag::HyperlinkHover) {
             out.push(rh);
+        }
+    }
+
+    // Trigger highlights are independent of search; emit them before the
+    // hint_matches early-return so they show without an active search.
+    if let Some(highlights) = trigger_highlights {
+        for (m, color) in highlights {
+            if let Some(mut rh) =
+                pos_pair_to_row_hint(*m.start(), *m.end(), HintTag::TriggerHighlight)
+            {
+                rh.color = Some(*color);
+                out.push(rh);
+            }
         }
     }
 
@@ -231,10 +251,10 @@ fn pos_eq(a: Pos, b: Pos) -> bool {
 
 #[inline]
 fn cell_in_row_hints(row_hints: &[RowHint], col: u16) -> Option<HintTag> {
-    // Skip HyperlinkHover for the color paths — it only contributes
-    // an underline (handled separately in `emit_underlines`).
+    // Skip HyperlinkHover (underline only) and TriggerHighlight (background
+    // only — handled by `cell_bg_hint`) so matched text keeps its own fg.
     for rh in row_hints {
-        if rh.tag == HintTag::HyperlinkHover {
+        if rh.tag == HintTag::HyperlinkHover || rh.tag == HintTag::TriggerHighlight {
             continue;
         }
         if col >= rh.lo && col <= rh.hi {
@@ -242,6 +262,15 @@ fn cell_in_row_hints(row_hints: &[RowHint], col: u16) -> Option<HintTag> {
         }
     }
     None
+}
+
+/// Background-affecting hint covering `col` (search/hint matches and trigger
+/// highlights; skips the underline-only HyperlinkHover).
+#[inline]
+fn cell_bg_hint(row_hints: &[RowHint], col: u16) -> Option<&RowHint> {
+    row_hints
+        .iter()
+        .find(|rh| rh.tag != HintTag::HyperlinkHover && col >= rh.lo && col <= rh.hi)
 }
 
 /// Whether a cell should receive a forced underline from a hovered
@@ -264,9 +293,9 @@ fn cell_fg_hinted(tag: HintTag, renderer: &Renderer) -> [u8; 4] {
             normalized_to_u8(renderer.named_colors.search_focused_match_foreground)
         }
         HintTag::Match => normalized_to_u8(renderer.named_colors.search_match_foreground),
-        // Hover doesn't change fg color; defensive — `cell_in_row_hints`
-        // already filters this tag out, so this arm shouldn't fire.
-        HintTag::HyperlinkHover => [0, 0, 0, 0],
+        // Hover and trigger highlights don't change fg; `cell_in_row_hints`
+        // filters them out, so these arms are defensive.
+        HintTag::HyperlinkHover | HintTag::TriggerHighlight => [0, 0, 0, 0],
     }
 }
 
@@ -1055,16 +1084,18 @@ pub fn build_row_bg(
             // matching `generic.zig:2775-2800` (selection check
             // runs before highlight check).
             sel_bg.unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors))
-        } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
-            match tag {
+        } else if let Some(rh) = cell_bg_hint(row_hints, col) {
+            match rh.tag {
                 HintTag::Focused => focused_bg
                     .unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors)),
                 HintTag::Match => {
                     match_bg.unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors))
                 }
-                // `cell_in_row_hints` filters HyperlinkHover out, but
-                // make the match exhaustive so a future caller can't
-                // accidentally hit a panic.
+                HintTag::TriggerHighlight => rh
+                    .color
+                    .unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors)),
+                // `cell_bg_hint` filters HyperlinkHover out, but keep the
+                // match exhaustive.
                 HintTag::HyperlinkHover => cell_bg(sq, style, renderer, term_colors),
             }
         } else {
