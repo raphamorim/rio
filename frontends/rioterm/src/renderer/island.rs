@@ -303,6 +303,12 @@ fn draw_close_button(
 
 pub struct Island {
     pub hide_if_single: bool,
+    /// Prefix each tab title with its 1-based visual position (`1 vim`).
+    /// The number is derived from the render position, so reordering tabs
+    /// renumbers them automatically.
+    pub display_tab_number: bool,
+    /// String inserted between the number and the title (default a space).
+    pub tab_number_separator: String,
     pub inactive_text_color: [f32; 4],
     pub active_text_color: [f32; 4],
     /// Current progress bar state
@@ -344,9 +350,13 @@ impl Island {
         inactive_text_color: [f32; 4],
         active_text_color: [f32; 4],
         hide_if_single: bool,
+        display_tab_number: bool,
+        tab_number_separator: String,
     ) -> Self {
         Self {
             hide_if_single,
+            display_tab_number,
+            tab_number_separator,
             inactive_text_color,
             active_text_color,
             progress_state: None,
@@ -1347,8 +1357,24 @@ impl Island {
         self.color_picker_tab.is_some()
     }
 
-    /// Get the title text for a specific tab index
+    /// Get the title text for a specific tab index, with the 1-based
+    /// position prefix applied when `display_tab_number` is enabled.
     fn get_title_for_tab(
+        &self,
+        context_manager: &ContextManager<EventProxy>,
+        tab_index: usize,
+    ) -> String {
+        let title = self.raw_title_for_tab(context_manager, tab_index);
+        Self::format_tab_label(
+            self.display_tab_number,
+            tab_index,
+            &self.tab_number_separator,
+            title,
+        )
+    }
+
+    /// The displayed title for a tab before any index prefix is applied.
+    fn raw_title_for_tab(
         &self,
         context_manager: &ContextManager<EventProxy>,
         tab_index: usize,
@@ -1371,8 +1397,25 @@ impl Island {
             }
         }
 
-        // Default fallback - show tab number
+        // Default fallback when nothing is known yet
         String::from("~")
+    }
+
+    /// Prefix `title` with its 1-based visual position when enabled, joined
+    /// by `separator`. `position` is the render-time tab index (0 = leftmost),
+    /// so a tab dragged from slot 2 to slot 0 renumbers `3 - x` → `1 - x` for
+    /// free.
+    fn format_tab_label(
+        display_tab_number: bool,
+        position: usize,
+        separator: &str,
+        title: String,
+    ) -> String {
+        if display_tab_number {
+            format!("{}{}{}", position + 1, separator, title)
+        } else {
+            title
+        }
     }
 }
 
@@ -1459,21 +1502,77 @@ mod tests {
         let inactive_color = [0.5, 0.5, 0.5, 1.0];
         let active_color = [0.9, 0.9, 0.9, 1.0];
 
-        let island = Island::new(inactive_color, active_color, true);
+        let island =
+            Island::new(inactive_color, active_color, true, false, " - ".to_string());
 
         assert_eq!(island.inactive_text_color, inactive_color);
         assert_eq!(island.active_text_color, active_color);
         assert!(island.hide_if_single);
+        assert!(!island.display_tab_number);
     }
 
     #[test]
     fn test_island_height() {
-        let island = Island::new([0.8, 0.8, 0.8, 1.0], [1.0, 1.0, 1.0, 1.0], false);
+        let island = Island::new(
+            [0.8, 0.8, 0.8, 1.0],
+            [1.0, 1.0, 1.0, 1.0],
+            false,
+            false,
+            " - ".to_string(),
+        );
         assert_eq!(island.height(), ISLAND_HEIGHT);
     }
 
     fn test_island() -> Island {
-        Island::new([0.5, 0.5, 0.5, 1.0], [0.9, 0.9, 0.9, 1.0], false)
+        Island::new(
+            [0.5, 0.5, 0.5, 1.0],
+            [0.9, 0.9, 0.9, 1.0],
+            false,
+            false,
+            " - ".to_string(),
+        )
+    }
+
+    #[test]
+    fn format_tab_label_prefixes_one_based_position() {
+        // Disabled: the title is returned untouched.
+        assert_eq!(
+            Island::format_tab_label(false, 0, " - ", "vim".to_string()),
+            "vim"
+        );
+        // Enabled: 1-based position prefix with the default separator.
+        assert_eq!(
+            Island::format_tab_label(true, 0, " - ", "vim".to_string()),
+            "1 - vim"
+        );
+        assert_eq!(
+            Island::format_tab_label(true, 2, " - ", "htop".to_string()),
+            "3 - htop"
+        );
+        // Custom separator.
+        assert_eq!(
+            Island::format_tab_label(true, 0, ": ", "vim".to_string()),
+            "1: vim"
+        );
+    }
+
+    #[test]
+    fn tab_numbers_follow_visual_position_after_reorder() {
+        // The number is derived from the render position (`tab_index`), which
+        // is the live slot in ContextManager's reordered `contexts` vector.
+        // Simulate a reorder by moving the last tab to the front: its number
+        // must drop from 3 to 1 and the others shift up, matching ghostty.
+        let labels = |titles: &[&str]| -> Vec<String> {
+            titles
+                .iter()
+                .enumerate()
+                .map(|(i, t)| Island::format_tab_label(true, i, " - ", t.to_string()))
+                .collect()
+        };
+
+        assert_eq!(labels(&["a", "b", "c"]), ["1 - a", "2 - b", "3 - c"]);
+        // "c" dragged from slot 2 to slot 0 renumbers 3 → 1.
+        assert_eq!(labels(&["c", "a", "b"]), ["1 - c", "2 - a", "3 - b"]);
     }
 
     #[test]

@@ -440,6 +440,10 @@ impl Screen<'_> {
         self.renderer.is_window_focused = was_focused;
         if let Some(mut island) = old_island {
             island.update_colors(config.colors.tabs, config.colors.tabs_active);
+            // Pick up live-reloaded tab-number settings (the preserved
+            // island keeps its old constructor values otherwise).
+            island.display_tab_number = config.navigation.display_tab_number;
+            island.tab_number_separator = config.navigation.tab_number_separator.clone();
             self.renderer.island = Some(island);
         }
 
