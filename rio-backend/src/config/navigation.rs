@@ -7,6 +7,11 @@ pub fn default_unfocused_split_opacity() -> f32 {
     0.7
 }
 
+#[inline]
+pub fn default_tab_number_separator() -> String {
+    String::from(" ")
+}
+
 /// Clamp `unfocused_split_opacity` to `[0.15, 1.0]`.
 ///
 /// A value of `0.0` makes the inactive pane invisible, which is never what
@@ -127,6 +132,21 @@ pub struct Navigation {
     pub current_working_directory: bool,
     #[serde(default = "bool::default", rename = "use-terminal-title")]
     pub use_terminal_title: bool,
+    /// Prefix each tab title with its 1-based visual position, e.g.
+    /// `1 vim`. The number tracks the position, so reordering tabs
+    /// renumbers them. The number/title separator is configurable via
+    /// `tab_number_separator`. Only applies to the rio-rendered tab strip
+    /// (`Tab` mode); `NativeTab` uses the OS tab bar.
+    #[serde(default = "bool::default", rename = "display-tab-number")]
+    pub display_tab_number: bool,
+    /// String inserted between the tab number and the title when
+    /// `display_tab_number` is enabled. Defaults to a single space
+    /// (`1 vim`); set e.g. `" - "` for `1 - vim` or `": "` for `1: vim`.
+    #[serde(
+        default = "default_tab_number_separator",
+        rename = "tab-number-separator"
+    )]
+    pub tab_number_separator: String,
     #[serde(default = "default_bool_true", rename = "hide-if-single")]
     pub hide_if_single: bool,
     #[serde(default = "default_bool_true", rename = "use-split")]
@@ -160,6 +180,8 @@ impl Default for Navigation {
             clickable: false,
             current_working_directory: true,
             use_terminal_title: false,
+            display_tab_number: false,
+            tab_number_separator: default_tab_number_separator(),
             hide_if_single: true,
             use_split: true,
             unfocused_split_opacity: default_unfocused_split_opacity(),
@@ -239,6 +261,24 @@ mod tests {
         assert_eq!(decoded.navigation.mode, NavigationMode::Tab);
         assert!(!decoded.navigation.clickable);
         assert!(decoded.navigation.color_automation.is_empty());
+    }
+
+    #[test]
+    fn test_display_tab_number() {
+        // Defaults: disabled, separator is a single space.
+        let decoded = toml::from_str::<Root>("[navigation]\nmode = 'Tab'\n").unwrap();
+        assert!(!decoded.navigation.display_tab_number);
+        assert_eq!(decoded.navigation.tab_number_separator, " ");
+
+        let content = r#"
+            [navigation]
+            mode = 'Tab'
+            display-tab-number = true
+            tab-number-separator = ": "
+        "#;
+        let decoded = toml::from_str::<Root>(content).unwrap();
+        assert!(decoded.navigation.display_tab_number);
+        assert_eq!(decoded.navigation.tab_number_separator, ": ");
     }
 
     #[test]
