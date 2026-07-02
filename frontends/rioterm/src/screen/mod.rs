@@ -422,6 +422,7 @@ impl Screen<'_> {
                 config.colors.tabs_active,
                 config.colors.tab_border,
             );
+            island.title_font_size = config.navigation.tab_font_size;
             self.renderer.island = Some(island);
         }
 
