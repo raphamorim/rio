@@ -15,11 +15,9 @@ use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::time::Instant;
 
-pub const ISLAND_HEIGHT: f32 = 34.0;
 const PROGRESS_BAR_HEIGHT: f32 = 3.0;
 
 const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
-const TITLE_FONT_SIZE: f32 = 12.0;
 
 const TAB_PADDING_X: f32 = 24.0;
 const TITLE_ELLIPSIS: char = '…';
@@ -78,10 +76,11 @@ fn fit_title_to_width<'a>(
     sugarloaf: &mut Sugarloaf,
     title: &'a str,
     max_width: f32,
+    font_size: f32,
 ) -> Cow<'a, str> {
     let attrs = Attributes::default();
     fit_title_with_widths(title, max_width, |c| {
-        sugarloaf.char_advance(c, attrs, TITLE_FONT_SIZE)
+        sugarloaf.char_advance(c, attrs, font_size)
     })
 }
 
@@ -146,6 +145,10 @@ pub fn tab_strip_layout(
 
 pub struct Island {
     pub hide_if_single: bool,
+    /// Tab-title font size in logical pixels (`navigation.tab-font-size`).
+    pub title_font_size: f32,
+    /// Tab strip / island bar height in logical pixels (`navigation.tab-bar-height`).
+    pub height: f32,
     pub inactive_text_color: [f32; 4],
     pub active_text_color: [f32; 4],
     pub border_color: [f32; 4],
@@ -186,9 +189,13 @@ impl Island {
         active_text_color: [f32; 4],
         border_color: [f32; 4],
         hide_if_single: bool,
+        title_font_size: f32,
+        height: f32,
     ) -> Self {
         Self {
             hide_if_single,
+            title_font_size,
+            height,
             inactive_text_color,
             active_text_color,
             border_color,
@@ -473,7 +480,7 @@ impl Island {
         };
 
         let width = window_width / scale_factor;
-        let y_position = ISLAND_HEIGHT;
+        let y_position = self.height;
 
         // Determine color based on state
         let color = match state {
@@ -538,7 +545,7 @@ impl Island {
     /// Get the height of the island
     #[inline]
     pub fn height(&self) -> f32 {
-        ISLAND_HEIGHT
+        self.height
     }
 
     /// Render tabs using equal-width layout
@@ -606,12 +613,16 @@ impl Island {
 
         // Draw bottom border for the left margin area (traffic light space on macOS)
         if left_margin > 0.0 {
+            // Pixel-snap: a 1-physical-px line at the bottom edge (see the
+            // separator below — sub-pixel thin rects get dropped).
+            let line_h = 1.0 / scale_factor;
+            let border_y = (self.height * scale_factor).round() / scale_factor - line_h;
             sugarloaf.rect(
                 None,
                 0.0,
-                ISLAND_HEIGHT - 1.0,
+                border_y,
                 left_margin,
-                0.5,
+                line_h,
                 self.border_color,
                 0.1,
                 0,
@@ -645,7 +656,12 @@ impl Island {
                 continue;
             }
             let max_text_width = (tab_width - TAB_PADDING_X * 2.0).max(0.0);
-            let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
+            let title = fit_title_to_width(
+                sugarloaf,
+                &raw_title,
+                max_text_width,
+                self.title_font_size,
+            );
 
             let text_color = if is_active {
                 self.active_text_color
@@ -654,7 +670,7 @@ impl Island {
             };
 
             let title_opts = DrawOpts {
-                font_size: TITLE_FONT_SIZE,
+                font_size: self.title_font_size,
                 color: color_u8(text_color),
                 ..DrawOpts::default()
             };
@@ -675,7 +691,7 @@ impl Island {
                 let ui = sugarloaf.text_mut();
                 let text_width = ui.measure(&title, &title_opts);
                 let text_x = tab_x + (tab_width - text_width) / 2.0;
-                let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
+                let text_y = (self.height / 2.0) - (self.title_font_size / 2.);
                 ui.draw(text_x, text_y, &title, &title_opts);
             }
 
@@ -686,7 +702,7 @@ impl Island {
                     tab_x,
                     0.0,
                     tab_width,
-                    ISLAND_HEIGHT,
+                    self.height,
                     bg_color,
                     0.05,
                     0,
@@ -696,12 +712,19 @@ impl Island {
             // Draw vertical left border (separator between tabs)
             // Skip for first tab UNLESS it's active (then draw to separate from traffic lights)
             if tab_index > 0 || (tab_index == 0 && is_active && left_margin > 0.0) {
+                // Pixel-snap: rect() scales logical coords by scale_factor
+                // without rounding, so a fractional x and sub-pixel width
+                // make the separator land between physical pixels and drop
+                // out (reappearing only when a resize realigns it). Snap x
+                // to a whole physical pixel and use a 1-physical-px width.
+                let snapped_x = (tab_x * scale_factor).round() / scale_factor;
+                let line_width = 1.0 / scale_factor;
                 sugarloaf.rect(
                     None,
-                    tab_x,
+                    snapped_x,
                     0.0, // Start from top
-                    0.5, // 1px width
-                    ISLAND_HEIGHT,
+                    line_width,
+                    self.height,
                     self.border_color,
                     0.1, // Same depth as other island elements
                     0,
@@ -710,12 +733,16 @@ impl Island {
 
             // Draw bottom border for inactive tabs (active tabs have no border)
             if !is_active {
+                // Pixel-snap to a 1-physical-px line at the bottom edge.
+                let line_h = 1.0 / scale_factor;
+                let border_y =
+                    (self.height * scale_factor).round() / scale_factor - line_h;
                 sugarloaf.rect(
                     None,
                     tab_x,
-                    ISLAND_HEIGHT - 1.0,
+                    border_y,
                     tab_width,
-                    0.5, // 1px height
+                    line_h,
                     self.border_color,
                     0.1, // Same depth as other island elements
                     0,
@@ -737,7 +764,7 @@ impl Island {
                     shadow_x,
                     0.0,
                     SHADOW_WIDTH,
-                    ISLAND_HEIGHT,
+                    self.height,
                     [0.0, 0.0, 0.0, 0.18],
                     0.05,
                     11,
@@ -753,7 +780,7 @@ impl Island {
                 floating_x,
                 0.0,
                 tab_width,
-                ISLAND_HEIGHT,
+                self.height,
                 fill,
                 0.05,
                 11,
@@ -766,7 +793,7 @@ impl Island {
                     edge_x,
                     0.0,
                     0.5,
-                    ISLAND_HEIGHT,
+                    self.height,
                     self.border_color,
                     0.1,
                     11,
@@ -776,16 +803,21 @@ impl Island {
             let raw_title = self.get_title_for_tab(context_manager, drag_idx);
             if !raw_title.is_empty() {
                 let max_text_width = (tab_width - TAB_PADDING_X * 2.0).max(0.0);
-                let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
+                let title = fit_title_to_width(
+                    sugarloaf,
+                    &raw_title,
+                    max_text_width,
+                    self.title_font_size,
+                );
                 let title_opts = DrawOpts {
-                    font_size: TITLE_FONT_SIZE,
+                    font_size: self.title_font_size,
                     color: color_u8(self.active_text_color),
                     ..DrawOpts::default()
                 };
                 let ui = sugarloaf.text_mut();
                 let text_width = ui.measure(&title, &title_opts);
                 let text_x = floating_x + (tab_width - text_width) / 2.0;
-                let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
+                let text_y = (self.height / 2.0) - (self.title_font_size / 2.);
                 ui.draw(text_x, text_y, &title, &title_opts);
             }
         }
@@ -924,7 +956,7 @@ impl Island {
         let tab_x = left_margin + picker_tab as f32 * tab_width;
 
         // Picker is rendered just below the island
-        let picker_y = ISLAND_HEIGHT;
+        let picker_y = self.height;
 
         // Check if click is within picker vertical range
         if mouse_y_unscaled < picker_y || mouse_y_unscaled > picker_y + PICKER_HEIGHT {
@@ -985,7 +1017,7 @@ impl Island {
         selected_color: Option<[f32; 4]>,
     ) {
         let padding = PICKER_PADDING;
-        let bg_y = ISLAND_HEIGHT;
+        let bg_y = self.height;
 
         // Compute total swatches width to derive the consistent inner content width
         // N color swatches + 1 reset swatch
@@ -1228,8 +1260,6 @@ mod tests {
     #[test]
     fn test_island_constants() {
         // Verify all constants are set correctly
-        assert_eq!(ISLAND_HEIGHT, 34.0);
-        assert_eq!(TITLE_FONT_SIZE, 12.0);
         assert_eq!(TAB_PADDING_X, 24.0);
         assert_eq!(ISLAND_MARGIN_RIGHT, 8.0);
         #[cfg(target_os = "macos")]
@@ -1242,7 +1272,8 @@ mod tests {
         let active_color = [0.9, 0.9, 0.9, 1.0];
         let border_color = [0.7, 0.7, 0.7, 1.0];
 
-        let island = Island::new(inactive_color, active_color, border_color, true);
+        let island =
+            Island::new(inactive_color, active_color, border_color, true, 12.0, 34.0);
 
         assert_eq!(island.inactive_text_color, inactive_color);
         assert_eq!(island.active_text_color, active_color);
@@ -1257,8 +1288,10 @@ mod tests {
             [1.0, 1.0, 1.0, 1.0],
             [0.8, 0.8, 0.8, 1.0],
             false,
+            12.0,
+            34.0,
         );
-        assert_eq!(island.height(), ISLAND_HEIGHT);
+        assert_eq!(island.height(), 34.0);
     }
 
     fn test_island() -> Island {
@@ -1267,6 +1300,8 @@ mod tests {
             [0.9, 0.9, 0.9, 1.0],
             [0.7, 0.7, 0.7, 1.0],
             false,
+            12.0,
+            34.0,
         )
     }
 

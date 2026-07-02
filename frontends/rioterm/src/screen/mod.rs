@@ -422,6 +422,8 @@ impl Screen<'_> {
                 config.colors.tabs_active,
                 config.colors.tab_border,
             );
+            island.title_font_size = config.navigation.tab_font_size;
+            island.height = config.navigation.tab_bar_height;
             self.renderer.island = Some(island);
         }
 
@@ -2581,9 +2583,9 @@ impl Screen<'_> {
         let mouse_x = self.mouse.x;
         let mouse_y = self.mouse.y;
 
-        use crate::renderer::island::ISLAND_HEIGHT;
         let scale_factor = self.sugarloaf.scale_factor();
-        let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
+        let island_height_px =
+            (self.renderer.navigation.tab_bar_height * scale_factor) as f64;
 
         let window_width = self.sugarloaf.window_size().width;
         let num_tabs = self.context_manager.len();

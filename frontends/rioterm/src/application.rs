@@ -1008,9 +1008,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         && button == MouseButton::Left
                         && route.window.screen.allow_manual_dragging
                     {
-                        use crate::renderer::island::ISLAND_HEIGHT;
+                        let tab_bar_height =
+                            route.window.screen.renderer.navigation.tab_bar_height;
                         let scale = route.window.screen.sugarloaf.scale_factor();
-                        if route.window.screen.mouse.y <= (ISLAND_HEIGHT * scale) as f64 {
+                        if route.window.screen.mouse.y <= (tab_bar_height * scale) as f64
+                        {
                             let _ = route.window.winit_window.drag_window();
                         }
                     }
@@ -1128,10 +1130,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                             #[cfg(target_os = "macos")]
                             if route.window.screen.allow_manual_dragging {
-                                use crate::renderer::island::ISLAND_HEIGHT;
+                                let tab_bar_height = route
+                                    .window
+                                    .screen
+                                    .renderer
+                                    .navigation
+                                    .tab_bar_height;
                                 let scale = route.window.screen.sugarloaf.scale_factor();
                                 if route.window.screen.mouse.y
-                                    <= (ISLAND_HEIGHT * scale) as f64
+                                    <= (tab_bar_height * scale) as f64
                                 {
                                     route
                                         .window
@@ -1418,9 +1425,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // tab on macOS) the band at the top has no tabs to
                 // hover, and the I-beam from the terminal grid below
                 // should stay during top-edge drags.
-                use crate::renderer::island::ISLAND_HEIGHT;
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
-                let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
+                let island_height_px =
+                    (route.window.screen.renderer.navigation.tab_bar_height
+                        * scale_factor) as f64;
                 let num_tabs = route.window.screen.ctx().len();
                 let nav = &route.window.screen.renderer.navigation;
                 if nav.island_visible(num_tabs) && y <= island_height_px {
