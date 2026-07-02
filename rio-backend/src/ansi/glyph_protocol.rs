@@ -67,10 +67,15 @@ pub enum GlyphCommand {
     /// `colrv0`/`colrv1` colour container wrapping OpenType tables).
     /// The `reply` level controls which replies (if any) the
     /// dispatcher emits — see [`ReplyMode`] for the three tiers.
+    /// `width` is the registration's declared Unicode width (spec
+    /// §8.5): `1` (narrow, the default) or `2` (wide). It is
+    /// authoritative for all terminal layout decisions — UAX #11 is
+    /// never consulted for a registered codepoint.
     Register {
         cp: u32,
         payload: GlyphPayload,
         reply: ReplyMode,
+        width: u8,
     },
     /// Clear a single PUA codepoint (`Some`) or every slot (`None`).
     Clear { cp: Option<u32> },
@@ -337,6 +342,16 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         return Err(ParseError::Malformed("register upm must be non-zero"));
     }
 
+    // Declared Unicode width (spec §8.5): `1` or `2`, default `1`.
+    let width = match params.get("width") {
+        Some(raw) => match trim(raw) {
+            b"1" => 1,
+            b"2" => 2,
+            _ => return Err(ParseError::Malformed("register width must be 1 or 2")),
+        },
+        None => 1,
+    };
+
     let payload_b64 = trim(payload_b64);
     let raw = BASE64
         .decode(payload_b64)
@@ -381,7 +396,12 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         _ => unreachable!("fmt validated above"),
     };
 
-    Ok(GlyphCommand::Register { cp, payload, reply })
+    Ok(GlyphCommand::Register {
+        cp,
+        payload,
+        reply,
+        width,
+    })
 }
 
 /// Decode a `colrv0`/`colrv1` container (see [`ColrContainer`] doc for
@@ -718,8 +738,40 @@ mod tests {
                     upm: 1000,
                 },
                 reply: ReplyMode::All,
+                width: 1,
             }
         );
+    }
+
+    #[test]
+    fn register_width_defaults_to_narrow_and_accepts_wide() {
+        let payload = b64(&[0x01]);
+
+        // Absent → 1 (checked in parses_register_at_pua_codepoint too).
+        let body = format!("25a1;r;cp=E0A0;upm=1000;width=2;{}", payload);
+        match parse(body.as_bytes()).unwrap() {
+            GlyphCommand::Register { width, .. } => assert_eq!(width, 2),
+            other => panic!("expected register, got {:?}", other),
+        }
+
+        let body = format!("25a1;r;cp=E0A0;upm=1000;width=1;{}", payload);
+        match parse(body.as_bytes()).unwrap() {
+            GlyphCommand::Register { width, .. } => assert_eq!(width, 1),
+            other => panic!("expected register, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn register_rejects_invalid_width() {
+        let payload = b64(&[0x01]);
+        for bad in ["0", "3", "two", ""].iter() {
+            let body = format!("25a1;r;cp=E0A0;upm=1000;width={};{}", bad, payload);
+            assert!(
+                matches!(parse(body.as_bytes()), Err(ParseError::Malformed(_))),
+                "width={:?} must be rejected",
+                bad
+            );
+        }
     }
 
     #[test]
@@ -1004,6 +1056,7 @@ mod tests {
                         upm: 1000,
                     },
                 reply: ReplyMode::All,
+                width: 1,
             } => {
                 assert_eq!(c.glyphs.len(), 1);
                 assert_eq!(c.glyphs[0], vec![0xAA, 0xBB]);
@@ -1035,6 +1088,7 @@ mod tests {
                         upm: 2048,
                     },
                 reply: ReplyMode::All,
+                width: 1,
             } => {
                 assert_eq!(c.glyphs.len(), 3);
                 assert_eq!(c.glyphs[2], vec![0x04, 0x05, 0x06]);

@@ -409,15 +409,17 @@ pub trait Handler {
     fn glyph_protocol_response(&mut self, _response: String) {}
 
     /// Register a custom glyph at a client-chosen PUA codepoint. The
-    /// parser has already verified `cp` is in PUA and the container
-    /// size is within bounds. The `payload` carries format-specific
-    /// data: monochrome `glyf`, or a `colrv0`/`colrv1` colour
-    /// container. `Err(reason)` causes the dispatcher to emit an error
-    /// response.
+    /// parser has already verified `cp` is in PUA, the container
+    /// size is within bounds, and `width` is `1` or `2`. The `payload`
+    /// carries format-specific data: monochrome `glyf`, or a
+    /// `colrv0`/`colrv1` colour container. `width` is the declared
+    /// Unicode width (spec §8.5), authoritative for layout.
+    /// `Err(reason)` causes the dispatcher to emit an error response.
     fn glyph_register(
         &mut self,
         _cp: u32,
         _payload: glyph_protocol::GlyphPayload,
+        _width: u8,
     ) -> Result<(), glyph_protocol::RegisterError> {
         Ok(())
     }
@@ -842,8 +844,13 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                 // reply back to the originating pane's PTY directly.
                 self.handler.glyph_query(cp);
             }
-            Ok(glyph_protocol::GlyphCommand::Register { cp, payload, reply }) => {
-                match self.handler.glyph_register(cp, payload) {
+            Ok(glyph_protocol::GlyphCommand::Register {
+                cp,
+                payload,
+                reply,
+                width,
+            }) => {
+                match self.handler.glyph_register(cp, payload, width) {
                     Ok(()) => {
                         if reply.emit_success() {
                             let resp = glyph_protocol::format_register_ok(cp);
