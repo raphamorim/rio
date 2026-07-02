@@ -1202,6 +1202,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             dim.update_dimensions(text_dims, cell);
         }
 
+        // Re-push the current size through Taffy with the *current*
+        // scaled_margin before laying out. Callers (e.g. tab create/close
+        // toggling `hide_if_single`) update scaled_margin.top to add/remove
+        // the tab-bar band, but apply_taffy_layout alone reuses Taffy's last
+        // available height — computed with the old margin — so the grid kept
+        // too many rows and the bottom row was clipped until a window resize
+        // refreshed it.
+        let _ = self.try_update_size(self.width, self.height);
+
         // Always apply Taffy layout for consistent positioning
         self.apply_taffy_layout(sugarloaf);
     }
