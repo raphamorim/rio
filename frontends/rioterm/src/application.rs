@@ -432,11 +432,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::Exit) => {
+            RioEventType::Rio(RioEvent::Exit | RioEvent::Quit) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if self.config.confirm_before_quit {
                         route.confirm_quit();
-                        route.request_redraw();
                     } else {
                         route.quit();
                     }
@@ -986,7 +985,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if self.config.confirm_before_quit {
                     route.confirm_quit();
-                    route.request_redraw();
                     return;
                 } else {
                     self.router.routes.remove(&window_id);
@@ -1002,7 +1000,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
-                if route.path != RoutePath::Terminal {
+                if route.path != RoutePath::Terminal
+                    || route.window.screen.renderer.confirm_quit.is_active()
+                {
                     #[cfg(target_os = "macos")]
                     if state == ElementState::Pressed
                         && button == MouseButton::Left
@@ -1308,7 +1308,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.mouse.y = y;
                 route.window.screen.mouse.raw_y = position.y;
 
-                if route.path != RoutePath::Terminal {
+                if route.path != RoutePath::Terminal
+                    || route.window.screen.renderer.confirm_quit.is_active()
+                {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
                 }
@@ -1616,7 +1618,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::MouseWheel { delta, phase, .. } => {
-                if route.path != RoutePath::Terminal {
+                if route.path != RoutePath::Terminal
+                    || route.window.screen.renderer.confirm_quit.is_active()
+                {
                     return;
                 }
 
@@ -1830,18 +1834,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     RoutePath::Welcome => {
                         route.window.screen.render_welcome();
                     }
-                    RoutePath::Terminal | RoutePath::ConfirmQuit => {
-                        if route.path == RoutePath::ConfirmQuit {
-                            let dim = route.window.screen.ctx().current().dimension;
-                            crate::router::routes::dialog::screen(
-                                &mut route.window.screen.sugarloaf,
-                                &dim,
-                                "want to quit?",
-                                "yes (y)",
-                                "no (n)",
-                            );
-                        }
-
+                    RoutePath::Terminal => {
                         if let Some(window_update) = route.window.screen.render() {
                             use crate::context::renderable::{
                                 BackgroundState, WindowUpdate,
@@ -1902,16 +1895,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.request_redraw();
                     event_loop.set_control_flow(ControlFlow::Poll);
                 } else {
-                    if route.path == RoutePath::Welcome
-                        || route.path == RoutePath::ConfirmQuit
-                        || route
-                            .window
-                            .screen
-                            .ctx()
-                            .current()
-                            .renderable_content
-                            .pending_update
-                            .is_dirty()
+                    if route
+                        .window
+                        .screen
+                        .ctx()
+                        .current()
+                        .renderable_content
+                        .pending_update
+                        .is_dirty()
                     {
                         route.request_redraw();
                     }
