@@ -3,17 +3,17 @@ use crate::ansi::iterm2_image_protocol;
 use crate::ansi::kitty_graphics_protocol;
 use crate::ansi::CursorShape;
 use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
-use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
-use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
-use crate::crosswords::square::Hyperlink;
+use crate::pos::{CharsetIndex, Column, Line, StandardCharset};
+use crate::square::Hyperlink;
 use cursor_icon::CursorIcon;
+use rio_core::color::{AnsiColor, ColorRgb, NamedColor};
+use rio_core::graphics::GraphicData;
 use std::mem;
 use std::time::Duration;
 use std::time::Instant;
-use sugarloaf::GraphicData;
 use tracing::{debug, warn};
 
-use crate::crosswords::attr::Attr;
+use crate::attr::Attr;
 
 use crate::ansi::control::C0;
 use crate::ansi::{
@@ -23,8 +23,8 @@ use crate::ansi::{
 use std::fmt::Write;
 
 // https://vt100.net/emu/dec_ansi_parser
-use super::osc;
-use super::parser::{Params, ParamsIter, Parser, Perform};
+use crate::osc;
+use rio_parser::{Params, ParamsIter, Parser, Perform};
 
 /// Maximum time before a synchronized update is aborted.
 const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
@@ -376,7 +376,7 @@ pub trait Handler {
     fn set_mouse_cursor_icon(&mut self, _: CursorIcon) {}
 
     /// Set progress bar report (OSC 9;4).
-    fn set_progress_report(&mut self, _: crate::event::ProgressReport) {}
+    fn set_progress_report(&mut self, _: crate::host::ProgressReport) {}
 
     /// Report current keyboard mode.
     fn report_keyboard_mode(&mut self) {}

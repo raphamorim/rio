@@ -1,0 +1,50 @@
+[package]
+name = "canario"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A correct, fast, embeddable headless VT/ANSI terminal engine — bytes in, terminal state out. Extracted from the Rio terminal."
+repository = "https://github.com/raphamorim/rio"
+documentation = "https://github.com/raphamorim/rio#readme"
+keywords = ["terminal", "vt100", "ansi", "emulator", "headless"]
+readme = "README.md"
+
+[dependencies]
+rio-core = { workspace = true }
+rio-parser = { workspace = true }
+rio-grapheme-width = { workspace = true }
+bitflags = { workspace = true }
+regex-automata = "0.4.9"
+base64 = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+cursor-icon = { version = "1.1.0", default-features = false }
+smallvec = { version = "1.13.2", default-features = false }
+parking_lot = { workspace = true }
+rustc-hash = { workspace = true }
+unicode-width = { workspace = true }
+image_rs = { workspace = true }
+simdutf = { workspace = true }
+flate2 = { workspace = true }
+memchr = { version = "2.7.4", default-features = false }
+url = { workspace = true }
+
+# pty driver (the `Machine` event loop) — optional, gated by the `pty` feature.
+teletypewriter = { workspace = true, optional = true }
+corcovado = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+# Feature-gated deps land with their phases (search: regex/onig; pty:
+# teletypewriter + corcovado; serde: session save). See ROADMAP.
+
+[features]
+default = []
+graphics = []
+selection = []
+search = []
+vi-mode = []
+pty = ["dep:teletypewriter", "dep:corcovado"]
+replay = []
+serde = ["rio-core/serde"]

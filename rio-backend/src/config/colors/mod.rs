@@ -6,77 +6,34 @@ use regex::Regex;
 use serde::Serialize;
 use serde::{de, Deserialize};
 use std::num::ParseIntError;
-use std::ops::Mul;
 
 // `ColorWGPU` is the legacy name; `sugarloaf::Color` is the actual
 // type now (mirrors `wgpu::Color`'s shape, but doesn't drag wgpu
 // into the dep tree on Linux/macOS native builds).
 pub type ColorWGPU = sugarloaf::Color;
-pub type ColorArray = [f32; 4];
 pub type ColorComposition = (ColorArray, ColorWGPU);
 
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct ColorRgb {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
+// The terminal color value model now lives in `rio-core`. Re-export it so all
+// existing `config::colors::{ColorRgb, AnsiColor, NamedColor, ColorArray, ...}`
+// paths keep resolving unchanged. The frontend-only conversions (`to_wgpu`,
+// `to_composition`) stay here, exposed via [`ColorRgbExt`].
+pub use rio_core::color::{AnsiColor, ColorArray, ColorRgb, NamedColor, DIM_FACTOR};
+
+/// Frontend-only conversions for [`ColorRgb`]: turning a plain RGB value into
+/// the renderer's `Color` (gamma/format aware via [`ColorBuilder`]). These
+/// deliberately do NOT live in `rio-core`, which is renderer-agnostic.
+pub trait ColorRgbExt {
+    fn to_wgpu(&self) -> ColorWGPU;
+    fn to_composition(&self) -> ColorComposition;
 }
 
-impl Mul<f32> for ColorRgb {
-    type Output = ColorRgb;
-
-    fn mul(self, rhs: f32) -> ColorRgb {
-        let result = ColorRgb {
-            r: (f32::from(self.r) * rhs).clamp(0.0, 255.0) as u8,
-            g: (f32::from(self.g) * rhs).clamp(0.0, 255.0) as u8,
-            b: (f32::from(self.b) * rhs).clamp(0.0, 255.0) as u8,
-        };
-
-        tracing::trace!(
-            "Scaling ColorRgb by {} from {:?} to {:?}",
-            rhs,
-            self,
-            result
-        );
-        result
-    }
-}
-
-impl From<&ColorRgb> for ColorArray {
-    fn from(color: &ColorRgb) -> ColorArray {
-        color.to_arr()
-    }
-}
-
-impl ColorRgb {
-    pub fn from_color_arr(arr: ColorArray) -> ColorRgb {
-        ColorRgb {
-            r: (arr[0] * 255.0) as u8,
-            g: (arr[1] * 255.0) as u8,
-            b: (arr[2] * 255.0) as u8,
-        }
-    }
-
-    pub fn to_arr(&self) -> ColorArray {
-        ColorBuilder::from_rgb(*self, Format::SRGB0_1).to_arr()
-    }
-
-    pub fn to_arr_with_dim(&self) -> ColorArray {
-        let r = (self.r as f32 * 0.66) as u8;
-        let g = (self.g as f32 * 0.66) as u8;
-        let b = (self.b as f32 * 0.66) as u8;
-        let temp_dim_self = Self { r, g, b };
-        ColorBuilder::from_rgb(temp_dim_self, Format::SRGB0_1).to_arr()
-    }
-
-    pub fn to_wgpu(&self) -> ColorWGPU {
+impl ColorRgbExt for ColorRgb {
+    fn to_wgpu(&self) -> ColorWGPU {
         ColorBuilder::from_rgb(*self, Format::SRGB0_1).to_wgpu()
     }
 
-    pub fn to_composition(&self) -> ColorComposition {
-        let arr = self.to_arr();
-        let wgpu = self.to_wgpu();
-        (arr, wgpu)
+    fn to_composition(&self) -> ColorComposition {
+        (self.to_arr(), self.to_wgpu())
     }
 }
 
@@ -84,13 +41,6 @@ impl ColorRgb {
 pub enum Format {
     SRGB0_255,
     SRGB0_1,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AnsiColor {
-    Named(NamedColor),
-    Spec(ColorRgb),
-    Indexed(u8),
 }
 
 #[derive(Debug, Copy, Deserialize, PartialEq, Clone)]
@@ -375,120 +325,6 @@ pub fn hex_to_color_wgpu(s: &str) -> ColorWGPU {
     ColorBuilder::from_hex(s.to_string(), Format::SRGB0_1)
         .unwrap_or_default()
         .to_wgpu()
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
-pub enum NamedColor {
-    /// Black.
-    Black = 0,
-    /// Red.
-    Red,
-    /// Green.
-    Green,
-    /// Yellow.
-    Yellow,
-    /// Blue.
-    Blue,
-    /// Magenta.
-    Magenta,
-    /// Cyan.
-    Cyan,
-    /// White.
-    White,
-    /// Bright black.
-    LightBlack,
-    /// Light red.
-    LightRed,
-    /// Light green.
-    LightGreen,
-    /// Light yellow.
-    LightYellow,
-    /// Light blue.
-    LightBlue,
-    /// Light magenta.
-    LightMagenta,
-    /// Light cyan.
-    LightCyan,
-    /// Light white.
-    LightWhite,
-    /// The foreground color.
-    Foreground = 256,
-    /// The background color.
-    Background,
-    /// Color for the cursor itself.
-    Cursor,
-    /// Dim black.
-    DimBlack,
-    /// Dim red.
-    DimRed,
-    /// Dim green.
-    DimGreen,
-    /// Dim yellow.
-    DimYellow,
-    /// Dim blue.
-    DimBlue,
-    /// Dim magenta.
-    DimMagenta,
-    /// Dim cyan.
-    DimCyan,
-    /// Dim white.
-    DimWhite,
-    /// The bright foreground color.
-    LightForeground,
-    /// Dim foreground.
-    DimForeground,
-}
-
-impl NamedColor {
-    #[must_use]
-    pub fn to_light(self) -> Self {
-        match self {
-            NamedColor::Foreground => NamedColor::LightForeground,
-            NamedColor::Black => NamedColor::LightBlack,
-            NamedColor::Red => NamedColor::LightRed,
-            NamedColor::Green => NamedColor::LightGreen,
-            NamedColor::Yellow => NamedColor::LightYellow,
-            NamedColor::Blue => NamedColor::LightBlue,
-            NamedColor::Magenta => NamedColor::LightMagenta,
-            NamedColor::Cyan => NamedColor::LightCyan,
-            NamedColor::White => NamedColor::LightWhite,
-            NamedColor::DimForeground => NamedColor::Foreground,
-            NamedColor::DimBlack => NamedColor::Black,
-            NamedColor::DimRed => NamedColor::Red,
-            NamedColor::DimGreen => NamedColor::Green,
-            NamedColor::DimYellow => NamedColor::Yellow,
-            NamedColor::DimBlue => NamedColor::Blue,
-            NamedColor::DimMagenta => NamedColor::Magenta,
-            NamedColor::DimCyan => NamedColor::Cyan,
-            NamedColor::DimWhite => NamedColor::White,
-            val => val,
-        }
-    }
-
-    #[must_use]
-    pub fn to_dim(self) -> Self {
-        match self {
-            NamedColor::Black => NamedColor::DimBlack,
-            NamedColor::Red => NamedColor::DimRed,
-            NamedColor::Green => NamedColor::DimGreen,
-            NamedColor::Yellow => NamedColor::DimYellow,
-            NamedColor::Blue => NamedColor::DimBlue,
-            NamedColor::Magenta => NamedColor::DimMagenta,
-            NamedColor::Cyan => NamedColor::DimCyan,
-            NamedColor::White => NamedColor::DimWhite,
-            NamedColor::Foreground => NamedColor::DimForeground,
-            NamedColor::LightBlack => NamedColor::Black,
-            NamedColor::LightRed => NamedColor::Red,
-            NamedColor::LightGreen => NamedColor::Green,
-            NamedColor::LightYellow => NamedColor::Yellow,
-            NamedColor::LightBlue => NamedColor::Blue,
-            NamedColor::LightMagenta => NamedColor::Magenta,
-            NamedColor::LightCyan => NamedColor::Cyan,
-            NamedColor::LightWhite => NamedColor::White,
-            NamedColor::LightForeground => NamedColor::Foreground,
-            val => val,
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Copy)]

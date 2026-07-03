@@ -3,9 +3,9 @@
 // https://github.com/alacritty/alacritty/pull/4763/files
 
 use crate::ansi::sixel;
-use crate::config::colors::ColorRgb;
-use crate::crosswords::grid::Dimensions;
-use crate::sugarloaf::{GraphicData, GraphicId};
+use crate::grid::Dimensions;
+use rio_core::color::ColorRgb;
+use rio_core::graphics::{GraphicData, GraphicId};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
@@ -706,9 +706,57 @@ impl Graphics {
     }
 }
 
+/// Build a [`GraphicData`] from a decoded [`image_rs::DynamicImage`].
+///
+/// Lives here (not in `rio-core`) because it depends on the `image` crate,
+/// which the renderer-agnostic core deliberately does not pull in. Used by
+/// the iTerm2 inline-image decoder.
+pub fn graphic_data_from_dynamic_image(
+    id: GraphicId,
+    image: image_rs::DynamicImage,
+) -> GraphicData {
+    use rio_core::graphics::ColorType;
+
+    let color_type;
+    let width;
+    let height;
+    let pixels;
+
+    match image {
+        image_rs::DynamicImage::ImageRgba8(image) => {
+            color_type = ColorType::Rgba;
+            width = image.width() as usize;
+            height = image.height() as usize;
+            pixels = image.into_raw();
+        }
+
+        _ => {
+            // Non-RGB image. Convert it to RGBA.
+            let image = image.into_rgba8();
+            color_type = ColorType::Rgba;
+            width = image.width() as usize;
+            height = image.height() as usize;
+            pixels = image.into_raw();
+        }
+    }
+
+    GraphicData {
+        id,
+        width,
+        height,
+        color_type,
+        pixels,
+        is_opaque: false,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    }
+}
+
 #[test]
 fn check_opaque_region() {
-    use sugarloaf::ColorType;
+    use rio_core::graphics::ColorType;
     let graphic = GraphicData {
         id: GraphicId::new(1),
         width: 10,
@@ -754,7 +802,7 @@ fn check_opaque_region() {
 
 #[test]
 fn test_graphics_memory_tracking() {
-    use sugarloaf::ColorType;
+    use rio_core::graphics::ColorType;
     let mut graphics = Graphics::default();
 
     // Create a small graphic (100x100 RGBA = 40,000 bytes)
@@ -788,7 +836,7 @@ fn test_graphics_memory_tracking() {
 
 #[test]
 fn test_graphics_eviction_unused_first() {
-    use sugarloaf::ColorType;
+    use rio_core::graphics::ColorType;
     let mut graphics = Graphics {
         total_limit: 100_000, // 100KB limit for testing
         ..Graphics::default()
@@ -849,7 +897,7 @@ fn test_graphics_eviction_unused_first() {
 
 #[test]
 fn test_graphics_eviction_oldest_first() {
-    use sugarloaf::ColorType;
+    use rio_core::graphics::ColorType;
     let mut graphics = Graphics {
         total_limit: 100_000, // 100KB limit
         ..Graphics::default()
@@ -906,7 +954,7 @@ fn test_graphics_eviction_oldest_first() {
 
 #[test]
 fn test_graphics_eviction_fails_when_not_enough_space() {
-    use sugarloaf::ColorType;
+    use rio_core::graphics::ColorType;
     let mut graphics = Graphics {
         total_limit: 100_000, // 100KB limit
         ..Graphics::default()
@@ -947,7 +995,7 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
 
 #[test]
 fn test_graphics_no_eviction_when_under_limit() {
-    use sugarloaf::ColorType;
+    use rio_core::graphics::ColorType;
     let mut graphics = Graphics {
         total_limit: 200_000, // 200KB limit
         ..Graphics::default()

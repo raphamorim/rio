@@ -2,8 +2,8 @@
 // https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/grid/row.rs
 // which is licensed under Apache 2.0 license.
 
-use crate::crosswords::grid::GridSquare;
-use crate::crosswords::Column;
+use crate::grid::GridSquare;
+use crate::pos::Column;
 use core::cmp::min;
 use std::cmp::max;
 use std::ops::{Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive};
@@ -174,6 +174,14 @@ impl<T> Row<T> {
     #[inline]
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    /// Number of occupied entries — the upper bound on cells modified since
+    /// the last reset. Exposed as an accessor so cross-crate consumers
+    /// (rio-backend tests) can read it without the field being public.
+    #[inline]
+    pub fn occ(&self) -> usize {
+        self.occ
     }
 
     #[inline]

@@ -8,7 +8,6 @@ use crate::crosswords::pos::{Direction, Pos};
 use crate::crosswords::search::{Match, RegexSearch};
 use crate::error::RioError;
 use rio_window::event::Event as RioWindowEvent;
-use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Formatter;
@@ -26,16 +25,13 @@ pub enum RioEventType {
     // Message(Message),
 }
 
-#[derive(Debug)]
-pub enum Msg {
-    /// Data that should be written to the PTY.
-    Input(Cow<'static, [u8]>),
-
-    #[allow(dead_code)]
-    Shutdown,
-
-    Resize(WinsizeBuilder),
-}
+// The PTY-channel `Msg` protocol now lives in the `canario` engine crate's
+// `pty` module (behind the `pty` feature). Re-export it so existing
+// `crate::event::Msg` references — and the frontend's `rio_backend::event::Msg`
+// imports — keep resolving unchanged. `WinsizeBuilder` itself stays in
+// `teletypewriter`, which `canario`'s `pty` feature pulls in, so the variant
+// payload is the same type across both crates.
+pub use canario::pty::Msg;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum ClickState {
@@ -45,28 +41,20 @@ pub enum ClickState {
     TripleClick,
 }
 
-/// Terminal damage hint — coarse signal for the renderer's update path.
-/// The actual per-row decision lives on the snapshot's `Row::dirty`
-/// (post-`snapshot_visible`); this enum just gates `update` itself
-/// (skip vs incremental vs full rebuild). Variants:
-/// - `Noop` — no terminal-side change worth rendering for
-/// - `Full` — global state changed (resize, palette, mode flip),
-///   force a full rebuild even if no individual row is dirty
-/// - `Partial` — at least one row's content changed; the snapshot's
-///   per-row dirty bits identify which rows
-/// - `CursorOnly` — cursor moved/blinked, no cell content changed
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TerminalDamage {
-    /// Nothing changed — skip rendering entirely
-    #[default]
-    Noop,
-    /// The entire terminal needs to be redrawn
-    Full,
-    /// At least one row changed; consult per-row dirty bits
-    Partial,
-    /// Only the cursor position has changed
-    CursorOnly,
-}
+// The terminal damage hint — a coarse signal for the renderer's update path
+// (skip vs incremental vs full rebuild) — now lives in the `canario` engine
+// crate, which defines the identical `Noop`/`Full`/`Partial`/`CursorOnly`
+// enum. Re-export it so existing `crate::event::TerminalDamage` references —
+// and the frontend's `rio_backend::event::TerminalDamage` — keep resolving
+// unchanged. The actual per-row decision still lives on the snapshot's
+// `Row::dirty` (post-`snapshot_visible`); this enum just gates `update`:
+// - `Noop` — no terminal-side change worth rendering for
+// - `Full` — global state changed (resize, palette, mode flip), force a full
+//   rebuild even if no individual row is dirty
+// - `Partial` — at least one row's content changed; the snapshot's per-row
+//   dirty bits identify which rows
+// - `CursorOnly` — cursor moved/blinked, no cell content changed
+pub use canario::TerminalDamage;
 
 #[derive(Clone)]
 pub enum RioEvent {
@@ -353,6 +341,22 @@ pub trait EventListener {
     fn send_global_event(&self, _event: RioEvent) {}
 }
 
+/// Convenience bound for Rio's frontend: a type that is both the legacy
+/// `EventListener` (for non-engine UI events) and the decoupled
+/// [`canario::host::TerminalHost`] (for the terminal engine), reporting
+/// against the `(WindowId, route_id)` [`HostId`]. `EventProxy` satisfies it;
+/// the frontend's generic terminal code bounds on this single trait so it
+/// can both drive `Crosswords<T>` and emit window/UI events.
+pub trait HostEventListener:
+    EventListener + canario::host::TerminalHost<WindowId = HostId>
+{
+}
+
+impl<T> HostEventListener for T where
+    T: EventListener + canario::host::TerminalHost<WindowId = HostId>
+{
+}
+
 #[derive(Clone)]
 pub struct VoidListener;
 
@@ -368,14 +372,61 @@ impl EventListener for VoidListener {
     }
 }
 
+/// `VoidListener` doubles as a no-op [`canario::host::TerminalHost`] so the
+/// engine's headless tests can construct `Crosswords<VoidListener>` with the
+/// raw `WindowId`. (Rioterm's UI tests, which build `Context`/`ContextManager`
+/// and therefore need the [`HostEventListener`] `(window, route)` identity,
+/// use their own `HostId`-typed void host.) Every host method is the
+/// defaulted no-op.
+impl canario::host::TerminalHost for VoidListener {
+    type WindowId = WindowId;
+}
+
+/// A no-op listener+host reporting against [`HostId`] — the frontend
+/// counterpart to [`VoidListener`]. Rio's `Context`/`ContextManager` are
+/// generic over [`HostEventListener`] (which fixes `WindowId = HostId`), so
+/// their tests can't use `VoidListener` (whose `WindowId` is the raw
+/// `WindowId`). `VoidHost` fills that gap: every method is a no-op.
+#[derive(Default, Clone)]
+pub struct VoidHost;
+
+impl EventListener for VoidHost {
+    fn event(&self) -> (std::option::Option<RioEvent>, bool) {
+        (None, false)
+    }
+}
+
+impl canario::host::TerminalHost for VoidHost {
+    type WindowId = HostId;
+}
+
 #[derive(Debug, Clone)]
 pub struct EventProxy {
     proxy: EventLoopProxy<EventPayload>,
+    /// Per-route Glyph Protocol glossaries. The engine no longer owns the
+    /// `sugarloaf` font types, so the host (this proxy) owns the registry the
+    /// renderer reads back. Lazily populated per route the first time a
+    /// program in that route registers a glyph, mirroring the engine's old
+    /// lazy-init exactly; on first init a `GlyphProtocolInstalled` event
+    /// hands the Arc-shared registry to the frontend's font library.
+    glyph_registries: Arc<
+        parking_lot::Mutex<
+            std::collections::HashMap<
+                usize,
+                sugarloaf::font::glyph_registry::GlyphRegistry,
+            >,
+        >,
+    >,
 }
 
 impl EventProxy {
     pub fn new(proxy: EventLoopProxy<EventPayload>) -> Self {
-        Self { proxy }
+        Self {
+            proxy,
+            glyph_registries: Arc::new(parking_lot::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+        }
     }
 
     pub fn send_event(&self, event: RioEventType, id: WindowId) {
@@ -390,6 +441,220 @@ impl EventListener for EventProxy {
 
     fn send_event(&self, event: RioEvent, id: WindowId) {
         let _ = self.proxy.send_event(EventPayload::new(event.into(), id));
+    }
+}
+
+/// The engine reports against an opaque `(window, route)` identity. The
+/// frontend's `RioEvent` flow routes replies by `route_id` and side effects
+/// by `WindowId`, so the proxy carries both inside `TerminalHost::WindowId`.
+pub type HostId = (WindowId, usize);
+
+/// `EventProxy` is the host that bridges the decoupled `canario` engine back
+/// onto Rio's existing `RioEvent` flow. Each host call is the inverse of the
+/// taxonomy applied inside the engine: side effects become `Alert`-equivalent
+/// `RioEvent`s, replies re-emit the same reply-closure events, and graphics /
+/// glyph operations route to the same handlers as before — so behaviour is
+/// identical to the pre-severance `EventListener` path.
+impl canario::host::TerminalHost for EventProxy {
+    type WindowId = HostId;
+
+    fn write_pty(&mut self, id: Self::WindowId, bytes: &[u8]) {
+        let (window_id, route_id) = id;
+        let text = String::from_utf8_lossy(bytes).into_owned();
+        EventListener::send_event(self, RioEvent::PtyWrite(route_id, text), window_id);
+    }
+
+    fn alert(&mut self, id: Self::WindowId, alert: canario::host::Alert) {
+        use canario::host::Alert;
+        let (window_id, route_id) = id;
+        let event = match alert {
+            Alert::Bell => RioEvent::Bell,
+            Alert::Damaged => RioEvent::TerminalDamaged(route_id),
+            Alert::MouseCursorDirty => RioEvent::MouseCursorDirty,
+            Alert::CursorBlinkingChanged => RioEvent::CursorBlinkingChange,
+            Alert::PaletteChanged { index, color } => {
+                RioEvent::ColorChange(route_id, index, color)
+            }
+            Alert::Progress(report) => RioEvent::ProgressReport(report),
+            Alert::ChildExited => RioEvent::CloseTerminal(route_id),
+            Alert::Notification { title, body } => {
+                RioEvent::DesktopNotification { title, body }
+            }
+            Alert::ClipboardStore { kind, data } => {
+                RioEvent::ClipboardStore(kind.into(), data)
+            }
+            Alert::ClipboardLoad { .. } => {
+                // OSC 52 loads always arrive through `clipboard_load_request`
+                // (they carry the reply formatter); a bare `ClipboardLoad`
+                // alert has no formatter and is never emitted by the engine.
+                return;
+            }
+        };
+        EventListener::send_event(self, event, window_id);
+    }
+
+    fn color_request(
+        &mut self,
+        id: Self::WindowId,
+        index: usize,
+        format: Arc<dyn Fn(ColorRgb) -> String + Send + Sync + 'static>,
+    ) {
+        let (window_id, route_id) = id;
+        EventListener::send_event(
+            self,
+            RioEvent::ColorRequest(route_id, index, format),
+            window_id,
+        );
+    }
+
+    fn text_area_size_request(
+        &mut self,
+        id: Self::WindowId,
+        format: Arc<
+            dyn Fn(canario::host::WindowSize) -> String + Send + Sync + 'static,
+        >,
+    ) {
+        let (window_id, route_id) = id;
+        // The engine formats from a `canario::host::WindowSize`; the existing
+        // event carries a `WinsizeBuilder`. Adapt the builder into the engine
+        // shape so the formatter is byte-identical.
+        let adapter: Arc<dyn Fn(WinsizeBuilder) -> String + Send + Sync + 'static> =
+            Arc::new(move |ws: WinsizeBuilder| {
+                format(canario::host::WindowSize {
+                    columns: ws.cols,
+                    lines: ws.rows,
+                    width_px: ws.width,
+                    height_px: ws.height,
+                })
+            });
+        EventListener::send_event(
+            self,
+            RioEvent::TextAreaSizeRequest(route_id, adapter),
+            window_id,
+        );
+    }
+
+    fn clipboard_load_request(
+        &mut self,
+        id: Self::WindowId,
+        kind: canario::host::ClipboardKind,
+        format: Arc<dyn Fn(&str) -> String + Send + Sync + 'static>,
+    ) {
+        let (window_id, route_id) = id;
+        EventListener::send_event(
+            self,
+            RioEvent::ClipboardLoad(route_id, kind.into(), format),
+            window_id,
+        );
+    }
+
+    fn update_graphics(
+        &mut self,
+        id: Self::WindowId,
+        queues: crate::ansi::graphics::UpdateQueues,
+    ) {
+        let (window_id, route_id) = id;
+        EventListener::send_event(
+            self,
+            RioEvent::UpdateGraphics { route_id, queues },
+            window_id,
+        );
+    }
+
+    fn glyph_register(
+        &mut self,
+        id: Self::WindowId,
+        cp: u32,
+        payload: crate::ansi::glyph_protocol::GlyphPayload,
+    ) -> Result<(), crate::ansi::glyph_protocol::RegisterError> {
+        use crate::ansi::glyph_protocol::{GlyphPayload, RegisterError};
+        use sugarloaf::font::glyf_decode;
+        use sugarloaf::font::glyph_registry::{RegisterRejection, StoredPayload};
+
+        let (window_id, route_id) = id;
+
+        // Translate a glyf_decode error into the protocol's `reason=` codes.
+        fn translate(err: glyf_decode::DecodeError) -> RegisterError {
+            match err {
+                glyf_decode::DecodeError::Composite => {
+                    RegisterError::CompositeUnsupported
+                }
+                glyf_decode::DecodeError::Hinted => RegisterError::HintingUnsupported,
+                glyf_decode::DecodeError::Malformed => RegisterError::MalformedPayload,
+            }
+        }
+
+        // Validate the monochrome `glyf` payload at register time; COLR
+        // containers are validated render-time only (see the protocol notes).
+        let (stored, upm) = match payload {
+            GlyphPayload::Glyf { glyf, upm } => {
+                glyf_decode::decode(&glyf).map_err(translate)?;
+                (StoredPayload::Glyf { glyf }, upm)
+            }
+            GlyphPayload::ColrV0 { container, upm } => (
+                StoredPayload::ColrV0 {
+                    glyphs: container.glyphs,
+                    colr: container.colr,
+                    cpal: container.cpal,
+                },
+                upm,
+            ),
+            GlyphPayload::ColrV1 { container, upm } => (
+                StoredPayload::ColrV1 {
+                    glyphs: container.glyphs,
+                    colr: container.colr,
+                    cpal: container.cpal,
+                },
+                upm,
+            ),
+        };
+
+        // Lazily allocate the per-route registry; emit GlyphProtocolInstalled
+        // exactly once per route so the frontend wires it into the font
+        // library a single time per session.
+        let mut registries = self.glyph_registries.lock();
+        let was_uninitialised = !registries.contains_key(&route_id);
+        let registry = registries.entry(route_id).or_default();
+
+        let result = match registry.register(cp, stored, upm) {
+            Ok(_evicted) => Ok(()),
+            Err(RegisterRejection::OutOfNamespace) => {
+                Err(RegisterError::OutOfNamespace)
+            }
+        };
+
+        if was_uninitialised && result.is_ok() {
+            let registry = registry.clone();
+            drop(registries);
+            EventListener::send_event(
+                self,
+                RioEvent::GlyphProtocolInstalled { route_id, registry },
+                window_id,
+            );
+        }
+
+        result
+    }
+
+    fn glyph_clear(&mut self, id: Self::WindowId, cp: Option<u32>) {
+        let (_window_id, route_id) = id;
+        let registries = self.glyph_registries.lock();
+        let Some(registry) = registries.get(&route_id) else {
+            return;
+        };
+        match cp {
+            None => registry.clear_all(),
+            Some(cp) => registry.clear_one(cp),
+        }
+    }
+
+    fn glyph_query(&mut self, id: Self::WindowId, cp: u32) {
+        let (window_id, route_id) = id;
+        EventListener::send_event(
+            self,
+            RioEvent::GlyphProtocolQuery { route_id, cp },
+            window_id,
+        );
     }
 }
 
@@ -474,26 +739,8 @@ impl Default for SearchState {
     }
 }
 
-/// Progress bar state for OSC 9;4 ConEmu/Windows Terminal progress reporting
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProgressState {
-    /// Remove/hide the progress bar (state 0)
-    Remove,
-    /// Set progress with a specific percentage (state 1)
-    Set,
-    /// Show error state (state 2)
-    Error,
-    /// Indeterminate/pulsing progress (state 3)
-    Indeterminate,
-    /// Paused progress (state 4)
-    Pause,
-}
-
-/// Progress report from OSC 9;4 sequence
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ProgressReport {
-    /// The progress bar state
-    pub state: ProgressState,
-    /// Optional progress percentage (0-100), only used with Set, Error, and Pause states
-    pub progress: Option<u8>,
-}
+// Progress reporting types (OSC 9;4) now live in the `canario` engine crate.
+// Re-export them so existing `crate::event::{ProgressReport, ProgressState}`
+// references — and the frontend's `rio_backend::event::ProgressReport`
+// imports — keep resolving unchanged.
+pub use canario::host::{ProgressReport, ProgressState};

@@ -19,7 +19,7 @@ use smallvec::{smallvec, SmallVec};
 
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
-use rio_backend::event::EventListener;
+use rio_backend::event::HostEventListener;
 use rio_backend::event::WindowId;
 use rio_backend::selection::SelectionRange;
 use rio_backend::sugarloaf::{font::SugarloafFont, Rect, Sugarloaf, SugarloafErrors};
@@ -46,7 +46,7 @@ use teletypewriter::create_pty;
 #[cfg(not(target_os = "windows"))]
 use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 
-pub struct Context<T: EventListener> {
+pub struct Context<T: HostEventListener> {
     pub route_id: usize,
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
     pub renderable_content: RenderableContent,
@@ -62,7 +62,7 @@ pub struct Context<T: EventListener> {
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
 
-impl<T: rio_backend::event::EventListener> Drop for Context<T> {
+impl<T: rio_backend::event::HostEventListener> Drop for Context<T> {
     fn drop(&mut self) {
         // Shutdown the terminal's PTY.
         let _ = self.messenger.channel.send(Msg::Shutdown);
@@ -72,7 +72,7 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
     }
 }
 
-impl<T: EventListener> Context<T> {
+impl<T: HostEventListener> Context<T> {
     #[inline]
     pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
         let old_selection = self.renderable_content.selection_range;
@@ -138,7 +138,7 @@ pub struct ContextManagerConfig {
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 
-pub struct ContextManager<T: EventListener> {
+pub struct ContextManager<T: HostEventListener> {
     contexts: SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]>,
     current_index: usize,
     current_route: usize,
@@ -150,7 +150,7 @@ pub struct ContextManager<T: EventListener> {
     last_title_update: Option<Instant>,
 }
 
-pub fn create_dead_context<T: rio_backend::event::EventListener>(
+pub fn create_dead_context<T: rio_backend::event::HostEventListener>(
     event_proxy: T,
     window_id: WindowId,
     route_id: usize,
@@ -161,7 +161,8 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         dimension,
         CursorShape::Block,
         event_proxy,
-        window_id,
+        // The engine reports against an opaque (window, route) identity.
+        (window_id, route_id),
         route_id,
         // Dead context never sees new input — no scrollback needed.
         0,
@@ -188,7 +189,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
 
 #[cfg(test)]
 pub fn create_mock_context<
-    T: rio_backend::event::EventListener + Clone + std::marker::Send + 'static,
+    T: rio_backend::event::HostEventListener + Clone + std::marker::Send + 'static,
 >(
     event_proxy: T,
     window_id: WindowId,
@@ -220,7 +221,7 @@ pub fn create_mock_context<
     .unwrap()
 }
 
-impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
+impl<T: HostEventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     fn create_context(
         cursor_state: (&Cursor, bool),
@@ -240,7 +241,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             dimension,
             CursorShape::from_char(cursor_state.0.content),
             event_proxy.clone(),
-            window_id,
+            // The engine reports against an opaque (window, route) identity.
+            (window_id, route_id),
             route_id,
             config.scrollback_history_limit,
         );
@@ -311,7 +313,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             Arc::clone(&terminal),
             pty,
             event_proxy.clone(),
-            window_id,
+            // The driver reports against the engine's opaque (window, route)
+            // host identity — the same id the `Crosswords` above is built with.
+            (window_id, route_id),
             route_id,
         )?;
         let channel = machine.channel();
@@ -1229,18 +1233,18 @@ pub fn process_open_url(
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::event::VoidListener;
+    use rio_backend::event::VoidHost;
 
     #[test]
     fn test_capacity() {
         let window_id: WindowId = WindowId::from(0);
 
         let context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         assert_eq!(context_manager.capacity, 5);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         context_manager.increase_capacity(3);
         assert_eq!(context_manager.capacity, 8);
     }
@@ -1250,7 +1254,7 @@ pub mod test {
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
 
@@ -1270,7 +1274,7 @@ pub mod test {
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(3, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(3, VoidHost {}, window_id).unwrap();
         assert_eq!(context_manager.capacity, 3);
         assert_eq!(context_manager.current_index, 0);
         let should_redirect = false;
@@ -1292,7 +1296,7 @@ pub mod test {
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(8, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(8, VoidHost {}, window_id).unwrap();
         let should_redirect = true;
 
         context_manager.add_context(should_redirect, 0);
@@ -1312,11 +1316,11 @@ pub mod test {
         assert_eq!(context_manager.current_index, 3);
     }
 
-    fn set_tab_title(cm: &mut ContextManager<VoidListener>, index: usize, content: &str) {
+    fn set_tab_title(cm: &mut ContextManager<VoidHost>, index: usize, content: &str) {
         cm.contexts[index].current_mut().title.content = content.to_string();
     }
 
-    fn tab_titles(cm: &ContextManager<VoidListener>) -> Vec<String> {
+    fn tab_titles(cm: &ContextManager<VoidHost>) -> Vec<String> {
         (0..cm.len())
             .map(|i| cm.title(i).unwrap().content.clone())
             .collect()
@@ -1326,7 +1330,7 @@ pub mod test {
     fn test_title_follows_tab_move() {
         let window_id = WindowId::from(0);
         let mut cm =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         for _ in 0..3 {
             cm.add_context(false, 0);
         }
@@ -1348,7 +1352,7 @@ pub mod test {
     fn test_title_follows_tab_swap() {
         let window_id = WindowId::from(0);
         let mut cm =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         for _ in 0..3 {
             cm.add_context(false, 0);
         }
@@ -1367,7 +1371,7 @@ pub mod test {
     fn test_custom_title_follows_tab_move() {
         let window_id = WindowId::from(0);
         let mut cm =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         for _ in 0..3 {
             cm.add_context(false, 0);
         }
@@ -1390,7 +1394,7 @@ pub mod test {
     fn test_custom_color_follows_tab_move() {
         let window_id = WindowId::from(0);
         let mut cm =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         for _ in 0..3 {
             cm.add_context(false, 0);
         }
@@ -1413,7 +1417,7 @@ pub mod test {
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(should_redirect, 0);
@@ -1443,7 +1447,7 @@ pub mod test {
         let window_id = WindowId::from(0);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.current_mut().rich_text_id = 1;
@@ -1486,7 +1490,7 @@ pub mod test {
         let window_id = WindowId::from(0);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.current_mut().rich_text_id = 1;
@@ -1529,7 +1533,7 @@ pub mod test {
         let window_id = WindowId::from(0);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+            ContextManager::start_with_capacity(5, VoidHost {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(should_redirect, 0);
@@ -1543,7 +1547,7 @@ pub mod test {
             context_manager.current_mut().rich_text_id = i;
         }
 
-        let order = |cm: &mut ContextManager<VoidListener>| -> Vec<usize> {
+        let order = |cm: &mut ContextManager<VoidHost>| -> Vec<usize> {
             (0..5)
                 .map(|i| {
                     cm.set_current(i);

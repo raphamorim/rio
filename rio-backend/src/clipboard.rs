@@ -10,6 +10,27 @@ pub enum ClipboardType {
     Selection,
 }
 
+impl From<ClipboardType> for canario::host::ClipboardKind {
+    fn from(ty: ClipboardType) -> Self {
+        match ty {
+            ClipboardType::Clipboard => canario::host::ClipboardKind::Clipboard,
+            ClipboardType::Selection => canario::host::ClipboardKind::Selection,
+        }
+    }
+}
+
+impl From<canario::host::ClipboardKind> for ClipboardType {
+    fn from(kind: canario::host::ClipboardKind) -> Self {
+        match kind {
+            canario::host::ClipboardKind::Clipboard => ClipboardType::Clipboard,
+            // Rio's clipboard model has no separate Primary buffer; both
+            // Primary and Selection map to the X11 selection buffer.
+            canario::host::ClipboardKind::Primary
+            | canario::host::ClipboardKind::Selection => ClipboardType::Selection,
+        }
+    }
+}
+
 use copypasta::nop_clipboard::NopClipboardContext;
 #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
 use copypasta::wayland_clipboard;

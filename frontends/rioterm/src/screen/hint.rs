@@ -9,7 +9,7 @@ use std::ops::Deref;
 pub const MAX_SEARCH_LINES: usize = 100;
 
 /// Iterate over all visible regex matches.
-pub fn visible_regex_match_iter<'a, T: rio_backend::event::EventListener>(
+pub fn visible_regex_match_iter<'a, T: rio_backend::event::HostEventListener>(
     term: &'a Crosswords<T>,
     regex: &'a mut RegexSearch,
 ) -> impl Iterator<Item = Match> + 'a {
@@ -47,7 +47,7 @@ impl<'a> HintMatches<'a> {
 
     /// Create from regex matches on term visible part.
     #[inline]
-    pub fn visible_regex_matches<T: rio_backend::event::EventListener>(
+    pub fn visible_regex_matches<T: rio_backend::event::HostEventListener>(
         term: &Crosswords<T>,
         dfas: &mut RegexSearch,
     ) -> Self {

@@ -1,0 +1,20 @@
+[package]
+name = "rio-parser"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "The VT500-series byte/escape-sequence state machine for the canario terminal engine (no terminal semantics)."
+repository = "https://github.com/raphamorim/rio"
+documentation = "https://github.com/raphamorim/rio#readme"
+
+[dependencies]
+# The forked vte state machine carries no sugarloaf/config/window deps; the
+# only non-trivial dependency is the SIMD UTF-8 fast path. A `simd` feature
+# with a `std::str::from_utf8` fallback is a deferred follow-up (see ROADMAP
+# Phase 1 / ground-truth note).
+memchr = { version = "2.7.4", default-features = false }
+simdutf = { workspace = true }
+
+[features]
+default = []
+# simd = ["dep:simdutf"]

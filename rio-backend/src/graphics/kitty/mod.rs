@@ -54,6 +54,13 @@ impl EventListener for TestEventListener {
     }
 }
 
+// The kitty tests build `Crosswords<TestEventListener>`, which now requires
+// the host trait. These tests only exercise grid/graphics state, so a no-op
+// host suffices.
+impl canario::host::TerminalHost for TestEventListener {
+    type WindowId = WindowId;
+}
+
 // Integration Tests
 
 #[test]

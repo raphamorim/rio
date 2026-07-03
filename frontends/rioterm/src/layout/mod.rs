@@ -5,7 +5,7 @@ use crate::context::Context;
 use crate::mouse::Mouse;
 use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::grid::Dimensions;
-use rio_backend::event::EventListener;
+use rio_backend::event::HostEventListener;
 use rio_backend::sugarloaf::{layout::TextDimensions, Rect, Sugarloaf};
 use rustc_hash::FxHashMap;
 
@@ -105,7 +105,7 @@ impl Default for BorderConfig {
     }
 }
 
-pub struct ContextGrid<T: EventListener> {
+pub struct ContextGrid<T: HostEventListener> {
     pub width: f32,
     pub height: f32,
     pub current: NodeId,
@@ -123,12 +123,12 @@ pub struct ContextGrid<T: EventListener> {
     border_config: BorderConfig,
 }
 
-pub struct ContextGridItem<T: EventListener> {
+pub struct ContextGridItem<T: HostEventListener> {
     pub val: Context<T>,
     pub layout_rect: [f32; 4],
 }
 
-impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
+impl<T: rio_backend::event::HostEventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
         Self {
             val: context,
@@ -153,7 +153,7 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     fn set_position(&mut self, _position: [f32; 2]) {}
 }
 
-impl<T: rio_backend::event::EventListener> ContextGrid<T> {
+impl<T: rio_backend::event::HostEventListener> ContextGrid<T> {
     pub fn new(
         context: Context<T>,
         scaled_margin: Margin,

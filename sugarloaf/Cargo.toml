@@ -43,6 +43,7 @@ targets = [
 # layer). Windows + WASM enable it via target-specific deps in the
 # downstream crate (`frontends/rioterm/Cargo.toml`).
 wgpu = { workspace = true, optional = true }
+rio-core = { workspace = true }
 bytemuck = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

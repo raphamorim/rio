@@ -1,4 +1,4 @@
-use crate::event::{EventListener, RioEvent};
+use crate::event::{HostEventListener, RioEvent};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::time::Duration;
@@ -7,7 +7,7 @@ const POLLING_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub fn configuration_file_updates<
     P: AsRef<Path> + std::marker::Send + 'static,
-    T: EventListener + std::marker::Send + 'static,
+    T: HostEventListener + std::marker::Send + 'static,
 >(
     path: P,
     event_proxy: T,

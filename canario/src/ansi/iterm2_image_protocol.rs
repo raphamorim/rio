@@ -7,13 +7,16 @@
 //
 // This implementation also supports `width` and `height` parameters to resize the image.
 
-use sugarloaf::{GraphicData, GraphicId, ResizeCommand, ResizeParameter};
+use crate::ansi::graphics::graphic_data_from_dynamic_image;
+use rio_core::graphics::{
+    GraphicData, GraphicId, ResizeCommand, ResizeParameter,
+};
 
 use rustc_hash::FxHashMap;
 use std::str;
 
 use crate::simd_base64;
-use crate::simd_utf8;
+use rio_parser::simd_utf8;
 
 /// Parse the OSC 1337 parameters to add a graphic to the grid.
 pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
@@ -39,7 +42,7 @@ pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
         }
     };
 
-    let mut graphics = GraphicData::from_dynamic_image(GraphicId::new(1), image);
+    let mut graphics = graphic_data_from_dynamic_image(GraphicId::new(1), image);
     graphics.resize = resize_param(&params);
     Some(graphics)
 }

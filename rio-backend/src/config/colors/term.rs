@@ -3,8 +3,12 @@ use crate::config::colors::{ColorArray, ColorBuilder, ColorRgb, Format};
 use crate::config::Colors;
 use std::ops::{Index, IndexMut};
 
-/// Number of terminal colors.
-pub const COUNT: usize = 269;
+// The engine-facing color table (`TermColors`, its `Index`/`IndexMut` impls,
+// and the slot `COUNT`) now lives in the `canario` engine crate — it carries
+// no config/`ColorBuilder` logic. Re-export them so existing
+// `crate::config::colors::term::{TermColors, COUNT}` paths keep resolving
+// unchanged.
+pub use canario::colors::{TermColors, COUNT};
 
 /// Factor for automatic computation of dim colors.
 pub const DIM_FACTOR: f32 = 0.66;
@@ -37,47 +41,6 @@ pub const DIM_FACTOR: f32 = 0.66;
 /// 256 indexed colors, giving an additional two configurable colors.
 /// You get them when not setting any other color or disabling other colors
 /// (i.e. print '\e[m').
-
-#[derive(Copy, Debug, Clone, PartialEq)]
-pub struct TermColors([Option<ColorArray>; COUNT]);
-
-impl Default for TermColors {
-    fn default() -> Self {
-        Self([None; COUNT])
-    }
-}
-
-impl Index<usize> for TermColors {
-    type Output = Option<ColorArray>;
-
-    #[inline]
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
-}
-
-impl IndexMut<usize> for TermColors {
-    #[inline]
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
-    }
-}
-
-impl Index<NamedColor> for TermColors {
-    type Output = Option<ColorArray>;
-
-    #[inline]
-    fn index(&self, index: NamedColor) -> &Self::Output {
-        &self.0[index as usize]
-    }
-}
-
-impl IndexMut<NamedColor> for TermColors {
-    #[inline]
-    fn index_mut(&mut self, index: NamedColor) -> &mut Self::Output {
-        &mut self.0[index as usize]
-    }
-}
 
 #[derive(Copy, Debug, Clone)]
 pub struct List([ColorArray; COUNT]);

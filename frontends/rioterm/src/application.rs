@@ -13,7 +13,7 @@ use crate::watcher::configuration_file_updates;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use raw_window_handle::HasDisplayHandle;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
-use rio_backend::config::colors::{ColorRgb, NamedColor};
+use rio_backend::config::colors::{ColorRgb, ColorRgbExt, NamedColor};
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
     ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase, WindowEvent,

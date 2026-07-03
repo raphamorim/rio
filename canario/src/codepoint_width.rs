@@ -14,7 +14,7 @@
 //! - `0xFF` → width undefined (control / surrogate / unassigned).
 //! - `0` / `1` / `2` → cell width.
 //!
-//! [`Handler::input_codepoints`]: crate::performer::handler::Handler::input_codepoints
+//! [`Handler::input_codepoints`]: crate::handler::Handler::input_codepoints
 
 use std::sync::OnceLock;
 use unicode_width::UnicodeWidthChar;

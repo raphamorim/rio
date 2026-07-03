@@ -1,22 +1,25 @@
-//! Parser for virtual terminal escape sequences.
+//! The forked VT500-series state machine for the canario terminal engine.
+//!
+//! Renderer-agnostic: it decodes a byte stream into parser events
+//! (print runs, CSI/OSC/DCS/ESC dispatches) and assigns no terminal
+//! semantics — that's the job of the [`Perform`] implementer.
 //!
 //! [`Parser`] implements [Paul Williams' ANSI parser state machine]. The state
 //! machine doesn't assign meaning to the parsed data — that's the job of the
 //! [`Perform`] implementer.
 //!
 //! Forked from Alacritty's VTE; previously the standalone `copa` crate. The
-//! crate-private [`Perform`] trait keeps a single dispatch shape so the same
-//! state machine drives both the production [`Performer`] and unit-test
-//! dispatchers.
+//! [`Perform`] trait keeps a single dispatch shape so the same state machine
+//! drives both the production `Performer` and unit-test dispatchers.
 //!
 //! [Paul Williams' ANSI parser state machine]: https://vt100.net/emu/dec_ansi_parser
-//! [`Performer`]: super::handler::Performer
 
 #![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
 
 use std::str;
 
 mod params;
+pub mod simd_utf8;
 
 pub use params::{Params, ParamsIter};
 
@@ -31,7 +34,7 @@ const OSC_FIXED_LEN: usize = 2048;
 
 /// Parser for raw _VTE_ protocol which delegates actions to a [`Perform`].
 #[derive(Default)]
-pub(crate) struct Parser {
+pub struct Parser {
     state: State,
     intermediates: [u8; MAX_INTERMEDIATES],
     intermediate_idx: usize,
@@ -131,7 +134,7 @@ impl Parser {
     ///
     /// Requires a [`Perform`] implementation to handle the triggered actions.
     #[inline]
-    pub(crate) fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
+    pub fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
         let mut i = 0;
 
         // Handle partial codepoints from previous calls to `advance`.
@@ -1022,13 +1025,12 @@ enum State {
 
 /// Performs actions requested by the [`Parser`].
 ///
-/// Crate-private dispatch trait. The single production implementer is
-/// [`super::handler::Performer`]; tests in this module supply their own
-/// recording dispatchers.
+/// The single production implementer is the engine's `Performer`; tests in
+/// this module supply their own recording dispatchers.
 ///
 /// The methods correspond to actions described in
 /// <http://vt100.net/emu/dec_ansi_parser>.
-pub(crate) trait Perform {
+pub trait Perform {
     /// Draw a character to the screen and update states.
     fn print(&mut self, _c: char) {}
 

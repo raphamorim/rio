@@ -1,6 +1,6 @@
 // Kitty graphics protocol virtual placement encoding/decoding
 
-use crate::config::colors::{AnsiColor, ColorRgb};
+use rio_core::color::{AnsiColor, ColorRgb};
 
 /// The Kitty Unicode placeholder codepoint (U+10EEEE). Cells containing
 /// this codepoint are interpreted as image placeholders; their fg color
@@ -674,7 +674,7 @@ mod tests {
         assert_eq!(decoded, (5, 10, Some(42)));
     }
 
-    use crate::config::colors::NamedColor;
+    use rio_core::color::NamedColor;
 
     #[test]
     fn from_cell_indexed_fg_two_diacritics() {

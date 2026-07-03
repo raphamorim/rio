@@ -25,10 +25,10 @@
 use std::cmp::max;
 use std::{fmt, mem};
 
-use crate::config::colors::ColorRgb;
-use sugarloaf::{ColorType, GraphicData, GraphicId, MAX_GRAPHIC_DIMENSIONS};
+use rio_core::color::ColorRgb;
+use rio_core::graphics::{ColorType, GraphicData, GraphicId, MAX_GRAPHIC_DIMENSIONS};
 
-use crate::performer::parser::Params;
+use rio_parser::Params;
 use tracing::trace;
 
 /// Type for color registers.

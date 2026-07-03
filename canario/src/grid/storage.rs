@@ -8,7 +8,7 @@ use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 
 use super::Row;
-use crate::crosswords::Line;
+use crate::pos::Line;
 
 /// Maximum number of buffered lines outside of the grid for performance optimization.
 const MAX_CACHE_SIZE: usize = 1_000;
@@ -280,9 +280,9 @@ impl<T> IndexMut<Line> for Storage<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::crosswords::grid::row::Row;
-    use crate::crosswords::grid::storage::{Storage, MAX_CACHE_SIZE};
-    use crate::crosswords::{Column, Line};
+    use crate::grid::row::Row;
+    use crate::grid::storage::{Storage, MAX_CACHE_SIZE};
+    use crate::pos::{Column, Line};
 
     #[test]
     fn with_capacity() {
@@ -753,7 +753,7 @@ mod tests {
 
     #[test]
     fn initialize_with_square() {
-        use crate::crosswords::Square;
+        use crate::square::Square;
 
         // Setup storage area.
         let mut storage: Storage<Square> = Storage {

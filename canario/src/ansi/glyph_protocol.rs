@@ -599,7 +599,7 @@ impl<'a> Params<'a> {
 /// produces `fmt=` — a degenerate "protocol implemented but no payload
 /// format accepted" state, reserved for future negotiation and never
 /// produced by this build.
-pub(crate) fn format_support_response(fmts: &[&str]) -> String {
+pub fn format_support_response(fmts: &[&str]) -> String {
     format!("\x1b_25a1;s;fmt={}\x1b\\", fmts.join(","))
 }
 
@@ -612,12 +612,12 @@ pub fn format_query_response(cp: u32, status: QueryStatus) -> String {
 }
 
 /// Format a successful register reply.
-pub(crate) fn format_register_ok(cp: u32) -> String {
+pub fn format_register_ok(cp: u32) -> String {
     format!("\x1b_25a1;r;cp={:x};status=0\x1b\\", cp)
 }
 
 /// Format a register error reply.
-pub(crate) fn format_register_error(cp: u32, reason: RegisterError) -> String {
+pub fn format_register_error(cp: u32, reason: RegisterError) -> String {
     format!(
         "\x1b_25a1;r;cp={:x};status=1;reason={}\x1b\\",
         cp,
@@ -627,7 +627,7 @@ pub(crate) fn format_register_error(cp: u32, reason: RegisterError) -> String {
 
 /// Format the reply to a clear request. `cp` is echoed back when the
 /// request scoped to a single slot, omitted for "clear all".
-pub(crate) fn format_clear_ok(cp: Option<u32>) -> String {
+pub fn format_clear_ok(cp: Option<u32>) -> String {
     match cp {
         Some(cp) => format!("\x1b_25a1;c;cp={:x};status=0\x1b\\", cp),
         None => String::from("\x1b_25a1;c;status=0\x1b\\"),
@@ -635,7 +635,7 @@ pub(crate) fn format_clear_ok(cp: Option<u32>) -> String {
 }
 
 /// Format a clear error reply (currently only `out_of_namespace`).
-pub(crate) fn format_clear_error_out_of_namespace() -> String {
+pub fn format_clear_error_out_of_namespace() -> String {
     String::from("\x1b_25a1;c;status=1;reason=out_of_namespace\x1b\\")
 }
 

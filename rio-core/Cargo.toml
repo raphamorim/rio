@@ -1,0 +1,15 @@
+[package]
+name = "rio-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Renderer-agnostic value types shared by the canario terminal engine and its embedders (colors, graphics payloads, geometry)."
+repository = "https://github.com/raphamorim/rio"
+documentation = "https://github.com/raphamorim/rio#readme"
+
+[dependencies]
+serde = { workspace = true, optional = true }
+
+[features]
+default = []
+serde = ["dep:serde"]

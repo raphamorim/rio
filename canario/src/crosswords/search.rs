@@ -1,7 +1,6 @@
 // search.rs was originally taken from Alacritty https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/term/search.rs
 // which is licensed under Apache 2.0 license.
 
-use crate::event;
 use std::cmp::max;
 use std::error::Error;
 use std::mem;
@@ -140,7 +139,7 @@ impl LazyDfa {
     }
 }
 
-impl<T: event::EventListener> Crosswords<T> {
+impl<H: crate::host::TerminalHost> Crosswords<H> {
     /// Get next search match in the specified direction.
     pub fn search_next(
         &self,
@@ -665,21 +664,21 @@ impl<T: event::EventListener> Crosswords<T> {
 }
 
 /// Iterator over regex matches.
-pub struct RegexIter<'a, T: event::EventListener> {
+pub struct RegexIter<'a, H: crate::host::TerminalHost> {
     pos: Pos,
     end: Pos,
     direction: Direction,
     regex: &'a mut RegexSearch,
-    term: &'a Crosswords<T>,
+    term: &'a Crosswords<H>,
     done: bool,
 }
 
-impl<'a, T: event::EventListener> RegexIter<'a, T> {
+impl<'a, H: crate::host::TerminalHost> RegexIter<'a, H> {
     pub fn new(
         pos: Pos,
         end: Pos,
         direction: Direction,
-        term: &'a Crosswords<T>,
+        term: &'a Crosswords<H>,
         regex: &'a mut RegexSearch,
     ) -> Self {
         Self {
@@ -715,7 +714,7 @@ impl<'a, T: event::EventListener> RegexIter<'a, T> {
     }
 }
 
-impl<T: event::EventListener> Iterator for RegexIter<'_, T> {
+impl<H: crate::host::TerminalHost> Iterator for RegexIter<'_, H> {
     type Item = Match;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -750,10 +749,10 @@ mod tests {
     use crate::crosswords::pos::{Column, Line};
     use crate::crosswords::CrosswordsSize;
     use crate::crosswords::CursorShape;
-    use crate::event::VoidListener;
+    use crate::VoidHost;
     use unicode_width::UnicodeWidthChar;
 
-    pub fn mock_term(content: &str) -> Crosswords<VoidListener> {
+    pub fn mock_term(content: &str) -> Crosswords<VoidHost> {
         let lines: Vec<&str> = content.split('\n').collect();
         let num_cols = lines
             .iter()
@@ -767,12 +766,12 @@ mod tests {
             .unwrap_or(0);
 
         // Create terminal with the appropriate dimensions.
-        let window_id = crate::event::WindowId::from(0);
+        let window_id = ();
         let size = CrosswordsSize::new(num_cols, lines.len());
         let mut term = Crosswords::new(
             size,
             CursorShape::Block,
-            VoidListener {},
+            VoidHost,
             window_id,
             0,
             10_000,
@@ -1258,12 +1257,12 @@ mod tests {
 
     #[test]
     fn wide_without_spacer() {
-        let window_id = crate::event::WindowId::from(0);
+        let window_id = ();
         let size = CrosswordsSize::new(2, 2);
         let mut term = Crosswords::new(
             size,
             CursorShape::Block,
-            VoidListener {},
+            VoidHost,
             window_id,
             0,
             10_000,

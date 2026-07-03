@@ -2,10 +2,10 @@
 // https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/grid/resize.rs
 // which is licensed under Apache 2.0 license.
 
-use crate::crosswords::grid::{Dimensions, Grid};
-use crate::crosswords::pos::{Boundary, Column, Line};
-use crate::crosswords::square::{Square, Wide};
-use crate::crosswords::Row;
+use crate::grid::row::Row;
+use crate::grid::{Dimensions, Grid};
+use crate::pos::{Boundary, Column, Line};
+use crate::square::{Square, Wide};
 use std::cmp::{max, min, Ordering};
 use std::mem;
 

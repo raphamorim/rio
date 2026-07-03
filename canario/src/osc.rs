@@ -10,10 +10,10 @@ use std::str::FromStr;
 use cursor_icon::CursorIcon;
 
 use crate::ansi::CursorShape;
-use crate::config::colors::{ColorRgb, NamedColor};
-use crate::crosswords::square::Hyperlink;
-use crate::event::{ProgressReport, ProgressState};
-use crate::simd_utf8;
+use crate::host::{ProgressReport, ProgressState};
+use crate::square::Hyperlink;
+use rio_core::color::{ColorRgb, NamedColor};
+use rio_parser::simd_utf8;
 
 /// Either a concrete color value or a query for the current value.
 pub(super) enum ColorSpec {

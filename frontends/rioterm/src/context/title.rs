@@ -19,7 +19,7 @@ impl Default for ContextTitle {
     }
 }
 
-pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
+pub fn create_title_extra_from_context<T: rio_backend::event::HostEventListener>(
     context: &Context<T>,
 ) -> Option<ContextTitleExtra> {
     #[cfg(unix)]
@@ -80,7 +80,7 @@ fn shorten_path(absolute: &str) -> String {
 }
 
 #[inline]
-pub fn update_title<T: rio_backend::event::EventListener>(
+pub fn update_title<T: rio_backend::event::HostEventListener>(
     template: &str,
     context: &Context<T>,
 ) -> String {
@@ -242,7 +242,7 @@ pub mod test {
     use crate::context::create_mock_context;
     use crate::context::ContextDimension;
     use rio_backend::config::layout::Margin;
-    use rio_backend::event::VoidListener;
+    use rio_backend::event::VoidHost;
     use rio_backend::sugarloaf::layout::TextDimensions;
     use rio_window::window::WindowId;
 
@@ -274,7 +274,7 @@ pub mod test {
 
         let rich_text_id = 0;
         let context = create_mock_context(
-            VoidListener {},
+            VoidHost {},
             WindowId::from(0),
             rich_text_id,
             context_dimension,
@@ -334,7 +334,7 @@ pub mod test {
 
         let rich_text_id = 0;
         let context = create_mock_context(
-            VoidListener {},
+            VoidHost {},
             WindowId::from(0),
             rich_text_id,
             context_dimension,

@@ -1,7 +1,7 @@
 use rio_backend::config::hints::Hint;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::crosswords::pos::{Column, Line, Pos};
-use rio_backend::event::EventListener;
+use rio_backend::event::HostEventListener;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -71,7 +71,7 @@ impl HintState {
     }
 
     /// Update visible matches for the current hint
-    pub fn update_matches<T: EventListener>(
+    pub fn update_matches<T: HostEventListener>(
         &mut self,
         term: &rio_backend::crosswords::Crosswords<T>,
     ) {
@@ -111,7 +111,7 @@ impl HintState {
     }
 
     /// Handle keyboard input during hint selection
-    pub fn keyboard_input<T: EventListener>(
+    pub fn keyboard_input<T: HostEventListener>(
         &mut self,
         term: &rio_backend::crosswords::Crosswords<T>,
         c: char,
@@ -201,7 +201,7 @@ impl HintState {
 
     // Private helper methods
 
-    fn find_regex_matches<T: EventListener>(
+    fn find_regex_matches<T: HostEventListener>(
         &mut self,
         term: &rio_backend::crosswords::Crosswords<T>,
         regex: &onig::Regex,
@@ -248,7 +248,7 @@ impl HintState {
         }
     }
 
-    fn find_hyperlink_matches<T: EventListener>(
+    fn find_hyperlink_matches<T: HostEventListener>(
         &mut self,
         term: &rio_backend::crosswords::Crosswords<T>,
         hint: Rc<Hint>,
@@ -310,7 +310,7 @@ impl HintState {
         }
     }
 
-    fn extract_line_text<T: EventListener>(
+    fn extract_line_text<T: HostEventListener>(
         &self,
         term: &rio_backend::crosswords::Crosswords<T>,
         line: Line,

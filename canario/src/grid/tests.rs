@@ -4,7 +4,7 @@
 
 use super::*;
 
-use crate::crosswords::square::Square;
+use crate::square::Square;
 
 impl GridSquare for usize {
     fn is_empty(&self) -> bool {
