@@ -59,6 +59,12 @@ use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
+// Bell coalescing reads the clock through this alias so tests can drive a
+// deterministic mock clock; production uses the real monotonic clock.
+#[cfg(test)]
+use mock_instant::thread_local::Instant;
+#[cfg(not(test))]
+use std::time::Instant;
 use sugarloaf::{GraphicData, MAX_GRAPHIC_DIMENSIONS};
 use tracing::{debug, info, trace, warn};
 use vi_mode::{ViModeCursor, ViMotion};
@@ -464,6 +470,16 @@ where
     keyboard_mode_idx: usize,
     inactive_keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
     inactive_keyboard_mode_idx: usize,
+
+    /// When the last `RioEvent::Bell` was emitted. Together with
+    /// [`bell_min_interval`](Self::bell_min_interval) this coalesces a flood of
+    /// BEL bytes (e.g. `cat`-ing a binary file) down to one bell per window, so
+    /// the event loop is not saturated and the terminal does not ring
+    /// constantly.
+    last_bell: Option<Instant>,
+
+    /// Minimum time between two emitted bells. Configured from `bell.min-interval`.
+    pub bell_min_interval: std::time::Duration,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -518,6 +534,10 @@ impl<U: EventListener> Crosswords<U> {
             keyboard_mode_idx: 0,
             inactive_keyboard_mode_stack: Default::default(),
             inactive_keyboard_mode_idx: 0,
+            last_bell: None,
+            // Matches the `bell.min-interval` config default (3s); overridden
+            // from config once the terminal is wired up.
+            bell_min_interval: std::time::Duration::from_secs(3),
         }
     }
 
@@ -3188,6 +3208,19 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn bell(&mut self) {
+        // Coalesce a flood of BEL bytes (e.g. `cat`-ing a binary file): emit at
+        // most one bell per `bell_min_interval`. Otherwise the PTY thread would
+        // emit one event per byte, saturating the event loop and ringing
+        // constantly until the source process dies. The window is much longer
+        // than any bell sound, so this never re-triggers mid-playback.
+        let now = Instant::now();
+        if self
+            .last_bell
+            .is_some_and(|last| now.duration_since(last) < self.bell_min_interval)
+        {
+            return;
+        }
+        self.last_bell = Some(now);
         self.event_proxy.send_event(RioEvent::Bell, self.window_id);
     }
 
@@ -4563,6 +4596,132 @@ mod tests {
         let size = CrosswordsSize::new(4, 4);
         let window_id = crate::event::WindowId::from(0);
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
+    }
+
+    /// Event listener that just counts how many `RioEvent::Bell` events it
+    /// receives, for the bell-flood regression test below.
+    #[derive(Clone, Default)]
+    struct BellCounter {
+        bells: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl crate::event::EventListener for BellCounter {
+        fn event(&self) -> (Option<RioEvent>, bool) {
+            (None, false)
+        }
+
+        fn send_event(&self, event: RioEvent, _id: crate::event::WindowId) {
+            if matches!(event, RioEvent::Bell) {
+                self.bells.set(self.bells.get() + 1);
+            }
+        }
+    }
+
+    /// Regression test for the freeze when `cat`-ing a binary file: a stream
+    /// full of BEL (0x07) bytes used to emit one `RioEvent::Bell` per byte,
+    /// flooding the event loop and ringing constantly. The bell must coalesce
+    /// to one event per `bell_min_interval`, then ring again on its own once
+    /// the window has actually elapsed.
+    ///
+    /// This drives the real production cycle end-to-end: BEL bytes go through
+    /// the parser into `bell()`, which gates purely on elapsed wall-clock time.
+    /// Only the configured interval is set here; the cycle re-arms itself.
+    #[test]
+    fn bell_flood_is_coalesced() {
+        use crate::performer::handler::Processor;
+
+        let listener = BellCounter::default();
+        let size = CrosswordsSize::new(4, 4);
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            listener.clone(),
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        // Drive a deterministic mock clock (no sleeping). The only thing the
+        // test configures is the window, exactly as `bell.min-interval` does.
+        use mock_instant::thread_local::MockClock;
+        MockClock::set_time(std::time::Duration::ZERO);
+        term.bell_min_interval = std::time::Duration::from_millis(20);
+        let mut processor = Processor::default();
+
+        // `cat`-ing a binary file: tens of thousands of BEL bytes arriving
+        // back-to-back collapse into a single bell.
+        processor.advance(&mut term, &vec![0x07u8; 50_000]);
+        assert_eq!(
+            listener.bells.get(),
+            1,
+            "a BEL flood within the window must coalesce into one bell"
+        );
+
+        // More bells while still inside the window stay coalesced.
+        MockClock::advance(std::time::Duration::from_millis(19));
+        processor.advance(&mut term, &vec![0x07u8; 50_000]);
+        assert_eq!(listener.bells.get(), 1, "no new bell inside the window");
+
+        // Once the window has elapsed, the next BEL rings again — the gate
+        // re-arms purely from elapsed time, with no manual reset.
+        MockClock::advance(std::time::Duration::from_millis(2));
+        processor.advance(&mut term, b"\x07");
+        assert_eq!(
+            listener.bells.get(),
+            2,
+            "bell must ring again once the window has elapsed"
+        );
+    }
+
+    /// Each terminal coalesces independently: flooding or ringing one must
+    /// never suppress (or trigger) another's bell. Guards the per-instance gate
+    /// against a refactor to shared/global bell state, which would let one
+    /// noisy terminal silence the rest.
+    #[test]
+    fn bells_coalesce_per_terminal() {
+        use crate::performer::handler::Processor;
+        use mock_instant::thread_local::MockClock;
+
+        let bells_a = BellCounter::default();
+        let bells_b = BellCounter::default();
+        let new_term = |listener: &BellCounter| {
+            let mut term = Crosswords::new(
+                CrosswordsSize::new(4, 4),
+                CursorShape::Block,
+                listener.clone(),
+                crate::event::WindowId::from(0),
+                0,
+                10,
+            );
+            term.bell_min_interval = std::time::Duration::from_millis(20);
+            term
+        };
+
+        MockClock::set_time(std::time::Duration::ZERO);
+        let mut term_a = new_term(&bells_a);
+        let mut term_b = new_term(&bells_b);
+        let mut processor = Processor::default();
+
+        // Flooding terminal A rings A once and leaves B untouched.
+        processor.advance(&mut term_a, &vec![0x07u8; 50_000]);
+        assert_eq!(bells_a.bells.get(), 1);
+        assert_eq!(bells_b.bells.get(), 0, "A must not suppress or trigger B");
+
+        // B still rings inside A's window — the gates are independent.
+        processor.advance(&mut term_b, b"\x07");
+        assert_eq!(bells_b.bells.get(), 1, "B gates independently of A");
+        assert_eq!(bells_a.bells.get(), 1);
+
+        // Both stay coalesced inside their own (shared-clock) window.
+        MockClock::advance(std::time::Duration::from_millis(10));
+        processor.advance(&mut term_a, b"\x07");
+        processor.advance(&mut term_b, b"\x07");
+        assert_eq!((bells_a.bells.get(), bells_b.bells.get()), (1, 1));
+
+        // After the window elapses, both re-arm on their own.
+        MockClock::advance(std::time::Duration::from_millis(21));
+        processor.advance(&mut term_a, b"\x07");
+        processor.advance(&mut term_b, b"\x07");
+        assert_eq!((bells_a.bells.get(), bells_b.bells.get()), (2, 2));
     }
 
     // Minimum-valid simple glyph: one contour, one on-curve point.

@@ -2720,6 +2720,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "mock_instant"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dce6dd36094cac388f119d2e9dc82dc730ef91c32a6222170d630e5414b956e6"
+
+[[package]]
 name = "moxcms"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3916,6 +3922,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "memchr",
+ "mock_instant",
  "onig",
  "parking_lot",
  "raw-window-handle",
@@ -4028,6 +4035,7 @@ dependencies = [
  "futures",
  "image",
  "libc",
+ "libloading",
  "lru",
  "notify",
  "objc-rs 0.3.1",
