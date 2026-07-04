@@ -1557,7 +1557,15 @@ impl Screen<'_> {
                     padding_y_bottom * scale,
                     d.scaled_margin.left,
                 ));
-                self.resize_all_contexts();
+                // Re-run the full grid resize so the Taffy root shrinks by the
+                // new margin and the row count (PTY lines) is recomputed.
+                // update_scaled_margin alone only moves the render offset:
+                // content shifts down by the tab-bar height without losing any
+                // rows, so the bottom overflows off-window until the next window
+                // resize. resize() runs try_update_size + apply_taffy_layout,
+                // which is exactly what the window-resize path does per grid.
+                let (width, height) = (d.width, d.height);
+                d.resize(width, height, &mut self.sugarloaf);
             }
         }
     }
