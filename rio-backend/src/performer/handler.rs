@@ -1748,9 +1748,12 @@ fn get_termcap_capability(name: &str) -> Option<String> {
 
         // Image protocol support
         //
-        // Sixel and iTerm2 graphics protocols were previously supported in v0.3 but they have not
-        // yet been ported to atlas graphics in the v0.4 atlast graphics rewrite, until their
+        // NOTE: Sixel and iTerm2 graphics protocols were previously supported in v0.3 but they have
+        // not yet been ported to atlas graphics in the v0.4 atlast graphics rewrite, until their
         // integration is completed, they are commented out to correctly report "no support"
+        //
+        // When re-enabling Sixel, also restore the `4` parameter in the DA1 primary device
+        // attributes response (crosswords/mod.rs: identify_terminal) and delete these comments!
         //
         // "sixel" => Some("".to_string()),
         // "iterm2" => Some("".to_string()),
