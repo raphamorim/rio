@@ -1747,8 +1747,13 @@ fn get_termcap_capability(name: &str) -> Option<String> {
         "npc" => Some("".to_string()),   // No pad character
 
         // Image protocol support
-        "sixel" => Some("".to_string()), // Sixel graphics support
-        "iterm2" => Some("".to_string()), // iTerm2 image protocol support
+        //
+        // Sixel and iTerm2 graphics protocols were previously supported in v0.3 but they have not
+        // yet been ported to atlas graphics in the v0.4 atlast graphics rewrite, until their
+        // integration is completed, they are commented out to correctly report "no support"
+        //
+        // "sixel" => Some("".to_string()),
+        // "iterm2" => Some("".to_string()),
         "TK" | "kitty" => Some("yes".to_string()), // Kitty graphics protocol support
 
         // Cursor movement - from terminfo
@@ -2240,8 +2245,8 @@ mod tests {
         );
 
         // Test image protocol capabilities
-        assert_eq!(get_termcap_capability("sixel"), Some("".to_string()));
-        assert_eq!(get_termcap_capability("iterm2"), Some("".to_string()));
+        assert_eq!(get_termcap_capability("sixel"), None);
+        assert_eq!(get_termcap_capability("iterm2"), None);
     }
 
     // APC accumulation tests
