@@ -161,7 +161,7 @@ impl PipelineLayoutObjects {
                 module: &self.vertex,
                 entry_point: Some(&self.vertex_entry_name),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[VertexBufferLayout {
+                buffers: &[Some(VertexBufferLayout {
                     array_stride: std::mem::size_of::<VertexInput>()
                         as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
@@ -179,7 +179,7 @@ impl PipelineLayoutObjects {
                             shader_location: 1,
                         },
                     ],
-                }],
+                })],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &self.fragment,

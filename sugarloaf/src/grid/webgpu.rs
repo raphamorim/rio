@@ -809,7 +809,7 @@ fn build_text_pipeline(
         vertex: wgpu::VertexState {
             module: shader,
             entry_point: Some("grid_text_vertex"),
-            buffers: &[vbuf_layout],
+            buffers: &[Some(vbuf_layout)],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
