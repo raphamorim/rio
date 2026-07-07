@@ -525,7 +525,7 @@ impl FilterChain {
                 let frame_count_pass = pass.meta.get_frame_count(frame_count);
 
                 if index != passes_len - 1 {
-                    let output_image = WgpuOutputView::from(&*target);
+                    let output_image = WgpuOutputView::from(target);
                     let out = RenderTarget::identity(&output_image)?;
 
                     pass.draw(
@@ -575,7 +575,7 @@ impl FilterChain {
                 // Shaders need to see the pass's declared scale rather than the viewport size,
                 // or they won't render correctly for feedback.
                 if self.draw_last_pass_feedback {
-                    let output_image = WgpuOutputView::from(&*target);
+                    let output_image = WgpuOutputView::from(target);
                     let out = RenderTarget::viewport_with_output(&output_image, viewport);
 
                     pass.draw(
