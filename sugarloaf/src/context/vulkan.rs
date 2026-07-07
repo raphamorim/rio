@@ -18,7 +18,7 @@
 use crate::sugarloaf::{Colorspace, SugarloafWindow, SugarloafWindowSize};
 use ash::khr;
 use ash::vk;
-use ash::vk::{CompositeAlphaFlagsKHR, SurfaceCapabilitiesKHR};
+use ash::vk::CompositeAlphaFlagsKHR;
 use ash::{Device, Entry, Instance};
 use raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
