@@ -29,7 +29,7 @@ use crate::components::filters::runtime::buffer::WgpuStagedBuffer;
 use crate::components::filters::runtime::draw_quad::DrawQuad;
 use librashader_common::{FilterMode, Size, Viewport, WrapMode};
 use librashader_reflect::reflect::naga::{Naga, NagaLoweringOptions};
-use librashader_runtime::framebuffer::FramebufferInit;
+use librashader_runtime::framebuffer::{FramebufferInit, FramebufferPool};
 use librashader_runtime::render_target::RenderTarget;
 use librashader_runtime::scaling::ScaleFramebuffer;
 use wgpu::{Device, TextureFormat};
@@ -76,8 +76,8 @@ use librashader_runtime::parameters::RuntimeParameters;
 pub struct FilterChain {
     pub(crate) common: FilterCommon,
     passes: Box<[FilterPass]>,
-    output_framebuffers: Box<[OwnedImage]>,
-    feedback_framebuffers: Box<[OwnedImage]>,
+    output_framebuffers: FramebufferPool<OwnedImage>,
+    feedback_framebuffers: FramebufferPool<OwnedImage>,
     history_framebuffers: VecDeque<OwnedImage>,
     disable_mipmaps: bool,
     mipmapper: MipmapGen,
@@ -238,7 +238,7 @@ impl FilterChain {
         //
         // initialize feedback framebuffers
         let (feedback_framebuffers, feedback_textures) =
-            framebuffer_init.init_output_framebuffers()?;
+            framebuffer_init.init_feedback_framebuffers()?;
         //
         // initialize history
         let (history_framebuffers, history_textures) = framebuffer_init.init_history()?;
@@ -471,11 +471,18 @@ impl FilterChain {
 
         let mut source = original.clone();
 
+        let passes_len = passes.len();
+        let options = options.unwrap_or(&self.default_frame_options);
+
         // swap output and feedback **before** recording command buffers
-        std::mem::swap(
-            &mut self.output_framebuffers,
-            &mut self.feedback_framebuffers,
-        );
+        for index in 0..passes_len {
+            if self.feedback_framebuffers.contains(index) {
+                std::mem::swap(
+                    &mut self.output_framebuffers[index],
+                    &mut self.feedback_framebuffers[index],
+                );
+            }
+        }
 
         let source_size = source.image.size();
         let source_size = Size {
@@ -489,99 +496,109 @@ impl FilterChain {
             height: original_size.height,
         };
 
-        // rescale render buffers to ensure all bindings are valid.
-        OwnedImage::scale_framebuffers_with_context(
+        // rescale feedback buffers and refresh their bound textures.
+        OwnedImage::scale_feedback_framebuffers_with_context(
+            source_size,
+            viewport.output.size,
+            original_size,
+            &mut self.feedback_framebuffers,
+            passes,
+            &context.device,
+            |index, pass, feedback| {
+                self.common.feedback_textures[index] =
+                    Some(feedback.as_input(pass.meta.filter, pass.meta.wrap_mode));
+                Ok(())
+            },
+        )?;
+
+        OwnedImage::scale_output_framebuffers_with_context(
             source_size,
             viewport.output.size,
             original_size,
             &mut self.output_framebuffers,
-            &mut self.feedback_framebuffers,
             passes,
             &context.device,
-            Some(&mut |index: usize,
-                       pass: &FilterPass,
-                       output: &OwnedImage,
-                       feedback: &OwnedImage| {
-                // refresh inputs
-                self.common.feedback_textures[index] =
-                    Some(feedback.as_input(pass.meta.filter, pass.meta.wrap_mode));
-                self.common.output_textures[index] =
-                    Some(output.as_input(pass.meta.filter, pass.meta.wrap_mode));
-                Ok(())
-            }),
-        )?;
+            |index, pass, target, _size| {
+                source.filter_mode = pass.meta.filter;
+                source.wrap_mode = pass.meta.wrap_mode;
+                source.mip_filter = pass.meta.filter;
+                let frame_count_pass = pass.meta.get_frame_count(frame_count);
 
-        let passes_len = passes.len();
-        let (pass, last) = passes.split_at_mut(passes_len - 1);
+                if index != passes_len - 1 {
+                    let output_image = WgpuOutputView::from(&*target);
+                    let out = RenderTarget::identity(&output_image)?;
 
-        let options = options.unwrap_or(&self.default_frame_options);
+                    pass.draw(
+                        cmd,
+                        index,
+                        &self.common,
+                        frame_count_pass,
+                        options,
+                        viewport,
+                        &original,
+                        &source,
+                        &out,
+                        QuadType::Offscreen,
+                        context,
+                    )?;
 
-        for (index, pass) in pass.iter_mut().enumerate() {
-            source.filter_mode = pass.meta.filter;
-            source.wrap_mode = pass.meta.wrap_mode;
-            source.mip_filter = pass.meta.filter;
+                    if target.max_miplevels > 1 && !self.disable_mipmaps {
+                        let sampler = self.common.samplers.get(
+                            WrapMode::ClampToEdge,
+                            FilterMode::Linear,
+                            FilterMode::Nearest,
+                        );
 
-            let target = &self.output_framebuffers[index];
-            let output_image = WgpuOutputView::from(target);
-            let out = RenderTarget::identity(&output_image)?;
+                        target.generate_mipmaps(
+                            &context.device,
+                            cmd,
+                            &mut self.mipmapper,
+                            &sampler,
+                        );
+                    }
 
-            pass.draw(
-                cmd,
-                index,
-                &self.common,
-                pass.meta.get_frame_count(frame_count),
-                options,
-                viewport,
-                &original,
-                &source,
-                &out,
-                QuadType::Offscreen,
-                context,
-            )?;
+                    self.common.output_textures[index] =
+                        Some(target.as_input(pass.meta.filter, pass.meta.wrap_mode));
+                    source = self.common.output_textures[index].clone().unwrap();
+                    return Ok(());
+                }
 
-            if target.max_miplevels > 1 && !self.disable_mipmaps {
-                let sampler = self.common.samplers.get(
-                    WrapMode::ClampToEdge,
-                    FilterMode::Linear,
-                    FilterMode::Nearest,
-                );
+                if !pass.graphics_pipeline.has_format(viewport.output.format) {
+                    // need to recompile
+                    pass.graphics_pipeline
+                        .recompile(&context.device, viewport.output.format);
+                }
 
-                target.generate_mipmaps(
-                    &context.device,
-                    cmd,
-                    &mut self.mipmapper,
-                    &sampler,
-                );
-            }
+                // When feedback is enabled, render the last pass to the intermediate
+                // framebuffer first then render to the viewport.
+                //
+                // Shaders need to see the pass's declared scale rather than the viewport size,
+                // or they won't render correctly for feedback.
+                if self.draw_last_pass_feedback {
+                    let output_image = WgpuOutputView::from(&*target);
+                    let out = RenderTarget::viewport_with_output(&output_image, viewport);
 
-            source = self.common.output_textures[index].clone().unwrap();
-        }
+                    pass.draw(
+                        cmd,
+                        index,
+                        &self.common,
+                        frame_count_pass,
+                        options,
+                        viewport,
+                        &original,
+                        &source,
+                        &out,
+                        QuadType::Final,
+                        context,
+                    )?;
+                }
 
-        // try to hint the optimizer
-        assert_eq!(last.len(), 1);
-
-        if let Some(pass) = last.iter_mut().next() {
-            let index = passes_len - 1;
-            if !pass.graphics_pipeline.has_format(viewport.output.format) {
-                // need to recompile
-                pass.graphics_pipeline
-                    .recompile(&context.device, viewport.output.format);
-            }
-
-            source.filter_mode = pass.meta.filter;
-            source.wrap_mode = pass.meta.wrap_mode;
-            source.mip_filter = pass.meta.filter;
-
-            if self.draw_last_pass_feedback {
-                let target = &self.output_framebuffers[index];
-                let output_image = WgpuOutputView::from(target);
-                let out = RenderTarget::viewport_with_output(&output_image, viewport);
-
+                let out = RenderTarget::viewport(viewport);
                 pass.draw(
                     cmd,
                     index,
                     &self.common,
-                    pass.meta.get_frame_count(frame_count),
+                    frame_count_pass,
                     options,
                     viewport,
                     &original,
@@ -590,23 +607,10 @@ impl FilterChain {
                     QuadType::Final,
                     context,
                 )?;
-            }
 
-            let out = RenderTarget::viewport(viewport);
-            pass.draw(
-                cmd,
-                index,
-                &self.common,
-                pass.meta.get_frame_count(frame_count),
-                options,
-                viewport,
-                &original,
-                &source,
-                &out,
-                QuadType::Final,
-                context,
-            )?;
-        }
+                Ok(())
+            },
+        )?;
 
         self.push_history(&input, cmd, context);
         Ok(())
