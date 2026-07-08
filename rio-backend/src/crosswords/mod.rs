@@ -1629,6 +1629,159 @@ impl<U: EventListener> Crosswords<U> {
         text.strip_suffix('\n').map(str::to_owned).unwrap_or(text)
     }
 
+    /// Serialize history + visible rows into a styled ANSI stream: text
+    /// plus minimal SGR runs, replayable through the parser to rebuild
+    /// the same content in a fresh terminal. At most the last
+    /// `max_lines` rows are emitted; trailing blank rows are dropped.
+    pub fn scrollback_to_ansi(&self, max_lines: usize) -> String {
+        use crate::config::colors::AnsiColor;
+        use crate::crosswords::style::{Style, StyleFlags};
+        use std::fmt::Write as _;
+
+        fn push_color(out: &mut String, color: AnsiColor, is_fg: bool) {
+            let (normal, bright, extended) =
+                if is_fg { (30, 90, 38) } else { (40, 100, 48) };
+            match color {
+                AnsiColor::Named(n) => {
+                    let idx = n as usize;
+                    match idx {
+                        0..=7 => {
+                            let _ = write!(out, "\x1b[{}m", normal + idx);
+                        }
+                        8..=15 => {
+                            let _ = write!(out, "\x1b[{}m", bright + idx - 8);
+                        }
+                        // Foreground/Background and the Dim* variants map
+                        // to the reset default, which SGR 0 already set.
+                        _ => {}
+                    }
+                }
+                AnsiColor::Indexed(i) => {
+                    let _ = write!(out, "\x1b[{extended};5;{i}m");
+                }
+                AnsiColor::Spec(rgb) => {
+                    let _ =
+                        write!(out, "\x1b[{extended};2;{};{};{}m", rgb.r, rgb.g, rgb.b);
+                }
+            }
+        }
+
+        fn push_sgr(out: &mut String, style: &Style) {
+            out.push_str("\x1b[0m");
+            if *style == Style::default() {
+                return;
+            }
+            let f = style.flags;
+            for (flag, code) in [
+                (StyleFlags::BOLD, 1),
+                (StyleFlags::DIM, 2),
+                (StyleFlags::ITALIC, 3),
+                (StyleFlags::UNDERLINE, 4),
+                (StyleFlags::UNDERCURL, 4),
+                (StyleFlags::DOTTED_UNDERLINE, 4),
+                (StyleFlags::DASHED_UNDERLINE, 4),
+                (StyleFlags::DOUBLE_UNDERLINE, 21),
+                (StyleFlags::INVERSE, 7),
+                (StyleFlags::HIDDEN, 8),
+                (StyleFlags::STRIKEOUT, 9),
+            ] {
+                if f.contains(flag) {
+                    let _ = write!(out, "\x1b[{code}m");
+                }
+            }
+            push_color(out, style.fg, true);
+            push_color(out, style.bg, false);
+        }
+
+        let bottom = self.grid.bottommost_line().0;
+        let top = self
+            .grid
+            .topmost_line()
+            .0
+            .max(bottom - max_lines.saturating_sub(1) as i32);
+
+        let mut out = String::new();
+        let mut current = Style::default();
+        let mut pending_newlines = 0usize;
+        let mut pending_blanks = 0usize;
+
+        for line in (top..=bottom).map(Line::from) {
+            let grid_line = &self.grid[line];
+            let line_length = grid_line.line_length();
+            let mut had_content = false;
+
+            for column in (0..line_length.0).map(Column::from) {
+                let cell = &grid_line[column];
+                if matches!(cell.wide(), Wide::Spacer | Wide::LeadingSpacer) {
+                    continue;
+                }
+
+                let c = cell.c();
+                let style = if cell.is_bg_only() {
+                    Style {
+                        bg: match cell.content_tag() {
+                            square::ContentTag::BgRgb => {
+                                let (r, g, b) = cell.bg_rgb();
+                                AnsiColor::Spec(crate::config::colors::ColorRgb {
+                                    r,
+                                    g,
+                                    b,
+                                })
+                            }
+                            _ => AnsiColor::Indexed(cell.bg_palette_index()),
+                        },
+                        ..Style::default()
+                    }
+                } else {
+                    self.grid.style_set.get(cell.style_id())
+                };
+
+                let is_blank = (c == '\0' || c == ' ')
+                    && style.bg == Style::default().bg
+                    && !style.flags.contains(StyleFlags::INVERSE);
+                if is_blank && cell.extras_id().is_none() {
+                    pending_blanks += 1;
+                    continue;
+                }
+
+                had_content = true;
+                for _ in 0..std::mem::take(&mut pending_newlines) {
+                    out.push_str("\r\n");
+                }
+                // Gap blanks flush in the previous style so a styled run
+                // starting after them doesn't paint them retroactively.
+                for _ in 0..std::mem::take(&mut pending_blanks) {
+                    out.push(' ');
+                }
+                if style != current {
+                    push_sgr(&mut out, &style);
+                    current = style;
+                }
+                out.push(if c == '\0' { ' ' } else { c });
+                if let Some(eid) = cell.extras_id() {
+                    if let Some(extras) = self.grid.extras_table.get(eid) {
+                        out.extend(extras.zerowidth.iter());
+                    }
+                }
+            }
+
+            pending_blanks = 0;
+            if grid_line[self.grid.last_column()].wrapline() {
+                // Soft-wrapped row: let replay re-wrap naturally.
+                if !had_content {
+                    pending_newlines += 1;
+                }
+            } else {
+                pending_newlines += 1;
+            }
+        }
+
+        if !out.is_empty() {
+            out.push_str("\x1b[0m\r\n");
+        }
+        out
+    }
+
     /// Convert a single line in the grid to a String. Used by Block selection;
     /// trailing blank cells are dropped. No trailing newline is appended —
     /// the caller controls row separation.
@@ -6683,5 +6836,53 @@ mod tests {
 
         // Cursor must be untouched.
         assert_eq!(cw.grid.cursor.pos, cursor_before);
+    }
+
+    /// scrollback_to_ansi output replayed into a fresh terminal must
+    /// reproduce the same text and cell styles.
+    #[test]
+    fn scrollback_ansi_round_trip() {
+        use crate::performer::handler::Processor;
+        let mut cw = new_term(20, 5);
+        let mut processor = Processor::default();
+        processor.advance(
+            &mut cw,
+            b"plain\r\n\x1b[1;31mbold red\x1b[0m\r\n\x1b[44m  \x1b[0m gap\r\n\x1b[38;5;208morange\x1b[0m",
+        );
+
+        let dump = cw.scrollback_to_ansi(100);
+
+        let mut replayed = new_term(20, 5);
+        let mut rp = Processor::default();
+        rp.advance(&mut replayed, dump.as_bytes());
+
+        for line in 0..4 {
+            for col in 0..20 {
+                let a = &cw.grid[Line(line)][Column(col)];
+                let b = &replayed.grid[Line(line)][Column(col)];
+                let (ca, cb) = (a.c(), b.c());
+                let norm = |c: char| if c == '\0' { ' ' } else { c };
+                assert_eq!(
+                    norm(ca),
+                    norm(cb),
+                    "text mismatch at ({line},{col}): {ca:?} vs {cb:?}"
+                );
+                let sa = cw.grid.style_set.get(a.style_id());
+                let sb = replayed.grid.style_set.get(b.style_id());
+                if !a.is_bg_only() && !b.is_bg_only() && norm(ca) != ' ' {
+                    assert_eq!(sa, sb, "style mismatch at ({line},{col})");
+                }
+            }
+        }
+
+        // The blue-bg blank cells must survive (bg-only or styled space).
+        let bg_cell = replayed.grid[Line(2)][Column(0)];
+        let has_bg = if bg_cell.is_bg_only() {
+            true
+        } else {
+            replayed.grid.style_set.get(bg_cell.style_id()).bg
+                != crate::crosswords::style::Style::default().bg
+        };
+        assert!(has_bg, "blue background lost in round trip");
     }
 }
