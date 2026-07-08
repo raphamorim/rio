@@ -913,6 +913,9 @@ impl Screen<'_> {
                     Act::Copy => {
                         self.copy_selection(ClipboardType::Clipboard, clipboard);
                     }
+                    Act::SelectAll => {
+                        self.select_all();
+                    }
                     Act::Hint(hint_config) => {
                         self.start_hint_mode(hint_config.clone());
                     }
@@ -1704,6 +1707,22 @@ impl Screen<'_> {
         drop(terminal);
 
         clipboard.set(ty, text);
+    }
+
+    #[inline]
+    pub fn select_all(&mut self) {
+        let current = self.context_manager.current_mut();
+        let mut terminal = current.terminal.lock();
+        let start = Pos::new(terminal.grid.topmost_line(), Column(0));
+        let end = Pos::new(terminal.grid.bottommost_line(), terminal.grid.last_column());
+        let mut selection = Selection::new(SelectionType::Simple, start, Side::Left);
+        selection.update(end, Side::Right);
+        let selection_range = selection.to_range(&terminal);
+        terminal.selection = Some(selection);
+        drop(terminal);
+
+        current.set_selection(selection_range);
+        self.context_manager.request_render();
     }
 
     #[inline]
