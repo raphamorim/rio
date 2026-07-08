@@ -56,6 +56,8 @@ image_rs = { package = "image", version = "0.25.10", default-features = false, f
     "pnm",
     "webp",
     "bmp",
+    # chafa's iTerm2 renderer emits TIFF payloads (OSC 1337)
+    "tiff",
 ] }
 regex = "1.12.3"
 onig = { version = "6.5.1", default-features = false }
