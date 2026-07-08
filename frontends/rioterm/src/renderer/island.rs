@@ -1364,9 +1364,12 @@ mod tests {
         #[cfg(target_os = "macos")]
         assert_eq!(ISLAND_MARGIN_LEFT_MACOS, 76.0);
         // Island geometry must leave a positive island: the vertical
-        // insets and gap can't consume the strip.
-        assert!(TAB_INSET_Y * 2.0 < ISLAND_HEIGHT);
-        assert!(TAB_GAP < MAX_TAB_WIDTH);
+        // insets and gap can't consume the strip. Constant inputs, so
+        // enforced at compile time.
+        const {
+            assert!(TAB_INSET_Y * 2.0 < ISLAND_HEIGHT);
+            assert!(TAB_GAP < MAX_TAB_WIDTH);
+        }
     }
 
     #[test]
