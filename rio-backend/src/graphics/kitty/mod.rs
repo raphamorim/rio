@@ -1110,6 +1110,7 @@ fn test_no_double_push_on_graphic_cell_drop() {
         id: GraphicId::new(99),
         width: 10,
         height: 20,
+        cell_width: 10,
         cell_height: 20,
         texture_operations: Arc::downgrade(&texture_ops),
     });
@@ -1119,11 +1120,13 @@ fn test_no_double_push_on_graphic_cell_drop() {
         texture: texture.clone(),
         offset_x: 0,
         offset_y: 0,
+        anchor_col: 0,
     };
     let cell2 = GraphicCell {
         texture: texture.clone(),
         offset_x: 10,
         offset_y: 0,
+        anchor_col: 0,
     };
 
     // Drop both cells — should NOT push to texture_operations (GraphicCell has no Drop impl)
@@ -1204,6 +1207,7 @@ fn test_collect_active_ids_uses_weak_refs() {
         id: GraphicId::new(1),
         width: 10,
         height: 20,
+        cell_width: 10,
         cell_height: 20,
         texture_operations: Arc::downgrade(&texture_ops),
     });
