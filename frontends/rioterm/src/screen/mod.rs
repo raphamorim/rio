@@ -27,6 +27,7 @@ use crate::crosswords::{
 use crate::hints::HintState;
 use crate::layout::ContextDimension;
 use crate::mouse::{calculate_mouse_position, Mouse};
+use crate::renderer::island::{self, TabStripLayout, ISLAND_HEIGHT};
 use crate::renderer::{utils::padding_top_from_config, Renderer};
 use crate::screen::hint::HintMatches;
 use crate::selection::{Selection, SelectionType};
@@ -78,7 +79,7 @@ pub struct Screen<'screen> {
     #[cfg(target_os = "macos")]
     pub allow_manual_dragging: bool,
     last_chrome_press: Option<ChromePress>,
-    last_close_press: Option<std::time::Instant>,
+    last_close_press: Option<(std::time::Instant, f32)>,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
     pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
 }
@@ -2566,11 +2567,8 @@ impl Screen<'_> {
     }
 
     #[inline]
-    fn island_tab_layout(
-        &self,
-        num_tabs: usize,
-    ) -> crate::renderer::island::TabStripLayout {
-        crate::renderer::island::tab_strip_layout(
+    fn island_tab_layout(&self, num_tabs: usize) -> TabStripLayout {
+        island::tab_strip_layout(
             self.sugarloaf.window_size().width,
             self.sugarloaf.scale_factor(),
             num_tabs,
@@ -2612,49 +2610,45 @@ impl Screen<'_> {
         self.last_chrome_press.take()
     }
 
+    fn is_close_press_tail(&self, x_unscaled: f32) -> bool {
+        const CLOSE_TAIL_SLOP: f32 = 16.0;
+        self.last_close_press.is_some_and(|(at, press_x)| {
+            at.elapsed() <= crate::constants::MULTI_CLICK_THRESHOLD
+                && (x_unscaled - press_x).abs() <= CLOSE_TAIL_SLOP
+        })
+    }
+
+    fn apply_close_hover(&mut self, hover: bool) -> bool {
+        let changed = self
+            .renderer
+            .island
+            .as_mut()
+            .is_some_and(|island| island.set_close_hover(hover));
+        if changed {
+            self.mark_dirty();
+        }
+        changed
+    }
+
     pub fn update_close_button_hover(&mut self, mouse_x: f64, mouse_y: f64) -> bool {
         let num_tabs = self.context_manager.len();
         let scale_factor = self.sugarloaf.scale_factor();
 
         let hovering = num_tabs > 1
             && self.renderer.navigation.island_visible(num_tabs)
-            && mouse_y <= (crate::renderer::island::ISLAND_HEIGHT * scale_factor) as f64
-            && {
-                let layout = self.island_tab_layout(num_tabs);
-                let x_unscaled = mouse_x as f32 / scale_factor;
-                crate::renderer::island::close_button_center_x(
-                    &layout,
-                    self.context_manager.current_index(),
-                )
-                .is_some_and(|cx| {
-                    (x_unscaled - cx).abs()
-                        <= crate::renderer::island::CLOSE_HIT_HALF_WIDTH
-                })
-            };
+            && mouse_y <= (ISLAND_HEIGHT * scale_factor) as f64
+            && island::close_button_hit(
+                &self.island_tab_layout(num_tabs),
+                self.context_manager.current_index(),
+                mouse_x as f32 / scale_factor,
+            );
 
-        let changed = match self.renderer.island {
-            Some(ref mut island) => island.set_close_hover(hovering),
-            None => false,
-        };
-        if changed {
-            // A hover flip is UI-only: without marking the current
-            // context dirty the requested redraw skips presenting
-            // (same pattern as the search overlay's hover highlight).
-            self.mark_dirty();
-        }
-        changed
+        self.apply_close_hover(hovering)
     }
 
     #[inline]
     pub fn clear_close_button_hover(&mut self) -> bool {
-        let changed = match self.renderer.island {
-            Some(ref mut island) => island.set_close_hover(false),
-            None => false,
-        };
-        if changed {
-            self.mark_dirty();
-        }
-        changed
+        self.apply_close_hover(false)
     }
 
     pub fn handle_island_click(
@@ -2672,7 +2666,6 @@ impl Screen<'_> {
         let mouse_x = self.mouse.x;
         let mouse_y = self.mouse.y;
 
-        use crate::renderer::island::ISLAND_HEIGHT;
         let scale_factor = self.sugarloaf.scale_factor();
         let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
 
@@ -2709,6 +2702,8 @@ impl Screen<'_> {
             return false;
         }
 
+        let mouse_x_unscaled = mouse_x as f32 / scale_factor;
+
         // Island isn't painted (hide_if_single + single tab on macOS).
         // Nothing to click on, so let the caller route the event to the
         // grid for selection / double-click maximize at the OS title bar.
@@ -2717,19 +2712,25 @@ impl Screen<'_> {
             // hide-if-single): the tail press of a double-click on the
             // × would otherwise leak into the terminal as a selection,
             // or start a window drag via the band fallback.
-            if self
-                .last_close_press
-                .is_some_and(|at| at.elapsed() <= crate::constants::MULTI_CLICK_THRESHOLD)
-            {
+            if self.is_close_press_tail(mouse_x_unscaled) {
                 return true;
             }
             return false;
         }
 
         let layout = self.island_tab_layout(num_tabs);
-
-        let mouse_x_unscaled = mouse_x as f32 / scale_factor;
         let x_in_tabs = mouse_x_unscaled - layout.left_margin;
+
+        if !is_right_click
+            && self.is_close_press_tail(mouse_x_unscaled)
+            && !island::close_button_hit(
+                &layout,
+                self.context_manager.current_index(),
+                mouse_x_unscaled,
+            )
+        {
+            return true;
+        }
 
         if x_in_tabs < 0.0 || x_in_tabs >= layout.tabs_width {
             if !is_right_click {
@@ -2786,21 +2787,17 @@ impl Screen<'_> {
             return true;
         }
 
-        if clicked_tab == self.context_manager.current_index() {
-            if let Some(cx) =
-                crate::renderer::island::close_button_center_x(&layout, clicked_tab)
-            {
-                if (mouse_x_unscaled - cx).abs()
-                    <= crate::renderer::island::CLOSE_HIT_HALF_WIDTH
-                {
-                    self.last_close_press = Some(std::time::Instant::now());
-                    self.close_tab(clipboard);
-                    return true;
-                }
-            }
+        if clicked_tab == self.context_manager.current_index()
+            && island::close_button_hit(&layout, clicked_tab, mouse_x_unscaled)
+        {
+            self.stop_hint_mode_if_active();
+            self.last_close_press = Some((std::time::Instant::now(), mouse_x_unscaled));
+            self.close_tab(clipboard);
+            return true;
         }
 
         if clicked_tab != self.context_manager.current_index() {
+            self.stop_hint_mode_if_active();
             self.cancel_search(clipboard);
             self.clear_selection();
             let old_index = self.context_manager.current_index();
@@ -3577,6 +3574,8 @@ impl Screen<'_> {
     }
 
     pub(crate) fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
+        self.update_close_button_hover(self.mouse.x, self.mouse.y);
+
         let current_route = self.context_manager.current_route();
         let (grid_cols, grid_rows) = {
             let terminal = self.context_manager.current().terminal.lock();
@@ -3769,6 +3768,8 @@ impl Screen<'_> {
                     rio_backend::crosswords::pos::Pos,
                     rio_backend::crosswords::pos::Pos,
                 )>,
+                hint_labels: Option<Vec<crate::context::renderable::HintLabel>>,
+                label_style_base: Option<u16>,
             }
 
             let (active_key, scaled_margin) = {
@@ -3820,7 +3821,8 @@ impl Screen<'_> {
                 // allocations.
                 let visible_rows =
                     std::mem::take(&mut ctx.renderable_content.visible_rows);
-                let style_table = std::mem::take(&mut ctx.renderable_content.style_table);
+                let mut style_table =
+                    std::mem::take(&mut ctx.renderable_content.style_table);
                 let extras = std::mem::take(&mut ctx.renderable_content.extras);
                 let term_colors = ctx.renderable_content.term_colors;
                 let display_offset = ctx.renderable_content.display_offset as i32;
@@ -3855,6 +3857,21 @@ impl Screen<'_> {
                 } else {
                     None
                 };
+                let hint_labels = if is_active {
+                    std::mem::take(&mut ctx.renderable_content.hint_labels)
+                } else {
+                    None
+                };
+                let label_style_base = hint_labels
+                    .as_deref()
+                    .filter(|labels| !labels.is_empty())
+                    .map(|_| {
+                        crate::grid_emit::push_hint_label_styles(
+                            &mut style_table,
+                            self.renderer.named_colors.hint_foreground,
+                            self.renderer.named_colors.hint_background,
+                        )
+                    });
                 let cursor_shape = cursor.state.content;
                 let cursor_blinking = ctx.renderable_content.has_blinking_enabled;
                 let cursor_blink_visible =
@@ -3895,6 +3912,8 @@ impl Screen<'_> {
                     hint_matches,
                     focused_match,
                     hovered_hyperlink,
+                    hint_labels,
+                    label_style_base,
                 });
             }
 
@@ -4002,6 +4021,26 @@ impl Screen<'_> {
                             p.display_offset,
                             &mut hint_scratch,
                         );
+                        let label_row;
+                        let row = match (p.hint_labels.as_deref(), p.label_style_base) {
+                            (Some(labels), Some(style_base)) => {
+                                match crate::grid_emit::overlay_hint_labels(
+                                    row,
+                                    labels,
+                                    y,
+                                    p.display_offset,
+                                    style_base,
+                                    &mut hint_scratch,
+                                ) {
+                                    Some(overlaid) => {
+                                        label_row = overlaid;
+                                        &label_row
+                                    }
+                                    None => row,
+                                }
+                            }
+                            _ => row,
+                        };
                         crate::grid_emit::build_row_bg(
                             row,
                             cols,
@@ -4211,9 +4250,14 @@ impl Screen<'_> {
                 let route_id = item.val.route_id;
                 if let Some(idx) = panels.iter().position(|p| p.route_id == route_id) {
                     let p = panels.swap_remove(idx);
+                    let mut style_table = p.style_table;
+                    if let Some(base) = p.label_style_base {
+                        style_table.truncate(base as usize);
+                    }
                     item.val.renderable_content.visible_rows = p.visible_rows;
-                    item.val.renderable_content.style_table = p.style_table;
+                    item.val.renderable_content.style_table = style_table;
                     item.val.renderable_content.extras = p.extras;
+                    item.val.renderable_content.hint_labels = p.hint_labels;
                 }
             }
             panels.clear();
@@ -4319,6 +4363,13 @@ impl Screen<'_> {
             rio_window::dpi::PhysicalPosition::new(pixel_x as f64, pixel_y as f64),
             rio_window::dpi::PhysicalSize::new(cell_width as f64, cell_height as f64),
         );
+    }
+
+    fn stop_hint_mode_if_active(&mut self) {
+        if self.hint_state.is_active() {
+            self.hint_state.stop();
+            self.update_hint_state();
+        }
     }
 
     /// Process a new character for keyboard hints
@@ -4460,27 +4511,29 @@ impl Screen<'_> {
                 let display_offset = terminal.display_offset();
                 let screen_lines = terminal.screen_lines();
 
-                let mut any = false;
-                for label in &hint_labels {
-                    let line = label.position.row.0 - display_offset as i32;
-                    if line >= 0 && (line as usize) < screen_lines {
-                        terminal.grid[rio_backend::crosswords::pos::Line(line)].dirty =
-                            true;
-                        any = true;
+                let visible_grid_line = |line: i32| -> bool {
+                    let viewport_row = line + display_offset as i32;
+                    viewport_row >= 0 && (viewport_row as usize) < screen_lines
+                };
+                let mut dirty_lines: Vec<i32> = Vec::new();
+                for label in hint_labels.iter().flatten() {
+                    let line = label.position.row.0;
+                    if visible_grid_line(line) {
+                        dirty_lines.push(line);
                     }
                 }
                 if let Some(hint_matches) = &hint_matches {
                     for hint_match in hint_matches {
-                        let start_line = hint_match.start().row.0 - display_offset as i32;
-                        let end_line = hint_match.end().row.0 - display_offset as i32;
-                        for line in start_line..=end_line {
-                            if line >= 0 && (line as usize) < screen_lines {
-                                terminal.grid[rio_backend::crosswords::pos::Line(line)]
-                                    .dirty = true;
-                                any = true;
+                        for line in hint_match.start().row.0..=hint_match.end().row.0 {
+                            if visible_grid_line(line) {
+                                dirty_lines.push(line);
                             }
                         }
                     }
+                }
+                let any = !dirty_lines.is_empty();
+                for line in dirty_lines {
+                    terminal.grid[rio_backend::crosswords::pos::Line(line)].dirty = true;
                 }
                 drop(terminal);
 
@@ -4503,8 +4556,7 @@ impl Screen<'_> {
             self.context_manager
                 .current_mut()
                 .renderable_content
-                .hint_labels
-                .clear();
+                .hint_labels = None;
             // Force full damage to clear all hint highlights
             let current = self.context_manager.current_mut();
             current
@@ -4517,12 +4569,11 @@ impl Screen<'_> {
     fn update_hint_labels(&mut self) {
         use crate::context::renderable::HintLabel;
 
-        let mut hint_labels = Vec::new();
-
-        if self.hint_state.is_active() {
+        let hint_labels = if self.hint_state.is_active() {
             let matches = self.hint_state.matches();
             let visible_labels = self.hint_state.visible_labels();
 
+            let mut labels = Vec::new();
             for (match_index, remaining_label) in visible_labels {
                 if let Some(hint_match) = matches.get(match_index) {
                     // Create labels for each character in the hint label
@@ -4532,15 +4583,18 @@ impl Screen<'_> {
                             hint_match.start.col + char_index,
                         );
 
-                        hint_labels.push(HintLabel {
+                        labels.push(HintLabel {
                             position,
-                            label: vec![label_char],
+                            label: label_char,
                             is_first: char_index == 0, // First character gets different styling
                         });
                     }
                 }
             }
-        }
+            Some(labels)
+        } else {
+            None
+        };
 
         self.context_manager
             .current_mut()
