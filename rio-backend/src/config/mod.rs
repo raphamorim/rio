@@ -9,6 +9,7 @@ pub mod layout;
 pub mod navigation;
 pub mod platform;
 pub mod renderer;
+pub mod session;
 pub mod theme;
 pub mod title;
 pub mod window;
@@ -89,6 +90,8 @@ pub struct Config {
     pub cursor: CursorConfig,
     #[serde(default = "Navigation::default")]
     pub navigation: Navigation,
+    #[serde(default = "session::Session::default")]
+    pub session: session::Session,
     #[serde(default = "Window::default")]
     pub window: Window,
     #[serde(default = "default_shell")]
@@ -219,6 +222,21 @@ pub fn config_dir_path() -> PathBuf {
 #[inline]
 pub fn config_file_path() -> PathBuf {
     config_dir_path().join("config.toml")
+}
+
+#[inline]
+pub fn session_file_path() -> PathBuf {
+    config_dir_path().join("session.json")
+}
+
+#[inline]
+pub fn sessions_dir_path() -> PathBuf {
+    config_dir_path().join("sessions")
+}
+
+#[inline]
+pub fn session_named_path(name: &str) -> PathBuf {
+    sessions_dir_path().join(format!("{name}.json"))
 }
 
 #[inline]
@@ -644,6 +662,7 @@ impl Default for Config {
             fonts: SugarloafFonts::default(),
             line_height: default_line_height(),
             navigation: Navigation::default(),
+            session: session::Session::default(),
             option_as_alt: default_option_as_alt(),
             margin: default_margin(),
             panel: Panel::default(),
