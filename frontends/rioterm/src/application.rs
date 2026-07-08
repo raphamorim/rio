@@ -1016,7 +1016,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     if state == ElementState::Pressed {
                         let _ = route.window.screen.take_chrome_press();
-                    } else if state == ElementState::Released && button == MouseButton::Left {
+                    } else if state == ElementState::Released
+                        && button == MouseButton::Left
+                    {
                         route.window.screen.mouse.left_button_state =
                             ElementState::Released;
                         if let Some(ref mut island) = route.window.screen.renderer.island
