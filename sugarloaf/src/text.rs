@@ -1498,7 +1498,7 @@ fn build_text_pipeline_wgpu(
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("text_vertex"),
-            buffers: &[vbuf],
+            buffers: &[Some(vbuf)],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {

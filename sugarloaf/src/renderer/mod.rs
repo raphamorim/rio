@@ -2709,7 +2709,7 @@ impl WgpuRenderer {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                         module: &shader,
                         entry_point: Some("vs_main"),
-                        buffers: &[wgpu::VertexBufferLayout {
+                        buffers: &[Some(wgpu::VertexBufferLayout {
                             array_stride: mem::size_of::<Vertex>() as u64,
                             // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
                             step_mode: wgpu::VertexStepMode::Vertex,
@@ -2723,7 +2723,7 @@ impl WgpuRenderer {
                                 6 => Sint32,     // underline_style
                                 7 => Float32x4,  // clip_rect
                             ),
-                        }],
+                        })],
                     },
                     fragment: Some(wgpu::FragmentState {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -2761,7 +2761,7 @@ impl WgpuRenderer {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                         module: &shader,
                         entry_point: Some("vs_instanced"),
-                        buffers: &[wgpu::VertexBufferLayout {
+                        buffers: &[Some(wgpu::VertexBufferLayout {
                             array_stride: mem::size_of::<batch::QuadInstance>() as u64,
                             step_mode: wgpu::VertexStepMode::Instance,
                             attributes: &wgpu::vertex_attr_array!(
@@ -2774,7 +2774,7 @@ impl WgpuRenderer {
                                 6 => Sint32,     // underline_style
                                 7 => Float32x4,  // clip_rect
                             ),
-                        }],
+                        })],
                     },
                     fragment: Some(wgpu::FragmentState {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -2881,7 +2881,7 @@ impl WgpuRenderer {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                         module: &image_shader,
                         entry_point: Some("vs_main"),
-                        buffers: &[wgpu::VertexBufferLayout {
+                        buffers: &[Some(wgpu::VertexBufferLayout {
                             array_stride: mem::size_of::<ImageInstance>() as u64,
                             step_mode: wgpu::VertexStepMode::Instance,
                             attributes: &wgpu::vertex_attr_array!(
@@ -2889,7 +2889,7 @@ impl WgpuRenderer {
                                 1 => Float32x2, // dest_size
                                 2 => Float32x4, // source_rect
                             ),
-                        }],
+                        })],
                     },
                     fragment: Some(wgpu::FragmentState {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),

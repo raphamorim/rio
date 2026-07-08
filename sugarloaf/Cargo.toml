@@ -68,14 +68,14 @@ tiny-skia = "0.12.0"
 wide = "1.2.0"
 
 # librashader is wgpu-only — gate the entire filter chain together.
-librashader = { version = "0.11.1", default-features = false, features = ["runtime-wgpu", "stable", "presets"], optional = true }
-librashader-common = { version = "0.11", optional = true }
-librashader-presets = { version = "0.11", optional = true }
-librashader-preprocess = { version = "0.11", optional = true }
-librashader-pack = { version = "0.11", optional = true }
-librashader-reflect = { version = "0.11", features = ["stable", "wgsl"], default-features = false, optional = true }
-librashader-runtime = { version = "0.11", optional = true }
-librashader-cache = { version = "0.11", optional = true }
+librashader = { version = "0.12.0", default-features = false, features = ["runtime-wgpu", "stable", "presets"], optional = true }
+librashader-common = { version = "0.12", optional = true }
+librashader-presets = { version = "0.12", optional = true }
+librashader-preprocess = { version = "0.12", optional = true }
+librashader-pack = { version = "0.12", optional = true }
+librashader-reflect = { version = "0.12", features = ["stable", "wgsl"], default-features = false, optional = true }
+librashader-runtime = { version = "0.12", optional = true }
+librashader-cache = { version = "0.12", optional = true }
 thiserror = "2.0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
