@@ -43,6 +43,17 @@ fn window_bg_alpha(config: &Config) -> f32 {
     }
 }
 
+/// `image_data` (u32) key for an atlas graphic (sixel/iTerm2).
+/// `GraphicId`s are small sequential u64s; the high bit keeps them out
+/// of the kitty protocol id space (see the `KittyPlacement` doc comment
+/// in rio-backend), so both kinds share the per-image texture store.
+pub const ATLAS_IMAGE_ID_FLAG: u32 = 0x8000_0000;
+
+#[inline]
+pub fn atlas_image_key(id: u64) -> u32 {
+    ATLAS_IMAGE_ID_FLAG | (id as u32 & 0x7FFF_FFFF)
+}
+
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
@@ -391,6 +402,8 @@ impl Renderer {
                 } else {
                     context.renderable_content.kitty_graphics_dirty = false;
                 }
+                context.renderable_content.has_atlas_graphics =
+                    !terminal.graphics.placed_textures.is_empty();
                 context.renderable_content.frame_damage = damage;
                 drop(terminal);
             }
@@ -401,7 +414,8 @@ impl Renderer {
             let rc = &context.renderable_content;
             let has_overlays = !rc.kitty_placements.is_empty();
             let has_virtual = !rc.kitty_virtual_placements.is_empty();
-            if has_overlays || has_virtual {
+            let has_atlas = rc.has_atlas_graphics;
+            if has_overlays || has_virtual || has_atlas {
                 let layout = context.dimension;
                 // Canonical integer cell stride — line_height already
                 // baked into `cell.cell_height`. Same value the GPU
@@ -466,8 +480,20 @@ impl Renderer {
                         cell_height,
                     );
                 }
-            } else if rc.kitty_graphics_dirty {
-                // Placements were removed — clear overlays
+
+                if has_atlas {
+                    Self::push_atlas_graphic_overlays(
+                        overlays,
+                        rc,
+                        origin_x,
+                        origin_y,
+                        cell_width,
+                        cell_height,
+                    );
+                }
+            } else {
+                // No placements of any kind — drop stale overlays (kitty
+                // deletes, or the last atlas graphic scrolled out).
                 sugarloaf.clear_image_overlays_for(context.rich_text_id);
             }
 
@@ -889,6 +915,160 @@ impl Renderer {
                 z_index,
                 source_rect: geom.source_rect,
             });
+        }
+    }
+
+    /// Scan visible rows for cells carrying atlas graphics (sixel/iTerm2)
+    /// and push one `GraphicOverlay` per row-run. The backend writes a
+    /// `GraphicCell { texture, offset_x, offset_y }` into every covered
+    /// cell, so contiguous cells continuing the same texture at the
+    /// expected pixel offset coalesce into one overlay; erased or
+    /// overwritten cells break the run and that slice is not drawn.
+    fn push_atlas_graphic_overlays(
+        overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
+        rc: &RenderableContent,
+        origin_x: f32,
+        origin_y: f32,
+        cell_width: f32,
+        cell_height: f32,
+    ) {
+        // Below text, like virtual placements.
+        const ATLAS_Z_INDEX: i32 = -1;
+
+        struct Run {
+            id: u64,
+            tex_w: f32,
+            tex_h: f32,
+            /// Cell size when the graphic was inserted — the pixel stride
+            /// between covered cells. Differs from the live cell size
+            /// after a font resize (the image then scales with the font).
+            insert_cw: f32,
+            insert_ch: f32,
+            src_x0: f32,
+            src_y: f32,
+            start_col: usize,
+            cells: usize,
+        }
+
+        /// Push the run as one overlay: a `source_rect` slice of the
+        /// texture (normalized, resolution-independent) covering the
+        /// run's cells. Edge cells draw only the pixels the image
+        /// actually has.
+        fn flush(
+            overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
+            r: Run,
+            line: usize,
+            origin_x: f32,
+            origin_y: f32,
+            cell_width: f32,
+            cell_height: f32,
+        ) {
+            let src_w = (r.cells as f32 * r.insert_cw).min(r.tex_w - r.src_x0);
+            let src_h = r.insert_ch.min(r.tex_h - r.src_y);
+            if src_w <= 0.0 || src_h <= 0.0 {
+                return;
+            }
+            overlays.push(rio_backend::sugarloaf::GraphicOverlay {
+                image_id: atlas_image_key(r.id),
+                x: origin_x + r.start_col as f32 * cell_width,
+                y: origin_y + line as f32 * cell_height,
+                width: src_w * (cell_width / r.insert_cw),
+                height: src_h * (cell_height / r.insert_ch),
+                z_index: ATLAS_Z_INDEX,
+                source_rect: [
+                    r.src_x0 / r.tex_w,
+                    r.src_y / r.tex_h,
+                    (r.src_x0 + src_w) / r.tex_w,
+                    (r.src_y + src_h) / r.tex_h,
+                ],
+            });
+        }
+
+        for (line_idx, row) in rc.visible_rows.iter().enumerate() {
+            if !row.has_extras {
+                continue;
+            }
+
+            let mut run: Option<Run> = None;
+
+            for (col_idx, square) in row.inner.iter().enumerate() {
+                let graphic = if square.has_graphics() {
+                    square
+                        .extras_id()
+                        .and_then(|eid| rc.extras.get(&eid))
+                        .and_then(|e| e.graphic.as_ref())
+                        .and_then(|g| g.first())
+                } else {
+                    None
+                };
+
+                let Some(cell) = graphic else {
+                    if let Some(r) = run.take() {
+                        flush(
+                            overlays,
+                            r,
+                            line_idx,
+                            origin_x,
+                            origin_y,
+                            cell_width,
+                            cell_height,
+                        );
+                    }
+                    continue;
+                };
+
+                // Covered cells of one image row share a single
+                // `GraphicCell`; the per-cell x offset is positional:
+                // offset_x + (col - anchor_col) * insert-time cell width.
+                match &mut run {
+                    Some(r)
+                        if r.id == cell.texture.id.get()
+                            && r.src_y == cell.offset_y as f32
+                            && col_idx == r.start_col + r.cells =>
+                    {
+                        r.cells += 1;
+                    }
+                    _ => {
+                        if let Some(r) = run.take() {
+                            flush(
+                                overlays,
+                                r,
+                                line_idx,
+                                origin_x,
+                                origin_y,
+                                cell_width,
+                                cell_height,
+                            );
+                        }
+                        let insert_cw = cell.texture.cell_width.max(1) as f32;
+                        let src_x0 = cell.offset_x as f32
+                            + (col_idx as f32 - cell.anchor_col as f32) * insert_cw;
+                        run = Some(Run {
+                            id: cell.texture.id.get(),
+                            tex_w: cell.texture.width as f32,
+                            tex_h: cell.texture.height as f32,
+                            insert_cw,
+                            insert_ch: cell.texture.cell_height.max(1) as f32,
+                            src_x0,
+                            src_y: cell.offset_y as f32,
+                            start_col: col_idx,
+                            cells: 1,
+                        });
+                    }
+                }
+            }
+
+            if let Some(r) = run {
+                flush(
+                    overlays,
+                    r,
+                    line_idx,
+                    origin_x,
+                    origin_y,
+                    cell_width,
+                    cell_height,
+                );
+            }
         }
     }
 }
