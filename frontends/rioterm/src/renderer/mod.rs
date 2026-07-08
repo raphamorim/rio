@@ -119,7 +119,6 @@ impl Renderer {
             Some(island::Island::new(
                 named_colors.tabs,
                 named_colors.tabs_active,
-                named_colors.tab_border,
                 config.navigation.hide_if_single,
             ))
         } else {

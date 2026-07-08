@@ -77,8 +77,25 @@ pub struct Screen<'screen> {
     pub resize_state: Option<crate::layout::ResizeState>,
     #[cfg(target_os = "macos")]
     pub allow_manual_dragging: bool,
+    last_chrome_press: Option<ChromePress>,
+    last_close_press: Option<std::time::Instant>,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
     pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
+}
+
+pub struct ChromePress {
+    window_origin: Option<rio_window::dpi::PhysicalPosition<i32>>,
+    at: std::time::Instant,
+}
+
+impl ChromePress {
+    fn validates_double_click(
+        &self,
+        window_origin: Option<rio_window::dpi::PhysicalPosition<i32>>,
+    ) -> bool {
+        self.at.elapsed() <= crate::constants::MULTI_CLICK_THRESHOLD
+            && self.window_origin == window_origin
+    }
 }
 
 pub struct ScreenWindowProperties {
@@ -295,6 +312,8 @@ impl Screen<'_> {
             resize_state: None,
             #[cfg(target_os = "macos")]
             allow_manual_dragging: config.navigation.is_enabled(),
+            last_chrome_press: None,
+            last_close_press: None,
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
         })
@@ -417,11 +436,7 @@ impl Screen<'_> {
         let old_island = self.renderer.island.take();
         self.renderer = Renderer::new(config);
         if let Some(mut island) = old_island {
-            island.update_colors(
-                config.colors.tabs,
-                config.colors.tabs_active,
-                config.colors.tab_border,
-            );
+            island.update_colors(config.colors.tabs, config.colors.tabs_active);
             self.renderer.island = Some(island);
         }
 
@@ -1337,8 +1352,8 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
-                        let (_, _, tab_width) =
-                            self.island_tab_layout(self.context_manager.len());
+                        let tab_width =
+                            self.island_tab_layout(self.context_manager.len()).tab_width;
                         if let Some(ref mut island) = self.renderer.island {
                             island.remap_tab_swap(old_index, new_index, tab_width);
                         }
@@ -1355,8 +1370,8 @@ impl Screen<'_> {
                             old_index,
                             new_index,
                         );
-                        let (_, _, tab_width) =
-                            self.island_tab_layout(self.context_manager.len());
+                        let tab_width =
+                            self.island_tab_layout(self.context_manager.len()).tab_width;
                         if let Some(ref mut island) = self.renderer.island {
                             island.remap_tab_swap(old_index, new_index, tab_width);
                         }
@@ -1523,8 +1538,7 @@ impl Screen<'_> {
             }
             return;
         }
-
-        let num_tabs = self.ctx().len().wrapping_sub(1);
+        let num_tabs = self.ctx().len();
         self.resize_top_or_bottom_line(num_tabs);
         self.mark_dirty();
     }
@@ -2552,13 +2566,15 @@ impl Screen<'_> {
     }
 
     #[inline]
-    fn island_tab_layout(&self, num_tabs: usize) -> (f32, f32, f32) {
-        let layout = crate::renderer::island::tab_strip_layout(
+    fn island_tab_layout(
+        &self,
+        num_tabs: usize,
+    ) -> crate::renderer::island::TabStripLayout {
+        crate::renderer::island::tab_strip_layout(
             self.sugarloaf.window_size().width,
             self.sugarloaf.scale_factor(),
             num_tabs,
-        );
-        (layout.left_margin, layout.available_width, layout.tab_width)
+        )
     }
 
     #[cfg(target_os = "macos")]
@@ -2567,11 +2583,86 @@ impl Screen<'_> {
         let _ = window.drag_window();
     }
 
+    fn on_chrome_press(
+        &mut self,
+        window: &rio_window::window::Window,
+        prev: Option<ChromePress>,
+    ) {
+        let window_origin = window.outer_position().ok();
+        let double = matches!(self.mouse.click_state, ClickState::DoubleClick)
+            && prev.is_some_and(|p| p.validates_double_click(window_origin));
+        if double {
+            let is_maximized = window.is_maximized();
+            window.set_maximized(!is_maximized);
+            return;
+        }
+
+        self.last_chrome_press = Some(ChromePress {
+            window_origin,
+            at: std::time::Instant::now(),
+        });
+        #[cfg(target_os = "macos")]
+        if self.allow_manual_dragging {
+            self.start_window_drag(window);
+        }
+    }
+
+    #[inline]
+    pub fn take_chrome_press(&mut self) -> Option<ChromePress> {
+        self.last_chrome_press.take()
+    }
+
+    pub fn update_close_button_hover(&mut self, mouse_x: f64, mouse_y: f64) -> bool {
+        let num_tabs = self.context_manager.len();
+        let scale_factor = self.sugarloaf.scale_factor();
+
+        let hovering = num_tabs > 1
+            && self.renderer.navigation.island_visible(num_tabs)
+            && mouse_y <= (crate::renderer::island::ISLAND_HEIGHT * scale_factor) as f64
+            && {
+                let layout = self.island_tab_layout(num_tabs);
+                let x_unscaled = mouse_x as f32 / scale_factor;
+                crate::renderer::island::close_button_center_x(
+                    &layout,
+                    self.context_manager.current_index(),
+                )
+                .is_some_and(|cx| {
+                    (x_unscaled - cx).abs()
+                        <= crate::renderer::island::CLOSE_HIT_HALF_WIDTH
+                })
+            };
+
+        let changed = match self.renderer.island {
+            Some(ref mut island) => island.set_close_hover(hovering),
+            None => false,
+        };
+        if changed {
+            // A hover flip is UI-only: without marking the current
+            // context dirty the requested redraw skips presenting
+            // (same pattern as the search overlay's hover highlight).
+            self.mark_dirty();
+        }
+        changed
+    }
+
+    #[inline]
+    pub fn clear_close_button_hover(&mut self) -> bool {
+        let changed = match self.renderer.island {
+            Some(ref mut island) => island.set_close_hover(false),
+            None => false,
+        };
+        if changed {
+            self.mark_dirty();
+        }
+        changed
+    }
+
     pub fn handle_island_click(
         &mut self,
         window: &rio_window::window::Window,
         clipboard: &mut Clipboard,
         is_right_click: bool,
+        chrome_press: Option<ChromePress>,
     ) -> bool {
         // Only handle if navigation is enabled
         if !self.renderer.navigation.is_enabled() {
@@ -2589,10 +2680,6 @@ impl Screen<'_> {
         let num_tabs = self.context_manager.len();
         let island_visible = self.renderer.navigation.island_visible(num_tabs);
 
-        // Check if the color picker is open and the click hits a swatch.
-        // Handled before the `island_visible` short-circuit so a picker
-        // left open across a tab-close (hide_if_single trip) can still
-        // be dismissed by clicking its swatches.
         if let Some(ref mut island) = self.renderer.island {
             if island.is_color_picker_open() {
                 let consumed = island.handle_color_picker_click(
@@ -2626,42 +2713,34 @@ impl Screen<'_> {
         // Nothing to click on, so let the caller route the event to the
         // grid for selection / double-click maximize at the OS title bar.
         if !island_visible {
+            // …unless a ×-close just hid the strip (2 tabs → 1 with
+            // hide-if-single): the tail press of a double-click on the
+            // × would otherwise leak into the terminal as a selection,
+            // or start a window drag via the band fallback.
+            if self
+                .last_close_press
+                .is_some_and(|at| at.elapsed() <= crate::constants::MULTI_CLICK_THRESHOLD)
+            {
+                return true;
+            }
             return false;
         }
 
-        if !is_right_click {
-            if let ClickState::DoubleClick = self.mouse.click_state {
-                let is_maximized = window.is_maximized();
-                window.set_maximized(!is_maximized);
-                return true;
-            }
-        }
-
-        let (left_margin, _available_width, tab_width) = self.island_tab_layout(num_tabs);
+        let layout = self.island_tab_layout(num_tabs);
 
         let mouse_x_unscaled = mouse_x as f32 / scale_factor;
+        let x_in_tabs = mouse_x_unscaled - layout.left_margin;
 
-        // Note: automatic titlebar dragging is disabled for island windows
-        // (`with_mouse_down_can_move_window(false)`), so left presses on
-        // the band margins outside the tabs hand the drag back to AppKit.
-        if mouse_x_unscaled < left_margin {
-            #[cfg(target_os = "macos")]
-            if !is_right_click && self.allow_manual_dragging {
-                self.start_window_drag(window);
+        if x_in_tabs < 0.0 || x_in_tabs >= layout.tabs_width {
+            if !is_right_click {
+                self.on_chrome_press(window, chrome_press);
             }
             return true;
         }
 
-        let x_in_tabs = mouse_x_unscaled - left_margin;
-        let clicked_tab = (x_in_tabs / tab_width) as usize;
-
-        if clicked_tab >= num_tabs {
-            #[cfg(target_os = "macos")]
-            if !is_right_click && self.allow_manual_dragging {
-                self.start_window_drag(window);
-            }
-            return true;
-        }
+        // `.min` guards the float edge where x_in_tabs / tab_width
+        // lands exactly on num_tabs despite x_in_tabs < tabs_width.
+        let clicked_tab = ((x_in_tabs / layout.tab_width) as usize).min(num_tabs - 1);
 
         #[cfg(target_os = "macos")]
         if !is_right_click && self.modifiers.state().super_key() {
@@ -2702,13 +2781,25 @@ impl Screen<'_> {
             return true;
         }
 
-        #[cfg(target_os = "macos")]
-        if num_tabs == 1 && self.allow_manual_dragging {
-            self.start_window_drag(window);
+        if num_tabs == 1 {
+            self.on_chrome_press(window, chrome_press);
             return true;
         }
 
-        // Normal click → switch tab
+        if clicked_tab == self.context_manager.current_index() {
+            if let Some(cx) =
+                crate::renderer::island::close_button_center_x(&layout, clicked_tab)
+            {
+                if (mouse_x_unscaled - cx).abs()
+                    <= crate::renderer::island::CLOSE_HIT_HALF_WIDTH
+                {
+                    self.last_close_press = Some(std::time::Instant::now());
+                    self.close_tab(clipboard);
+                    return true;
+                }
+            }
+        }
+
         if clicked_tab != self.context_manager.current_index() {
             self.cancel_search(clipboard);
             self.clear_selection();
@@ -2724,7 +2815,6 @@ impl Screen<'_> {
             self.mark_dirty();
         }
 
-        // Close picker on normal click
         if let Some(ref mut island) = self.renderer.island {
             if island.is_color_picker_open() {
                 island.close_color_picker(&mut self.context_manager);
@@ -2738,7 +2828,7 @@ impl Screen<'_> {
         let can_reorder = true;
         if num_tabs > 1 && can_reorder {
             if let Some(ref mut island) = self.renderer.island {
-                let tab_left = left_margin + clicked_tab as f32 * tab_width;
+                let tab_left = layout.left_margin + clicked_tab as f32 * layout.tab_width;
                 island.start_drag(
                     clicked_tab,
                     mouse_x_unscaled - tab_left,
@@ -2761,7 +2851,7 @@ impl Screen<'_> {
             return;
         }
 
-        let (left_margin, available_width, tab_width) = self.island_tab_layout(num_tabs);
+        let layout = self.island_tab_layout(num_tabs);
 
         let (drag_idx, center) = match self.renderer.island.as_mut() {
             Some(island) => {
@@ -2769,10 +2859,7 @@ impl Screen<'_> {
                     // armed but still below the drag threshold
                     return;
                 }
-                match (
-                    island.drag_index(),
-                    island.drag_center(left_margin, available_width, tab_width),
-                ) {
+                match (island.drag_index(), island.drag_center(&layout)) {
                     (Some(idx), Some(center)) => (idx, center),
                     _ => return,
                 }
@@ -2789,7 +2876,8 @@ impl Screen<'_> {
             return;
         }
 
-        let target = (((center - left_margin) / tab_width) as usize).min(num_tabs - 1);
+        let target = (((center - layout.left_margin) / layout.tab_width) as usize)
+            .min(num_tabs - 1);
         if target != old_index {
             self.context_manager.move_current_tab_to(target);
             let new_index = self.context_manager.current_index();
@@ -2799,7 +2887,7 @@ impl Screen<'_> {
                 new_index,
             );
             if let Some(ref mut island) = self.renderer.island {
-                island.remap_tab_move(old_index, new_index, tab_width);
+                island.remap_tab_move(old_index, new_index, layout.tab_width);
             }
         }
         self.mark_dirty();
@@ -2807,11 +2895,11 @@ impl Screen<'_> {
 
     pub fn handle_tab_drag_release(&mut self) -> bool {
         let num_tabs = self.context_manager.len();
-        let (left_margin, available_width, tab_width) = self.island_tab_layout(num_tabs);
+        let layout = self.island_tab_layout(num_tabs);
 
         if let Some(ref mut island) = self.renderer.island {
             let started = island.drag_index().is_some();
-            island.end_drag(left_margin, available_width, tab_width);
+            island.end_drag(&layout);
             if started {
                 self.mark_dirty();
             }
@@ -4609,6 +4697,39 @@ fn post_process_hyperlink_uri(uri: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chrome_press_validates_double_click() {
+        use rio_window::dpi::PhysicalPosition;
+        let origin = Some(PhysicalPosition::new(10, 20));
+
+        // Same origin, fresh → a chrome double-click.
+        let fresh = ChromePress {
+            window_origin: origin,
+            at: std::time::Instant::now(),
+        };
+        assert!(fresh.validates_double_click(origin));
+
+        // Window moved between the presses (a re-grab after a window
+        // drag) → keep dragging, don't maximize.
+        assert!(!fresh.validates_double_click(Some(PhysicalPosition::new(110, 20))));
+
+        // Unreported origin on both presses (Wayland) → time guard
+        // alone decides; a reported-vs-unreported mix never validates.
+        let unknown = ChromePress {
+            window_origin: None,
+            at: std::time::Instant::now(),
+        };
+        assert!(unknown.validates_double_click(None));
+        assert!(!unknown.validates_double_click(origin));
+
+        // Stale press → expired even at the same origin.
+        let stale = ChromePress {
+            window_origin: origin,
+            at: std::time::Instant::now() - crate::constants::MULTI_CLICK_THRESHOLD * 2,
+        };
+        assert!(!stale.validates_double_click(origin));
+    }
 
     #[test]
     fn test_post_process_hyperlink_uri() {

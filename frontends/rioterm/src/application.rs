@@ -1014,6 +1014,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             let _ = route.window.winit_window.drag_window();
                         }
                     }
+                    if state == ElementState::Pressed {
+                        let _ = route.window.screen.take_chrome_press();
+                    } else if state == ElementState::Released && button == MouseButton::Left {
+                        route.window.screen.mouse.left_button_state =
+                            ElementState::Released;
+                        if let Some(ref mut island) = route.window.screen.renderer.island
+                        {
+                            island.cancel_drag();
+                        }
+                        route.window.screen.renderer.scrollbar.end_drag();
+                        route.window.screen.resize_state = None;
+                    }
                     return;
                 }
 
@@ -1043,7 +1055,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             now - route.window.screen.mouse.last_click_timestamp;
                         route.window.screen.mouse.last_click_timestamp = now;
 
-                        let threshold = Duration::from_millis(300);
+                        let threshold = crate::constants::MULTI_CLICK_THRESHOLD;
                         let mouse = &route.window.screen.mouse;
                         route.window.screen.mouse.click_state = match mouse.click_state {
                             // Reset click state if button has changed.
@@ -1059,6 +1071,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             }
                             _ => ClickState::Click,
                         };
+
+                        let chrome_press = route.window.screen.take_chrome_press();
 
                         if let MouseButton::Left = button {
                             // Check if clicking on a panel border to start resize
@@ -1119,6 +1133,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                     &route.window.winit_window,
                                     &mut self.router.clipboard,
                                     false,
+                                    chrome_press,
                                 );
 
                             if handled_by_island {
@@ -1150,6 +1165,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                     &route.window.winit_window,
                                     &mut self.router.clipboard,
                                     true,
+                                    chrome_press,
                                 );
 
                             if handled_by_island {
@@ -1291,6 +1307,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
 
+            WindowEvent::CursorLeft { .. } => {
+                if route.window.screen.clear_close_button_hover() {
+                    route.request_redraw();
+                }
+            }
+
             WindowEvent::CursorMoved { position, .. } => {
                 if self.config.hide_cursor_when_typing {
                     route.window.winit_window.set_cursor_visible(true);
@@ -1411,6 +1433,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     route.request_redraw();
                     return;
+                }
+
+                if route.window.screen.update_close_button_hover(x, y) {
+                    route.request_redraw();
                 }
 
                 // Only force the default cursor while the island is
