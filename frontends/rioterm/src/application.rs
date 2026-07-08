@@ -1413,17 +1413,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                // Only force the default cursor while the island is
-                // visible — when it's hidden (hide_if_single + single
-                // tab on macOS) the band at the top has no tabs to
-                // hover, and the I-beam from the terminal grid below
-                // should stay during top-edge drags.
+                // Use the arrow over Rio's top chrome. On macOS this
+                // remains a titlebar/traffic-light band even when the
+                // island is hidden for a single tab.
                 use crate::renderer::island::ISLAND_HEIGHT;
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
                 let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
                 let num_tabs = route.window.screen.ctx().len();
                 let nav = &route.window.screen.renderer.navigation;
-                if nav.island_visible(num_tabs) && y <= island_height_px {
+                let top_chrome_uses_arrow = nav.island_visible(num_tabs)
+                    || (cfg!(target_os = "macos") && nav.is_enabled());
+                if top_chrome_uses_arrow && y <= island_height_px {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
                 }
