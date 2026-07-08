@@ -319,17 +319,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::UpdateGraphics {
-                route_id: _,
-                queues,
-            }) => {
+            RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 
-                    // Atlas graphics (sixel/iTerm2)
+                    // Atlas graphics (sixel/iTerm2) → the same per-image
+                    // texture store the overlay pipeline draws from, under
+                    // a namespaced key.
                     for graphic_data in queues.pending {
-                        sugarloaf.graphics.insert(graphic_data);
+                        let key = crate::renderer::atlas_image_key(graphic_data.id.get());
+                        sugarloaf.image_data.insert(
+                            key,
+                            rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
+                                graphic_data,
+                            ),
+                        );
                     }
 
                     // Image textures (kitty) → separate store, no clone
@@ -342,8 +347,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         );
                     }
 
-                    for graphic_data in queues.remove_queue {
-                        sugarloaf.graphics.remove(&graphic_data);
+                    for graphic_id in queues.remove_queue {
+                        sugarloaf
+                            .image_data
+                            .remove(&crate::renderer::atlas_image_key(graphic_id.get()));
+                    }
+
+                    // Mark the panel dirty — the renderer skips non-dirty
+                    // panels, so a bare redraw after the pixels arrive
+                    // would no-op and leave the image blank until the
+                    // next unrelated damage.
+                    if let Some(ctx_item) =
+                        route.window.screen.ctx_mut().get_by_route_id(route_id)
+                    {
+                        ctx_item.val.renderable_content.pending_update.set_dirty();
                     }
 
                     // Request a redraw to display the updated graphics

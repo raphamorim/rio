@@ -97,6 +97,9 @@ pub struct RenderableContent {
     pub kitty_images: FxHashMap<u32, StoredImage>,
     pub kitty_placements: Vec<KittyPlacement>,
     pub kitty_graphics_dirty: bool,
+    /// `true` while any atlas graphic (sixel/iTerm2) is alive on the
+    /// grid. Gates the per-frame cell scan that builds their overlays.
+    pub has_atlas_graphics: bool,
 }
 
 impl RenderableContent {
@@ -128,6 +131,7 @@ impl RenderableContent {
             kitty_images: FxHashMap::default(),
             kitty_placements: Vec::new(),
             kitty_graphics_dirty: false,
+            has_atlas_graphics: false,
         }
     }
 
