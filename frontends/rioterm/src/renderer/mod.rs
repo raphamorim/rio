@@ -14,7 +14,6 @@ use taffy::NodeId;
 
 use crate::context::renderable::{PendingUpdate, RenderableContent};
 use crate::context::ContextManager;
-use crate::crosswords::pos::Pos;
 use crate::crosswords::style::{Style as CellStyle, StyleFlags};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
@@ -569,12 +568,9 @@ impl Renderer {
         }
 
         if let Some(island) = &mut self.island {
-            // The floating-drag tab needs an opaque fill matching what
-            // the window actually shows: the last effective bg (follows
-            // OSC 11), falling back to the theme bg on the first frame.
             let island_bg = self
                 .last_window_bg
-                .map(|c| [c.r as f32, c.g as f32, c.b as f32, 1.0])
+                .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32])
                 .unwrap_or(self.named_colors.background.0);
             island.render(
                 sugarloaf,
@@ -688,19 +684,6 @@ impl Renderer {
         } else {
             false
         }
-    }
-
-    /// Find hint label at the specified position
-    #[allow(dead_code)]
-    fn find_hint_label_at_position<'a>(
-        &self,
-        renderable_content: &'a RenderableContent,
-        pos: Pos,
-    ) -> Option<&'a crate::context::renderable::HintLabel> {
-        renderable_content
-            .hint_labels
-            .iter()
-            .find(|label| label.position == pos)
     }
 
     /// Scan visible rows for kitty Unicode-placeholder cells (U+10EEEE) and

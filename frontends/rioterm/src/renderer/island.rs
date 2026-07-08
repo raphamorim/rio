@@ -70,7 +70,11 @@ const CLOSE_GLYPH_HALF: f32 = 3.5;
 const CLOSE_MIN_ISLAND_WIDTH: f32 = 64.0;
 const CLOSE_HOVER_HALF: f32 = 10.0;
 const CLOSE_HOVER_CORNER_RADIUS: f32 = 5.0;
-pub const CLOSE_HIT_HALF_WIDTH: f32 = 10.0;
+const CLOSE_HIT_HALF_WIDTH: f32 = 10.0;
+const CLOSE_ALPHA_IDLE: f32 = 0.55;
+const CLOSE_ALPHA_HOVER: f32 = 0.95;
+const CLOSE_STROKE_WIDTH: f32 = 1.2;
+const INACTIVE_CUSTOM_MUTE: f32 = 0.55;
 
 struct TabDrag {
     // Index of the dragged tab, follows the tab as it reorders.
@@ -244,10 +248,20 @@ fn close_button_center(island_x: f32, island_w: f32) -> Option<f32> {
 }
 
 #[inline]
-pub fn close_button_center_x(layout: &TabStripLayout, tab_index: usize) -> Option<f32> {
+fn close_button_center_x(layout: &TabStripLayout, tab_index: usize) -> Option<f32> {
     let slot_x = layout.left_margin + tab_index as f32 * layout.tab_width;
     let (ix, _, iw, _, _) = island_rect(slot_x, layout.tab_width);
     close_button_center(ix, iw)
+}
+
+#[inline]
+pub fn close_button_hit(
+    layout: &TabStripLayout,
+    tab_index: usize,
+    x_unscaled: f32,
+) -> bool {
+    close_button_center_x(layout, tab_index)
+        .is_some_and(|cx| (x_unscaled - cx).abs() <= CLOSE_HIT_HALF_WIDTH)
 }
 
 fn draw_close_button(
@@ -259,10 +273,32 @@ fn draw_close_button(
 ) {
     let cy = ISLAND_HEIGHT / 2.0;
     let r = CLOSE_GLYPH_HALF;
-    let alpha = if hover { 0.95 } else { 0.55 };
+    let alpha = if hover {
+        CLOSE_ALPHA_HOVER
+    } else {
+        CLOSE_ALPHA_IDLE
+    };
     let color = [color[0], color[1], color[2], color[3] * alpha];
-    sugarloaf.line(cx - r, cy - r, cx + r, cy + r, 1.2, 0.0, color, order);
-    sugarloaf.line(cx - r, cy + r, cx + r, cy - r, 1.2, 0.0, color, order);
+    sugarloaf.line(
+        cx - r,
+        cy - r,
+        cx + r,
+        cy + r,
+        CLOSE_STROKE_WIDTH,
+        0.0,
+        color,
+        order,
+    );
+    sugarloaf.line(
+        cx - r,
+        cy + r,
+        cx + r,
+        cy - r,
+        CLOSE_STROKE_WIDTH,
+        0.0,
+        color,
+        order,
+    );
 }
 
 pub struct Island {
@@ -802,7 +838,7 @@ impl Island {
             let fill = match context_manager.custom_color(tab_index) {
                 Some(mut custom) => {
                     if !is_active {
-                        custom[3] *= 0.55;
+                        custom[3] *= INACTIVE_CUSTOM_MUTE;
                     }
                     custom
                 }
@@ -1355,20 +1391,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_island_constants() {
-        // Verify all constants are set correctly
-        assert_eq!(ISLAND_HEIGHT, 38.0);
-        assert_eq!(TITLE_FONT_SIZE, 12.0);
-        assert_eq!(TAB_PADDING_X, 27.0);
-        assert_eq!(ISLAND_MARGIN_RIGHT, 8.0);
-        #[cfg(target_os = "macos")]
-        assert_eq!(ISLAND_MARGIN_LEFT_MACOS, 76.0);
-        // Island geometry must leave a positive island: the vertical
-        // insets and gap can't consume the strip. Constant inputs, so
-        // enforced at compile time.
+    fn island_geometry_invariants() {
         const {
             assert!(TAB_INSET_Y * 2.0 < ISLAND_HEIGHT);
             assert!(TAB_GAP < MAX_TAB_WIDTH);
+            assert!(CLOSE_MARGIN_RIGHT + CLOSE_HIT_HALF_WIDTH < CLOSE_MIN_ISLAND_WIDTH);
+            assert!(CLOSE_HOVER_HALF * 2.0 <= ISLAND_HEIGHT - TAB_INSET_Y * 2.0);
         }
     }
 
