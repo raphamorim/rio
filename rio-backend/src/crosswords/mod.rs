@@ -1452,8 +1452,15 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
 
+        // A Noop/CursorOnly frame normally has nothing to copy — but rows
+        // written after the damage event was consumed (e.g. a graphics
+        // insert racing a redraw) still carry their dirty bit. Fall
+        // through when any row is dirty so the snapshot can't go stale.
         if matches!(damage, TerminalDamage::Noop | TerminalDamage::CursorOnly) {
-            return;
+            let any_dirty = (0..count as i32).any(|y| self.grid[Line(start + y)].dirty);
+            if !any_dirty {
+                return;
+            }
         }
 
         #[allow(clippy::needless_range_loop)]
@@ -1488,6 +1495,11 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
         for sq in &row.inner {
+            // Bg-only cells reuse the extras_id bits for the bg color;
+            // reading them would insert junk map entries.
+            if sq.is_bg_only() {
+                continue;
+            }
             if let Some(id) = sq.extras_id() {
                 if let Some(live) = self.grid.extras_table.get(id) {
                     extras.insert(id, live.clone());
@@ -1874,12 +1886,18 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     fn clear_cell_graphic(extras_table: &mut grid::ExtrasTable, cell: &mut Square) {
         if let Some(eid) = cell.extras_id() {
-            if let Some(extras) = extras_table.get_mut(eid) {
-                extras.graphic = None;
-                if extras.is_empty() {
-                    extras_table.free(eid);
-                    cell.set_extras_id(None);
+            match extras_table.get_mut(eid) {
+                Some(extras) => {
+                    extras.graphic = None;
+                    if extras.is_empty() {
+                        extras_table.free(eid);
+                        cell.set_extras_id(None);
+                    }
                 }
+                // Covered cells share one slot per image row; another cell
+                // already freed it. Drop the stale id so a reused slot
+                // isn't aliased.
+                None => cell.set_extras_id(None),
             }
         }
         cell.remove_cell_flag(CellFlags::GRAPHICS);
@@ -3770,12 +3788,19 @@ impl<U: EventListener> Handler for Crosswords<U> {
             id: graphic_id,
             width,
             height,
+            cell_width,
             cell_height,
             texture_operations: Arc::downgrade(&self.graphics.texture_operations),
         });
 
         self.graphics
             .register_placed_texture(graphic_id, Arc::downgrade(&texture));
+
+        // Reclaim slots dropped off the scrollback ring before allocating
+        // this image's rows against a nearly-full table.
+        if self.grid.extras_table.under_pressure() {
+            self.grid.gc_extras();
+        }
 
         for (top, offset_y) in (0..).zip((0..height).step_by(cell_height)) {
             let line = if scrolling {
@@ -3789,19 +3814,21 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 Line(top)
             };
 
-            // Store a reference to the graphic in the first column.
+            // One shared extras slot per image row: every covered cell
+            // points at the same `GraphicCell` and derives its own x
+            // offset from `anchor_col`. A slot per cell would exhaust
+            // the u16 extras id space in a dozen screen-sized images.
+            let graphic_cell = GraphicCell {
+                texture: texture.clone(),
+                offset_x: 0,
+                offset_y,
+                anchor_col: leftmost as u16,
+            };
+            let mut shared_eid: Option<square::ExtrasId> = None;
+
             let row_len = self.grid[line].len();
-            for (left, offset_x) in (leftmost..).zip((0..width).step_by(cell_width)) {
-                if left >= row_len {
-                    break;
-                }
-
-                let graphic_cell = GraphicCell {
-                    texture: texture.clone(),
-                    offset_x,
-                    offset_y,
-                };
-
+            let cols = (width as usize).div_ceil(cell_width);
+            for left in leftmost..(leftmost + cols).min(row_len) {
                 let cell_ref = &mut self.grid.raw[line][Column(left)];
 
                 // Bg-only cells (BgPalette/BgRgb) reuse the upper 32
@@ -3813,17 +3840,26 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     cell_ref.clear();
                 }
 
-                // If the cell already has an extras slot (e.g. hyperlink),
-                // merge the graphic into it; otherwise allocate a new one.
+                // A cell that already has an extras slot (e.g. hyperlink)
+                // gets the graphic merged into its own slot — never into
+                // the shared one, which other cells read. Bare cells all
+                // point at the single shared slot.
                 if let Some(eid) = cell_ref.extras_id() {
                     if let Some(extras) = self.grid.extras_table.get_mut(eid) {
-                        extras.graphic = Some(smallvec::smallvec![graphic_cell]);
+                        extras.graphic = Some(smallvec::smallvec![graphic_cell.clone()]);
                     }
                 } else {
-                    let eid = self.grid.extras_table.alloc(square::Extras {
-                        graphic: Some(smallvec::smallvec![graphic_cell]),
-                        ..Default::default()
-                    });
+                    let eid = match shared_eid {
+                        Some(eid) => eid,
+                        None => {
+                            let eid = self.grid.extras_table.alloc(square::Extras {
+                                graphic: Some(smallvec::smallvec![graphic_cell.clone()]),
+                                ..Default::default()
+                            });
+                            shared_eid = Some(eid);
+                            eid
+                        }
+                    };
                     cell_ref.set_extras_id(Some(eid));
                 }
                 cell_ref.insert_cell_flag(CellFlags::GRAPHICS);
@@ -6428,8 +6464,11 @@ mod tests {
 
         cw.insert_graphic(graphic, None, None);
 
-        // The image spans rows 0..2, cols 0..2.
+        // The image spans rows 0..2, cols 0..2. Covered cells of one image
+        // row share a single GraphicCell (one extras slot per row); each
+        // cell's x offset derives from anchor_col.
         for row in 0..2 {
+            let mut row_eid = None;
             for col in 0..2 {
                 let cell = &cw.grid[Line(row)][Column(col)];
                 assert!(
@@ -6437,6 +6476,10 @@ mod tests {
                     "cell ({row},{col}) should have GRAPHICS flag"
                 );
                 let eid = cell.extras_id().expect("cell should have extras_id");
+                if let Some(prev) = row_eid {
+                    assert_eq!(eid, prev, "row {row} cells should share one slot");
+                }
+                row_eid = Some(eid);
                 let extras = cw
                     .grid
                     .extras_table
@@ -6449,8 +6492,10 @@ mod tests {
                     .first()
                     .expect("graphic SmallVec should have one entry");
 
-                // Verify offsets match the cell position.
-                assert_eq!(gc.offset_x, (col * 10) as u16);
+                // Derived offsets match the cell position.
+                let derived_x = gc.offset_x as usize
+                    + (col - gc.anchor_col as usize) * gc.texture.cell_width;
+                assert_eq!(derived_x, col * 10);
                 assert_eq!(gc.offset_y, (row * 10) as u16);
             }
         }
