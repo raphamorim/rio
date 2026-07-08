@@ -121,6 +121,22 @@ impl ExtrasTable {
         id
     }
 
+    /// Nearly out of slot ids — time for `Grid::gc_extras`.
+    pub fn under_pressure(&self) -> bool {
+        self.slots.len() >= u16::MAX as usize && self.free.len() < 256
+    }
+
+    /// Free every allocated slot whose bit is not set in `live`.
+    pub fn sweep_unmarked(&mut self, live: &[u64]) {
+        for id in 1..self.slots.len() {
+            let marked = live[id / 64] & (1 << (id % 64)) != 0;
+            if !marked && self.slots[id].is_some() {
+                self.slots[id] = None;
+                self.free.push(id as u16);
+            }
+        }
+    }
+
     /// Free a previously-allocated slot. No-op if `id == 0`.
     pub fn free(&mut self, id: crate::crosswords::square::ExtrasId) {
         if id == 0 {
@@ -471,6 +487,42 @@ use crate::crosswords::square::Square;
 use crate::crosswords::style::{Style, StyleId};
 
 impl Grid<Square> {
+    /// Free extras slots no longer referenced by any cell.
+    ///
+    /// Cells are overwritten and rows drop off the scrollback ring without
+    /// freeing their extras slot, so a session heavy on per-cell extras —
+    /// inline graphics above all — eventually exhausts the u16 id space.
+    /// Mark every slot referenced by a live row (visible + history) or a
+    /// cursor template, then free the rest. Swept graphic slots drop their
+    /// `TextureRef`, which queues the image removal downstream.
+    pub fn gc_extras(&mut self) {
+        #[inline]
+        fn mark(live: &mut [u64], sq: &Square) {
+            if matches!(
+                sq.content_tag(),
+                crate::crosswords::square::ContentTag::Codepoint
+            ) {
+                if let Some(eid) = sq.extras_id() {
+                    live[eid as usize / 64] |= 1 << (eid % 64);
+                }
+            }
+        }
+
+        let mut live = vec![0u64; (u16::MAX as usize).div_ceil(64)];
+        for l in self.topmost_line().0..=self.bottommost_line().0 {
+            let row = &self.raw[Line(l)];
+            if !row.has_extras {
+                continue;
+            }
+            for sq in &row.inner {
+                mark(&mut live, sq);
+            }
+        }
+        mark(&mut live, &self.cursor.template);
+        mark(&mut live, &self.saved_cursor.template);
+        self.extras_table.sweep_unmarked(&live);
+    }
+
     /// Read the style associated with the cell's style id.
     #[inline]
     pub fn style_of(&self, square: &Square) -> Style {

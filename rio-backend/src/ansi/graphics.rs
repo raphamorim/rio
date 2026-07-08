@@ -36,6 +36,9 @@ pub struct TextureRef {
     /// Height, in pixels, of the graphic.
     pub height: u16,
 
+    /// Width, in pixels, of the cell when the graphic was inserted.
+    pub cell_width: usize,
+
     /// Height, in pixels, of the cell when the graphic was inserted.
     pub cell_height: usize,
 
@@ -63,17 +66,25 @@ impl Drop for TextureRef {
 /// A list of graphics in a single cell.
 pub type GraphicsCell = SmallVec<[GraphicCell; 1]>;
 
-/// Graphic data stored in a single cell.
+/// Graphic data stored in a cell's extras slot.
+///
+/// One `GraphicCell` (one extras slot) is shared by every covered cell of
+/// an image row — a slot per cell would exhaust the u16 extras id space in
+/// a dozen large images. A cell's actual x offset is derived positionally:
+/// `offset_x + (col - anchor_col) * texture.cell_width`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GraphicCell {
     /// Texture to draw the graphic in this cell.
     pub texture: Arc<TextureRef>,
 
-    /// Offset in the x direction.
+    /// Offset in the x direction, at `anchor_col`.
     pub offset_x: u16,
 
     /// Offset in the y direction.
     pub offset_y: u16,
+
+    /// Grid column `offset_x` is measured at.
+    pub anchor_col: u16,
 }
 
 /// Kitty graphics Unicode placeholder character
