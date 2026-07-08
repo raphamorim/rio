@@ -22,6 +22,7 @@ mod renderer;
 mod router;
 mod scheduler;
 mod screen;
+mod session;
 mod watcher;
 
 use clap::Parser;
@@ -237,12 +238,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rio_window::event_loop::EventLoop::<EventPayload>::with_user_event().build()?;
 
     let app_id = args.window_options.terminal_options.app_id;
+    let session_name = args.window_options.terminal_options.session;
 
     let mut application = crate::application::Application::new(
         config,
         config_error,
         &window_event_loop,
         app_id,
+        session_name,
     );
     let _ = application.run(window_event_loop);
 

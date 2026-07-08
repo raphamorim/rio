@@ -1115,6 +1115,9 @@ impl Screen<'_> {
                     Act::Quit => {
                         self.context_manager.quit();
                     }
+                    Act::SaveSession => {
+                        self.context_manager.request_save_session();
+                    }
                     Act::IncreaseFontSize => {
                         self.change_font_size(FontSizeAction::Increase);
                     }
@@ -3482,6 +3485,9 @@ impl Screen<'_> {
                 // caller firing the action directly — do nothing so the
                 // palette just closes without side effects.
             }
+            // Handled in the router before dispatch (they swap the
+            // palette into sessions mode and keep it open).
+            PaletteAction::SaveSessionAs | PaletteAction::RestoreSessionPicker => {}
             PaletteAction::Quit => {
                 self.context_manager.quit();
             }

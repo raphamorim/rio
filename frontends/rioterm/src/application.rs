@@ -36,6 +36,7 @@ pub struct Application<'a> {
     router: Router<'a>,
     scheduler: Scheduler,
     app_id: Option<String>,
+    session_name: Option<String>,
 }
 
 impl Application<'_> {
@@ -44,6 +45,7 @@ impl Application<'_> {
         config_error: Option<rio_backend::config::ConfigError>,
         event_loop: &EventLoop<EventPayload>,
         app_id: Option<String>,
+        session_name: Option<String>,
     ) -> Application<'app> {
         // SAFETY: Since this takes a pointer to the winit event loop, it MUST be dropped first,
         // which is done in `exiting`.
@@ -75,6 +77,7 @@ impl Application<'_> {
             router,
             scheduler,
             app_id,
+            session_name,
         }
     }
 
@@ -192,6 +195,40 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             None,
             self.app_id.as_deref(),
         );
+
+        if let Some(name) = self.session_name.clone() {
+            // `rio --session <name>`: explicit binding restores the
+            // named session (when it exists) regardless of the
+            // configured restore mode, and saves write back to it.
+            let name = crate::session::sanitize_name(&name);
+            if let Some(route) = self.router.routes.values_mut().next() {
+                route.session_name = Some(name.clone());
+                if let Some(state) = crate::session::SessionState::load(
+                    &rio_backend::config::session_named_path(&name),
+                ) {
+                    route.restore_session(state);
+                }
+            }
+        } else {
+            match self.config.session.restore {
+                rio_backend::config::session::SessionRestore::Never => {}
+                mode => {
+                    if let Some(state) = crate::session::SessionState::load(
+                        &rio_backend::config::session_file_path(),
+                    ) {
+                        if let Some(route) = self.router.routes.values_mut().next() {
+                            if mode
+                                == rio_backend::config::session::SessionRestore::Always
+                            {
+                                route.restore_session(state);
+                            } else {
+                                route.prompt_session_resume(state);
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Schedule title updates every 2s
         let timer_id = TimerId::new(Topic::UpdateTitles, 0);
@@ -430,6 +467,64 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     } else {
                         route.clear_errors();
                     }
+                }
+            }
+            RioEventType::Rio(RioEvent::SaveSession) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.save_session();
+                    route
+                        .window
+                        .screen
+                        .renderer
+                        .session_prompt
+                        .set_saved_notice(true);
+                    route.request_redraw();
+                    self.scheduler.schedule(
+                        EventPayload::new(
+                            RioEventType::Rio(RioEvent::ClearSessionNotice),
+                            window_id,
+                        ),
+                        Duration::from_millis(1500),
+                        false,
+                        TimerId::new(Topic::ClearSessionNotice, 0),
+                    );
+                }
+            }
+            RioEventType::Rio(RioEvent::SaveSessionAs(name)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.save_session_as(&name);
+                    route
+                        .window
+                        .screen
+                        .renderer
+                        .session_prompt
+                        .set_saved_notice(true);
+                    route.request_redraw();
+                    self.scheduler.schedule(
+                        EventPayload::new(
+                            RioEventType::Rio(RioEvent::ClearSessionNotice),
+                            window_id,
+                        ),
+                        Duration::from_millis(1500),
+                        false,
+                        TimerId::new(Topic::ClearSessionNotice, 0),
+                    );
+                }
+            }
+            RioEventType::Rio(RioEvent::RestoreSessionByName(name)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.restore_session_named(&name);
+                }
+            }
+            RioEventType::Rio(RioEvent::ClearSessionNotice) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route
+                        .window
+                        .screen
+                        .renderer
+                        .session_prompt
+                        .set_saved_notice(false);
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::Exit | RioEvent::Quit) => {
@@ -1002,6 +1097,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             WindowEvent::MouseInput { state, button, .. } => {
                 if route.path != RoutePath::Terminal
                     || route.window.screen.renderer.confirm_quit.is_active()
+                    || route.window.screen.renderer.session_prompt.is_active()
                 {
                     #[cfg(target_os = "macos")]
                     if state == ElementState::Pressed
@@ -1310,6 +1406,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if route.path != RoutePath::Terminal
                     || route.window.screen.renderer.confirm_quit.is_active()
+                    || route.window.screen.renderer.session_prompt.is_active()
                 {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
@@ -1620,6 +1717,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             WindowEvent::MouseWheel { delta, phase, .. } => {
                 if route.path != RoutePath::Terminal
                     || route.window.screen.renderer.confirm_quit.is_active()
+                    || route.window.screen.renderer.session_prompt.is_active()
                 {
                     return;
                 }
@@ -1970,6 +2068,31 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     // This is irreversible - if this event is emitted, it is guaranteed to be the last event that gets emitted.
     // You generally want to treat this as an “do on quit” event.
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        if self.config.session.restore
+            == rio_backend::config::session::SessionRestore::Always
+        {
+            let max = self.config.session.max_scrollback_lines;
+            let windows: Vec<crate::session::WindowState> = self
+                .router
+                .routes
+                .values()
+                .map(|route| {
+                    crate::session::capture_window(
+                        route.window.screen.ctx(),
+                        max,
+                        &route.window.winit_window,
+                    )
+                })
+                .collect();
+            if !windows.is_empty() {
+                let state = crate::session::SessionState {
+                    version: crate::session::SESSION_VERSION,
+                    windows,
+                };
+                let _ = state.save(&rio_backend::config::session_file_path());
+            }
+        }
+
         // Ensure that all the windows are dropped, so the destructors for
         // Renderer and contexts ran.
         self.router.routes.clear();

@@ -676,6 +676,24 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.event_proxy.send_event(RioEvent::Quit, self.window_id);
     }
 
+    #[inline]
+    pub fn request_save_session(&mut self) {
+        self.event_proxy
+            .send_event(RioEvent::SaveSession, self.window_id);
+    }
+
+    #[inline]
+    pub fn request_save_session_as(&mut self, name: String) {
+        self.event_proxy
+            .send_event(RioEvent::SaveSessionAs(name), self.window_id);
+    }
+
+    #[inline]
+    pub fn request_restore_session_named(&mut self, name: String) {
+        self.event_proxy
+            .send_event(RioEvent::RestoreSessionByName(name), self.window_id);
+    }
+
     #[cfg(target_os = "macos")]
     #[inline]
     pub fn hide_other_apps(&mut self) {
@@ -812,6 +830,117 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn current_grid(&self) -> &ContextGrid<T> {
         &self.contexts[self.current_index]
+    }
+
+    /// All tabs, for session capture.
+    #[inline]
+    pub fn grids(&self) -> &[ContextGrid<T>] {
+        &self.contexts
+    }
+
+    /// Select the current grid's pane by visual order index. Used by
+    /// session restore to reselect the saved active pane.
+    pub fn select_pane_by_order(&mut self, index: usize) {
+        let grid = &mut self.contexts[self.current_index];
+        if let Some(&node) = grid.get_ordered_keys().get(index) {
+            grid.set_current(node);
+            self.current_route = grid.current().route_id;
+        }
+    }
+
+    /// Split the current pane, spawning the new pane's shell at `dir`.
+    /// Forces the spawn (non-fork) pty path — the fork path has no
+    /// working-directory support.
+    pub fn split_with_dir(
+        &mut self,
+        rich_text_id: usize,
+        split_down: bool,
+        sugarloaf: &mut Sugarloaf,
+        dir: Option<String>,
+    ) {
+        let mut cloned_config = self.config.clone();
+        if dir.is_some() {
+            cloned_config.working_dir = dir;
+            #[cfg(not(target_os = "windows"))]
+            {
+                cloned_config.use_fork = false;
+            }
+        }
+
+        let current = self.current();
+        let cursor = current.cursor_from_ref();
+
+        match ContextManager::create_context(
+            (&cursor, current.renderable_content.has_blinking_enabled),
+            self.event_proxy.clone(),
+            self.window_id,
+            rich_text_id,
+            self.current().dimension,
+            &cloned_config,
+        ) {
+            Ok(new_context) => {
+                let new_route_id = new_context.route_id;
+                if split_down {
+                    self.contexts[self.current_index].split_down(new_context, sugarloaf);
+                } else {
+                    self.contexts[self.current_index].split_right(new_context, sugarloaf);
+                }
+                self.current_route = new_route_id;
+            }
+            Err(..) => {
+                tracing::error!("session restore: not able to create a split context");
+            }
+        }
+    }
+
+    /// Add a tab whose shell spawns at `dir` (session restore). Same
+    /// spawn-path requirement as `split_with_dir`.
+    pub fn add_context_with_dir(&mut self, rich_text_id: usize, dir: Option<String>) {
+        let mut cloned_config = self.config.clone();
+        if dir.is_some() {
+            cloned_config.working_dir = dir;
+            #[cfg(not(target_os = "windows"))]
+            {
+                cloned_config.use_fork = false;
+            }
+        }
+
+        if self.contexts.len() >= self.capacity {
+            return;
+        }
+        let last_index = self.contexts.len();
+        let current = self.current();
+        let cursor = current.cursor_from_ref();
+        let mut dimension = current.dimension;
+        if self.current_grid().len() > 1 {
+            dimension = self.current_grid().grid_dimension();
+        }
+
+        match ContextManager::create_context(
+            (&cursor, current.renderable_content.has_blinking_enabled),
+            self.event_proxy.clone(),
+            self.window_id,
+            rich_text_id,
+            dimension,
+            &cloned_config,
+        ) {
+            Ok(new_context) => {
+                let previous_scaled_margin =
+                    self.contexts[self.current_index].scaled_margin;
+                self.contexts.push(ContextGrid::new(
+                    new_context,
+                    previous_scaled_margin,
+                    self.config.split_color,
+                    self.config.split_active_color,
+                    self.config.panel,
+                ));
+                self.current_index = last_index;
+                self.current_route = self.current().route_id;
+            }
+            Err(..) => {
+                tracing::error!("session restore: not able to create a tab context");
+            }
+        }
     }
 
     #[inline]

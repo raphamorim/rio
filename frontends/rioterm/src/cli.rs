@@ -46,6 +46,11 @@ pub struct TerminalOptions {
     /// Set the Wayland app_id or X11 WM_CLASS (Linux/BSD only)
     #[clap(long)]
     pub app_id: Option<String>,
+
+    /// Bind this instance to a named session: restores
+    /// sessions/<NAME>.json on launch and saves back to it.
+    #[clap(long, value_name = "NAME")]
+    pub session: Option<String>,
 }
 
 impl TerminalOptions {
