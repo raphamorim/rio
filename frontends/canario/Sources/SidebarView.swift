@@ -44,11 +44,101 @@ private struct SidebarItemView: View {
     var body: some View {
         switch item {
         case .terminal(let terminal):
-            TerminalRowView(terminal: terminal)
-                .padding(.leading, CGFloat(depth) * 18)
+            TerminalGroupView(terminal: terminal, depth: depth)
         case .folder(let folder):
             FolderGroupView(folder: folder, depth: depth)
         }
+    }
+}
+
+private struct TerminalGroupView: View {
+    let terminal: TerminalItem
+    let depth: Int
+
+    var body: some View {
+        VStack(spacing: 3) {
+            TerminalRowView(terminal: terminal)
+                .padding(.leading, CGFloat(depth) * 18)
+            if terminal.panelCount > 1 && terminal.isExpanded {
+                ForEach(Array(terminal.panels.enumerated()), id: \.element.id) {
+                    index, panel in
+                    PanelRowView(terminal: terminal, panel: panel, index: index)
+                        .padding(.leading, CGFloat(depth + 1) * 18)
+                }
+            }
+        }
+    }
+}
+
+private struct PanelRowView: View {
+    @Environment(AppModel.self) private var model
+    let terminal: TerminalItem
+    let panel: Panel
+    let index: Int
+
+    @State private var isHovered = false
+    @State private var isCloseHovered = false
+
+    private var isActive: Bool {
+        model.selectedTerminalID == terminal.id && terminal.focusedPanelID == panel.id
+    }
+
+    var body: some View {
+        Button {
+            model.selectedTerminalID = terminal.id
+            terminal.focusedPanelID = panel.id
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "rectangle.on.rectangle")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(
+                        isActive ? Theme.textSelected : Theme.textPrimary.opacity(0.5))
+
+                Text("Panel \(index + 1)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(
+                        isActive ? Theme.textSelected : Theme.textPrimary.opacity(0.65))
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                if isHovered {
+                    Button {
+                        model.closePanel(panel.id, in: terminal)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(
+                                (isActive ? Theme.textSelected : Theme.textPrimary)
+                                    .opacity(isCloseHovered ? 0.95 : 0.5)
+                            )
+                            .frame(width: 17, height: 17)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(
+                                        Color.black.opacity(isCloseHovered ? 0.12 : 0.0001))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close Panel \(index + 1)")
+                    .onHover { isCloseHovered = $0 }
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background {
+                if isActive {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Theme.selectedFill.opacity(0.75))
+                } else {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.black.opacity(isHovered ? 0.07 : 0.0001))
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -206,17 +296,25 @@ private struct TerminalRowView: View {
                 Spacer(minLength: 0)
 
                 if terminal.panelCount > 1 {
-                    ZStack {
-                        Circle()
-                            .fill(Color.black.opacity(0.12))
-                        Text("\(terminal.panelCount)")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(
-                                isSelected
-                                    ? Theme.textSelected
-                                    : Theme.textPrimary.opacity(0.7))
+                    Button {
+                        withAnimation(.spring(duration: 0.25)) {
+                            terminal.isExpanded.toggle()
+                        }
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.black.opacity(terminal.isExpanded ? 0.20 : 0.12))
+                            Text("\(terminal.panelCount)")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(
+                                    isSelected
+                                        ? Theme.textSelected
+                                        : Theme.textPrimary.opacity(0.7))
+                        }
+                        .frame(width: 18, height: 18)
                     }
-                    .frame(width: 18, height: 18)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Show Panels")
                 }
 
                 if isHovered || isSelected {

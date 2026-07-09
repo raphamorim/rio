@@ -18,6 +18,7 @@ final class TerminalItem: Identifiable {
     var columns: [PanelColumn]
     var focusedPanelID: UUID
     var panelWeights: [UUID: CGFloat] = [:]
+    var isExpanded = false
 
     init(name: String) {
         self.name = name
@@ -220,13 +221,16 @@ final class AppModel {
 
     func closeFocusedPanel() {
         guard let terminal = selectedTerminal else { return }
+        closePanel(terminal.focusedPanelID, in: terminal)
+    }
+
+    func closePanel(_ id: UUID, in terminal: TerminalItem) {
         if terminal.panelCount <= 1 {
             closeTerminal(terminal.id)
             return
         }
-        let focusedID = terminal.focusedPanelID
-        if terminal.removePanel(focusedID) {
-            surfaces.remove(focusedID)
+        if terminal.removePanel(id) {
+            surfaces.remove(id)
         }
     }
 
