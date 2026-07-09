@@ -1,15 +1,71 @@
 import Foundation
 import Observation
 
-struct TerminalItem: Identifiable, Hashable {
-    let id: UUID
+struct Panel: Identifiable {
+    let id = UUID()
+}
+
+enum SplitDirection {
+    case right
+    case down
+}
+
+indirect enum PanelNode {
+    case leaf(Panel)
+    case split(SplitDirection, PanelNode, PanelNode)
+}
+
+@Observable
+final class TerminalItem: Identifiable {
+    let id = UUID()
     var name: String
-    let createdAt: Date
+    let createdAt = Date()
+    var panelRoot: PanelNode
+    var focusedPanelID: UUID
 
     init(name: String) {
-        self.id = UUID()
         self.name = name
-        self.createdAt = Date()
+        let panel = Panel()
+        self.panelRoot = .leaf(panel)
+        self.focusedPanelID = panel.id
+    }
+
+    var panelIDs: [UUID] {
+        Self.leafIDs(panelRoot)
+    }
+
+    var panelCount: Int {
+        panelIDs.count
+    }
+
+    func split(_ direction: SplitDirection) {
+        let newPanel = Panel()
+        panelRoot = Self.splitting(
+            panelRoot, at: focusedPanelID, direction: direction, newPanel: newPanel)
+        focusedPanelID = newPanel.id
+    }
+
+    private static func leafIDs(_ node: PanelNode) -> [UUID] {
+        switch node {
+        case .leaf(let panel):
+            [panel.id]
+        case .split(_, let first, let second):
+            leafIDs(first) + leafIDs(second)
+        }
+    }
+
+    private static func splitting(
+        _ node: PanelNode, at id: UUID, direction: SplitDirection, newPanel: Panel
+    ) -> PanelNode {
+        switch node {
+        case .leaf(let panel):
+            return panel.id == id ? .split(direction, node, .leaf(newPanel)) : node
+        case .split(let existing, let first, let second):
+            return .split(
+                existing,
+                splitting(first, at: id, direction: direction, newPanel: newPanel),
+                splitting(second, at: id, direction: direction, newPanel: newPanel))
+        }
     }
 }
 
@@ -109,8 +165,11 @@ final class AppModel {
         guard let index = flattened.firstIndex(where: { $0.id == id }) else {
             return
         }
+        let panelIDs = flattened[index].panelIDs
         Self.removeTerminal(id, from: &items)
-        surfaces.remove(id)
+        for panelID in panelIDs {
+            surfaces.remove(panelID)
+        }
         if selectedTerminalID == id {
             let remaining = flattenedTerminals
             if remaining.isEmpty {
@@ -125,6 +184,10 @@ final class AppModel {
         if let id = selectedTerminalID {
             closeTerminal(id)
         }
+    }
+
+    func splitSelected(_ direction: SplitDirection) {
+        selectedTerminal?.split(direction)
     }
 
     func selectTerminal(at index: Int) {
@@ -209,7 +272,9 @@ final class AppModel {
 
     func deleteFolder(_ folder: Folder) {
         for terminal in Self.terminals(in: folder.children) {
-            surfaces.remove(terminal.id)
+            for panelID in terminal.panelIDs {
+                surfaces.remove(panelID)
+            }
             if selectedTerminalID == terminal.id {
                 selectedTerminalID = nil
             }

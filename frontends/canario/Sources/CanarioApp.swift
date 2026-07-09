@@ -18,6 +18,21 @@ struct CanarioApp: App {
                     .keyboardShortcut("t", modifiers: .command)
                 Button("New Folder") { model.createFolder() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
+                Divider()
+                Button("Split Right") {
+                    withAnimation(.spring(duration: 0.25)) {
+                        model.splitSelected(.right)
+                    }
+                }
+                .keyboardShortcut("d", modifiers: .command)
+                .disabled(model.selectedTerminalID == nil)
+                Button("Split Down") {
+                    withAnimation(.spring(duration: 0.25)) {
+                        model.splitSelected(.down)
+                    }
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(model.selectedTerminalID == nil)
                 Button(model.selectedTerminalID == nil ? "Close Window" : "Close Terminal") {
                     if model.selectedTerminalID != nil {
                         model.closeSelectedTerminal()
