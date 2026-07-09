@@ -30,7 +30,7 @@ struct ContentView: View {
             }
 
             SidebarToggleButton()
-                .padding(.leading, 76)
+                .padding(.leading, 88)
                 .padding(.top, 4)
         }
         .ignoresSafeArea(.container, edges: .top)

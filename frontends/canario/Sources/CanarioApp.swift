@@ -16,6 +16,8 @@ struct CanarioApp: App {
             CommandGroup(after: .newItem) {
                 Button("New Terminal") { model.createTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
+                Button("New Folder") { model.createFolder() }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
                 Button(model.selectedTerminalID == nil ? "Close Window" : "Close Terminal") {
                     if model.selectedTerminalID != nil {
                         model.closeSelectedTerminal()
