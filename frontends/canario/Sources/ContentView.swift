@@ -13,7 +13,7 @@ struct ContentView: View {
 
                 ZStack {
                     if let terminal = model.selectedTerminal {
-                        PanelTreeView(terminal: terminal, node: terminal.panelRoot)
+                        PanelGridView(terminal: terminal)
                             .id(terminal.id)
                     } else {
                         EmptyStateView()
@@ -73,42 +73,89 @@ struct SidebarToggleButton: View {
     }
 }
 
-private struct PanelTreeView: View {
-    @Environment(AppModel.self) private var model
+private struct PanelGridView: View {
     let terminal: TerminalItem
-    let node: PanelNode
 
     var body: some View {
-        switch node {
-        case .leaf(let panel):
-            TerminalSurface(hostView: model.surfaces.view(for: panel.id))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.cardRadius)
-                        .strokeBorder(
-                            .white.opacity(
-                                terminal.panelCount > 1
-                                    && terminal.focusedPanelID == panel.id ? 0.35 : 0),
-                            lineWidth: 1.5)
-                )
-                .shadow(color: .black.opacity(0.22), radius: 10, y: 3)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    terminal.focusedPanelID = panel.id
-                }
-        case .split(let direction, let first, let second):
-            if direction == .right {
-                HStack(spacing: 8) {
-                    PanelTreeView(terminal: terminal, node: first)
-                    PanelTreeView(terminal: terminal, node: second)
-                }
-            } else {
-                VStack(spacing: 8) {
-                    PanelTreeView(terminal: terminal, node: first)
-                    PanelTreeView(terminal: terminal, node: second)
+        PanelGridLayout(spacing: 8) {
+            ForEach(Array(terminal.columns.enumerated()), id: \.element.id) {
+                columnIndex, column in
+                ForEach(column.panels) { panel in
+                    PanelTileView(terminal: terminal, panel: panel)
+                        .layoutValue(key: PanelGridLayout.ColumnKey.self, value: columnIndex)
+                        .layoutValue(
+                            key: PanelGridLayout.WeightKey.self,
+                            value: terminal.weight(for: panel.id))
                 }
             }
         }
+        .animation(.spring(duration: 0.25), value: terminal.panelCount)
+    }
+}
+
+private struct PanelTileView: View {
+    @Environment(AppModel.self) private var model
+    let terminal: TerminalItem
+    let panel: Panel
+
+    @State private var weightAtDragStart: CGFloat?
+    @State private var isHandleHovered = false
+
+    var body: some View {
+        TerminalSurface(hostView: model.surfaces.view(for: panel.id))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.cardRadius)
+                    .strokeBorder(
+                        .white.opacity(
+                            terminal.panelCount > 1
+                                && terminal.focusedPanelID == panel.id ? 0.35 : 0),
+                        lineWidth: 1.5)
+            )
+            .overlay(alignment: .bottom) {
+                if terminal.panelCount > 1 {
+                    resizeHandle
+                }
+            }
+            .shadow(color: .black.opacity(0.22), radius: 10, y: 3)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                terminal.focusedPanelID = panel.id
+            }
+    }
+
+    private var resizeHandle: some View {
+        ZStack {
+            Color.clear
+            RoundedRectangle(cornerRadius: 2)
+                .fill(.white.opacity(isHandleHovered ? 0.35 : 0.0001))
+                .frame(width: 28, height: 3)
+        }
+        .frame(height: 9)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHandleHovered = hovering
+            if hovering {
+                NSCursor.resizeUpDown.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if weightAtDragStart == nil {
+                        weightAtDragStart = terminal.weight(for: panel.id)
+                    }
+                    if let start = weightAtDragStart {
+                        terminal.setWeight(
+                            start + value.translation.height / 200, for: panel.id)
+                    }
+                }
+                .onEnded { _ in
+                    weightAtDragStart = nil
+                }
+        )
     }
 }
 

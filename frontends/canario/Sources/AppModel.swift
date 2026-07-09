@@ -5,14 +5,9 @@ struct Panel: Identifiable {
     let id = UUID()
 }
 
-enum SplitDirection {
-    case right
-    case down
-}
-
-indirect enum PanelNode {
-    case leaf(Panel)
-    case split(SplitDirection, PanelNode, PanelNode)
+struct PanelColumn: Identifiable {
+    let id = UUID()
+    var panels: [Panel]
 }
 
 @Observable
@@ -20,52 +15,81 @@ final class TerminalItem: Identifiable {
     let id = UUID()
     var name: String
     let createdAt = Date()
-    var panelRoot: PanelNode
+    var columns: [PanelColumn]
     var focusedPanelID: UUID
+    var panelWeights: [UUID: CGFloat] = [:]
 
     init(name: String) {
         self.name = name
         let panel = Panel()
-        self.panelRoot = .leaf(panel)
+        self.columns = [PanelColumn(panels: [panel])]
         self.focusedPanelID = panel.id
     }
 
+    var panels: [Panel] {
+        columns.flatMap(\.panels)
+    }
+
     var panelIDs: [UUID] {
-        Self.leafIDs(panelRoot)
+        panels.map(\.id)
     }
 
     var panelCount: Int {
-        panelIDs.count
+        columns.reduce(0) { $0 + $1.panels.count }
     }
 
-    func split(_ direction: SplitDirection) {
-        let newPanel = Panel()
-        panelRoot = Self.splitting(
-            panelRoot, at: focusedPanelID, direction: direction, newPanel: newPanel)
-        focusedPanelID = newPanel.id
+    func weight(for id: UUID) -> CGFloat {
+        panelWeights[id] ?? 1
     }
 
-    private static func leafIDs(_ node: PanelNode) -> [UUID] {
-        switch node {
-        case .leaf(let panel):
-            [panel.id]
-        case .split(_, let first, let second):
-            leafIDs(first) + leafIDs(second)
+    func setWeight(_ weight: CGFloat, for id: UUID) {
+        panelWeights[id] = min(max(weight, 0.35), 3.0)
+    }
+
+    func position(of panelID: UUID) -> (column: Int, row: Int)? {
+        for (columnIndex, column) in columns.enumerated() {
+            if let rowIndex = column.panels.firstIndex(where: { $0.id == panelID }) {
+                return (columnIndex, rowIndex)
+            }
         }
+        return nil
     }
 
-    private static func splitting(
-        _ node: PanelNode, at id: UUID, direction: SplitDirection, newPanel: Panel
-    ) -> PanelNode {
-        switch node {
-        case .leaf(let panel):
-            return panel.id == id ? .split(direction, node, .leaf(newPanel)) : node
-        case .split(let existing, let first, let second):
-            return .split(
-                existing,
-                splitting(first, at: id, direction: direction, newPanel: newPanel),
-                splitting(second, at: id, direction: direction, newPanel: newPanel))
+    func splitRight() {
+        let panel = Panel()
+        let columnIndex = position(of: focusedPanelID)?.column ?? columns.count - 1
+        columns.insert(PanelColumn(panels: [panel]), at: columnIndex + 1)
+        focusedPanelID = panel.id
+    }
+
+    func splitDown() {
+        let panel = Panel()
+        if let position = position(of: focusedPanelID) {
+            columns[position.column].panels.insert(panel, at: position.row + 1)
+        } else {
+            columns[columns.count - 1].panels.append(panel)
         }
+        focusedPanelID = panel.id
+    }
+
+    func removePanel(_ id: UUID) -> Bool {
+        guard let position = position(of: id) else { return false }
+        columns[position.column].panels.remove(at: position.row)
+        panelWeights.removeValue(forKey: id)
+        if columns[position.column].panels.isEmpty {
+            columns.remove(at: position.column)
+        }
+        if focusedPanelID == id {
+            if columns.indices.contains(position.column),
+                !columns[position.column].panels.isEmpty
+            {
+                let column = columns[position.column]
+                focusedPanelID = column.panels[min(position.row, column.panels.count - 1)].id
+            } else if let first = panels.first {
+                focusedPanelID = first.id
+            }
+        }
+        return true
     }
 }
 
@@ -186,8 +210,24 @@ final class AppModel {
         }
     }
 
-    func splitSelected(_ direction: SplitDirection) {
-        selectedTerminal?.split(direction)
+    func splitRightInSelected() {
+        selectedTerminal?.splitRight()
+    }
+
+    func splitDownInSelected() {
+        selectedTerminal?.splitDown()
+    }
+
+    func closeFocusedPanel() {
+        guard let terminal = selectedTerminal else { return }
+        if terminal.panelCount <= 1 {
+            closeTerminal(terminal.id)
+            return
+        }
+        let focusedID = terminal.focusedPanelID
+        if terminal.removePanel(focusedID) {
+            surfaces.remove(focusedID)
+        }
     }
 
     func selectTerminal(at index: Int) {

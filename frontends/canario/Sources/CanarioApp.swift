@@ -21,17 +21,24 @@ struct CanarioApp: App {
                 Divider()
                 Button("Split Right") {
                     withAnimation(.spring(duration: 0.25)) {
-                        model.splitSelected(.right)
+                        model.splitRightInSelected()
                     }
                 }
                 .keyboardShortcut("d", modifiers: .command)
                 .disabled(model.selectedTerminalID == nil)
                 Button("Split Down") {
                     withAnimation(.spring(duration: 0.25)) {
-                        model.splitSelected(.down)
+                        model.splitDownInSelected()
                     }
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(model.selectedTerminalID == nil)
+                Button("Close Panel") {
+                    withAnimation(.spring(duration: 0.25)) {
+                        model.closeFocusedPanel()
+                    }
+                }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
                 .disabled(model.selectedTerminalID == nil)
                 Button(model.selectedTerminalID == nil ? "Close Window" : "Close Terminal") {
                     if model.selectedTerminalID != nil {
