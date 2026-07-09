@@ -4138,15 +4138,17 @@ impl Screen<'_> {
                 // `cursor.style()`):
                 // 1. Decide render style with strict priority:
                 // preedit > visible > focused > blink > shape.
-                // 2. Always clear both cursor slots first — last
-                // frame's sprite (if any) needs to disappear
-                // whether we emit a new one or not.
-                // 3. Some(style): emit a sprite into slot 0 (block)
-                // or slot rows+1 (others). For Block we ALSO
-                // write the bg-tint uniforms below so the bg
-                // fragment paints the block + the text shader
-                // inverts the underlying glyph.
-                // 4. None: leave both slots empty + zero uniforms.
+                // 2. Some(style): build the sprite for the block
+                // slot (drawn under text; the bg-tint uniforms
+                // below make the bg fragment paint the block +
+                // the text shader invert the underlying glyph)
+                // or the tail slot (bar/underline, drawn over
+                // text). None: both stay empty + zero uniforms.
+                // 3. One `grid.set_cursor(block, tail)` call
+                // replaces both slots. It diffs against last
+                // frame and only dirties cursor buffers on
+                // change — do NOT clear the slots beforehand,
+                // that would dirty them every frame.
                 let render_style = crate::grid_emit::cursor_render_style(
                     crate::grid_emit::CursorRenderInputs {
                         visible: p.cursor_visible,
@@ -4157,7 +4159,10 @@ impl Screen<'_> {
                         shape: p.cursor_shape,
                     },
                 );
-                grid.clear_cursor();
+                let mut block_cursor: Option<rio_backend::sugarloaf::grid::CellText> =
+                    None;
+                let mut tail_cursor: Option<rio_backend::sugarloaf::grid::CellText> =
+                    None;
                 if let Some(style) = render_style {
                     let cell_w = p.cell_w.round().clamp(1.0, u32::MAX as f32) as u32;
                     let cell_h = p.cell_h.round().clamp(1.0, u32::MAX as f32) as u32;
@@ -4167,7 +4172,7 @@ impl Screen<'_> {
                         (p.cursor_color[2].clamp(0.0, 1.0) * 255.0) as u8,
                         255,
                     ];
-                    crate::grid_emit::emit_cursor_sprite(
+                    if let Some((is_block, cell)) = crate::grid_emit::cursor_sprite_cell(
                         grid,
                         style,
                         p.cursor_col,
@@ -4175,8 +4180,15 @@ impl Screen<'_> {
                         cursor_color,
                         cell_w,
                         cell_h,
-                    );
+                    ) {
+                        if is_block {
+                            block_cursor = Some(cell);
+                        } else {
+                            tail_cursor = Some(cell);
+                        }
+                    }
                 }
+                grid.set_cursor(block_cursor.as_slice(), tail_cursor.as_slice());
 
                 // Panel's grid origin in drawable-pixel space =
                 // window scaled_margin + the panel's layout rect
@@ -4297,6 +4309,11 @@ impl Screen<'_> {
                 .renderable_content
                 .pending_update
                 .set_dirty();
+        }
+
+        if let Some(wake_in) = self.renderer.scrollbar.next_wake_in() {
+            self.context_manager
+                .schedule_render_on_route(wake_in.as_millis() as u64);
         }
 
         // In case the configuration of blinking cursor is enabled

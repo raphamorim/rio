@@ -102,8 +102,8 @@ struct TextMetalState {
     atlas_grayscale: crate::grid::metal::MetalGlyphAtlas,
     atlas_color: crate::grid::metal::MetalGlyphAtlas,
     pipeline: metal::RenderPipelineState,
-    instance_buffer: metal::Buffer,
-    instance_capacity: usize,
+    instance_buffers: Vec<metal::Buffer>,
+    instance_capacities: Vec<usize>,
 }
 
 #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
@@ -832,15 +832,18 @@ impl Text {
         }
         let pipeline = build_text_pipeline_metal(device);
         let instance_capacity: usize = 256;
-        let instance_buffer = alloc_instance_buffer_metal(device, instance_capacity);
+        let frames = crate::grid::metal::FRAMES_IN_FLIGHT_PUB;
+        let instance_buffers = (0..frames)
+            .map(|_| alloc_instance_buffer_metal(device, instance_capacity))
+            .collect();
         self.metal = Some(TextMetalState {
             device: device.to_owned(),
             command_queue: command_queue.to_owned(),
             atlas_grayscale: crate::grid::metal::MetalGlyphAtlas::new_grayscale(device),
             atlas_color: crate::grid::metal::MetalGlyphAtlas::new_color(device),
             pipeline,
-            instance_buffer,
-            instance_capacity,
+            instance_buffers,
+            instance_capacities: vec![instance_capacity; frames],
         });
     }
 
@@ -849,6 +852,7 @@ impl Text {
         &mut self,
         encoder: &metal::RenderCommandEncoderRef,
         viewport: [f32; 2],
+        frame: usize,
     ) {
         let instance_count = self.instances.len();
         if instance_count == 0 {
@@ -858,19 +862,21 @@ impl Text {
             return;
         };
 
-        if instance_count > state.instance_capacity {
+        let slot = frame % state.instance_buffers.len();
+        if instance_count > state.instance_capacities[slot] {
             let new_cap = instance_count.next_power_of_two().max(256);
-            state.instance_buffer = alloc_instance_buffer_metal(&state.device, new_cap);
-            state.instance_capacity = new_cap;
+            state.instance_buffers[slot] =
+                alloc_instance_buffer_metal(&state.device, new_cap);
+            state.instance_capacities[slot] = new_cap;
         }
 
         unsafe {
-            let dst = state.instance_buffer.contents() as *mut TextInstance;
+            let dst = state.instance_buffers[slot].contents() as *mut TextInstance;
             std::ptr::copy_nonoverlapping(self.instances.as_ptr(), dst, instance_count);
         }
 
         encoder.set_render_pipeline_state(&state.pipeline);
-        encoder.set_vertex_buffer(0, Some(&state.instance_buffer), 0);
+        encoder.set_vertex_buffer(0, Some(&state.instance_buffers[slot]), 0);
         let vp: [f32; 2] = viewport;
         encoder.set_vertex_bytes(
             1,

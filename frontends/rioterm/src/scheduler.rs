@@ -25,6 +25,7 @@ impl TimerId {
 pub enum Topic {
     Render,
     RenderRoute,
+    ScheduledRenderRoute,
     UpdateConfig,
     CursorBlinking,
     UpdateTitles,

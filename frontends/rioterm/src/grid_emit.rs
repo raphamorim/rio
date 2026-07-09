@@ -705,12 +705,7 @@ fn ensure_drawable_sprite(
     )
 }
 
-/// Emit a cursor sprite into the appropriate `fg_rows` slot. Caller
-/// is responsible for clearing the OTHER slot (so a previous-frame
-/// block doesn't linger when this frame draws a hollow, etc.) — see
-/// `grid.clear_cursor()`. `addCursor`
-///.
-pub fn emit_cursor_sprite(
+pub fn cursor_sprite_cell(
     grid: &mut GridRenderer,
     style: CursorRenderStyle,
     col: u16,
@@ -718,15 +713,12 @@ pub fn emit_cursor_sprite(
     color: [u8; 4],
     cell_w: u32,
     cell_h: u32,
-) {
+) -> Option<(bool, CellText)> {
     let sprite = style.sprite();
     let thickness = cursor_thickness(cell_h);
-    let Some(slot) = ensure_cursor_sprite_slot(grid, sprite, cell_w, cell_h, thickness)
-    else {
-        return;
-    };
+    let slot = ensure_cursor_sprite_slot(grid, sprite, cell_w, cell_h, thickness)?;
     if slot.w == 0 || slot.h == 0 {
-        return;
+        return None;
     }
     let cursor_cell = CellText {
         glyph_pos: [slot.x as u32, slot.y as u32],
@@ -742,11 +734,7 @@ pub fn emit_cursor_sprite(
         page: slot.page,
         _pad: 0,
     };
-    if sprite.is_block_slot() {
-        grid.set_block_cursor(&[cursor_cell]);
-    } else {
-        grid.set_non_block_cursor(&[cursor_cell]);
-    }
+    Some((sprite.is_block_slot(), cursor_cell))
 }
 
 /// Underline thickness in physical pixels. fallback

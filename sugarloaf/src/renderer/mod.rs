@@ -2253,6 +2253,7 @@ impl Renderer {
                     text.render_metal(
                         render_encoder,
                         [context.size.width, context.size.height],
+                        frame,
                     );
                     true
                 })();
@@ -2274,7 +2275,13 @@ impl Renderer {
                     );
                     // No completion handler will fire to release the
                     // swap-chain permit we acquired above — release
-                    // it here so the next frame can run.
+                    // it here so the next frame can run, and roll the
+                    // frame slot back since nothing was committed for
+                    // it (permits pair with committed frames).
+                    self.metal_frame_index = (self.metal_frame_index
+                        + crate::grid::metal::FRAMES_IN_FLIGHT_PUB
+                        - 1)
+                        % crate::grid::metal::FRAMES_IN_FLIGHT_PUB;
                     crate::grid::metal::release_frame_permit(&self.metal_frame_permits);
                     return;
                 }
