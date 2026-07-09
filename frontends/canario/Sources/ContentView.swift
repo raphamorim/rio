@@ -104,14 +104,17 @@ private struct PanelTileView: View {
     var body: some View {
         TerminalSurface(hostView: model.surfaces.view(for: panel.id))
             .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.cardRadius)
-                    .strokeBorder(
-                        .white.opacity(
-                            terminal.panelCount > 1
-                                && terminal.focusedPanelID == panel.id ? 0.35 : 0),
-                        lineWidth: 1.5)
-            )
+            .overlay {
+                if terminal.panelCount > 1 {
+                    if terminal.focusedPanelID == panel.id {
+                        RoundedRectangle(cornerRadius: Theme.cardRadius)
+                            .strokeBorder(Theme.accentBorder, lineWidth: 2.5)
+                    } else {
+                        RoundedRectangle(cornerRadius: Theme.cardRadius)
+                            .strokeBorder(.white.opacity(0.10), lineWidth: 1)
+                    }
+                }
+            }
             .overlay(alignment: .bottom) {
                 if terminal.panelCount > 1 {
                     resizeHandle
