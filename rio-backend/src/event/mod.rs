@@ -126,6 +126,8 @@ pub enum RioEvent {
     SelectNativeTabNext,
     SelectNativeTabPrev,
 
+    UpdateLastWorkingDirectory(std::path::PathBuf),
+
     ReportToAssistant(RioError),
 
     /// Grid has changed possibly requiring a mouse cursor shape change.
@@ -220,6 +222,9 @@ pub enum RioEvent {
     /// Color index: 0 for foreground, 1 for background, 2 for cursor color.
     ColorChange(usize, usize, Option<ColorRgb>),
 
+    // IPC
+    IpcCreateWindow(Option<std::path::PathBuf>),
+
     // No operation
     Noop,
 }
@@ -293,6 +298,9 @@ impl Debug for RioEvent {
             RioEvent::SelectNativeTabPrev => write!(f, "SelectNativeTabPrev"),
             RioEvent::CreateConfigEditor => write!(f, "CreateConfigEditor"),
             RioEvent::UpdateConfig => write!(f, "ReloadConfiguration"),
+            RioEvent::UpdateLastWorkingDirectory(working_dir) => {
+                write!(f, "UpdateLastWorkingDirectory({:?})", working_dir)
+            }
             RioEvent::ReportToAssistant(error_report) => {
                 write!(f, "ReportToAssistant({})", error_report.report)
             }
@@ -312,6 +320,9 @@ impl Debug for RioEvent {
             }
             RioEvent::ColorChange(route_id, color, rgb) => {
                 write!(f, "ColorChange({route_id}, {color:?}, {rgb:?})")
+            }
+            RioEvent::IpcCreateWindow(working_dir) => {
+                write!(f, "IpcCreateWindow({:?})", working_dir)
             }
         }
     }

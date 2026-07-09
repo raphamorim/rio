@@ -72,6 +72,19 @@ pub fn default_use_fork() -> bool {
 }
 
 #[inline]
+pub fn default_enable_ipc() -> bool {
+    #[cfg(unix)]
+    {
+        true
+    }
+
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
+#[inline]
 pub fn default_working_dir() -> Option<String> {
     None
 }
