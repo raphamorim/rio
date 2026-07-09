@@ -540,6 +540,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn schedule_render_on_route(&mut self, millis: u64) {
+        self.event_proxy.send_event(
+            RioEvent::PrepareRenderOnRoute(millis, self.current_route),
+            self.window_id,
+        );
+    }
+
+    #[inline]
     pub fn report_error_fonts_not_found(&mut self, fonts_not_found: Vec<SugarloafFont>) {
         if !fonts_not_found.is_empty() {
             self.event_proxy.send_event(

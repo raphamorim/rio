@@ -198,6 +198,11 @@ impl DisplayLink {
         }
     }
 
+    #[inline]
+    pub fn is_running(&self) -> bool {
+        self.is_running.get()
+    }
+
     /// Start VSync-synchronized rendering
     pub fn start(&self) -> Result<(), &'static str> {
         if self.is_running.get() {
@@ -214,9 +219,8 @@ impl DisplayLink {
                 _ds: self.dispatch_source,
             });
 
-            // Start CVDisplayLink
             let result = CVDisplayLinkStart(self.display_link);
-            if result != 0 {
+            if result != 0 && result != -6671 {
                 dispatch_suspend(super::dispatcher::dispatch_sys::dispatch_object_t {
                     _ds: self.dispatch_source,
                 });
@@ -251,10 +255,11 @@ impl DisplayLink {
                 _ds: self.dispatch_source,
             });
 
+            self.is_running.set(false);
+
             if result != 0 {
                 Err("Failed to stop CVDisplayLink")
             } else {
-                self.is_running.set(false);
                 tracing::info!(
                     "CVDisplayLink stopped for window {:?}",
                     self.user_data.window_id

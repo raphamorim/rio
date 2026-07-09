@@ -85,6 +85,8 @@ impl Default for PlatformSpecificWindowAttributes {
     }
 }
 
+const IDLE_VSYNC_STOP_TICKS: u32 = 30;
+
 #[derive(Debug)]
 pub(crate) struct State {
     /// Strong reference to the global application state.
@@ -137,6 +139,7 @@ pub(crate) struct State {
     display_link: RefCell<Option<super::display_link::DisplayLink>>,
     // Track when rendering is needed (dirty state)
     needs_redraw: Cell<bool>,
+    idle_vsync_ticks: Cell<u32>,
     // Rate-gated post-input sustain window. Replaces the raw
     // `last_input_timestamp` — single keystrokes no longer force
     // 1 s of vsync redraws. See `platform_impl::input_rate`.
@@ -781,6 +784,7 @@ impl WindowDelegate {
             background_color: unsafe { NSColor::blackColor().into() },
             display_link: RefCell::new(None),
             needs_redraw: Cell::new(false),
+            idle_vsync_ticks: Cell::new(0),
             input_rate_tracker: RefCell::new(
                 crate::platform_impl::input_rate::InputRateTracker::new(),
             ),
@@ -1147,7 +1151,31 @@ impl WindowDelegate {
         // Mark window as needing redraw instead of immediately queuing
         // The display link will handle the actual redraw on next VSync
         self.ivars().needs_redraw.set(true);
+        self.ensure_display_link_running();
         tracing::trace!("Window {:?} marked as needing redraw", self.id());
+    }
+
+    fn ensure_display_link_running(&self) {
+        let running = self
+            .ivars()
+            .display_link
+            .borrow()
+            .as_ref()
+            .is_none_or(|link| link.is_running());
+        if running {
+            return;
+        }
+        if !self
+            .window()
+            .occlusionState()
+            .contains(NSWindowOcclusionState::Visible)
+        {
+            return;
+        }
+        self.ivars().idle_vsync_ticks.set(0);
+        if let Err(e) = self.start_display_link() {
+            tracing::warn!("Failed to restart idle display link: {}", e);
+        }
     }
 
     pub fn initialize_display_link(&self) {
@@ -1175,6 +1203,7 @@ impl WindowDelegate {
     #[inline]
     pub(crate) fn mark_input_received(&self) {
         self.ivars().input_rate_tracker.borrow_mut().record_input();
+        self.ensure_display_link_running();
     }
 
     /// `true` while we're still inside a high-rate-input sustain
@@ -2397,14 +2426,11 @@ impl DisplayLinkSupport for WindowDelegate {
                 // Get window delegate from the view (similar to Zed's approach)
                 use super::view::get_window_delegate;
                 if let Some(window_delegate) = get_window_delegate(view) {
-                    // Check if window needs redraw (dirty state) OR if we're within
-                    // the 1-second presentation window after input to prevent display downclocking
                     let needs_redraw = window_delegate.ivars().needs_redraw.get();
-                    let present_after_input =
-                        window_delegate.should_present_after_input();
 
-                    if needs_redraw || present_after_input {
+                    if needs_redraw {
                         // Clear dirty flag and trigger redraw
+                        window_delegate.ivars().idle_vsync_ticks.set(0);
                         window_delegate.ivars().needs_redraw.set(false);
                         window_delegate
                             .ivars()
@@ -2412,15 +2438,25 @@ impl DisplayLinkSupport for WindowDelegate {
                             .handle_redraw(user_data.window_id);
 
                         tracing::trace!(
-                            "VSync redraw triggered {:?} - needs_redraw {:?}",
+                            "VSync redraw triggered {:?}",
                             user_data.window_id,
-                            needs_redraw
                         );
+                    } else if window_delegate.should_present_after_input() {
+                        window_delegate.ivars().idle_vsync_ticks.set(0);
                     } else {
-                        tracing::trace!(
-                            "VSync callback skipped - window {:?} not dirty",
-                            user_data.window_id
-                        );
+                        let ticks = window_delegate.ivars().idle_vsync_ticks.get() + 1;
+                        window_delegate.ivars().idle_vsync_ticks.set(ticks);
+                        if ticks >= IDLE_VSYNC_STOP_TICKS {
+                            window_delegate.ivars().idle_vsync_ticks.set(0);
+                            if let Err(e) = window_delegate.stop_display_link() {
+                                tracing::warn!("Failed to idle-stop display link: {}", e);
+                            } else {
+                                tracing::trace!(
+                                    "Display link idle-stopped for window {:?}",
+                                    user_data.window_id
+                                );
+                            }
+                        }
                     }
                 } else {
                     tracing::warn!(

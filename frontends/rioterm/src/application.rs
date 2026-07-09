@@ -244,6 +244,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
                         {
+                            if route.window.screen.renderer.scrollbar.needs_redraw() {
+                                route.request_redraw();
+                            }
                             return;
                         }
 
@@ -430,6 +433,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     } else {
                         route.clear_errors();
                     }
+
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::Exit | RioEvent::Quit) => {
@@ -585,7 +590,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::PrepareRenderOnRoute(millis, route_id)) => {
-                let timer_id = TimerId::new(Topic::RenderRoute, route_id);
+                let timer_id = TimerId::new(Topic::ScheduledRenderRoute, route_id);
                 let event = EventPayload::new(
                     RioEventType::Rio(RioEvent::RenderRoute(route_id)),
                     window_id,
@@ -1352,7 +1357,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .assistant
                         .hover(mx, my, win_w, scale)
                     {
-                        route.request_redraw();
+                        route.request_overlay_redraw();
                     }
 
                     if route
@@ -1383,7 +1388,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .command_palette
                         .hover(mx, my, win_w, scale)
                     {
-                        route.request_redraw();
+                        route.request_overlay_redraw();
                     }
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
@@ -1824,6 +1829,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     false,
                 );
                 route.window.configure_window(&self.config);
+                route.request_redraw();
             }
 
             WindowEvent::DroppedFile(path) => {
@@ -1841,6 +1847,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
 
                 route.window.screen.resize(new_size);
+                route.request_redraw();
             }
 
             WindowEvent::ScaleFactorChanged {
@@ -1853,6 +1860,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .screen
                     .set_scale(scale, route.window.winit_window.inner_size());
                 route.window.update_vblank_interval();
+                route.request_redraw();
             }
 
             WindowEvent::RedrawRequested => {
