@@ -426,6 +426,7 @@ impl Graphics {
             },
         );
         self.total_bytes += new_bytes;
+        self.kitty_graphics_dirty = true;
 
         // Update image number mapping if provided
         if let Some(number) = image_number {
@@ -451,7 +452,11 @@ impl Graphics {
         &mut self,
         predicate: impl Fn(&u32, &StoredImage) -> bool,
     ) {
+        let before = self.kitty_images.len();
         self.kitty_images.retain(|id, img| !predicate(id, img));
+        if self.kitty_images.len() != before {
+            self.kitty_graphics_dirty = true;
+        }
         // Clean up stale number mappings
         self.kitty_image_numbers
             .retain(|_, id| self.kitty_images.contains_key(id));
@@ -605,6 +610,7 @@ impl Graphics {
                 CandidateSource::ActiveKitty => {
                     self.kitty_images.remove(&evicted_u32);
                     self.kitty_image_numbers.retain(|_, v| *v != evicted_u32);
+                    self.kitty_graphics_dirty = true;
                 }
                 CandidateSource::InactiveKitty => {
                     self.kitty_inactive_screen.kitty_images.remove(&evicted_u32);

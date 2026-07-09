@@ -1793,10 +1793,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.winit_window.set_cursor_visible(true);
                 }
 
-                let has_regained_focus = !route.window.is_focused && focused;
+                let focus_changed = route.window.is_focused != focused;
                 route.window.is_focused = focused;
 
-                if has_regained_focus {
+                if focus_changed {
                     route.request_redraw();
                 }
 

@@ -88,11 +88,7 @@ pub fn release_frame_permit(p: &FramePermits) {
 /// non-block-style cursor at the tail).
 const CURSOR_ROW_SLOTS: usize = 2;
 
-/// Initial square atlas texture side. 2048² @ R8 = 4 MiB, grown to
-/// 4096² / 8192² on demand when the allocator reports full (see
-/// `MetalGlyphAtlas::grow`). `atlas.grow` in
-/// `ghostty/src/font/Atlas.zig`.
-const ATLAS_SIZE: u16 = 2048;
+const ATLAS_SIZE: u16 = 1024;
 
 /// Hard cap on atlas side — Metal textures support 16384² on Apple
 /// Silicon but 8192² is the safe floor across Intel Mac + discrete
@@ -364,8 +360,7 @@ pub struct MetalGridRenderer {
     /// CoreText's color-emoji rasterizer. Same allocator + slot
     /// bookkeeping as the grayscale atlas; the text fragment
     /// shader picks between them via `CellText.atlas`
-    /// (`ATLAS_GRAYSCALE` vs `ATLAS_COLOR`).
-    atlas_color: MetalGlyphAtlas,
+    atlas_color: Option<MetalGlyphAtlas>,
 
     /// Set to `true` on construction + `resize()`. The emission
     /// path checks this to force a full rebuild (every row) on the
@@ -389,7 +384,6 @@ impl MetalGridRenderer {
         let bg_pipeline = build_bg_pipeline(&device);
         let text_pipeline = build_text_pipeline(&device);
         let atlas_grayscale = MetalGlyphAtlas::new_grayscale(&device);
-        let atlas_color = MetalGlyphAtlas::new_color(&device);
 
         let bg_cpu_len = (cols as usize) * (rows as usize);
         let bg_cpu = vec![CellBg::TRANSPARENT; bg_cpu_len];
@@ -411,7 +405,7 @@ impl MetalGridRenderer {
             fg_live_count: [0; FRAMES_IN_FLIGHT],
             fg_dirty: [true; FRAMES_IN_FLIGHT],
             atlas_grayscale,
-            atlas_color,
+            atlas_color: None,
             needs_full_rebuild: true,
         }
     }
@@ -440,35 +434,39 @@ impl MetalGridRenderer {
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
-            return Some(slot);
-        }
-        if self.atlas_grayscale.grow(&self.device, &self.command_queue) {
-            self.atlas_grayscale.insert(key, glyph)
-        } else {
-            None
+        loop {
+            if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
+                return Some(slot);
+            }
+            if !self.atlas_grayscale.grow(&self.device, &self.command_queue) {
+                return None;
+            }
         }
     }
 
     /// Lookup a glyph in the color atlas.
     pub fn lookup_glyph_color(&self, key: GlyphKey) -> Option<AtlasSlot> {
-        self.atlas_color.lookup(key)
+        self.atlas_color
+            .as_ref()
+            .and_then(|atlas| atlas.lookup(key))
     }
 
-    /// Pack + upload a color (RGBA8-premultiplied) rasterized glyph.
-    /// Same grow-on-full behaviour as `insert_glyph`.
     pub fn insert_glyph_color(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        if let Some(slot) = self.atlas_color.insert(key, glyph) {
-            return Some(slot);
+        if self.atlas_color.is_none() {
+            self.atlas_color = Some(MetalGlyphAtlas::new_color(&self.device));
         }
-        if self.atlas_color.grow(&self.device, &self.command_queue) {
-            self.atlas_color.insert(key, glyph)
-        } else {
-            None
+        let atlas = self.atlas_color.as_mut().unwrap();
+        loop {
+            if let Some(slot) = atlas.insert(key, glyph) {
+                return Some(slot);
+            }
+            if !atlas.grow(&self.device, &self.command_queue) {
+                return None;
+            }
         }
     }
 
@@ -697,7 +695,12 @@ impl MetalGridRenderer {
             uniforms_bytes.as_ptr() as *const std::ffi::c_void,
         );
         encoder.set_fragment_texture(0, Some(&self.atlas_grayscale.texture));
-        encoder.set_fragment_texture(1, Some(&self.atlas_color.texture));
+        let color_texture = self
+            .atlas_color
+            .as_ref()
+            .map(|atlas| &atlas.texture)
+            .unwrap_or(&self.atlas_grayscale.texture);
+        encoder.set_fragment_texture(1, Some(color_texture));
 
         encoder.draw_primitives_instanced(
             MTLPrimitiveType::TriangleStrip,
