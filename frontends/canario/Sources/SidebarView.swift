@@ -205,6 +205,20 @@ private struct TerminalRowView: View {
 
                 Spacer(minLength: 0)
 
+                if terminal.panelCount > 1 {
+                    ZStack {
+                        Circle()
+                            .fill(Color.black.opacity(0.12))
+                        Text("\(terminal.panelCount)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(
+                                isSelected
+                                    ? Theme.textSelected
+                                    : Theme.textPrimary.opacity(0.7))
+                    }
+                    .frame(width: 18, height: 18)
+                }
+
                 if isHovered || isSelected {
                     Button {
                         model.closeTerminal(terminal.id)
