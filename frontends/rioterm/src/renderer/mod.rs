@@ -46,6 +46,7 @@ fn window_bg_alpha(config: &Config) -> f32 {
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
+    pub is_window_focused: bool,
     draw_bold_text_with_light_colors: bool,
     use_drawable_chars: bool,
     pub named_colors: Colors,
@@ -136,6 +137,7 @@ impl Renderer {
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_vi_mode_enabled: false,
             config_has_blinking_enabled: config.cursor.blinking,
+            is_window_focused: true,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
             navigation: config.navigation.clone(),
@@ -281,24 +283,6 @@ impl Renderer {
             self.last_active = Some(active_key);
         }
 
-        // Update per-panel scroll state for scrollbar rendering (all panels, not just dirty ones)
-        if self.scrollbar.is_enabled() {
-            self.scrollbar.clear_panel_states();
-            for grid_context in grid.contexts_mut().values() {
-                let panel_rect = grid_context.layout_rect;
-                let ctx = grid_context.context();
-                let terminal = ctx.terminal.lock();
-                self.scrollbar
-                    .push_panel_state(scrollbar::PanelScrollState {
-                        rich_text_id: ctx.rich_text_id,
-                        panel_rect,
-                        display_offset: terminal.display_offset(),
-                        history_size: terminal.history_size(),
-                        screen_lines: terminal.screen_lines(),
-                    });
-            }
-        }
-
         for (_key, grid_context) in grid.contexts_mut().iter_mut() {
             let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
@@ -380,26 +364,29 @@ impl Renderer {
                 context.renderable_content.history_size = terminal.history_size();
                 context.renderable_content.blinking_cursor = terminal.blinking_cursor;
                 context.renderable_content.cursor.state = terminal.cursor();
-                context.renderable_content.kitty_virtual_placements =
-                    terminal.graphics.kitty_virtual_placements.clone();
-                context.renderable_content.kitty_images =
-                    terminal.graphics.kitty_images.clone();
-                context.renderable_content.kitty_placements = {
-                    let mut placements: Vec<_> = terminal
-                        .graphics
-                        .kitty_placements
-                        .values()
-                        .filter(|p| {
-                            terminal.graphics.kitty_images.contains_key(&p.image_id)
-                        })
-                        .cloned()
-                        .collect();
-                    placements.sort_by_key(|p| p.z_index);
-                    placements
-                };
-                context.renderable_content.kitty_graphics_dirty =
-                    terminal.graphics.kitty_graphics_dirty;
-                terminal.graphics.kitty_graphics_dirty = false;
+                if terminal.graphics.kitty_graphics_dirty {
+                    context.renderable_content.kitty_virtual_placements =
+                        terminal.graphics.kitty_virtual_placements.clone();
+                    context.renderable_content.kitty_images =
+                        terminal.graphics.kitty_images.clone();
+                    context.renderable_content.kitty_placements = {
+                        let mut placements: Vec<_> = terminal
+                            .graphics
+                            .kitty_placements
+                            .values()
+                            .filter(|p| {
+                                terminal.graphics.kitty_images.contains_key(&p.image_id)
+                            })
+                            .cloned()
+                            .collect();
+                        placements.sort_by_key(|p| p.z_index);
+                        placements
+                    };
+                    context.renderable_content.kitty_graphics_dirty = true;
+                    terminal.graphics.kitty_graphics_dirty = false;
+                } else {
+                    context.renderable_content.kitty_graphics_dirty = false;
+                }
                 context.renderable_content.frame_damage = damage;
                 drop(terminal);
             }
@@ -477,7 +464,7 @@ impl Renderer {
             if context.renderable_content.blinking_cursor {
                 let has_selection = context.renderable_content.selection_range.is_some();
                 if !has_selection {
-                    let mut should_blink = true;
+                    let mut should_blink = self.is_window_focused;
                     if let Some(last_typing_time) = context.renderable_content.last_typing
                     {
                         if last_typing_time.elapsed() < std::time::Duration::from_secs(1)
@@ -516,6 +503,23 @@ impl Renderer {
                     context.renderable_content.is_blinking_cursor_visible = true;
                     context.renderable_content.last_blink_toggle = None;
                 }
+            }
+        }
+
+        if self.scrollbar.is_enabled() {
+            self.scrollbar.clear_panel_states();
+            for grid_context in grid.contexts_mut().values() {
+                let panel_rect = grid_context.layout_rect;
+                let ctx = grid_context.context();
+                let rc = &ctx.renderable_content;
+                self.scrollbar
+                    .push_panel_state(scrollbar::PanelScrollState {
+                        rich_text_id: ctx.rich_text_id,
+                        panel_rect,
+                        display_offset: rc.display_offset,
+                        history_size: rc.history_size,
+                        screen_lines: rc.screen_lines,
+                    });
             }
         }
 

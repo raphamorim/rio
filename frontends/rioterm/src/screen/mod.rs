@@ -435,7 +435,9 @@ impl Screen<'_> {
 
         // Preserve existing Island (tab state) and update its colors
         let old_island = self.renderer.island.take();
+        let was_focused = self.renderer.is_window_focused;
         self.renderer = Renderer::new(config);
+        self.renderer.is_window_focused = was_focused;
         if let Some(mut island) = old_island {
             island.update_colors(config.colors.tabs, config.colors.tabs_active);
             self.renderer.island = Some(island);
@@ -3313,7 +3315,19 @@ impl Screen<'_> {
 
     #[inline]
     pub fn on_focus_change(&mut self, is_focused: bool) {
+        self.renderer.is_window_focused = is_focused;
+        if is_focused {
+            self.mark_dirty();
+        }
         if !is_focused {
+            let rc = &mut self.context_manager.current_mut().renderable_content;
+            if !rc.is_blinking_cursor_visible {
+                rc.is_blinking_cursor_visible = true;
+            }
+            rc.last_blink_toggle = None;
+            rc.pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::CursorOnly);
+
             if let Some(ref mut island) = self.renderer.island {
                 if island.is_dragging() {
                     island.cancel_drag();
@@ -3594,15 +3608,6 @@ impl Screen<'_> {
 
     pub(crate) fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
         self.update_close_button_hover(self.mouse.x, self.mouse.y);
-
-        let current_route = self.context_manager.current_route();
-        let (grid_cols, grid_rows) = {
-            let terminal = self.context_manager.current().terminal.lock();
-            (terminal.columns() as u32, terminal.screen_lines() as u32)
-        };
-        if grid_cols > 0 && grid_rows > 0 {
-            self.ensure_grid(current_route, grid_cols, grid_rows);
-        }
 
         let is_search_active = self.search_active();
         if is_search_active {
@@ -4295,9 +4300,9 @@ impl Screen<'_> {
         }
 
         // In case the configuration of blinking cursor is enabled
-        // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
-        if self.renderer.config_has_blinking_enabled
+        if self.renderer.is_window_focused
+            && self.renderer.config_has_blinking_enabled
             && self.selection_is_empty()
             && self
                 .context_manager
@@ -4331,9 +4336,7 @@ impl Screen<'_> {
         };
 
         let layout = current_item.val.dimension;
-        let terminal = current_item.val.terminal.lock();
-        let cursor_pos = terminal.grid.cursor.pos;
-        drop(terminal);
+        let cursor_pos = current_item.val.renderable_content.cursor.state.pos;
 
         // Calculate pixel position of cursor — canonical integer
         // stride (line_height already baked into cell_height).

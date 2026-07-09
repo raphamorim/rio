@@ -142,6 +142,7 @@ impl VulkanGlyphAtlas {
             descriptor_pool,
             descriptor_set_layout,
             sampler,
+            true,
         )
     }
 
@@ -158,9 +159,11 @@ impl VulkanGlyphAtlas {
             descriptor_pool,
             descriptor_set_layout,
             sampler,
+            false,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new(
         ctx: &VulkanContext,
         format: vk::Format,
@@ -168,21 +171,26 @@ impl VulkanGlyphAtlas {
         descriptor_pool: vk::DescriptorPool,
         descriptor_set_layout: vk::DescriptorSetLayout,
         sampler: vk::Sampler,
+        eager_first_page: bool,
     ) -> Self {
         let shared = ctx.shared().clone();
         let queue = ctx.queue;
         let queue_family_index = ctx.queue_family_index;
-        let initial_page = make_page(
-            &shared,
-            queue,
-            queue_family_index,
-            format,
-            descriptor_pool,
-            descriptor_set_layout,
-            sampler,
-        );
+        let pages = if eager_first_page {
+            vec![make_page(
+                &shared,
+                queue,
+                queue_family_index,
+                format,
+                descriptor_pool,
+                descriptor_set_layout,
+                sampler,
+            )]
+        } else {
+            Vec::new()
+        };
         Self {
-            pages: vec![initial_page],
+            pages,
             slots: FxHashMap::default(),
             format,
             bytes_per_pixel,
