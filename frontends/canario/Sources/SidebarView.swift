@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SidebarView: View {
     @Environment(AppModel.self) private var model
@@ -8,17 +9,13 @@ struct SidebarView: View {
             Spacer()
                 .frame(height: 52)
 
-            Text("Terminals")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.textMuted)
-                .padding(.horizontal, 6)
-                .padding(.bottom, 6)
-
-            VStack(spacing: 3) {
-                ForEach(model.terminals) { terminal in
-                    TerminalRowView(terminal: terminal)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 3) {
+                    ForEach(model.items) { item in
+                        SidebarItemView(item: item, depth: 0)
+                    }
+                    NewTerminalRowView()
                 }
-                NewTerminalRowView()
             }
 
             Spacer(minLength: 8)
@@ -28,6 +25,133 @@ struct SidebarView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
         .frame(width: 276)
+        .onDrop(
+            of: [.text],
+            delegate: ReorderDropDelegate(
+                onEntered: {
+                    withAnimation(.spring(duration: 0.25)) {
+                        model.moveDraggedToRootEnd()
+                    }
+                },
+                onPerform: { model.draggingTerminalID = nil }))
+    }
+}
+
+private struct SidebarItemView: View {
+    let item: SidebarItem
+    let depth: Int
+
+    var body: some View {
+        switch item {
+        case .terminal(let terminal):
+            TerminalRowView(terminal: terminal)
+                .padding(.leading, CGFloat(depth) * 18)
+        case .folder(let folder):
+            FolderGroupView(folder: folder, depth: depth)
+        }
+    }
+}
+
+private struct FolderGroupView: View {
+    let folder: Folder
+    let depth: Int
+
+    var body: some View {
+        VStack(spacing: 3) {
+            FolderRowView(folder: folder)
+                .padding(.leading, CGFloat(depth) * 18)
+            if folder.isExpanded {
+                ForEach(folder.children) { child in
+                    SidebarItemView(item: child, depth: depth + 1)
+                }
+            }
+        }
+    }
+}
+
+private struct FolderRowView: View {
+    @Environment(AppModel.self) private var model
+    @Bindable var folder: Folder
+
+    @State private var isHovered = false
+    @State private var isRenaming = false
+    @State private var isDropTargeted = false
+    @FocusState private var nameFieldFocused: Bool
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(duration: 0.25)) {
+                folder.isExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: folder.isExpanded ? "folder" : "folder.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary.opacity(0.6))
+
+                if isRenaming {
+                    TextField("", text: $folder.name)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .focused($nameFieldFocused)
+                        .onSubmit { isRenaming = false }
+                        .onExitCommand { isRenaming = false }
+                } else {
+                    Text(folder.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary.opacity(0.8))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary.opacity(0.4))
+                    .rotationEffect(.degrees(folder.isExpanded ? 90 : 0))
+                    .opacity(isHovered ? 1.0 : 0.0)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 40)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(
+                        Color.black.opacity(
+                            isDropTargeted ? 0.14 : (isHovered ? 0.08 : 0.0001)))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Folder \(folder.name)")
+        .onHover { isHovered = $0 }
+        .onDrop(
+            of: [.text],
+            delegate: ReorderDropDelegate(
+                onEntered: {
+                    isDropTargeted = true
+                    withAnimation(.spring(duration: 0.25)) {
+                        model.moveDraggedIntoFolder(folder)
+                    }
+                },
+                onPerform: {
+                    isDropTargeted = false
+                    model.draggingTerminalID = nil
+                },
+                onExited: { isDropTargeted = false }))
+        .contextMenu {
+            Button("New Terminal in \(folder.name)") {
+                model.createTerminal(in: folder)
+            }
+            Button("Rename") {
+                isRenaming = true
+                nameFieldFocused = true
+            }
+            Divider()
+            Button("Delete Folder", role: .destructive) {
+                model.deleteFolder(folder)
+            }
+        }
     }
 }
 
@@ -97,7 +221,46 @@ private struct TerminalRowView: View {
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
+        .onDrag {
+            model.draggingTerminalID = terminal.id
+            return NSItemProvider(object: terminal.id.uuidString as NSString)
+        } preview: {
+            Color.black.opacity(0.001)
+                .frame(width: 1, height: 1)
+        }
+        .onDrop(
+            of: [.text],
+            delegate: ReorderDropDelegate(
+                onEntered: {
+                    withAnimation(.spring(duration: 0.25)) {
+                        model.moveDraggedTerminal(before: terminal.id)
+                    }
+                },
+                onPerform: { model.draggingTerminalID = nil }))
         .onHover { isHovered = $0 }
+    }
+}
+
+private struct ReorderDropDelegate: DropDelegate {
+    let onEntered: () -> Void
+    let onPerform: () -> Void
+    var onExited: () -> Void = {}
+
+    func dropEntered(info: DropInfo) {
+        onEntered()
+    }
+
+    func dropExited(info: DropInfo) {
+        onExited()
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        onPerform()
+        return true
     }
 }
 
@@ -137,28 +300,42 @@ private struct NewTerminalRowView: View {
 private struct BottomBarView: View {
     @Environment(AppModel.self) private var model
 
-    @State private var isPlusHovered = false
-
     var body: some View {
-        HStack {
+        HStack(spacing: 4) {
             Spacer()
 
-            Button {
-                model.createTerminal()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary.opacity(isPlusHovered ? 0.95 : 0.55))
-                    .frame(width: 26, height: 26)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(Color.black.opacity(isPlusHovered ? 0.10 : 0.0001))
-                    )
+            BottomBarButton(systemName: "folder.badge.plus", label: "New Folder") {
+                model.createFolder()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("New Terminal")
-            .onHover { isPlusHovered = $0 }
+
+            BottomBarButton(systemName: "plus", label: "New Terminal") {
+                model.createTerminal()
+            }
         }
         .padding(.horizontal, 6)
+    }
+}
+
+private struct BottomBarButton: View {
+    let systemName: String
+    let label: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary.opacity(isHovered ? 0.95 : 0.55))
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Color.black.opacity(isHovered ? 0.10 : 0.0001))
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .onHover { isHovered = $0 }
     }
 }
