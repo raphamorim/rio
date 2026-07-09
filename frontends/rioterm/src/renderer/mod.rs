@@ -14,7 +14,6 @@ use taffy::NodeId;
 
 use crate::context::renderable::{PendingUpdate, RenderableContent};
 use crate::context::ContextManager;
-use crate::crosswords::pos::Pos;
 use crate::crosswords::style::{Style as CellStyle, StyleFlags};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
@@ -47,6 +46,7 @@ fn window_bg_alpha(config: &Config) -> f32 {
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
+    pub is_window_focused: bool,
     draw_bold_text_with_light_colors: bool,
     use_drawable_chars: bool,
     pub named_colors: Colors,
@@ -119,7 +119,6 @@ impl Renderer {
             Some(island::Island::new(
                 named_colors.tabs,
                 named_colors.tabs_active,
-                named_colors.tab_border,
                 config.navigation.hide_if_single,
             ))
         } else {
@@ -138,6 +137,7 @@ impl Renderer {
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_vi_mode_enabled: false,
             config_has_blinking_enabled: config.cursor.blinking,
+            is_window_focused: true,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
             navigation: config.navigation.clone(),
@@ -283,24 +283,6 @@ impl Renderer {
             self.last_active = Some(active_key);
         }
 
-        // Update per-panel scroll state for scrollbar rendering (all panels, not just dirty ones)
-        if self.scrollbar.is_enabled() {
-            self.scrollbar.clear_panel_states();
-            for grid_context in grid.contexts_mut().values() {
-                let panel_rect = grid_context.layout_rect;
-                let ctx = grid_context.context();
-                let terminal = ctx.terminal.lock();
-                self.scrollbar
-                    .push_panel_state(scrollbar::PanelScrollState {
-                        rich_text_id: ctx.rich_text_id,
-                        panel_rect,
-                        display_offset: terminal.display_offset(),
-                        history_size: terminal.history_size(),
-                        screen_lines: terminal.screen_lines(),
-                    });
-            }
-        }
-
         for (_key, grid_context) in grid.contexts_mut().iter_mut() {
             let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
@@ -382,26 +364,29 @@ impl Renderer {
                 context.renderable_content.history_size = terminal.history_size();
                 context.renderable_content.blinking_cursor = terminal.blinking_cursor;
                 context.renderable_content.cursor.state = terminal.cursor();
-                context.renderable_content.kitty_virtual_placements =
-                    terminal.graphics.kitty_virtual_placements.clone();
-                context.renderable_content.kitty_images =
-                    terminal.graphics.kitty_images.clone();
-                context.renderable_content.kitty_placements = {
-                    let mut placements: Vec<_> = terminal
-                        .graphics
-                        .kitty_placements
-                        .values()
-                        .filter(|p| {
-                            terminal.graphics.kitty_images.contains_key(&p.image_id)
-                        })
-                        .cloned()
-                        .collect();
-                    placements.sort_by_key(|p| p.z_index);
-                    placements
-                };
-                context.renderable_content.kitty_graphics_dirty =
-                    terminal.graphics.kitty_graphics_dirty;
-                terminal.graphics.kitty_graphics_dirty = false;
+                if terminal.graphics.kitty_graphics_dirty {
+                    context.renderable_content.kitty_virtual_placements =
+                        terminal.graphics.kitty_virtual_placements.clone();
+                    context.renderable_content.kitty_images =
+                        terminal.graphics.kitty_images.clone();
+                    context.renderable_content.kitty_placements = {
+                        let mut placements: Vec<_> = terminal
+                            .graphics
+                            .kitty_placements
+                            .values()
+                            .filter(|p| {
+                                terminal.graphics.kitty_images.contains_key(&p.image_id)
+                            })
+                            .cloned()
+                            .collect();
+                        placements.sort_by_key(|p| p.z_index);
+                        placements
+                    };
+                    context.renderable_content.kitty_graphics_dirty = true;
+                    terminal.graphics.kitty_graphics_dirty = false;
+                } else {
+                    context.renderable_content.kitty_graphics_dirty = false;
+                }
                 context.renderable_content.frame_damage = damage;
                 drop(terminal);
             }
@@ -479,7 +464,7 @@ impl Renderer {
             if context.renderable_content.blinking_cursor {
                 let has_selection = context.renderable_content.selection_range.is_some();
                 if !has_selection {
-                    let mut should_blink = true;
+                    let mut should_blink = self.is_window_focused;
                     if let Some(last_typing_time) = context.renderable_content.last_typing
                     {
                         if last_typing_time.elapsed() < std::time::Duration::from_secs(1)
@@ -518,6 +503,23 @@ impl Renderer {
                     context.renderable_content.is_blinking_cursor_visible = true;
                     context.renderable_content.last_blink_toggle = None;
                 }
+            }
+        }
+
+        if self.scrollbar.is_enabled() {
+            self.scrollbar.clear_panel_states();
+            for grid_context in grid.contexts_mut().values() {
+                let panel_rect = grid_context.layout_rect;
+                let ctx = grid_context.context();
+                let rc = &ctx.renderable_content;
+                self.scrollbar
+                    .push_panel_state(scrollbar::PanelScrollState {
+                        rich_text_id: ctx.rich_text_id,
+                        panel_rect,
+                        display_offset: rc.display_offset,
+                        history_size: rc.history_size,
+                        screen_lines: rc.screen_lines,
+                    });
             }
         }
 
@@ -570,12 +572,9 @@ impl Renderer {
         }
 
         if let Some(island) = &mut self.island {
-            // The floating-drag tab needs an opaque fill matching what
-            // the window actually shows: the last effective bg (follows
-            // OSC 11), falling back to the theme bg on the first frame.
             let island_bg = self
                 .last_window_bg
-                .map(|c| [c.r as f32, c.g as f32, c.b as f32, 1.0])
+                .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32])
                 .unwrap_or(self.named_colors.background.0);
             island.render(
                 sugarloaf,
@@ -689,19 +688,6 @@ impl Renderer {
         } else {
             false
         }
-    }
-
-    /// Find hint label at the specified position
-    #[allow(dead_code)]
-    fn find_hint_label_at_position<'a>(
-        &self,
-        renderable_content: &'a RenderableContent,
-        pos: Pos,
-    ) -> Option<&'a crate::context::renderable::HintLabel> {
-        renderable_content
-            .hint_labels
-            .iter()
-            .find(|label| label.position == pos)
     }
 
     /// Scan visible rows for kitty Unicode-placeholder cells (U+10EEEE) and

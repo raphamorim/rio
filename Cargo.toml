@@ -12,13 +12,13 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.4.8"
+version = "0.4.10"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
 keywords = ["graphics", "terminal", "application"]
 # Minimal stable rust version (MSRV)
-rust-version = "1.96.0"
+rust-version = "1.96.1"
 repository = "https://github.com/raphamorim/rio"
 homepage = "https://rioterm.com"
 documentation = "https://github.com/raphamorim/rio#readme"
@@ -28,13 +28,13 @@ readme = "README.md"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-teletypewriter = { path = "teletypewriter", version = "0.4.8" }
-rio-backend = { path = "rio-backend", version = "0.4.8" }
-rio-window = { path = "rio-window", version = "0.4.8", default-features = false }
-rio-notifier = { path = "rio-notifier", version = "0.4.8" }
-rio-grapheme-width = { path = "rio-grapheme-width", version = "0.4.8" }
-sugarloaf = { path = "sugarloaf", version = "0.4.8" }
-corcovado = { path = "corcovado", version = "0.4.8" }
+teletypewriter = { path = "teletypewriter", version = "0.4.10" }
+rio-backend = { path = "rio-backend", version = "0.4.10" }
+rio-window = { path = "rio-window", version = "0.4.10", default-features = false }
+rio-notifier = { path = "rio-notifier", version = "0.4.10" }
+rio-grapheme-width = { path = "rio-grapheme-width", version = "0.4.10" }
+sugarloaf = { path = "sugarloaf", version = "0.4.10" }
+corcovado = { path = "corcovado", version = "0.4.10" }
 
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.5", features = [
@@ -61,7 +61,7 @@ regex = "1.12.3"
 onig = { version = "6.5.1", default-features = false }
 bytemuck = { version = "1.25.0", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
-wgpu = "29.0.3"
+wgpu = "30.0.0"
 libc = "0.2.185"
 smol_str = "0.3.2"
 futures = "0.3.31"
