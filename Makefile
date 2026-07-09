@@ -64,6 +64,24 @@ $(APP_NAME)-%: $(TARGET)-%
 install-terminfo:
 	@tic -xe xterm-rio,rio -o $(APP_EXTRAS_DIR) $(TERMINFO)
 
+CANARIO_DIR = frontends/canario
+CANARIO_APP_DIR = target/canario/Canario.app
+.PHONY: canario canario-run
+canario:
+	@mkdir -p $(CANARIO_APP_DIR)/Contents/MacOS
+	@mkdir -p $(CANARIO_APP_DIR)/Contents/Resources
+	swiftc -O -parse-as-library \
+		-target arm64-apple-macosx14.0 \
+		$(CANARIO_DIR)/Sources/*.swift \
+		-o $(CANARIO_APP_DIR)/Contents/MacOS/canario
+	@cp -fp $(CANARIO_DIR)/Info.plist $(CANARIO_APP_DIR)/Contents/Info.plist
+	@cp -fp $(CANARIO_DIR)/Resources/icon.icns $(CANARIO_APP_DIR)/Contents/Resources/icon.icns
+	@codesign --force --sign - "$(CANARIO_APP_DIR)"
+	@echo "Created '$(CANARIO_APP_DIR)'"
+
+canario-run: canario
+	open -n $(CANARIO_APP_DIR)
+
 release-macos: app-universal
 	@codesign --remove-signature "$(TARGET_DIR_OSX)/$(APP_NAME)"
 	@codesign --force --deep --sign - "$(TARGET_DIR_OSX)/$(APP_NAME)"
