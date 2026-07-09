@@ -34,7 +34,11 @@ struct ContentView: View {
                 .padding(.top, 4)
         }
         .ignoresSafeArea(.container, edges: .top)
-        .background(Theme.chrome.ignoresSafeArea())
+        .background(
+            ChromeBackground()
+                .overlay(GrainOverlay())
+                .ignoresSafeArea()
+        )
     }
 }
 
