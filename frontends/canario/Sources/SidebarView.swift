@@ -90,13 +90,13 @@ private struct FolderRowView: View {
                     .foregroundStyle(Theme.textPrimary.opacity(0.6))
 
                 if isRenaming {
-                    TextField("", text: $folder.name)
+                    TextField("New Folder", text: $folder.name)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                         .focused($nameFieldFocused)
-                        .onSubmit { isRenaming = false }
-                        .onExitCommand { isRenaming = false }
+                        .onSubmit { endRenaming() }
+                        .onExitCommand { endRenaming() }
                 } else {
                     Text(folder.name)
                         .font(.system(size: 13, weight: .semibold))
@@ -124,6 +124,20 @@ private struct FolderRowView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Folder \(folder.name)")
+        .onAppear {
+            if model.pendingRenameFolderID == folder.id {
+                model.pendingRenameFolderID = nil
+                isRenaming = true
+                DispatchQueue.main.async {
+                    nameFieldFocused = true
+                }
+            }
+        }
+        .onChange(of: nameFieldFocused) { _, focused in
+            if !focused && isRenaming {
+                endRenaming()
+            }
+        }
         .onHover { isHovered = $0 }
         .onDrop(
             of: [.text],
@@ -152,6 +166,13 @@ private struct FolderRowView: View {
                 model.deleteFolder(folder)
             }
         }
+    }
+
+    private func endRenaming() {
+        guard isRenaming else { return }
+        model.commitFolderName(folder)
+        isRenaming = false
+        nameFieldFocused = false
     }
 }
 

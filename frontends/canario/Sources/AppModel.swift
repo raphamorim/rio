@@ -43,6 +43,7 @@ final class AppModel {
     var selectedTerminalID: UUID?
     var isSidebarCollapsed = false
     var draggingTerminalID: UUID?
+    var pendingRenameFolderID: UUID?
 
     @ObservationIgnored
     let surfaces = SurfaceRegistry()
@@ -88,9 +89,19 @@ final class AppModel {
     }
 
     func createFolder() {
-        let folder = Folder(name: "Folder \(nextFolderIndex)")
-        nextFolderIndex += 1
+        let folder = Folder(name: "")
         items.append(.folder(folder))
+        pendingRenameFolderID = folder.id
+    }
+
+    func commitFolderName(_ folder: Folder) {
+        let trimmed = folder.name.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            folder.name = "Folder \(nextFolderIndex)"
+            nextFolderIndex += 1
+        } else {
+            folder.name = trimmed
+        }
     }
 
     func closeTerminal(_ id: UUID) {
