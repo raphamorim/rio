@@ -4590,6 +4590,7 @@ dependencies = [
  "librashader-runtime",
  "lru",
  "memmap2",
+ "naga",
  "num-traits",
  "objc-rs 0.2.8",
  "parking_lot",

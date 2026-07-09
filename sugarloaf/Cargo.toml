@@ -125,6 +125,7 @@ rio-window = { workspace = true }
 png = "0.17.16"
 deflate = "1.0.0"
 criterion = { workspace = true }
+naga = { version = "30.0.0", features = ["wgsl-in"] }
 
 [features]
 default = ["scale", "render"]
