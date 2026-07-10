@@ -427,7 +427,11 @@ impl Scrollbar {
             .map(|(_, t)| *t)
     }
 
-    /// Returns true if any scrollbar is still animating (visible or fading).
+    /// Returns true if a scrollbar needs per-frame redraws right now:
+    /// while dragging or while a fade-out is in progress. Returns false
+    /// during the fully-visible delay before the fade starts — callers
+    /// must pair this with `next_wake_in()` to schedule the redraw that
+    /// kicks off the fade.
     pub fn needs_redraw(&mut self) -> bool {
         if !self.enabled {
             return false;
@@ -435,11 +439,31 @@ impl Scrollbar {
         if self.drag_state.is_some() {
             return true;
         }
-        // Prune fully faded entries and check if any are still active
         let deadline = FADE_OUT_DELAY_MS + FADE_OUT_DURATION_MS;
         self.last_scroll_times
             .retain(|(_, t)| t.elapsed().as_millis() < deadline);
-        !self.last_scroll_times.is_empty()
+        self.last_scroll_times
+            .iter()
+            .any(|(_, t)| t.elapsed().as_millis() >= FADE_OUT_DELAY_MS)
+    }
+
+    pub fn next_wake_in(&self) -> Option<std::time::Duration> {
+        if !self.enabled || self.drag_state.is_some() {
+            return None;
+        }
+        self.last_scroll_times
+            .iter()
+            .filter_map(|(_, t)| {
+                let elapsed = t.elapsed().as_millis();
+                if elapsed < FADE_OUT_DELAY_MS {
+                    Some(std::time::Duration::from_millis(
+                        (FADE_OUT_DELAY_MS - elapsed) as u64,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .min()
     }
 }
 

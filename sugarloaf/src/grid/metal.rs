@@ -88,11 +88,7 @@ pub fn release_frame_permit(p: &FramePermits) {
 /// non-block-style cursor at the tail).
 const CURSOR_ROW_SLOTS: usize = 2;
 
-/// Initial square atlas texture side. 2048² @ R8 = 4 MiB, grown to
-/// 4096² / 8192² on demand when the allocator reports full (see
-/// `MetalGlyphAtlas::grow`). `atlas.grow` in
-/// `ghostty/src/font/Atlas.zig`.
-const ATLAS_SIZE: u16 = 2048;
+const ATLAS_SIZE: u16 = 1024;
 
 /// Hard cap on atlas side — Metal textures support 16384² on Apple
 /// Silicon but 8192² is the safe floor across Intel Mac + discrete
@@ -364,8 +360,7 @@ pub struct MetalGridRenderer {
     /// CoreText's color-emoji rasterizer. Same allocator + slot
     /// bookkeeping as the grayscale atlas; the text fragment
     /// shader picks between them via `CellText.atlas`
-    /// (`ATLAS_GRAYSCALE` vs `ATLAS_COLOR`).
-    atlas_color: MetalGlyphAtlas,
+    atlas_color: Option<MetalGlyphAtlas>,
 
     /// Set to `true` on construction + `resize()`. The emission
     /// path checks this to force a full rebuild (every row) on the
@@ -374,7 +369,13 @@ pub struct MetalGridRenderer {
     /// `ghostty/src/renderer/generic.zig:2353`. Cleared via
     /// `mark_full_rebuild_done` after the emission loop runs.
     needs_full_rebuild: bool,
+
+    cursor_buffers: [Buffer; FRAMES_IN_FLIGHT],
+    cursor_dirty: [bool; FRAMES_IN_FLIGHT],
+    cursor_live: [(u32, u32); FRAMES_IN_FLIGHT],
 }
+
+const CURSOR_SLOT_CAPACITY: usize = 2;
 
 impl MetalGridRenderer {
     pub fn new(ctx: &MetalContext, cols: u32, rows: u32) -> Self {
@@ -389,7 +390,8 @@ impl MetalGridRenderer {
         let bg_pipeline = build_bg_pipeline(&device);
         let text_pipeline = build_text_pipeline(&device);
         let atlas_grayscale = MetalGlyphAtlas::new_grayscale(&device);
-        let atlas_color = MetalGlyphAtlas::new_color(&device);
+        let cursor_buffers =
+            std::array::from_fn(|_| alloc_fg_buffer(&device, CURSOR_SLOT_CAPACITY * 2));
 
         let bg_cpu_len = (cols as usize) * (rows as usize);
         let bg_cpu = vec![CellBg::TRANSPARENT; bg_cpu_len];
@@ -411,8 +413,11 @@ impl MetalGridRenderer {
             fg_live_count: [0; FRAMES_IN_FLIGHT],
             fg_dirty: [true; FRAMES_IN_FLIGHT],
             atlas_grayscale,
-            atlas_color,
+            atlas_color: None,
             needs_full_rebuild: true,
+            cursor_buffers,
+            cursor_dirty: [true; FRAMES_IN_FLIGHT],
+            cursor_live: [(0, 0); FRAMES_IN_FLIGHT],
         }
     }
 
@@ -440,35 +445,39 @@ impl MetalGridRenderer {
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
-            return Some(slot);
-        }
-        if self.atlas_grayscale.grow(&self.device, &self.command_queue) {
-            self.atlas_grayscale.insert(key, glyph)
-        } else {
-            None
+        loop {
+            if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
+                return Some(slot);
+            }
+            if !self.atlas_grayscale.grow(&self.device, &self.command_queue) {
+                return None;
+            }
         }
     }
 
     /// Lookup a glyph in the color atlas.
     pub fn lookup_glyph_color(&self, key: GlyphKey) -> Option<AtlasSlot> {
-        self.atlas_color.lookup(key)
+        self.atlas_color
+            .as_ref()
+            .and_then(|atlas| atlas.lookup(key))
     }
 
-    /// Pack + upload a color (RGBA8-premultiplied) rasterized glyph.
-    /// Same grow-on-full behaviour as `insert_glyph`.
     pub fn insert_glyph_color(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        if let Some(slot) = self.atlas_color.insert(key, glyph) {
-            return Some(slot);
+        if self.atlas_color.is_none() {
+            self.atlas_color = Some(MetalGlyphAtlas::new_color(&self.device));
         }
-        if self.atlas_color.grow(&self.device, &self.command_queue) {
-            self.atlas_color.insert(key, glyph)
-        } else {
-            None
+        let atlas = self.atlas_color.as_mut().unwrap();
+        loop {
+            if let Some(slot) = atlas.insert(key, glyph) {
+                return Some(slot);
+            }
+            if !atlas.grow(&self.device, &self.command_queue) {
+                return None;
+            }
         }
     }
 
@@ -486,6 +495,8 @@ impl MetalGridRenderer {
         self.fg_buffers =
             std::array::from_fn(|_| alloc_fg_buffer(&self.device, initial_fg_capacity));
         self.fg_capacity = [initial_fg_capacity; FRAMES_IN_FLIGHT];
+        self.cursor_dirty = [true; FRAMES_IN_FLIGHT];
+        self.cursor_live = [(0, 0); FRAMES_IN_FLIGHT];
         // Fresh buffers = zero contents; emission path must rewrite
         // every row on the next frame even if no damage came in. All
         // 3 in-flight slots are now stale so each one needs a flush
@@ -542,61 +553,27 @@ impl MetalGridRenderer {
         }
     }
 
-    /// Replace the block cursor sprite slot. Drawn FIRST in the text
-    /// pass (slot 0) — sits BEHIND row glyphs so text inversion can
-    /// composite on top of the block. "block" cursor
-    /// slot at `fg_rows[0]`.
-    pub fn set_block_cursor(&mut self, cells: &[CellText]) {
-        if let Some(slot) = self.fg_rows.first_mut() {
-            if slot.is_empty() && cells.is_empty() {
-                return;
-            }
-            slot.clear();
-            slot.extend_from_slice(cells);
-            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
-        }
-    }
-
-    /// Replace the non-block cursor sprite slot. Drawn LAST in the
-    /// text pass — sits on top of all row glyphs. Used for hollow /
-    /// bar / underline cursor sprites that should overlay text. Pass
-    /// `&[]` to clear. "non-block" cursor slot at
-    /// `fg_rows[rows + 1]`.
-    pub fn set_non_block_cursor(&mut self, cells: &[CellText]) {
-        let idx = self.fg_rows.len().saturating_sub(1);
-        if let Some(slot) = self.fg_rows.get_mut(idx) {
-            if slot.is_empty() && cells.is_empty() {
-                return;
-            }
-            slot.clear();
-            slot.extend_from_slice(cells);
-            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
-        }
-    }
-
-    /// Empty both cursor slots (block + non-block). Call once per
-    /// frame before deciding whether to emit a cursor sprite for
-    /// this panel — without this, the previous frame's sprite stays
-    /// resident in fg_rows.
-    pub fn clear_cursor(&mut self) {
+    pub fn set_cursor(&mut self, block: &[CellText], non_block: &[CellText]) {
         let mut changed = false;
         if let Some(slot) = self.fg_rows.first_mut() {
-            if !slot.is_empty() {
+            if slot.as_slice() != block {
                 slot.clear();
+                slot.extend_from_slice(block);
                 changed = true;
             }
         }
         let last = self.fg_rows.len().saturating_sub(1);
         if last > 0 {
             if let Some(slot) = self.fg_rows.get_mut(last) {
-                if !slot.is_empty() {
+                if slot.as_slice() != non_block {
                     slot.clear();
+                    slot.extend_from_slice(non_block);
                     changed = true;
                 }
             }
         }
         if changed {
-            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
+            self.cursor_dirty = [true; FRAMES_IN_FLIGHT];
         }
     }
 
@@ -657,11 +634,9 @@ impl MetalGridRenderer {
         uniforms: &GridUniforms,
     ) {
         if self.fg_dirty[frame] {
-            // Flatten per-row fg_rows into the staging vec. Order matters
-            // for z: slot 0 (block cursor) first, content rows next,
-            // non-block-cursor slot last — same approach's ordering.
             self.fg_staging.clear();
-            for row in &self.fg_rows {
+            let content_end = self.fg_rows.len().saturating_sub(1);
+            for row in &self.fg_rows[1..content_end] {
                 self.fg_staging.extend_from_slice(row);
             }
 
@@ -683,28 +658,84 @@ impl MetalGridRenderer {
             self.fg_dirty[frame] = false;
         }
 
+        if self.cursor_dirty[frame] {
+            let block = self
+                .fg_rows
+                .first()
+                .map(|v| &v[..v.len().min(CURSOR_SLOT_CAPACITY)])
+                .unwrap_or(&[]);
+            let last = self.fg_rows.len().saturating_sub(1);
+            let tail = if last > 0 {
+                let v = &self.fg_rows[last];
+                &v[..v.len().min(CURSOR_SLOT_CAPACITY)]
+            } else {
+                &[]
+            };
+            unsafe {
+                let dst = self.cursor_buffers[frame].contents() as *mut CellText;
+                std::ptr::copy_nonoverlapping(block.as_ptr(), dst, block.len());
+                std::ptr::copy_nonoverlapping(
+                    tail.as_ptr(),
+                    dst.add(CURSOR_SLOT_CAPACITY),
+                    tail.len(),
+                );
+            }
+            self.cursor_live[frame] = (block.len() as u32, tail.len() as u32);
+            self.cursor_dirty[frame] = false;
+        }
+
         let instance_count = self.fg_live_count[frame] as usize;
-        if instance_count == 0 {
+        let (block_count, tail_count) = self.cursor_live[frame];
+        if instance_count == 0 && block_count == 0 && tail_count == 0 {
             return;
         }
 
         let uniforms_bytes = bytemuck::bytes_of(uniforms);
         encoder.set_render_pipeline_state(&self.text_pipeline);
-        encoder.set_vertex_buffer(0, Some(&self.fg_buffers[frame]), 0);
         encoder.set_vertex_bytes(
             1,
             uniforms_bytes.len() as u64,
             uniforms_bytes.as_ptr() as *const std::ffi::c_void,
         );
         encoder.set_fragment_texture(0, Some(&self.atlas_grayscale.texture));
-        encoder.set_fragment_texture(1, Some(&self.atlas_color.texture));
+        let color_texture = self
+            .atlas_color
+            .as_ref()
+            .map(|atlas| &atlas.texture)
+            .unwrap_or(&self.atlas_grayscale.texture);
+        encoder.set_fragment_texture(1, Some(color_texture));
 
-        encoder.draw_primitives_instanced(
-            MTLPrimitiveType::TriangleStrip,
-            0,
-            4,
-            instance_count as u64,
-        );
+        if block_count > 0 {
+            encoder.set_vertex_buffer(0, Some(&self.cursor_buffers[frame]), 0);
+            encoder.draw_primitives_instanced(
+                MTLPrimitiveType::TriangleStrip,
+                0,
+                4,
+                block_count as u64,
+            );
+        }
+        if instance_count > 0 {
+            encoder.set_vertex_buffer(0, Some(&self.fg_buffers[frame]), 0);
+            encoder.draw_primitives_instanced(
+                MTLPrimitiveType::TriangleStrip,
+                0,
+                4,
+                instance_count as u64,
+            );
+        }
+        if tail_count > 0 {
+            encoder.set_vertex_buffer(
+                0,
+                Some(&self.cursor_buffers[frame]),
+                (CURSOR_SLOT_CAPACITY * std::mem::size_of::<CellText>()) as u64,
+            );
+            encoder.draw_primitives_instanced(
+                MTLPrimitiveType::TriangleStrip,
+                0,
+                4,
+                tail_count as u64,
+            );
+        }
     }
 }
 

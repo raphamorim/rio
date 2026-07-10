@@ -4549,6 +4549,7 @@ impl<U: EventListener> Crosswords<U> {
         self.graphics
             .kitty_virtual_placements
             .insert((placement.image_id, placement.placement_id), vp);
+        self.graphics.kitty_graphics_dirty = true;
     }
 }
 
