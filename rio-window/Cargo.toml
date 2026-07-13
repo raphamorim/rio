@@ -26,7 +26,7 @@ wayland = [
     "memmap2",
 ]
 wayland-dlopen = ["wayland-backend/dlopen"]
-wayland-csd-adwaita = ["sctk-adwaita", "sctk-adwaita/ab_glyph"]
+wayland-csd-adwaita = ["sctk-adwaita", "sctk-adwaita/cosmic-text"]
 # wayland-csd-adwaita-crossfont = ["sctk-adwaita", "sctk-adwaita/crossfont"]
 wayland-csd-adwaita-notitle = ["sctk-adwaita"]
 
@@ -156,7 +156,7 @@ winres = "0.1.12"
 [target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "macos"))))'.dependencies]
 ahash = { version = "0.8.7", features = ["no-rng"], optional = true }
 bytemuck = { version = "1.13.1", default-features = false, optional = true }
-calloop = "0.13.0"
+calloop = "0.14.0"
 zbus = { workspace = true, features = ["blocking"] }
 libc = { workspace = true }
 memmap2 = { workspace = true, optional = true }
@@ -167,10 +167,10 @@ rustix = { version = "0.38.4", default-features = false, features = [
     "thread",
     "process",
 ] }
-sctk = { package = "smithay-client-toolkit", version = "0.19.2", default-features = false, features = [
+sctk = { package = "smithay-client-toolkit", version = "0.20.0", default-features = false, features = [
     "calloop",
 ], optional = true }
-sctk-adwaita = { version = "0.10.1", default-features = false, optional = true }
+sctk-adwaita = { version = "0.11.0", default-features = false, optional = true }
 wayland-backend = { version = "0.3.10", default-features = false, features = [
     "client_system",
 ], optional = true }
