@@ -165,11 +165,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             return;
         }
 
+        #[cfg(all(
+            any(feature = "x11", feature = "wayland"),
+            unix,
+            not(any(target_os = "redox", target_family = "wasm", target_os = "macos"))
+        ))]
+        if cause == StartCause::Init
+            && self.config.adaptive_colors.is_some()
+            && self.config.force_theme.is_none()
+        {
+            use rio_window::platform::linux::ActiveEventLoopExtLinux;
+            event_loop.start_system_theme_monitor();
+        }
+
         let theme = self
             .config
             .force_theme
             .map(|t| t.to_window_theme())
-            .or(event_loop.system_theme());
+            .or_else(|| event_loop.system_theme());
         update_colors_based_on_theme(&mut self.config, theme);
 
         self.router.create_window(
@@ -231,6 +244,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
                         {
+                            if route.window.screen.renderer.scrollbar.needs_redraw() {
+                                route.request_redraw();
+                            }
                             return;
                         }
 
@@ -383,7 +399,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 for (_id, route) in self.router.routes.iter_mut() {
                     // Apply system theme to ensure colors are consistent
                     if !has_checked_adaptive_colors {
-                        let system_theme = route.window.winit_window.theme();
+                        let system_theme = event_loop.system_theme();
                         let theme = self
                             .config
                             .force_theme
@@ -417,13 +433,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     } else {
                         route.clear_errors();
                     }
+
+                    route.request_redraw();
                 }
             }
-            RioEventType::Rio(RioEvent::Exit) => {
+            RioEventType::Rio(RioEvent::Exit | RioEvent::Quit) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if self.config.confirm_before_quit {
                         route.confirm_quit();
-                        route.request_redraw();
                     } else {
                         route.quit();
                     }
@@ -573,7 +590,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::PrepareRenderOnRoute(millis, route_id)) => {
-                let timer_id = TimerId::new(Topic::RenderRoute, route_id);
+                let timer_id = TimerId::new(Topic::ScheduledRenderRoute, route_id);
                 let event = EventPayload::new(
                     RioEventType::Rio(RioEvent::RenderRoute(route_id)),
                     window_id,
@@ -973,7 +990,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if self.config.confirm_before_quit {
                     route.confirm_quit();
-                    route.request_redraw();
                     return;
                 } else {
                     self.router.routes.remove(&window_id);
@@ -989,7 +1005,34 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
-                if route.path != RoutePath::Terminal {
+                if route.path != RoutePath::Terminal
+                    || route.window.screen.renderer.confirm_quit.is_active()
+                {
+                    #[cfg(target_os = "macos")]
+                    if state == ElementState::Pressed
+                        && button == MouseButton::Left
+                        && route.window.screen.allow_manual_dragging
+                    {
+                        use crate::renderer::island::ISLAND_HEIGHT;
+                        let scale = route.window.screen.sugarloaf.scale_factor();
+                        if route.window.screen.mouse.y <= (ISLAND_HEIGHT * scale) as f64 {
+                            let _ = route.window.winit_window.drag_window();
+                        }
+                    }
+                    if state == ElementState::Pressed {
+                        let _ = route.window.screen.take_chrome_press();
+                    } else if state == ElementState::Released
+                        && button == MouseButton::Left
+                    {
+                        route.window.screen.mouse.left_button_state =
+                            ElementState::Released;
+                        if let Some(ref mut island) = route.window.screen.renderer.island
+                        {
+                            island.cancel_drag();
+                        }
+                        route.window.screen.renderer.scrollbar.end_drag();
+                        route.window.screen.resize_state = None;
+                    }
                     return;
                 }
 
@@ -1019,7 +1062,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             now - route.window.screen.mouse.last_click_timestamp;
                         route.window.screen.mouse.last_click_timestamp = now;
 
-                        let threshold = Duration::from_millis(300);
+                        let threshold = crate::constants::MULTI_CLICK_THRESHOLD;
                         let mouse = &route.window.screen.mouse;
                         route.window.screen.mouse.click_state = match mouse.click_state {
                             // Reset click state if button has changed.
@@ -1035,6 +1078,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             }
                             _ => ClickState::Click,
                         };
+
+                        let chrome_press = route.window.screen.take_chrome_press();
 
                         if let MouseButton::Left = button {
                             // Check if clicking on a panel border to start resize
@@ -1095,12 +1140,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                     &route.window.winit_window,
                                     &mut self.router.clipboard,
                                     false,
+                                    chrome_press,
                                 );
 
                             if handled_by_island {
-                                // Island handled the click, don't process further
                                 route.request_redraw();
                                 return;
+                            }
+
+                            #[cfg(target_os = "macos")]
+                            if route.window.screen.allow_manual_dragging {
+                                use crate::renderer::island::ISLAND_HEIGHT;
+                                let scale = route.window.screen.sugarloaf.scale_factor();
+                                if route.window.screen.mouse.y
+                                    <= (ISLAND_HEIGHT * scale) as f64
+                                {
+                                    route
+                                        .window
+                                        .screen
+                                        .start_window_drag(&route.window.winit_window);
+                                }
                             }
 
                             if route.window.screen.handle_scrollbar_click() {
@@ -1113,6 +1172,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                     &route.window.winit_window,
                                     &mut self.router.clipboard,
                                     true,
+                                    chrome_press,
                                 );
 
                             if handled_by_island {
@@ -1185,6 +1245,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             self.scheduler.unschedule(timer_id);
                         }
 
+                        if button == MouseButton::Left
+                            && route
+                                .window
+                                .screen
+                                .renderer
+                                .island
+                                .as_ref()
+                                .is_some_and(|i| i.is_dragging())
+                        {
+                            let started = route.window.screen.handle_tab_drag_release();
+                            if started {
+                                route.request_redraw();
+                                return;
+                            }
+                        }
+
                         if route.window.screen.renderer.scrollbar.is_dragging() {
                             route.window.screen.handle_scrollbar_release();
                             route.request_redraw();
@@ -1238,30 +1314,35 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
 
+            WindowEvent::CursorLeft { .. } => {
+                if route.window.screen.clear_close_button_hover() {
+                    route.request_redraw();
+                }
+            }
+
             WindowEvent::CursorMoved { position, .. } => {
                 if self.config.hide_cursor_when_typing {
                     route.window.winit_window.set_cursor_visible(true);
                 }
-
-                if route.path != RoutePath::Terminal {
-                    route.window.winit_window.set_cursor(CursorIcon::Default);
-                    return;
-                }
-
-                let x = position.x;
-                let y = position.y;
 
                 let layout = route.window.screen.sugarloaf.window_size();
 
                 // Keep f64 precision all the way to the cell-grid
                 // divide. The old `as usize` cast here dropped
                 // subpixel info from HiDPI events.
-                let x = x.clamp(0.0, (layout.width as i32 - 1) as f64);
-                let y = y.clamp(0.0, (layout.height as i32 - 1) as f64);
+                let x = position.x.clamp(0.0, (layout.width as i32 - 1) as f64);
+                let y = position.y.clamp(0.0, (layout.height as i32 - 1) as f64);
 
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
                 route.window.screen.mouse.raw_y = position.y;
+
+                if route.path != RoutePath::Terminal
+                    || route.window.screen.renderer.confirm_quit.is_active()
+                {
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    return;
+                }
 
                 // Handle assistant overlay hover
                 if route.window.screen.renderer.assistant.is_active() {
@@ -1276,7 +1357,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .assistant
                         .hover(mx, my, win_w, scale)
                     {
-                        route.request_redraw();
+                        route.request_overlay_redraw();
                     }
 
                     if route
@@ -1307,7 +1388,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .command_palette
                         .hover(mx, my, win_w, scale)
                     {
-                        route.request_redraw();
+                        route.request_overlay_redraw();
                     }
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
@@ -1343,6 +1424,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .set_dirty();
                         route.request_redraw();
                     }
+                }
+
+                if route.window.screen.mouse.left_button_state == ElementState::Pressed
+                    && route
+                        .window
+                        .screen
+                        .renderer
+                        .island
+                        .as_ref()
+                        .is_some_and(|i| i.is_dragging())
+                {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    route.window.screen.handle_tab_drag_move(x as f32 / scale);
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    route.request_redraw();
+                    return;
+                }
+
+                if route.window.screen.update_close_button_hover(x, y) {
+                    route.request_redraw();
                 }
 
                 // Only force the default cursor while the island is
@@ -1550,7 +1651,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::MouseWheel { delta, phase, .. } => {
-                if route.path != RoutePath::Terminal {
+                if route.path != RoutePath::Terminal
+                    || route.window.screen.renderer.confirm_quit.is_active()
+                {
                     return;
                 }
 
@@ -1695,10 +1798,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.winit_window.set_cursor_visible(true);
                 }
 
-                let has_regained_focus = !route.window.is_focused && focused;
+                let focus_changed = route.window.is_focused != focused;
                 route.window.is_focused = focused;
 
-                if has_regained_focus {
+                if focus_changed {
                     route.request_redraw();
                 }
 
@@ -1726,6 +1829,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     false,
                 );
                 route.window.configure_window(&self.config);
+                route.request_redraw();
             }
 
             WindowEvent::DroppedFile(path) => {
@@ -1743,6 +1847,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
 
                 route.window.screen.resize(new_size);
+                route.request_redraw();
             }
 
             WindowEvent::ScaleFactorChanged {
@@ -1755,6 +1860,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .screen
                     .set_scale(scale, route.window.winit_window.inner_size());
                 route.window.update_vblank_interval();
+                route.request_redraw();
             }
 
             WindowEvent::RedrawRequested => {
@@ -1764,18 +1870,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     RoutePath::Welcome => {
                         route.window.screen.render_welcome();
                     }
-                    RoutePath::Terminal | RoutePath::ConfirmQuit => {
-                        if route.path == RoutePath::ConfirmQuit {
-                            let dim = route.window.screen.ctx().current().dimension;
-                            crate::router::routes::dialog::screen(
-                                &mut route.window.screen.sugarloaf,
-                                &dim,
-                                "want to quit?",
-                                "yes (y)",
-                                "no (n)",
-                            );
-                        }
-
+                    RoutePath::Terminal => {
                         if let Some(window_update) = route.window.screen.render() {
                             use crate::context::renderable::{
                                 BackgroundState, WindowUpdate,
@@ -1836,16 +1931,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.request_redraw();
                     event_loop.set_control_flow(ControlFlow::Poll);
                 } else {
-                    if route.path == RoutePath::Welcome
-                        || route.path == RoutePath::ConfirmQuit
-                        || route
-                            .window
-                            .screen
-                            .ctx()
-                            .current()
-                            .renderable_content
-                            .pending_update
-                            .is_dirty()
+                    if route
+                        .window
+                        .screen
+                        .ctx()
+                        .current()
+                        .renderable_content
+                        .pending_update
+                        .is_dirty()
                     {
                         route.request_redraw();
                     }

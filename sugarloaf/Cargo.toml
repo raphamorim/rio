@@ -68,24 +68,24 @@ tiny-skia = "0.12.0"
 wide = "1.2.0"
 
 # librashader is wgpu-only — gate the entire filter chain together.
-librashader = { version = "0.10.0", default-features = false, features = ["runtime-wgpu", "stable", "presets"], optional = true }
-librashader-common = { version = "0.10", optional = true }
-librashader-presets = { version = "0.10", optional = true }
-librashader-preprocess = { version = "0.10", optional = true }
-librashader-pack = { version = "0.10", optional = true }
-librashader-reflect = { version = "0.10", features = ["stable", "wgsl"], default-features = false, optional = true }
-librashader-runtime = { version = "0.10", optional = true }
-librashader-cache = { version = "0.10", optional = true }
+librashader = { version = "0.12.0", default-features = false, features = ["runtime-wgpu", "stable", "presets"], optional = true }
+librashader-common = { version = "0.12", optional = true }
+librashader-presets = { version = "0.12", optional = true }
+librashader-preprocess = { version = "0.12", optional = true }
+librashader-pack = { version = "0.12", optional = true }
+librashader-reflect = { version = "0.12", features = ["stable", "wgsl"], default-features = false, optional = true }
+librashader-runtime = { version = "0.12", optional = true }
+librashader-cache = { version = "0.12", optional = true }
 thiserror = "2.0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-metal = "0.32.0"
+metal = { package = "baremetal", version = "0.33.0" }
 objc-rs = "0.2.8"
 core-graphics-types = "0.2.0"
 core-graphics = "0.24.0"
 core-text = "21.0.0"
 core-foundation = "0.10.1"
-block = "0.1.6"
+block = { package = "block-rs", version = "0.2.0" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.10.0"
@@ -125,6 +125,7 @@ rio-window = { workspace = true }
 png = "0.17.16"
 deflate = "1.0.0"
 criterion = { workspace = true }
+naga = { version = "30.0.0", features = ["wgsl-in"] }
 
 [features]
 default = ["scale", "render"]

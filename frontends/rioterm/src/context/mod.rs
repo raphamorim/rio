@@ -3,7 +3,7 @@ pub mod title;
 
 use crate::ansi::CursorShape;
 use crate::context::title::{
-    create_title_extra_from_context, update_title, ContextManagerTitles,
+    create_title_extra_from_context, update_title, ContextTitle,
 };
 use crate::event::sync::FairMutex;
 use crate::event::{Msg, RioEvent};
@@ -57,6 +57,7 @@ pub struct Context<T: EventListener> {
     pub shell_pid: u32,
     pub rich_text_id: usize,
     pub dimension: ContextDimension,
+    pub title: ContextTitle,
     pub ime: Ime,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
@@ -146,7 +147,7 @@ pub struct ContextManager<T: EventListener> {
     event_proxy: T,
     window_id: WindowId,
     pub config: ContextManagerConfig,
-    pub titles: ContextManagerTitles,
+    last_title_update: Option<Instant>,
 }
 
 pub fn create_dead_context<T: rio_backend::event::EventListener>(
@@ -179,6 +180,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         terminal,
         rich_text_id,
         dimension,
+        title: ContextTitle::default(),
         ime: Ime::new(),
         _io_thread: None,
     }
@@ -231,6 +233,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let route_id = ROUTE_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
         let cols: u16 = dimension.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
         let rows: u16 = dimension.lines.try_into().unwrap_or(MIN_LINES as u16);
+        #[cfg(not(target_os = "windows"))]
+        let initial_winsize = crate::renderer::utils::terminal_dimensions(&dimension);
 
         let mut terminal = Crosswords::new(
             dimension,
@@ -252,6 +256,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     &Cow::Borrowed(&config.shell.program),
                     cols,
                     rows,
+                    initial_winsize.width,
+                    initial_winsize.height,
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
@@ -267,6 +273,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     &config.working_dir,
                     cols,
                     rows,
+                    initial_winsize.width,
+                    initial_winsize.height,
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
@@ -326,6 +334,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             rich_text_id,
             renderable_content: RenderableContent::new(cursor_state.0.clone()),
             dimension,
+            title: ContextTitle::default(),
             ime: Ime::new(),
             _io_thread: io_thread,
         })
@@ -376,8 +385,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         };
 
-        let titles = ContextManagerTitles::new(0, String::from("tab"), None);
-
         // Sugarloaf has found errors and context need to notify it for the user
         if let Some(errors) = sugarloaf_errors {
             if !errors.fonts_not_found.is_empty() {
@@ -407,7 +414,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config: ctx_config,
-            titles,
+            last_title_update: None,
         })
     }
 
@@ -440,8 +447,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &config,
         )?;
 
-        let titles = ContextManagerTitles::new(0, String::new(), None);
-
         Ok(ContextManager {
             current_index: 0,
             current_route: 0,
@@ -456,7 +461,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config,
-            titles,
+            last_title_update: None,
         })
     }
 
@@ -504,7 +509,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 }
                 self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
                 self.contexts.remove(index_to_remove);
-                self.titles.titles.remove(&index_to_remove);
 
                 if should_set_current {
                     self.set_current(0);
@@ -536,6 +540,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn schedule_render_on_route(&mut self, millis: u64) {
+        self.event_proxy.send_event(
+            RioEvent::PrepareRenderOnRoute(millis, self.current_route),
+            self.window_id,
+        );
+    }
+
+    #[inline]
     pub fn report_error_fonts_not_found(&mut self, fonts_not_found: Vec<SugarloafFont>) {
         if !fonts_not_found.is_empty() {
             self.event_proxy.send_event(
@@ -559,7 +571,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn close_unfocused_tabs(&mut self) {
         let current_route_id = self.current().route_id;
-        self.titles.titles.retain(|&i, _| i == self.current_index);
         self.contexts
             .retain(|ctx| ctx.current().route_id == current_route_id);
         self.current_route = self.contexts[0].current().route_id;
@@ -708,6 +719,37 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn title(&self, index: usize) -> Option<&ContextTitle> {
+        self.contexts.get(index).map(|grid| &grid.current().title)
+    }
+
+    #[inline]
+    pub fn custom_title(&self, index: usize) -> Option<&str> {
+        self.contexts
+            .get(index)
+            .and_then(|grid| grid.custom_title.as_deref())
+    }
+
+    #[inline]
+    pub fn set_custom_title(&mut self, index: usize, title: Option<String>) {
+        if let Some(grid) = self.contexts.get_mut(index) {
+            grid.custom_title = title;
+        }
+    }
+
+    #[inline]
+    pub fn custom_color(&self, index: usize) -> Option<[f32; 4]> {
+        self.contexts.get(index).and_then(|grid| grid.custom_color)
+    }
+
+    #[inline]
+    pub fn set_custom_color(&mut self, index: usize, color: Option<[f32; 4]>) {
+        if let Some(grid) = self.contexts.get_mut(index) {
+            grid.custom_color = color;
+        }
+    }
+
+    #[inline]
     pub fn resize_all_grids(
         &mut self,
         width: f32,
@@ -722,33 +764,25 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn update_titles(&mut self) {
         let interval_time = Duration::from_secs(2);
         if self
-            .titles
             .last_title_update
             .map(|i| i.elapsed() > interval_time)
             .unwrap_or(true)
         {
-            self.titles.last_title_update = Some(Instant::now());
-            let mut id = String::default();
-            for (i, context) in self.contexts.iter_mut().enumerate() {
-                let content = update_title(&self.config.title.content, context.current());
+            self.last_title_update = Some(Instant::now());
+            for grid in self.contexts.iter_mut() {
+                let content = update_title(&self.config.title.content, grid.current());
 
                 self.event_proxy
                     .send_event(RioEvent::Title(content.to_owned()), self.window_id);
 
-                id.push_str(&format!("{i}{content};"));
-
-                if self.config.should_update_title_extra {
-                    self.titles.set_key_val(
-                        i,
-                        content,
-                        create_title_extra_from_context(context.current()),
-                    );
+                let extra = if self.config.should_update_title_extra {
+                    create_title_extra_from_context(grid.current())
                 } else {
-                    self.titles.set_key_val(i, content, None);
-                }
-            }
+                    None
+                };
 
-            self.titles.set_key(id);
+                grid.current_mut().title = ContextTitle { content, extra };
+            }
         }
     }
 
@@ -788,13 +822,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &self.contexts[self.current_index]
     }
 
-    /// Get panel borders for the current grid (returns empty vec if single panel)
     #[inline]
     pub fn get_panel_borders(&self) -> Vec<Rect> {
         self.contexts[self.current_index].get_panel_borders()
     }
 
-    /// Get the scaled margin of the current grid (in physical pixels, for border positioning)
     #[inline]
     pub fn get_current_grid_scaled_margin(&self) -> rio_backend::config::layout::Margin {
         self.contexts[self.current_index].get_scaled_margin()
@@ -836,7 +868,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         // Remove all rich text from the grid before removing the context
         self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
-        self.titles.titles.remove(&index_to_remove);
         self.contexts.remove(index_to_remove);
 
         if should_set_current {
@@ -924,6 +955,22 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let target_index = if current == len - 1 { 0 } else { current + 1 };
         self.contexts.swap(current, target_index);
         self.select_tab(target_index);
+    }
+
+    #[inline]
+    pub fn move_current_tab_to(&mut self, target: usize) {
+        if self.config.is_native {
+            return;
+        }
+
+        let current = self.current_index;
+        if target == current || target >= self.contexts.len() {
+            return;
+        }
+
+        let grid = self.contexts.remove(current);
+        self.contexts.insert(target, grid);
+        self.set_current(target);
     }
 
     pub fn split(
@@ -1273,6 +1320,102 @@ pub mod test {
         assert_eq!(context_manager.current_index, 3);
     }
 
+    fn set_tab_title(cm: &mut ContextManager<VoidListener>, index: usize, content: &str) {
+        cm.contexts[index].current_mut().title.content = content.to_string();
+    }
+
+    fn tab_titles(cm: &ContextManager<VoidListener>) -> Vec<String> {
+        (0..cm.len())
+            .map(|i| cm.title(i).unwrap().content.clone())
+            .collect()
+    }
+
+    #[test]
+    fn test_title_follows_tab_move() {
+        let window_id = WindowId::from(0);
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        for _ in 0..3 {
+            cm.add_context(false, 0);
+        }
+        assert_eq!(cm.len(), 4);
+        for (i, label) in ["a", "b", "c", "d"].iter().enumerate() {
+            set_tab_title(&mut cm, i, label);
+        }
+
+        // Drag tab 1 to slot 3 (rotate). The title must track the moved
+        // tab immediately, without waiting on the next update_titles tick.
+        cm.set_current(1);
+        cm.move_current_tab_to(3);
+
+        assert_eq!(tab_titles(&cm), ["a", "c", "d", "b"]);
+        assert_eq!(cm.current().title.content, "b");
+    }
+
+    #[test]
+    fn test_title_follows_tab_swap() {
+        let window_id = WindowId::from(0);
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        for _ in 0..3 {
+            cm.add_context(false, 0);
+        }
+        for (i, label) in ["a", "b", "c", "d"].iter().enumerate() {
+            set_tab_title(&mut cm, i, label);
+        }
+
+        // Swap current (0) with its neighbor (1).
+        cm.set_current(0);
+        cm.move_current_to_next();
+
+        assert_eq!(tab_titles(&cm), ["b", "a", "c", "d"]);
+    }
+
+    #[test]
+    fn test_custom_title_follows_tab_move() {
+        let window_id = WindowId::from(0);
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        for _ in 0..3 {
+            cm.add_context(false, 0);
+        }
+        cm.set_custom_title(2, Some("work".to_string()));
+
+        // Move tab 1 → 3 (rotate): the override on tab 2 shifts to slot 1,
+        // with no remap bookkeeping.
+        cm.set_current(1);
+        cm.move_current_tab_to(3);
+
+        assert_eq!(cm.custom_title(1), Some("work"));
+        assert_eq!(cm.custom_title(2), None);
+
+        // Clearing with None removes the override.
+        cm.set_custom_title(1, None);
+        assert_eq!(cm.custom_title(1), None);
+    }
+
+    #[test]
+    fn test_custom_color_follows_tab_move() {
+        let window_id = WindowId::from(0);
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        for _ in 0..3 {
+            cm.add_context(false, 0);
+        }
+        let red = [1.0, 0.0, 0.0, 1.0];
+        cm.set_custom_color(2, Some(red));
+
+        // Move tab 1 → 3 (rotate): the color on tab 2 shifts to slot 1.
+        cm.set_current(1);
+        cm.move_current_tab_to(3);
+
+        assert_eq!(cm.custom_color(1), Some(red));
+        assert_eq!(cm.custom_color(2), None);
+
+        cm.set_custom_color(1, None);
+        assert_eq!(cm.custom_color(1), None);
+    }
+
     #[test]
     fn test_switch_to_next() {
         let window_id: WindowId = WindowId::from(0);
@@ -1387,5 +1530,56 @@ pub mod test {
         context_manager.move_current_to_prev();
         assert_eq!(context_manager.current_index, 4);
         assert_eq!(context_manager.current().rich_text_id, 1);
+    }
+
+    #[test]
+    fn test_move_current_tab_to() {
+        let window_id = WindowId::from(0);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        let should_redirect = false;
+
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+
+        // Tag every tab with its starting position.
+        for i in 0..5 {
+            context_manager.set_current(i);
+            context_manager.current_mut().rich_text_id = i;
+        }
+
+        let order = |cm: &mut ContextManager<VoidListener>| -> Vec<usize> {
+            (0..5)
+                .map(|i| {
+                    cm.set_current(i);
+                    cm.current().rich_text_id
+                })
+                .collect()
+        };
+
+        // Multi-slot jump forward: tabs in between shift left by one.
+        context_manager.set_current(1);
+        context_manager.move_current_tab_to(3);
+        assert_eq!(context_manager.current_index, 3);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+        assert_eq!(order(&mut context_manager), vec![0, 2, 3, 1, 4]);
+
+        // Multi-slot jump backward: tabs in between shift right by one.
+        context_manager.set_current(3);
+        context_manager.move_current_tab_to(0);
+        assert_eq!(context_manager.current_index, 0);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+        assert_eq!(order(&mut context_manager), vec![1, 0, 2, 3, 4]);
+
+        // No-op cases: same index and out-of-bounds target.
+        context_manager.set_current(2);
+        context_manager.move_current_tab_to(2);
+        assert_eq!(context_manager.current_index, 2);
+        context_manager.move_current_tab_to(5);
+        assert_eq!(context_manager.current_index, 2);
+        assert_eq!(order(&mut context_manager), vec![1, 0, 2, 3, 4]);
     }
 }

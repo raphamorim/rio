@@ -1,7 +1,5 @@
 use crate::context::Context;
-use rustc_hash::FxHashMap;
 use std::path::Path;
-use std::time::Instant;
 
 pub struct ContextTitleExtra {
     pub program: String,
@@ -12,41 +10,12 @@ pub struct ContextTitle {
     pub extra: Option<ContextTitleExtra>,
 }
 
-pub struct ContextManagerTitles {
-    pub last_title_update: Option<Instant>,
-    pub titles: FxHashMap<usize, ContextTitle>,
-    pub key: String,
-}
-
-impl ContextManagerTitles {
-    pub fn new(
-        idx: usize,
-        content: String,
-        extra: Option<ContextTitleExtra>,
-    ) -> ContextManagerTitles {
-        let key = format!("{idx}{content};");
-        let mut map = FxHashMap::default();
-        map.insert(idx, ContextTitle { content, extra });
-        ContextManagerTitles {
-            key,
-            titles: map,
-            last_title_update: None,
+impl Default for ContextTitle {
+    fn default() -> Self {
+        Self {
+            content: String::from("~"),
+            extra: None,
         }
-    }
-
-    #[inline]
-    pub fn set_key_val(
-        &mut self,
-        idx: usize,
-        content: String,
-        extra: Option<ContextTitleExtra>,
-    ) {
-        self.titles.insert(idx, ContextTitle { content, extra });
-    }
-
-    #[inline]
-    pub fn set_key(&mut self, key: String) {
-        self.key = key;
     }
 }
 

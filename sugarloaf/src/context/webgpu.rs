@@ -36,10 +36,9 @@ impl<'a> WgpuContext<'a> {
         // - `webgpu`
         // - `primary`
         let backend = wgpu::Backends::from_env().unwrap_or(wgpu_backend);
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: backend,
-            ..Default::default()
-        });
+        let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
+        instance_desc.backends = backend;
+        let instance = wgpu::Instance::new(instance_desc);
 
         tracing::info!("selected instance: {instance:?}");
 
@@ -67,6 +66,7 @@ impl<'a> WgpuContext<'a> {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             },
         ))
         .expect("Request adapter");
@@ -142,6 +142,7 @@ impl<'a> WgpuContext<'a> {
                 height: size.height as u32,
                 view_formats,
                 alpha_mode,
+                color_space: wgpu::SurfaceColorSpace::Auto,
                 present_mode: wgpu::PresentMode::Fifo,
                 desired_maximum_frame_latency: 2,
             },
@@ -218,6 +219,7 @@ impl<'a> WgpuContext<'a> {
                 height,
                 view_formats,
                 alpha_mode: self.alpha_mode,
+                color_space: wgpu::SurfaceColorSpace::Auto,
                 present_mode: wgpu::PresentMode::Fifo,
                 desired_maximum_frame_latency: 2,
             },

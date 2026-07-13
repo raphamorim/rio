@@ -216,6 +216,7 @@ impl From<String> for Action {
             "paste" => Some(Action::Paste),
             "quit" => Some(Action::Quit),
             "copy" => Some(Action::Copy),
+            "selectall" => Some(Action::SelectAll),
             "searchforward" => Some(Action::SearchForward),
             "searchbackward" => Some(Action::SearchBackward),
             "searchconfirm" => Some(Action::Search(SearchAction::SearchConfirm)),
@@ -454,6 +455,9 @@ pub enum Action {
 
     /// Clear active selection.
     ClearSelection,
+
+    /// Select everything, including the scrollback history.
+    SelectAll,
 
     /// Toggle vi mode.
     ToggleViMode,
@@ -1003,6 +1007,7 @@ pub fn platform_key_bindings(
         "f", ModifiersState::CONTROL | ModifiersState::SUPER; Action::ToggleFullscreen;
         "c", ModifiersState::SUPER; Action::Copy;
         "c", ModifiersState::SUPER, +BindingMode::VI; Action::ClearSelection;
+        "a", ModifiersState::SUPER, ~BindingMode::VI, ~BindingMode::SEARCH; Action::SelectAll;
         "h", ModifiersState::SUPER; Action::Hide;
         "h", ModifiersState::SUPER | ModifiersState::ALT; Action::HideOtherApplications;
         "m", ModifiersState::SUPER; Action::Minimize;

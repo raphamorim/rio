@@ -1048,8 +1048,7 @@ impl Renderer {
         // overlays for hidden panels (callers `clear_image_overlays_for`
         // on hide / panel removal). The renderer just drains whatever
         // `image_overlays` currently holds.
-        let overlays: Vec<_> =
-            image_overlays.iter().flat_map(|(_, v)| v.iter()).collect();
+        let overlays: Vec<_> = image_overlays.values().flat_map(|v| v.iter()).collect();
         if !overlays.is_empty() {
             self.render_graphic_overlays(context, image_data, &overlays);
         } else {
@@ -2254,6 +2253,7 @@ impl Renderer {
                     text.render_metal(
                         render_encoder,
                         [context.size.width, context.size.height],
+                        frame,
                     );
                     true
                 })();
@@ -2275,7 +2275,13 @@ impl Renderer {
                     );
                     // No completion handler will fire to release the
                     // swap-chain permit we acquired above — release
-                    // it here so the next frame can run.
+                    // it here so the next frame can run, and roll the
+                    // frame slot back since nothing was committed for
+                    // it (permits pair with committed frames).
+                    self.metal_frame_index = (self.metal_frame_index
+                        + crate::grid::metal::FRAMES_IN_FLIGHT_PUB
+                        - 1)
+                        % crate::grid::metal::FRAMES_IN_FLIGHT_PUB;
                     crate::grid::metal::release_frame_permit(&self.metal_frame_permits);
                     return;
                 }
@@ -2349,12 +2355,12 @@ impl Renderer {
     /// pass that `Sugarloaf::render_vulkan` opens. Order:
     /// 1. Background image (full-screen quad).
     /// 2. BelowText image overlays (kitty / sixel placements with
-    /// `dest_pos.z < 0`).
+    ///    `dest_pos.z < 0`).
     /// 3. Rich-text quad pass — `quad()` / `rect()` calls + cell
-    /// underline decorations (dashed/dotted/curly handled in
-    /// `quad.frag.glsl`).
+    ///    underline decorations (dashed/dotted/curly handled in
+    ///    `quad.frag.glsl`).
     /// 4. Non-quad geometry — `polygon()` / `line()` / `triangle()`
-    /// / `arc()` calls (cursor underline shape, hint highlights).
+    ///    / `arc()` calls (cursor underline shape, hint highlights).
     /// 5. AboveText image overlays.
     /// 6. Optional bootstrap rect (`RIO_VULKAN_BOOTSTRAP=1`).
     ///
@@ -2593,8 +2599,8 @@ impl WgpuRenderer {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: None,
                     bind_group_layouts: &[
-                        &constant_bind_group_layout,
-                        &layout_bind_group_layout,
+                        Some(&constant_bind_group_layout),
+                        Some(&layout_bind_group_layout),
                     ],
                     ..Default::default()
                 });
@@ -2710,7 +2716,7 @@ impl WgpuRenderer {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                         module: &shader,
                         entry_point: Some("vs_main"),
-                        buffers: &[wgpu::VertexBufferLayout {
+                        buffers: &[Some(wgpu::VertexBufferLayout {
                             array_stride: mem::size_of::<Vertex>() as u64,
                             // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
                             step_mode: wgpu::VertexStepMode::Vertex,
@@ -2724,7 +2730,7 @@ impl WgpuRenderer {
                                 6 => Sint32,     // underline_style
                                 7 => Float32x4,  // clip_rect
                             ),
-                        }],
+                        })],
                     },
                     fragment: Some(wgpu::FragmentState {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -2762,7 +2768,7 @@ impl WgpuRenderer {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                         module: &shader,
                         entry_point: Some("vs_instanced"),
-                        buffers: &[wgpu::VertexBufferLayout {
+                        buffers: &[Some(wgpu::VertexBufferLayout {
                             array_stride: mem::size_of::<batch::QuadInstance>() as u64,
                             step_mode: wgpu::VertexStepMode::Instance,
                             attributes: &wgpu::vertex_attr_array!(
@@ -2775,7 +2781,7 @@ impl WgpuRenderer {
                                 6 => Sint32,     // underline_style
                                 7 => Float32x4,  // clip_rect
                             ),
-                        }],
+                        })],
                     },
                     fragment: Some(wgpu::FragmentState {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -2851,8 +2857,8 @@ impl WgpuRenderer {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("image pipeline layout"),
                     bind_group_layouts: &[
-                        &constant_bind_group_layout, // group 0: transform + sampler
-                        &image_bind_group_layout,    // group 1: image texture
+                        Some(&constant_bind_group_layout), // group 0: transform + sampler
+                        Some(&image_bind_group_layout),    // group 1: image texture
                     ],
                     immediate_size: 0,
                 });
@@ -2882,7 +2888,7 @@ impl WgpuRenderer {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                         module: &image_shader,
                         entry_point: Some("vs_main"),
-                        buffers: &[wgpu::VertexBufferLayout {
+                        buffers: &[Some(wgpu::VertexBufferLayout {
                             array_stride: mem::size_of::<ImageInstance>() as u64,
                             step_mode: wgpu::VertexStepMode::Instance,
                             attributes: &wgpu::vertex_attr_array!(
@@ -2890,7 +2896,7 @@ impl WgpuRenderer {
                                 1 => Float32x2, // dest_size
                                 2 => Float32x4, // source_rect
                             ),
-                        }],
+                        })],
                     },
                     fragment: Some(wgpu::FragmentState {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),

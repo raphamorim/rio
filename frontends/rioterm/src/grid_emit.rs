@@ -126,6 +126,7 @@ pub enum HintTag {
     Match,
     Focused,
     HyperlinkHover,
+    Label,
 }
 
 /// Per-row hint interval, closed on both ends. Several `RowHint`s may
@@ -229,6 +230,69 @@ fn pos_eq(a: Pos, b: Pos) -> bool {
     a.row == b.row && a.col == b.col
 }
 
+pub fn push_hint_label_styles(
+    style_table: &mut Vec<Style>,
+    hint_foreground: rio_backend::config::colors::ColorArray,
+    hint_background: rio_backend::config::colors::ColorArray,
+) -> u16 {
+    use rio_backend::config::colors::ColorRgb;
+    let base = style_table.len() as u16;
+    let fg = AnsiColor::Spec(ColorRgb::from_color_arr(hint_foreground));
+    style_table.push(Style {
+        fg,
+        bg: AnsiColor::Spec(ColorRgb::from_color_arr(hint_background)),
+        underline_color: None,
+        flags: StyleFlags::BOLD,
+    });
+    let dimmed = [
+        hint_background[0] * 0.8,
+        hint_background[1] * 0.8,
+        hint_background[2] * 0.8,
+        hint_background[3],
+    ];
+    style_table.push(Style {
+        fg,
+        bg: AnsiColor::Spec(ColorRgb::from_color_arr(dimmed)),
+        underline_color: None,
+        flags: StyleFlags::BOLD,
+    });
+    base
+}
+
+pub fn overlay_hint_labels(
+    row: &Row<Square>,
+    labels: &[crate::context::renderable::HintLabel],
+    y: usize,
+    display_offset: i32,
+    label_style_base: u16,
+    row_hints: &mut Vec<RowHint>,
+) -> Option<Row<Square>> {
+    let line = Line((y as i32) - display_offset);
+    let mut out: Option<Row<Square>> = None;
+    for label in labels {
+        if label.position.row != line {
+            continue;
+        }
+        let col = label.position.col.0;
+        if col >= row.len() {
+            continue;
+        }
+        let target = out.get_or_insert_with(|| row.clone());
+        let mut sq = Square::from_char(label.label);
+        sq.set_style_id(label_style_base + if label.is_first { 0 } else { 1 });
+        target[Column(col)] = sq;
+        row_hints.insert(
+            0,
+            RowHint {
+                lo: col as u16,
+                hi: col as u16,
+                tag: HintTag::Label,
+            },
+        );
+    }
+    out
+}
+
 #[inline]
 fn cell_in_row_hints(row_hints: &[RowHint], col: u16) -> Option<HintTag> {
     // Skip HyperlinkHover for the color paths — it only contributes
@@ -264,6 +328,7 @@ fn cell_fg_hinted(tag: HintTag, renderer: &Renderer) -> [u8; 4] {
             normalized_to_u8(renderer.named_colors.search_focused_match_foreground)
         }
         HintTag::Match => normalized_to_u8(renderer.named_colors.search_match_foreground),
+        HintTag::Label => normalized_to_u8(renderer.named_colors.hint_foreground),
         // Hover doesn't change fg color; defensive — `cell_in_row_hints`
         // already filters this tag out, so this arm shouldn't fire.
         HintTag::HyperlinkHover => [0, 0, 0, 0],
@@ -640,12 +705,7 @@ fn ensure_drawable_sprite(
     )
 }
 
-/// Emit a cursor sprite into the appropriate `fg_rows` slot. Caller
-/// is responsible for clearing the OTHER slot (so a previous-frame
-/// block doesn't linger when this frame draws a hollow, etc.) — see
-/// `grid.clear_cursor()`. `addCursor`
-///.
-pub fn emit_cursor_sprite(
+pub fn cursor_sprite_cell(
     grid: &mut GridRenderer,
     style: CursorRenderStyle,
     col: u16,
@@ -653,15 +713,12 @@ pub fn emit_cursor_sprite(
     color: [u8; 4],
     cell_w: u32,
     cell_h: u32,
-) {
+) -> Option<(bool, CellText)> {
     let sprite = style.sprite();
     let thickness = cursor_thickness(cell_h);
-    let Some(slot) = ensure_cursor_sprite_slot(grid, sprite, cell_w, cell_h, thickness)
-    else {
-        return;
-    };
+    let slot = ensure_cursor_sprite_slot(grid, sprite, cell_w, cell_h, thickness)?;
     if slot.w == 0 || slot.h == 0 {
-        return;
+        return None;
     }
     let cursor_cell = CellText {
         glyph_pos: [slot.x as u32, slot.y as u32],
@@ -674,13 +731,10 @@ pub fn emit_cursor_sprite(
         // fg-swap skips it (the sprite paints in `color` directly,
         // not in `cursor_color` from the uniforms).
         bools: CellText::BOOL_IS_CURSOR_GLYPH,
-        _pad: [0, 0],
+        page: slot.page,
+        _pad: 0,
     };
-    if sprite.is_block_slot() {
-        grid.set_block_cursor(&[cursor_cell]);
-    } else {
-        grid.set_non_block_cursor(&[cursor_cell]);
-    }
+    Some((sprite.is_block_slot(), cursor_cell))
 }
 
 /// Underline thickness in physical pixels. fallback
@@ -1061,6 +1115,7 @@ pub fn build_row_bg(
                 HintTag::Match => {
                     match_bg.unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors))
                 }
+                HintTag::Label => cell_bg(sq, style, renderer, term_colors),
                 // `cell_in_row_hints` filters HyperlinkHover out, but
                 // make the match exhaustive so a future caller can't
                 // accidentally hit a panic.
@@ -1244,15 +1299,8 @@ impl GridGlyphRasterizer {
             .entry((ch, style_flags, route_id))
             .or_insert_with(|| {
                 let span_style = span_style_for_flags(style_flags);
-                #[cfg(target_os = "macos")]
                 let (id, emoji) =
                     font_library.resolve_font_for_char(ch, &span_style, Some(route_id));
-                #[cfg(not(target_os = "macos"))]
-                let (id, emoji) = {
-                    let lib = font_library.inner.read();
-                    lib.find_best_font_match(ch, &span_style, Some(route_id))
-                        .unwrap_or((0, false))
-                };
                 (id as u32, emoji)
             })
     }
@@ -1676,7 +1724,8 @@ pub fn build_row_fg(
                         color,
                         atlas,
                         bools: 0,
-                        _pad: [0, 0],
+                        page: slot.page,
+                        _pad: 0,
                     });
                 }
             }
@@ -1722,7 +1771,8 @@ pub fn build_row_fg(
                         color,
                         atlas: CellText::ATLAS_GRAYSCALE,
                         bools: 0,
-                        _pad: [0, 0],
+                        page: slot.page,
+                        _pad: 0,
                     });
                 }
                 x += 1;
@@ -2068,7 +2118,8 @@ pub fn build_row_fg(
                 color,
                 atlas,
                 bools: 0,
-                _pad: [0, 0],
+                page: slot.page,
+                _pad: 0,
             });
         }
 
@@ -2159,7 +2210,8 @@ fn emit_underlines(
             color,
             atlas: CellText::ATLAS_GRAYSCALE,
             bools: 0,
-            _pad: [0, 0],
+            page: slot.page,
+            _pad: 0,
         });
     }
 }
@@ -2216,7 +2268,8 @@ fn emit_strikethroughs(
             color,
             atlas: CellText::ATLAS_GRAYSCALE,
             bools: 0,
-            _pad: [0, 0],
+            page: slot.page,
+            _pad: 0,
         });
     }
 }
@@ -2489,4 +2542,75 @@ fn font_library_hinting(_r: &GridGlyphRasterizer) -> bool {
     // For now the lock on swash rasterize is a small fraction of
     // render time; optimise if profiling flags it.
     true
+}
+
+#[cfg(test)]
+mod hint_label_tests {
+    use super::*;
+    use crate::context::renderable::HintLabel;
+
+    fn label(row: i32, col: usize, ch: char, is_first: bool) -> HintLabel {
+        HintLabel {
+            position: Pos::new(Line(row), Column(col)),
+            label: ch,
+            is_first,
+        }
+    }
+
+    #[test]
+    fn push_hint_label_styles_appends_two_bold_badges() {
+        use rio_backend::config::colors::ColorRgb;
+        let mut table = vec![Style::default()];
+        let fg = [0.1, 0.1, 0.1, 1.0];
+        let bg = [1.0, 0.5, 0.0, 1.0];
+        let base = push_hint_label_styles(&mut table, fg, bg);
+        assert_eq!(base, 1);
+        assert_eq!(table.len(), 3);
+        assert!(table[1].flags.contains(StyleFlags::BOLD));
+        assert!(table[2].flags.contains(StyleFlags::BOLD));
+        assert_eq!(table[1].bg, AnsiColor::Spec(ColorRgb::from_color_arr(bg)));
+        assert_eq!(
+            table[2].bg,
+            AnsiColor::Spec(ColorRgb::from_color_arr([0.8, 0.4, 0.0, 1.0]))
+        );
+    }
+
+    #[test]
+    fn overlay_substitutes_label_squares_on_matching_row_only() {
+        let row: Row<Square> = Row::new(10);
+        let labels = [label(3, 2, 'j', true), label(3, 3, 'f', false)];
+        let mut hints = Vec::new();
+
+        assert!(overlay_hint_labels(&row, &labels, 2, 0, 5, &mut hints).is_none());
+        assert!(hints.is_empty());
+
+        let overlaid = overlay_hint_labels(&row, &labels, 3, 0, 5, &mut hints).unwrap();
+        assert_eq!(overlaid[Column(2)].c(), 'j');
+        assert_eq!(overlaid[Column(2)].style_id(), 5);
+        assert_eq!(overlaid[Column(3)].c(), 'f');
+        assert_eq!(overlaid[Column(3)].style_id(), 6);
+        assert_eq!(overlaid[Column(4)].c(), row[Column(4)].c());
+        assert_eq!(hints.len(), 2);
+        assert!(hints.iter().all(|h| h.tag == HintTag::Label));
+        assert_eq!(cell_in_row_hints(&hints, 2), Some(HintTag::Label));
+        assert_eq!(cell_in_row_hints(&hints, 3), Some(HintTag::Label));
+
+        let mut hints = vec![RowHint {
+            lo: 0,
+            hi: 9,
+            tag: HintTag::Match,
+        }];
+        overlay_hint_labels(&row, &labels, 3, 0, 5, &mut hints).unwrap();
+        assert_eq!(cell_in_row_hints(&hints, 2), Some(HintTag::Label));
+        assert_eq!(cell_in_row_hints(&hints, 5), Some(HintTag::Match));
+
+        let mut hints = Vec::new();
+        assert!(overlay_hint_labels(&row, &labels, 3, 2, 5, &mut hints).is_none());
+        assert!(overlay_hint_labels(&row, &labels, 5, 2, 5, &mut hints).is_some());
+
+        let oob = [label(3, 99, 'x', true)];
+        let mut hints = Vec::new();
+        assert!(overlay_hint_labels(&row, &oob, 3, 0, 5, &mut hints).is_none());
+        assert!(hints.is_empty());
+    }
 }

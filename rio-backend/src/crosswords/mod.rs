@@ -4416,16 +4416,27 @@ impl<U: EventListener> Crosswords<U> {
         // Absolute row = history_size + screen-relative row
         let dest_row = self.history_size() as i64 + cursor_row as i64;
 
-        // Compute cell-based size
+        // kitty spec the `X=`/`Y=` sub-cell offset must be smaller
+        // than the cell size; kitty clamps out-of-range values to the
+        // cell box
+        let cell_x_offset = (placement.cell_x_offset as usize).min(cell_width - 1);
+        let cell_y_offset = (placement.cell_y_offset as usize).min(cell_height - 1);
+
+        // Compute cell-based size.
+        //
+        // the trick is the sub-cell offset shifts the image
+        // within its first cell, so it can spill into one extra
+        // row/column. Include it so cursor movement and row occupation
+        // cover the full image.
         let columns = if placement.columns > 0 {
             placement.columns
         } else {
-            display_w.div_ceil(cell_width) as u32
+            (display_w + cell_x_offset).div_ceil(cell_width) as u32
         };
         let rows = if placement.rows > 0 {
             placement.rows
         } else {
-            display_h.div_ceil(cell_height) as u32
+            (display_h + cell_y_offset).div_ceil(cell_height) as u32
         };
 
         // Create overlay placement.
@@ -4454,8 +4465,8 @@ impl<U: EventListener> Crosswords<U> {
             rows,
             pixel_width: display_w as u32,
             pixel_height: display_h as u32,
-            cell_x_offset: 0,
-            cell_y_offset: 0,
+            cell_x_offset: cell_x_offset as u32,
+            cell_y_offset: cell_y_offset as u32,
             z_index: placement.z_index,
             transmit_time,
         };
@@ -4538,6 +4549,7 @@ impl<U: EventListener> Crosswords<U> {
         self.graphics
             .kitty_virtual_placements
             .insert((placement.image_id, placement.placement_id), vp);
+        self.graphics.kitty_graphics_dirty = true;
     }
 }
 
@@ -6640,6 +6652,8 @@ mod tests {
             virtual_placement: true,
             unicode_placeholder: 0,
             cursor_movement: 0,
+            cell_x_offset: 0,
+            cell_y_offset: 0,
         };
 
         cw.place_graphic(placement);

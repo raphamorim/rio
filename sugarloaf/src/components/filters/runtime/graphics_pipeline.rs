@@ -125,7 +125,7 @@ impl PipelineLayoutObjects {
                 entries: &sampler_bindings,
             });
 
-        let bind_group_layout_refs = [&main_bind_group, &sampler_bind_group];
+        let bind_group_layout_refs = [Some(&main_bind_group), Some(&sampler_bind_group)];
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("shader pipeline layout"),
@@ -161,7 +161,7 @@ impl PipelineLayoutObjects {
                 module: &self.vertex,
                 entry_point: Some(&self.vertex_entry_name),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[VertexBufferLayout {
+                buffers: &[Some(VertexBufferLayout {
                     array_stride: std::mem::size_of::<VertexInput>()
                         as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
@@ -179,7 +179,7 @@ impl PipelineLayoutObjects {
                             shader_location: 1,
                         },
                     ],
-                }],
+                })],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &self.fragment,

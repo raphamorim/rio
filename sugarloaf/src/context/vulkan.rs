@@ -18,6 +18,7 @@
 use crate::sugarloaf::{Colorspace, SugarloafWindow, SugarloafWindowSize};
 use ash::khr;
 use ash::vk;
+use ash::vk::CompositeAlphaFlagsKHR;
 use ash::{Device, Entry, Instance};
 use raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
@@ -136,11 +137,10 @@ pub struct VulkanContext {
     swapchain_loader: khr::swapchain::Device,
 
     // Core device.
-    queue: vk::Queue,
+    pub(crate) queue: vk::Queue,
     // Kept around so future phases (atlas uploads, a dedicated transfer
     // pool, pipeline creation) don't have to re-probe the family.
-    #[allow(dead_code)]
-    queue_family_index: u32,
+    pub(crate) queue_family_index: u32,
 
     /// Reference-counted owner of `device`, `instance`, `physical_device`,
     /// and the loader (`Entry`). Cloned into every per-resource struct
@@ -803,7 +803,7 @@ pub fn allocate_host_visible_buffer_raw(
 /// produce for the standard `HOST_VISIBLE | HOST_COHERENT` and
 /// `DEVICE_LOCAL` combinations, but callers should still treat it as
 /// fatal rather than ignore it.
-fn find_memory_type(
+pub(crate) fn find_memory_type(
     instance: &Instance,
     physical_device: vk::PhysicalDevice,
     type_filter: u32,
@@ -970,10 +970,10 @@ impl VulkanContext {
 /// usable layout (`TRANSFER_DST_OPTIMAL` for the initial upload).
 pub struct VulkanImage {
     /// Shared device handle. See `VkShared`.
-    shared: Arc<VkShared>,
-    image: vk::Image,
-    view: vk::ImageView,
-    memory: vk::DeviceMemory,
+    pub(crate) shared: Arc<VkShared>,
+    pub(crate) image: vk::Image,
+    pub(crate) view: vk::ImageView,
+    pub(crate) memory: vk::DeviceMemory,
     pub width: u32,
     pub height: u32,
     pub format: vk::Format,
@@ -1454,6 +1454,8 @@ fn create_swapchain(
         image_count = caps.max_image_count;
     }
 
+    let composite_alpha = guess_composite_alpha(caps.supported_composite_alpha);
+
     let create_info = vk::SwapchainCreateInfoKHR::default()
         .surface(surface)
         .min_image_count(image_count)
@@ -1466,7 +1468,7 @@ fn create_swapchain(
         )
         .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
         .pre_transform(caps.current_transform)
-        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+        .composite_alpha(composite_alpha)
         .present_mode(present_mode)
         .clipped(true)
         .old_swapchain(old);
@@ -1505,6 +1507,20 @@ fn create_swapchain(
         images,
         views,
     )
+}
+
+fn guess_composite_alpha(
+    supported_alpha: CompositeAlphaFlagsKHR,
+) -> CompositeAlphaFlagsKHR {
+    if supported_alpha.contains(CompositeAlphaFlagsKHR::POST_MULTIPLIED) {
+        CompositeAlphaFlagsKHR::POST_MULTIPLIED
+    } else if supported_alpha.contains(CompositeAlphaFlagsKHR::PRE_MULTIPLIED) {
+        CompositeAlphaFlagsKHR::PRE_MULTIPLIED
+    } else if supported_alpha.contains(CompositeAlphaFlagsKHR::INHERIT) {
+        CompositeAlphaFlagsKHR::INHERIT
+    } else {
+        CompositeAlphaFlagsKHR::OPAQUE
+    }
 }
 
 fn create_frames(
