@@ -43,7 +43,7 @@ url = { workspace = true }
 regex-automata = "0.4.9"
 cursor-icon = { version = "1.1.0", default-features = false }
 smallvec = { version = "1.13.2", default-features = false }
-rio-window = { workspace = true }
+rio-window = { workspace = true, optional = true }
 simdutf = { workspace = true }
 flate2 = { workspace = true }
 lazy_static = { workspace = true }
@@ -52,7 +52,8 @@ lazy_static = { workspace = true }
 windows-sys = { version = "0.60.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
 
 [features]
-default = ["wayland", "x11"]
+default = ["wayland", "x11", "winit"]
+winit = ["dep:rio-window"]
 x11 = [
     "copypasta/x11"
 ]

@@ -7,6 +7,7 @@ use crate::crosswords::grid::Scroll;
 use crate::crosswords::pos::{Direction, Pos};
 use crate::crosswords::search::{Match, RegexSearch};
 use crate::error::RioError;
+#[cfg(feature = "winit")]
 use rio_window::event::Event as RioWindowEvent;
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -15,9 +16,22 @@ use std::fmt::Formatter;
 use std::sync::Arc;
 use teletypewriter::WinsizeBuilder;
 
+#[cfg(feature = "winit")]
 use rio_window::event_loop::EventLoopProxy;
 
+#[cfg(feature = "winit")]
 pub type WindowId = rio_window::window::WindowId;
+
+#[cfg(not(feature = "winit"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct WindowId(u64);
+
+#[cfg(not(feature = "winit"))]
+impl From<u64> for WindowId {
+    fn from(id: u64) -> Self {
+        WindowId(id)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum RioEventType {
@@ -332,6 +346,7 @@ impl EventPayload {
     }
 }
 
+#[cfg(feature = "winit")]
 impl From<EventPayload> for RioWindowEvent<EventPayload> {
     fn from(event: EventPayload) -> Self {
         RioWindowEvent::UserEvent(event)
@@ -371,10 +386,12 @@ impl EventListener for VoidListener {
 }
 
 #[derive(Debug, Clone)]
+#[cfg(feature = "winit")]
 pub struct EventProxy {
     proxy: EventLoopProxy<EventPayload>,
 }
 
+#[cfg(feature = "winit")]
 impl EventProxy {
     pub fn new(proxy: EventLoopProxy<EventPayload>) -> Self {
         Self { proxy }
@@ -385,6 +402,7 @@ impl EventProxy {
     }
 }
 
+#[cfg(feature = "winit")]
 impl EventListener for EventProxy {
     fn event(&self) -> (std::option::Option<RioEvent>, bool) {
         (None, false)
