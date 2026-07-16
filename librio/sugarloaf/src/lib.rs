@@ -115,6 +115,7 @@ pub struct Renderer {
     cell_width: f32,
     cell_height: f32,
     padding: f32,
+    preedit: Option<String>,
 }
 
 impl Renderer {
@@ -144,6 +145,7 @@ impl Renderer {
             cell_width: 0.0,
             cell_height: 0.0,
             padding: 4.0,
+            preedit: None,
         };
         renderer.refresh_cell_metrics();
         Ok(renderer)
@@ -173,6 +175,23 @@ impl Renderer {
     pub fn rescale(&mut self, scale: f32) {
         self.sugarloaf.rescale(scale);
         self.refresh_cell_metrics();
+    }
+
+    pub fn set_font_size(&mut self, font_size: f32) {
+        self.font_size = font_size.clamp(6.0, 72.0);
+        self.refresh_cell_metrics();
+    }
+
+    pub fn font_size(&self) -> f32 {
+        self.font_size
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
+    pub fn set_preedit(&mut self, preedit: Option<String>) {
+        self.preedit = preedit;
     }
 
     pub fn draw(&mut self, state: &RenderState) {
@@ -251,6 +270,35 @@ impl Renderer {
             }
         }
 
+        if let Some(selection) = state.selection() {
+            let highlight = [1.0, 1.0, 1.0, 0.22];
+            for line in selection.start_line..=selection.end_line {
+                let (from, to): (u16, u16) =
+                    if selection.is_block || selection.start_line == selection.end_line {
+                        (selection.start_col, selection.end_col)
+                    } else if line == selection.start_line {
+                        (selection.start_col, columns.saturating_sub(1) as u16)
+                    } else if line == selection.end_line {
+                        (0, selection.end_col)
+                    } else {
+                        (0, columns.saturating_sub(1) as u16)
+                    };
+                if to < from {
+                    continue;
+                }
+                self.sugarloaf.rect(
+                    None,
+                    pad + from as f32 * cell_w,
+                    pad + line as f32 * cell_h,
+                    (to - from + 1) as f32 * cell_w,
+                    cell_h,
+                    highlight,
+                    0.0,
+                    0,
+                );
+            }
+        }
+
         if state.display_offset() == 0 {
             let (cursor_line, cursor_column) = state.cursor();
             self.sugarloaf.rect(
@@ -263,6 +311,36 @@ impl Renderer {
                 0.0,
                 0,
             );
+
+            if let Some(preedit) = self.preedit.clone() {
+                if !preedit.is_empty() {
+                    let x = pad + cursor_column as f32 * cell_w;
+                    let y = pad + cursor_line as f32 * cell_h;
+                    let width = preedit.chars().count() as f32 * cell_w;
+                    self.sugarloaf.rect(
+                        None,
+                        x,
+                        y,
+                        width,
+                        cell_h,
+                        self.theme.foreground,
+                        0.0,
+                        0,
+                    );
+                    self.sugarloaf.text_mut().draw(
+                        x,
+                        y,
+                        &preedit,
+                        &DrawOpts {
+                            font_size: self.font_size,
+                            color: to_u8(self.theme.background),
+                            bold: false,
+                            italic: false,
+                            font_id: None,
+                        },
+                    );
+                }
+            }
         }
 
         self.sugarloaf.render();

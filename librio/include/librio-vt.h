@@ -40,6 +40,11 @@ typedef size_t rio_surface_id_t;
 #define RIO_KEY_DELETE 14u
 #define RIO_KEY_F 15u
 
+#define RIO_SELECTION_SIMPLE 0u
+#define RIO_SELECTION_WORD 1u
+#define RIO_SELECTION_LINE 2u
+#define RIO_SELECTION_BLOCK 3u
+
 #define RIO_MOD_SHIFT (1u << 0)
 #define RIO_MOD_CTRL (1u << 1)
 #define RIO_MOD_ALT (1u << 2)
@@ -96,6 +101,15 @@ typedef struct {
 } rio_cursor_s;
 
 typedef struct {
+  bool active;
+  uint16_t start_line;
+  uint16_t start_col;
+  uint16_t end_line;
+  uint16_t end_col;
+  bool is_block;
+} rio_selection_s;
+
+typedef struct {
   uint32_t tag;
   uint32_t codepoint;
   uint8_t function_key;
@@ -118,6 +132,15 @@ void rio_surface_resize(rio_surface_t *surface, uint16_t cols, uint16_t rows,
                         uint16_t pixel_width, uint16_t pixel_height);
 void rio_surface_scroll(rio_surface_t *surface, int32_t delta_lines);
 
+void rio_surface_selection_begin(rio_surface_t *surface, int32_t viewport_line,
+                                 uint16_t col, uint8_t kind);
+void rio_surface_selection_update(rio_surface_t *surface, int32_t viewport_line,
+                                  uint16_t col);
+void rio_surface_selection_clear(rio_surface_t *surface);
+/* Returns NULL when nothing is selected. Free with rio_text_free. */
+char *rio_surface_selection_text(const rio_surface_t *surface);
+void rio_text_free(char *text);
+
 /* Render-state calls must all come from one thread. */
 rio_render_state_t *rio_render_state_new(const rio_surface_t *surface);
 void rio_render_state_free(rio_render_state_t *state);
@@ -129,6 +152,7 @@ void rio_render_state_reset_dirty(rio_render_state_t *state);
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
+rio_selection_s rio_render_state_selection(const rio_render_state_t *state);
 
 #ifdef __cplusplus
 }

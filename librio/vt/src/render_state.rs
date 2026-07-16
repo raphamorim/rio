@@ -10,6 +10,15 @@ use rio_backend::event::TerminalDamage;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewportSelection {
+    pub start_line: u16,
+    pub start_col: u16,
+    pub end_line: u16,
+    pub end_col: u16,
+    pub is_block: bool,
+}
+
 pub struct RenderState {
     terminal: Arc<FairMutex<Crosswords<Listener>>>,
     rows: Vec<Row<Square>>,
@@ -19,6 +28,7 @@ pub struct RenderState {
     cursor_line: usize,
     cursor_column: usize,
     display_offset: usize,
+    selection: Option<ViewportSelection>,
 }
 
 impl RenderState {
@@ -37,6 +47,7 @@ impl RenderState {
             cursor_line: 0,
             cursor_column: 0,
             display_offset: 0,
+            selection: None,
         }
     }
 
@@ -64,6 +75,36 @@ impl RenderState {
         let cursor = term.cursor();
         self.cursor_line = cursor.pos.row.0.max(0) as usize;
         self.cursor_column = cursor.pos.col.0;
+        self.selection = term
+            .selection
+            .as_ref()
+            .and_then(|selection| selection.to_range(&term))
+            .and_then(|range| {
+                let offset = term.display_offset() as i32;
+                let lines = self.rows.len() as i32;
+                let start = range.start.row.0 + offset;
+                let end = range.end.row.0 + offset;
+                if end < 0 || start >= lines {
+                    return None;
+                }
+                let clamped_start = start.max(0);
+                let clamped_end = end.min(lines - 1);
+                Some(ViewportSelection {
+                    start_line: clamped_start as u16,
+                    start_col: if start < 0 {
+                        0
+                    } else {
+                        range.start.col.0 as u16
+                    },
+                    end_line: clamped_end as u16,
+                    end_col: if end >= lines {
+                        (self.columns.saturating_sub(1)) as u16
+                    } else {
+                        range.end.col.0 as u16
+                    },
+                    is_block: range.is_block,
+                })
+            });
     }
 
     pub fn columns(&self) -> usize {
@@ -109,6 +150,10 @@ impl RenderState {
 
     pub fn display_offset(&self) -> usize {
         self.display_offset
+    }
+
+    pub fn selection(&self) -> Option<ViewportSelection> {
+        self.selection
     }
 
     pub fn text_row(&self, line: usize) -> String {

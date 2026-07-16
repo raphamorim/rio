@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -127,6 +128,7 @@ final class AppModel {
     var isSidebarCollapsed = false
     var draggingTerminalID: UUID?
     var pendingRenameFolderID: UUID?
+    var fontSize: Float = 13.0
 
     @ObservationIgnored
     let surfaces = SurfaceRegistry()
@@ -226,6 +228,42 @@ final class AppModel {
 
     func splitDownInSelected() {
         selectedTerminal?.splitDown()
+    }
+
+    var focusedSession: PanelSession? {
+        guard let terminal = selectedTerminal else { return nil }
+        return surfaces.existingSession(for: terminal.focusedPanelID)
+    }
+
+    func adjustFontSize(by delta: Float) {
+        setFontSize(fontSize + delta)
+    }
+
+    func resetFontSize() {
+        setFontSize(13.0)
+    }
+
+    private func setFontSize(_ size: Float) {
+        fontSize = min(max(size, 6.0), 72.0)
+        RioEngine.fontSize = fontSize
+        for session in surfaces.allSessions {
+            session.setFontSize(fontSize)
+        }
+    }
+
+    func copySelection() {
+        guard let session = focusedSession, let text = session.selectionText(),
+            !text.isEmpty
+        else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    func pasteClipboard() {
+        guard let session = focusedSession,
+            let text = NSPasteboard.general.string(forType: .string)
+        else { return }
+        session.sendText(text)
     }
 
     func closeFocusedPanel() {

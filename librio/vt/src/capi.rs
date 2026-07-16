@@ -1,8 +1,8 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::{
-    Action, Engine, Key, KeyEvent, Modifiers, RenderState, Surface, SurfaceDelegate,
-    SurfaceDesc, SurfaceId,
+    Action, Engine, Key, KeyEvent, Modifiers, RenderState, SelectionKind, Surface,
+    SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
 use rio_backend::config::colors::AnsiColor;
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -33,6 +33,11 @@ pub const RIO_KEY_PAGE_DOWN: u32 = 12;
 pub const RIO_KEY_INSERT: u32 = 13;
 pub const RIO_KEY_DELETE: u32 = 14;
 pub const RIO_KEY_F: u32 = 15;
+
+pub const RIO_SELECTION_SIMPLE: u8 = 0;
+pub const RIO_SELECTION_WORD: u8 = 1;
+pub const RIO_SELECTION_LINE: u8 = 2;
+pub const RIO_SELECTION_BLOCK: u8 = 3;
 
 #[repr(C)]
 pub struct rio_action_s {
@@ -78,6 +83,17 @@ pub struct rio_cell_s {
     pub fg: rio_color_s,
     pub bg: rio_color_s,
     pub style_flags: u16,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct rio_selection_s {
+    pub active: bool,
+    pub start_line: u16,
+    pub start_col: u16,
+    pub end_line: u16,
+    pub end_col: u16,
+    pub is_block: bool,
 }
 
 #[repr(C)]
@@ -358,6 +374,99 @@ pub unsafe extern "C" fn rio_surface_scroll(surface: *mut Surface, delta_lines: 
         }
         unsafe { &*surface }.scroll(delta_lines);
     }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_selection_begin(
+    surface: *mut Surface,
+    viewport_line: i32,
+    col: u16,
+    kind: u8,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return;
+        }
+        let kind = match kind {
+            RIO_SELECTION_WORD => SelectionKind::Word,
+            RIO_SELECTION_LINE => SelectionKind::Line,
+            RIO_SELECTION_BLOCK => SelectionKind::Block,
+            _ => SelectionKind::Simple,
+        };
+        unsafe { &*surface }.selection_begin(viewport_line, col as usize, kind);
+    }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_selection_update(
+    surface: *mut Surface,
+    viewport_line: i32,
+    col: u16,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return;
+        }
+        unsafe { &*surface }.selection_update(viewport_line, col as usize);
+    }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_selection_clear(surface: *mut Surface) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return;
+        }
+        unsafe { &*surface }.selection_clear();
+    }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_selection_text(
+    surface: *const Surface,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return std::ptr::null_mut();
+        }
+        match unsafe { &*surface }.selection_text() {
+            Some(text) => CString::new(text).unwrap_or_default().into_raw(),
+            None => std::ptr::null_mut(),
+        }
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_text_free(text: *mut c_char) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if !text.is_null() {
+            drop(unsafe { CString::from_raw(text) });
+        }
+    }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_selection(
+    state: *const RenderState,
+) -> rio_selection_s {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return rio_selection_s::default();
+        }
+        match unsafe { &*state }.selection() {
+            Some(selection) => rio_selection_s {
+                active: true,
+                start_line: selection.start_line,
+                start_col: selection.start_col,
+                end_line: selection.end_line,
+                end_col: selection.end_col,
+                is_block: selection.is_block,
+            },
+            None => rio_selection_s::default(),
+        }
+    }))
+    .unwrap_or_default()
 }
 
 #[no_mangle]

@@ -11,6 +11,8 @@ final class RioEngine {
     var onTitle: ((PanelSession, String) -> Void)?
     var onCloseSurface: ((PanelSession) -> Void)?
 
+    static var fontSize: Float = 13.0
+
     private init() {
         var config = rio_runtime_config_s()
         config.userdata = Unmanaged.passUnretained(self).toOpaque()
@@ -24,6 +26,14 @@ final class RioEngine {
             let engine = Unmanaged<RioEngine>.fromOpaque(userdata).takeUnretainedValue()
             if action.tag == RIO_ACTION_SET_TITLE, let titlePtr = action.title {
                 engine.title(surfaceID, String(cString: titlePtr))
+            }
+        }
+        config.clipboard_write_cb = { _, _, _, textPtr in
+            guard let textPtr else { return }
+            let text = String(cString: textPtr)
+            DispatchQueue.main.async {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
             }
         }
         config.close_surface_cb = { userdata, surfaceID in
@@ -118,7 +128,7 @@ final class PanelSession {
                 Float(pixelSize.width),
                 Float(pixelSize.height),
                 scale,
-                13.0)
+                RioEngine.fontSize)
         else { return }
         self.renderer = renderer
 
@@ -214,6 +224,78 @@ final class PanelSession {
     func scroll(deltaLines: Int32) {
         guard let surface else { return }
         rio_surface_scroll(surface, deltaLines)
+    }
+
+    func cellAt(_ point: NSPoint) -> (line: Int32, col: UInt16)? {
+        guard let renderer else { return nil }
+        var cellWidth: Float = 0
+        var cellHeight: Float = 0
+        rio_renderer_cell_size(renderer, &cellWidth, &cellHeight)
+        guard cellWidth > 0, cellHeight > 0 else { return nil }
+        let pad = CGFloat(rio_renderer_padding(renderer))
+        let col = Int((point.x - pad) / CGFloat(cellWidth))
+        let line = Int((point.y - pad) / CGFloat(cellHeight))
+        let maxCol = max(Int(lastCols) - 1, 0)
+        let maxLine = max(Int(lastRows) - 1, 0)
+        return (
+            Int32(min(max(line, 0), maxLine)),
+            UInt16(min(max(col, 0), maxCol))
+        )
+    }
+
+    func selectionBegin(at point: NSPoint, kind: UInt8) {
+        guard let surface, let cell = cellAt(point) else { return }
+        rio_surface_selection_begin(surface, cell.line, cell.col, kind)
+        render()
+    }
+
+    func selectionUpdate(at point: NSPoint) {
+        guard let surface, let cell = cellAt(point) else { return }
+        rio_surface_selection_update(surface, cell.line, cell.col)
+        render()
+    }
+
+    func selectionClear() {
+        guard let surface else { return }
+        rio_surface_selection_clear(surface)
+        render()
+    }
+
+    func selectionText() -> String? {
+        guard let surface else { return nil }
+        guard let pointer = rio_surface_selection_text(surface) else { return nil }
+        defer { rio_text_free(pointer) }
+        return String(cString: pointer)
+    }
+
+    func setPreedit(_ text: String?) {
+        guard let renderer else { return }
+        if let text, !text.isEmpty {
+            text.withCString { rio_renderer_set_preedit(renderer, $0) }
+        } else {
+            rio_renderer_set_preedit(renderer, nil)
+        }
+        render()
+    }
+
+    func setFontSize(_ size: Float) {
+        guard let renderer else { return }
+        rio_renderer_set_font_size(renderer, size)
+        syncSize()
+    }
+
+    func cursorRect() -> NSRect? {
+        guard let renderState, let renderer else { return nil }
+        let cursor = rio_render_state_cursor(renderState)
+        var cellWidth: Float = 0
+        var cellHeight: Float = 0
+        rio_renderer_cell_size(renderer, &cellWidth, &cellHeight)
+        let pad = CGFloat(rio_renderer_padding(renderer))
+        return NSRect(
+            x: pad + CGFloat(cursor.column) * CGFloat(cellWidth),
+            y: pad + CGFloat(cursor.line) * CGFloat(cellHeight),
+            width: CGFloat(cellWidth),
+            height: CGFloat(cellHeight))
     }
 
     func shutdown() {

@@ -4,18 +4,21 @@ pub mod key;
 mod render_state;
 
 pub use key::{encode as encode_key, Key, KeyEvent, Modifiers};
-pub use render_state::RenderState;
+pub use render_state::{RenderState, ViewportSelection};
 pub use rio_backend::clipboard::ClipboardType;
 pub use rio_backend::config::colors::{AnsiColor, ColorRgb, NamedColor};
 pub use rio_backend::crosswords::pos::Column;
 pub use rio_backend::crosswords::square::Square;
 pub use rio_backend::crosswords::style::{Style, StyleFlags};
+pub use rio_backend::selection::SelectionRange;
 
 use rio_backend::ansi::CursorShape;
+use rio_backend::crosswords::pos::{Column as PosColumn, Line, Pos, Side};
 use rio_backend::crosswords::{Crosswords, Mode};
 use rio_backend::event::sync::FairMutex;
 use rio_backend::event::{EventListener, Msg, RioEvent, WindowId};
 use rio_backend::performer::Machine;
+use rio_backend::selection::{Selection, SelectionType};
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -23,6 +26,25 @@ use std::sync::{Arc, Mutex};
 use teletypewriter::{create_pty_with_spawn, WinsizeBuilder};
 
 pub type SurfaceId = usize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionKind {
+    Simple,
+    Word,
+    Line,
+    Block,
+}
+
+impl SelectionKind {
+    fn to_type(self) -> SelectionType {
+        match self {
+            SelectionKind::Simple => SelectionType::Simple,
+            SelectionKind::Word => SelectionType::Semantic,
+            SelectionKind::Line => SelectionType::Lines,
+            SelectionKind::Block => SelectionType::Block,
+        }
+    }
+}
 
 struct GridSize {
     rows: usize,
@@ -306,6 +328,35 @@ impl Surface {
             .scroll_display(Scroll::Delta(delta_lines));
     }
 
+    pub fn selection_begin(&self, viewport_line: i32, col: usize, kind: SelectionKind) {
+        let mut term = self.terminal.lock();
+        let offset = term.display_offset() as i32;
+        let pos = Pos::new(Line(viewport_line - offset), PosColumn(col));
+        term.selection = Some(Selection::new(kind.to_type(), pos, Side::Left));
+        term.mark_fully_damaged();
+    }
+
+    pub fn selection_update(&self, viewport_line: i32, col: usize) {
+        let mut term = self.terminal.lock();
+        let offset = term.display_offset() as i32;
+        let pos = Pos::new(Line(viewport_line - offset), PosColumn(col));
+        if let Some(selection) = &mut term.selection {
+            selection.update(pos, Side::Right);
+            term.mark_fully_damaged();
+        }
+    }
+
+    pub fn selection_clear(&self) {
+        let mut term = self.terminal.lock();
+        if term.selection.take().is_some() {
+            term.mark_fully_damaged();
+        }
+    }
+
+    pub fn selection_text(&self) -> Option<String> {
+        self.terminal.lock().selection_to_string()
+    }
+
     pub(crate) fn terminal(&self) -> Arc<FairMutex<Crosswords<Listener>>> {
         self.terminal.clone()
     }
@@ -368,5 +419,14 @@ mod tests {
             );
         }
         assert!(delegate.wakeups.load(Ordering::SeqCst) > 0);
+
+        surface.selection_begin(0, 0, SelectionKind::Simple);
+        surface.selection_update(0, 9);
+        let text = surface.selection_text().expect("selection text");
+        assert!(!text.is_empty());
+        state.update();
+        assert!(state.selection().is_some());
+        surface.selection_clear();
+        assert!(surface.selection_text().is_none());
     }
 }
