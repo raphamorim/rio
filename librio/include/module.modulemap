@@ -1,0 +1,4 @@
+module RioKit {
+    umbrella header "librio-vt.h"
+    export *
+}

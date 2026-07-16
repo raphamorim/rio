@@ -8,8 +8,15 @@ keywords.workspace = true
 repository = "https://github.com/raphamorim/rio"
 description = "Embeddable terminal core extracted from Rio: PTY, VT state, render-state pull API"
 
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[features]
+default = []
+capi = []
+
 [dependencies]
-rio-backend = { workspace = true, default-features = false }
+rio-backend = { path = "../../rio-backend", version = "0.4.10", default-features = false }
 teletypewriter = { workspace = true }
 corcovado = { workspace = true }
 rustc-hash = { workspace = true }
