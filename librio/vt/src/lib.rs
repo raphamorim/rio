@@ -1,3 +1,5 @@
+#[cfg(feature = "capi")]
+pub mod capi;
 pub mod key;
 mod render_state;
 

@@ -66,7 +66,7 @@ install-terminfo:
 
 CANARIO_DIR = frontends/canario
 CANARIO_APP_DIR = target/canario/Canario.app
-.PHONY: canario canario-run
+.PHONY: canario canario-run librio-vt-ctest
 canario:
 	@mkdir -p $(CANARIO_APP_DIR)/Contents/MacOS
 	@mkdir -p $(CANARIO_APP_DIR)/Contents/Resources
@@ -81,6 +81,16 @@ canario:
 
 canario-run: canario
 	open -n $(CANARIO_APP_DIR)
+
+librio-vt-ctest:
+	cargo build -p librio-vt --features capi
+	@mkdir -p target/librio
+	cc librio/vt/ctest/main.c target/debug/liblibrio_vt.a \
+		-o target/librio/vt-ctest \
+		-framework CoreFoundation -framework Foundation -framework AppKit \
+		-framework CoreGraphics -framework CoreText -framework Metal \
+		-framework QuartzCore -framework CoreVideo -liconv -lc++
+	target/librio/vt-ctest
 
 release-macos: app-universal
 	@codesign --remove-signature "$(TARGET_DIR_OSX)/$(APP_NAME)"
