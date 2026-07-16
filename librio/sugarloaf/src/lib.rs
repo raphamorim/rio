@@ -1,3 +1,6 @@
+#[cfg(feature = "capi")]
+pub mod capi;
+
 use librio_vt::{AnsiColor, NamedColor, RenderState, StyleFlags};
 use sugarloaf::font::FontLibrary;
 use sugarloaf::layout::RootStyle;
