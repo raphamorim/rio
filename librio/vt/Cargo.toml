@@ -1,12 +1,13 @@
 [package]
 name = "librio-vt"
-version.workspace = true
+version = "0.1.0-alpha.1"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
 keywords.workspace = true
 repository = "https://github.com/raphamorim/rio"
 description = "Embeddable terminal core extracted from Rio: PTY, VT state, render-state pull API"
+readme = "README.md"
 
 [lib]
 crate-type = ["rlib", "staticlib"]

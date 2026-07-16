@@ -204,4 +204,8 @@ test:
 
 publish-crates: build
 	# Note: cargo publish is only supported from >=1.90
-	cargo publish --workspace
+	cargo publish --workspace --exclude librio-vt --exclude librio-sugarloaf
+
+publish-librio:
+	cargo publish -p librio-vt
+	cargo publish -p librio-sugarloaf
