@@ -5,6 +5,10 @@ import SwiftUI
 final class SurfaceRegistry {
     private var sessions: [UUID: PanelSession] = [:]
 
+    var allSessions: [PanelSession] {
+        Array(sessions.values)
+    }
+
     func session(for panelID: UUID, terminal: TerminalItem) -> PanelSession {
         if let existing = sessions[panelID] {
             return existing
@@ -32,6 +36,9 @@ final class RioSurfaceNSView: NSView {
 final class PanelHostView: NSView {
     weak var session: PanelSession?
     let surfaceView = RioSurfaceNSView()
+    private var selectionAnchor: NSPoint?
+    private var selectionActive = false
+    private var markedText = ""
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -68,7 +75,36 @@ final class PanelHostView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        super.mouseDown(with: event)
+        guard let session else { return }
+        let point = surfaceView.convert(event.locationInWindow, from: nil)
+        switch event.clickCount {
+        case 2:
+            selectionActive = true
+            session.selectionBegin(at: point, kind: UInt8(RIO_SELECTION_WORD))
+        case 3:
+            selectionActive = true
+            session.selectionBegin(at: point, kind: UInt8(RIO_SELECTION_LINE))
+        default:
+            selectionActive = false
+            selectionAnchor = point
+            session.selectionClear()
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let session else { return }
+        let point = surfaceView.convert(event.locationInWindow, from: nil)
+        if !selectionActive {
+            guard let anchor = selectionAnchor else { return }
+            selectionActive = true
+            session.selectionBegin(at: anchor, kind: UInt8(RIO_SELECTION_SIMPLE))
+        }
+        session.selectionUpdate(at: point)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        selectionAnchor = nil
+        super.mouseUp(with: event)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -117,6 +153,10 @@ extension PanelHostView: NSTextInputClient {
         } else {
             return
         }
+        if !markedText.isEmpty {
+            markedText = ""
+            session?.setPreedit(nil)
+        }
         session?.sendText(text)
     }
 
@@ -156,20 +196,33 @@ extension PanelHostView: NSTextInputClient {
         }
     }
 
-    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {}
+    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        if let value = string as? String {
+            markedText = value
+        } else if let value = string as? NSAttributedString {
+            markedText = value.string
+        }
+        session?.setPreedit(markedText)
+    }
 
-    func unmarkText() {}
+    func unmarkText() {
+        markedText = ""
+        session?.setPreedit(nil)
+    }
 
     func selectedRange() -> NSRange {
         NSRange(location: NSNotFound, length: 0)
     }
 
     func markedRange() -> NSRange {
-        NSRange(location: NSNotFound, length: 0)
+        if markedText.isEmpty {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        return NSRange(location: 0, length: markedText.utf16.count)
     }
 
     func hasMarkedText() -> Bool {
-        false
+        !markedText.isEmpty
     }
 
     func attributedSubstring(
@@ -186,7 +239,8 @@ extension PanelHostView: NSTextInputClient {
         -> NSRect
     {
         guard let window else { return .zero }
-        let rect = convert(bounds, to: nil)
+        let local = session?.cursorRect() ?? bounds
+        let rect = surfaceView.convert(local, to: nil)
         return window.convertToScreen(rect)
     }
 

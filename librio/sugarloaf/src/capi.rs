@@ -2,7 +2,7 @@
 
 use crate::{Renderer, Theme};
 use librio_vt::RenderState;
-use std::ffi::c_void;
+use std::ffi::{c_char, c_void, CStr};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr::NonNull;
 
@@ -103,6 +103,51 @@ pub unsafe extern "C" fn rio_renderer_cell_size(
             *out_width = width;
             *out_height = height;
         }
+    }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_renderer_set_font_size(renderer: *mut Renderer, size: f32) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if !renderer.is_null() {
+            unsafe { &mut *renderer }.set_font_size(size);
+        }
+    }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_renderer_font_size(renderer: *const Renderer) -> f32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if renderer.is_null() {
+            return 0.0;
+        }
+        unsafe { &*renderer }.font_size()
+    }))
+    .unwrap_or(0.0)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_renderer_set_preedit(
+    renderer: *mut Renderer,
+    preedit: *const c_char,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if renderer.is_null() {
+            return;
+        }
+        let value = if preedit.is_null() {
+            None
+        } else {
+            let text = unsafe { CStr::from_ptr(preedit) }
+                .to_string_lossy()
+                .into_owned();
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        };
+        unsafe { &mut *renderer }.set_preedit(value);
     }));
 }
 

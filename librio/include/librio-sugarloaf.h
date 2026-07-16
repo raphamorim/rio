@@ -25,6 +25,10 @@ void rio_renderer_rescale(rio_renderer_t *renderer, float scale);
 void rio_renderer_cell_size(const rio_renderer_t *renderer, float *out_width,
                             float *out_height);
 float rio_renderer_padding(const rio_renderer_t *renderer);
+void rio_renderer_set_font_size(rio_renderer_t *renderer, float size);
+float rio_renderer_font_size(const rio_renderer_t *renderer);
+/* NULL or empty clears the preedit overlay. */
+void rio_renderer_set_preedit(rio_renderer_t *renderer, const char *utf8);
 
 #ifdef __cplusplus
 }

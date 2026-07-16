@@ -40,6 +40,21 @@ struct CanarioApp: App {
                 }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
                 .disabled(model.selectedTerminalID == nil)
+                Divider()
+                Button("Copy") { model.copySelection() }
+                    .keyboardShortcut("c", modifiers: .command)
+                    .disabled(model.selectedTerminalID == nil)
+                Button("Paste") { model.pasteClipboard() }
+                    .keyboardShortcut("v", modifiers: .command)
+                    .disabled(model.selectedTerminalID == nil)
+                Divider()
+                Button("Increase Font Size") { model.adjustFontSize(by: 1) }
+                    .keyboardShortcut("=", modifiers: .command)
+                Button("Decrease Font Size") { model.adjustFontSize(by: -1) }
+                    .keyboardShortcut("-", modifiers: .command)
+                Button("Reset Font Size") { model.resetFontSize() }
+                    .keyboardShortcut("0", modifiers: .command)
+                Divider()
                 Button(model.selectedTerminalID == nil ? "Close Window" : "Close Terminal") {
                     if model.selectedTerminalID != nil {
                         model.closeSelectedTerminal()
