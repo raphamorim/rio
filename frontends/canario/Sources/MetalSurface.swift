@@ -64,7 +64,11 @@ final class PanelHostView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        session?.startIfNeeded()
+        guard let session, window != nil else { return }
+        session.startIfNeeded()
+        if session.terminal.focusedPanelID == session.panelID {
+            window?.makeFirstResponder(self)
+        }
     }
 
     override func viewDidChangeBackingProperties() {
