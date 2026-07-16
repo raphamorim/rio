@@ -1,0 +1,17 @@
+[package]
+name = "librio-vt"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+repository = "https://github.com/raphamorim/rio"
+description = "Embeddable terminal core extracted from Rio: PTY, VT state, render-state pull API"
+
+[dependencies]
+rio-backend = { workspace = true, default-features = false }
+teletypewriter = { workspace = true }
+corcovado = { workspace = true }
+rustc-hash = { workspace = true }
+bitflags = { workspace = true }
+tracing = { workspace = true }
