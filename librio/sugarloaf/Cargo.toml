@@ -1,12 +1,13 @@
 [package]
 name = "librio-sugarloaf"
-version.workspace = true
+version = "0.1.0-alpha.1"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
 keywords.workspace = true
 repository = "https://github.com/raphamorim/rio"
 description = "Terminal renderer for librio-vt render state, powered by sugarloaf"
+readme = "README.md"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
@@ -16,7 +17,7 @@ default = []
 capi = ["librio-vt/capi", "dep:raw-window-handle"]
 
 [dependencies]
-librio-vt = { path = "../vt", version = "0.4.10" }
+librio-vt = { path = "../vt", version = "0.1.0-alpha.1" }
 sugarloaf = { workspace = true }
 raw-window-handle = { workspace = true, optional = true }
 

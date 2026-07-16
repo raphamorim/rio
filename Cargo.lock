@@ -2573,7 +2573,7 @@ dependencies = [
 
 [[package]]
 name = "librio-sugarloaf"
-version = "0.4.10"
+version = "0.1.0-alpha.1"
 dependencies = [
  "librio-vt",
  "raw-window-handle",
@@ -2583,7 +2583,7 @@ dependencies = [
 
 [[package]]
 name = "librio-vt"
-version = "0.4.10"
+version = "0.1.0-alpha.1"
 dependencies = [
  "bitflags 2.13.0",
  "corcovado",
