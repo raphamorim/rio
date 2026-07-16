@@ -8,6 +8,7 @@ members = [
     "rio-window",
     "rio-notifier",
     "frontends/rioterm",
+    "librio/vt",
 ]
 resolver = "2"
 
