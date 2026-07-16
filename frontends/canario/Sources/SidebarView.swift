@@ -24,7 +24,7 @@ struct SidebarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
-        .frame(width: 276)
+        .frame(width: 200)
         .onDrop(
             of: [.text],
             delegate: ReorderDropDelegate(
