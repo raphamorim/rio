@@ -94,7 +94,7 @@ private struct PanelRowView: View {
                     .foregroundStyle(
                         isActive ? Theme.textSelected : Theme.textPrimary.opacity(0.5))
 
-                Text("Panel \(index + 1)")
+                Text(terminal.panelTitles[panel.id] ?? "Panel \(index + 1)")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(
                         isActive ? Theme.textSelected : Theme.textPrimary.opacity(0.65))
