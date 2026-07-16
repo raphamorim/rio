@@ -67,12 +67,17 @@ install-terminfo:
 CANARIO_DIR = frontends/canario
 CANARIO_APP_DIR = target/canario/Canario.app
 .PHONY: canario canario-run librio-vt-ctest librio-xcframework
-canario:
+canario: librio-xcframework
 	@mkdir -p $(CANARIO_APP_DIR)/Contents/MacOS
 	@mkdir -p $(CANARIO_APP_DIR)/Contents/Resources
 	swiftc -O -parse-as-library \
 		-target arm64-apple-macosx14.0 \
+		-I $(LIBRIO_XCF)/macos-arm64/Headers \
 		$(CANARIO_DIR)/Sources/*.swift \
+		$(LIBRIO_XCF)/macos-arm64/librio.a \
+		-framework CoreFoundation -framework Foundation -framework AppKit \
+		-framework CoreGraphics -framework CoreText -framework Metal \
+		-framework QuartzCore -framework CoreVideo -lc++ -liconv \
 		-o $(CANARIO_APP_DIR)/Contents/MacOS/canario
 	@cp -fp $(CANARIO_DIR)/Info.plist $(CANARIO_APP_DIR)/Contents/Info.plist
 	@cp -fp $(CANARIO_DIR)/Resources/icon.icns $(CANARIO_APP_DIR)/Contents/Resources/icon.icns

@@ -1,49 +1,46 @@
 import AppKit
-import Metal
-import QuartzCore
+import RioKit
 import SwiftUI
 
 final class SurfaceRegistry {
-    private var views: [UUID: MetalHostView] = [:]
+    private var sessions: [UUID: PanelSession] = [:]
 
-    func view(for id: UUID) -> MetalHostView {
-        if let existing = views[id] {
+    func session(for panelID: UUID, terminal: TerminalItem) -> PanelSession {
+        if let existing = sessions[panelID] {
             return existing
         }
-        let view = MetalHostView()
-        views[id] = view
-        return view
+        let session = PanelSession(panelID: panelID, terminal: terminal)
+        sessions[panelID] = session
+        return session
     }
 
-    func remove(_ id: UUID) {
-        views.removeValue(forKey: id)
+    func existingSession(for panelID: UUID) -> PanelSession? {
+        sessions[panelID]
+    }
+
+    func remove(_ panelID: UUID) {
+        if let session = sessions.removeValue(forKey: panelID) {
+            session.shutdown()
+        }
     }
 }
 
-final class MetalHostView: NSView {
-    private static let device = MTLCreateSystemDefaultDevice()
-    private static let commandQueue = device?.makeCommandQueue()
+final class RioSurfaceNSView: NSView {
+    override var isFlipped: Bool { true }
+}
 
-    private let metalLayer: CAMetalLayer
+final class PanelHostView: NSView {
+    weak var session: PanelSession?
+    let surfaceView = RioSurfaceNSView()
 
     override init(frame frameRect: NSRect) {
-        let metalLayer = CAMetalLayer()
-        metalLayer.device = Self.device
-        metalLayer.pixelFormat = .bgra8Unorm
-        metalLayer.colorspace = CGColorSpace(name: CGColorSpace.displayP3)
-        metalLayer.isOpaque = true
-        metalLayer.maximumDrawableCount = 3
-        metalLayer.allowsNextDrawableTimeout = false
-        self.metalLayer = metalLayer
-
         super.init(frame: frameRect)
         wantsLayer = true
         layerContentsRedrawPolicy = .duringViewResize
-        // Rounding an opaque CAMetalLayer directly is unreliable, so the
-        // metal layer lives as a sublayer clipped by the backing layer.
-        layer?.cornerRadius = 12
+        layer?.cornerRadius = Theme.cardRadius
         layer?.masksToBounds = true
-        layer?.addSublayer(metalLayer)
+        layer?.backgroundColor = CGColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1)
+        addSubview(surfaceView)
     }
 
     required init?(coder: NSCoder) {
@@ -54,76 +51,156 @@ final class MetalHostView: NSView {
 
     override func layout() {
         super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        metalLayer.frame = bounds
-        CATransaction.commit()
-        updateDrawableSize()
-        render(synchronized: true)
+        surfaceView.frame = bounds
+        session?.syncSize()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        session?.startIfNeeded()
     }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         guard let window else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        metalLayer.contentsScale = window.backingScaleFactor
-        CATransaction.commit()
-        updateDrawableSize()
-        render(synchronized: true)
+        session?.rescale(Float(window.backingScaleFactor))
     }
 
-    private func updateDrawableSize() {
-        let size = convertToBacking(bounds).size
-        guard size.width > 0, size.height > 0 else { return }
-        if metalLayer.drawableSize != size {
-            metalLayer.drawableSize = size
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let delta = event.scrollingDeltaY
+        if delta != 0 {
+            let lines = event.hasPreciseScrollingDeltas ? delta / 12.0 : delta
+            session?.scroll(deltaLines: Int32(lines.rounded()))
+            session?.render()
         }
     }
 
-    func render(synchronized: Bool = false) {
-        guard let queue = Self.commandQueue,
-            metalLayer.drawableSize.width > 0,
-            metalLayer.drawableSize.height > 0
-        else { return }
+    override func keyDown(with event: NSEvent) {
+        guard let session else { return }
+        let flags = event.modifierFlags
 
-        let sync = synchronized || inLiveResize
-        if metalLayer.presentsWithTransaction != sync {
-            metalLayer.presentsWithTransaction = sync
+        if flags.contains(.command) {
+            super.keyDown(with: event)
+            return
         }
 
-        guard let drawable = metalLayer.nextDrawable(),
-            let commandBuffer = queue.makeCommandBuffer()
-        else { return }
+        if flags.contains(.control), let chars = event.charactersIgnoringModifiers,
+            let ch = chars.unicodeScalars.first
+        {
+            var mods = UInt8(RIO_MOD_CTRL)
+            if flags.contains(.option) {
+                mods |= UInt8(RIO_MOD_ALT)
+            }
+            if flags.contains(.shift) {
+                mods |= UInt8(RIO_MOD_SHIFT)
+            }
+            session.sendKey(UInt32(RIO_KEY_CHAR), mods: mods, codepoint: ch.value)
+            return
+        }
 
-        let descriptor = MTLRenderPassDescriptor()
-        let attachment = descriptor.colorAttachments[0]!
-        attachment.texture = drawable.texture
-        attachment.loadAction = .clear
-        attachment.storeAction = .store
-        attachment.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        interpretKeyEvents([event])
+    }
+}
 
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)
-        else { return }
-        encoder.endEncoding()
-
-        if sync {
-            commandBuffer.commit()
-            commandBuffer.waitUntilScheduled()
-            drawable.present()
+extension PanelHostView: NSTextInputClient {
+    func insertText(_ string: Any, replacementRange: NSRange) {
+        let text: String
+        if let value = string as? String {
+            text = value
+        } else if let value = string as? NSAttributedString {
+            text = value.string
         } else {
-            commandBuffer.present(drawable)
-            commandBuffer.commit()
+            return
         }
+        session?.sendText(text)
+    }
+
+    override func doCommand(by selector: Selector) {
+        guard let session else { return }
+        switch selector {
+        case #selector(insertNewline(_:)):
+            session.sendKey(UInt32(RIO_KEY_ENTER))
+        case #selector(deleteBackward(_:)):
+            session.sendKey(UInt32(RIO_KEY_BACKSPACE))
+        case #selector(insertTab(_:)):
+            session.sendKey(UInt32(RIO_KEY_TAB))
+        case #selector(insertBacktab(_:)):
+            session.sendKey(UInt32(RIO_KEY_TAB), mods: UInt8(RIO_MOD_SHIFT))
+        case #selector(cancelOperation(_:)):
+            session.sendKey(UInt32(RIO_KEY_ESCAPE))
+        case #selector(moveUp(_:)):
+            session.sendKey(UInt32(RIO_KEY_UP))
+        case #selector(moveDown(_:)):
+            session.sendKey(UInt32(RIO_KEY_DOWN))
+        case #selector(moveLeft(_:)):
+            session.sendKey(UInt32(RIO_KEY_LEFT))
+        case #selector(moveRight(_:)):
+            session.sendKey(UInt32(RIO_KEY_RIGHT))
+        case #selector(scrollToBeginningOfDocument(_:)):
+            session.sendKey(UInt32(RIO_KEY_HOME))
+        case #selector(scrollToEndOfDocument(_:)):
+            session.sendKey(UInt32(RIO_KEY_END))
+        case #selector(pageUp(_:)):
+            session.sendKey(UInt32(RIO_KEY_PAGE_UP))
+        case #selector(pageDown(_:)):
+            session.sendKey(UInt32(RIO_KEY_PAGE_DOWN))
+        case #selector(deleteForward(_:)):
+            session.sendKey(UInt32(RIO_KEY_DELETE))
+        default:
+            break
+        }
+    }
+
+    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {}
+
+    func unmarkText() {}
+
+    func selectedRange() -> NSRange {
+        NSRange(location: NSNotFound, length: 0)
+    }
+
+    func markedRange() -> NSRange {
+        NSRange(location: NSNotFound, length: 0)
+    }
+
+    func hasMarkedText() -> Bool {
+        false
+    }
+
+    func attributedSubstring(
+        forProposedRange range: NSRange, actualRange: NSRangePointer?
+    ) -> NSAttributedString? {
+        nil
+    }
+
+    func validAttributesForMarkedText() -> [NSAttributedString.Key] {
+        []
+    }
+
+    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?)
+        -> NSRect
+    {
+        guard let window else { return .zero }
+        let rect = convert(bounds, to: nil)
+        return window.convertToScreen(rect)
+    }
+
+    func characterIndex(for point: NSPoint) -> Int {
+        0
     }
 }
 
 struct TerminalSurface: NSViewRepresentable {
-    let hostView: MetalHostView
+    let hostView: PanelHostView
 
-    func makeNSView(context: Context) -> MetalHostView {
+    func makeNSView(context: Context) -> PanelHostView {
         hostView
     }
 
-    func updateNSView(_ nsView: MetalHostView, context: Context) {}
+    func updateNSView(_ nsView: PanelHostView, context: Context) {}
 }

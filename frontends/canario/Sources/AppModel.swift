@@ -18,6 +18,7 @@ final class TerminalItem: Identifiable {
     var columns: [PanelColumn]
     var focusedPanelID: UUID
     var panelWeights: [UUID: CGFloat] = [:]
+    var panelTitles: [UUID: String] = [:]
     var isExpanded = false
 
     init(name: String) {
@@ -77,6 +78,7 @@ final class TerminalItem: Identifiable {
         guard let position = position(of: id) else { return false }
         columns[position.column].panels.remove(at: position.row)
         panelWeights.removeValue(forKey: id)
+        panelTitles.removeValue(forKey: id)
         if columns[position.column].panels.isEmpty {
             columns.remove(at: position.column)
         }
@@ -134,6 +136,13 @@ final class AppModel {
 
     init() {
         createTerminal()
+        RioEngine.shared.onTitle = { [weak self] session, title in
+            guard self != nil else { return }
+            session.terminal.panelTitles[session.panelID] = title
+        }
+        RioEngine.shared.onCloseSurface = { [weak self] session in
+            self?.closePanel(session.panelID, in: session.terminal)
+        }
     }
 
     var selectedTerminal: TerminalItem? {

@@ -102,7 +102,8 @@ private struct PanelTileView: View {
     @State private var isHandleHovered = false
 
     var body: some View {
-        TerminalSurface(hostView: model.surfaces.view(for: panel.id))
+        let session = model.surfaces.session(for: panel.id, terminal: terminal)
+        TerminalSurface(hostView: session.hostView)
             .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
             .overlay {
                 if terminal.panelCount > 1 {
@@ -124,6 +125,11 @@ private struct PanelTileView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 terminal.focusedPanelID = panel.id
+            }
+            .onChange(of: terminal.focusedPanelID, initial: true) { _, focused in
+                if focused == panel.id {
+                    session.hostView.window?.makeFirstResponder(session.hostView)
+                }
             }
     }
 
