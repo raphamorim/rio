@@ -8,9 +8,17 @@ keywords.workspace = true
 repository = "https://github.com/raphamorim/rio"
 description = "Terminal renderer for librio-vt render state, powered by sugarloaf"
 
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[features]
+default = []
+capi = ["librio-vt/capi", "dep:raw-window-handle"]
+
 [dependencies]
 librio-vt = { path = "../vt", version = "0.4.10" }
 sugarloaf = { workspace = true }
+raw-window-handle = { workspace = true, optional = true }
 
 [dev-dependencies]
 rio-window = { workspace = true }

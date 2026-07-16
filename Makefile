@@ -66,7 +66,7 @@ install-terminfo:
 
 CANARIO_DIR = frontends/canario
 CANARIO_APP_DIR = target/canario/Canario.app
-.PHONY: canario canario-run librio-vt-ctest
+.PHONY: canario canario-run librio-vt-ctest librio-xcframework
 canario:
 	@mkdir -p $(CANARIO_APP_DIR)/Contents/MacOS
 	@mkdir -p $(CANARIO_APP_DIR)/Contents/Resources
@@ -91,6 +91,19 @@ librio-vt-ctest:
 		-framework CoreGraphics -framework CoreText -framework Metal \
 		-framework QuartzCore -framework CoreVideo -liconv -lc++
 	target/librio/vt-ctest
+
+LIBRIO_XCF = target/librio/RioKit.xcframework
+librio-xcframework:
+	cargo build -p librio-sugarloaf --features capi --profile librio --target aarch64-apple-darwin
+	@rm -rf $(LIBRIO_XCF)
+	@mkdir -p $(LIBRIO_XCF)/macos-arm64/Headers
+	@cp target/aarch64-apple-darwin/librio/liblibrio_sugarloaf.a \
+		$(LIBRIO_XCF)/macos-arm64/librio.a
+	@cp librio/include/librio.h librio/include/librio-vt.h \
+		librio/include/librio-sugarloaf.h librio/include/module.modulemap \
+		$(LIBRIO_XCF)/macos-arm64/Headers/
+	@cp librio/xcframework-info.plist $(LIBRIO_XCF)/Info.plist
+	@echo "Created '$(LIBRIO_XCF)'"
 
 release-macos: app-universal
 	@codesign --remove-signature "$(TARGET_DIR_OSX)/$(APP_NAME)"
