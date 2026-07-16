@@ -2528,6 +2528,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "librio-sugarloaf"
+version = "0.4.10"
+dependencies = [
+ "librio-vt",
+ "raw-window-handle",
+ "rio-window",
+ "sugarloaf",
+]
+
+[[package]]
 name = "librio-vt"
 version = "0.4.10"
 dependencies = [

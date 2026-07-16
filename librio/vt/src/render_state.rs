@@ -58,6 +58,7 @@ impl RenderState {
             &mut self.extras,
         );
         term.reset_damage();
+        term.damage_event_in_flight = false;
         self.columns = term.grid.columns();
         self.display_offset = term.display_offset();
         let cursor = term.cursor();

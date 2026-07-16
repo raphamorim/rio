@@ -6,6 +6,7 @@ mod render_state;
 pub use key::{encode as encode_key, Key, KeyEvent, Modifiers};
 pub use render_state::RenderState;
 pub use rio_backend::clipboard::ClipboardType;
+pub use rio_backend::config::colors::{AnsiColor, ColorRgb, NamedColor};
 pub use rio_backend::crosswords::pos::Column;
 pub use rio_backend::crosswords::square::Square;
 pub use rio_backend::crosswords::style::{Style, StyleFlags};
