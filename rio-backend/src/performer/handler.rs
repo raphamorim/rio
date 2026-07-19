@@ -151,6 +151,9 @@ pub trait Handler {
     /// Report device status.
     fn device_status(&mut self, _: usize) {}
 
+    /// Reply to the color-scheme query DSR (`CSI ? 996 n`).
+    fn report_color_scheme_query(&mut self) {}
+
     /// Move cursor forward `cols`.
     fn move_forward(&mut self, _: Column) {}
 
@@ -1317,6 +1320,14 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 }
             }
             ('n', []) => handler.device_status(next_param_or(0) as usize),
+            ('n', [b'?']) => {
+                // DSR for private params. 996 = query current color scheme.
+                if next_param_or(0) == 996 {
+                    handler.report_color_scheme_query();
+                } else {
+                    csi_unhandled!();
+                }
+            }
             ('P', []) => handler.delete_chars(next_param_or(1) as usize),
             ('p', [b'$']) => {
                 let mode = next_param_or(0);

@@ -421,6 +421,12 @@ impl WgpuGridRenderer {
         self.atlas_color.insert(key, glyph)
     }
 
+    /// Drop both atlases' cached glyphs. See [`GridRenderer::clear_glyph_cache`].
+    pub fn clear_glyph_cache(&mut self) {
+        self.atlas_grayscale.clear();
+        self.atlas_color.clear();
+    }
+
     /// Record the cell-bg pass. Uploads the uniform buffer (cheap; the
     /// bg path always runs first per frame so this is the right place
     /// for it) and the bg cell storage buffer if it changed since the
