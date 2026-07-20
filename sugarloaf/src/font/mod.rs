@@ -568,6 +568,9 @@ pub struct FontLibraryData {
     pub inner: FxHashMap<usize, FontEntry>,
     pub symbol_maps: Option<Vec<SymbolMap>>,
     pub hinting: bool,
+    /// Parsed `fonts.features` entries, applied at shape time on every
+    /// platform. Empty when the user set none.
+    pub features: Arc<Vec<swash::Setting<u16>>>,
     // Cache primary font metrics for consistent cell dimensions (consistent metrics approach)
     primary_metrics_cache: FxHashMap<u32, Metrics>,
     /// PostScript-name → `font_id` lookup, populated on `insert`. Used
@@ -592,6 +595,7 @@ impl Default for FontLibraryData {
         Self {
             inner: FxHashMap::default(),
             hinting: true,
+            features: Arc::new(Vec::new()),
             symbol_maps: None,
             primary_metrics_cache: FxHashMap::default(),
             postscript_to_id: FxHashMap::default(),
@@ -876,6 +880,12 @@ impl FontLibraryData {
     pub fn load(&mut self, mut spec: SugarloafFonts) -> Vec<SugarloafFont> {
         // Configure hinting through spec
         self.hinting = spec.hinting;
+        self.features = Arc::new(
+            spec.features
+                .as_deref()
+                .map(parse_font_features)
+                .unwrap_or_default(),
+        );
 
         let mut fonts_not_fount: Vec<SugarloafFont> = vec![];
 
@@ -1350,14 +1360,19 @@ impl FontData {
 
         let attributes = font.attributes();
         let style = attributes.style();
-        let weight = attributes.weight();
+        // An explicit user weight pins the `wght` axis and overrides the
+        // face's reported weight so lookup and synthesis match intent.
+        let weight = match font_spec.weight {
+            Some(w) => Weight(w),
+            None => attributes.weight(),
+        };
 
         // Semibold threshold: families shipping bold at 600 must not
         // get faux-bold stacked on the real bold face.
         let (should_embolden, should_italicize) = synth_decisions(
             slot,
             font_spec,
-            weight >= Weight(600),
+            font_spec.weight.is_some() || weight >= Weight(600),
             style == Style::Italic,
         );
 
@@ -1373,7 +1388,7 @@ impl FontData {
             offset,
             should_italicize,
             should_embolden,
-            wght_variation: None,
+            wght_variation: font_spec.weight.map(f32::from),
             key,
             synth,
             style,
@@ -1448,6 +1463,15 @@ impl FontData {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let handle = crate::font::macos::FontHandle::from_path(&path)
             .ok_or_else(|| format!("CoreText refused {}", path.display()))?;
+        // Pin the `wght` axis when the user configured a weight so the
+        // stored CTFont shapes and rasterizes at that weight.
+        let handle = match font_spec.weight {
+            Some(w) => handle
+                .clone()
+                .with_wght_variation(f32::from(w))
+                .unwrap_or(handle),
+            None => handle,
+        };
         let attrs = crate::font::macos::font_attributes(&handle);
 
         let style = if attrs.is_italic {
@@ -1455,10 +1479,17 @@ impl FontData {
         } else {
             swash::Style::Normal
         };
-        let weight = swash::Weight(attrs.weight);
+        let weight = match font_spec.weight {
+            Some(w) => swash::Weight(w),
+            None => swash::Weight(attrs.weight),
+        };
 
-        let (should_embolden, should_italicize) =
-            synth_decisions(slot, font_spec, attrs.is_bold, attrs.is_italic);
+        let (should_embolden, should_italicize) = synth_decisions(
+            slot,
+            font_spec,
+            font_spec.weight.is_some() || attrs.is_bold,
+            attrs.is_italic,
+        );
 
         let postscript_name = Some(handle.postscript_name());
         Ok(Self {
@@ -1472,7 +1503,7 @@ impl FontData {
             synth: Synthesis::default(),
             should_embolden,
             should_italicize,
-            wght_variation: None,
+            wght_variation: font_spec.weight.map(f32::from),
             is_emoji: attrs.is_color,
             metrics_cache: FxHashMap::default(),
             handle: Some(handle),
@@ -1690,6 +1721,41 @@ enum FindResult {
     NotFound(SugarloafFont),
 }
 
+/// Parse `fonts.features` entries into OpenType feature settings.
+/// Accepts `"ss01"`, `"+ss01"`, `"-liga"` and `"cv01=2"` forms.
+pub fn parse_font_features(entries: &[String]) -> Vec<swash::Setting<u16>> {
+    let mut out: Vec<swash::Setting<u16>> = Vec::with_capacity(entries.len());
+    for raw in entries {
+        let s = raw.trim();
+        let (name, value) = if let Some(rest) = s.strip_prefix('-') {
+            (rest.trim(), 0u16)
+        } else if let Some(rest) = s.strip_prefix('+') {
+            (rest.trim(), 1u16)
+        } else if let Some((name, v)) = s.split_once('=') {
+            match v.trim().parse::<u16>() {
+                Ok(v) => (name.trim(), v),
+                Err(_) => {
+                    warn!("ignoring invalid font feature '{raw}'");
+                    continue;
+                }
+            }
+        } else {
+            (s, 1u16)
+        };
+        if name.is_empty() || name.len() > 4 || !name.is_ascii() {
+            warn!("ignoring invalid font feature '{raw}'");
+            continue;
+        }
+        let mut tag = [b' '; 4];
+        tag[..name.len()].copy_from_slice(name.as_bytes());
+        out.push(swash::Setting {
+            tag: u32::from_be_bytes(tag),
+            value,
+        });
+    }
+    out
+}
+
 /// Whether to apply faux-bold / faux-italic on top of the matched face.
 /// Synth fires only when the slot's bold/italic intent isn't already
 /// satisfied by the matched face, and never when the user pinned an
@@ -1762,10 +1828,10 @@ fn find_font(
             ..crate::font::loader::Query::default()
         };
 
-        query.weight = if slot.is_bold() {
-            crate::font::loader::Weight::BOLD
-        } else {
-            crate::font::loader::Weight::NORMAL
+        query.weight = match font_spec.weight {
+            Some(w) => crate::font::loader::Weight(w),
+            None if slot.is_bold() => crate::font::loader::Weight::BOLD,
+            None => crate::font::loader::Weight::NORMAL,
         };
 
         query.style = if slot.is_italic() {
@@ -1998,6 +2064,25 @@ mod alias_tests {
             font_id, FONT_ID_BOLD,
             "bold cells must use the configured bold slot"
         );
+    }
+
+    #[test]
+    fn parse_font_features_forms() {
+        let entries: Vec<String> = ["ss01", "+dlig", "-liga", "cv01=2", "bogus_tag", ""]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let parsed = parse_font_features(&entries);
+        let tag = |s: &str| {
+            let mut t = [b' '; 4];
+            t[..s.len()].copy_from_slice(s.as_bytes());
+            u32::from_be_bytes(t)
+        };
+        assert_eq!(parsed.len(), 4);
+        assert_eq!((parsed[0].tag, parsed[0].value), (tag("ss01"), 1));
+        assert_eq!((parsed[1].tag, parsed[1].value), (tag("dlig"), 1));
+        assert_eq!((parsed[2].tag, parsed[2].value), (tag("liga"), 0));
+        assert_eq!((parsed[3].tag, parsed[3].value), (tag("cv01"), 2));
     }
 
     /// Aliases share the target's `metrics_cache`, so requesting

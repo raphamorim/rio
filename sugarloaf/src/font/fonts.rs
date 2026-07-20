@@ -82,6 +82,10 @@ pub struct SugarloafFont {
     pub family: String,
     #[serde(default)]
     pub style: FontStyle,
+    /// CSS-style weight (100..900). Steers face selection where the
+    /// platform supports it and pins the `wght` axis on variable fonts.
+    #[serde(default = "Option::default")]
+    pub weight: Option<u16>,
 }
 
 impl Default for SugarloafFont {
@@ -89,6 +93,7 @@ impl Default for SugarloafFont {
         Self {
             family: default_font_family(),
             style: FontStyle::Default,
+            weight: None,
         }
     }
 }

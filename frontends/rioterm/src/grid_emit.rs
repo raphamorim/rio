@@ -1212,6 +1212,17 @@ pub struct GridGlyphRasterizer {
     #[cfg(target_os = "macos")]
     handle_cache: FxHashMap<u32, rio_backend::sugarloaf::font::macos::FontHandle>,
 
+    /// Library-wide `(hinting, features)` snapshot, refreshed lazily
+    /// after `clear_font_caches` so shaping and rasterization don't
+    /// take the library lock per run.
+    lib_settings: Option<(
+        bool,
+        std::sync::Arc<Vec<rio_backend::sugarloaf::swash::Setting<u16>>>,
+    )>,
+    /// Per-font `wght` axis pin, mirrored from `FontData.wght_variation`.
+    #[cfg(not(target_os = "macos"))]
+    wght_cache: FxHashMap<u32, Option<f32>>,
+
     // non-macOS: swash wants UTF-8, so keep a `String` scratch.
     #[cfg(not(target_os = "macos"))]
     run_str_scratch: String,
@@ -1255,6 +1266,9 @@ impl GridGlyphRasterizer {
             run_str_scratch: String::new(),
             #[cfg(target_os = "macos")]
             handle_cache: FxHashMap::default(),
+            lib_settings: None,
+            #[cfg(not(target_os = "macos"))]
+            wght_cache: FxHashMap::default(),
             #[cfg(not(target_os = "macos"))]
             shape_ctx: rio_backend::sugarloaf::swash::shape::ShapeContext::new(),
             #[cfg(not(target_os = "macos"))]
@@ -1273,10 +1287,30 @@ impl GridGlyphRasterizer {
         for bucket in &mut self.run_cache {
             bucket.clear();
         }
+        self.lib_settings = None;
         #[cfg(target_os = "macos")]
         self.handle_cache.clear();
         #[cfg(not(target_os = "macos"))]
-        self.font_data_cache.clear();
+        {
+            self.wght_cache.clear();
+            self.font_data_cache.clear();
+        }
+    }
+
+    /// Library-wide `(hinting, features)`, cached until the next
+    /// `clear_font_caches`.
+    fn library_settings(
+        &mut self,
+        font_library: &FontLibrary,
+    ) -> (
+        bool,
+        std::sync::Arc<Vec<rio_backend::sugarloaf::swash::Setting<u16>>>,
+    ) {
+        if self.lib_settings.is_none() {
+            let lib = font_library.inner.read();
+            self.lib_settings = Some((lib.hinting, lib.features.clone()));
+        }
+        self.lib_settings.clone().unwrap()
     }
 
     #[inline]
@@ -1454,10 +1488,20 @@ fn shape_run_ct(
     size_bucket: u16,
     font_library: &FontLibrary,
 ) -> Option<(Vec<ShapedGlyph>, i16)> {
+    let (_, features) = rasterizer.library_settings(font_library);
     let handle = match rasterizer.handle_cache.entry(font_id) {
         std::collections::hash_map::Entry::Occupied(e) => e.into_mut().clone(),
         std::collections::hash_map::Entry::Vacant(e) => {
             let h = font_library.ct_font(font_id as usize)?;
+            // Configured OpenType features are baked into the cached
+            // CTFont so both shaping and rasterization honor them.
+            let h = if features.is_empty() {
+                h
+            } else {
+                let pairs: Vec<(u32, u16)> =
+                    features.iter().map(|s| (s.tag, s.value)).collect();
+                h.clone().with_features(&pairs).unwrap_or(h)
+            };
             e.insert(h.clone());
             h
         }
@@ -1501,7 +1545,14 @@ fn shape_run_swash(
     size_bucket: u16,
     font_library: &FontLibrary,
 ) -> Option<(Vec<ShapedGlyph>, i16)> {
-    use rio_backend::sugarloaf::swash::FontRef;
+    use rio_backend::sugarloaf::swash::{FontRef, Setting};
+
+    let (_, features) = rasterizer.library_settings(font_library);
+    let wght = *rasterizer.wght_cache.entry(font_id).or_insert_with(|| {
+        let lib = font_library.inner.read();
+        lib.try_get(&(font_id as usize))
+            .and_then(|f| f.wght_variation)
+    });
 
     let font_entry = rasterizer
         .font_data_cache
@@ -1525,10 +1576,17 @@ fn shape_run_swash(
             m.ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
         });
 
+    const WGHT_TAG: u32 = u32::from_be_bytes(*b"wght");
+    let wght_var = wght.map(|v| Setting {
+        tag: WGHT_TAG,
+        value: v,
+    });
     let mut shaper = rasterizer
         .shape_ctx
         .builder(font_ref)
         .size(size_u16 as f32)
+        .features(features.iter().copied())
+        .variations(wght_var.iter().copied())
         .build();
     shaper.add_str(&rasterizer.run_str_scratch);
     let mut glyphs: Vec<ShapedGlyph> = Vec::new();
@@ -2492,7 +2550,7 @@ fn rasterize_glyph_native(
             Render, Source, StrikeWith,
         },
         zeno::{Angle, Format, Transform},
-        FontRef,
+        FontRef, Setting,
     };
 
     let font_entry = rasterizer.font_data_cache.get(&font_id)?.clone();
@@ -2502,12 +2560,29 @@ fn rasterize_glyph_native(
         key: font_entry.2,
     };
 
-    let hinting = font_library_hinting(rasterizer);
+    // Shaping runs before rasterization, so `lib_settings` and
+    // `wght_cache` are already populated for this font.
+    let hinting = rasterizer
+        .lib_settings
+        .as_ref()
+        .map(|s| s.0)
+        .unwrap_or(true);
+    const WGHT_TAG: u32 = u32::from_be_bytes(*b"wght");
+    let wght_var = rasterizer
+        .wght_cache
+        .get(&font_id)
+        .copied()
+        .flatten()
+        .map(|v| Setting {
+            tag: WGHT_TAG,
+            value: v,
+        });
     let mut scaler = rasterizer
         .scale_ctx
         .builder(font_ref)
         .hint(hinting)
         .size(size_u16 as f32)
+        .variations(wght_var.iter().copied())
         .build();
 
     let sources: &[Source] = &[
@@ -2545,18 +2620,6 @@ fn rasterize_glyph_native(
         is_color,
         bytes: image.data,
     })
-}
-
-/// Hinting is a library-wide setting. Read once per rasterize; the
-/// RwLock read is cheap. (Caching it locally would require reset
-/// plumbing on config reload.)
-#[cfg(not(target_os = "macos"))]
-#[inline]
-fn font_library_hinting(_r: &GridGlyphRasterizer) -> bool {
-    // TODO: thread through from a cache to avoid the lock per glyph.
-    // For now the lock on swash rasterize is a small fraction of
-    // render time; optimise if profiling flags it.
-    true
 }
 
 #[cfg(test)]

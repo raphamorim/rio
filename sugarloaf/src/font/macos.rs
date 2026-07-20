@@ -29,10 +29,11 @@ use core_text::{
     font::{CTFont, CTFontRef},
     font_collection,
     font_descriptor::{
-        self, kCTFontBoldTrait, kCTFontFamilyNameAttribute, kCTFontItalicTrait,
-        kCTFontMonoSpaceTrait, kCTFontOrientationDefault, kCTFontStyleNameAttribute,
-        kCTFontSymbolicTrait, kCTFontTraitsAttribute, kCTFontVariationAttribute,
-        CTFontDescriptor, CTFontDescriptorCopyAttribute, CTFontDescriptorRef,
+        self, kCTFontBoldTrait, kCTFontFamilyNameAttribute,
+        kCTFontFeatureSettingsAttribute, kCTFontItalicTrait, kCTFontMonoSpaceTrait,
+        kCTFontOrientationDefault, kCTFontStyleNameAttribute, kCTFontSymbolicTrait,
+        kCTFontTraitsAttribute, kCTFontVariationAttribute, CTFontDescriptor,
+        CTFontDescriptorCopyAttribute, CTFontDescriptorRef,
     },
     font_manager,
     line::CTLine,
@@ -324,6 +325,68 @@ impl FontHandle {
             unsafe { CFString::wrap_under_get_rule(kCTFontVariationAttribute) };
         let attrs: CFDictionary<CFString, CFType> =
             CFDictionary::from_CFType_pairs(&[(var_attr_key, variation.as_CFType())]);
+        let desc = font_descriptor::new_from_attributes(&attrs);
+
+        let derived_ref = unsafe {
+            CTFontCreateCopyWithAttributes(
+                self.base_font.as_concrete_TypeRef(),
+                0.0,
+                std::ptr::null(),
+                desc.as_concrete_TypeRef(),
+            )
+        };
+        if derived_ref.is_null() {
+            return None;
+        }
+        let derived = unsafe { CTFont::wrap_under_create_rule(derived_ref) };
+        Some(Self { base_font: derived })
+    }
+
+    /// Return a derived `FontHandle` with OpenType feature settings
+    /// applied through `kCTFontFeatureSettingsAttribute`. Each entry is
+    /// a `(tag, value)` pair, e.g. `(u32::from_be_bytes(*b"liga"), 0)`
+    /// to disable standard ligatures. CoreText applies these to both
+    /// shaping and rasterization for the derived font.
+    pub fn with_features(self, features: &[(u32, u16)]) -> Option<Self> {
+        use core_foundation::array::CFArray;
+        use core_foundation::base::TCFType;
+        use core_foundation::dictionary::CFDictionary;
+        use core_foundation::number::CFNumber;
+        use core_foundation::string::CFString;
+
+        if features.is_empty() {
+            return Some(self);
+        }
+
+        extern "C" {
+            static kCTFontOpenTypeFeatureTag: core_foundation::string::CFStringRef;
+            static kCTFontOpenTypeFeatureValue: core_foundation::string::CFStringRef;
+        }
+
+        let tag_key = unsafe { CFString::wrap_under_get_rule(kCTFontOpenTypeFeatureTag) };
+        let value_key =
+            unsafe { CFString::wrap_under_get_rule(kCTFontOpenTypeFeatureValue) };
+
+        let entries: Vec<CFDictionary<CFString, CFType>> = features
+            .iter()
+            .filter_map(|(tag, value)| {
+                let bytes = tag.to_be_bytes();
+                let name = std::str::from_utf8(&bytes).ok()?;
+                Some(CFDictionary::from_CFType_pairs(&[
+                    (tag_key.clone(), CFString::new(name).as_CFType()),
+                    (value_key.clone(), CFNumber::from(*value as i64).as_CFType()),
+                ]))
+            })
+            .collect();
+        if entries.is_empty() {
+            return Some(self);
+        }
+        let settings = CFArray::from_CFTypes(&entries);
+
+        let attr_key =
+            unsafe { CFString::wrap_under_get_rule(kCTFontFeatureSettingsAttribute) };
+        let attrs: CFDictionary<CFString, CFType> =
+            CFDictionary::from_CFType_pairs(&[(attr_key, settings.as_CFType())]);
         let desc = font_descriptor::new_from_attributes(&attrs);
 
         let derived_ref = unsafe {
