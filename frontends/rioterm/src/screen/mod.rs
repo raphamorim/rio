@@ -438,6 +438,10 @@ impl Screen<'_> {
         self.sugarloaf
             .update_filters(config.renderer.filters.as_slice());
 
+        // Rebuild bindings so `[bindings]` edits live-reload like the
+        // rest of the config instead of waiting for a new window.
+        self.bindings = crate::bindings::default_key_bindings(config);
+
         // Preserve existing Island (tab state) and update its colors
         let old_island = self.renderer.island.take();
         let was_focused = self.renderer.is_window_focused;
@@ -771,7 +775,32 @@ impl Screen<'_> {
 
         let build_key_sequence = Self::should_build_sequence(key, text, mode, mods);
 
-        let bytes = if build_key_sequence {
+        // Legacy ctrl encoding runs before trusting the platform text:
+        // the OS is inconsistent about synthesizing C0 characters for
+        // combos like ctrl+6 or ctrl+/ (macOS reports the plain char,
+        // Windows reports nothing), so the byte is computed from the
+        // kitty C0 table directly. Gated on the exact flag set that
+        // makes `build_key_sequence` produce CSI u (`kitty_seq`), so
+        // kitty-protocol encoding is untouched in every mode where it
+        // applies.
+        let kitty_seq = mode.intersects(
+            Mode::REPORT_ALL_KEYS_AS_ESC
+                | Mode::DISAMBIGUATE_ESC_CODES
+                | Mode::REPORT_EVENT_TYPES,
+        );
+        let ctrl_c0 = if kitty_seq {
+            None
+        } else {
+            crate::bindings::ctrl_seq(&key.logical_key, text, mods)
+        };
+
+        let bytes = if let Some(c0) = ctrl_c0 {
+            if mods.alt_key() {
+                vec![b'\x1b', c0]
+            } else {
+                vec![c0]
+            }
+        } else if build_key_sequence {
             crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
         } else {
             let mut bytes = Vec::with_capacity(text.len() + 1);
