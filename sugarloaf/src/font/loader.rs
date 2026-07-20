@@ -167,6 +167,52 @@ struct FontCandidate {
     style: Style,
 }
 
+/// Load every face of `family_name` from `source` into `candidates`.
+///
+/// The direct `select_family_by_name` lookup runs first because it
+/// matches every name a family carries, localized names and English
+/// aliases alike, while `all_families` reports only the first name of
+/// each family; CJK fonts like "Source Han Mono SC" were invisible
+/// under their English name (#1466). The case-insensitive scan over
+/// `all_families` stays as a fallback for sources whose direct lookup
+/// is case-sensitive.
+#[cfg(not(target_arch = "wasm32"))]
+fn family_candidates(
+    source: &dyn font_kit::source::Source,
+    family_name: &str,
+    family_name_lower: &str,
+    candidates: &mut Vec<FontCandidate>,
+) {
+    let family_handle = source.select_family_by_name(family_name).ok().or_else(|| {
+        let families = source.all_families().ok()?;
+        let name = families
+            .iter()
+            .find(|f| f.to_lowercase() == family_name_lower)?;
+        source.select_family_by_name(name).ok()
+    });
+    let Some(family_handle) = family_handle else {
+        tracing::debug!("no family match for '{family_name}'");
+        return;
+    };
+    for handle in family_handle.fonts() {
+        if let Ok(font) = handle.load() {
+            let props = font.properties();
+            tracing::debug!(
+                "found candidate: weight={}, stretch={:?}, style={:?}",
+                props.weight.0,
+                props.stretch,
+                props.style
+            );
+            candidates.push(FontCandidate {
+                handle: handle.clone(),
+                weight: Weight(props.weight.0 as u16),
+                stretch: Stretch::from_font_kit(props.stretch),
+                style: Style::from_font_kit(props.style),
+            });
+        }
+    }
+}
+
 /// CSS-spec compliant font matching algorithm
 /// Based on https://www.w3.org/TR/css-fonts-4/#font-matching-algorithm
 #[cfg(not(target_arch = "wasm32"))]
@@ -404,81 +450,25 @@ impl Database {
                 "checking {} additional sources",
                 self.additional_sources.len()
             );
-            for (idx, additional_source) in self.additional_sources.iter().enumerate() {
+            for additional_source in self.additional_sources.iter() {
                 if candidates.is_empty() {
-                    tracing::debug!(
-                        "additional source {}: trying case-insensitive match",
-                        idx
+                    family_candidates(
+                        additional_source,
+                        family_name_str,
+                        &family_name_lower,
+                        &mut candidates,
                     );
-                    if let Ok(families) = additional_source.all_families() {
-                        tracing::debug!(
-                            "additional source {}: has {} families",
-                            idx,
-                            families.len()
-                        );
-                        for system_family_name in families {
-                            if system_family_name.to_lowercase() == family_name_lower {
-                                if let Ok(family_handle) = additional_source
-                                    .select_family_by_name(&system_family_name)
-                                {
-                                    for handle in family_handle.fonts() {
-                                        if let Ok(font) = handle.load() {
-                                            let props = font.properties();
-                                            tracing::debug!("found candidate: weight={}, stretch={:?}, style={:?}",
-                                                props.weight.0, props.stretch, props.style);
-                                            candidates.push(FontCandidate {
-                                                handle: handle.clone(),
-                                                weight: Weight(props.weight.0 as u16),
-                                                stretch: Stretch::from_font_kit(
-                                                    props.stretch,
-                                                ),
-                                                style: Style::from_font_kit(props.style),
-                                            });
-                                        }
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
                 }
             }
 
-            // step 2: try case-insensitive on system fonts
+            // step 2: system fonts
             if candidates.is_empty() {
-                tracing::debug!("System fonts: trying case-insensitive match");
-                if let Ok(families) = self.system_source.all_families() {
-                    tracing::debug!("System has {} families total", families.len());
-                    for system_family_name in families {
-                        if system_family_name.to_lowercase() == family_name_lower {
-                            tracing::debug!(
-                                "  Found case-insensitive system match: '{}'",
-                                system_family_name
-                            );
-                            if let Ok(family_handle) = self
-                                .system_source
-                                .select_family_by_name(&system_family_name)
-                            {
-                                for handle in family_handle.fonts() {
-                                    if let Ok(font) = handle.load() {
-                                        let props = font.properties();
-                                        tracing::debug!("    Found system candidate: weight={}, stretch={:?}, style={:?}",
-                                            props.weight.0, props.stretch, props.style);
-                                        candidates.push(FontCandidate {
-                                            handle: handle.clone(),
-                                            weight: Weight(props.weight.0 as u16),
-                                            stretch: Stretch::from_font_kit(
-                                                props.stretch,
-                                            ),
-                                            style: Style::from_font_kit(props.style),
-                                        });
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                    }
-                }
+                family_candidates(
+                    &self.system_source,
+                    family_name_str,
+                    &family_name_lower,
+                    &mut candidates,
+                );
             }
 
             tracing::debug!("Total candidates found: {}", candidates.len());
