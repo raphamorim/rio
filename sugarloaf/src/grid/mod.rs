@@ -101,6 +101,21 @@ impl GridRenderer {
         }
     }
 
+    /// Drop every cached glyph and force a full row rebuild. Must be
+    /// called when the font library is swapped, since atlas slots are keyed
+    /// by font id and the new library reuses the same ids.
+    pub fn clear_atlas(&mut self) {
+        match self {
+            #[cfg(target_os = "macos")]
+            GridRenderer::Metal(r) => r.clear_atlas(),
+            #[cfg(feature = "wgpu")]
+            GridRenderer::Wgpu(r) => r.clear_atlas(),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.clear_atlas(),
+            GridRenderer::Cpu(r) => r.clear_atlas(),
+        }
+    }
+
     /// Overwrite `row`'s background + foreground cells. `bg` must have
     /// exactly `cols` entries; `fg` is variable length (base glyph +
     /// decorations). Callers that want to clear a row should use
