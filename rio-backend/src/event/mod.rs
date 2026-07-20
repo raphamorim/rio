@@ -118,6 +118,7 @@ pub enum RioEvent {
     HideOtherApplications,
     UpdateConfig,
     CreateWindow,
+    ToggleQuake,
     CloseWindow,
     CreateNativeTab(Option<String>),
     CreateConfigEditor,
@@ -283,6 +284,7 @@ impl Debug for RioEvent {
             RioEvent::Quit => write!(f, "Quit"),
             RioEvent::CloseTerminal(route) => write!(f, "CloseTerminal {route}"),
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
+            RioEvent::ToggleQuake => write!(f, "ToggleQuake"),
             RioEvent::CloseWindow => write!(f, "CloseWindow"),
             RioEvent::CreateNativeTab(_) => write!(f, "CreateNativeTab"),
             RioEvent::SelectNativeTabByIndex(tab_index) => {

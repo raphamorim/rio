@@ -569,6 +569,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn toggle_quake(&self) {
+        self.event_proxy
+            .send_event(RioEvent::ToggleQuake, self.window_id);
+    }
+
+    #[inline]
     pub fn close_unfocused_tabs(&mut self) {
         let current_route_id = self.current().route_id;
         self.contexts

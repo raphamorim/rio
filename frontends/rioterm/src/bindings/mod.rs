@@ -236,6 +236,7 @@ impl From<String> for Action {
             "increasefontsize" => Some(Action::IncreaseFontSize),
             "decreasefontsize" => Some(Action::DecreaseFontSize),
             "createwindow" => Some(Action::WindowCreateNew),
+            "togglequake" => Some(Action::ToggleQuake),
             "createtab" => Some(Action::TabCreateNew),
             "movecurrenttabtoprev" => Some(Action::MoveCurrentTabToPrev),
             "movecurrenttabtonext" => Some(Action::MoveCurrentTabToNext),
@@ -458,6 +459,10 @@ pub enum Action {
 
     /// Select everything, including the scrollback history.
     SelectAll,
+
+    /// Show or hide the quake-style dropdown window. Also registered
+    /// as a system-wide hotkey when bound in `[bindings]`.
+    ToggleQuake,
 
     /// Toggle vi mode.
     ToggleViMode,

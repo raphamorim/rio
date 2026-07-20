@@ -36,6 +36,7 @@ pub struct Application<'a> {
     router: Router<'a>,
     scheduler: Scheduler,
     app_id: Option<String>,
+    global_hotkey: Option<crate::global_hotkey::GlobalHotkeyManager>,
 }
 
 impl Application<'_> {
@@ -75,6 +76,7 @@ impl Application<'_> {
             router,
             scheduler,
             app_id,
+            global_hotkey: None,
         }
     }
 
@@ -150,6 +152,79 @@ impl Application<'_> {
     }
 }
 
+impl Application<'_> {
+    /// Register a system-wide hotkey for every `ToggleQuake` binding
+    /// in the config, so the quake window opens while Rio is
+    /// unfocused. Failures are logged and ignored: pure Wayland has
+    /// no global hotkey API, the compositor keybinding + a regular
+    /// binding cover it there.
+    fn setup_quake_hotkey(&mut self) {
+        let mut triggers: Vec<String> = Vec::new();
+        for binding in &self.config.bindings.keys {
+            if binding.action.to_lowercase() == "togglequake" {
+                let mods = binding.with.replace(' ', "").replace('|', "+");
+                if mods.is_empty() {
+                    triggers.push(binding.key.clone());
+                } else {
+                    triggers.push(format!("{}+{}", mods, binding.key));
+                }
+            }
+        }
+        if triggers.is_empty() {
+            return;
+        }
+
+        let mut manager = match crate::global_hotkey::GlobalHotkeyManager::new(
+            self.event_proxy.clone(),
+        ) {
+            Some(manager) => manager,
+            None => return,
+        };
+        for trigger in &triggers {
+            if let Err(err) = manager.register_hotkey(trigger) {
+                tracing::warn!("quake hotkey '{trigger}': {err}");
+            }
+        }
+        self.global_hotkey = Some(manager);
+    }
+
+    /// Show, focus or hide the quake window; create it on first use.
+    fn toggle_quake_window(&mut self, event_loop: &ActiveEventLoop) {
+        let quake_id = self
+            .router
+            .quake_window_id
+            .filter(|id| self.router.routes.contains_key(id));
+
+        let Some(id) = quake_id else {
+            self.router.quake_window_id = None;
+            self.router.create_quake_window(
+                event_loop,
+                self.event_proxy.clone(),
+                &self.config,
+            );
+            if let Some(id) = self.router.quake_window_id {
+                if let Some(route) = self.router.routes.get(&id) {
+                    route.window.winit_window.focus_window();
+                }
+            }
+            return;
+        };
+
+        if let Some(route) = self.router.routes.get_mut(&id) {
+            let window = &route.window.winit_window;
+            let visible = window.is_visible().unwrap_or(true);
+            if !visible {
+                window.set_visible(true);
+                window.focus_window();
+            } else if window.has_focus() {
+                window.set_visible(false);
+            } else {
+                window.focus_window();
+            }
+        }
+    }
+}
+
 impl ApplicationHandler<EventPayload> for Application<'_> {
     fn resumed(&mut self, _active_event_loop: &ActiveEventLoop) {}
 
@@ -192,6 +267,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             None,
             self.app_id.as_deref(),
         );
+
+        if cause == StartCause::Init {
+            self.setup_quake_hotkey();
+        }
 
         // Schedule title updates every 2s
         let timer_id = TimerId::new(Topic::UpdateTitles, 0);
@@ -760,6 +839,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     None,
                     self.app_id.as_deref(),
                 );
+            }
+            RioEventType::Rio(RioEvent::ToggleQuake) => {
+                self.toggle_quake_window(event_loop);
             }
             #[cfg(target_os = "macos")]
             RioEventType::Rio(RioEvent::CreateNativeTab(working_dir_overwrite)) => {
