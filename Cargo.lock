@@ -878,7 +878,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -3909,7 +3909,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "base64",
  "bitflags 2.13.0",
@@ -3946,7 +3946,7 @@ dependencies = [
 
 [[package]]
 name = "rio-grapheme-width"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "phf",
  "ucd-trie",
@@ -3954,7 +3954,7 @@ dependencies = [
 
 [[package]]
 name = "rio-notifier"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "block2 0.5.1",
  "objc-rs 0.3.1",
@@ -3967,7 +3967,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -4022,7 +4022,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "ahash",
  "bitflags 2.13.0",
@@ -4556,7 +4556,7 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "approx",
  "ash",
@@ -4676,7 +4676,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "corcovado",
  "dirs",
