@@ -1163,6 +1163,17 @@ struct RunCacheEntry {
     glyphs: Vec<ShapedGlyph>,
 }
 
+/// Library-wide render settings snapshot, refreshed lazily after
+/// `clear_font_caches`.
+#[derive(Clone)]
+struct LibrarySettings {
+    /// Read by the swash rasterizer; CoreText has no hinting toggle.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    hinting: bool,
+    antialias: bool,
+    features: std::sync::Arc<Vec<rio_backend::sugarloaf::swash::Setting<u16>>>,
+}
+
 pub struct GridGlyphRasterizer {
     /// Cache of `(char, style_flags, route_id) → (font_id, is_emoji)`
     /// resolutions. The route_id is part of the key because Glyph
@@ -1215,10 +1226,7 @@ pub struct GridGlyphRasterizer {
     /// Library-wide `(hinting, features)` snapshot, refreshed lazily
     /// after `clear_font_caches` so shaping and rasterization don't
     /// take the library lock per run.
-    lib_settings: Option<(
-        bool,
-        std::sync::Arc<Vec<rio_backend::sugarloaf::swash::Setting<u16>>>,
-    )>,
+    lib_settings: Option<LibrarySettings>,
     /// Per-font `wght` axis pin, mirrored from `FontData.wght_variation`.
     #[cfg(not(target_os = "macos"))]
     wght_cache: FxHashMap<u32, Option<f32>>,
@@ -1299,16 +1307,14 @@ impl GridGlyphRasterizer {
 
     /// Library-wide `(hinting, features)`, cached until the next
     /// `clear_font_caches`.
-    fn library_settings(
-        &mut self,
-        font_library: &FontLibrary,
-    ) -> (
-        bool,
-        std::sync::Arc<Vec<rio_backend::sugarloaf::swash::Setting<u16>>>,
-    ) {
+    fn library_settings(&mut self, font_library: &FontLibrary) -> LibrarySettings {
         if self.lib_settings.is_none() {
             let lib = font_library.inner.read();
-            self.lib_settings = Some((lib.hinting, lib.features.clone()));
+            self.lib_settings = Some(LibrarySettings {
+                hinting: lib.hinting,
+                antialias: lib.antialias,
+                features: lib.features.clone(),
+            });
         }
         self.lib_settings.clone().unwrap()
     }
@@ -1488,7 +1494,7 @@ fn shape_run_ct(
     size_bucket: u16,
     font_library: &FontLibrary,
 ) -> Option<(Vec<ShapedGlyph>, i16)> {
-    let (_, features) = rasterizer.library_settings(font_library);
+    let features = rasterizer.library_settings(font_library).features;
     let handle = match rasterizer.handle_cache.entry(font_id) {
         std::collections::hash_map::Entry::Occupied(e) => e.into_mut().clone(),
         std::collections::hash_map::Entry::Vacant(e) => {
@@ -1547,7 +1553,7 @@ fn shape_run_swash(
 ) -> Option<(Vec<ShapedGlyph>, i16)> {
     use rio_backend::sugarloaf::swash::{FontRef, Setting};
 
-    let (_, features) = rasterizer.library_settings(font_library);
+    let features = rasterizer.library_settings(font_library).features;
     let wght = *rasterizer.wght_cache.entry(font_id).or_insert_with(|| {
         let lib = font_library.inner.read();
         lib.try_get(&(font_id as usize))
@@ -2516,6 +2522,11 @@ fn rasterize_glyph_native(
     synthetic_italic: bool,
 ) -> Option<RawGlyph> {
     let handle = rasterizer.handle_cache.get(&font_id)?.clone();
+    let antialias = rasterizer
+        .lib_settings
+        .as_ref()
+        .map(|s| s.antialias)
+        .unwrap_or(true);
     let raw = rio_backend::sugarloaf::font::macos::rasterize_glyph(
         &handle,
         glyph_id,
@@ -2523,6 +2534,7 @@ fn rasterize_glyph_native(
         is_emoji,
         synthetic_italic,
         synthetic_bold,
+        antialias,
     )?;
     Some(RawGlyph {
         width: raw.width,
@@ -2562,11 +2574,11 @@ fn rasterize_glyph_native(
 
     // Shaping runs before rasterization, so `lib_settings` and
     // `wght_cache` are already populated for this font.
-    let hinting = rasterizer
+    let (hinting, antialias) = rasterizer
         .lib_settings
         .as_ref()
-        .map(|s| s.0)
-        .unwrap_or(true);
+        .map(|s| (s.hinting, s.antialias))
+        .unwrap_or((true, true));
     const WGHT_TAG: u32 = u32::from_be_bytes(*b"wght");
     let wght_var = rasterizer
         .wght_cache
@@ -2612,6 +2624,9 @@ fn rasterize_glyph_native(
         return None;
     }
     let is_color = image.content == Content::Color;
+    if !antialias && !is_color {
+        rio_backend::sugarloaf::font::threshold_mask(&mut image.data);
+    }
     Some(RawGlyph {
         width: image.placement.width,
         height: image.placement.height,

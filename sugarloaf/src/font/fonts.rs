@@ -132,8 +132,14 @@ fn default_font_family() -> String {
 pub struct SugarloafFonts {
     #[serde(default = "default_font_size")]
     pub size: f32,
-    #[serde(default = "default_bool_true")]
-    pub hinting: bool,
+    /// `None` falls back to the platform default: the fontconfig
+    /// setting on Linux, `true` elsewhere.
+    #[serde(default = "Option::default")]
+    pub hinting: Option<bool>,
+    /// `None` falls back to the platform default: the fontconfig
+    /// setting on Linux, `true` elsewhere.
+    #[serde(default = "Option::default")]
+    pub antialias: Option<bool>,
     #[serde(default = "Option::default")]
     pub features: Option<Vec<String>>,
     #[serde(default = "Option::default")]
@@ -156,6 +162,23 @@ pub struct SugarloafFonts {
     pub additional_dirs: Option<Vec<String>>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hinting_and_antialias_parse_and_default_to_unset() {
+        let fonts: SugarloafFonts = toml::from_str("").unwrap();
+        assert_eq!(fonts.hinting, None);
+        assert_eq!(fonts.antialias, None);
+
+        let fonts: SugarloafFonts =
+            toml::from_str("hinting = false\nantialias = false").unwrap();
+        assert_eq!(fonts.hinting, Some(false));
+        assert_eq!(fonts.antialias, Some(false));
+    }
+}
+
 pub fn parse_unicode(input: &str) -> Option<char> {
     if let Ok(unicode) = u32::from_str_radix(input, 16) {
         if let Some(result) = char::from_u32(unicode) {
@@ -170,7 +193,8 @@ impl Default for SugarloafFonts {
     fn default() -> SugarloafFonts {
         SugarloafFonts {
             features: None,
-            hinting: true,
+            hinting: None,
+            antialias: None,
             size: default_font_size(),
             family: None,
             regular: SugarloafFont::default(),
