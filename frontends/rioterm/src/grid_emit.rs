@@ -1264,6 +1264,21 @@ impl GridGlyphRasterizer {
         }
     }
 
+    /// Drop every cache keyed by `font_id`; a swapped font library
+    /// reuses the same ids.
+    pub fn clear_font_caches(&mut self) {
+        self.font_resolve.clear();
+        self.ascent_cache.clear();
+        self.synthesis_cache.clear();
+        for bucket in &mut self.run_cache {
+            bucket.clear();
+        }
+        #[cfg(target_os = "macos")]
+        self.handle_cache.clear();
+        #[cfg(not(target_os = "macos"))]
+        self.font_data_cache.clear();
+    }
+
     #[inline]
     fn resolve_font(
         &mut self,

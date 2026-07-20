@@ -424,6 +424,11 @@ impl Screen<'_> {
 
         if should_update_font_library {
             self.sugarloaf.update_font(font_library);
+            // Caches keyed by font_id would serve the old font's data.
+            self.grid_rasterizer.clear_font_caches();
+            for grid in self.grids.values_mut() {
+                grid.clear_atlas();
+            }
         }
         let s = self.sugarloaf.style_mut();
         s.font_size = config.fonts.size;
@@ -4114,10 +4119,13 @@ impl Screen<'_> {
                         // (cursor_pos moved, etc.) take effect.
                     }
                     RowsToRebuild::All => {
+                        // Clear the flag before rebuilding so an
+                        // atlas-full clear inside `rebuild_row` can
+                        // re-set it for the recovery pass below.
+                        grid.mark_full_rebuild_done();
                         for y in 0..p.visible_rows.len() {
                             rebuild_row(p, y, grid, rasterizer);
                         }
-                        grid.mark_full_rebuild_done();
                     }
                     RowsToRebuild::Dirty => {
                         // Walk the snapshot rows; rebuild + clear the
@@ -4131,6 +4139,16 @@ impl Screen<'_> {
                             rebuild_row(p, y, grid, rasterizer);
                             p.visible_rows[y].dirty = false;
                         }
+                    }
+                }
+
+                // Atlas-full recovery: the backend cleared the atlas
+                // during the rebuild above, so rows written before the
+                // clear reference stale slots. Re-emit everything.
+                if grid.needs_full_rebuild() {
+                    grid.mark_full_rebuild_done();
+                    for y in 0..p.visible_rows.len() {
+                        rebuild_row(p, y, grid, rasterizer);
                     }
                 }
 
