@@ -254,6 +254,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 tracing::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
                     &Cow::Borrowed(&config.shell.program),
+                    &config.shell.args,
                     cols,
                     rows,
                     initial_winsize.width,
