@@ -165,17 +165,7 @@ impl Application<'_> {
     /// no global hotkey API, the compositor keybinding + a regular
     /// binding cover it there.
     fn setup_quake_hotkey(&mut self) {
-        let mut triggers: Vec<String> = Vec::new();
-        for binding in &self.config.bindings.keys {
-            if binding.action.to_lowercase() == "togglequake" {
-                let mods = binding.with.replace(' ', "").replace('|', "+");
-                if mods.is_empty() {
-                    triggers.push(binding.key.clone());
-                } else {
-                    triggers.push(format!("{}+{}", mods, binding.key));
-                }
-            }
-        }
+        let triggers = crate::global_hotkey::quake_triggers(&self.config.bindings.keys);
         if triggers.is_empty() {
             return;
         }

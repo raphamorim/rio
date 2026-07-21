@@ -62,6 +62,22 @@ impl GlobalHotkeyManagerHandle {
     }
 }
 
+/// Triggers for every `ToggleQuake` binding in the config, in the
+/// format `parse_hotkey` accepts.
+pub fn quake_triggers(keys: &[rio_backend::config::bindings::KeyBinding]) -> Vec<String> {
+    keys.iter()
+        .filter(|binding| binding.action.to_lowercase() == "togglequake")
+        .map(|binding| {
+            let mods = binding.with.replace(' ', "").replace('|', "+");
+            if mods.is_empty() {
+                binding.key.clone()
+            } else {
+                format!("{}+{}", mods, binding.key)
+            }
+        })
+        .collect()
+}
+
 /// Parse a binding-style trigger ("super+shift+q", "f12") into a
 /// `HotKey`. Accepts the same modifier names as `[bindings]` `with`.
 fn parse_hotkey(trigger: &str) -> Result<HotKey, String> {
@@ -77,12 +93,15 @@ fn parse_hotkey(trigger: &str) -> Result<HotKey, String> {
             "ctrl" | "control" => modifiers |= Modifiers::CONTROL,
             "alt" | "option" => modifiers |= Modifiers::ALT,
             "shift" => modifiers |= Modifiers::SHIFT,
+            // The bindings parser accepts "none" as a no-op modifier.
+            "none" => {}
             "escape" | "esc" => code = Some(Code::Escape),
             "space" => code = Some(Code::Space),
             "enter" | "return" => code = Some(Code::Enter),
             "tab" => code = Some(Code::Tab),
             "back" | "backspace" => code = Some(Code::Backspace),
             "delete" => code = Some(Code::Delete),
+            "insert" => code = Some(Code::Insert),
             "home" => code = Some(Code::Home),
             "end" => code = Some(Code::End),
             "pageup" => code = Some(Code::PageUp),
@@ -114,6 +133,24 @@ fn parse_hotkey(trigger: &str) -> Result<HotKey, String> {
             "=" | "equal" => code = Some(Code::Equal),
             "[" | "bracketleft" => code = Some(Code::BracketLeft),
             "]" | "bracketright" => code = Some(Code::BracketRight),
+            "numpadenter" => code = Some(Code::NumpadEnter),
+            "numpadadd" => code = Some(Code::NumpadAdd),
+            "numpadsubtract" => code = Some(Code::NumpadSubtract),
+            "numpadmultiply" => code = Some(Code::NumpadMultiply),
+            "numpaddivide" => code = Some(Code::NumpadDivide),
+            "numpaddecimal" => code = Some(Code::NumpadDecimal),
+            "numpadcomma" => code = Some(Code::NumpadComma),
+            "numpadequals" => code = Some(Code::NumpadEqual),
+            "numpad0" => code = Some(Code::Numpad0),
+            "numpad1" => code = Some(Code::Numpad1),
+            "numpad2" => code = Some(Code::Numpad2),
+            "numpad3" => code = Some(Code::Numpad3),
+            "numpad4" => code = Some(Code::Numpad4),
+            "numpad5" => code = Some(Code::Numpad5),
+            "numpad6" => code = Some(Code::Numpad6),
+            "numpad7" => code = Some(Code::Numpad7),
+            "numpad8" => code = Some(Code::Numpad8),
+            "numpad9" => code = Some(Code::Numpad9),
             key if key.len() == 1 => {
                 let ch = key.chars().next().unwrap();
                 code = Some(match ch {
@@ -201,5 +238,35 @@ mod tests {
         assert_eq!(hk, HotKey::new(None, Code::F12));
         assert!(parse_hotkey("super+banana").is_err());
         assert!(parse_hotkey("super+shift").is_err());
+        // Parity with the bindings parser.
+        let hk = parse_hotkey("none+f12").unwrap();
+        assert_eq!(hk, HotKey::new(None, Code::F12));
+        let hk = parse_hotkey("control+numpad5").unwrap();
+        assert_eq!(hk, HotKey::new(Some(Modifiers::CONTROL), Code::Numpad5));
+        let hk = parse_hotkey("shift+insert").unwrap();
+        assert_eq!(hk, HotKey::new(Some(Modifiers::SHIFT), Code::Insert));
+    }
+
+    #[test]
+    fn quake_triggers_from_bindings() {
+        use rio_backend::config::bindings::KeyBinding;
+        let binding = |key: &str, with: &str, action: &str| KeyBinding {
+            key: key.into(),
+            with: with.into(),
+            action: action.into(),
+            esc: String::new(),
+            mode: String::new(),
+        };
+        let keys = vec![
+            binding("q", "super | shift", "ToggleQuake"),
+            binding("f12", "", "togglequake"),
+            binding("f12", "none", "togglequake"),
+            binding("w", "super", "quit"),
+        ];
+        let triggers = quake_triggers(&keys);
+        assert_eq!(triggers, vec!["super+shift+q", "f12", "none+f12"]);
+        for trigger in &triggers {
+            assert!(parse_hotkey(trigger).is_ok(), "{trigger} must parse");
+        }
     }
 }
