@@ -795,21 +795,17 @@ impl<U: EventListener> Crosswords<U> {
             self.history_size() as i64 + self.grid.cursor.pos.row.0 as i64;
         let dest_row_shift = post_resize_cursor_abs - pre_resize_cursor_abs;
 
-        // Recompute overlay placement pixel dimensions for new cell
-        // size, and shift dest_row to follow the text. Active and
-        // inactive screens both get the treatment so alt-screen
+        // Rescale overlay placements for the new cell size (cell-sized
+        // placements track the grid; native-size ones keep their pixel
+        // dimensions), and shift dest_row to follow the text. Active
+        // and inactive screens both get the treatment so alt-screen
         // images aren't stale on swap-back.
         let cell_w = self.graphics.cell_width as usize;
         let cell_h = self.graphics.cell_height as usize;
         let mut overlay_changed = false;
         if cell_w > 0 && cell_h > 0 {
             for p in self.graphics.kitty_placements.values_mut() {
-                if p.columns > 0 {
-                    p.pixel_width = (p.columns as usize * cell_w) as u32;
-                }
-                if p.rows > 0 {
-                    p.pixel_height = (p.rows as usize * cell_h) as u32;
-                }
+                p.rescale(cell_w, cell_h);
                 if dest_row_shift != 0 {
                     p.dest_row += dest_row_shift;
                 }
@@ -820,12 +816,7 @@ impl<U: EventListener> Crosswords<U> {
                 .kitty_placements
                 .values_mut()
             {
-                if p.columns > 0 {
-                    p.pixel_width = (p.columns as usize * cell_w) as u32;
-                }
-                if p.rows > 0 {
-                    p.pixel_height = (p.rows as usize * cell_h) as u32;
-                }
+                p.rescale(cell_w, cell_h);
                 if dest_row_shift != 0 {
                     p.dest_row += dest_row_shift;
                 }
@@ -4423,25 +4414,14 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
 
-        // Display size: the source rectangle scaled to the requested
-        // cell span (`c=`/`r=`), keeping aspect when only one axis is
-        // given, or shown at native size when no span is requested.
-        let (display_w, display_h) = match (placement.columns, placement.rows) {
-            (0, 0) => (source_width, source_height),
-            (c, 0) => {
-                let w = c as usize * cell_width;
-                let h = (source_height as f64 * w as f64 / source_width as f64).round()
-                    as usize;
-                (w, h)
-            }
-            (0, r) => {
-                let h = r as usize * cell_height;
-                let w = (source_width as f64 * h as f64 / source_height as f64).round()
-                    as usize;
-                (w, h)
-            }
-            (c, r) => (c as usize * cell_width, r as usize * cell_height),
-        };
+        let (display_w, display_h) = crate::ansi::graphics::kitty_display_size(
+            source_width,
+            source_height,
+            placement.columns,
+            placement.rows,
+            cell_width,
+            cell_height,
+        );
 
         if display_w == 0 || display_h == 0 {
             return;
@@ -4520,6 +4500,8 @@ impl<U: EventListener> Crosswords<U> {
             dest_row,
             columns,
             rows,
+            requested_columns: placement.columns,
+            requested_rows: placement.rows,
             pixel_width: display_w as u32,
             pixel_height: display_h as u32,
             cell_x_offset: cell_x_offset as u32,

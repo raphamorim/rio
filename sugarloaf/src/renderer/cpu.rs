@@ -304,10 +304,11 @@ pub fn render_cpu(
     images: &ImageLayers,
 ) {
     // Flatten and z-sort image overlays once; ties broken by image id
-    // so the paint order (and the frame hash) stays deterministic.
+    // and position so the paint order (and the frame hash) stays
+    // deterministic across frames.
     let mut image_overlays: Vec<&GraphicOverlay> =
         images.overlays.values().flatten().collect();
-    image_overlays.sort_by_key(|o| (o.z_index, o.image_id));
+    image_overlays.sort_by_key(|o| (o.z_index, o.image_id, o.x.to_bits(), o.y.to_bits()));
 
     let vertices = renderer.vertices();
     let quad_instances = renderer.instances();
@@ -576,9 +577,11 @@ fn draw_image_overlays(
 /// Nearest-neighbor, alpha-blended blit of one image overlay.
 ///
 /// `source_rect` follows the shared shader convention: normalized
-/// `[u0, v0, u1, v1]` (origin, end) within the source image. Sampling
-/// happens at destination pixel centers, matching what the GPU
-/// backends rasterize for an axis-aligned quad.
+/// `[u0, v0, u1, v1]` (origin, end) within the source image. Sample
+/// positions sit at destination pixel centers like the GPU quad
+/// rasterization; the filter is nearest rather than the GPU sampler's
+/// bilinear, so scaled images are blockier here but land on exactly
+/// the same pixels (and identical ones at 1:1).
 #[allow(clippy::too_many_arguments)]
 pub fn draw_image_overlay(
     buf: &mut [u32],

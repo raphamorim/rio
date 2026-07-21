@@ -113,6 +113,12 @@ pub struct KittyPlacement {
     /// Display size in cells.
     pub columns: u32,
     pub rows: u32,
+    /// The `c=`/`r=` span the client requested (0 = derived). Kept
+    /// separate from `columns`/`rows` so a cell size change can tell
+    /// cell-sized placements (which track the grid) apart from
+    /// native-size ones (which keep their pixel size).
+    pub requested_columns: u32,
+    pub requested_rows: u32,
     /// Actual display pixel dimensions.
     pub pixel_width: u32,
     pub pixel_height: u32,
@@ -123,6 +129,75 @@ pub struct KittyPlacement {
     pub z_index: i32,
     /// Transmission timestamp for cache invalidation.
     pub transmit_time: std::time::Instant,
+}
+
+/// Display pixel size for a kitty placement: the source rectangle
+/// scaled to the requested cell span, keeping aspect when only one
+/// axis is given, or shown at native size when no span is requested.
+pub fn kitty_display_size(
+    source_width: usize,
+    source_height: usize,
+    requested_columns: u32,
+    requested_rows: u32,
+    cell_width: usize,
+    cell_height: usize,
+) -> (usize, usize) {
+    if source_width == 0 || source_height == 0 {
+        return (0, 0);
+    }
+    match (requested_columns, requested_rows) {
+        (0, 0) => (source_width, source_height),
+        (c, 0) => {
+            let w = c as usize * cell_width;
+            let h =
+                (source_height as f64 * w as f64 / source_width as f64).round() as usize;
+            (w, h)
+        }
+        (0, r) => {
+            let h = r as usize * cell_height;
+            let w =
+                (source_width as f64 * h as f64 / source_height as f64).round() as usize;
+            (w, h)
+        }
+        (c, r) => (c as usize * cell_width, r as usize * cell_height),
+    }
+}
+
+impl KittyPlacement {
+    /// Recompute display size, cell span, and offset clamps for a new
+    /// cell size. Cell-sized placements track the grid; native-size
+    /// ones keep their pixel dimensions but re-derive how many cells
+    /// they cover.
+    pub fn rescale(&mut self, cell_width: usize, cell_height: usize) {
+        if cell_width == 0 || cell_height == 0 {
+            return;
+        }
+        let (w, h) = kitty_display_size(
+            self.source_width as usize,
+            self.source_height as usize,
+            self.requested_columns,
+            self.requested_rows,
+            cell_width,
+            cell_height,
+        );
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.pixel_width = w as u32;
+        self.pixel_height = h as u32;
+        self.cell_x_offset = self.cell_x_offset.min(cell_width as u32 - 1);
+        self.cell_y_offset = self.cell_y_offset.min(cell_height as u32 - 1);
+        self.columns = if self.requested_columns > 0 {
+            self.requested_columns
+        } else {
+            (w + self.cell_x_offset as usize).div_ceil(cell_width) as u32
+        };
+        self.rows = if self.requested_rows > 0 {
+            self.requested_rows
+        } else {
+            (h + self.cell_y_offset as usize).div_ceil(cell_height) as u32
+        };
+    }
 }
 
 /// On-screen quad for a direct kitty placement, in physical pixels.

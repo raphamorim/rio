@@ -379,7 +379,11 @@ impl Renderer {
                             })
                             .cloned()
                             .collect();
-                        placements.sort_by_key(|p| p.z_index);
+                        // Tie-break on the unique key so equal
+                        // z-indexes keep a stable paint order across
+                        // frames (map iteration order is not).
+                        placements
+                            .sort_by_key(|p| (p.z_index, p.image_id, p.placement_id));
                         placements
                     };
                     context.renderable_content.kitty_graphics_dirty = true;

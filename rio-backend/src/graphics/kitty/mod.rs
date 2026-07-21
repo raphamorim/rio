@@ -1300,6 +1300,8 @@ fn test_kitty_placement_insert_and_delete() {
         dest_row: 0,
         columns: 10,
         rows: 5,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: 100,
         pixel_height: 50,
         cell_x_offset: 0,
@@ -1333,6 +1335,8 @@ fn test_kitty_placement_delete_by_z_index() {
         dest_row: 0,
         columns: 1,
         rows: 1,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: 10,
         pixel_height: 10,
         cell_x_offset: 0,
@@ -1375,6 +1379,8 @@ fn test_collect_active_ids_includes_overlay_placements() {
         dest_row: 0,
         columns: 1,
         rows: 1,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: 10,
         pixel_height: 10,
         cell_x_offset: 0,
@@ -1430,6 +1436,8 @@ fn test_eviction_removes_dangling_placements() {
         dest_row: 0,
         columns: 1,
         rows: 1,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: 10,
         pixel_height: 10,
         cell_x_offset: 0,
@@ -1471,6 +1479,8 @@ fn make_test_placement(
         dest_row,
         columns,
         rows,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: columns * 10,
         pixel_height: rows * 20,
         cell_x_offset: 0,
@@ -4090,6 +4100,8 @@ fn test_overlay_geometry_scroll_and_pixel_position() {
         dest_row: 55,
         columns: 2,
         rows: 3,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: 25,
         pixel_height: 45,
         cell_x_offset: 3,
@@ -4148,6 +4160,8 @@ fn test_overlay_geometry_partial_visibility_and_full_source() {
         dest_row: 48,
         columns: 2,
         rows: 3,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: 20,
         pixel_height: 60,
         cell_x_offset: 0,
@@ -4174,4 +4188,55 @@ fn test_overlay_geometry_partial_visibility_and_full_source() {
 
     // Zero crop falls back to the full texture.
     assert_eq!(geometry.source_rect, [0.0, 0.0, 1.0, 1.0]);
+}
+
+#[test]
+fn test_rescale_keeps_native_size_and_tracks_cell_span() {
+    use crate::ansi::graphics::KittyPlacement;
+
+    // Native-size placement: 25x45 crop, 10x20 cells.
+    let mut native = KittyPlacement {
+        image_id: 1,
+        placement_id: 1,
+        source_x: 0,
+        source_y: 0,
+        source_width: 25,
+        source_height: 45,
+        dest_col: 0,
+        dest_row: 0,
+        columns: 3,
+        rows: 3,
+        requested_columns: 0,
+        requested_rows: 0,
+        pixel_width: 25,
+        pixel_height: 45,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        z_index: 0,
+        transmit_time: std::time::Instant::now(),
+    };
+
+    // Font grows to 12x24 cells: the image must NOT stretch to its
+    // cell box; only the derived span shrinks.
+    native.rescale(12, 24);
+    assert_eq!(native.pixel_width, 25, "native pixel size is kept");
+    assert_eq!(native.pixel_height, 45);
+    assert_eq!(native.columns, 3, "ceil(25 / 12)");
+    assert_eq!(native.rows, 2, "ceil(45 / 24)");
+
+    // Cell-sized placement (c=4, r=2) tracks the grid instead.
+    let mut cell_sized = KittyPlacement {
+        requested_columns: 4,
+        requested_rows: 2,
+        columns: 4,
+        rows: 2,
+        pixel_width: 40,
+        pixel_height: 40,
+        ..native.clone()
+    };
+    cell_sized.rescale(12, 24);
+    assert_eq!(cell_sized.pixel_width, 48);
+    assert_eq!(cell_sized.pixel_height, 48);
+    assert_eq!(cell_sized.columns, 4);
+    assert_eq!(cell_sized.rows, 2);
 }
