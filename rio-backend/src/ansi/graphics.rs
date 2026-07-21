@@ -185,17 +185,19 @@ impl KittyPlacement {
         }
         self.pixel_width = w as u32;
         self.pixel_height = h as u32;
-        self.cell_x_offset = self.cell_x_offset.min(cell_width as u32 - 1);
-        self.cell_y_offset = self.cell_y_offset.min(cell_height as u32 - 1);
+        // Offsets are stored raw and clamped where they're read, so a
+        // shrink-then-grow of the cell size can't lose the original.
+        let x_offset = (self.cell_x_offset as usize).min(cell_width - 1);
+        let y_offset = (self.cell_y_offset as usize).min(cell_height - 1);
         self.columns = if self.requested_columns > 0 {
             self.requested_columns
         } else {
-            (w + self.cell_x_offset as usize).div_ceil(cell_width) as u32
+            (w + x_offset).div_ceil(cell_width) as u32
         };
         self.rows = if self.requested_rows > 0 {
             self.requested_rows
         } else {
-            (h + self.cell_y_offset as usize).div_ceil(cell_height) as u32
+            (h + y_offset).div_ceil(cell_height) as u32
         };
     }
 }
@@ -266,13 +268,15 @@ pub fn kitty_overlay_geometry(
         [0.0, 0.0, 1.0, 1.0]
     };
 
+    // Per the kitty spec the sub-cell offset stays inside the cell
+    // box; stored values are raw, so clamp against the current cell
+    // size here.
+    let x_offset = (placement.cell_x_offset as f32).min(viewport.cell_width - 1.0);
+    let y_offset = (placement.cell_y_offset as f32).min(viewport.cell_height - 1.0);
+
     Some(KittyOverlayGeometry {
-        x: viewport.origin_x
-            + placement.dest_col as f32 * viewport.cell_width
-            + placement.cell_x_offset as f32,
-        y: viewport.origin_y
-            + screen_row as f32 * viewport.cell_height
-            + placement.cell_y_offset as f32,
+        x: viewport.origin_x + placement.dest_col as f32 * viewport.cell_width + x_offset,
+        y: viewport.origin_y + screen_row as f32 * viewport.cell_height + y_offset,
         width: placement.pixel_width as f32,
         height: placement.pixel_height as f32,
         source_rect,

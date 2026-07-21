@@ -724,6 +724,39 @@ impl<U: EventListener> Crosswords<U> {
         let num_lines = size.screen_lines();
 
         if old_cols == num_cols && old_lines == num_lines {
+            // Same grid, but the cell size may still have changed (a
+            // font or DPI change that kept cols/rows constant). Keep
+            // the graphics cell metrics and placements in sync so
+            // cell-sized images keep tracking the grid.
+            if self.graphics.cell_width != size.square_width()
+                || self.graphics.cell_height != size.square_height()
+            {
+                self.graphics.resize(&size);
+                let cell_w = self.graphics.cell_width as usize;
+                let cell_h = self.graphics.cell_height as usize;
+                if cell_w > 0 && cell_h > 0 {
+                    for p in self.graphics.kitty_placements.values_mut() {
+                        p.rescale(cell_w, cell_h);
+                    }
+                    for p in self
+                        .graphics
+                        .kitty_inactive_screen
+                        .kitty_placements
+                        .values_mut()
+                    {
+                        p.rescale(cell_w, cell_h);
+                    }
+                    if !self.graphics.kitty_placements.is_empty()
+                        || !self
+                            .graphics
+                            .kitty_inactive_screen
+                            .kitty_placements
+                            .is_empty()
+                    {
+                        self.graphics.kitty_graphics_dirty = true;
+                    }
+                }
+            }
             info!("Crosswords::resize dimensions unchanged");
             return;
         }
@@ -4454,8 +4487,9 @@ impl<U: EventListener> Crosswords<U> {
         let dest_row = self.history_size() as i64 + cursor_row as i64;
 
         // kitty spec the `X=`/`Y=` sub-cell offset must be smaller
-        // than the cell size; kitty clamps out-of-range values to the
-        // cell box
+        // than the cell size. The stored value stays raw (a later cell
+        // size change re-clamps at read time without losing the
+        // original); these clamped copies only drive span derivation.
         let cell_x_offset = (placement.cell_x_offset as usize).min(cell_width - 1);
         let cell_y_offset = (placement.cell_y_offset as usize).min(cell_height - 1);
 
@@ -4504,8 +4538,8 @@ impl<U: EventListener> Crosswords<U> {
             requested_rows: placement.rows,
             pixel_width: display_w as u32,
             pixel_height: display_h as u32,
-            cell_x_offset: cell_x_offset as u32,
-            cell_y_offset: cell_y_offset as u32,
+            cell_x_offset: placement.cell_x_offset,
+            cell_y_offset: placement.cell_y_offset,
             z_index: placement.z_index,
             transmit_time,
         };

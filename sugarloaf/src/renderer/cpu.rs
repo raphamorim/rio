@@ -303,12 +303,14 @@ pub fn render_cpu(
     text: &crate::text::Text,
     images: &ImageLayers,
 ) {
-    // Flatten and z-sort image overlays once; ties broken by image id
-    // and position so the paint order (and the frame hash) stays
-    // deterministic across frames.
+    // Flatten and z-sort image overlays once. The sort is stable and
+    // each panel's vec arrives ordered (z, image_id, placement_id)
+    // from the frontend, so equal keys keep their per-panel paint
+    // order. Never key on screen position: it changes with scroll,
+    // and f32 bit patterns don't order correctly once negative.
     let mut image_overlays: Vec<&GraphicOverlay> =
         images.overlays.values().flatten().collect();
-    image_overlays.sort_by_key(|o| (o.z_index, o.image_id, o.x.to_bits(), o.y.to_bits()));
+    image_overlays.sort_by_key(|o| (o.z_index, o.image_id));
 
     let vertices = renderer.vertices();
     let quad_instances = renderer.instances();

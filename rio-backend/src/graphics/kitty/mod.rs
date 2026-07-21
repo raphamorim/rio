@@ -676,8 +676,9 @@ fn test_subcell_offset_forwarded_and_clamped() {
     assert_eq!(stored.cell_x_offset, 7);
     assert_eq!(stored.cell_y_offset, 9);
 
-    // Per kitty spec the offset must be smaller than the cell size;
-    // out-of-range values are clamped to the cell box.
+    // Per kitty spec the offset must be smaller than the cell size.
+    // The stored value stays raw (re-clamped at read time so cell
+    // size changes don't lose it); span derivation uses the clamp.
     let placement = kitty_graphics_protocol::PlacementRequest {
         image_id: 1,
         placement_id: 8,
@@ -701,8 +702,11 @@ fn test_subcell_offset_forwarded_and_clamped() {
         .kitty_placements
         .get(&(1, 8))
         .expect("placement stored");
-    assert_eq!(stored.cell_x_offset, 9, "clamped to cell_width - 1");
-    assert_eq!(stored.cell_y_offset, 19, "clamped to cell_height - 1");
+    assert_eq!(stored.cell_x_offset, 999, "raw offset is kept");
+    assert_eq!(stored.cell_y_offset, 999);
+    // 40x40 image, 10x20 cells, offsets clamped to 9/19 for spans.
+    assert_eq!(stored.columns, 5, "ceil((40 + 9) / 10)");
+    assert_eq!(stored.rows, 3, "ceil((40 + 19) / 20)");
 }
 
 #[test]
@@ -4239,4 +4243,85 @@ fn test_rescale_keeps_native_size_and_tracks_cell_span() {
     assert_eq!(cell_sized.pixel_height, 48);
     assert_eq!(cell_sized.columns, 4);
     assert_eq!(cell_sized.rows, 2);
+}
+
+#[test]
+fn test_crop_scaled_to_requested_rows_and_both_axes() {
+    let mut term = geometry_test_term();
+
+    // r= only: height = 2 cells * 20px, width keeps the crop aspect.
+    let mut placement = placement_request(9);
+    placement.width = 50;
+    placement.height = 25;
+    placement.rows = 2;
+    term.place_graphic(placement);
+
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 9))
+        .expect("placement stored");
+    assert_eq!(stored.pixel_height, 40);
+    assert_eq!(stored.pixel_width, 80, "aspect follows the crop");
+    assert_eq!(stored.rows, 2);
+    assert_eq!(stored.columns, 8, "ceil(80 / 10)");
+
+    // c= and r= both: exact fit, aspect not preserved.
+    let mut placement = placement_request(10);
+    placement.width = 50;
+    placement.height = 25;
+    placement.columns = 3;
+    placement.rows = 4;
+    term.place_graphic(placement);
+
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 10))
+        .expect("placement stored");
+    assert_eq!(stored.pixel_width, 30);
+    assert_eq!(stored.pixel_height, 80, "stretched to the exact span");
+    assert_eq!(stored.columns, 3);
+    assert_eq!(stored.rows, 4);
+}
+
+#[test]
+fn test_overlay_geometry_clamps_raw_offsets() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    // Raw offsets larger than the current cell box clamp at read
+    // time; the stored value survives cell size changes.
+    let placement = KittyPlacement {
+        image_id: 1,
+        placement_id: 1,
+        source_x: 0,
+        source_y: 0,
+        source_width: 0,
+        source_height: 0,
+        dest_col: 2,
+        dest_row: 0,
+        columns: 1,
+        rows: 1,
+        requested_columns: 0,
+        requested_rows: 0,
+        pixel_width: 8,
+        pixel_height: 8,
+        cell_x_offset: 999,
+        cell_y_offset: 999,
+        z_index: 0,
+        transmit_time: std::time::Instant::now(),
+    };
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: 0,
+        display_offset: 0,
+        screen_lines: 24,
+    };
+    let geometry =
+        kitty_overlay_geometry(&placement, 8, 8, &viewport).expect("visible placement");
+    assert_eq!(geometry.x, 2.0 * 10.0 + 9.0, "offset clamped to cell box");
+    assert_eq!(geometry.y, 19.0);
 }
