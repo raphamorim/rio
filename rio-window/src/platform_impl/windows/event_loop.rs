@@ -546,7 +546,7 @@ impl ActiveEventLoop {
             return None;
         }
         let hmonitor = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONULL) };
-        if hmonitor == 0 {
+        if hmonitor.is_null() {
             return None;
         }
         Some(MonitorHandle::new(hmonitor))
