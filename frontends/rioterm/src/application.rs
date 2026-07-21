@@ -165,6 +165,9 @@ impl Application<'_> {
     /// global hotkey API, the compositor keybinding + a regular
     /// binding cover it there.
     fn setup_quake_hotkey(&mut self) {
+        // Drop any previous manager first: registering a chord the old
+        // manager still holds fails on Windows and X11.
+        self.global_hotkey = None;
         self.global_hotkey = crate::global_hotkey::setup(
             self.event_proxy.clone(),
             &self.config.bindings.keys,
@@ -492,6 +495,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 };
 
                 let has_font_updates = self.config.fonts != config.fonts;
+                let has_binding_updates = self.config.bindings != config.bindings;
 
                 let font_library_errors = if has_font_updates {
                     let new_font_library = rio_backend::sugarloaf::font::FontLibrary::new(
@@ -504,6 +508,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 };
 
                 self.config = config;
+
+                // Dropping the old manager unregisters its hotkeys, so
+                // ToggleQuake binding edits apply without restarting.
+                if has_binding_updates {
+                    self.setup_quake_hotkey();
+                }
 
                 let mut has_checked_adaptive_colors = false;
                 for (_id, route) in self.router.routes.iter_mut() {

@@ -58,16 +58,22 @@ pub fn setup(
         return None;
     }
 
-    std::thread::spawn(move || {
-        use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
-        while let Ok(event) = GlobalHotKeyEvent::receiver().recv() {
-            if event.state == HotKeyState::Pressed {
-                event_proxy
-                    .send_event(RioEventType::Rio(RioEvent::ToggleQuake), unsafe {
-                        rio_window::window::WindowId::dummy()
-                    });
+    // The crate's event receiver is a process-wide channel; one
+    // listener serves every manager, including managers recreated on
+    // config reload.
+    static LISTENER: std::sync::Once = std::sync::Once::new();
+    LISTENER.call_once(move || {
+        std::thread::spawn(move || {
+            use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
+            while let Ok(event) = GlobalHotKeyEvent::receiver().recv() {
+                if event.state == HotKeyState::Pressed {
+                    event_proxy
+                        .send_event(RioEventType::Rio(RioEvent::ToggleQuake), unsafe {
+                            rio_window::window::WindowId::dummy()
+                        });
+                }
             }
-        }
+        });
     });
 
     Some(GlobalHotkeys { _manager: manager })
