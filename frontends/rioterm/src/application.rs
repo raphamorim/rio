@@ -435,31 +435,49 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::UpdateGraphics {
-                route_id: _,
-                queues,
-            }) => {
+            RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 
-                    // Atlas graphics (sixel/iTerm2)
+                    // Atlas graphics (sixel/iTerm2) share the per-image
+                    // texture store with kitty images, in a disjoint key
+                    // namespace.
                     for graphic_data in queues.pending {
-                        sugarloaf.graphics.insert(graphic_data);
-                    }
-
-                    // Image textures (kitty) → separate store, no clone
-                    for (image_id, graphic_data) in queues.pending_images {
+                        let key = crate::renderer::atlas_image_key(graphic_data.id.get());
                         sugarloaf.image_data.insert(
-                            image_id,
+                            key,
                             rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
                                 graphic_data,
                             ),
                         );
                     }
 
-                    for graphic_data in queues.remove_queue {
-                        sugarloaf.graphics.remove(&graphic_data);
+                    // Image textures (kitty) → separate store, no clone
+                    for (image_id, graphic_data) in queues.pending_images {
+                        sugarloaf.image_data.insert(
+                            crate::renderer::kitty_image_key(image_id),
+                            rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
+                                graphic_data,
+                            ),
+                        );
+                    }
+
+                    // Removals arrive as final image keys (atlas refs
+                    // dropped off scrollback, kitty evictions) and free
+                    // both the pixel store and the cached GPU texture.
+                    for key in queues.remove_queue {
+                        sugarloaf.remove_image(key);
+                    }
+
+                    // Mark the panel dirty — the renderer skips non-dirty
+                    // panels, so a bare redraw after the pixels arrive
+                    // would no-op and leave the image blank until the
+                    // next unrelated damage.
+                    if let Some(ctx_item) =
+                        route.window.screen.ctx_mut().get_by_route_id(route_id)
+                    {
+                        ctx_item.val.renderable_content.pending_update.set_dirty();
                     }
 
                     // Request a redraw to display the updated graphics

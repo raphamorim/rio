@@ -21,7 +21,7 @@ use wide::{u32x4, u32x8};
 /// Image overlays and their pixel stores for a CPU frame.
 pub struct ImageLayers<'a> {
     pub overlays: &'a FxHashMap<usize, Vec<GraphicOverlay>>,
-    pub data: &'a FxHashMap<u32, GraphicDataEntry>,
+    pub data: &'a FxHashMap<u64, GraphicDataEntry>,
 }
 
 #[derive(Default)]
@@ -350,7 +350,7 @@ pub fn render_cpu(
         // retransmitted image gets a fresh handle id).
         h.write_usize(image_overlays.len());
         for overlay in &image_overlays {
-            h.write_u32(overlay.image_id);
+            h.write_u64(overlay.image_id);
             h.write_u32(overlay.x.to_bits());
             h.write_u32(overlay.y.to_bits());
             h.write_u32(overlay.width.to_bits());
@@ -557,7 +557,7 @@ fn draw_image_overlays(
     buf_w: i32,
     buf_h: i32,
     overlays: &[&GraphicOverlay],
-    data: &FxHashMap<u32, GraphicDataEntry>,
+    data: &FxHashMap<u64, GraphicDataEntry>,
 ) {
     for overlay in overlays {
         let entry = match data.get(&overlay.image_id) {
