@@ -4722,6 +4722,25 @@ mod tests {
     }
 
     #[test]
+    fn grid_iterator_survives_narrow_rows() {
+        let mut cw = make_crosswords();
+        for _ in 0..6 {
+            cw.linefeed();
+        }
+        // History rows keep their old length across column growth;
+        // simulate one narrower than the grid (#1713).
+        cw.grid[Line(-2)].inner.truncate(2);
+        let start = Pos::new(Line(-3), Column(0));
+        // Must not panic; may end early at the narrow row.
+        let _ = cw.grid.iter_from(start).count();
+
+        // A stale position beyond the grid's history must end the
+        // iteration instead of panicking.
+        let stale = Pos::new(Line(-40), Column(0));
+        assert_eq!(cw.grid.iter_from(stale).count(), 0);
+    }
+
+    #[test]
     fn user_vars_are_stored() {
         let mut cw = make_crosswords();
         assert!(cw.user_vars.is_empty());

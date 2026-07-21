@@ -754,6 +754,20 @@ impl<'a, T> Iterator for GridIterator<'a, T> {
             _ => self.current.col += Column(1),
         }
 
+        // Guard both axes before indexing (#1713): positions can be
+        // stale relative to the live grid (resize between capture and
+        // use), and history rows keep their old length across column
+        // growth. Ending the iteration beats panicking.
+        let screen_lines = self.grid.screen_lines() as i32;
+        let history = (self.grid.total_lines() - self.grid.screen_lines()) as i32;
+        if self.current.row.0 >= screen_lines || self.current.row.0 < -history {
+            return None;
+        }
+        let row = &self.grid[self.current.row];
+        if self.current.col.0 >= row.len() {
+            return None;
+        }
+
         Some(Indexed {
             square: &self.grid[self.current],
             pos: self.current,
