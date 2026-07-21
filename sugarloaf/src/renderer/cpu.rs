@@ -5,16 +5,24 @@
 // Writes directly into softbuffer's `&mut [u32]` (0x00RRGGBB) — no
 // intermediate pixmap, no pixel format conversion at present time.
 //
-// v1 limitations: monochrome glyphs only (color-atlas glyphs / images
-// not implemented), no per-corner radii / borders / advanced underlines.
+// v1 limitations: monochrome glyphs only (color-atlas glyphs not
+// implemented), no per-corner radii / borders / advanced underlines.
+// Kitty image overlays composite via `draw_image_overlay`.
 
 use crate::context::cpu::CpuContext;
 use crate::renderer::compositor::Vertex;
 use crate::renderer::image_cache::ImageCache;
 use crate::renderer::Renderer;
+use crate::sugarloaf::graphics::{GraphicDataEntry, GraphicOverlay};
 use rustc_hash::FxHashMap;
 use std::hash::Hasher;
 use wide::{u32x4, u32x8};
+
+/// Image overlays and their pixel stores for a CPU frame.
+pub struct ImageLayers<'a> {
+    pub overlays: &'a FxHashMap<usize, Vec<GraphicOverlay>>,
+    pub data: &'a FxHashMap<u32, GraphicDataEntry>,
+}
 
 #[derive(Default)]
 pub struct CpuCache {
@@ -293,7 +301,17 @@ pub fn render_cpu(
     background: Option<crate::sugarloaf::Color>,
     grids: &mut [(&mut crate::grid::GridRenderer, crate::grid::GridUniforms)],
     text: &crate::text::Text,
+    images: &ImageLayers,
 ) {
+    // Flatten and z-sort image overlays once. The sort is stable and
+    // each panel's vec arrives ordered (z, image_id, placement_id)
+    // from the frontend, so equal keys keep their per-panel paint
+    // order. Never key on screen position: it changes with scroll,
+    // and f32 bit patterns don't order correctly once negative.
+    let mut image_overlays: Vec<&GraphicOverlay> =
+        images.overlays.values().flatten().collect();
+    image_overlays.sort_by_key(|o| (o.z_index, o.image_id));
+
     let vertices = renderer.vertices();
     let quad_instances = renderer.instances();
     let text_instances = text.instances();
@@ -326,6 +344,23 @@ pub fn render_cpu(
             h.write(bytemuck::bytes_of(uniforms));
             if let crate::grid::GridRenderer::Cpu(cpu_grid) = &**grid {
                 cpu_grid.hash_state(&mut h);
+            }
+        }
+        // Image overlays: geometry plus the pixel store identity (a
+        // retransmitted image gets a fresh handle id).
+        h.write_usize(image_overlays.len());
+        for overlay in &image_overlays {
+            h.write_u32(overlay.image_id);
+            h.write_u32(overlay.x.to_bits());
+            h.write_u32(overlay.y.to_bits());
+            h.write_u32(overlay.width.to_bits());
+            h.write_u32(overlay.height.to_bits());
+            h.write_i32(overlay.z_index);
+            for v in overlay.source_rect {
+                h.write_u32(v.to_bits());
+            }
+            if let Some(entry) = images.data.get(&overlay.image_id) {
+                h.write_u64(entry.handle.id());
             }
         }
         // Text instances change per frame for any UI overlay
@@ -379,15 +414,28 @@ pub fn render_cpu(
 
     // Grid passes: paint each panel's terminal cells (bg + glyphs)
     // into the buffer before overlay vertices, so UI overlays
-    // composite on top. CPU backend doesn't handle kitty image layers
-    // (no image-overlay support on softbuffer), so the bg/text split
-    // here just runs back-to-back per panel.
+    // composite on top. Image overlays interleave with the passes the
+    // same way the GPU backends layer them: below-bg images first,
+    // then cell backgrounds, below-text images, glyphs, above-text
+    // images.
     {
+        use crate::renderer::IMAGE_BG_LIMIT;
         let buf_slice: &mut [u32] = &mut buffer;
+        let split_below_bg =
+            image_overlays.partition_point(|o| o.z_index < IMAGE_BG_LIMIT);
+        let split_below_text = image_overlays.partition_point(|o| o.z_index < 0);
+        let (below_bg, rest) = image_overlays.split_at(split_below_bg);
+        let (below_text, above_text) = rest.split_at(split_below_text - split_below_bg);
+
+        draw_image_overlays(buf_slice, buf_w, buf_h, below_bg, images.data);
         for (grid, uniforms) in grids.iter() {
             grid.render_bg_cpu(buf_slice, ctx.width_px, ctx.height_px, uniforms);
+        }
+        draw_image_overlays(buf_slice, buf_w, buf_h, below_text, images.data);
+        for (grid, uniforms) in grids.iter() {
             grid.render_text_cpu(buf_slice, ctx.width_px, ctx.height_px, uniforms);
         }
+        draw_image_overlays(buf_slice, buf_w, buf_h, above_text, images.data);
     }
 
     // QuadInstance pass: split borders, panel rects, scrollbar, dim
@@ -500,6 +548,111 @@ pub fn render_cpu(
 
     if let Err(e) = buffer.present() {
         tracing::error!("softbuffer present failed: {e}");
+    }
+}
+
+/// Draw a batch of image overlays into the buffer.
+fn draw_image_overlays(
+    buf: &mut [u32],
+    buf_w: i32,
+    buf_h: i32,
+    overlays: &[&GraphicOverlay],
+    data: &FxHashMap<u32, GraphicDataEntry>,
+) {
+    for overlay in overlays {
+        let entry = match data.get(&overlay.image_id) {
+            Some(e) => e,
+            None => continue,
+        };
+        let (width, height, pixels) = match &entry.handle.data {
+            crate::components::core::image::Data::Rgba {
+                width,
+                height,
+                pixels,
+            } => (*width, *height, pixels.as_ref()),
+            _ => continue,
+        };
+        draw_image_overlay(buf, buf_w, buf_h, overlay, width, height, pixels);
+    }
+}
+
+/// Nearest-neighbor, alpha-blended blit of one image overlay.
+///
+/// `source_rect` follows the shared shader convention: normalized
+/// `[u0, v0, u1, v1]` (origin, end) within the source image. Sample
+/// positions sit at destination pixel centers like the GPU quad
+/// rasterization; the filter is nearest rather than the GPU sampler's
+/// bilinear, so scaled images are blockier here but land on exactly
+/// the same pixels (and identical ones at 1:1).
+#[allow(clippy::too_many_arguments)]
+pub fn draw_image_overlay(
+    buf: &mut [u32],
+    buf_w: i32,
+    buf_h: i32,
+    overlay: &GraphicOverlay,
+    image_width: u32,
+    image_height: u32,
+    rgba: &[u8],
+) {
+    if image_width == 0 || image_height == 0 {
+        return;
+    }
+    if rgba.len() < (image_width as usize) * (image_height as usize) * 4 {
+        return;
+    }
+    if overlay.width <= 0.0 || overlay.height <= 0.0 {
+        return;
+    }
+
+    let x0 = overlay.x.round() as i32;
+    let y0 = overlay.y.round() as i32;
+    let x1 = (overlay.x + overlay.width).round() as i32;
+    let y1 = (overlay.y + overlay.height).round() as i32;
+    let span_x = (x1 - x0) as f32;
+    let span_y = (y1 - y0) as f32;
+    if span_x <= 0.0 || span_y <= 0.0 {
+        return;
+    }
+
+    let cx0 = x0.max(0);
+    let cy0 = y0.max(0);
+    let cx1 = x1.min(buf_w);
+    let cy1 = y1.min(buf_h);
+    if cx1 <= cx0 || cy1 <= cy0 {
+        return;
+    }
+
+    let [u0, v0, u1, v1] = overlay.source_rect;
+    let iw = image_width as f32;
+    let ih = image_height as f32;
+    let max_sx = image_width as i32 - 1;
+    let max_sy = image_height as i32 - 1;
+
+    for py in cy0..cy1 {
+        let t_y = ((py - y0) as f32 + 0.5) / span_y;
+        let v = v0 + (v1 - v0) * t_y;
+        let sy = ((v * ih) as i32).clamp(0, max_sy) as usize;
+        let src_row = sy * image_width as usize;
+        let dst_row = (py * buf_w) as usize;
+        for px in cx0..cx1 {
+            let t_x = ((px - x0) as f32 + 0.5) / span_x;
+            let u = u0 + (u1 - u0) * t_x;
+            let sx = ((u * iw) as i32).clamp(0, max_sx) as usize;
+            let idx = (src_row + sx) * 4;
+            let a = rgba[idx + 3];
+            if a == 0 {
+                continue;
+            }
+            let premul = |c: u8| ((c as u32 * a as u32 + 127) / 255) as u8;
+            let src = pack_premul(
+                premul(rgba[idx]),
+                premul(rgba[idx + 1]),
+                premul(rgba[idx + 2]),
+                a,
+            );
+            let dst = &mut buf[dst_row + px as usize];
+            *dst = blend_over_swar(src, *dst);
+        }
     }
 }
 
@@ -841,5 +994,115 @@ fn draw_quad_instance(
             let idx = (y as usize) * stride + (x as usize);
             buf[idx] = blend_over_swar(src_premul, buf[idx]);
         }
+    }
+}
+
+#[cfg(test)]
+mod image_overlay_tests {
+    use super::*;
+
+    const RED: [u8; 4] = [255, 0, 0, 255];
+    const BLUE: [u8; 4] = [0, 0, 255, 255];
+
+    fn overlay(x: f32, y: f32, width: f32, height: f32) -> GraphicOverlay {
+        GraphicOverlay {
+            image_id: 1,
+            x,
+            y,
+            width,
+            height,
+            z_index: 0,
+            source_rect: [0.0, 0.0, 1.0, 1.0],
+        }
+    }
+
+    /// 2x2 image: left column red, right column blue.
+    fn red_blue_image() -> Vec<u8> {
+        [RED, BLUE, RED, BLUE].concat()
+    }
+
+    fn buffer(w: usize, h: usize) -> Vec<u32> {
+        vec![0u32; w * h]
+    }
+
+    const RED_PX: u32 = 0x00ff_0000;
+    const BLUE_PX: u32 = 0x0000_00ff;
+
+    #[test]
+    fn one_to_one_blit_lands_on_exact_pixels() {
+        let mut buf = buffer(6, 6);
+        let image = red_blue_image();
+        draw_image_overlay(&mut buf, 6, 6, &overlay(1.0, 2.0, 2.0, 2.0), 2, 2, &image);
+
+        for y in 0..6usize {
+            for x in 0..6usize {
+                let expected = match (x, y) {
+                    (1, 2) | (1, 3) => RED_PX,
+                    (2, 2) | (2, 3) => BLUE_PX,
+                    _ => 0,
+                };
+                assert_eq!(buf[y * 6 + x], expected, "pixel ({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
+    fn source_rect_selects_the_crop() {
+        let mut buf = buffer(4, 4);
+        let image = red_blue_image();
+        // Right half only: everything drawn must be blue.
+        let mut o = overlay(0.0, 0.0, 1.0, 2.0);
+        o.source_rect = [0.5, 0.0, 1.0, 1.0];
+        draw_image_overlay(&mut buf, 4, 4, &o, 2, 2, &image);
+
+        assert_eq!(buf[0], BLUE_PX);
+        assert_eq!(buf[4], BLUE_PX);
+        assert_eq!(buf[1], 0, "outside the quad stays untouched");
+    }
+
+    #[test]
+    fn nearest_neighbor_upscale() {
+        let mut buf = buffer(4, 2);
+        let image = red_blue_image();
+        // 2x2 image scaled to 4x2: two red columns then two blue.
+        draw_image_overlay(&mut buf, 4, 2, &overlay(0.0, 0.0, 4.0, 2.0), 2, 2, &image);
+
+        assert_eq!(&buf[0..4], &[RED_PX, RED_PX, BLUE_PX, BLUE_PX]);
+        assert_eq!(&buf[4..8], &[RED_PX, RED_PX, BLUE_PX, BLUE_PX]);
+    }
+
+    #[test]
+    fn alpha_blends_over_background() {
+        let mut buf = vec![0x0000_00ff_u32; 1]; // blue background
+                                                // Single half-transparent red pixel.
+        let image = vec![255, 0, 0, 128];
+        draw_image_overlay(&mut buf, 1, 1, &overlay(0.0, 0.0, 1.0, 1.0), 1, 1, &image);
+
+        let r = (buf[0] >> 16) & 0xff;
+        let b = buf[0] & 0xff;
+        assert!((127..=129).contains(&r), "red ~50%: {r}");
+        assert!((126..=128).contains(&b), "blue ~50%: {b}");
+    }
+
+    #[test]
+    fn clips_at_buffer_edges() {
+        let mut buf = buffer(2, 2);
+        let image = red_blue_image();
+        // Overlay hangs off the top-left corner; only the bottom-right
+        // quarter (blue column, bottom row) is inside the buffer.
+        draw_image_overlay(&mut buf, 2, 2, &overlay(-1.0, -1.0, 2.0, 2.0), 2, 2, &image);
+
+        assert_eq!(buf[0], BLUE_PX, "visible slice of the image");
+        assert_eq!(buf[1], 0);
+        assert_eq!(buf[2], 0);
+        assert_eq!(buf[3], 0);
+    }
+
+    #[test]
+    fn fully_transparent_pixels_leave_dst_untouched() {
+        let mut buf = vec![0x0012_3456_u32; 4];
+        let image = vec![0u8; 2 * 2 * 4]; // all alpha 0
+        draw_image_overlay(&mut buf, 2, 2, &overlay(0.0, 0.0, 2.0, 2.0), 2, 2, &image);
+        assert!(buf.iter().all(|&px| px == 0x0012_3456));
     }
 }

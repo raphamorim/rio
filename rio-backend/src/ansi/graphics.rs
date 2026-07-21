@@ -101,7 +101,11 @@ pub struct KittyPlacement {
     pub image_id: u32,
     /// Kitty protocol placement ID (p= parameter).
     pub placement_id: u32,
-    /// Source rectangle within the image (pixels).
+    /// Source rectangle within the image, exactly as requested
+    /// (`x=`/`y=`/`w=`/`h=`; zero width/height means "to the image
+    /// edge"). Stored raw and resolved against the image's current
+    /// dimensions at read time, so a retransmit that changes the
+    /// image size re-clamps instead of showing a stale crop.
     pub source_x: u32,
     pub source_y: u32,
     pub source_width: u32,
@@ -113,7 +117,14 @@ pub struct KittyPlacement {
     /// Display size in cells.
     pub columns: u32,
     pub rows: u32,
-    /// Actual display pixel dimensions.
+    /// The `c=`/`r=` span the client requested (0 = derived). Kept
+    /// separate from `columns`/`rows` so a cell size change can tell
+    /// cell-sized placements (which track the grid) apart from
+    /// native-size ones (which keep their pixel size).
+    pub requested_columns: u32,
+    pub requested_rows: u32,
+    /// Cached display pixel size for grid footprint bookkeeping. The
+    /// render path resolves size per frame and never reads these.
     pub pixel_width: u32,
     pub pixel_height: u32,
     /// Sub-cell pixel offset.
@@ -125,6 +136,236 @@ pub struct KittyPlacement {
     pub transmit_time: std::time::Instant,
 }
 
+/// Resolve a raw kitty source rectangle against the image's current
+/// dimensions: origin clamped to the edges, zero width/height meaning
+/// "to the edge". Returns `None` when nothing of the crop lies inside
+/// the image (or the image is empty).
+pub fn resolve_source_rect(
+    source_x: u32,
+    source_y: u32,
+    source_width: u32,
+    source_height: u32,
+    image_width: usize,
+    image_height: usize,
+) -> Option<(usize, usize, usize, usize)> {
+    if image_width == 0 || image_height == 0 {
+        return None;
+    }
+    let x = (source_x as usize).min(image_width);
+    let y = (source_y as usize).min(image_height);
+    let width = if source_width > 0 {
+        (source_width as usize).min(image_width - x)
+    } else {
+        image_width - x
+    };
+    let height = if source_height > 0 {
+        (source_height as usize).min(image_height - y)
+    } else {
+        image_height - y
+    };
+    if width == 0 || height == 0 {
+        return None;
+    }
+    Some((x, y, width, height))
+}
+
+/// Display pixel size for a kitty placement: the source rectangle
+/// scaled to the requested cell span, keeping aspect when only one
+/// axis is given, or shown at native size when no span is requested.
+pub fn kitty_display_size(
+    source_width: usize,
+    source_height: usize,
+    requested_columns: u32,
+    requested_rows: u32,
+    cell_width: usize,
+    cell_height: usize,
+) -> (usize, usize) {
+    if source_width == 0 || source_height == 0 {
+        return (0, 0);
+    }
+    match (requested_columns, requested_rows) {
+        (0, 0) => (source_width, source_height),
+        (c, 0) => {
+            let w = c as usize * cell_width;
+            let h =
+                (source_height as f64 * w as f64 / source_width as f64).round() as usize;
+            (w, h)
+        }
+        (0, r) => {
+            let h = r as usize * cell_height;
+            let w =
+                (source_width as f64 * h as f64 / source_height as f64).round() as usize;
+            (w, h)
+        }
+        (c, r) => (c as usize * cell_width, r as usize * cell_height),
+    }
+}
+
+impl KittyPlacement {
+    /// Recompute display size and cell span against the image's
+    /// current dimensions and a cell size. Cell-sized placements
+    /// track the grid; native-size ones keep their pixel dimensions
+    /// but re-derive how many cells they cover. Called on resize and
+    /// retransmission.
+    pub fn rescale(
+        &mut self,
+        image_width: usize,
+        image_height: usize,
+        cell_width: usize,
+        cell_height: usize,
+    ) {
+        if cell_width == 0 || cell_height == 0 {
+            return;
+        }
+        let Some((_, _, source_width, source_height)) = resolve_source_rect(
+            self.source_x,
+            self.source_y,
+            self.source_width,
+            self.source_height,
+            image_width,
+            image_height,
+        ) else {
+            // Nothing of the crop is inside the image: invisible, no
+            // cell footprint.
+            self.pixel_width = 0;
+            self.pixel_height = 0;
+            self.columns = 0;
+            self.rows = 0;
+            return;
+        };
+        let (w, h) = kitty_display_size(
+            source_width,
+            source_height,
+            self.requested_columns,
+            self.requested_rows,
+            cell_width,
+            cell_height,
+        );
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.pixel_width = w as u32;
+        self.pixel_height = h as u32;
+        // Offsets are stored raw and clamped where they're read, so a
+        // shrink-then-grow of the cell size can't lose the original.
+        let x_offset = (self.cell_x_offset as usize).min(cell_width - 1);
+        let y_offset = (self.cell_y_offset as usize).min(cell_height - 1);
+        self.columns = if self.requested_columns > 0 {
+            self.requested_columns
+        } else {
+            (w + x_offset).div_ceil(cell_width) as u32
+        };
+        self.rows = if self.requested_rows > 0 {
+            self.requested_rows
+        } else {
+            (h + y_offset).div_ceil(cell_height) as u32
+        };
+    }
+}
+
+/// On-screen quad for a direct kitty placement, in physical pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct KittyOverlayGeometry {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    /// Normalized source rectangle within the image texture.
+    pub source_rect: [f32; 4],
+}
+
+/// Viewport parameters for placement geometry: the panel content
+/// origin in physical pixels, the canonical cell stride the grid
+/// paints with, and the scroll state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverlayViewport {
+    pub cell_width: f32,
+    pub cell_height: f32,
+    pub origin_x: f32,
+    pub origin_y: f32,
+    pub history_size: i64,
+    pub display_offset: i64,
+    pub screen_lines: i64,
+}
+
+/// Compute where a direct kitty placement lands on screen.
+///
+/// The crop and display size are resolved here, per frame, against
+/// the image's current dimensions and the viewport's cell stride —
+/// nothing baked at place time can go stale when the image is
+/// retransmitted or the cell size changes. The viewport cell stride
+/// must be the same one the grid paints with, so image position and
+/// text stay in lockstep. Returns `None` when the placement is fully
+/// outside the viewport or resolves to nothing visible; a partially
+/// visible placement keeps its full quad and the GPU clips it.
+pub fn kitty_overlay_geometry(
+    placement: &KittyPlacement,
+    image_width: usize,
+    image_height: usize,
+    viewport: &OverlayViewport,
+) -> Option<KittyOverlayGeometry> {
+    // dest_row is absolute (scrollback aware); the viewport top sits
+    // at history_size - display_offset, so scrolling up moves the
+    // placement down relative to the viewport.
+    let screen_row =
+        placement.dest_row - (viewport.history_size - viewport.display_offset);
+    let bottom_row = screen_row + placement.rows as i64;
+    if bottom_row <= 0 || screen_row >= viewport.screen_lines {
+        return None;
+    }
+
+    let (source_x, source_y, source_width, source_height) = resolve_source_rect(
+        placement.source_x,
+        placement.source_y,
+        placement.source_width,
+        placement.source_height,
+        image_width,
+        image_height,
+    )?;
+
+    let cell_width_px = viewport.cell_width.round() as usize;
+    let cell_height_px = viewport.cell_height.round() as usize;
+    if cell_width_px == 0 || cell_height_px == 0 {
+        return None;
+    }
+    let (display_width, display_height) = kitty_display_size(
+        source_width,
+        source_height,
+        placement.requested_columns,
+        placement.requested_rows,
+        cell_width_px,
+        cell_height_px,
+    );
+    if display_width == 0 || display_height == 0 {
+        return None;
+    }
+
+    // Normalized `[u0, v0, u1, v1]` (origin, end), the convention all
+    // three image shaders share.
+    let image_width = image_width as f32;
+    let image_height = image_height as f32;
+    let source_rect = [
+        source_x as f32 / image_width,
+        source_y as f32 / image_height,
+        (source_x + source_width) as f32 / image_width,
+        (source_y + source_height) as f32 / image_height,
+    ];
+
+    // Per the kitty spec the sub-cell offset stays inside the cell
+    // box; stored values are raw, so clamp against the current cell
+    // size here.
+    let x_offset = (placement.cell_x_offset as f32).min(viewport.cell_width - 1.0);
+    let y_offset = (placement.cell_y_offset as f32).min(viewport.cell_height - 1.0);
+
+    Some(KittyOverlayGeometry {
+        x: viewport.origin_x + placement.dest_col as f32 * viewport.cell_width + x_offset,
+        y: viewport.origin_y + screen_row as f32 * viewport.cell_height + y_offset,
+        width: display_width as f32,
+        height: display_height as f32,
+        source_rect,
+    })
+}
+
 /// Virtual placement metadata for Kitty graphics protocol
 /// Stored separately from direct graphics in cells
 #[derive(Debug, Clone, PartialEq)]
@@ -133,8 +374,13 @@ pub struct VirtualPlacement {
     pub placement_id: u32,
     pub columns: u32,
     pub rows: u32,
+    /// Raw source rectangle (`x=`/`y=`/`w=`/`h=`), resolved against
+    /// the image's current dimensions at render time like direct
+    /// placements.
     pub x: u32,
     pub y: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Per-screen Kitty graphics state.

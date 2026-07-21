@@ -783,7 +783,7 @@ enum ImageLayer {
 /// Threshold separating `BelowBg` from `BelowText`. Matches ghostty's
 /// `bg_limit = std.math.minInt(i32) / 2` at
 /// `renderer/image.zig:377`.
-const IMAGE_BG_LIMIT: i32 = i32::MIN / 2;
+pub(crate) const IMAGE_BG_LIMIT: i32 = i32::MIN / 2;
 
 /// A single image draw command for the image pipeline.
 struct ImageDraw {
@@ -1184,7 +1184,9 @@ impl Renderer {
                 continue;
             }
 
-            // CPU backend: image overlays not supported in v1, skip.
+            // CPU backend composites overlays directly from
+            // `image_data` in `cpu::render_cpu`; no GPU texture to
+            // upload here.
             if matches!(&context.inner, crate::context::ContextType::Cpu(_)) {
                 continue;
             }
