@@ -36,7 +36,7 @@ pub struct Application<'a> {
     router: Router<'a>,
     scheduler: Scheduler,
     app_id: Option<String>,
-    global_hotkey: Option<crate::global_hotkey::GlobalHotkeyManager>,
+    global_hotkey: Option<crate::global_hotkey::GlobalHotkeys>,
     /// Frontmost app when the quake window was shown, re-activated
     /// when it hides so focus returns where the user was.
     #[cfg(target_os = "macos")]
@@ -161,27 +161,14 @@ impl Application<'_> {
 impl Application<'_> {
     /// Register a system-wide hotkey for every `ToggleQuake` binding
     /// in the config, so the quake window opens while Rio is
-    /// unfocused. Failures are logged and ignored: pure Wayland has
-    /// no global hotkey API, the compositor keybinding + a regular
+    /// unfocused. No-op when quake is not bound; pure Wayland has no
+    /// global hotkey API, the compositor keybinding + a regular
     /// binding cover it there.
     fn setup_quake_hotkey(&mut self) {
-        let triggers = crate::global_hotkey::quake_triggers(&self.config.bindings.keys);
-        if triggers.is_empty() {
-            return;
-        }
-
-        let mut manager = match crate::global_hotkey::GlobalHotkeyManager::new(
+        self.global_hotkey = crate::global_hotkey::setup(
             self.event_proxy.clone(),
-        ) {
-            Some(manager) => manager,
-            None => return,
-        };
-        for trigger in &triggers {
-            if let Err(err) = manager.register_hotkey(trigger) {
-                tracing::warn!("quake hotkey '{trigger}': {err}");
-            }
-        }
-        self.global_hotkey = Some(manager);
+            &self.config.bindings.keys,
+        );
     }
 
     /// The monitor the quake window should drop down on: the one

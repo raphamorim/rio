@@ -8,58 +8,69 @@ use crate::event::EventProxy;
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyManager};
 use rio_backend::event::{RioEvent, RioEventType};
 
-pub struct GlobalHotkeyManagerHandle {
-    manager: GlobalHotKeyManager,
-    event_proxy: EventProxy,
-    listener_started: bool,
+/// Keeps the OS hotkey registrations alive for the app's lifetime.
+pub struct GlobalHotkeys {
+    _manager: GlobalHotKeyManager,
 }
 
-pub use GlobalHotkeyManagerHandle as GlobalHotkeyManager;
-
-impl GlobalHotkeyManagerHandle {
-    pub fn new(event_proxy: EventProxy) -> Option<Self> {
-        let manager = match GlobalHotKeyManager::new() {
-            Ok(manager) => manager,
+/// Register a system-wide hotkey for every `ToggleQuake` binding.
+/// Nothing is created when no binding exists or none of the triggers
+/// parse: the manager itself owns OS resources (a Carbon handler on
+/// macOS, a hidden window on Windows, an X connection thread on X11)
+/// that a quake-less config should never pay for.
+pub fn setup(
+    event_proxy: EventProxy,
+    keys: &[rio_backend::config::bindings::KeyBinding],
+) -> Option<GlobalHotkeys> {
+    let hotkeys: Vec<(String, HotKey)> = quake_triggers(keys)
+        .into_iter()
+        .filter_map(|trigger| match parse_hotkey(&trigger) {
+            Ok(hotkey) => Some((trigger, hotkey)),
             Err(err) => {
-                tracing::warn!("global hotkeys unavailable: {err}");
-                return None;
+                tracing::warn!("quake hotkey '{trigger}': {err}");
+                None
             }
-        };
-        Some(Self {
-            manager,
-            event_proxy,
-            listener_started: false,
         })
+        .collect();
+    if hotkeys.is_empty() {
+        return None;
     }
 
-    pub fn register_hotkey(&mut self, trigger: &str) -> Result<(), String> {
-        let hotkey = parse_hotkey(trigger)?;
-        self.manager
-            .register(hotkey)
-            .map_err(|err| err.to_string())?;
-        tracing::info!("registered global hotkey: {trigger}");
-
-        if !self.listener_started {
-            self.listener_started = true;
-            self.start_listener();
+    let manager = match GlobalHotKeyManager::new() {
+        Ok(manager) => manager,
+        Err(err) => {
+            tracing::warn!("global hotkeys unavailable: {err}");
+            return None;
         }
-        Ok(())
+    };
+
+    let mut registered = false;
+    for (trigger, hotkey) in hotkeys {
+        match manager.register(hotkey) {
+            Ok(()) => {
+                registered = true;
+                tracing::info!("registered global hotkey: {trigger}");
+            }
+            Err(err) => tracing::warn!("quake hotkey '{trigger}': {err}"),
+        }
+    }
+    if !registered {
+        return None;
     }
 
-    fn start_listener(&self) {
-        let event_proxy = self.event_proxy.clone();
-        std::thread::spawn(move || {
-            use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
-            while let Ok(event) = GlobalHotKeyEvent::receiver().recv() {
-                if event.state == HotKeyState::Pressed {
-                    event_proxy
-                        .send_event(RioEventType::Rio(RioEvent::ToggleQuake), unsafe {
-                            rio_window::window::WindowId::dummy()
-                        });
-                }
+    std::thread::spawn(move || {
+        use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
+        while let Ok(event) = GlobalHotKeyEvent::receiver().recv() {
+            if event.state == HotKeyState::Pressed {
+                event_proxy
+                    .send_event(RioEventType::Rio(RioEvent::ToggleQuake), unsafe {
+                        rio_window::window::WindowId::dummy()
+                    });
             }
-        });
-    }
+        }
+    });
+
+    Some(GlobalHotkeys { _manager: manager })
 }
 
 /// Triggers for every `ToggleQuake` binding in the config, in the
