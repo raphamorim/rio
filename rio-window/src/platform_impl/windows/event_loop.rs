@@ -23,8 +23,9 @@ use windows_sys::Win32::Foundation::{
     GetLastError, FALSE, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WAIT_FAILED, WPARAM,
 };
 use windows_sys::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromRect, MonitorFromWindow, RedrawWindow, ScreenToClient,
-    ValidateRect, MONITORINFO, MONITOR_DEFAULTTONULL, RDW_INTERNALPAINT, SC_SCREENSAVE,
+    GetMonitorInfoW, MonitorFromPoint, MonitorFromRect, MonitorFromWindow, RedrawWindow,
+    ScreenToClient, ValidateRect, MONITORINFO, MONITOR_DEFAULTTONULL, RDW_INTERNALPAINT,
+    SC_SCREENSAVE,
 };
 use windows_sys::Win32::System::Ole::RevokeDragDrop;
 use windows_sys::Win32::System::Threading::{
@@ -537,6 +538,18 @@ impl ActiveEventLoop {
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
         let monitor = monitor::primary_monitor();
         Some(monitor)
+    }
+
+    pub fn cursor_monitor(&self) -> Option<MonitorHandle> {
+        let mut point = POINT { x: 0, y: 0 };
+        if unsafe { GetCursorPos(&mut point) } == 0 {
+            return None;
+        }
+        let hmonitor = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONULL) };
+        if hmonitor == 0 {
+            return None;
+        }
+        Some(MonitorHandle::new(hmonitor))
     }
 
     pub fn raw_display_handle_raw_window_handle(

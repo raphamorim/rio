@@ -905,6 +905,11 @@ impl ActiveEventLoop {
     }
 
     #[inline]
+    pub fn cursor_monitor(&self) -> Option<MonitorHandle> {
+        None
+    }
+
+    #[inline]
     pub fn listen_device_events(&self, allowed: DeviceEvents) {
         x11_or_wayland!(match self; Self(evlp) => evlp.listen_device_events(allowed))
     }

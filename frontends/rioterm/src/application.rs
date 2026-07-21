@@ -201,20 +201,9 @@ impl Application<'_> {
         &self,
         event_loop: &ActiveEventLoop,
     ) -> Option<rio_window::monitor::MonitorHandle> {
-        #[cfg(target_os = "macos")]
-        {
-            use rio_window::platform::macos::ActiveEventLoopExtMacOS;
-            if let Some(monitor) = event_loop.cursor_monitor() {
-                return Some(monitor);
-            }
-        }
-        #[cfg(windows)]
-        {
-            if let Some(monitor) = windows_cursor_monitor(event_loop) {
-                return Some(monitor);
-            }
-        }
-        event_loop.primary_monitor()
+        event_loop
+            .cursor_monitor()
+            .or_else(|| event_loop.primary_monitor())
     }
 
     /// Anchor the quake window to the top of `monitor`, horizontally
@@ -288,30 +277,6 @@ impl Application<'_> {
             }
         }
     }
-}
-
-/// Monitor under the cursor on Windows: `GetCursorPos` reports
-/// virtual-screen physical pixels, the same space monitor positions
-/// use, so a rect test finds the right one.
-#[cfg(windows)]
-fn windows_cursor_monitor(
-    event_loop: &ActiveEventLoop,
-) -> Option<rio_window::monitor::MonitorHandle> {
-    use windows_sys::Win32::Foundation::POINT;
-    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
-
-    let mut point = POINT { x: 0, y: 0 };
-    if unsafe { GetCursorPos(&mut point) } == 0 {
-        return None;
-    }
-    event_loop.available_monitors().find(|monitor| {
-        let pos = monitor.position();
-        let size = monitor.size();
-        point.x >= pos.x
-            && point.x < pos.x + size.width as i32
-            && point.y >= pos.y
-            && point.y < pos.y + size.height as i32
-    })
 }
 
 impl ApplicationHandler<EventPayload> for Application<'_> {

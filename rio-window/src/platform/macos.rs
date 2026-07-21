@@ -542,19 +542,11 @@ pub trait ActiveEventLoopExtMacOS {
     fn set_allows_automatic_window_tabbing(&self, enabled: bool);
     /// Returns whether the system can automatically organize windows into tabs.
     fn allows_automatic_window_tabbing(&self) -> bool;
-    /// The monitor currently under the mouse cursor, regardless of
-    /// which application is focused.
-    fn cursor_monitor(&self) -> Option<crate::monitor::MonitorHandle>;
 }
 
 impl ActiveEventLoopExtMacOS for ActiveEventLoop {
     fn hide_application(&self) {
         self.p.hide_application()
-    }
-
-    fn cursor_monitor(&self) -> Option<crate::monitor::MonitorHandle> {
-        crate::platform_impl::cursor_monitor()
-            .map(|inner| crate::monitor::MonitorHandle { inner })
     }
 
     fn hide_other_applications(&self) {
