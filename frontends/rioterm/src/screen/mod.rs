@@ -1182,6 +1182,24 @@ impl Screen<'_> {
                     Act::ResetFontSize => {
                         self.change_font_size(FontSizeAction::Reset);
                     }
+                    Act::ScrollToPrevPrompt => {
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
+                        terminal.scroll_to_prompt(false);
+                        drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
+                        self.mark_dirty();
+                    }
+                    Act::ScrollToNextPrompt => {
+                        let current = self.context_manager.current_mut();
+                        let rtid = current.rich_text_id;
+                        let mut terminal = current.terminal.lock();
+                        terminal.scroll_to_prompt(true);
+                        drop(terminal);
+                        self.renderer.scrollbar.notify_scroll(rtid);
+                        self.mark_dirty();
+                    }
                     Act::ScrollPageUp => {
                         // Move vi mode cursor.
                         let current = self.context_manager.current_mut();
