@@ -228,6 +228,18 @@ pub struct Window {
     pub columns: Option<u16>,
     #[serde(default = "Option::default")]
     pub rows: Option<u16>,
+    /// Quake window width as a fraction of the monitor width.
+    #[serde(
+        rename = "quake-width-percentage",
+        default = "default_quake_width_percentage"
+    )]
+    pub quake_width_percentage: f32,
+    /// Quake window height as a fraction of the monitor height.
+    #[serde(
+        rename = "quake-height-percentage",
+        default = "default_quake_height_percentage"
+    )]
+    pub quake_height_percentage: f32,
 }
 
 impl Default for Window {
@@ -252,8 +264,18 @@ impl Default for Window {
             colorspace: Colorspace::default(),
             columns: None,
             rows: None,
+            quake_width_percentage: default_quake_width_percentage(),
+            quake_height_percentage: default_quake_height_percentage(),
         }
     }
+}
+
+fn default_quake_width_percentage() -> f32 {
+    1.0
+}
+
+fn default_quake_height_percentage() -> f32 {
+    0.4
 }
 
 impl Colorspace {

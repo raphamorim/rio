@@ -1145,6 +1145,9 @@ impl Screen<'_> {
                     Act::WindowCreateNew => {
                         self.context_manager.create_new_window();
                     }
+                    Act::ToggleQuake => {
+                        self.context_manager.toggle_quake();
+                    }
                     Act::CloseCurrentSplitOrTab => {
                         self.close_split_or_tab(clipboard);
                     }

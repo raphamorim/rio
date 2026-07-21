@@ -870,7 +870,7 @@ checksum = "3e6811e17f81fe246ef2bc553f76b6ee6ab41a694845df1d37e52a92b7bbd38a"
 dependencies = [
  "clipboard-win",
  "objc2 0.5.2",
- "objc2-app-kit",
+ "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
  "smithay-clipboard",
  "x11-clipboard",
@@ -1111,6 +1111,15 @@ checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
 dependencies = [
  "cast",
  "itertools 0.10.5",
+]
+
+[[package]]
+name = "crossbeam-channel"
+version = "0.5.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d85363c37faeca707aef026efa9f3b34d077bce547e48f770770625c6013679e"
+dependencies = [
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -1865,6 +1874,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
+name = "global-hotkey"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c386b0a4a70cb2d39fffd74480f985b6f0bfbcb934b6a6b6b7e630e448f242e"
+dependencies = [
+ "crossbeam-channel",
+ "keyboard-types",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "once_cell",
+ "thiserror 2.0.18",
+ "windows-sys 0.59.0",
+ "x11rb",
+ "xkeysym",
+]
+
+[[package]]
 name = "glow"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2292,6 +2318,17 @@ dependencies = [
  "cfg-if 1.0.4",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "keyboard-types"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b750dcadc39a09dbadd74e118f6dd6598df77fa01df0cfcdc52c28dece74528a"
+dependencies = [
+ "bitflags 2.13.0",
+ "serde",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -3015,6 +3052,17 @@ dependencies = [
  "objc2-core-image",
  "objc2-foundation 0.2.2",
  "objc2-quartz-core 0.2.2",
+]
+
+[[package]]
+name = "objc2-app-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d49e936b501e5c5bf01fda3a9452ff86dc3ea98ad5f283e1455153142d97518c"
+dependencies = [
+ "bitflags 2.13.0",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
 ]
 
 [[package]]
@@ -3988,7 +4036,7 @@ dependencies = [
  "memmap2",
  "objc-rs 0.3.1",
  "objc2 0.5.2",
- "objc2-app-kit",
+ "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
  "orbclient",
  "percent-encoding",
@@ -4033,6 +4081,7 @@ dependencies = [
  "dirs",
  "dunce",
  "futures",
+ "global-hotkey",
  "image",
  "libc",
  "lru",

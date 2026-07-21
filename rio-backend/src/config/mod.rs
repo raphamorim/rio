@@ -1274,6 +1274,30 @@ mod tests {
     }
 
     #[test]
+    fn test_window_quake_config() {
+        let result = create_temporary_config(
+            "window-quake",
+            r#"
+            [window]
+            quake-width-percentage = 0.8
+            quake-height-percentage = 0.5
+        "#,
+        );
+        assert_eq!(result.window.quake_width_percentage, 0.8);
+        assert_eq!(result.window.quake_height_percentage, 0.5);
+
+        let result = create_temporary_config(
+            "window-quake-defaults",
+            r#"
+            [window]
+            width = 800
+        "#,
+        );
+        assert_eq!(result.window.quake_width_percentage, 1.0);
+        assert_eq!(result.window.quake_height_percentage, 0.4);
+    }
+
+    #[test]
     fn test_window_colorspace_default() {
         let result = create_temporary_config(
             "window-colorspace-default",
