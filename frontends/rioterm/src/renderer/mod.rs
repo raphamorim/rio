@@ -1063,3 +1063,105 @@ impl Renderer {
         }
     }
 }
+
+#[cfg(test)]
+mod atlas_overlay_tests {
+    use super::*;
+    use crate::context::renderable::Cursor;
+    use parking_lot::Mutex;
+    use rio_backend::ansi::graphics::{GraphicCell, TextureRef};
+    use rio_backend::crosswords::grid::row::Row;
+    use rio_backend::crosswords::pos::Column;
+    use rio_backend::crosswords::square::{CellFlags, Extras, Square};
+    use rio_backend::sugarloaf::GraphicId;
+    use std::sync::Arc;
+
+    /// 30x40 px texture inserted at 10x20 cells: 3 cells wide, 2 rows.
+    fn test_rc(covered: &[usize]) -> RenderableContent {
+        let ops = Arc::new(Mutex::new(Vec::new()));
+        let texture = Arc::new(TextureRef {
+            id: GraphicId::new(5),
+            width: 30,
+            height: 40,
+            cell_width: 10,
+            cell_height: 20,
+            texture_operations: Arc::downgrade(&ops),
+        });
+        // Leak the ops arc so the queue outlives the test scope.
+        std::mem::forget(ops);
+
+        let mut rc = RenderableContent::new(Cursor::default());
+        let mut row: Row<Square> = Row::new(5);
+        let mut extras_map = rustc_hash::FxHashMap::default();
+        let eid: u16 = 3;
+        extras_map.insert(
+            eid,
+            Extras {
+                zerowidth: Vec::new(),
+                hyperlink: None,
+                graphic: Some(smallvec::smallvec![GraphicCell {
+                    texture: texture.clone(),
+                    offset_x: 0,
+                    offset_y: 0,
+                    anchor_col: 0,
+                }]),
+            },
+        );
+        for &col in covered {
+            let square = &mut row[Column(col)];
+            square.set_extras_id(Some(eid));
+            square.insert_cell_flag(CellFlags::GRAPHICS);
+        }
+        row.has_extras = true;
+        rc.visible_rows = vec![row];
+        rc.extras = extras_map;
+        rc
+    }
+
+    #[test]
+    fn contiguous_run_coalesces_into_one_overlay() {
+        let rc = test_rc(&[0, 1, 2]);
+        let mut overlays = Vec::new();
+        Renderer::push_atlas_graphic_overlays(&mut overlays, &rc, 0.0, 0.0, 10.0, 20.0);
+
+        assert_eq!(overlays.len(), 1, "one overlay per row-run");
+        let o = &overlays[0];
+        assert_eq!(o.image_id, atlas_image_key(5));
+        assert_eq!(o.x, 0.0);
+        assert_eq!(o.y, 0.0);
+        assert_eq!(o.width, 30.0);
+        assert_eq!(o.height, 20.0, "one cell row of the texture");
+        // Top half of the 40px-tall texture.
+        assert_eq!(o.source_rect, [0.0, 0.0, 1.0, 0.5]);
+    }
+
+    #[test]
+    fn erased_cell_splits_the_run_and_hides_its_slice() {
+        let rc = test_rc(&[0, 2]);
+        let mut overlays = Vec::new();
+        Renderer::push_atlas_graphic_overlays(&mut overlays, &rc, 0.0, 0.0, 10.0, 20.0);
+
+        assert_eq!(overlays.len(), 2, "erased middle cell splits the run");
+        assert_eq!(overlays[0].x, 0.0);
+        assert_eq!(overlays[0].width, 10.0);
+        assert_eq!(overlays[0].source_rect[0], 0.0);
+        // Second slice starts at cell 2 on screen AND in the texture,
+        // derived positionally from the anchor column.
+        assert_eq!(overlays[1].x, 20.0);
+        assert_eq!(overlays[1].width, 10.0);
+        assert!((overlays[1].source_rect[0] - 20.0 / 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn font_resize_scales_atlas_overlay_to_live_cell_size() {
+        let rc = test_rc(&[0, 1, 2]);
+        let mut overlays = Vec::new();
+        // Live cells grew to 12x24 after insert at 10x20: the image
+        // scales with the font.
+        Renderer::push_atlas_graphic_overlays(&mut overlays, &rc, 0.0, 0.0, 12.0, 24.0);
+
+        assert_eq!(overlays.len(), 1);
+        assert_eq!(overlays[0].width, 36.0, "30px scaled by 12/10");
+        assert_eq!(overlays[0].height, 24.0, "20px scaled by 24/20");
+    }
+}
