@@ -237,6 +237,8 @@ impl From<String> for Action {
             "decreasefontsize" => Some(Action::DecreaseFontSize),
             "createwindow" => Some(Action::WindowCreateNew),
             "togglequake" => Some(Action::ToggleQuake),
+            "scrolltoprevprompt" => Some(Action::ScrollToPrevPrompt),
+            "scrolltonextprompt" => Some(Action::ScrollToNextPrompt),
             "createtab" => Some(Action::TabCreateNew),
             "movecurrenttabtoprev" => Some(Action::MoveCurrentTabToPrev),
             "movecurrenttabtonext" => Some(Action::MoveCurrentTabToNext),
@@ -463,6 +465,13 @@ pub enum Action {
     /// Show or hide the quake-style dropdown window. Also registered
     /// as a system-wide hotkey when bound in `[bindings]`.
     ToggleQuake,
+
+    /// Scroll so the previous OSC 133 prompt is at the top of the
+    /// viewport. Requires shell integration emitting semantic prompts.
+    ScrollToPrevPrompt,
+
+    /// Scroll so the next OSC 133 prompt is at the top of the viewport.
+    ScrollToNextPrompt,
 
     /// Toggle vi mode.
     ToggleViMode,
