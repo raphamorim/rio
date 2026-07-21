@@ -692,6 +692,10 @@ impl ActiveEventLoop {
         None
     }
 
+    pub fn cursor_monitor(&self) -> Option<MonitorHandle> {
+        None
+    }
+
     #[inline]
     pub fn raw_display_handle_raw_window_handle(
         &self,

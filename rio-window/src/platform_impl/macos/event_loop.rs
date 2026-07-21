@@ -105,6 +105,11 @@ impl ActiveEventLoop {
     }
 
     #[inline]
+    pub fn cursor_monitor(&self) -> Option<MonitorHandle> {
+        monitor::cursor_monitor()
+    }
+
+    #[inline]
     pub fn listen_device_events(&self, _allowed: DeviceEvents) {}
 
     #[inline]
