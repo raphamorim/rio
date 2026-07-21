@@ -37,6 +37,10 @@ pub struct Application<'a> {
     scheduler: Scheduler,
     app_id: Option<String>,
     global_hotkey: Option<crate::global_hotkey::GlobalHotkeyManager>,
+    /// Frontmost app when the quake window was shown, re-activated
+    /// when it hides so focus returns where the user was.
+    #[cfg(target_os = "macos")]
+    quake_previous_app: Option<i32>,
 }
 
 impl Application<'_> {
@@ -77,6 +81,8 @@ impl Application<'_> {
             scheduler,
             app_id,
             global_hotkey: None,
+            #[cfg(target_os = "macos")]
+            quake_previous_app: None,
         }
     }
 
@@ -188,6 +194,64 @@ impl Application<'_> {
         self.global_hotkey = Some(manager);
     }
 
+    /// The monitor the quake window should drop down on: the one
+    /// under the mouse cursor where the platform can tell us, the
+    /// primary monitor otherwise.
+    fn quake_monitor(
+        &self,
+        event_loop: &ActiveEventLoop,
+    ) -> Option<rio_window::monitor::MonitorHandle> {
+        #[cfg(target_os = "macos")]
+        {
+            use rio_window::platform::macos::ActiveEventLoopExtMacOS;
+            if let Some(monitor) = event_loop.cursor_monitor() {
+                return Some(monitor);
+            }
+        }
+        #[cfg(windows)]
+        {
+            if let Some(monitor) = windows_cursor_monitor(event_loop) {
+                return Some(monitor);
+            }
+        }
+        event_loop.primary_monitor()
+    }
+
+    /// Anchor the quake window to the top of `monitor`, horizontally
+    /// centered, sized by the configured percentages, then show it.
+    fn show_quake_window(
+        &mut self,
+        id: rio_window::window::WindowId,
+        event_loop: &ActiveEventLoop,
+    ) {
+        #[cfg(target_os = "macos")]
+        {
+            self.quake_previous_app =
+                rio_window::platform::macos::frontmost_application_pid();
+        }
+
+        let Some(route) = self.router.routes.get(&id) else {
+            return;
+        };
+        let window = &route.window.winit_window;
+        if let Some(monitor) = self.quake_monitor(event_loop) {
+            let msize = monitor.size();
+            let mpos = monitor.position();
+            let width = (msize.width as f32
+                * self.config.window.quake_width_percentage.clamp(0.1, 1.0))
+                as u32;
+            let height = (msize.height as f32
+                * self.config.window.quake_height_percentage.clamp(0.1, 1.0))
+                as u32;
+            let x = mpos.x + (msize.width.saturating_sub(width) / 2) as i32;
+            let _ = window
+                .request_inner_size(rio_window::dpi::PhysicalSize::new(width, height));
+            window.set_outer_position(rio_window::dpi::PhysicalPosition::new(x, mpos.y));
+        }
+        window.set_visible(true);
+        window.focus_window();
+    }
+
     /// Show, focus or hide the quake window; create it on first use.
     fn toggle_quake_window(&mut self, event_loop: &ActiveEventLoop) {
         let quake_id = self
@@ -203,9 +267,7 @@ impl Application<'_> {
                 &self.config,
             );
             if let Some(id) = self.router.quake_window_id {
-                if let Some(route) = self.router.routes.get(&id) {
-                    route.window.winit_window.focus_window();
-                }
+                self.show_quake_window(id, event_loop);
             }
             return;
         };
@@ -214,15 +276,42 @@ impl Application<'_> {
             let window = &route.window.winit_window;
             let visible = window.is_visible().unwrap_or(true);
             if !visible {
-                window.set_visible(true);
-                window.focus_window();
+                self.show_quake_window(id, event_loop);
             } else if window.has_focus() {
                 window.set_visible(false);
+                #[cfg(target_os = "macos")]
+                if let Some(pid) = self.quake_previous_app.take() {
+                    rio_window::platform::macos::activate_application(pid);
+                }
             } else {
-                window.focus_window();
+                self.show_quake_window(id, event_loop);
             }
         }
     }
+}
+
+/// Monitor under the cursor on Windows: `GetCursorPos` reports
+/// virtual-screen physical pixels, the same space monitor positions
+/// use, so a rect test finds the right one.
+#[cfg(windows)]
+fn windows_cursor_monitor(
+    event_loop: &ActiveEventLoop,
+) -> Option<rio_window::monitor::MonitorHandle> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    let mut point = POINT { x: 0, y: 0 };
+    if unsafe { GetCursorPos(&mut point) } == 0 {
+        return None;
+    }
+    event_loop.available_monitors().find(|monitor| {
+        let pos = monitor.position();
+        let size = monitor.size();
+        point.x >= pos.x
+            && point.x < pos.x + size.width as i32
+            && point.y >= pos.y
+            && point.y < pos.y + size.height as i32
+    })
 }
 
 impl ApplicationHandler<EventPayload> for Application<'_> {

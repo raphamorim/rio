@@ -505,6 +505,30 @@ impl MonitorHandleExtMacOS for MonitorHandle {
 }
 
 /// Additional methods on [`ActiveEventLoop`] that are specific to macOS.
+/// Process id of the frontmost application, or `None` when that is
+/// this process, so a caller restoring focus never re-activates
+/// itself.
+pub fn frontmost_application_pid() -> Option<i32> {
+    let workspace = unsafe { objc2_app_kit::NSWorkspace::sharedWorkspace() };
+    let app = unsafe { workspace.frontmostApplication() }?;
+    let pid = unsafe { app.processIdentifier() };
+    (pid != std::process::id() as i32).then_some(pid)
+}
+
+/// Bring the application owning `pid` back to the front.
+pub fn activate_application(pid: i32) {
+    let app = unsafe {
+        objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+    };
+    if let Some(app) = app {
+        unsafe {
+            app.activateWithOptions(
+                objc2_app_kit::NSApplicationActivationOptions::empty(),
+            )
+        };
+    }
+}
+
 pub trait ActiveEventLoopExtMacOS {
     /// Hide the entire application. In most applications this is typically triggered with
     /// Command-H.
@@ -518,11 +542,19 @@ pub trait ActiveEventLoopExtMacOS {
     fn set_allows_automatic_window_tabbing(&self, enabled: bool);
     /// Returns whether the system can automatically organize windows into tabs.
     fn allows_automatic_window_tabbing(&self) -> bool;
+    /// The monitor currently under the mouse cursor, regardless of
+    /// which application is focused.
+    fn cursor_monitor(&self) -> Option<crate::monitor::MonitorHandle>;
 }
 
 impl ActiveEventLoopExtMacOS for ActiveEventLoop {
     fn hide_application(&self) {
         self.p.hide_application()
+    }
+
+    fn cursor_monitor(&self) -> Option<crate::monitor::MonitorHandle> {
+        crate::platform_impl::cursor_monitor()
+            .map(|inner| crate::monitor::MonitorHandle { inner })
     }
 
     fn hide_other_applications(&self) {

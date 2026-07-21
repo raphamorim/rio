@@ -721,23 +721,11 @@ impl<'a> RouteWindow<'a> {
         let mut window_builder =
             create_window_builder(window_name, config, tab_id, app_id, quake);
 
-        // Anchor the quake window to the top of the primary monitor,
-        // horizontally centered, sized by the configured percentages.
+        // The quake window starts hidden; the caller anchors it to the
+        // monitor under the cursor and shows it (position changes on
+        // every toggle, not just at creation).
         if quake {
-            if let Some(monitor) = event_loop.primary_monitor() {
-                let msize = monitor.size();
-                let mpos = monitor.position();
-                let width = (msize.width as f32
-                    * config.window.quake_width_percentage.clamp(0.1, 1.0))
-                    as u32;
-                let height = (msize.height as f32
-                    * config.window.quake_height_percentage.clamp(0.1, 1.0))
-                    as u32;
-                let x = mpos.x + (msize.width.saturating_sub(width) / 2) as i32;
-                window_builder = window_builder
-                    .with_inner_size(rio_window::dpi::PhysicalSize::new(width, height))
-                    .with_position(rio_window::dpi::PhysicalPosition::new(x, mpos.y));
-            }
+            window_builder = window_builder.with_visible(false);
         }
 
         #[cfg(not(any(target_os = "macos", windows)))]
