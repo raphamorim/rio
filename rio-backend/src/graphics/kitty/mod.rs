@@ -4116,7 +4116,8 @@ fn test_overlay_geometry_scroll_and_pixel_position() {
     assert_eq!(geometry.y, 50.0 + 5.0 * 20.0 + 7.0);
     assert_eq!(geometry.width, 25.0);
     assert_eq!(geometry.height, 45.0);
-    assert_eq!(geometry.source_rect, [0.25, 0.25, 0.5, 0.5]);
+    // (origin, end): crop (50, 25)-(150, 75) of a 200x100 image.
+    assert_eq!(geometry.source_rect, [0.25, 0.25, 0.75, 0.75]);
 
     // At the live view (no scroll) the same placement is 25 rows above
     // the viewport and fully culled.

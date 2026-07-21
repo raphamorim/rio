@@ -172,16 +172,20 @@ pub fn kitty_overlay_geometry(
         return None;
     }
 
+    // Normalized `[u0, v0, u1, v1]` (origin, end), the convention all
+    // three image shaders share.
     let source_rect = if image_width > 0
         && image_height > 0
         && placement.source_width > 0
         && placement.source_height > 0
     {
+        let image_width = image_width as f32;
+        let image_height = image_height as f32;
         [
-            placement.source_x as f32 / image_width as f32,
-            placement.source_y as f32 / image_height as f32,
-            placement.source_width as f32 / image_width as f32,
-            placement.source_height as f32 / image_height as f32,
+            placement.source_x as f32 / image_width,
+            placement.source_y as f32 / image_height,
+            (placement.source_x + placement.source_width) as f32 / image_width,
+            (placement.source_y + placement.source_height) as f32 / image_height,
         ]
     } else {
         [0.0, 0.0, 1.0, 1.0]
