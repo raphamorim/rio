@@ -61,29 +61,40 @@ extern "C" {
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
-#[cfg(target_os = "macos")]
-fn default_shell_command(shell: &str) {
-    let command_shell_string = CString::new(shell).unwrap();
-    let command_pointer = command_shell_string.as_ptr();
-    let args = CString::new("--login").unwrap();
-    let args_pointer = args.as_ptr();
-    unsafe {
-        libc::execvp(command_pointer, vec![args_pointer].as_ptr());
-    }
-}
+fn default_shell_command(shell: &str, args: &[String]) {
+    let program = match CString::new(shell) {
+        Ok(program) => program,
+        Err(_) => return,
+    };
 
-#[cfg(not(target_os = "macos"))]
-fn default_shell_command(shell: &str) {
-    let command_shell_string = CString::new(shell).unwrap();
-    let command_pointer = command_shell_string.as_ptr();
-    // let home = std::env::var("HOME").unwrap();
-    // let args = CString::new(home).unwrap();
-    // let args_pointer = args.as_ptr() as *const i8;
+    // argv[0] is the program itself, except on macOS with no custom
+    // args: there a bare shell becomes a login shell via the classic
+    // convention of prefixing argv[0] with '-' (what login(1) does),
+    // which every shell understands without flag parsing.
+    #[allow(unused_mut)]
+    let mut arg0 = program.clone();
+    #[cfg(target_os = "macos")]
+    if args.is_empty() {
+        let name = shell.rsplit('/').next().unwrap_or(shell);
+        if let Ok(login_arg0) = CString::new(format!("-{name}")) {
+            arg0 = login_arg0;
+        }
+    }
+    let mut argv_owned: Vec<CString> = vec![arg0];
+    for arg in args {
+        match CString::new(arg.as_str()) {
+            Ok(arg) => argv_owned.push(arg),
+            Err(_) => return,
+        }
+    }
+
+    // execvp requires a null-terminated argv.
+    let mut argv: Vec<*const libc::c_char> =
+        argv_owned.iter().map(|arg| arg.as_ptr()).collect();
+    argv.push(std::ptr::null());
+
     unsafe {
-        libc::execvp(
-            command_pointer,
-            vec![command_pointer, std::ptr::null()].as_ptr(),
-        );
+        libc::execvp(program.as_ptr(), argv.as_ptr());
     }
 }
 
@@ -625,6 +636,7 @@ pub fn create_pty_with_spawn(
 ///
 pub fn create_pty_with_fork(
     shell: &str,
+    args: &[String],
     columns: u16,
     rows: u16,
     width: u16,
@@ -665,7 +677,7 @@ pub fn create_pty_with_fork(
         )
     } {
         0 => {
-            default_shell_command(shell_program);
+            default_shell_command(shell_program, args);
             Err(Error::other(format!(
                 "forkpty has reach unreachable with {shell_program}"
             )))
