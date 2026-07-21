@@ -43,16 +43,7 @@ fn window_bg_alpha(config: &Config) -> f32 {
     }
 }
 
-/// `image_data` (u32) key for an atlas graphic (sixel/iTerm2).
-/// `GraphicId`s are small sequential u64s; the high bit keeps them out
-/// of the kitty protocol id space (see the `KittyPlacement` doc comment
-/// in rio-backend), so both kinds share the per-image texture store.
-pub const ATLAS_IMAGE_ID_FLAG: u32 = 0x8000_0000;
-
-#[inline]
-pub fn atlas_image_key(id: u64) -> u32 {
-    ATLAS_IMAGE_ID_FLAG | (id as u32 & 0x7FFF_FFFF)
-}
+pub use rio_backend::sugarloaf::{atlas_image_key, kitty_image_key};
 
 pub struct Renderer {
     is_vi_mode_enabled: bool,
@@ -459,7 +450,7 @@ impl Renderer {
                             continue;
                         };
                         overlays.push(rio_backend::sugarloaf::GraphicOverlay {
-                            image_id: p.image_id,
+                            image_id: kitty_image_key(p.image_id),
                             x: geometry.x,
                             y: geometry.y,
                             width: geometry.width,
@@ -907,7 +898,7 @@ impl Renderer {
             };
 
             overlays.push(rio_backend::sugarloaf::GraphicOverlay {
-                image_id: run.image_id,
+                image_id: kitty_image_key(run.image_id),
                 x: geom.x,
                 y: geom.y,
                 width: geom.width,

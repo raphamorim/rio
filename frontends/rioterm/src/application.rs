@@ -456,17 +456,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Image textures (kitty) → separate store, no clone
                     for (image_id, graphic_data) in queues.pending_images {
                         sugarloaf.image_data.insert(
-                            image_id,
+                            crate::renderer::kitty_image_key(image_id),
                             rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
                                 graphic_data,
                             ),
                         );
                     }
 
-                    for graphic_id in queues.remove_queue {
-                        sugarloaf
-                            .image_data
-                            .remove(&crate::renderer::atlas_image_key(graphic_id.get()));
+                    // Removals arrive as final image keys (atlas refs
+                    // dropped off scrollback, kitty evictions) and free
+                    // both the pixel store and the cached GPU texture.
+                    for key in queues.remove_queue {
+                        sugarloaf.remove_image(key);
                     }
 
                     // Mark the panel dirty — the renderer skips non-dirty
