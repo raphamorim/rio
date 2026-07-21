@@ -787,7 +787,7 @@ pub(crate) const IMAGE_BG_LIMIT: i32 = i32::MIN / 2;
 
 /// A single image draw command for the image pipeline.
 struct ImageDraw {
-    image_id: u32,
+    image_id: u64,
     instance: ImageInstance,
     layer: ImageLayer,
 }
@@ -807,7 +807,7 @@ pub struct Renderer {
     draw_cmds: Vec<batch::DrawCmd>,
     images: ImageCache,
     /// Per-image GPU textures (one map, any backend).
-    image_textures: FxHashMap<u32, ImageTextureEntry>,
+    image_textures: FxHashMap<u64, ImageTextureEntry>,
     /// Image draw commands for the current frame.
     image_draws: Vec<ImageDraw>,
     /// Pending background image upload (consumed by `prepare`).
@@ -1024,7 +1024,7 @@ impl Renderer {
         _state: &crate::sugarloaf::state::SugarState,
         _graphics: &mut Graphics,
         image_data: &mut rustc_hash::FxHashMap<
-            u32,
+            u64,
             crate::sugarloaf::graphics::GraphicDataEntry,
         >,
         image_overlays: &rustc_hash::FxHashMap<
@@ -1148,7 +1148,7 @@ impl Renderer {
         &mut self,
         context: &mut crate::context::Context,
         image_data: &mut rustc_hash::FxHashMap<
-            u32,
+            u64,
             crate::sugarloaf::graphics::GraphicDataEntry,
         >,
         overlays: &[&crate::sugarloaf::graphics::GraphicOverlay],
@@ -1355,7 +1355,7 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     fn draw_images_metal(
         image_draws: &[ImageDraw],
-        image_textures: &FxHashMap<u32, ImageTextureEntry>,
+        image_textures: &FxHashMap<u64, ImageTextureEntry>,
         brush: &MetalRenderer,
         render_encoder: &metal::RenderCommandEncoderRef,
         layer: ImageLayer,
@@ -1566,6 +1566,15 @@ impl Renderer {
     pub fn reset(&mut self) {
         self.image_textures.clear();
         self.image_draws.clear();
+    }
+
+    /// Drop the cached GPU texture for one image key. Called when the
+    /// image's pixel data is removed (scrolled out of scrollback,
+    /// kitty eviction) — without this, sequential atlas ids from e.g.
+    /// sixel animations would grow the texture cache without bound.
+    #[inline]
+    pub fn evict_image_texture(&mut self, key: u64) {
+        self.image_textures.remove(&key);
     }
 
     #[inline]
