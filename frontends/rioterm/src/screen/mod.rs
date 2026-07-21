@@ -1605,8 +1605,6 @@ impl Screen<'_> {
     }
 
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
-        let layout = self.context_manager.current().dimension;
-        let previous_margin = layout.margin;
         let padding_y_top = padding_top_from_config(
             &self.renderer.navigation,
             self.renderer.margin.top,
@@ -1615,25 +1613,38 @@ impl Screen<'_> {
         );
         let padding_y_bottom = self.renderer.margin.bottom;
 
-        if previous_margin.top != padding_y_top
-            || previous_margin.bottom != padding_y_bottom
-        {
-            let current_dim = self.context_manager.current().dimension;
-            if current_dim.font_size > 0.0 {
-                let s = self.sugarloaf.style_mut();
-                s.font_size = current_dim.font_size;
-                s.line_height = current_dim.line_height;
+        let scale = self.sugarloaf.scale_factor();
+        let scaled_top = padding_y_top * scale;
+        let scaled_bottom = padding_y_bottom * scale;
 
-                let scale = self.sugarloaf.scale_factor();
-                let d = self.context_manager.current_grid_mut();
-                d.update_scaled_margin(Margin::new(
-                    padding_y_top * scale,
-                    d.scaled_margin.right,
-                    padding_y_bottom * scale,
-                    d.scaled_margin.left,
-                ));
-                self.resize_all_contexts();
-            }
+        // Compare against the grid's scaled margin, the value the
+        // layout actually uses. The per panel dimension margin is
+        // zeroed by the taffy pass so it cannot be used as a guard.
+        let current_margin = self.context_manager.current_grid().scaled_margin;
+        if current_margin.top == scaled_top && current_margin.bottom == scaled_bottom {
+            return;
+        }
+
+        let current_dim = self.context_manager.current().dimension;
+        if current_dim.font_size <= 0.0 {
+            return;
+        }
+
+        let s = self.sugarloaf.style_mut();
+        s.font_size = current_dim.font_size;
+        s.line_height = current_dim.line_height;
+
+        // Every tab shares the window, so every grid needs the new
+        // margin and a layout pass, not just the current one.
+        for context_grid in self.context_manager.contexts_mut() {
+            let margin = context_grid.scaled_margin;
+            context_grid.update_scaled_margin(Margin::new(
+                scaled_top,
+                margin.right,
+                scaled_bottom,
+                margin.left,
+            ));
+            context_grid.update_dimensions(&mut self.sugarloaf);
         }
     }
 
