@@ -1,6 +1,7 @@
 pub mod routes;
 mod window;
 use crate::event::EventProxy;
+use crate::renderer::session_prompt::SessionPromptKind;
 use crate::router::window::{
     configure_window, create_window_builder, DEFAULT_MINIMUM_WINDOW_HEIGHT,
     DEFAULT_MINIMUM_WINDOW_WIDTH,
@@ -35,6 +36,12 @@ pub struct Route<'a> {
     pub assistant: assistant::Assistant,
     pub path: RoutePath,
     pub window: RouteWindow<'a>,
+    /// Parsed session waiting on the launch "resume?" answer.
+    pub pending_session: Option<crate::session::SessionState>,
+    /// Named-session binding (`rio --session <name>`): saves and
+    /// quit-prompts target `sessions/<name>.json` instead of the
+    /// implicit last-session slot.
+    pub session_name: Option<String>,
 }
 
 impl Route<'_> {
@@ -49,6 +56,8 @@ impl Route<'_> {
             assistant,
             path,
             window,
+            pending_session: None,
+            session_name: None,
         }
     }
 }
@@ -137,7 +146,175 @@ impl Route<'_> {
 
     #[inline]
     pub fn quit(&mut self) {
+        use rio_backend::config::session::SessionRestore;
+        match self.window.screen.renderer.session_restore {
+            SessionRestore::Prompt => {
+                self.window.screen.renderer.confirm_quit.set_active(false);
+                self.window
+                    .screen
+                    .renderer
+                    .session_prompt
+                    .set_active(Some(SessionPromptKind::SaveOnExit));
+                self.request_overlay_redraw();
+                return;
+            }
+            SessionRestore::Always => self.save_session(),
+            SessionRestore::Never => {}
+        }
         std::process::exit(0);
+    }
+
+    /// Target file for this window's session saves: the bound name
+    /// (CLI/save-as) or the implicit last-session slot.
+    fn session_path(&self) -> std::path::PathBuf {
+        match &self.session_name {
+            Some(name) => {
+                let _ = std::fs::create_dir_all(rio_backend::config::sessions_dir_path());
+                rio_backend::config::session_named_path(name)
+            }
+            None => rio_backend::config::session_file_path(),
+        }
+    }
+
+    /// Persist this window's tabs/splits/CWDs/scrollback to disk.
+    pub fn save_session(&mut self) {
+        let max = self.window.screen.renderer.session_max_scrollback;
+        let state = crate::session::SessionState {
+            version: crate::session::SESSION_VERSION,
+            windows: vec![crate::session::capture_window(
+                self.window.screen.ctx(),
+                max,
+                &self.window.winit_window,
+            )],
+        };
+        if let Err(err) = state.save(&self.session_path()) {
+            tracing::warn!("session save failed: {err}");
+        }
+    }
+
+    /// Palette "Save Session As": bind this window to `name` and save.
+    pub fn save_session_as(&mut self, name: &str) {
+        let name = crate::session::sanitize_name(name);
+        if name.is_empty() {
+            return;
+        }
+        self.session_name = Some(name);
+        self.save_session();
+    }
+
+    /// Palette "Restore Session": append a named session's tabs to
+    /// this window. Named sessions are workspaces — never consumed.
+    pub fn restore_session_named(&mut self, name: &str) {
+        let path = rio_backend::config::session_named_path(name);
+        if let Some(state) = crate::session::SessionState::load(&path) {
+            self.session_name = Some(name.to_string());
+            self.restore_session_inner(state, false);
+        }
+    }
+
+    /// Offer to resume `state` (activates the launch prompt).
+    pub fn prompt_session_resume(&mut self, state: crate::session::SessionState) {
+        self.pending_session = Some(state);
+        self.window
+            .screen
+            .renderer
+            .session_prompt
+            .set_active(Some(SessionPromptKind::ResumeOnLaunch));
+        self.request_overlay_redraw();
+    }
+
+    /// Rebuild tabs/splits/scrollback from a saved session, replacing
+    /// the window's default tab (launch-time restore).
+    pub fn restore_session(&mut self, state: crate::session::SessionState) {
+        self.restore_session_inner(state, true);
+    }
+
+    fn restore_session_inner(
+        &mut self,
+        state: crate::session::SessionState,
+        replace: bool,
+    ) {
+        let Some(win) = state.windows.into_iter().next() else {
+            return;
+        };
+        if win.tabs.is_empty() {
+            return;
+        }
+        if replace && win.size.0 > 0 && win.size.1 > 0 {
+            // When the platform applies the size immediately (Wayland),
+            // no Resized event follows — run the resize pipeline here so
+            // the layout and the tabs built below use the final size.
+            if let Some(applied) = self
+                .window
+                .winit_window
+                .request_inner_size(PhysicalSize::new(win.size.0, win.size.1))
+            {
+                if applied.width > 0 && applied.height > 0 {
+                    self.window.screen.resize(applied);
+                }
+            }
+        }
+        // No-op on Wayland: the compositor owns placement.
+        if let (true, Some((x, y))) = (replace, win.position) {
+            self.window
+                .winit_window
+                .set_outer_position(PhysicalPosition::new(x, y));
+        }
+        let screen = &mut self.window.screen;
+        for tab in &win.tabs {
+            let first = tab.layout.first_leaf();
+
+            // Mirror Screen::create_tab: grow the top margin before the
+            // tab exists (hide_if_single -> visible transition) and
+            // reposition the previous tab's rich texts.
+            let num_tabs = screen.ctx().len();
+            let old_index = screen.context_manager.current_index();
+            screen.resize_top_or_bottom_line(num_tabs + 1);
+            #[cfg(not(target_os = "macos"))]
+            screen.context_manager.contexts_mut()[old_index]
+                .update_dimensions(&mut screen.sugarloaf);
+
+            screen.ctx_mut().add_context_with_dir(
+                crate::context::next_rich_text_id(),
+                first.cwd.clone(),
+            );
+            let new_index = screen.context_manager.current_index();
+            screen.context_manager.switch_context_visibility(
+                &mut screen.sugarloaf,
+                old_index,
+                new_index,
+            );
+            screen.ctx_mut().current_grid_mut().custom_title = tab.custom_title.clone();
+            crate::session::restore_tab_layout(
+                &mut screen.context_manager,
+                &tab.layout,
+                &mut screen.sugarloaf,
+            );
+        }
+        if replace {
+            // Drop the default tab the window opened with; the restored
+            // tabs then sit at their saved indices.
+            screen.ctx_mut().select_tab(0);
+            screen
+                .context_manager
+                .close_current_context(&mut screen.sugarloaf);
+            let num_tabs = screen.ctx().len();
+            screen.resize_top_or_bottom_line(num_tabs);
+            screen
+                .ctx_mut()
+                .select_tab(win.active_tab.min(win.tabs.len().saturating_sub(1)));
+        }
+        screen.resize_all_contexts();
+
+        // The implicit last-session slot is consumed once restored;
+        // quitting offers a fresh save, so a stale copy must not
+        // re-prompt next launch. Named sessions persist.
+        if replace && self.session_name.is_none() {
+            crate::session::SessionState::discard(
+                &rio_backend::config::session_file_path(),
+            );
+        }
+        self.request_redraw();
     }
 
     #[inline]
@@ -218,6 +395,35 @@ impl Route<'_> {
                             .get_selected_action();
                         use crate::renderer::command_palette::PaletteAction;
 
+                        // Sessions-mode Enter: save-as or restore the
+                        // picked name, then close the palette.
+                        if let Some((name, saving)) = self
+                            .window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .get_selected_session()
+                        {
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .set_enabled(false);
+                            if saving {
+                                self.window
+                                    .screen
+                                    .context_manager
+                                    .request_save_session_as(name);
+                            } else {
+                                self.window
+                                    .screen
+                                    .context_manager
+                                    .request_restore_session_named(name);
+                            }
+                            self.request_overlay_redraw();
+                            return true;
+                        }
+
                         // Fonts-mode Enter: copy the family name to
                         // the system clipboard and close. The copy
                         // icon on each row advertises this.
@@ -248,6 +454,22 @@ impl Route<'_> {
                                     .renderer
                                     .command_palette
                                     .enter_fonts_mode(fonts);
+                            }
+                            // Sessions pickers stay inside the palette,
+                            // swapping to the saved-session list.
+                            Some(
+                                action @ (PaletteAction::SaveSessionAs
+                                | PaletteAction::RestoreSessionPicker),
+                            ) => {
+                                let names = crate::session::list_sessions();
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .enter_sessions_mode(
+                                        names,
+                                        action == PaletteAction::SaveSessionAs,
+                                    );
                             }
                             // Any other command is a one-shot: close
                             // the palette first, then dispatch.
@@ -326,8 +548,55 @@ impl Route<'_> {
                         self.request_overlay_redraw();
                     }
                     Key::Character(c) if c.as_str() == "y" || c.as_str() == "Y" => {
+                        self.window.screen.renderer.confirm_quit.set_active(false);
                         self.quit();
                         return true;
+                    }
+                    _ => {}
+                }
+            }
+            return true;
+        }
+
+        if let Some(kind) = self.window.screen.renderer.session_prompt.kind() {
+            if key_event.state == rio_window::event::ElementState::Pressed {
+                match (&key_event.logical_key, kind) {
+                    (Key::Character(c), SessionPromptKind::SaveOnExit)
+                        if c.as_str() == "y" || c.as_str() == "Y" =>
+                    {
+                        self.save_session();
+                        std::process::exit(0);
+                    }
+                    (Key::Character(c), SessionPromptKind::SaveOnExit)
+                        if c.as_str() == "n" || c.as_str() == "N" =>
+                    {
+                        std::process::exit(0);
+                    }
+                    (Key::Character(c), SessionPromptKind::ResumeOnLaunch)
+                        if c.as_str() == "y" || c.as_str() == "Y" =>
+                    {
+                        self.window.screen.renderer.session_prompt.set_active(None);
+                        if let Some(state) = self.pending_session.take() {
+                            self.restore_session(state);
+                        }
+                        self.request_overlay_redraw();
+                    }
+                    (Key::Character(c), SessionPromptKind::ResumeOnLaunch)
+                        if c.as_str() == "n" || c.as_str() == "N" =>
+                    {
+                        self.window.screen.renderer.session_prompt.set_active(None);
+                        self.pending_session = None;
+                        crate::session::SessionState::discard(
+                            &rio_backend::config::session_file_path(),
+                        );
+                        self.request_overlay_redraw();
+                    }
+                    // Esc cancels: on exit it aborts the quit, on
+                    // launch it keeps the file for next time.
+                    (Key::Named(NamedKey::Escape), _) => {
+                        self.window.screen.renderer.session_prompt.set_active(None);
+                        self.pending_session = None;
+                        self.request_overlay_redraw();
                     }
                     _ => {}
                 }
@@ -533,6 +802,8 @@ impl Router<'_> {
             window,
             path: RoutePath::Terminal,
             assistant: Assistant::new(),
+            pending_session: None,
+            session_name: None,
         };
 
         if let Some(err) = &self.propagated_report {
@@ -569,6 +840,8 @@ impl Router<'_> {
                 window,
                 path: RoutePath::Terminal,
                 assistant: Assistant::new(),
+                pending_session: None,
+                session_name: None,
             },
         );
     }

@@ -946,6 +946,122 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         &self.inner
     }
 
+    /// Serialize the split tree for session save. Panes are the nodes
+    /// present in `inner`; anything else is a flex container. Containers
+    /// with a single child (e.g. the root wrapper) are collapsed.
+    pub fn to_layout_node(
+        &self,
+        capture_pane: &mut dyn FnMut(&Context<T>, bool) -> crate::session::PaneState,
+    ) -> crate::session::LayoutNode {
+        use crate::session::{LayoutNode, SplitDir};
+
+        fn walk<T: rio_backend::event::EventListener>(
+            grid: &ContextGrid<T>,
+            node: NodeId,
+            capture_pane: &mut dyn FnMut(&Context<T>, bool) -> crate::session::PaneState,
+        ) -> Option<LayoutNode> {
+            if let Some(item) = grid.inner.get(&node) {
+                return Some(LayoutNode::Leaf(capture_pane(
+                    &item.val,
+                    node == grid.current,
+                )));
+            }
+            let children = grid.tree.children(node).ok()?;
+            let direction = grid
+                .tree
+                .style(node)
+                .map(|s| match s.flex_direction {
+                    taffy::FlexDirection::Column
+                    | taffy::FlexDirection::ColumnReverse => SplitDir::Vertical,
+                    _ => SplitDir::Horizontal,
+                })
+                .unwrap_or(SplitDir::Horizontal);
+
+            let mut nodes = Vec::new();
+            for child in children {
+                let weight = grid
+                    .tree
+                    .style(child)
+                    .map(|s| s.flex_grow)
+                    .unwrap_or(1.0)
+                    .max(0.01);
+                if let Some(n) = walk(grid, child, capture_pane) {
+                    nodes.push((weight, n));
+                }
+            }
+            match nodes.len() {
+                0 => None,
+                1 => Some(nodes.pop().unwrap().1),
+                _ => Some(LayoutNode::Split {
+                    direction,
+                    children: nodes,
+                }),
+            }
+        }
+
+        walk(self, self.root_node, capture_pane).unwrap_or_else(|| {
+            // Degenerate fallback: a grid always has at least one pane.
+            let item = self.inner.get(&self.current).expect("grid has a pane");
+            crate::session::LayoutNode::Leaf(capture_pane(&item.val, true))
+        })
+    }
+
+    /// Point `current` at a specific pane. Used by session restore to
+    /// choose which leaf the next split acts on.
+    pub fn set_current(&mut self, node: NodeId) -> bool {
+        if self.inner.contains_key(&node) {
+            self.current = node;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Re-apply saved split ratios after a session rebuild: walk the
+    /// live tree parallel to the saved layout and copy each child's
+    /// weight into its `flex_grow`. Shape mismatches stop silently —
+    /// content correctness never depends on ratios.
+    pub fn apply_layout_weights(&mut self, layout: &crate::session::LayoutNode) {
+        use crate::session::LayoutNode;
+
+        fn walk<T: rio_backend::event::EventListener>(
+            grid: &mut ContextGrid<T>,
+            node: NodeId,
+            layout: &LayoutNode,
+        ) {
+            // Collapse single-child containers the same way capture does.
+            let mut node = node;
+            while !grid.inner.contains_key(&node) {
+                match grid.tree.children(node) {
+                    Ok(children) if children.len() == 1 => node = children[0],
+                    _ => break,
+                }
+            }
+            let LayoutNode::Split { children, .. } = layout else {
+                return;
+            };
+            let Ok(live_children) = grid.tree.children(node) else {
+                return;
+            };
+            if live_children.len() != children.len() {
+                return;
+            }
+            for (child_node, (weight, child_layout)) in
+                live_children.into_iter().zip(children)
+            {
+                if let Ok(mut style) = grid.tree.style(child_node).cloned() {
+                    style.flex_basis = length(0.0);
+                    style.flex_grow = *weight;
+                    style.flex_shrink = 1.0;
+                    let _ = grid.tree.set_style(child_node, style);
+                }
+                walk(grid, child_node, child_layout);
+            }
+        }
+
+        walk(self, self.root_node, layout);
+    }
+
     /// Get contexts ordered by visual position (top-to-bottom, left-to-right)
     pub fn get_ordered_keys(&self) -> Vec<NodeId> {
         let mut panels: Vec<(NodeId, f32, f32)> = self

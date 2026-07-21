@@ -30,6 +30,7 @@ pub enum Topic {
     CursorBlinking,
     UpdateTitles,
     SelectionScrolling,
+    ClearSessionNotice,
 }
 
 /// Event scheduled to be emitted at a specific time.

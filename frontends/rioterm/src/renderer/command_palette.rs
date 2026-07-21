@@ -69,6 +69,8 @@ const ORDER: u8 = 20;
 /// Actions that can be triggered from the command palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteAction {
+    SaveSessionAs,
+    RestoreSessionPicker,
     TabCreate,
     TabClose,
     TabCloseUnfocused,
@@ -232,6 +234,16 @@ const COMMANDS: &[Command] = &[
         shortcut: "Cmd+Q",
         action: PaletteAction::Quit,
     },
+    Command {
+        title: "Save Session As...",
+        shortcut: "",
+        action: PaletteAction::SaveSessionAs,
+    },
+    Command {
+        title: "Restore Session...",
+        shortcut: "",
+        action: PaletteAction::RestoreSessionPicker,
+    },
 ];
 
 /// What the palette is currently browsing and filtering over.
@@ -247,6 +259,12 @@ const COMMANDS: &[Command] = &[
 enum PaletteMode {
     Commands,
     Fonts(Vec<String>),
+    /// Saved-session picker. `saving` chooses what Enter means:
+    /// save-as (the query itself is a valid new name) vs restore.
+    Sessions {
+        names: Vec<String>,
+        saving: bool,
+    },
 }
 
 /// One row in the filtered result list. Variants carry exactly the
@@ -258,16 +276,20 @@ enum PaletteRow<'a> {
         shortcut: &'a str,
         action: PaletteAction,
     },
+    Session {
+        name: std::borrow::Cow<'a, str>,
+    },
     Font {
         family: &'a str,
     },
 }
 
 impl<'a> PaletteRow<'a> {
-    fn title(&self) -> &'a str {
-        match *self {
+    fn title(&self) -> &str {
+        match self {
             PaletteRow::Command { title, .. } => title,
             PaletteRow::Font { family } => family,
+            PaletteRow::Session { name } => name,
         }
     }
 
@@ -275,6 +297,7 @@ impl<'a> PaletteRow<'a> {
         match *self {
             PaletteRow::Command { shortcut, .. } => shortcut,
             PaletteRow::Font { .. } => "",
+            PaletteRow::Session { .. } => "",
         }
     }
 
@@ -282,6 +305,7 @@ impl<'a> PaletteRow<'a> {
         match *self {
             PaletteRow::Command { action, .. } => Some(action),
             PaletteRow::Font { .. } => None,
+            PaletteRow::Session { .. } => None,
         }
     }
 }
@@ -497,6 +521,31 @@ impl CommandPalette {
     /// list. Clears the query so the full list is visible, keeps the
     /// palette open. Called by the router after the user picks the
     /// `List Fonts` command.
+    /// Swap into the saved-session picker. `saving` selects the Enter
+    /// semantics (save-as vs restore).
+    pub fn enter_sessions_mode(&mut self, names: Vec<String>, saving: bool) {
+        self.mode = PaletteMode::Sessions { names, saving };
+        self.query.clear();
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+        self.caret_blink_start = Instant::now();
+        self.last_scroll_time = None;
+    }
+
+    /// Selected (or typed, in save-as mode) session name plus the
+    /// `saving` flag. Owned so the caller can mutate palette state.
+    pub fn get_selected_session(&self) -> Option<(String, bool)> {
+        let PaletteMode::Sessions { saving, .. } = self.mode else {
+            return None;
+        };
+        self.filtered_rows()
+            .get(self.selected_index)
+            .and_then(|(_, row)| match row {
+                PaletteRow::Session { name } => Some((name.to_string(), saving)),
+                _ => None,
+            })
+    }
+
     pub fn enter_fonts_mode(&mut self, fonts: Vec<String>) {
         self.mode = PaletteMode::Fonts(fonts);
         self.query.clear();
@@ -552,7 +601,7 @@ impl CommandPalette {
             .get(self.selected_index)
             .and_then(|(_, row)| match row {
                 PaletteRow::Font { family } => Some((*family).to_owned()),
-                PaletteRow::Command { .. } => None,
+                _ => None,
             })
     }
 
@@ -591,6 +640,35 @@ impl CommandPalette {
                     Some((score, PaletteRow::Font { family }))
                 })
                 .collect(),
+            PaletteMode::Sessions { names, saving } => {
+                let mut rows: Vec<(i32, PaletteRow<'_>)> = names
+                    .iter()
+                    .filter_map(|name| {
+                        let score = fuzzy_score(&self.query, name)?;
+                        Some((
+                            score,
+                            PaletteRow::Session {
+                                name: std::borrow::Cow::Borrowed(name.as_str()),
+                            },
+                        ))
+                    })
+                    .collect();
+                // Save-as: the typed query is itself a valid new name.
+                // Offer it as the top row unless it exactly matches an
+                // existing session (that row already covers overwrite).
+                if *saving && !self.query.trim().is_empty() {
+                    let typed = crate::session::sanitize_name(&self.query);
+                    if !typed.is_empty() && !names.contains(&typed) {
+                        rows.push((
+                            i32::MAX,
+                            PaletteRow::Session {
+                                name: std::borrow::Cow::Owned(typed),
+                            },
+                        ));
+                    }
+                }
+                rows
+            }
         };
 
         results.sort_by_key(|r| std::cmp::Reverse(r.0));
@@ -708,6 +786,8 @@ impl CommandPalette {
         let placeholder = match self.mode {
             PaletteMode::Commands => "Type a command...",
             PaletteMode::Fonts(_) => "Type a font name...",
+            PaletteMode::Sessions { saving: true, .. } => "Type a session name...",
+            PaletteMode::Sessions { saving: false, .. } => "Pick a session to restore...",
         };
         let display_text = if self.query.is_empty() {
             placeholder

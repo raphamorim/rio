@@ -215,6 +215,7 @@ impl From<String> for Action {
         let action_from_string = match action.as_str() {
             "paste" => Some(Action::Paste),
             "quit" => Some(Action::Quit),
+            "savesession" => Some(Action::SaveSession),
             "copy" => Some(Action::Copy),
             "selectall" => Some(Action::SelectAll),
             "searchforward" => Some(Action::SearchForward),
@@ -402,6 +403,9 @@ pub enum Action {
 
     /// Quit Rio.
     Quit,
+
+    /// Save the current session (tabs/splits/CWDs/scrollback) to disk.
+    SaveSession,
 
     /// Clear warning and error notices.
     ClearLogNotice,
@@ -1111,6 +1115,7 @@ pub fn platform_key_bindings(
         "h", ModifiersState::SUPER | ModifiersState::ALT; Action::HideOtherApplications;
         "m", ModifiersState::SUPER; Action::Minimize;
         "q", ModifiersState::SUPER; Action::Quit;
+        "s", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SaveSession;
         "n", ModifiersState::SUPER; Action::WindowCreateNew;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
         "p", ModifiersState::SUPER | ModifiersState::SHIFT; Action::OpenCommandPalette;
@@ -1194,6 +1199,7 @@ pub fn platform_key_bindings(
         "+", ModifiersState::CONTROL;  Action::IncreaseFontSize;
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
+        "s", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SaveSession;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
         "p", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::OpenCommandPalette;
 
