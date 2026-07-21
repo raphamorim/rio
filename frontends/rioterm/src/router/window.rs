@@ -150,22 +150,27 @@ pub fn create_window_builder(
         window_builder = window_builder.with_cloaked(true);
     }
 
-    match config.window.mode {
-        WindowMode::Fullscreen => {
-            window_builder =
-                window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
-        }
-        WindowMode::Maximized => {
-            window_builder = window_builder.with_maximized(true);
-        }
-        _ => {
-            window_builder =
-                window_builder.with_inner_size(rio_window::dpi::LogicalSize {
-                    width: config.window.width,
-                    height: config.window.height,
-                })
-        }
-    };
+    // The quake window ignores `window.mode`: a fullscreen or
+    // maximized mode would defeat the dropdown, and its geometry is
+    // recomputed from the target monitor on every show anyway.
+    if !quake {
+        match config.window.mode {
+            WindowMode::Fullscreen => {
+                window_builder =
+                    window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
+            }
+            WindowMode::Maximized => {
+                window_builder = window_builder.with_maximized(true);
+            }
+            _ => {
+                window_builder =
+                    window_builder.with_inner_size(rio_window::dpi::LogicalSize {
+                        width: config.window.width,
+                        height: config.window.height,
+                    })
+            }
+        };
+    }
 
     window_builder
 }
