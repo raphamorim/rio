@@ -732,8 +732,8 @@ impl<U: EventListener> Crosswords<U> {
                 || self.graphics.cell_height != size.square_height()
             {
                 self.graphics.resize(&size);
-                let cell_w = self.graphics.cell_width as usize;
-                let cell_h = self.graphics.cell_height as usize;
+                let cell_w = self.graphics.cell_width.round() as usize;
+                let cell_h = self.graphics.cell_height.round() as usize;
                 if cell_w > 0 && cell_h > 0 {
                     for p in self.graphics.kitty_placements.values_mut() {
                         let (iw, ih) = self
@@ -846,8 +846,8 @@ impl<U: EventListener> Crosswords<U> {
         // dimensions), and shift dest_row to follow the text. Active
         // and inactive screens both get the treatment so alt-screen
         // images aren't stale on swap-back.
-        let cell_w = self.graphics.cell_width as usize;
-        let cell_h = self.graphics.cell_height as usize;
+        let cell_w = self.graphics.cell_width.round() as usize;
+        let cell_h = self.graphics.cell_height.round() as usize;
         let mut overlay_changed = false;
         if cell_w > 0 && cell_h > 0 {
             for p in self.graphics.kitty_placements.values_mut() {
@@ -3911,13 +3911,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.graphics.store_kitty_image(image_id, None, graphic);
 
         if let Some(pixel_data) = pixel_data {
-            let cell_w = self.graphics.cell_width as usize;
-            let cell_h = self.graphics.cell_height as usize;
-            for ((id, _), p) in self.graphics.kitty_placements.iter_mut() {
-                if *id == image_id {
-                    p.rescale(image_width, image_height, cell_w, cell_h);
-                }
-            }
+            self.refresh_placements_for_image(image_id, image_width, image_height);
             self.graphics.pending_images.push((image_id, pixel_data));
             self.graphics.kitty_graphics_dirty = true;
             self.send_graphics_updates();
@@ -3943,10 +3937,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // `pending_images`, so we have to do that here — otherwise the
         // GPU never sees the pixel data and the placeholder cells render
         // as blank space.
+        // Like the a=t path, a retransmission with live direct
+        // placements of this id must refresh their grid footprint
+        // against the new dimensions.
+        let image_width = graphic_data.width;
+        let image_height = graphic_data.height;
+
         if placement.virtual_placement {
             let pixel_data = graphic_data.clone();
             self.graphics
                 .store_kitty_image(image_id, None, graphic_data);
+            self.refresh_placements_for_image(image_id, image_width, image_height);
             self.graphics.pending_images.push((image_id, pixel_data));
             self.graphics.kitty_graphics_dirty = true;
             self.send_graphics_updates();
@@ -3957,6 +3958,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Store takes ownership and sets transmit_time.
         self.graphics
             .store_kitty_image(image_id, None, graphic_data);
+        self.refresh_placements_for_image(image_id, image_width, image_height);
 
         // Place as overlay — handles GPU upload internally.
         self.place_kitty_overlay(image_id, &placement);
@@ -4470,8 +4472,8 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
 
-        let cell_width = self.graphics.cell_width as usize;
-        let cell_height = self.graphics.cell_height as usize;
+        let cell_width = self.graphics.cell_width.round() as usize;
+        let cell_height = self.graphics.cell_height.round() as usize;
 
         if cell_width == 0 || cell_height == 0 {
             return;
@@ -4636,6 +4638,23 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Refresh the grid footprint of every live placement of an image
+    /// after its pixel data changed dimensions.
+    pub fn refresh_placements_for_image(
+        &mut self,
+        image_id: u32,
+        image_width: usize,
+        image_height: usize,
+    ) {
+        let cell_w = self.graphics.cell_width.round() as usize;
+        let cell_h = self.graphics.cell_height.round() as usize;
+        for ((id, _), p) in self.graphics.kitty_placements.iter_mut() {
+            if *id == image_id {
+                p.rescale(image_width, image_height, cell_w, cell_h);
+            }
+        }
+    }
+
     /// Move the cursor past a placement (`C=0`): linefeed once per
     /// occupied row so the whole image scrolls into view, then land on
     /// the image's last row at the first column after it, clamped to
@@ -4658,6 +4677,10 @@ impl<U: EventListener> Crosswords<U> {
         }
         let col = (dest_col + columns as usize).min(self.grid.columns() - 1);
         self.grid.cursor.pos.col = Column(col);
+        // Any cursor repositioning discards a pending wrap, otherwise
+        // the next printed character wraps a row below the intended
+        // caption position.
+        self.grid.cursor.should_wrap = false;
     }
 
     /// Register a virtual placement (kitty graphics `a=p,U=1`).

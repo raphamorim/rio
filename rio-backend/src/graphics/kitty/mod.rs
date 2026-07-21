@@ -5,6 +5,7 @@ use crate::ansi::graphics::KittyPlacement;
 use crate::ansi::kitty_graphics_protocol::{
     self, DeleteRequest, KittyGraphicsState, PlacementRequest,
 };
+use crate::crosswords::pos::Column;
 use crate::crosswords::Crosswords;
 use crate::event::{EventListener, RioEvent, WindowId};
 use crate::performer::handler::Handler;
@@ -4544,4 +4545,67 @@ fn test_virtual_run_geometry_honors_source_crop() {
     .expect("visible run");
     assert_eq!(g.source_rect[0], 0.0, "full-image left edge");
     assert_eq!(g.source_rect[1], 0.0, "crop origin maps to image top");
+}
+
+#[test]
+fn test_cursor_movement_clears_pending_wrap() {
+    let mut term = geometry_test_term();
+
+    // A character printed into the last column arms the wrap flag; a
+    // C=0 placement repositions the cursor and must disarm it, or the
+    // next printed character wraps below the intended position.
+    term.grid.cursor.pos.col = Column(79);
+    term.grid.cursor.should_wrap = true;
+
+    let mut placement = placement_request(14);
+    placement.cursor_movement = 0;
+    term.place_graphic(placement);
+
+    assert!(
+        !term.grid.cursor.should_wrap,
+        "cursor repositioning discards a pending wrap"
+    );
+}
+
+#[test]
+fn test_transmit_and_display_refreshes_sibling_placements() {
+    let mut term = geometry_test_term();
+
+    // Direct placement of the 100x100 image: 5 rows at 20px cells.
+    let mut placement = placement_request(15);
+    placement.cursor_movement = 1;
+    term.place_graphic(placement);
+    assert_eq!(
+        term.graphics.kitty_placements.get(&(1, 15)).unwrap().rows,
+        5
+    );
+
+    // a=T retransmit of the same id (new 100x200 pixels + a second
+    // placement): the first placement's footprint must follow the new
+    // dimensions like the a=t path.
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 100,
+        height: 200,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 100 * 200 * 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    let mut second = placement_request(16);
+    second.cursor_movement = 1;
+    term.kitty_transmit_and_display(graphic, second);
+
+    assert_eq!(
+        term.graphics.kitty_placements.get(&(1, 15)).unwrap().rows,
+        10,
+        "sibling placement footprint follows the retransmit"
+    );
+    assert_eq!(
+        term.graphics.kitty_placements.get(&(1, 16)).unwrap().rows,
+        10
+    );
 }

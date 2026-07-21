@@ -123,7 +123,8 @@ pub struct KittyPlacement {
     /// native-size ones (which keep their pixel size).
     pub requested_columns: u32,
     pub requested_rows: u32,
-    /// Actual display pixel dimensions.
+    /// Cached display pixel size for grid footprint bookkeeping. The
+    /// render path resolves size per frame and never reads these.
     pub pixel_width: u32,
     pub pixel_height: u32,
     /// Sub-cell pixel offset.
