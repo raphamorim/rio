@@ -2692,3 +2692,255 @@ mod hint_label_tests {
         assert!(hints.is_empty());
     }
 }
+
+/// One coalesced run of sixel/iTerm2 image cells on a single visible
+/// row. Rebuilt only when its row rebuilds (damage-driven, alongside
+/// the bg/fg passes); resident otherwise, so clean frames do no image
+/// work at all. The backend writes one shared `GraphicCell` per image
+/// row; a cell's x offset into the texture is derived positionally
+/// from the anchor column and the insert-time cell size.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageRun {
+    /// Texture key in the shared per-image store
+    /// (`sugarloaf::atlas_image_key`).
+    pub image_key: u64,
+    pub start_col: usize,
+    pub cells: usize,
+    /// Source offset into the texture, pixels.
+    pub src_x: f32,
+    pub src_y: f32,
+    /// Texture dimensions, pixels.
+    pub tex_w: f32,
+    pub tex_h: f32,
+    /// Cell size when the image was inserted: the pixel stride between
+    /// covered cells. Differs from the live cell size after a font
+    /// resize (the image then scales with the font).
+    pub insert_cell_w: f32,
+    pub insert_cell_h: f32,
+}
+
+/// Extract the image runs of one row. Cells continuing the same
+/// texture at the expected positional offset coalesce into one run;
+/// erased or overwritten cells break the run so exactly that region
+/// is hidden.
+pub fn build_row_images(
+    row: &Row<Square>,
+    extras: &FxHashMap<u16, Extras>,
+    out: &mut Vec<ImageRun>,
+) {
+    out.clear();
+    if !row.has_extras {
+        return;
+    }
+
+    let mut run: Option<ImageRun> = None;
+    for (col_idx, square) in row.inner.iter().enumerate() {
+        let graphic = if square.has_graphics() {
+            square
+                .extras_id()
+                .and_then(|eid| extras.get(&eid))
+                .and_then(|e| e.graphic.as_ref())
+                .and_then(|g| g.first())
+        } else {
+            None
+        };
+
+        let Some(cell) = graphic else {
+            if let Some(r) = run.take() {
+                out.push(r);
+            }
+            continue;
+        };
+
+        let key = rio_backend::sugarloaf::atlas_image_key(cell.texture.id.get());
+        match &mut run {
+            Some(r)
+                if r.image_key == key
+                    && r.src_y == cell.offset_y as f32
+                    && col_idx == r.start_col + r.cells =>
+            {
+                r.cells += 1;
+            }
+            _ => {
+                if let Some(r) = run.take() {
+                    out.push(r);
+                }
+                let insert_cell_w = cell.texture.cell_width.max(1) as f32;
+                run = Some(ImageRun {
+                    image_key: key,
+                    start_col: col_idx,
+                    cells: 1,
+                    src_x: cell.offset_x as f32
+                        + (col_idx as f32 - cell.anchor_col as f32) * insert_cell_w,
+                    src_y: cell.offset_y as f32,
+                    tex_w: cell.texture.width as f32,
+                    tex_h: cell.texture.height as f32,
+                    insert_cell_w,
+                    insert_cell_h: cell.texture.cell_height.max(1) as f32,
+                });
+            }
+        }
+    }
+    if let Some(r) = run {
+        out.push(r);
+    }
+}
+
+/// Convert a resident run into an on-screen quad, using the same
+/// panel origin and cell stride the grid uniforms carry so image and
+/// text positions can never drift apart. Edge cells draw only the
+/// pixels the texture actually has.
+pub fn image_run_overlay(
+    run: &ImageRun,
+    row: usize,
+    origin_x: f32,
+    origin_y: f32,
+    cell_width: f32,
+    cell_height: f32,
+) -> Option<rio_backend::sugarloaf::GraphicOverlay> {
+    // Below text, so glyphs typed over image cells stay readable
+    // (those cells also broke the run and hide their slice).
+    const IMAGE_RUN_Z_INDEX: i32 = -1;
+
+    let src_w = (run.cells as f32 * run.insert_cell_w).min(run.tex_w - run.src_x);
+    let src_h = run.insert_cell_h.min(run.tex_h - run.src_y);
+    if src_w <= 0.0 || src_h <= 0.0 {
+        return None;
+    }
+    Some(rio_backend::sugarloaf::GraphicOverlay {
+        image_id: run.image_key,
+        x: origin_x + run.start_col as f32 * cell_width,
+        y: origin_y + row as f32 * cell_height,
+        width: src_w * (cell_width / run.insert_cell_w),
+        height: src_h * (cell_height / run.insert_cell_h),
+        z_index: IMAGE_RUN_Z_INDEX,
+        source_rect: [
+            run.src_x / run.tex_w,
+            run.src_y / run.tex_h,
+            (run.src_x + src_w) / run.tex_w,
+            (run.src_y + src_h) / run.tex_h,
+        ],
+    })
+}
+
+#[cfg(test)]
+mod image_run_tests {
+    use super::*;
+    use parking_lot::Mutex;
+    use rio_backend::ansi::graphics::{GraphicCell, TextureRef};
+    use rio_backend::sugarloaf::{atlas_image_key, GraphicId};
+    use std::sync::Arc;
+
+    /// One row over a 30x40 texture inserted at 10x20 cells (3 cells
+    /// wide, 2 rows tall), with the given columns covered.
+    fn row_with_graphics(covered: &[usize]) -> (Row<Square>, FxHashMap<u16, Extras>) {
+        let ops = Arc::new(Mutex::new(Vec::new()));
+        let texture = Arc::new(TextureRef {
+            id: GraphicId::new(5),
+            width: 30,
+            height: 40,
+            cell_width: 10,
+            cell_height: 20,
+            texture_operations: Arc::downgrade(&ops),
+        });
+        std::mem::forget(ops);
+
+        let mut row: Row<Square> = Row::new(5);
+        let mut extras = FxHashMap::default();
+        let eid: u16 = 3;
+        extras.insert(
+            eid,
+            Extras {
+                zerowidth: Vec::new(),
+                hyperlink: None,
+                graphic: Some(smallvec::smallvec![GraphicCell {
+                    texture: texture.clone(),
+                    offset_x: 0,
+                    offset_y: 0,
+                    anchor_col: 0,
+                }]),
+            },
+        );
+        for &col in covered {
+            let square = &mut row[Column(col)];
+            square.set_extras_id(Some(eid));
+            square.insert_cell_flag(rio_backend::crosswords::square::CellFlags::GRAPHICS);
+        }
+        row.has_extras = true;
+        (row, extras)
+    }
+
+    #[test]
+    fn contiguous_cells_coalesce_into_one_run() {
+        let (row, extras) = row_with_graphics(&[0, 1, 2]);
+        let mut runs = Vec::new();
+        build_row_images(&row, &extras, &mut runs);
+
+        assert_eq!(runs.len(), 1, "one run per contiguous stretch");
+        let r = &runs[0];
+        assert_eq!(r.image_key, atlas_image_key(5));
+        assert_eq!(r.start_col, 0);
+        assert_eq!(r.cells, 3);
+
+        let o = image_run_overlay(r, 0, 0.0, 0.0, 10.0, 20.0).expect("visible");
+        assert_eq!(o.x, 0.0);
+        assert_eq!(o.y, 0.0);
+        assert_eq!(o.width, 30.0);
+        assert_eq!(o.height, 20.0, "one cell row of the texture");
+        // Top half of the 40px-tall texture.
+        assert_eq!(o.source_rect, [0.0, 0.0, 1.0, 0.5]);
+    }
+
+    #[test]
+    fn erased_cell_splits_the_run_and_hides_its_slice() {
+        let (row, extras) = row_with_graphics(&[0, 2]);
+        let mut runs = Vec::new();
+        build_row_images(&row, &extras, &mut runs);
+
+        assert_eq!(runs.len(), 2, "erased middle cell splits the run");
+        let a = image_run_overlay(&runs[0], 0, 0.0, 0.0, 10.0, 20.0).unwrap();
+        assert_eq!(a.x, 0.0);
+        assert_eq!(a.width, 10.0);
+        assert_eq!(a.source_rect[0], 0.0);
+        // Second slice starts at cell 2 on screen AND in the texture,
+        // derived positionally from the anchor column.
+        let b = image_run_overlay(&runs[1], 0, 0.0, 0.0, 10.0, 20.0).unwrap();
+        assert_eq!(b.x, 20.0);
+        assert_eq!(b.width, 10.0);
+        assert!((b.source_rect[0] - 20.0 / 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn font_resize_scales_run_to_live_cell_size() {
+        let (row, extras) = row_with_graphics(&[0, 1, 2]);
+        let mut runs = Vec::new();
+        build_row_images(&row, &extras, &mut runs);
+
+        // Live cells grew to 12x24 after insert at 10x20: the image
+        // scales with the font, positioned on the new grid stride.
+        let o = image_run_overlay(&runs[0], 1, 5.0, 7.0, 12.0, 24.0).unwrap();
+        assert_eq!(o.x, 5.0);
+        assert_eq!(o.y, 7.0 + 24.0, "row 1 at the live cell stride");
+        assert_eq!(o.width, 36.0, "30px scaled by 12/10");
+        assert_eq!(o.height, 24.0, "20px scaled by 24/20");
+    }
+
+    #[test]
+    fn rows_without_extras_produce_no_runs_cheaply() {
+        let row: Row<Square> = Row::new(5);
+        let extras = FxHashMap::default();
+        let mut runs = vec![ImageRun {
+            image_key: 1,
+            start_col: 0,
+            cells: 1,
+            src_x: 0.0,
+            src_y: 0.0,
+            tex_w: 1.0,
+            tex_h: 1.0,
+            insert_cell_w: 1.0,
+            insert_cell_h: 1.0,
+        }];
+        build_row_images(&row, &extras, &mut runs);
+        assert!(runs.is_empty(), "stale runs cleared for graphic-free rows");
+    }
+}
