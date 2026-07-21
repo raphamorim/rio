@@ -43,6 +43,8 @@ fn window_bg_alpha(config: &Config) -> f32 {
     }
 }
 
+pub use rio_backend::sugarloaf::{atlas_image_key, kitty_image_key};
+
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
@@ -445,7 +447,7 @@ impl Renderer {
                             continue;
                         };
                         overlays.push(rio_backend::sugarloaf::GraphicOverlay {
-                            image_id: p.image_id,
+                            image_id: kitty_image_key(p.image_id),
                             x: geometry.x,
                             y: geometry.y,
                             width: geometry.width,
@@ -881,7 +883,7 @@ impl Renderer {
             };
 
             overlays.push(rio_backend::sugarloaf::GraphicOverlay {
-                image_id: run.image_id,
+                image_id: kitty_image_key(run.image_id),
                 x: geom.x,
                 y: geom.y,
                 width: geom.width,

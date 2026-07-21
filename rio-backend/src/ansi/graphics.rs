@@ -21,8 +21,9 @@ pub struct UpdateQueues {
     /// Image textures (kitty) keyed by image_id.
     pub pending_images: Vec<(u32, GraphicData)>,
 
-    /// Graphics removed from the grid.
-    pub remove_queue: Vec<GraphicId>,
+    /// Image keys removed from the grid or evicted
+    /// (`sugarloaf::graphics::kitty_image_key` / `atlas_image_key`).
+    pub remove_queue: Vec<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,8 +43,8 @@ pub struct TextureRef {
     /// Height, in pixels, of the cell when the graphic was inserted.
     pub cell_height: usize,
 
-    /// Queue to track removed textures.
-    pub texture_operations: Weak<Mutex<Vec<GraphicId>>>,
+    /// Queue to track removed textures (final image keys).
+    pub texture_operations: Weak<Mutex<Vec<u64>>>,
 }
 
 impl PartialEq for TextureRef {
@@ -58,7 +59,9 @@ impl Eq for TextureRef {}
 impl Drop for TextureRef {
     fn drop(&mut self) {
         if let Some(texture_operations) = self.texture_operations.upgrade() {
-            texture_operations.lock().push(self.id);
+            texture_operations
+                .lock()
+                .push(crate::sugarloaf::atlas_image_key(self.id.get()));
         }
     }
 }
@@ -426,7 +429,7 @@ pub struct Graphics {
     pub pending_images: Vec<(u32, GraphicData)>,
 
     /// Graphics removed from the grid.
-    pub texture_operations: Arc<Mutex<Vec<GraphicId>>>,
+    pub texture_operations: Arc<Mutex<Vec<u64>>>,
 
     /// Shared palette for Sixel graphics.
     pub sixel_shared_palette: Option<Vec<ColorRgb>>,
@@ -880,8 +883,16 @@ impl Graphics {
             // Remove timestamp (only used for pending atlas graphics)
             self.image_timestamps.remove(&id);
 
-            // Add to removal queue so GPU textures get cleaned up
-            self.texture_operations.lock().push(id);
+            // Add to removal queue so GPU textures get cleaned up.
+            // The key namespace depends on where the image lived:
+            // kitty ids map verbatim, atlas graphics live above 2^32.
+            let key = match source {
+                CandidateSource::Pending => crate::sugarloaf::atlas_image_key(id.get()),
+                CandidateSource::ActiveKitty | CandidateSource::InactiveKitty => {
+                    crate::sugarloaf::kitty_image_key(id.get() as u32)
+                }
+            };
+            self.texture_operations.lock().push(key);
         }
 
         // Sweep dangling placements on both screens. A placement is

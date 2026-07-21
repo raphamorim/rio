@@ -1112,7 +1112,7 @@ fn test_no_double_push_on_graphic_cell_drop() {
     use parking_lot::Mutex;
     use std::sync::Arc;
 
-    let texture_ops: Arc<Mutex<Vec<GraphicId>>> = Arc::new(Mutex::new(Vec::new()));
+    let texture_ops: Arc<Mutex<Vec<u64>>> = Arc::new(Mutex::new(Vec::new()));
 
     let texture = Arc::new(TextureRef {
         id: GraphicId::new(99),
@@ -1154,7 +1154,7 @@ fn test_no_double_push_on_graphic_cell_drop() {
         "TextureRef drop should push exactly once, got {}",
         ops.len()
     );
-    assert_eq!(ops[0], GraphicId::new(99));
+    assert_eq!(ops[0], crate::sugarloaf::atlas_image_key(99));
 }
 
 #[test]
@@ -4611,5 +4611,42 @@ fn test_transmit_and_display_refreshes_sibling_placements() {
     assert_eq!(
         term.graphics.kitty_placements.get(&(1, 16)).unwrap().rows,
         10
+    );
+}
+
+#[test]
+fn test_image_key_namespaces_are_disjoint() {
+    use crate::sugarloaf::{atlas_image_key, kitty_image_key};
+
+    // kitty clients may pick any u32 image id (kitten icat uses random
+    // ones); the atlas namespace must live entirely above that range.
+    assert_eq!(kitty_image_key(u32::MAX), u32::MAX as u64);
+    assert_eq!(kitty_image_key(0x8000_0001), 0x8000_0001);
+    assert!(atlas_image_key(0) > u32::MAX as u64);
+    assert_eq!(atlas_image_key(7), (1u64 << 32) + 7);
+}
+
+#[test]
+fn test_texture_ref_drop_queues_atlas_key() {
+    use crate::ansi::graphics::TextureRef;
+    use crate::sugarloaf::atlas_image_key;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    let ops = Arc::new(Mutex::new(Vec::new()));
+    {
+        let _texture = TextureRef {
+            id: GraphicId::new(3),
+            width: 10,
+            height: 10,
+            cell_width: 10,
+            cell_height: 20,
+            texture_operations: Arc::downgrade(&ops),
+        };
+    }
+    assert_eq!(
+        *ops.lock(),
+        vec![atlas_image_key(3)],
+        "dropping the last grid reference queues the atlas key for GPU cleanup"
     );
 }

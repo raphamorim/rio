@@ -85,12 +85,30 @@ pub struct Graphic {
     pub offset_y: u16,
 }
 
+/// Key for `Sugarloaf::image_data` and the renderer's per-image
+/// texture cache: a kitty image, keyed by its protocol id verbatim.
+/// The full u32 space belongs to the client, so atlas graphics live
+/// in a disjoint range above it (see [`atlas_image_key`]).
+#[inline]
+pub fn kitty_image_key(image_id: u32) -> u64 {
+    image_id as u64
+}
+
+/// Key for an atlas graphic (sixel/iTerm2): the sequential
+/// `GraphicId` shifted above the kitty u32 id space so a kitty client
+/// picking a high image id (kitten icat uses random u32 ids) can
+/// never collide with an atlas texture.
+#[inline]
+pub fn atlas_image_key(graphic_id: u64) -> u64 {
+    (1u64 << 32) + graphic_id
+}
+
 /// An overlay image placement.
 /// Used by the renderer to draw images on top of (or behind) terminal content.
 #[derive(Debug, Clone)]
 pub struct GraphicOverlay {
-    /// Image identifier (kitty protocol image_id).
-    pub image_id: u32,
+    /// Image texture key ([`kitty_image_key`] or [`atlas_image_key`]).
+    pub image_id: u64,
     /// Screen position (physical pixels).
     pub x: f32,
     pub y: f32,

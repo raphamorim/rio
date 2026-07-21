@@ -38,8 +38,9 @@ pub struct Sugarloaf<'a> {
     pub graphics: Graphics,
     #[cfg(feature = "wgpu")]
     filters_brush: Option<FiltersBrush>,
-    /// Pixel data for standalone image textures, keyed by ImageId.
-    pub image_data: rustc_hash::FxHashMap<u32, GraphicDataEntry>,
+    /// Pixel data for standalone image textures, keyed by image key
+    /// (`graphics::kitty_image_key` / `graphics::atlas_image_key`).
+    pub image_data: rustc_hash::FxHashMap<u64, GraphicDataEntry>,
     /// Persistent state for the CPU rasterizer (glyph cache + frame hash).
     /// Unused on GPU backends.
     cpu_cache: crate::renderer::cpu::CpuCache,
@@ -901,6 +902,14 @@ impl Sugarloaf<'_> {
         // Drop this frame's UI text instances — overlays re-record
         // next frame (immediate mode).
         self.text.clear();
+    }
+
+    /// Remove an image's pixel data and its cached GPU texture.
+    /// `key` is a `graphics::kitty_image_key` / `graphics::atlas_image_key`.
+    #[inline]
+    pub fn remove_image(&mut self, key: u64) {
+        self.image_data.remove(&key);
+        self.renderer.evict_image_texture(key);
     }
 
     /// Drop everything this frame's immediate-mode producers pushed
