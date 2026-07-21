@@ -97,3 +97,16 @@ split-debuginfo = "unpacked"
 lto = false
 incremental = true
 opt-level = 0
+
+# Temporary pin to upstream master carrying the cosmic-text title renderer
+# (proper shaping + font fallback) in the CSD title-bar, merged in
+# https://github.com/PolyMeilex/sctk-adwaita/pull/98 but not yet released.
+# Without this, emoji / CJK / many symbols in window titles render as
+# identical .notdef hollow boxes on GNOME Wayland (and any other compositor
+# that forces CSD). Tracking:
+#   downstream: https://github.com/raphamorim/rio/issues/1622
+# Drop this patch once an sctk-adwaita release ships the cosmic-text feature.
+# NOTE: pkgRio.nix pins this git dependency's vendoring hash (outputHashes);
+# update it whenever the pinned rev changes.
+[patch.crates-io]
+sctk-adwaita = { git = "https://github.com/PolyMeilex/sctk-adwaita", rev = "3614d093a0d5c4d4d163b2659d48f1b164882757" }
