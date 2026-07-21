@@ -454,6 +454,8 @@ where
     pub route_id: usize,
     title_stack: Vec<String>,
     pub current_directory: Option<std::path::PathBuf>,
+    /// Shell state from `OSC 1337 ; SetUserVar` (iTerm2 style).
+    pub user_vars: rustc_hash::FxHashMap<String, String>,
 
     /// Whether a `TerminalDamaged` event is already in flight to the renderer.
     /// Set by PTY thread before sending; cleared by renderer after extracting damage.
@@ -513,6 +515,7 @@ impl<U: EventListener> Crosswords<U> {
             route_id,
             title_stack: Default::default(),
             current_directory: None,
+            user_vars: rustc_hash::FxHashMap::default(),
             damage_event_in_flight: false,
             keyboard_mode_stack: Default::default(),
             keyboard_mode_idx: 0,
@@ -616,6 +619,36 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     pub fn clear_saved_history(&mut self) {
         self.clear_screen(ClearMode::Saved);
+    }
+
+    /// Scroll so the previous (`forward = false`) or next prompt row
+    /// starts at the top of the viewport. Prompts come from OSC 133
+    /// marks; a run of consecutive prompt rows counts as one prompt.
+    pub fn scroll_to_prompt(&mut self, forward: bool) {
+        use crate::crosswords::grid::row::SemanticPrompt;
+
+        let display_offset = self.grid.display_offset() as i32;
+        let history = self.grid.history_size() as i32;
+        let screen_lines = self.grid.screen_lines() as i32;
+        let top = -display_offset;
+
+        let is_marked =
+            |line: i32| self.grid[Line(line)].semantic_prompt != SemanticPrompt::None;
+        // First row of a prompt run: marked, with an unmarked row (or
+        // the top of history) above it.
+        let is_prompt_start =
+            |line: i32| is_marked(line) && (line == -history || !is_marked(line - 1));
+
+        let target = if forward {
+            (top + 1..screen_lines).find(|line| is_prompt_start(*line))
+        } else {
+            (-history..top).rev().find(|line| is_prompt_start(*line))
+        };
+
+        if let Some(line) = target {
+            let new_offset = (-line).max(0);
+            self.scroll_display(Scroll::Delta(new_offset - display_offset));
+        }
     }
 
     #[inline]
@@ -2555,6 +2588,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn set_current_directory(&mut self, path: std::path::PathBuf) {
         trace!("Setting working directory {:?}", path);
         self.current_directory = Some(path);
+    }
+
+    fn set_semantic_prompt(
+        &mut self,
+        mark: crate::crosswords::grid::row::SemanticPrompt,
+    ) {
+        let row = self.grid.cursor.pos.row;
+        self.grid[row].semantic_prompt = mark;
+    }
+
+    fn set_user_var(&mut self, name: String, value: String) {
+        self.user_vars.insert(name, value);
     }
 
     #[inline]
@@ -4592,6 +4637,97 @@ mod tests {
 
     fn registry_len(cw: &Crosswords<VoidListener>) -> usize {
         cw.glyph_registry.as_ref().map_or(0, |r| r.len())
+    }
+
+    #[test]
+    fn semantic_prompt_marks_and_navigation() {
+        use crate::crosswords::grid::row::SemanticPrompt;
+
+        let mut cw = make_crosswords();
+        // Three prompts, each followed by two lines of output. The
+        // 4-row screen pushes earlier prompts into scrollback.
+        for _ in 0..3 {
+            cw.set_semantic_prompt(SemanticPrompt::Prompt);
+            cw.linefeed();
+            cw.linefeed();
+            cw.linefeed();
+        }
+        assert_eq!(cw.grid.history_size(), 6);
+        assert_eq!(cw.grid[Line(-6)].semantic_prompt, SemanticPrompt::Prompt);
+        assert_eq!(cw.grid[Line(-3)].semantic_prompt, SemanticPrompt::Prompt);
+        assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);
+
+        cw.scroll_to_prompt(false);
+        assert_eq!(cw.display_offset(), 3);
+        cw.scroll_to_prompt(false);
+        assert_eq!(cw.display_offset(), 6);
+        // No prompt further up: stays put.
+        cw.scroll_to_prompt(false);
+        assert_eq!(cw.display_offset(), 6);
+
+        cw.scroll_to_prompt(true);
+        assert_eq!(cw.display_offset(), 3);
+        cw.scroll_to_prompt(true);
+        assert_eq!(cw.display_offset(), 0);
+        cw.scroll_to_prompt(true);
+        assert_eq!(cw.display_offset(), 0);
+    }
+
+    #[test]
+    fn semantic_prompt_run_counts_as_one() {
+        use crate::crosswords::grid::row::SemanticPrompt;
+
+        let mut cw = make_crosswords();
+        for _ in 0..6 {
+            cw.linefeed();
+        }
+        // A two-row prompt: continuation directly below the start.
+        cw.grid[Line(-3)].semantic_prompt = SemanticPrompt::Prompt;
+        cw.grid[Line(-2)].semantic_prompt = SemanticPrompt::PromptContinuation;
+
+        cw.scroll_to_prompt(false);
+        assert_eq!(cw.display_offset(), 3);
+        cw.scroll_to_prompt(false);
+        assert_eq!(cw.display_offset(), 3);
+    }
+
+    #[test]
+    fn shell_integration_oscs_dispatch_from_raw_bytes() {
+        use crate::crosswords::grid::row::SemanticPrompt;
+        use crate::performer::handler::Processor;
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = Processor::default();
+
+        // A prompt mark, a full A/B/C/D cycle with options, and a
+        // user var ("hello" in base64), bell-terminated like shells
+        // emit them.
+        let bytes = b"]133;A;aid=1prompt]133;Bcmd
+]133;Cout
+]133;D;0]1337;SetUserVar=foo=aGVsbG8=";
+        processor.advance(&mut cw, bytes);
+
+        assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);
+        assert_eq!(cw.grid[Line(1)].semantic_prompt, SemanticPrompt::None);
+        assert_eq!(cw.user_vars.get("foo").map(String::as_str), Some("hello"));
+    }
+
+    #[test]
+    fn user_vars_are_stored() {
+        let mut cw = make_crosswords();
+        assert!(cw.user_vars.is_empty());
+        cw.set_user_var("k".to_string(), "v".to_string());
+        cw.set_user_var("k".to_string(), "v2".to_string());
+        assert_eq!(cw.user_vars.get("k").map(String::as_str), Some("v2"));
     }
 
     #[test]

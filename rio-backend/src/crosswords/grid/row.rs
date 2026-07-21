@@ -9,6 +9,18 @@ use std::cmp::max;
 use std::ops::{Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive};
 use std::{ptr, slice};
 
+/// Row-level semantic prompt mark from OSC 133 shell integration.
+/// An index for prompt navigation, following the same model other
+/// terminals use: a run of `Prompt`/`PromptContinuation` rows is one
+/// prompt; everything else is `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SemanticPrompt {
+    #[default]
+    None,
+    Prompt,
+    PromptContinuation,
+}
+
 /// A row in the grid.
 #[derive(Clone, Debug)]
 pub struct Row<T> {
@@ -27,6 +39,10 @@ pub struct Row<T> {
 
     pub has_extras: bool,
 
+    /// OSC 133 semantic prompt mark. Travels with the row into
+    /// scrollback; cleared when the row is recycled.
+    pub semantic_prompt: SemanticPrompt,
+
     /// Per-row dirty bit set on every write through `IndexMut` /
     /// `last_mut` / `iter_mut` / `reset` / `append*` / `front_split_off`.
     /// Read + cleared by the renderer's snapshot path so it can copy
@@ -43,6 +59,7 @@ impl<T> Default for Row<T> {
             occ: 0,
             kitty_virtual_placeholder: false,
             has_extras: false,
+            semantic_prompt: SemanticPrompt::None,
             dirty: true,
         }
     }
@@ -81,6 +98,7 @@ impl<T: Clone + Default> Row<T> {
             occ: 0,
             kitty_virtual_placeholder: false,
             has_extras: false,
+            semantic_prompt: SemanticPrompt::None,
             dirty: true,
         }
     }
@@ -97,6 +115,7 @@ impl<T: Clone + Default> Row<T> {
         self.occ = src.occ;
         self.kitty_virtual_placeholder = src.kitty_virtual_placeholder;
         self.has_extras = src.has_extras;
+        self.semantic_prompt = src.semantic_prompt;
     }
 
     /// Increase the number of columns in the row.
@@ -154,6 +173,7 @@ impl<T: Clone + Default> Row<T> {
         self.occ = 0;
         self.kitty_virtual_placeholder = false;
         self.has_extras = false;
+        self.semantic_prompt = SemanticPrompt::None;
         self.dirty = true;
     }
 }
@@ -167,6 +187,7 @@ impl<T> Row<T> {
             occ,
             kitty_virtual_placeholder: false,
             has_extras: true,
+            semantic_prompt: SemanticPrompt::None,
             dirty: true,
         }
     }
