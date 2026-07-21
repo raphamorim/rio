@@ -379,7 +379,11 @@ impl Renderer {
                             })
                             .cloned()
                             .collect();
-                        placements.sort_by_key(|p| p.z_index);
+                        // Tie-break on the unique key so equal
+                        // z-indexes keep a stable paint order across
+                        // frames (map iteration order is not).
+                        placements
+                            .sort_by_key(|p| (p.z_index, p.image_id, p.placement_id));
                         placements
                     };
                     context.renderable_content.kitty_graphics_dirty = true;
@@ -414,31 +418,40 @@ impl Renderer {
                 overlays.clear();
 
                 if has_overlays {
-                    let history_size = rc.history_size as i64;
-                    let display_offset = rc.display_offset as i64;
-                    let screen_lines = rc.screen_lines as i64;
+                    let viewport = rio_backend::ansi::graphics::OverlayViewport {
+                        cell_width,
+                        cell_height,
+                        origin_x,
+                        origin_y,
+                        history_size: rc.history_size as i64,
+                        display_offset: rc.display_offset as i64,
+                        screen_lines: rc.screen_lines as i64,
+                    };
 
                     for p in &rc.kitty_placements {
-                        let screen_row = p.dest_row - (history_size - display_offset);
-                        let image_bottom_row = screen_row + p.rows as i64;
-                        // Cull only if fully off-screen (like )
-                        if image_bottom_row <= 0 || screen_row >= screen_lines {
+                        let (image_width, image_height) = rc
+                            .kitty_images
+                            .get(&p.image_id)
+                            .map(|stored| (stored.data.width, stored.data.height))
+                            .unwrap_or((0, 0));
+                        let Some(geometry) =
+                            rio_backend::ansi::graphics::kitty_overlay_geometry(
+                                p,
+                                image_width,
+                                image_height,
+                                &viewport,
+                            )
+                        else {
                             continue;
-                        }
+                        };
                         overlays.push(rio_backend::sugarloaf::GraphicOverlay {
                             image_id: p.image_id,
-                            // kitty X=/Y= offset, supports sub-cell positioning
-                            x: origin_x
-                                + p.dest_col as f32 * cell_width
-                                + p.cell_x_offset as f32,
-                            y: origin_y
-                                + screen_row as f32 * cell_height
-                                + p.cell_y_offset as f32,
-                            width: p.pixel_width as f32,
-                            height: p.pixel_height as f32,
+                            x: geometry.x,
+                            y: geometry.y,
+                            width: geometry.width,
+                            height: geometry.height,
                             z_index: p.z_index,
-                            source_rect:
-                                rio_backend::sugarloaf::GraphicOverlay::FULL_SOURCE_RECT,
+                            source_rect: geometry.source_rect,
                         });
                     }
                 }
@@ -855,6 +868,7 @@ impl Renderer {
                 vp.rows,
                 img.data.width as u32,
                 img.data.height as u32,
+                (vp.x, vp.y, vp.width, vp.height),
                 cell_width,
                 cell_height,
                 origin_x,
