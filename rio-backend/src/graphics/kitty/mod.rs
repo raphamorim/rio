@@ -3946,3 +3946,231 @@ fn test_animation_action_surfaces_unsupported_response() {
     assert!(body.contains("EINVAL:unsupported action"));
     assert!(body.contains("i=1"));
 }
+
+// Placement geometry tests
+
+fn geometry_test_term() -> Crosswords<TestEventListener> {
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 24),
+        crate::ansi::CursorShape::Block,
+        TestEventListener,
+        unsafe { WindowId::dummy() },
+        0,
+        10_000,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 100,
+        height: 100,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 100 * 100 * 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    term.store_graphic(graphic);
+    term
+}
+
+fn placement_request(placement_id: u32) -> PlacementRequest {
+    PlacementRequest {
+        image_id: 1,
+        placement_id,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 0,
+        rows: 0,
+        z_index: 0,
+        virtual_placement: false,
+        unicode_placeholder: 0,
+        cursor_movement: 1,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+    }
+}
+
+#[test]
+fn test_source_crop_keeps_placement_at_cursor() {
+    let mut term = geometry_test_term();
+
+    // x=/y= select the source rectangle, never the destination cell.
+    let mut placement = placement_request(5);
+    placement.x = 30;
+    placement.y = 40;
+    term.place_graphic(placement);
+
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 5))
+        .expect("placement stored");
+    assert_eq!(stored.dest_col, 0, "placement lands at the cursor column");
+    assert_eq!(stored.dest_row, 0, "placement lands at the cursor row");
+    assert_eq!(stored.source_x, 30);
+    assert_eq!(stored.source_y, 40);
+    assert_eq!(stored.source_width, 70, "crop extends to the image edge");
+    assert_eq!(stored.source_height, 60);
+    assert_eq!(stored.pixel_width, 70, "native size shows only the crop");
+    assert_eq!(stored.pixel_height, 60);
+    assert_eq!(stored.columns, 7);
+    assert_eq!(stored.rows, 3);
+}
+
+#[test]
+fn test_source_crop_clamped_and_degenerate_dropped() {
+    let mut term = geometry_test_term();
+
+    // Crop wider than the image clamps to the edge.
+    let mut placement = placement_request(6);
+    placement.x = 90;
+    placement.width = 50;
+    term.place_graphic(placement);
+
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 6))
+        .expect("placement stored");
+    assert_eq!(stored.source_x, 90);
+    assert_eq!(stored.source_width, 10, "clamped to image width");
+    assert_eq!(stored.source_height, 100);
+
+    // A crop fully outside the image places nothing.
+    let mut placement = placement_request(7);
+    placement.y = 100;
+    term.place_graphic(placement);
+    assert!(
+        !term.graphics.kitty_placements.contains_key(&(1, 7)),
+        "degenerate crop must not store a placement"
+    );
+}
+
+#[test]
+fn test_crop_scaled_to_requested_columns() {
+    let mut term = geometry_test_term();
+
+    // 50x25 crop over c=10 columns: width = 10 cells * 10px, height
+    // keeps the crop aspect ratio.
+    let mut placement = placement_request(8);
+    placement.width = 50;
+    placement.height = 25;
+    placement.columns = 10;
+    term.place_graphic(placement);
+
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 8))
+        .expect("placement stored");
+    assert_eq!(stored.pixel_width, 100);
+    assert_eq!(stored.pixel_height, 50, "aspect follows the crop");
+    assert_eq!(stored.columns, 10);
+    assert_eq!(stored.rows, 3, "ceil(50 / 20)");
+}
+
+#[test]
+fn test_overlay_geometry_scroll_and_pixel_position() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    let placement = KittyPlacement {
+        image_id: 1,
+        placement_id: 1,
+        source_x: 50,
+        source_y: 25,
+        source_width: 100,
+        source_height: 50,
+        dest_col: 4,
+        dest_row: 55,
+        columns: 2,
+        rows: 3,
+        pixel_width: 25,
+        pixel_height: 45,
+        cell_x_offset: 3,
+        cell_y_offset: 7,
+        z_index: 0,
+        transmit_time: std::time::Instant::now(),
+    };
+
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 100.0,
+        origin_y: 50.0,
+        history_size: 80,
+        display_offset: 30,
+        screen_lines: 24,
+    };
+
+    // Scrolled back 30 rows into 80 rows of history: the absolute row
+    // 55 sits 5 rows below the viewport top (80 - 30).
+    let geometry = kitty_overlay_geometry(&placement, 200, 100, &viewport)
+        .expect("visible placement");
+    assert_eq!(geometry.x, 100.0 + 4.0 * 10.0 + 3.0);
+    assert_eq!(geometry.y, 50.0 + 5.0 * 20.0 + 7.0);
+    assert_eq!(geometry.width, 25.0);
+    assert_eq!(geometry.height, 45.0);
+    assert_eq!(geometry.source_rect, [0.25, 0.25, 0.5, 0.5]);
+
+    // At the live view (no scroll) the same placement is 25 rows above
+    // the viewport and fully culled.
+    let live = OverlayViewport {
+        display_offset: 0,
+        ..viewport
+    };
+    assert!(kitty_overlay_geometry(&placement, 200, 100, &live).is_none());
+
+    // One row past the bottom edge is culled too.
+    let mut below = placement.clone();
+    below.dest_row = 80 + 24;
+    assert!(kitty_overlay_geometry(&below, 200, 100, &live).is_none());
+}
+
+#[test]
+fn test_overlay_geometry_partial_visibility_and_full_source() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    let placement = KittyPlacement {
+        image_id: 1,
+        placement_id: 1,
+        source_x: 0,
+        source_y: 0,
+        source_width: 0,
+        source_height: 0,
+        dest_col: 0,
+        dest_row: 48,
+        columns: 2,
+        rows: 3,
+        pixel_width: 20,
+        pixel_height: 60,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        z_index: 0,
+        transmit_time: std::time::Instant::now(),
+    };
+
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: 50,
+        display_offset: 0,
+        screen_lines: 24,
+    };
+
+    // Two of three rows scrolled off the top: keep the quad with a
+    // negative y and let the GPU clip it.
+    let geometry = kitty_overlay_geometry(&placement, 20, 60, &viewport)
+        .expect("partially visible placement");
+    assert_eq!(geometry.y, -40.0);
+
+    // Zero crop falls back to the full texture.
+    assert_eq!(geometry.source_rect, [0.0, 0.0, 1.0, 1.0]);
+}

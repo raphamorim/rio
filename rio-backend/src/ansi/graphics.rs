@@ -125,6 +125,81 @@ pub struct KittyPlacement {
     pub transmit_time: std::time::Instant,
 }
 
+/// On-screen quad for a direct kitty placement, in physical pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct KittyOverlayGeometry {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    /// Normalized source rectangle within the image texture.
+    pub source_rect: [f32; 4],
+}
+
+/// Viewport parameters for placement geometry: the panel content
+/// origin in physical pixels, the canonical cell stride the grid
+/// paints with, and the scroll state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverlayViewport {
+    pub cell_width: f32,
+    pub cell_height: f32,
+    pub origin_x: f32,
+    pub origin_y: f32,
+    pub history_size: i64,
+    pub display_offset: i64,
+    pub screen_lines: i64,
+}
+
+/// Compute where a direct kitty placement lands on screen.
+///
+/// The viewport cell stride must be the same one the grid paints
+/// with, so image position and text stay in lockstep. Returns `None`
+/// when the placement is fully outside the viewport; a partially
+/// visible placement keeps its full quad and the GPU clips it.
+pub fn kitty_overlay_geometry(
+    placement: &KittyPlacement,
+    image_width: usize,
+    image_height: usize,
+    viewport: &OverlayViewport,
+) -> Option<KittyOverlayGeometry> {
+    // dest_row is absolute (scrollback aware); the viewport top sits
+    // at history_size - display_offset, so scrolling up moves the
+    // placement down relative to the viewport.
+    let screen_row =
+        placement.dest_row - (viewport.history_size - viewport.display_offset);
+    let bottom_row = screen_row + placement.rows as i64;
+    if bottom_row <= 0 || screen_row >= viewport.screen_lines {
+        return None;
+    }
+
+    let source_rect = if image_width > 0
+        && image_height > 0
+        && placement.source_width > 0
+        && placement.source_height > 0
+    {
+        [
+            placement.source_x as f32 / image_width as f32,
+            placement.source_y as f32 / image_height as f32,
+            placement.source_width as f32 / image_width as f32,
+            placement.source_height as f32 / image_height as f32,
+        ]
+    } else {
+        [0.0, 0.0, 1.0, 1.0]
+    };
+
+    Some(KittyOverlayGeometry {
+        x: viewport.origin_x
+            + placement.dest_col as f32 * viewport.cell_width
+            + placement.cell_x_offset as f32,
+        y: viewport.origin_y
+            + screen_row as f32 * viewport.cell_height
+            + placement.cell_y_offset as f32,
+        width: placement.pixel_width as f32,
+        height: placement.pixel_height as f32,
+        source_rect,
+    })
+}
+
 /// Virtual placement metadata for Kitty graphics protocol
 /// Stored separately from direct graphics in cells
 #[derive(Debug, Clone, PartialEq)]

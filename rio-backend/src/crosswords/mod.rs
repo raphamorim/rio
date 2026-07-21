@@ -4390,22 +4390,30 @@ impl<U: EventListener> Crosswords<U> {
         };
         let mut graphic_data = stored.data.clone();
 
-        // Apply resize from placement parameters
-        if placement.columns > 0 || placement.rows > 0 {
-            let both_specified = placement.columns > 0 && placement.rows > 0;
-            graphic_data.resize = Some(sugarloaf::ResizeCommand {
-                width: if placement.columns > 0 {
-                    sugarloaf::ResizeParameter::Cells(placement.columns)
-                } else {
-                    sugarloaf::ResizeParameter::Auto
-                },
-                height: if placement.rows > 0 {
-                    sugarloaf::ResizeParameter::Cells(placement.rows)
-                } else {
-                    sugarloaf::ResizeParameter::Auto
-                },
-                preserve_aspect_ratio: !both_specified,
-            });
+        let image_width = graphic_data.width;
+        let image_height = graphic_data.height;
+        if image_width == 0 || image_height == 0 {
+            return;
+        }
+
+        // Resolve the source rectangle (kitty `x=`/`y=`/`w=`/`h=`)
+        // against the image. Zero width/height means "to the image
+        // edge". The crop is what gets displayed; it never affects
+        // where the placement lands.
+        let source_x = (placement.x as usize).min(image_width);
+        let source_y = (placement.y as usize).min(image_height);
+        let source_width = if placement.width > 0 {
+            (placement.width as usize).min(image_width - source_x)
+        } else {
+            image_width - source_x
+        };
+        let source_height = if placement.height > 0 {
+            (placement.height as usize).min(image_height - source_y)
+        } else {
+            image_height - source_y
+        };
+        if source_width == 0 || source_height == 0 {
+            return;
         }
 
         let cell_width = self.graphics.cell_width as usize;
@@ -4415,15 +4423,25 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
 
-        // Compute display dimensions
-        let view_width = cell_width * self.grid.columns();
-        let view_height = cell_height * self.grid.screen_lines();
-        let (display_w, display_h) = graphic_data.compute_display_dimensions(
-            cell_width,
-            cell_height,
-            view_width,
-            view_height,
-        );
+        // Display size: the source rectangle scaled to the requested
+        // cell span (`c=`/`r=`), keeping aspect when only one axis is
+        // given, or shown at native size when no span is requested.
+        let (display_w, display_h) = match (placement.columns, placement.rows) {
+            (0, 0) => (source_width, source_height),
+            (c, 0) => {
+                let w = c as usize * cell_width;
+                let h = (source_height as f64 * w as f64 / source_width as f64).round()
+                    as usize;
+                (w, h)
+            }
+            (0, r) => {
+                let h = r as usize * cell_height;
+                let w = (source_width as f64 * h as f64 / source_height as f64).round()
+                    as usize;
+                (w, h)
+            }
+            (c, r) => (c as usize * cell_width, r as usize * cell_height),
+        };
 
         if display_w == 0 || display_h == 0 {
             return;
@@ -4447,17 +4465,11 @@ impl<U: EventListener> Crosswords<U> {
 
         // Memory is managed in store_kitty_image (eviction happens there)
 
-        // Compute cursor position for placement
-        let dest_col = if placement.x > 0 {
-            placement.x as usize
-        } else {
-            self.grid.cursor.pos.col.0
-        };
-        let cursor_row = if placement.y > 0 {
-            placement.y as i32
-        } else {
-            self.grid.cursor.pos.row.0
-        };
+        // Per the kitty spec a placement always renders at the cursor
+        // position; `x=`/`y=` select the source rectangle within the
+        // image, never the destination cell.
+        let dest_col = self.grid.cursor.pos.col.0;
+        let cursor_row = self.grid.cursor.pos.row.0;
         // Absolute row = history_size + screen-relative row
         let dest_row = self.history_size() as i64 + cursor_row as i64;
 
@@ -4500,10 +4512,10 @@ impl<U: EventListener> Crosswords<U> {
         let kitty_placement = KittyPlacement {
             image_id,
             placement_id,
-            source_x: placement.x,
-            source_y: placement.y,
-            source_width: placement.width,
-            source_height: placement.height,
+            source_x: source_x as u32,
+            source_y: source_y as u32,
+            source_width: source_width as u32,
+            source_height: source_height as u32,
             dest_col,
             dest_row,
             columns,
