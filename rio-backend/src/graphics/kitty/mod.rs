@@ -423,8 +423,11 @@ fn test_cursor_movement_default() {
     let final_cursor_row = term.grid.cursor.pos.row.0;
     let final_cursor_col = term.grid.cursor.pos.col.0;
 
-    // With cursor_movement=0 (Kitty default), cursor stays ON last row of image
-    // For a 2-row image starting at row 0 (occupies rows 0-1), cursor should be at row 1, col 0
+    // With cursor_movement=0 (Kitty default), the cursor ends on the
+    // image's last row at the first column after the image, so text
+    // printed next never overwrites the image. 2-row image at row 0
+    // occupies rows 0-1; r=2 with a 100x100 image in 10x20 cells gives
+    // a 40x40 display, i.e. 4 columns.
     assert_eq!(
         final_cursor_row, 1,
         "Cursor should be at row 1 (last row of image) with cursor_movement=0. Initial: {}, Final: {}",
@@ -432,8 +435,8 @@ fn test_cursor_movement_default() {
         final_cursor_row
     );
     assert_eq!(
-        final_cursor_col, 0,
-        "Cursor should be at column 0 after carriage return"
+        final_cursor_col, 4,
+        "Cursor should be at the first column after the image"
     );
 }
 
@@ -4027,21 +4030,32 @@ fn test_source_crop_keeps_placement_at_cursor() {
         .expect("placement stored");
     assert_eq!(stored.dest_col, 0, "placement lands at the cursor column");
     assert_eq!(stored.dest_row, 0, "placement lands at the cursor row");
-    assert_eq!(stored.source_x, 30);
+    assert_eq!(stored.source_x, 30, "crop is stored raw");
     assert_eq!(stored.source_y, 40);
-    assert_eq!(stored.source_width, 70, "crop extends to the image edge");
-    assert_eq!(stored.source_height, 60);
-    assert_eq!(stored.pixel_width, 70, "native size shows only the crop");
+    assert_eq!(stored.source_width, 0, "raw zero means to the edge");
+    assert_eq!(stored.source_height, 0);
+    assert_eq!(stored.pixel_width, 70, "footprint shows only the crop");
     assert_eq!(stored.pixel_height, 60);
     assert_eq!(stored.columns, 7);
     assert_eq!(stored.rows, 3);
 }
 
 #[test]
-fn test_source_crop_clamped_and_degenerate_dropped() {
-    let mut term = geometry_test_term();
+fn test_source_crop_clamped_and_degenerate_invisible() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
 
-    // Crop wider than the image clamps to the edge.
+    let mut term = geometry_test_term();
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: 0,
+        display_offset: 0,
+        screen_lines: 24,
+    };
+
+    // Crop wider than the image clamps to the edge at render time.
     let mut placement = placement_request(6);
     placement.x = 90;
     placement.width = 50;
@@ -4052,17 +4066,35 @@ fn test_source_crop_clamped_and_degenerate_dropped() {
         .kitty_placements
         .get(&(1, 6))
         .expect("placement stored");
-    assert_eq!(stored.source_x, 90);
-    assert_eq!(stored.source_width, 10, "clamped to image width");
-    assert_eq!(stored.source_height, 100);
+    assert_eq!(stored.source_x, 90, "raw request kept");
+    assert_eq!(stored.source_width, 50);
+    assert_eq!(stored.pixel_width, 10, "footprint uses the clamped crop");
+    assert_eq!(stored.pixel_height, 100);
+    let geometry = kitty_overlay_geometry(stored, 100, 100, &viewport).expect("visible");
+    assert_eq!(geometry.width, 10.0, "clamped to image width");
+    assert_eq!(geometry.source_rect, [0.9, 0.0, 1.0, 1.0]);
 
-    // A crop fully outside the image places nothing.
+    // A crop fully outside the image is stored (kitty answers OK) but
+    // renders nothing and occupies no cells.
     let mut placement = placement_request(7);
     placement.y = 100;
+    placement.cursor_movement = 0;
+    let cursor_before = term.grid.cursor.pos;
     term.place_graphic(placement);
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 7))
+        .expect("degenerate placement still stored");
+    assert_eq!(stored.columns, 0, "no cell footprint");
+    assert_eq!(stored.rows, 0);
     assert!(
-        !term.graphics.kitty_placements.contains_key(&(1, 7)),
-        "degenerate crop must not store a placement"
+        kitty_overlay_geometry(stored, 100, 100, &viewport).is_none(),
+        "degenerate crop renders nothing"
+    );
+    assert_eq!(
+        term.grid.cursor.pos, cursor_before,
+        "invisible placement leaves the cursor untouched"
     );
 }
 
@@ -4130,8 +4162,10 @@ fn test_overlay_geometry_scroll_and_pixel_position() {
         .expect("visible placement");
     assert_eq!(geometry.x, 100.0 + 4.0 * 10.0 + 3.0);
     assert_eq!(geometry.y, 50.0 + 5.0 * 20.0 + 7.0);
-    assert_eq!(geometry.width, 25.0);
-    assert_eq!(geometry.height, 45.0);
+    // Display size resolves per frame: no cell span requested, so the
+    // 100x50 crop shows at native size.
+    assert_eq!(geometry.width, 100.0);
+    assert_eq!(geometry.height, 50.0);
     // (origin, end): crop (50, 25)-(150, 75) of a 200x100 image.
     assert_eq!(geometry.source_rect, [0.25, 0.25, 0.75, 0.75]);
 
@@ -4222,7 +4256,7 @@ fn test_rescale_keeps_native_size_and_tracks_cell_span() {
 
     // Font grows to 12x24 cells: the image must NOT stretch to its
     // cell box; only the derived span shrinks.
-    native.rescale(12, 24);
+    native.rescale(25, 45, 12, 24);
     assert_eq!(native.pixel_width, 25, "native pixel size is kept");
     assert_eq!(native.pixel_height, 45);
     assert_eq!(native.columns, 3, "ceil(25 / 12)");
@@ -4238,7 +4272,7 @@ fn test_rescale_keeps_native_size_and_tracks_cell_span() {
         pixel_height: 40,
         ..native.clone()
     };
-    cell_sized.rescale(12, 24);
+    cell_sized.rescale(25, 45, 12, 24);
     assert_eq!(cell_sized.pixel_width, 48);
     assert_eq!(cell_sized.pixel_height, 48);
     assert_eq!(cell_sized.columns, 4);
@@ -4324,4 +4358,190 @@ fn test_overlay_geometry_clamps_raw_offsets() {
         kitty_overlay_geometry(&placement, 8, 8, &viewport).expect("visible placement");
     assert_eq!(geometry.x, 2.0 * 10.0 + 9.0, "offset clamped to cell box");
     assert_eq!(geometry.y, 19.0);
+}
+
+#[test]
+fn test_retransmit_reclamps_crop_and_updates_footprint() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    let mut term = geometry_test_term();
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: 0,
+        display_offset: 0,
+        screen_lines: 24,
+    };
+
+    // Crop the bottom half of the 100x100 image.
+    let mut placement = placement_request(11);
+    placement.y = 50;
+    term.place_graphic(placement);
+
+    let stored = term.graphics.kitty_placements.get(&(1, 11)).unwrap();
+    assert_eq!(stored.rows, 3, "ceil(50 / 20)");
+    let geometry = kitty_overlay_geometry(stored, 100, 100, &viewport).unwrap();
+    assert_eq!(geometry.height, 50.0);
+    assert_eq!(geometry.source_rect, [0.0, 0.5, 1.0, 1.0]);
+
+    // Retransmit the same id as 100x60: the crop re-resolves against
+    // the new dimensions instead of showing a stale region, and the
+    // grid footprint follows.
+    term.graphics.kitty_graphics_dirty = false;
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 100,
+        height: 60,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 100 * 60 * 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    term.store_graphic(graphic);
+
+    let stored = term.graphics.kitty_placements.get(&(1, 11)).unwrap();
+    assert_eq!(stored.pixel_height, 10, "60 - 50 remaining below the crop");
+    assert_eq!(stored.rows, 1);
+    let geometry = kitty_overlay_geometry(stored, 100, 60, &viewport).unwrap();
+    assert_eq!(geometry.height, 10.0);
+    let [_, v0, _, v1] = geometry.source_rect;
+    assert!((v0 - 50.0 / 60.0).abs() < 1e-6);
+    assert_eq!(v1, 1.0);
+
+    // The new pixels were dispatched for upload without a re-place
+    // (send_graphics_updates drains the queue into an event, so the
+    // dirty flag is the observable side).
+    assert!(term.graphics.kitty_graphics_dirty);
+}
+
+#[test]
+fn test_retransmit_can_make_degenerate_placement_visible() {
+    let mut term = geometry_test_term();
+
+    // Fully outside the 100x100 image: invisible, zero footprint.
+    let mut placement = placement_request(12);
+    placement.y = 100;
+    term.place_graphic(placement);
+    assert_eq!(
+        term.graphics.kitty_placements.get(&(1, 12)).unwrap().rows,
+        0
+    );
+
+    // Retransmit taller: the placement comes alive.
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 100,
+        height: 200,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 100 * 200 * 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    term.store_graphic(graphic);
+
+    let stored = term.graphics.kitty_placements.get(&(1, 12)).unwrap();
+    assert_eq!(stored.pixel_height, 100, "rows 100..200 of the new image");
+    assert_eq!(stored.rows, 5, "ceil(100 / 20)");
+}
+
+#[test]
+fn test_cursor_movement_scrolls_at_screen_bottom() {
+    let mut term = geometry_test_term();
+
+    // Park the cursor on the bottom row.
+    for _ in 0..23 {
+        term.linefeed();
+    }
+    assert_eq!(term.grid.cursor.pos.row.0, 23);
+
+    // 100x100 image in 10x20 cells: 5 rows, 10 columns.
+    let mut placement = placement_request(13);
+    placement.cursor_movement = 0;
+    term.place_graphic(placement);
+
+    // The image scrolled into view (5 linefeeds at the bottom) and the
+    // cursor sits on its last row, first column after it.
+    assert_eq!(term.grid.cursor.pos.row.0, 22);
+    assert_eq!(term.grid.cursor.pos.col.0, 10);
+    assert_eq!(term.history_size(), 5, "five rows scrolled into history");
+}
+
+#[test]
+fn test_virtual_run_geometry_honors_source_crop() {
+    use crate::ansi::kitty_virtual::{compute_run_geometry, PlaceholderRun};
+
+    let run = PlaceholderRun {
+        image_id: 1,
+        placement_id: 1,
+        row: 0,
+        col: 0,
+        width: 5,
+    };
+
+    // Right half of a 100x50 image (crop 50x50) into a 5x5 cell
+    // placement at 10x10 cells: the crop fits the 50x50 box exactly.
+    let g = compute_run_geometry(
+        &run,
+        5,
+        5,
+        100,
+        50,
+        (50, 0, 50, 50),
+        10.0,
+        10.0,
+        0.0,
+        0.0,
+        0,
+        0,
+    )
+    .expect("visible run");
+    assert_eq!(g.width, 50.0);
+    assert_eq!(g.height, 10.0, "one cell row");
+    // u spans the right half of the image; v the top fifth of the crop.
+    assert_eq!(g.source_rect, [0.5, 0.0, 1.0, 0.2]);
+
+    // Without a crop the full image aspect-fits with letterboxing;
+    // the top run sits entirely in the padding, while the second row
+    // maps to the full-image left edge.
+    assert!(compute_run_geometry(
+        &run,
+        5,
+        5,
+        100,
+        50,
+        (0, 0, 0, 0),
+        10.0,
+        10.0,
+        0.0,
+        0.0,
+        0,
+        0,
+    )
+    .is_none());
+    let second_row = PlaceholderRun { row: 1, ..run };
+    let g = compute_run_geometry(
+        &second_row,
+        5,
+        5,
+        100,
+        50,
+        (0, 0, 0, 0),
+        10.0,
+        10.0,
+        0.0,
+        0.0,
+        1,
+        0,
+    )
+    .expect("visible run");
+    assert_eq!(g.source_rect[0], 0.0, "full-image left edge");
+    assert_eq!(g.source_rect[1], 0.0, "crop origin maps to image top");
 }

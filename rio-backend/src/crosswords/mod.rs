@@ -736,7 +736,13 @@ impl<U: EventListener> Crosswords<U> {
                 let cell_h = self.graphics.cell_height as usize;
                 if cell_w > 0 && cell_h > 0 {
                     for p in self.graphics.kitty_placements.values_mut() {
-                        p.rescale(cell_w, cell_h);
+                        let (iw, ih) = self
+                            .graphics
+                            .kitty_images
+                            .get(&p.image_id)
+                            .map(|s| (s.data.width, s.data.height))
+                            .unwrap_or((0, 0));
+                        p.rescale(iw, ih, cell_w, cell_h);
                     }
                     for p in self
                         .graphics
@@ -744,7 +750,14 @@ impl<U: EventListener> Crosswords<U> {
                         .kitty_placements
                         .values_mut()
                     {
-                        p.rescale(cell_w, cell_h);
+                        let (iw, ih) = self
+                            .graphics
+                            .kitty_inactive_screen
+                            .kitty_images
+                            .get(&p.image_id)
+                            .map(|s| (s.data.width, s.data.height))
+                            .unwrap_or((0, 0));
+                        p.rescale(iw, ih, cell_w, cell_h);
                     }
                     if !self.graphics.kitty_placements.is_empty()
                         || !self
@@ -838,7 +851,13 @@ impl<U: EventListener> Crosswords<U> {
         let mut overlay_changed = false;
         if cell_w > 0 && cell_h > 0 {
             for p in self.graphics.kitty_placements.values_mut() {
-                p.rescale(cell_w, cell_h);
+                let (iw, ih) = self
+                    .graphics
+                    .kitty_images
+                    .get(&p.image_id)
+                    .map(|s| (s.data.width, s.data.height))
+                    .unwrap_or((0, 0));
+                p.rescale(iw, ih, cell_w, cell_h);
                 if dest_row_shift != 0 {
                     p.dest_row += dest_row_shift;
                 }
@@ -849,7 +868,14 @@ impl<U: EventListener> Crosswords<U> {
                 .kitty_placements
                 .values_mut()
             {
-                p.rescale(cell_w, cell_h);
+                let (iw, ih) = self
+                    .graphics
+                    .kitty_inactive_screen
+                    .kitty_images
+                    .get(&p.image_id)
+                    .map(|s| (s.data.width, s.data.height))
+                    .unwrap_or((0, 0));
+                p.rescale(iw, ih, cell_w, cell_h);
                 if dest_row_shift != 0 {
                     p.dest_row += dest_row_shift;
                 }
@@ -3871,7 +3897,31 @@ impl<U: EventListener> Handler for Crosswords<U> {
             "Storing kitty graphic: id={}, {}x{}",
             image_id, graphic.width, graphic.height
         );
+        // Retransmission of an id with live placements: refresh their
+        // grid footprint against the new dimensions and push the new
+        // pixels so the display updates without a re-place.
+        let has_placements = self
+            .graphics
+            .kitty_placements
+            .keys()
+            .any(|(id, _)| *id == image_id);
+        let image_width = graphic.width;
+        let image_height = graphic.height;
+        let pixel_data = has_placements.then(|| graphic.clone());
         self.graphics.store_kitty_image(image_id, None, graphic);
+
+        if let Some(pixel_data) = pixel_data {
+            let cell_w = self.graphics.cell_width as usize;
+            let cell_h = self.graphics.cell_height as usize;
+            for ((id, _), p) in self.graphics.kitty_placements.iter_mut() {
+                if *id == image_id {
+                    p.rescale(image_width, image_height, cell_w, cell_h);
+                }
+            }
+            self.graphics.pending_images.push((image_id, pixel_data));
+            self.graphics.kitty_graphics_dirty = true;
+            self.send_graphics_updates();
+        }
     }
 
     fn kitty_transmit_and_display(
@@ -4420,26 +4470,6 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
 
-        // Resolve the source rectangle (kitty `x=`/`y=`/`w=`/`h=`)
-        // against the image. Zero width/height means "to the image
-        // edge". The crop is what gets displayed; it never affects
-        // where the placement lands.
-        let source_x = (placement.x as usize).min(image_width);
-        let source_y = (placement.y as usize).min(image_height);
-        let source_width = if placement.width > 0 {
-            (placement.width as usize).min(image_width - source_x)
-        } else {
-            image_width - source_x
-        };
-        let source_height = if placement.height > 0 {
-            (placement.height as usize).min(image_height - source_y)
-        } else {
-            image_height - source_y
-        };
-        if source_width == 0 || source_height == 0 {
-            return;
-        }
-
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
 
@@ -4447,18 +4477,36 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
 
-        let (display_w, display_h) = crate::ansi::graphics::kitty_display_size(
-            source_width,
-            source_height,
-            placement.columns,
-            placement.rows,
-            cell_width,
-            cell_height,
-        );
+        // Resolve the source rectangle (kitty `x=`/`y=`/`w=`/`h=`)
+        // against the image. The crop is what gets displayed; it
+        // never affects where the placement lands. Both crop and
+        // display size are re-resolved at render time, so these
+        // values only drive the grid footprint (spans and cursor
+        // movement). A crop fully outside the image still stores the
+        // placement — it renders nothing and occupies no cells, and
+        // can become visible after a retransmission with larger
+        // dimensions.
+        let (display_w, display_h) = match crate::ansi::graphics::resolve_source_rect(
+            placement.x,
+            placement.y,
+            placement.width,
+            placement.height,
+            image_width,
+            image_height,
+        ) {
+            Some((_, _, source_width, source_height)) => {
+                crate::ansi::graphics::kitty_display_size(
+                    source_width,
+                    source_height,
+                    placement.columns,
+                    placement.rows,
+                    cell_width,
+                    cell_height,
+                )
+            }
+            None => (0, 0),
+        };
 
-        if display_w == 0 || display_h == 0 {
-            return;
-        }
         if display_w > MAX_GRAPHIC_DIMENSIONS[0] || display_h > MAX_GRAPHIC_DIMENSIONS[1]
         {
             return;
@@ -4498,16 +4546,22 @@ impl<U: EventListener> Crosswords<U> {
         // the trick is the sub-cell offset shifts the image
         // within its first cell, so it can spill into one extra
         // row/column. Include it so cursor movement and row occupation
-        // cover the full image.
-        let columns = if placement.columns > 0 {
-            placement.columns
+        // cover the full image. An invisible placement (degenerate
+        // crop) occupies no cells at all.
+        let (columns, rows) = if display_w == 0 || display_h == 0 {
+            (0, 0)
         } else {
-            (display_w + cell_x_offset).div_ceil(cell_width) as u32
-        };
-        let rows = if placement.rows > 0 {
-            placement.rows
-        } else {
-            (display_h + cell_y_offset).div_ceil(cell_height) as u32
+            let columns = if placement.columns > 0 {
+                placement.columns
+            } else {
+                (display_w + cell_x_offset).div_ceil(cell_width) as u32
+            };
+            let rows = if placement.rows > 0 {
+                placement.rows
+            } else {
+                (display_h + cell_y_offset).div_ceil(cell_height) as u32
+            };
+            (columns, rows)
         };
 
         // Create overlay placement.
@@ -4526,10 +4580,10 @@ impl<U: EventListener> Crosswords<U> {
         let kitty_placement = KittyPlacement {
             image_id,
             placement_id,
-            source_x: source_x as u32,
-            source_y: source_y as u32,
-            source_width: source_width as u32,
-            source_height: source_height as u32,
+            source_x: placement.x,
+            source_y: placement.y,
+            source_width: placement.width,
+            source_height: placement.height,
             dest_col,
             dest_row,
             columns,
@@ -4570,24 +4624,40 @@ impl<U: EventListener> Crosswords<U> {
         match placement.cursor_movement {
             0 => {
                 // C=0: Move cursor to after the image
-                let rows_to_advance = rows.saturating_sub(1) as usize;
-                for _ in 0..rows_to_advance {
-                    self.linefeed();
-                }
-                self.carriage_return();
+                self.advance_cursor_past_placement(dest_col, columns, rows);
             }
             1 => {
                 // C=1: Don't move cursor
             }
             _ => {
                 // Default: treat as C=0
-                let rows_to_advance = rows.saturating_sub(1) as usize;
-                for _ in 0..rows_to_advance {
-                    self.linefeed();
-                }
-                self.carriage_return();
+                self.advance_cursor_past_placement(dest_col, columns, rows);
             }
         }
+    }
+
+    /// Move the cursor past a placement (`C=0`): linefeed once per
+    /// occupied row so the whole image scrolls into view, then land on
+    /// the image's last row at the first column after it, clamped to
+    /// the grid edge. An invisible placement (zero span) leaves the
+    /// cursor untouched.
+    fn advance_cursor_past_placement(
+        &mut self,
+        dest_col: usize,
+        columns: u32,
+        rows: u32,
+    ) {
+        if rows == 0 {
+            return;
+        }
+        for _ in 0..rows {
+            self.linefeed();
+        }
+        if self.grid.cursor.pos.row.0 > 0 {
+            self.grid.cursor.pos.row -= 1;
+        }
+        let col = (dest_col + columns as usize).min(self.grid.columns() - 1);
+        self.grid.cursor.pos.col = Column(col);
     }
 
     /// Register a virtual placement (kitty graphics `a=p,U=1`).
@@ -4618,6 +4688,8 @@ impl<U: EventListener> Crosswords<U> {
             rows: placement.rows,
             x: placement.x,
             y: placement.y,
+            width: placement.width,
+            height: placement.height,
         };
         self.graphics
             .kitty_virtual_placements

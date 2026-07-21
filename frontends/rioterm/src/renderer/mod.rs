@@ -868,6 +868,7 @@ impl Renderer {
                 vp.rows,
                 img.data.width as u32,
                 img.data.height as u32,
+                (vp.x, vp.y, vp.width, vp.height),
                 cell_width,
                 cell_height,
                 origin_x,

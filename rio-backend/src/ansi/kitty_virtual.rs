@@ -560,6 +560,7 @@ pub fn compute_run_geometry(
     placement_rows: u32,
     image_width_px: u32,
     image_height_px: u32,
+    source_rect_px: (u32, u32, u32, u32),
     cell_width: f32,
     cell_height: f32,
     origin_x: f32,
@@ -569,18 +570,32 @@ pub fn compute_run_geometry(
 ) -> Option<RunGeometry> {
     let img_w = image_width_px as f32;
     let img_h = image_height_px as f32;
-    if img_w <= 0.0 || img_h <= 0.0 {
-        return None;
-    }
+
+    // Resolve the placement's raw source rectangle against the
+    // image's current dimensions; what gets fitted into the
+    // placement box is the crop, not the whole image. A full-image
+    // crop (the common case) leaves the math identical.
+    let (crop_x, crop_y, crop_w, crop_h) = crate::ansi::graphics::resolve_source_rect(
+        source_rect_px.0,
+        source_rect_px.1,
+        source_rect_px.2,
+        source_rect_px.3,
+        image_width_px as usize,
+        image_height_px as usize,
+    )?;
+    let crop_x = crop_x as f32;
+    let crop_y = crop_y as f32;
+    let crop_w = crop_w as f32;
+    let crop_h = crop_h as f32;
 
     // 1. Placement box in pixels.
     let p_cols_px = placement_cols.max(1) as f32 * cell_width;
     let p_rows_px = placement_rows.max(1) as f32 * cell_height;
 
     // 2. Aspect-fit + centering.
-    let scale = (p_cols_px / img_w).min(p_rows_px / img_h);
-    let fit_w = img_w * scale;
-    let fit_h = img_h * scale;
+    let scale = (p_cols_px / crop_w).min(p_rows_px / crop_h);
+    let fit_w = crop_w * scale;
+    let fit_h = crop_h * scale;
     let pad_x = (p_cols_px - fit_w) * 0.5;
     let pad_y = (p_rows_px - fit_h) * 0.5;
 
@@ -604,11 +619,13 @@ pub fn compute_run_geometry(
         return None;
     }
 
-    // 5. Source rect (normalised) and screen position.
-    let src_u0 = (vis_x0 - img_box_x0) / fit_w;
-    let src_v0 = (vis_y0 - img_box_y0) / fit_h;
-    let src_u1 = (vis_x1 - img_box_x0) / fit_w;
-    let src_v1 = (vis_y1 - img_box_y0) / fit_h;
+    // 5. Source rect (normalised) and screen position. The fitted
+    // fractions live in crop space; map them into full-image texture
+    // coordinates.
+    let src_u0 = (crop_x + (vis_x0 - img_box_x0) / fit_w * crop_w) / img_w;
+    let src_v0 = (crop_y + (vis_y0 - img_box_y0) / fit_h * crop_h) / img_h;
+    let src_u1 = (crop_x + (vis_x1 - img_box_x0) / fit_w * crop_w) / img_w;
+    let src_v1 = (crop_y + (vis_y1 - img_box_y0) / fit_h * crop_h) / img_h;
 
     let intra_x = vis_x0 - run_box_x;
     let intra_y = vis_y0 - run_box_y;
@@ -864,6 +881,7 @@ mod tests {
             5,
             100,
             50,
+            (0, 0, 0, 0),
             10.0,
             10.0,
             0.0,
@@ -897,6 +915,7 @@ mod tests {
             10,
             50,
             100,
+            (0, 0, 0, 0),
             10.0,
             10.0,
             0.0,
@@ -915,6 +934,7 @@ mod tests {
             10,
             50,
             100,
+            (0, 0, 0, 0),
             10.0,
             10.0,
             0.0,
@@ -952,6 +972,7 @@ mod tests {
             10,
             200,
             50,
+            (0, 0, 0, 0),
             10.0,
             10.0,
             0.0,
@@ -968,6 +989,7 @@ mod tests {
             10,
             200,
             50,
+            (0, 0, 0, 0),
             10.0,
             10.0,
             0.0,
@@ -1004,6 +1026,7 @@ mod tests {
             10,
             100,
             100,
+            (0, 0, 0, 0),
             10.0,
             10.0,
             0.0,
@@ -1031,6 +1054,7 @@ mod tests {
             5,
             100,
             50,
+            (0, 0, 0, 0),
             10.0,
             10.0,
             100.0,
@@ -1055,6 +1079,7 @@ mod tests {
             5,
             100,
             50,
+            (0, 0, 0, 0),
             10.0,
             10.0,
             0.0,
@@ -1069,8 +1094,20 @@ mod tests {
 
     #[test]
     fn geom_returns_none_when_image_zero_sized() {
-        let none =
-            compute_run_geometry(&run(0, 0, 1), 10, 5, 0, 50, 10.0, 10.0, 0.0, 0.0, 0, 0);
+        let none = compute_run_geometry(
+            &run(0, 0, 1),
+            10,
+            5,
+            0,
+            50,
+            (0, 0, 0, 0),
+            10.0,
+            10.0,
+            0.0,
+            0.0,
+            0,
+            0,
+        );
         assert!(none.is_none());
     }
 
