@@ -81,6 +81,11 @@ pub struct Screen<'screen> {
     last_chrome_press: Option<ChromePress>,
     last_close_press: Option<(std::time::Instant, f32)>,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
+    /// Resident sixel/iTerm2 image runs per panel (route_id), indexed
+    /// by visible row. Rebuilt only when the row rebuilds; converted
+    /// to overlay quads each presented frame with the same origin and
+    /// cell stride the grid uniforms carry.
+    image_runs: rustc_hash::FxHashMap<usize, Vec<Vec<crate::grid_emit::ImageRun>>>,
     pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
 }
 
@@ -316,6 +321,7 @@ impl Screen<'_> {
             last_chrome_press: None,
             last_close_press: None,
             grids: rustc_hash::FxHashMap::default(),
+            image_runs: rustc_hash::FxHashMap::default(),
             grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
         })
     }
@@ -3785,6 +3791,8 @@ impl Screen<'_> {
         {
             struct PanelFrame {
                 route_id: usize,
+                /// Overlay-map key for this panel (`Sugarloaf::image_overlays`).
+                rich_text_id: usize,
                 layout_rect: [f32; 4],
                 cols: u32,
                 rows: u32,
@@ -3977,6 +3985,7 @@ impl Screen<'_> {
                     .unwrap_or(self.renderer.named_colors.cursor);
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
+                    rich_text_id: ctx.rich_text_id,
                     layout_rect: item.layout_rect,
                     cols: ctx.renderable_content.columns.max(1) as u32,
                     rows: ctx.renderable_content.screen_lines.max(1) as u32,
@@ -4030,6 +4039,7 @@ impl Screen<'_> {
 
             let rasterizer = &mut self.grid_rasterizer;
             let renderer_ref = &self.renderer;
+            let image_runs_map = &mut self.image_runs;
             for (route_id, grid) in self.grids.iter_mut() {
                 let Some(p) = panels.iter_mut().find(|p| p.route_id == *route_id) else {
                     continue;
@@ -4172,6 +4182,15 @@ impl Screen<'_> {
                         grid.write_row(y as u32, &bg_scratch, &fg_scratch);
                     };
 
+                // Image runs are resident like CellBg/CellText: they
+                // rebuild only with their row (below), so clean frames
+                // do no image extraction work at all.
+                let panel_runs = image_runs_map.entry(*route_id).or_default();
+                if panel_runs.len() != p.visible_rows.len() {
+                    panel_runs.clear();
+                    panel_runs.resize_with(p.visible_rows.len(), Vec::new);
+                }
+
                 match rows_to_rebuild {
                     RowsToRebuild::None => {
                         // Nothing to rebuild — previous frame's
@@ -4184,8 +4203,14 @@ impl Screen<'_> {
                         // atlas-full clear inside `rebuild_row` can
                         // re-set it for the recovery pass below.
                         grid.mark_full_rebuild_done();
+                        #[allow(clippy::needless_range_loop)]
                         for y in 0..p.visible_rows.len() {
                             rebuild_row(p, y, grid, rasterizer);
+                            crate::grid_emit::build_row_images(
+                                &p.visible_rows[y],
+                                &p.extras,
+                                &mut panel_runs[y],
+                            );
                         }
                     }
                     RowsToRebuild::Dirty => {
@@ -4193,11 +4218,17 @@ impl Screen<'_> {
                         // per-row dirty bit. Set by `snapshot_visible`
                         // for rows it copied this frame; cleared here
                         // so next frame starts clean.
+                        #[allow(clippy::needless_range_loop)]
                         for y in 0..p.visible_rows.len() {
                             if !p.visible_rows[y].dirty {
                                 continue;
                             }
                             rebuild_row(p, y, grid, rasterizer);
+                            crate::grid_emit::build_row_images(
+                                &p.visible_rows[y],
+                                &p.extras,
+                                &mut panel_runs[y],
+                            );
                             p.visible_rows[y].dirty = false;
                         }
                     }
@@ -4333,6 +4364,30 @@ impl Screen<'_> {
                 };
 
                 frame_grids.push((grid, uniforms));
+
+                // Append this panel's image runs as overlay quads,
+                // positioned with the exact origin and cell stride the
+                // grid uniforms above carry — image and text can't
+                // drift apart. The kitty pass in `Renderer::run`
+                // reset the overlay vec earlier this frame.
+                if let Some(panel_runs) = image_runs_map.get(route_id) {
+                    if panel_runs.iter().any(|runs| !runs.is_empty()) {
+                        let overlays = self
+                            .sugarloaf
+                            .image_overlays
+                            .entry(p.rich_text_id)
+                            .or_default();
+                        for (y, runs) in panel_runs.iter().enumerate() {
+                            for run in runs {
+                                if let Some(overlay) = crate::grid_emit::image_run_overlay(
+                                    run, y, panel_left, panel_top, p.cell_w, p.cell_h,
+                                ) {
+                                    overlays.push(overlay);
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             if should_present {

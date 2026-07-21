@@ -468,8 +468,12 @@ impl Renderer {
                         cell_height,
                     );
                 }
-            } else if rc.kitty_graphics_dirty {
-                // Placements were removed — clear overlays
+            } else {
+                // No kitty placements — drop this panel's overlay vec
+                // unconditionally. The screen emit loop appends grid
+                // image runs (sixel/iTerm2) after this pass each
+                // frame, so the vec must start from a known-empty
+                // state or stale run quads would double up.
                 sugarloaf.clear_image_overlays_for(context.rich_text_id);
             }
 
