@@ -2693,6 +2693,16 @@ mod hint_label_tests {
     }
 }
 
+/// Resident image-run state for one panel: per-visible-row runs plus
+/// the geometry key the current quads were built with. Quads rebuild
+/// only when runs change or the panel's origin/cell stride moves.
+#[derive(Default)]
+pub struct PanelImageRuns {
+    pub rows: Vec<Vec<ImageRun>>,
+    /// `(origin_x, origin_y, cell_w, cell_h)` as bit patterns.
+    pub quads_key: Option<(u32, u32, u32, u32)>,
+}
+
 /// One coalesced run of sixel/iTerm2 image cells on a single visible
 /// row. Rebuilt only when its row rebuilds (damage-driven, alongside
 /// the bg/fg passes); resident otherwise, so clean frames do no image
@@ -2766,12 +2776,20 @@ pub fn build_row_images(
                     out.push(r);
                 }
                 let insert_cell_w = cell.texture.cell_width.max(1) as f32;
+                // DCH/ICH can shift image cells left of their anchor
+                // column; the derived source offset then points
+                // outside the texture. Hide such cells rather than
+                // sampling a wrong slice.
+                let src_x = cell.offset_x as f32
+                    + (col_idx as f32 - cell.anchor_col as f32) * insert_cell_w;
+                if src_x < 0.0 {
+                    continue;
+                }
                 run = Some(ImageRun {
                     image_key: key,
                     start_col: col_idx,
                     cells: 1,
-                    src_x: cell.offset_x as f32
-                        + (col_idx as f32 - cell.anchor_col as f32) * insert_cell_w,
+                    src_x,
                     src_y: cell.offset_y as f32,
                     tex_w: cell.texture.width as f32,
                     tex_h: cell.texture.height as f32,
