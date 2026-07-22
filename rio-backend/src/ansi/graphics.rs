@@ -229,7 +229,7 @@ pub struct KittyOverlayGeometry {
 /// of the quad lies inside the rect (drop the overlay).
 ///
 /// Without this, an image wider or taller than its panel paints across
-/// split dividers onto neighbor panels — the image pipeline draws
+/// split dividers onto neighbor panels, since the image pipeline draws
 /// global quads with no per-panel scissor.
 pub fn clip_overlay_to_rect(
     overlay: &mut crate::sugarloaf::GraphicOverlay,
@@ -365,7 +365,7 @@ pub fn kitty_overlay_geometry(
 }
 
 /// One displayed sixel/iTerm2 image region, anchored to grid content
-/// (DEC semantics — unlike floating kitty placements, these clip under
+/// (DEC semantics: unlike floating kitty placements, these clip under
 /// text and erase operations and shift with region scrolls).
 ///
 /// The source rectangle lives in display-pixel space at insert time:
@@ -440,8 +440,8 @@ impl AtlasPlacement {
     /// Subtract a cell-aligned hole (rows [hr0, hr1) x cols [hc0, hc1))
     /// from this placement. Returns `None` when the hole misses the
     /// placement entirely (keep it as is); otherwise the surviving
-    /// pieces — up to four children referencing the same texture with
-    /// adjusted crops, zero pixel copies — are appended to `out` (an
+    /// pieces are appended to `out`: up to four children referencing the
+    /// same texture with adjusted crops, zero pixel copies (an
     /// empty append means the hole swallowed the whole placement).
     pub fn subtract_rect(
         &self,
