@@ -379,6 +379,10 @@ impl Screen<'_> {
             .select_current_based_on_mouse(&self.mouse)
         {
             self.context_manager.select_route_from_current_grid();
+            // The focusing click never reaches on_left_click, so a
+            // selection left behind in the target panel would
+            // drag-extend from its stale anchor; drop it on switch.
+            self.clear_selection();
             return true;
         }
         false
