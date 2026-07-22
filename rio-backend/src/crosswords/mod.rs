@@ -3757,6 +3757,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let scrolling = !self.mode.contains(Mode::SIXEL_DISPLAY);
 
+        // For "don't move the cursor" placements, the fill loop below
+        // still linefeeds through the image rows; the position is
+        // restored afterwards.
+        let saved_cursor = self.grid.cursor.pos;
+
         let leftmost = if scrolling {
             self.grid.cursor.pos.col.0
         } else {
@@ -3877,34 +3882,48 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // - None: Sixel (traditional behavior - move to next line after image)
         // - Some(0): Kitty C=0 (cursor stays on last row of image)
         // - Some(1): Kitty C=1 (cursor doesn't move at all)
+        // Display width in cells, from the size actually drawn (the
+        // requested display size, not the source pixel size).
+        let graphic_columns = (width as usize).div_ceil(cell_width);
+
         match cursor_movement {
             None => {
-                // Sixel graphics - cursor stays on last row of image
-                if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-                    let graphic_columns = graphic.width.div_ceil(cell_width);
-                    self.move_forward(Column(graphic_columns));
-                } else if scrolling {
-                    self.carriage_return();
-                }
-            }
-            Some(0) => {
-                // Kitty C=0: Move cursor to start of current line (ON last row of image)
-                if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-                    let graphic_columns = graphic.width.div_ceil(cell_width);
-                    self.move_forward(Column(graphic_columns));
-                } else if scrolling {
-                    // For Kitty: cursor stays ON the last row of the image
-                    // The loop already did all necessary linefeeds
-                    self.carriage_return();
+                // Sixel: the fill loop left the cursor on the image's
+                // last row; the column follows DEC STD 070 (image start
+                // column), or mode 8452 (first column right of the
+                // image). This matches foot, xterm and contour.
+                if scrolling {
+                    let col = if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
+                        (leftmost + graphic_columns).min(self.grid.columns() - 1)
+                    } else {
+                        leftmost
+                    };
+                    self.grid.cursor.pos.col = Column(col);
+                    self.grid.cursor.should_wrap = false;
                 }
             }
             Some(1) => {
-                // Kitty C=1: Don't move cursor at all
+                // Don't move the cursor at all (kitty C=1, and the
+                // OSC 1337 doNotMoveCursor=1 extension). The fill
+                // loop advanced through the image rows; put the
+                // cursor back where the image was requested.
+                self.grid.cursor.pos = saved_cursor;
+            }
+            Some(2) => {
+                // OSC 1337 inline image: iTerm2 leaves the cursor on
+                // the image's last row, in the first column after the
+                // image.
+                if scrolling {
+                    let col = (leftmost + graphic_columns).min(self.grid.columns() - 1);
+                    self.grid.cursor.pos.col = Column(col);
+                    self.grid.cursor.should_wrap = false;
+                }
             }
             Some(_) => {
-                // Unknown cursor movement value, treat as C=0
-                if scrolling && !self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-                    self.carriage_return();
+                // Legacy/unknown values: last row, image start column.
+                if scrolling {
+                    self.grid.cursor.pos.col = Column(leftmost);
+                    self.grid.cursor.should_wrap = false;
                 }
             }
         }
