@@ -223,6 +223,55 @@ pub struct KittyOverlayGeometry {
     pub source_rect: [f32; 4],
 }
 
+/// Clip an overlay quad to a panel's content rectangle, shrinking the
+/// normalized source rect proportionally so the visible slice shows
+/// exactly the covered part of the image. Returns `false` when nothing
+/// of the quad lies inside the rect (drop the overlay).
+///
+/// Without this, an image wider or taller than its panel paints across
+/// split dividers onto neighbor panels — the image pipeline draws
+/// global quads with no per-panel scissor.
+pub fn clip_overlay_to_rect(
+    overlay: &mut crate::sugarloaf::GraphicOverlay,
+    clip_x0: f32,
+    clip_y0: f32,
+    clip_x1: f32,
+    clip_y1: f32,
+) -> bool {
+    if overlay.width <= 0.0 || overlay.height <= 0.0 {
+        return false;
+    }
+    let x0 = overlay.x;
+    let y0 = overlay.y;
+    let x1 = overlay.x + overlay.width;
+    let y1 = overlay.y + overlay.height;
+
+    let nx0 = x0.max(clip_x0);
+    let ny0 = y0.max(clip_y0);
+    let nx1 = x1.min(clip_x1);
+    let ny1 = y1.min(clip_y1);
+    if nx1 <= nx0 || ny1 <= ny0 {
+        return false;
+    }
+
+    let [u0, v0, u1, v1] = overlay.source_rect;
+    let fx0 = (nx0 - x0) / overlay.width;
+    let fx1 = (nx1 - x0) / overlay.width;
+    let fy0 = (ny0 - y0) / overlay.height;
+    let fy1 = (ny1 - y0) / overlay.height;
+    overlay.source_rect = [
+        u0 + (u1 - u0) * fx0,
+        v0 + (v1 - v0) * fy0,
+        u0 + (u1 - u0) * fx1,
+        v0 + (v1 - v0) * fy1,
+    ];
+    overlay.x = nx0;
+    overlay.y = ny0;
+    overlay.width = nx1 - nx0;
+    overlay.height = ny1 - ny0;
+    true
+}
+
 /// Viewport parameters for placement geometry: the panel content
 /// origin in physical pixels, the canonical cell stride the grid
 /// paints with, and the scroll state.
