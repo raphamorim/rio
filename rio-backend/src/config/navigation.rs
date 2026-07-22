@@ -12,6 +12,17 @@ pub fn default_tab_font_size() -> f32 {
     12.0
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy, Default)]
+pub enum TabCloseConfirm {
+    #[serde(alias = "never")]
+    #[default]
+    Never,
+    #[serde(alias = "ask")]
+    Ask,
+    #[serde(alias = "double-click", alias = "doubleclick")]
+    DoubleClick,
+}
+
 #[inline]
 pub fn default_tab_max_width() -> f32 {
     180.0
@@ -221,6 +232,18 @@ pub struct Navigation {
     /// Corner radius of each tab island. 0 = square corners.
     #[serde(default = "default_tab_radius", rename = "tab-radius")]
     pub tab_radius: f32,
+    /// Show the close button and a hover highlight on the hovered tab
+    /// (Terminal.app style) and let its click close that tab; on by
+    /// default. When false the close button only exists on the active
+    /// tab and tabs don't react to hover (stock behavior).
+    #[serde(default = "default_bool_true", rename = "tab-close-on-hover")]
+    pub tab_close_on_hover: bool,
+    /// Misclick guard for the tab close button. `never` closes on a
+    /// single click; `ask` pops a y/n confirmation; `double-click`
+    /// arms the button on the first click (it turns red) and closes on
+    /// a second click within a few seconds.
+    #[serde(default, rename = "tab-close-confirm")]
+    pub tab_close_confirm: TabCloseConfirm,
     /// Explicit island fill for inactive tabs. When unset, fills adapt
     /// to the window background's luminance.
     #[serde(
@@ -257,6 +280,8 @@ impl Default for Navigation {
             tab_gap: default_tab_gap(),
             tab_inset_y: default_tab_inset_y(),
             tab_radius: default_tab_radius(),
+            tab_close_on_hover: true,
+            tab_close_confirm: TabCloseConfirm::default(),
             tab_fill: None,
             tab_fill_active: None,
         }

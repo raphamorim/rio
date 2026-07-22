@@ -668,6 +668,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     } else {
                         let size = route.window.screen.context_manager.len();
                         route.window.screen.resize_top_or_bottom_line(size);
+                        // A tab just closed: indices shifted, so any armed
+                        // close button now points at the wrong tab. Drop it.
+                        if let Some(island) = route.window.screen.renderer.island.as_mut()
+                        {
+                            island.disarm();
+                        }
                     }
                 }
             }

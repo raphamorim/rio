@@ -1590,7 +1590,52 @@ impl Screen<'_> {
         }
     }
 
+    /// Misclick guard shared by the tab close entry points. Returns true
+    /// when the close may proceed; false when it was consumed (a
+    /// double-click arm was set). The `Ask` confirm mode has no overlay
+    /// in this build and behaves like `Never` (immediate close).
+    fn confirm_close_gate(&mut self, tab_index: usize) -> bool {
+        use rio_backend::config::navigation::TabCloseConfirm;
+        match self.renderer.navigation.tab_close_confirm {
+            TabCloseConfirm::Never | TabCloseConfirm::Ask => true,
+            TabCloseConfirm::DoubleClick => {
+                // With a single tab there is no visible close button to
+                // arm — invisible arming would just eat the keypress.
+                if self.context_manager.len() <= 1 {
+                    return true;
+                }
+                let confirmed = self
+                    .renderer
+                    .island
+                    .as_mut()
+                    .is_none_or(|island| island.confirm_close_click(tab_index));
+                if !confirmed {
+                    self.mark_dirty();
+                }
+                confirmed
+            }
+        }
+    }
+
+    /// Close a specific tab by index, routing through the misclick gate.
+    pub fn close_tab_at(&mut self, tab_index: usize, clipboard: &mut Clipboard) {
+        if !self.confirm_close_gate(tab_index) {
+            return;
+        }
+        if tab_index != self.context_manager.current_index() {
+            self.context_manager.select_tab(tab_index);
+        }
+        self.close_tab_confirmed(clipboard);
+    }
+
     pub fn close_tab(&mut self, clipboard: &mut Clipboard) {
+        if !self.confirm_close_gate(self.context_manager.current_index()) {
+            return;
+        }
+        self.close_tab_confirmed(clipboard);
+    }
+
+    pub fn close_tab_confirmed(&mut self, clipboard: &mut Clipboard) {
         self.clear_selection();
         self.context_manager
             .close_current_context(&mut self.sugarloaf);
@@ -2758,25 +2803,78 @@ impl Screen<'_> {
     }
 
     pub fn update_close_button_hover(&mut self, mouse_x: f64, mouse_y: f64) -> bool {
+        use rio_backend::config::navigation::TabCloseConfirm;
+        // Any pointer movement after the arm window lapsed drops the red
+        // armed button (there is no idle timer in this build; the arm is
+        // functionally dead once ARM_TIMEOUT passes, this repaints it).
+        let disarmed = self
+            .renderer
+            .island
+            .as_mut()
+            .is_some_and(|island| island.disarm_stale());
+        if disarmed {
+            self.mark_dirty();
+        }
+        let close_on_hover = self.renderer.navigation.tab_close_on_hover;
+        let double_click =
+            self.renderer.navigation.tab_close_confirm == TabCloseConfirm::DoubleClick;
+
         let num_tabs = self.context_manager.len();
         let scale_factor = self.sugarloaf.scale_factor();
 
-        let hovering = num_tabs > 1
+        let in_bar = num_tabs > 1
             && self.renderer.navigation.island_visible(num_tabs)
-            && mouse_y <= (self.renderer.navigation.tab_bar_height * scale_factor) as f64
-            && island::close_button_hit(
-                &self.island_tab_layout(num_tabs),
-                self.context_manager.current_index(),
-                mouse_x as f32 / scale_factor,
-                island::TabGeom::from_navigation(&self.renderer.navigation),
-            );
+            && mouse_y <= (self.renderer.navigation.tab_bar_height * scale_factor) as f64;
+        let layout = self.island_tab_layout(num_tabs);
+        let x_unscaled = mouse_x as f32 / scale_factor;
+        // Guard x below the first tab: the cast to usize would wrap a
+        // negative offset to tab 0 (mirrors the click path).
+        let x_in_tabs = x_unscaled - layout.left_margin;
+        let hovered_tab = (in_bar && x_in_tabs >= 0.0 && layout.tab_width > 0.0)
+            .then(|| (x_in_tabs / layout.tab_width) as usize)
+            .filter(|idx| *idx < num_tabs);
+        let hovering = hovered_tab.is_some_and(|idx| {
+            (close_on_hover || idx == self.context_manager.current_index())
+                && island::close_button_hit(
+                    &layout,
+                    idx,
+                    x_unscaled,
+                    island::TabGeom::from_navigation(&self.renderer.navigation),
+                )
+        });
 
-        self.apply_close_hover(hovering)
+        // Only the active tab shows a × unless close-on-hover is set, and
+        // only double-click confirm arms non-active tabs. When neither
+        // mode is on, restrict the tracked tab to the active one so
+        // crossing between background tabs no longer forces a repaint.
+        let tracked = if close_on_hover || double_click {
+            hovered_tab
+        } else {
+            hovered_tab.filter(|idx| *idx == self.context_manager.current_index())
+        };
+
+        let tab_changed = self
+            .renderer
+            .island
+            .as_mut()
+            .is_some_and(|island| island.set_hovered_tab(tracked));
+        if tab_changed {
+            self.mark_dirty();
+        }
+        self.apply_close_hover(hovering) || tab_changed || disarmed
     }
 
     #[inline]
     pub fn clear_close_button_hover(&mut self) -> bool {
-        self.apply_close_hover(false)
+        let tab_changed = self
+            .renderer
+            .island
+            .as_mut()
+            .is_some_and(|island| island.set_hovered_tab(None));
+        if tab_changed {
+            self.mark_dirty();
+        }
+        self.apply_close_hover(false) || tab_changed
     }
 
     pub fn handle_island_click(
@@ -2917,7 +3015,8 @@ impl Screen<'_> {
             return true;
         }
 
-        if clicked_tab == self.context_manager.current_index()
+        if (self.renderer.navigation.tab_close_on_hover
+            || clicked_tab == self.context_manager.current_index())
             && island::close_button_hit(
                 &layout,
                 clicked_tab,
@@ -2927,7 +3026,7 @@ impl Screen<'_> {
         {
             self.stop_hint_mode_if_active();
             self.last_close_press = Some((std::time::Instant::now(), mouse_x_unscaled));
-            self.close_tab(clipboard);
+            self.close_tab_at(clicked_tab, clipboard);
             return true;
         }
 

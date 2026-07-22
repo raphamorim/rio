@@ -130,6 +130,9 @@ impl Renderer {
                     config.navigation.tab_fill,
                     config.navigation.tab_fill_active,
                 );
+                island.close_on_hover = config.navigation.tab_close_on_hover;
+                island.close_confirm = config.navigation.tab_close_confirm
+                    == rio_backend::config::navigation::TabCloseConfirm::DoubleClick;
                 island
             })
         } else {

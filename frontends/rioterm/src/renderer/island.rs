@@ -218,6 +218,8 @@ struct IslandFills {
     active: [f32; 4],
     outline: Option<[f32; 4]>,
     close_hover: [f32; 4],
+    /// Overlay composited onto an inactive island under the pointer.
+    hover: [f32; 4],
 }
 
 fn island_fills(bg: [f32; 4]) -> IslandFills {
@@ -228,6 +230,7 @@ fn island_fills(bg: [f32; 4]) -> IslandFills {
             active: [1.0, 1.0, 1.0, 0.92],
             outline: Some([0.0, 0.0, 0.0, 0.14]),
             close_hover: [0.0, 0.0, 0.0, 0.09],
+            hover: [0.0, 0.0, 0.0, 0.08],
         }
     } else {
         IslandFills {
@@ -235,6 +238,7 @@ fn island_fills(bg: [f32; 4]) -> IslandFills {
             active: [1.0, 1.0, 1.0, 0.18],
             outline: None,
             close_hover: [1.0, 1.0, 1.0, 0.14],
+            hover: [1.0, 1.0, 1.0, 0.10],
         }
     }
 }
@@ -407,6 +411,17 @@ pub struct Island {
     /// Cursor is over the active island's close button — draws the
     /// hover backdrop. Updated on every cursor move by `Screen`.
     close_hover: bool,
+    /// Tab slot currently under the pointer (hover highlight).
+    hovered_tab: Option<usize>,
+    /// `[navigation] tab-close-on-hover` — show the close button on
+    /// the hovered tab, not only the active one.
+    pub close_on_hover: bool,
+    /// `[navigation] tab-close-confirm` — first click arms, second
+    /// click closes.
+    pub close_confirm: bool,
+    /// Armed close button: (tab index, armed-at). Cleared when the
+    /// pointer leaves the tab or the arm times out.
+    armed_close: Option<(usize, std::time::Instant)>,
 }
 
 impl Island {
@@ -439,11 +454,80 @@ impl Island {
             slide_springs: FxHashMap::default(),
             last_anim_frame: Instant::now(),
             close_hover: false,
+            hovered_tab: None,
+            close_on_hover: true,
+            close_confirm: false,
+            armed_close: None,
         }
     }
 
     /// Set whether the cursor hovers the active island's close button.
     /// Returns true when the state changed (the caller redraws).
+    pub fn set_hovered_tab(&mut self, tab: Option<usize>) -> bool {
+        let hover_moved = self.hovered_tab != tab;
+        let mut changed = hover_moved;
+        self.hovered_tab = tab;
+        // Moving the pointer ONTO a different tab disarms the close
+        // button. Two things must NOT disarm: leaving the bar entirely
+        // (keyboard-armed closes survive the pointer idling over the
+        // terminal — the timeout covers abandonment), and a static
+        // re-hover re-asserted every render frame (gated by hover_moved,
+        // so a keyboard-armed tab isn't disarmed the instant the pointer
+        // happens to already rest over a different tab).
+        if hover_moved {
+            if let (Some((armed_idx, _)), Some(hovered)) = (self.armed_close, tab) {
+                if hovered != armed_idx {
+                    self.armed_close = None;
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+
+    /// How long an armed close button stays armed.
+    pub const ARM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+    /// Two-click close: returns true when the click should CLOSE the
+    /// tab (unarmed mode, or second click on an armed button); false
+    /// means the click armed the button and was consumed.
+    pub fn confirm_close_click(&mut self, tab_index: usize) -> bool {
+        if !self.close_confirm {
+            return true;
+        }
+        match self.armed_close {
+            Some((armed_idx, at))
+                if armed_idx == tab_index && at.elapsed() < Self::ARM_TIMEOUT =>
+            {
+                self.armed_close = None;
+                true
+            }
+            _ => {
+                self.armed_close = Some((tab_index, std::time::Instant::now()));
+                false
+            }
+        }
+    }
+
+    /// Drop an armed close button whose window expired. Returns true
+    /// when state changed (caller repaints).
+    pub fn disarm_stale(&mut self) -> bool {
+        if let Some((_, at)) = self.armed_close {
+            if at.elapsed() >= Self::ARM_TIMEOUT {
+                self.armed_close = None;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Unconditionally drop any armed close button. Called when the tab
+    /// list mutates (a tab closed / shell exited), since the bare armed
+    /// index would otherwise point at a different tab after the shift.
+    pub fn disarm(&mut self) {
+        self.armed_close = None;
+    }
+
     pub fn set_close_hover(&mut self, hover: bool) -> bool {
         let changed = self.close_hover != hover;
         self.close_hover = hover;
@@ -607,6 +691,11 @@ impl Island {
             return;
         }
 
+        // A reorder moves the armed × out from under the pointer; rather
+        // than remap the bare index (and risk authorizing a one-click
+        // close of a tab that shifted into the armed slot), just disarm.
+        self.armed_close = None;
+
         self.slide_springs = self
             .slide_springs
             .drain()
@@ -647,6 +736,9 @@ impl Island {
         if a == b {
             return;
         }
+
+        // Disarm on reorder (see remap_tab_move).
+        self.armed_close = None;
 
         let swap_key = |i: usize| {
             if i == a {
@@ -927,7 +1019,7 @@ impl Island {
             // bleach custom colors to pastel on light themes, so the
             // hierarchy is carried by the mute instead.
             let (ix, iy, iw, ih, radius) = island_rect(tab_x, tab_width, self.geom);
-            let fill = match context_manager.custom_color(tab_index) {
+            let mut fill = match context_manager.custom_color(tab_index) {
                 Some(mut custom) => {
                     if !is_active {
                         custom[3] *= INACTIVE_CUSTOM_MUTE;
@@ -942,6 +1034,10 @@ impl Island {
                     }
                 }
             };
+            // Hover affordances are opt-in; stock rio has none.
+            if !is_active && self.close_on_hover && self.hovered_tab == Some(tab_index) {
+                fill = over(fill, fills.hover);
+            }
             draw_island(
                 sugarloaf,
                 ix,
@@ -955,9 +1051,16 @@ impl Island {
                 0,
             );
 
-            if is_active && num_tabs > 1 {
+            // Close affordance on the active tab and on whichever tab
+            // the pointer hovers (Terminal.app behavior).
+            let is_hovered = self.hovered_tab == Some(tab_index);
+            let shows_close = is_active || (is_hovered && self.close_on_hover);
+            if shows_close && num_tabs > 1 {
                 if let Some(cx) = close_button_center(ix, iw) {
-                    if self.close_hover {
+                    let close_hovered = self.close_hover && is_hovered;
+                    let is_armed =
+                        self.armed_close.is_some_and(|(idx, _)| idx == tab_index);
+                    if close_hovered {
                         sugarloaf.rounded_rect(
                             None,
                             cx - CLOSE_HOVER_HALF,
@@ -973,8 +1076,14 @@ impl Island {
                     draw_close_button(
                         sugarloaf,
                         cx,
-                        self.active_text_color,
-                        self.close_hover,
+                        if is_armed {
+                            [0.90, 0.25, 0.25, 1.0]
+                        } else if is_active {
+                            self.active_text_color
+                        } else {
+                            self.inactive_text_color
+                        },
+                        close_hovered || is_armed,
                         2,
                         self.geom.bar_height,
                     );
