@@ -4898,3 +4898,106 @@ fn test_kitty_placement_glued_across_ring_saturation_and_expiry() {
         "placement expires with its content"
     );
 }
+
+#[test]
+fn test_atlas_placement_created_on_insert() {
+    let mut term = geometry_test_term();
+    term.grid.cursor.pos.col = Column(5);
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+
+    assert_eq!(term.graphics.atlas_placements.len(), 1);
+    let p = &term.graphics.atlas_placements[0];
+    assert_eq!(p.image_key, crate::sugarloaf::atlas_image_key(1));
+    assert_eq!(p.abs_row, 0);
+    assert_eq!(p.col, 5, "anchored at the cursor column");
+    assert_eq!((p.columns, p.rows), (3, 2), "30x40 at 10x20 cells");
+    assert_eq!(
+        (p.src_x, p.src_y, p.src_width, p.src_height),
+        (0, 0, 30, 40),
+        "initial crop covers the whole display"
+    );
+    assert_eq!((p.insert_cell_w, p.insert_cell_h), (10, 20));
+    assert_eq!(
+        term.graphics.atlas_key_refs.get(&p.image_key),
+        Some(&1),
+        "one placement references the key"
+    );
+}
+
+#[test]
+fn test_atlas_overlay_geometry_scaling_and_scroll() {
+    use crate::ansi::graphics::{
+        atlas_overlay_geometry, AtlasPlacement, OverlayViewport,
+    };
+
+    let placement = AtlasPlacement {
+        image_key: 7,
+        abs_row: 55,
+        col: 4,
+        columns: 3,
+        rows: 2,
+        src_x: 0,
+        src_y: 20,
+        src_width: 30,
+        src_height: 20,
+        total_width: 30,
+        total_height: 40,
+        insert_cell_w: 10,
+        insert_cell_h: 20,
+    };
+    // Scrolled back 30 rows into 80 rows above the screen top.
+    let viewport = OverlayViewport {
+        cell_width: 12.0,
+        cell_height: 24.0,
+        origin_x: 100.0,
+        origin_y: 50.0,
+        history_size: 80,
+        display_offset: 30,
+        screen_lines: 24,
+    };
+    let g = atlas_overlay_geometry(&placement, &viewport).expect("visible");
+    assert_eq!(g.x, 100.0 + 4.0 * 12.0);
+    assert_eq!(g.y, 50.0 + 5.0 * 24.0);
+    // Live cells grew 10x20 -> 12x24: display scales with the font.
+    assert_eq!(g.width, 30.0 * 1.2);
+    assert_eq!(g.height, 20.0 * 1.2);
+    // Bottom half of the display space.
+    assert_eq!(g.source_rect, [0.0, 0.5, 1.0, 1.0]);
+
+    // Fully above the viewport: culled.
+    let live = OverlayViewport {
+        display_offset: 0,
+        ..viewport
+    };
+    assert!(atlas_overlay_geometry(&placement, &live).is_none());
+}
+
+#[test]
+fn test_atlas_placement_expires_off_the_ring() {
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 4),
+        crate::ansi::CursorShape::Block,
+        TestEventListener,
+        unsafe { WindowId::dummy() },
+        0,
+        2,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    assert_eq!(term.graphics.atlas_placements.len(), 1);
+
+    // Push the image's two rows out of the screen and the 2-line ring.
+    for _ in 0..10 {
+        term.linefeed();
+    }
+    assert!(
+        term.graphics.atlas_placements.is_empty(),
+        "placement expires with its content"
+    );
+    assert!(
+        term.graphics.atlas_key_refs.is_empty(),
+        "last placement released the image key"
+    );
+}

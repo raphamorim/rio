@@ -66,19 +66,8 @@ impl SugarState {
             usize,
             Vec<super::graphics::GraphicOverlay>,
         >,
-        grid_image_overlays: &rustc_hash::FxHashMap<
-            usize,
-            Vec<super::graphics::GraphicOverlay>,
-        >,
     ) {
-        advance_brush.prepare(
-            context,
-            self,
-            graphics,
-            image_data,
-            image_overlays,
-            grid_image_overlays,
-        );
+        advance_brush.prepare(context, self, graphics, image_data, image_overlays);
     }
 
     /// `compute_dimensions` used to walk per-id Content states and
