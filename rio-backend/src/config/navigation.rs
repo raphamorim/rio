@@ -8,19 +8,29 @@ pub fn default_unfocused_split_opacity() -> f32 {
 }
 
 #[inline]
-pub fn default_max_tab_width() -> f32 {
-    240.0
+pub fn default_tab_font_size() -> f32 {
+    12.0
 }
 
-/// Clamp `max_tab_width` to `[80.0, 280.0]`.
-///
-/// Below the lower bound the close button and title no longer fit.
 #[inline]
-pub fn clamp_max_tab_width(v: f32) -> f32 {
-    if !v.is_finite() {
-        return default_max_tab_width();
-    }
-    v.clamp(80.0, 280.0)
+pub fn default_tab_max_width() -> f32 {
+    180.0
+}
+
+pub fn default_tab_gap() -> f32 {
+    6.0
+}
+
+pub fn default_tab_inset_y() -> f32 {
+    7.0
+}
+
+pub fn default_tab_radius() -> f32 {
+    6.0
+}
+
+pub fn default_tab_bar_height() -> f32 {
+    38.0
 }
 
 /// Clamp `unfocused_split_opacity` to `[0.15, 1.0]`.
@@ -31,6 +41,31 @@ pub fn clamp_max_tab_width(v: f32) -> f32 {
 #[inline]
 pub fn clamp_unfocused_split_opacity(v: f32) -> f32 {
     v.clamp(0.15, 1.0)
+}
+
+/// Sanitize tab-strip geometry after load: NaN and negative or zero
+/// sizes would produce a negative island height, garbage padding, or an
+/// oversized hover circle. Fields that may legitimately be `0` (gap,
+/// inset, radius, max-width) are only floored at `0`; the two sizes that
+/// must stay positive (font size, bar height) get a small lower bound.
+impl Navigation {
+    #[inline]
+    pub fn clamp_tab_geometry(&mut self) {
+        let non_negative = |v: f32| if v.is_finite() { v.max(0.0) } else { 0.0 };
+        let positive = |v: f32, floor: f32| {
+            if v.is_finite() {
+                v.max(floor)
+            } else {
+                floor
+            }
+        };
+        self.tab_font_size = positive(self.tab_font_size, 1.0);
+        self.tab_bar_height = positive(self.tab_bar_height, 1.0);
+        self.tab_max_width = non_negative(self.tab_max_width);
+        self.tab_gap = non_negative(self.tab_gap);
+        self.tab_inset_y = non_negative(self.tab_inset_y);
+        self.tab_radius = non_negative(self.tab_radius);
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
@@ -166,11 +201,41 @@ pub struct Navigation {
         rename = "unfocused-split-fill"
     )]
     pub unfocused_split_fill: Option<ColorArray>,
-    /// Maximum width of a tab in logical pixels. Tabs shrink below
-    /// this as more open; the cap only limits how wide a tab grows
-    /// when few are open. Clamped to `[80.0, 280.0]` at load time.
-    #[serde(default = "default_max_tab_width", rename = "max-tab-width")]
-    pub max_tab_width: f32,
+    /// Font size (in logical pixels) for the tab-strip titles.
+    #[serde(default = "default_tab_font_size", rename = "tab-font-size")]
+    pub tab_font_size: f32,
+    /// Height (in logical pixels) of the tab strip / island bar.
+    #[serde(default = "default_tab_bar_height", rename = "tab-bar-height")]
+    pub tab_bar_height: f32,
+    /// Maximum width (logical px) of one tab. 0 = no cap: tabs expand
+    /// to fill the whole strip.
+    #[serde(default = "default_tab_max_width", rename = "tab-max-width")]
+    pub tab_max_width: f32,
+    /// Horizontal gap (logical px) between tab islands. 0 = tabs touch.
+    #[serde(default = "default_tab_gap", rename = "tab-gap")]
+    pub tab_gap: f32,
+    /// Vertical inset (logical px) of each island inside the strip.
+    /// 0 = tabs fill the full bar height (classic flat strip).
+    #[serde(default = "default_tab_inset_y", rename = "tab-inset-y")]
+    pub tab_inset_y: f32,
+    /// Corner radius of each tab island. 0 = square corners.
+    #[serde(default = "default_tab_radius", rename = "tab-radius")]
+    pub tab_radius: f32,
+    /// Explicit island fill for inactive tabs. When unset, fills adapt
+    /// to the window background's luminance.
+    #[serde(
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
+        rename = "tab-fill"
+    )]
+    pub tab_fill: Option<ColorArray>,
+    /// Explicit island fill for the active tab.
+    #[serde(
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
+        rename = "tab-fill-active"
+    )]
+    pub tab_fill_active: Option<ColorArray>,
 }
 
 impl Default for Navigation {
@@ -186,7 +251,14 @@ impl Default for Navigation {
             unfocused_split_opacity: default_unfocused_split_opacity(),
             unfocused_split_fill: None,
             open_config_with_split: true,
-            max_tab_width: default_max_tab_width(),
+            tab_font_size: default_tab_font_size(),
+            tab_bar_height: default_tab_bar_height(),
+            tab_max_width: default_tab_max_width(),
+            tab_gap: default_tab_gap(),
+            tab_inset_y: default_tab_inset_y(),
+            tab_radius: default_tab_radius(),
+            tab_fill: None,
+            tab_fill_active: None,
         }
     }
 }

@@ -27,7 +27,7 @@ use crate::crosswords::{
 use crate::hints::HintState;
 use crate::layout::ContextDimension;
 use crate::mouse::{calculate_mouse_position, Mouse};
-use crate::renderer::island::{self, TabStripLayout, ISLAND_HEIGHT};
+use crate::renderer::island::{self, TabStripLayout};
 use crate::renderer::{utils::padding_top_from_config, Renderer};
 use crate::screen::hint::HintMatches;
 use crate::selection::{Selection, SelectionType};
@@ -455,7 +455,13 @@ impl Screen<'_> {
         self.renderer.is_window_focused = was_focused;
         if let Some(mut island) = old_island {
             island.update_colors(config.colors.tabs, config.colors.tabs_active);
-            island.max_tab_width = config.navigation.max_tab_width;
+            island.title_font_size = config.navigation.tab_font_size;
+            island.geom =
+                crate::renderer::island::TabGeom::from_navigation(&config.navigation);
+            island.fill_override = (
+                config.navigation.tab_fill,
+                config.navigation.tab_fill_active,
+            );
             self.renderer.island = Some(island);
         }
 
@@ -2686,8 +2692,8 @@ impl Screen<'_> {
             .renderer
             .island
             .as_ref()
-            .map(|island| island.max_tab_width)
-            .unwrap_or_else(rio_backend::config::navigation::default_max_tab_width);
+            .map(|island| island.geom.max_tab_width)
+            .unwrap_or_else(rio_backend::config::navigation::default_tab_max_width);
         island::tab_strip_layout(
             self.sugarloaf.window_size().width,
             self.sugarloaf.scale_factor(),
@@ -2757,11 +2763,12 @@ impl Screen<'_> {
 
         let hovering = num_tabs > 1
             && self.renderer.navigation.island_visible(num_tabs)
-            && mouse_y <= (ISLAND_HEIGHT * scale_factor) as f64
+            && mouse_y <= (self.renderer.navigation.tab_bar_height * scale_factor) as f64
             && island::close_button_hit(
                 &self.island_tab_layout(num_tabs),
                 self.context_manager.current_index(),
                 mouse_x as f32 / scale_factor,
+                island::TabGeom::from_navigation(&self.renderer.navigation),
             );
 
         self.apply_close_hover(hovering)
@@ -2788,7 +2795,8 @@ impl Screen<'_> {
         let mouse_y = self.mouse.y;
 
         let scale_factor = self.sugarloaf.scale_factor();
-        let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
+        let island_height_px =
+            (self.renderer.navigation.tab_bar_height * scale_factor) as f64;
 
         let window_width = self.sugarloaf.window_size().width;
         let num_tabs = self.context_manager.len();
@@ -2848,6 +2856,7 @@ impl Screen<'_> {
                 &layout,
                 self.context_manager.current_index(),
                 mouse_x_unscaled,
+                island::TabGeom::from_navigation(&self.renderer.navigation),
             )
         {
             return true;
@@ -2909,7 +2918,12 @@ impl Screen<'_> {
         }
 
         if clicked_tab == self.context_manager.current_index()
-            && island::close_button_hit(&layout, clicked_tab, mouse_x_unscaled)
+            && island::close_button_hit(
+                &layout,
+                clicked_tab,
+                mouse_x_unscaled,
+                island::TabGeom::from_navigation(&self.renderer.navigation),
+            )
         {
             self.stop_hint_mode_if_active();
             self.last_close_press = Some((std::time::Instant::now(), mouse_x_unscaled));
