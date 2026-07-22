@@ -523,6 +523,7 @@ impl Text {
                 /* is_emoji: */ false,
                 run.synthetic_italic,
                 run.synthetic_bold,
+                self.font_library.inner.read().antialias,
             )?;
             let is_color = raw.is_color;
             let raster = crate::grid::RasterizedGlyph {
@@ -590,6 +591,7 @@ impl Text {
                     run.synthetic_bold,
                     run.synthetic_italic,
                     self.font_library.inner.read().hinting,
+                    self.font_library.inner.read().antialias,
                     run.wght_variation,
                 )?;
                 let is_color = raw.is_color;
@@ -635,6 +637,7 @@ impl Text {
                     run.synthetic_bold,
                     run.synthetic_italic,
                     self.font_library.inner.read().hinting,
+                    self.font_library.inner.read().antialias,
                     run.wght_variation,
                 )?;
                 let is_color = raw.is_color;
@@ -701,6 +704,7 @@ impl Text {
                 /* is_emoji: */ false,
                 run.synthetic_italic,
                 run.synthetic_bold,
+                self.font_library.inner.read().antialias,
             )?;
             (
                 raw.width,
@@ -722,6 +726,7 @@ impl Text {
                 run.synthetic_bold,
                 run.synthetic_italic,
                 self.font_library.inner.read().hinting,
+                self.font_library.inner.read().antialias,
                 run.wght_variation,
             )?;
             (
@@ -1209,6 +1214,7 @@ fn rasterize_swash_glyph(
     synthetic_bold: bool,
     synthetic_italic: bool,
     hint: bool,
+    antialias: bool,
     wght_variation: Option<f32>,
 ) -> Option<SwashRawGlyph> {
     use swash::scale::{
@@ -1272,6 +1278,9 @@ fn rasterize_swash_glyph(
     }
 
     let is_color = image.content == Content::Color;
+    if !antialias && !is_color {
+        crate::font::threshold_mask(&mut image.data);
+    }
     Some(SwashRawGlyph {
         width: image.placement.width,
         height: image.placement.height,

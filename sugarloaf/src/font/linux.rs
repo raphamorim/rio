@@ -14,8 +14,9 @@ use std::sync::OnceLock;
 // pull them in explicitly.
 use fontconfig_sys as fc;
 use fontconfig_sys::constants::{
-    FC_CHARSET, FC_FAMILY, FC_FILE, FC_INDEX, FC_LANG, FC_MONO, FC_SLANT,
-    FC_SLANT_ITALIC, FC_SPACING, FC_WEIGHT, FC_WEIGHT_BOLD,
+    FC_ANTIALIAS, FC_CHARSET, FC_FAMILY, FC_FILE, FC_HINTING, FC_HINT_NONE,
+    FC_HINT_STYLE, FC_INDEX, FC_LANG, FC_MONO, FC_RGBA, FC_SLANT, FC_SLANT_ITALIC,
+    FC_SPACING, FC_WEIGHT, FC_WEIGHT_BOLD,
 };
 
 /// Process-global fontconfig handle. `FcConfigGetCurrent` returns a
@@ -208,6 +209,85 @@ unsafe fn pattern_path_and_index(pattern: *mut fc::FcPattern) -> Option<(PathBuf
         let mut index: i32 = 0;
         let _ = fc::FcPatternGetInteger(pattern, FC_INDEX.as_ptr(), 0, &mut index);
         Some((PathBuf::from(path_str), index.max(0) as u32))
+    }
+}
+
+/// Rendering preferences fontconfig reports for a family, used as
+/// defaults when the Rio config leaves them unset. `rgba` carries the
+/// `FC_RGBA_*` subpixel order for the renderer.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct FcRenderSettings {
+    pub antialias: Option<bool>,
+    pub hinting: Option<bool>,
+    pub rgba: Option<i32>,
+}
+
+/// Query fontconfig for the render settings it would apply to
+/// `family`, honoring the user's fonts.conf match rules the same way
+/// other fontconfig consumers do.
+pub fn render_settings(family: &str) -> FcRenderSettings {
+    let cfg = fc_config();
+    if cfg.is_null() {
+        return FcRenderSettings::default();
+    }
+
+    unsafe {
+        let pattern = fc::FcPatternCreate();
+        if pattern.is_null() {
+            return FcRenderSettings::default();
+        }
+
+        if let Ok(family_c) = CString::new(family) {
+            fc::FcPatternAddString(
+                pattern,
+                FC_FAMILY.as_ptr(),
+                family_c.as_ptr() as *const fc::FcChar8,
+            );
+        }
+        fc::FcConfigSubstitute(cfg, pattern, fc::FcMatchPattern);
+        fc::FcDefaultSubstitute(pattern);
+
+        let mut result: fc::FcResult = 0;
+        let matched = fc::FcFontMatch(cfg, pattern, &mut result);
+
+        let mut out = FcRenderSettings::default();
+        if !matched.is_null() && result == fc::FcResultMatch {
+            let mut b: fc::FcBool = 0;
+            if fc::FcPatternGetBool(matched, FC_ANTIALIAS.as_ptr(), 0, &mut b)
+                == fc::FcResultMatch
+            {
+                out.antialias = Some(b != 0);
+            }
+
+            // Hinting is off when either the boolean is false or the
+            // style is `hintnone`; fontconfig tools treat them as one
+            // setting split across two keys.
+            let mut hinting: Option<bool> = None;
+            if fc::FcPatternGetBool(matched, FC_HINTING.as_ptr(), 0, &mut b)
+                == fc::FcResultMatch
+            {
+                hinting = Some(b != 0);
+            }
+            let mut style: i32 = 0;
+            if fc::FcPatternGetInteger(matched, FC_HINT_STYLE.as_ptr(), 0, &mut style)
+                == fc::FcResultMatch
+                && style == FC_HINT_NONE
+            {
+                hinting = Some(false);
+            }
+            out.hinting = hinting;
+
+            let mut rgba: i32 = 0;
+            if fc::FcPatternGetInteger(matched, FC_RGBA.as_ptr(), 0, &mut rgba)
+                == fc::FcResultMatch
+            {
+                out.rgba = Some(rgba);
+            }
+
+            fc::FcPatternDestroy(matched);
+        }
+        fc::FcPatternDestroy(pattern);
+        out
     }
 }
 

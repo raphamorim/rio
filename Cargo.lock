@@ -4663,6 +4663,7 @@ dependencies = [
  "swash",
  "thiserror 2.0.19",
  "tiny-skia 0.12.0",
+ "toml 0.9.12+spec-1.1.0",
  "tracing",
  "ttf-parser",
  "twox-hash",

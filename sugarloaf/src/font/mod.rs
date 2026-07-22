@@ -568,6 +568,7 @@ pub struct FontLibraryData {
     pub inner: FxHashMap<usize, FontEntry>,
     pub symbol_maps: Option<Vec<SymbolMap>>,
     pub hinting: bool,
+    pub antialias: bool,
     /// Parsed `fonts.features` entries, applied at shape time on every
     /// platform. Empty when the user set none.
     pub features: Arc<Vec<swash::Setting<u16>>>,
@@ -595,6 +596,7 @@ impl Default for FontLibraryData {
         Self {
             inner: FxHashMap::default(),
             hinting: true,
+            antialias: true,
             features: Arc::new(Vec::new()),
             symbol_maps: None,
             primary_metrics_cache: FxHashMap::default(),
@@ -878,8 +880,11 @@ impl FontLibraryData {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(&mut self, mut spec: SugarloafFonts) -> Vec<SugarloafFont> {
-        // Configure hinting through spec
-        self.hinting = spec.hinting;
+        // Explicit config wins; unset values fall back to the platform
+        // default, which on Linux comes from fontconfig (resolved after
+        // the regular font is known, below).
+        self.hinting = spec.hinting.unwrap_or(true);
+        self.antialias = spec.antialias.unwrap_or(true);
         self.features = Arc::new(
             spec.features
                 .as_deref()
@@ -895,6 +900,30 @@ impl FontLibraryData {
             font_family_overwrite.clone_into(&mut spec.bold.family);
             font_family_overwrite.clone_into(&mut spec.bold_italic.family);
             font_family_overwrite.clone_into(&mut spec.italic.family);
+        }
+
+        // On Linux, unset hinting/antialias fall back to what
+        // fontconfig would apply to the primary family, so fonts.conf
+        // rules (antialias=false for pixel fonts, hintnone, etc.) are
+        // honored without Rio-specific config.
+        #[cfg(all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "android"),
+            not(target_arch = "wasm32")
+        ))]
+        if spec.hinting.is_none() || spec.antialias.is_none() {
+            let fc = crate::font::linux::render_settings(&spec.regular.family);
+            if spec.hinting.is_none() {
+                if let Some(hinting) = fc.hinting {
+                    self.hinting = hinting;
+                }
+            }
+            if spec.antialias.is_none() {
+                if let Some(antialias) = fc.antialias {
+                    self.antialias = antialias;
+                }
+            }
         }
 
         // On macOS we resolve fonts through CoreText (see `find_font` below)
@@ -1719,6 +1748,15 @@ use tracing::{info, warn};
 enum FindResult {
     Found(FontData),
     NotFound(SugarloafFont),
+}
+
+/// Collapse an 8-bit coverage mask to hard edges. Used when
+/// antialiasing is disabled: swash/zeno have no aliased render mode,
+/// so the mask is thresholded post-render.
+pub fn threshold_mask(data: &mut [u8]) {
+    for px in data.iter_mut() {
+        *px = if *px >= 128 { 255 } else { 0 };
+    }
 }
 
 /// Parse `fonts.features` entries into OpenType feature settings.
