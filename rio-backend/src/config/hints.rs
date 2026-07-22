@@ -109,13 +109,79 @@ pub struct Hint {
 }
 
 /// Actions that can be performed with hints
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HintAction {
     /// Built-in action
     Action { action: HintInternalAction },
     /// Custom command
     Command { command: HintCommand },
+}
+
+/// Accepted TOML shapes for a rule's action, all of which resolve to
+/// [`HintAction`]:
+///
+/// ```toml
+/// action = "Copy"                                  # inline built-in
+/// command = "open"                                 # inline command
+/// command = { program = "open", args = ["-R"] }    # command with args
+/// [hints.rules.action]                             # nested table, both
+/// action = "Copy"                                  # keys accepted here
+/// [hints.rules.command]
+/// command = "open"
+/// ```
+///
+/// The nested `[hints.rules.action] command = ...` form is what the
+/// docs always showed; the serde derive only ever accepted the
+/// double-nested spellings, so everything else failed with
+/// "missing field action" (#1407).
+impl<'de> Deserialize<'de> for HintAction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum ActionValue {
+            Inline(HintInternalAction),
+            Nested { action: HintInternalAction },
+            NestedCommand { command: HintCommand },
+        }
+
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum CommandValue {
+            Inline(HintCommand),
+            Nested { command: HintCommand },
+        }
+
+        #[derive(Deserialize)]
+        struct Raw {
+            #[serde(default)]
+            action: Option<ActionValue>,
+            #[serde(default)]
+            command: Option<CommandValue>,
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+        match (raw.action, raw.command) {
+            (Some(ActionValue::Inline(action)), None)
+            | (Some(ActionValue::Nested { action }), None) => {
+                Ok(HintAction::Action { action })
+            }
+            (Some(ActionValue::NestedCommand { command }), None)
+            | (None, Some(CommandValue::Inline(command)))
+            | (None, Some(CommandValue::Nested { command })) => {
+                Ok(HintAction::Command { command })
+            }
+            (Some(_), Some(_)) => Err(serde::de::Error::custom(
+                "hint rule has both `action` and `command`; use one",
+            )),
+            (None, None) => Err(serde::de::Error::custom(
+                "hint rule needs an `action` (e.g. \"Copy\") or a `command`",
+            )),
+        }
+    }
 }
 
 /// Built-in hint actions
@@ -390,5 +456,117 @@ mods = ["Control"]
         assert!(!hint.hyperlinks);
         assert!(hint.post_processing);
         assert!(!hint.persist);
+    }
+
+    fn parse_rule(rule_body: &str) -> Result<crate::config::Config, toml::de::Error> {
+        toml::from_str(&format!("[[hints.rules]]\nregex = \"x\"\n{rule_body}"))
+    }
+
+    #[test]
+    fn test_hint_action_inline_action() {
+        let config = parse_rule("action = \"Copy\"").unwrap();
+        assert_eq!(
+            config.hints.rules[0].action,
+            HintAction::Action {
+                action: HintInternalAction::Copy
+            }
+        );
+    }
+
+    #[test]
+    fn test_hint_action_inline_command() {
+        let config = parse_rule("command = \"open\"").unwrap();
+        assert_eq!(
+            config.hints.rules[0].action,
+            HintAction::Command {
+                command: HintCommand::Simple("open".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn test_hint_action_inline_command_with_args() {
+        let config =
+            parse_rule("command = { program = \"open\", args = [\"-R\"] }").unwrap();
+        assert_eq!(
+            config.hints.rules[0].action,
+            HintAction::Command {
+                command: HintCommand::WithArgs {
+                    program: "open".to_string(),
+                    args: vec!["-R".to_string()],
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn test_hint_action_documented_nested_command() {
+        // The shape the docs always showed: a command inside the
+        // `action` table. Regression test for #1407.
+        let config = parse_rule("[hints.rules.action]\ncommand = \"open\"").unwrap();
+        assert_eq!(
+            config.hints.rules[0].action,
+            HintAction::Command {
+                command: HintCommand::Simple("open".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn test_hint_action_legacy_nested_action() {
+        let config = parse_rule("[hints.rules.action]\naction = \"Paste\"").unwrap();
+        assert_eq!(
+            config.hints.rules[0].action,
+            HintAction::Action {
+                action: HintInternalAction::Paste
+            }
+        );
+    }
+
+    #[test]
+    fn test_hint_action_legacy_nested_command() {
+        let config = parse_rule("[hints.rules.command]\ncommand = \"open\"").unwrap();
+        assert_eq!(
+            config.hints.rules[0].action,
+            HintAction::Command {
+                command: HintCommand::Simple("open".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn test_hint_action_missing_errors() {
+        let err = parse_rule("").unwrap_err().to_string();
+        assert!(err.contains("action"), "unhelpful error: {err}");
+    }
+
+    #[test]
+    fn test_hint_action_both_keys_error() {
+        let err = parse_rule("action = \"Copy\"\ncommand = \"open\"")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("both"), "unhelpful error: {err}");
+    }
+
+    #[test]
+    fn test_hint_action_serialize_roundtrip() {
+        let action = HintAction::Command {
+            command: HintCommand::Simple("open".to_string()),
+        };
+        let hint = Hint {
+            regex: Some("x".to_string()),
+            hyperlinks: false,
+            post_processing: true,
+            persist: false,
+            action,
+            mouse: HintMouse {
+                enabled: true,
+                mods: Vec::new(),
+            },
+            binding: None,
+        };
+        let serialized = toml::to_string(&hint).unwrap();
+        let parsed: Hint = toml::from_str(&serialized).unwrap();
+        assert_eq!(parsed.action, hint.action);
     }
 }
