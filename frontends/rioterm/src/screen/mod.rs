@@ -212,6 +212,8 @@ impl Screen<'_> {
         );
 
         let context_manager_config = context::ContextManagerConfig {
+            #[cfg(test)]
+            dead_pty: false,
             cwd: config.navigation.current_working_directory,
             shell,
             working_dir,
