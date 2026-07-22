@@ -82,6 +82,10 @@ pub struct Screen<'screen> {
     last_close_press: Option<(std::time::Instant, f32)>,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
     pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
+    /// Compiled smart-selection rules; consulted on double-click
+    /// after the OSC 8 fast path. Owns its own reload logic so
+    /// config edits take effect without rebuilding the `Screen`.
+    smart_selector: rio_backend::crosswords::smart_select::SmartSelector,
 }
 
 pub struct ChromePress {
@@ -319,6 +323,9 @@ impl Screen<'_> {
             last_close_press: None,
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
+            smart_selector: rio_backend::crosswords::smart_select::SmartSelector::new(
+                &config.smart_selection,
+            ),
         })
     }
 
@@ -499,6 +506,11 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
+
+        // Recompile smart-selection rules so [smart-selection] edits
+        // take effect without a restart. A bad user regex is warned
+        // and skipped by `compile()` itself.
+        self.smart_selector.reload(&config.smart_selection);
 
         // Re-evaluate the opaque flag — toggling `window.opacity` /
         // `window.blur` at runtime should flip the compositor mode.
@@ -1828,6 +1840,31 @@ impl Screen<'_> {
         self.context_manager.request_render();
     }
 
+    /// Install a pre-computed selection range. Used by the OSC 8
+    /// double-click fast path, where the span comes from the extras
+    /// table walk instead of a `SelectionType`-driven expansion. Builds
+    /// a `Simple` selection covering exactly the supplied cells so
+    /// `terminal.selection_to_string()` (and any later drag-extend)
+    /// works the same way as a manual drag selection would.
+    #[inline]
+    fn set_selection_range(
+        &mut self,
+        range: rio_backend::selection::SelectionRange,
+        clipboard: &mut Clipboard,
+    ) {
+        self.copy_selection(ClipboardType::Selection, clipboard);
+        let current = self.context_manager.current_mut();
+        let mut terminal = current.terminal.lock();
+        let mut selection =
+            Selection::new(SelectionType::Simple, range.start, Side::Left);
+        selection.update(range.end, Side::Right);
+        terminal.selection = Some(selection);
+        drop(terminal);
+
+        current.set_selection(Some(range));
+        self.context_manager.request_render();
+    }
+
     #[inline]
     fn toggle_selection(
         &mut self,
@@ -2072,32 +2109,11 @@ impl Screen<'_> {
             return None;
         }
 
-        // Look up the cell's hyperlink via the per-grid extras table.
-        // Cells in the same OSC 8 span share an `extras_id`, so we
-        // walk left/right comparing ids (cheap u16 compare) to find
-        // the span boundaries, then look up the URI once.
-        let id = terminal.cell_hyperlink_id(point.row, point.col)?;
-
-        let mut start_col = point.col;
-        let mut end_col = point.col;
-
-        while start_col > rio_backend::crosswords::pos::Column(0) {
-            let prev_col = start_col - 1;
-            if terminal.cell_hyperlink_id(point.row, prev_col) == Some(id) {
-                start_col = prev_col;
-            } else {
-                break;
-            }
-        }
-        while end_col < grid.columns() - 1 {
-            let next_col = end_col + 1;
-            if terminal.cell_hyperlink_id(point.row, next_col) == Some(id) {
-                end_col = next_col;
-            } else {
-                break;
-            }
-        }
-
+        // Delegate the span walk (including soft-wrap row crossing) to
+        // the shared helper so this code path and the OSC 8 double-click
+        // fast path agree on the selection boundaries.
+        let span =
+            rio_backend::crosswords::hyperlink::hyperlink_span_at(terminal, point)?;
         let hyperlink = terminal.cell_hyperlink(point.row, point.col)?;
 
         // Build a synthetic hint config so the rest of the hint
@@ -2124,8 +2140,8 @@ impl Screen<'_> {
 
         Some(crate::hints::HintMatch {
             text: uri,
-            start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
-            end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
+            start: span.start,
+            end: span.end,
             hint: hint_config,
         })
     }
@@ -3033,7 +3049,25 @@ impl Screen<'_> {
                 }
             }
             ClickState::DoubleClick => {
-                self.start_selection(SelectionType::Semantic, point, side, clipboard);
+                // Double-click resolution order:
+                //   1. OSC 8 hyperlink span (precise, producer-driven).
+                //   2. Smart-select rules (URL, file:line, UUID, ...).
+                //   3. Fallback to semantic word boundaries.
+                // Each step short-circuits on success so the cheaper
+                // checks run first and unrelated text falls through to
+                // the existing semantic behavior with no regression.
+                let resolved = {
+                    let terminal = self.context_manager.current().terminal.lock();
+                    rio_backend::crosswords::hyperlink::hyperlink_span_at(
+                        &terminal, point,
+                    )
+                    .or_else(|| self.smart_selector.select_at(&terminal, point))
+                };
+                if let Some(range) = resolved {
+                    self.set_selection_range(range, clipboard);
+                } else {
+                    self.start_selection(SelectionType::Semantic, point, side, clipboard);
+                }
             }
             ClickState::TripleClick => {
                 self.start_selection(SelectionType::Lines, point, side, clipboard);
