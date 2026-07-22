@@ -774,18 +774,38 @@ impl Graphics {
     /// pixel store and the GPU texture. The vec is tiny, so a full
     /// recount beats distributed per-child bookkeeping.
     pub fn recount_atlas_keys(&mut self) {
+        Self::recount_atlas_keys_for(
+            &self.atlas_placements,
+            &mut self.atlas_key_refs,
+            &self.texture_operations,
+        );
+    }
+
+    pub fn recount_inactive_atlas_keys(&mut self) {
+        Self::recount_atlas_keys_for(
+            &self.kitty_inactive_screen.atlas_placements,
+            &mut self.kitty_inactive_screen.atlas_key_refs,
+            &self.texture_operations,
+        );
+    }
+
+    fn recount_atlas_keys_for(
+        placements: &[AtlasPlacement],
+        key_refs: &mut FxHashMap<u64, u32>,
+        texture_operations: &std::sync::Arc<parking_lot::Mutex<Vec<u64>>>,
+    ) {
         let mut refs: FxHashMap<u64, u32> = FxHashMap::default();
-        for placement in &self.atlas_placements {
+        for placement in placements {
             *refs.entry(placement.image_key).or_insert(0) += 1;
         }
-        let mut removals = self.texture_operations.lock();
-        for key in self.atlas_key_refs.keys() {
+        let mut removals = texture_operations.lock();
+        for key in key_refs.keys() {
             if !refs.contains_key(key) {
                 removals.push(*key);
             }
         }
         drop(removals);
-        self.atlas_key_refs = refs;
+        *key_refs = refs;
     }
 
     pub fn swap_kitty_screen_state(&mut self) {

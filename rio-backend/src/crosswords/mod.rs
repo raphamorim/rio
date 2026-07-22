@@ -787,26 +787,35 @@ impl<U: EventListener> Crosswords<U> {
         delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
         self.vi_mode_cursor.pos.row += delta;
 
-        // Snapshot the cursor's *absolute* row (history + screen row)
-        // before the grid is reflowed. Kitty placements live in the
-        // same absolute coordinate space, and we use the cursor as a
-        // proxy for "where the surrounding text is". When reflow
-        // unwraps a row above the cursor (e.g. a long prompt fits on
-        // one line after the window widens), the cursor moves up to
-        // follow its content; we shift placements by the same amount
-        // so the image moves with the text. For grow_lines pulling
-        // from history the cursor's *absolute* row is invariant
-        // (history shrinks by N, cursor.row grows by N), so the
-        // delta naturally falls out to zero and placements stay put
-        // — which is what we want, since neither the cursor nor the
-        // image actually moved relative to the buffer.
-        let pre_resize_cursor_abs = self.grid.lines_evicted() as i64
-            + history_size as i64
-            + self.grid.cursor.pos.row.0 as i64;
+        // Image placements (kitty and sixel/iTerm2) anchor at absolute
+        // rows. A column reflow moves content to different rows, so ask
+        // each grid to record an exact old-row to new-row mapping while
+        // it reflows, but only when that grid's screen actually has
+        // placements; tracking costs a Vec sized to the ring. Vertical
+        // resizes never move content in absolute row space and produce
+        // no remap.
+        let active_has_placements = !self.graphics.kitty_placements.is_empty()
+            || !self.graphics.atlas_placements.is_empty();
+        let inactive_has_placements = !self
+            .graphics
+            .kitty_inactive_screen
+            .kitty_placements
+            .is_empty()
+            || !self
+                .graphics
+                .kitty_inactive_screen
+                .atlas_placements
+                .is_empty();
 
         let is_alt = self.mode.contains(Mode::ALT_SCREEN);
+        self.grid.track_reflow_remap = active_has_placements;
+        self.inactive_grid.track_reflow_remap = inactive_has_placements;
         self.grid.resize(!is_alt, num_lines, num_cols);
         self.inactive_grid.resize(is_alt, num_lines, num_cols);
+        self.grid.track_reflow_remap = false;
+        self.inactive_grid.track_reflow_remap = false;
+        let active_remap = self.grid.reflow_remap.take();
+        let inactive_remap = self.inactive_grid.reflow_remap.take();
 
         // Invalidate selection and tabs only when necessary.
         if old_cols != num_cols {
@@ -838,24 +847,12 @@ impl<U: EventListener> Crosswords<U> {
         // Update size information for graphics.
         self.graphics.resize(&size);
 
-        // Compute the placement dest_row shift. See the comment above
-        // where we captured `pre_resize_cursor_abs`. Note: we use the
-        // *absolute* cursor row (history + cursor.row), not screen
-        // row, so vertical resizes (which move cursor.row but keep
-        // the absolute row constant) don't shift placements.
-        let post_resize_cursor_abs = self.grid.lines_evicted() as i64
-            + self.history_size() as i64
-            + self.grid.cursor.pos.row.0 as i64;
-        let dest_row_shift = post_resize_cursor_abs - pre_resize_cursor_abs;
-
         // Rescale overlay placements for the new cell size (cell-sized
         // placements track the grid; native-size ones keep their pixel
-        // dimensions), and shift dest_row to follow the text. Active
-        // and inactive screens both get the treatment so alt-screen
-        // images aren't stale on swap-back.
+        // dimensions). Active and inactive screens both get the
+        // treatment so alt-screen images aren't stale on swap-back.
         let cell_w = self.graphics.cell_width.round() as usize;
         let cell_h = self.graphics.cell_height.round() as usize;
-        let mut overlay_changed = false;
         if cell_w > 0 && cell_h > 0 {
             for p in self.graphics.kitty_placements.values_mut() {
                 let (iw, ih) = self
@@ -865,9 +862,6 @@ impl<U: EventListener> Crosswords<U> {
                     .map(|s| (s.data.width, s.data.height))
                     .unwrap_or((0, 0));
                 p.rescale(iw, ih, cell_w, cell_h);
-                if dest_row_shift != 0 {
-                    p.dest_row += dest_row_shift;
-                }
             }
             for p in self
                 .graphics
@@ -883,20 +877,70 @@ impl<U: EventListener> Crosswords<U> {
                     .map(|s| (s.data.width, s.data.height))
                     .unwrap_or((0, 0));
                 p.rescale(iw, ih, cell_w, cell_h);
-                if dest_row_shift != 0 {
-                    p.dest_row += dest_row_shift;
+            }
+        }
+
+        // Re-anchor placements through the exact reflow row mapping:
+        // each one moves to wherever its anchor row's content landed.
+        // Kitty placements on a dropped row stay put (they float and
+        // get culled off screen); sixel/iTerm2 placements are grid
+        // content and are destroyed, along with any that a truncation
+        // pushed past the ring end.
+        if let Some(remap) = &active_remap {
+            let max_abs =
+                self.grid.lines_evicted() as i64 + self.grid.total_lines() as i64;
+            for p in self.graphics.kitty_placements.values_mut() {
+                if let Some(abs) = remap.remap_abs(p.dest_row) {
+                    p.dest_row = abs;
                 }
             }
-            overlay_changed = !self.graphics.kitty_placements.is_empty()
-                || !self
-                    .graphics
-                    .kitty_inactive_screen
-                    .kitty_placements
-                    .is_empty();
+            let before = self.graphics.atlas_placements.len();
+            self.graphics.atlas_placements.retain_mut(|p| {
+                match remap.remap_abs(p.abs_row) {
+                    Some(abs) if abs < max_abs => {
+                        p.abs_row = abs;
+                        true
+                    }
+                    _ => false,
+                }
+            });
+            if self.graphics.atlas_placements.len() != before {
+                self.graphics.recount_atlas_keys();
+                self.send_graphics_updates();
+            }
         }
-        if overlay_changed {
+        if let Some(remap) = &inactive_remap {
+            let max_abs = self.inactive_grid.lines_evicted() as i64
+                + self.inactive_grid.total_lines() as i64;
+            let inactive = &mut self.graphics.kitty_inactive_screen;
+            for p in inactive.kitty_placements.values_mut() {
+                if let Some(abs) = remap.remap_abs(p.dest_row) {
+                    p.dest_row = abs;
+                }
+            }
+            let before = inactive.atlas_placements.len();
+            inactive
+                .atlas_placements
+                .retain_mut(|p| match remap.remap_abs(p.abs_row) {
+                    Some(abs) if abs < max_abs => {
+                        p.abs_row = abs;
+                        true
+                    }
+                    _ => false,
+                });
+            if inactive.atlas_placements.len() != before {
+                self.graphics.recount_inactive_atlas_keys();
+                self.send_graphics_updates();
+            }
+        }
+
+        // The renderer only refreshes its placement snapshot when it
+        // sees the dirty flag, and resize invalidates positions even
+        // when no placement field changed (history and viewport moved).
+        if active_has_placements || inactive_has_placements {
             self.graphics.kitty_graphics_dirty = true;
         }
+        self.expire_atlas_placements();
     }
 
     /// Toggle the vi mode.

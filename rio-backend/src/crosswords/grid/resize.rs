@@ -2,7 +2,7 @@
 // https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/grid/resize.rs
 // which is licensed under Apache 2.0 license.
 
-use crate::crosswords::grid::{Dimensions, Grid};
+use crate::crosswords::grid::{Dimensions, Grid, ReflowRemap};
 use crate::crosswords::pos::{Boundary, Column, Line};
 use crate::crosswords::square::{Square, Wide};
 use crate::crosswords::Row;
@@ -14,6 +14,10 @@ impl Grid<Square> {
     pub fn resize(&mut self, reflow: bool, lines: usize, columns: usize) {
         // Use empty template cell for resetting cells due to resize.
         let template = mem::take(&mut self.cursor.template);
+
+        // Only the column passes below produce a row remap; a stale
+        // one from an earlier resize must not leak through.
+        self.reflow_remap = None;
 
         match self.lines.cmp(&lines) {
             Ordering::Less => self.grow_lines(lines),
@@ -107,13 +111,28 @@ impl Grid<Square> {
         }
 
         let mut rows = self.raw.take_all();
+        let old_len = rows.len();
+        // Exact row tracking for image placements: rows are walked
+        // oldest-first, and a row's absolute index is `base_abs +
+        // oldest-first position` on both sides of the reflow.
+        let mut remap = self.track_reflow_remap.then(|| ReflowRemap {
+            base_abs: self.lines_evicted(),
+            new_pos: vec![-1; old_len],
+        });
 
         for (i, mut row) in rows.drain(..).enumerate().rev() {
+            // Index of the merge target while `last_row` holds the
+            // mutable borrow below.
+            let merge_target = reversed.len().wrapping_sub(1);
+
             // Check if reflowing should be performed.
             let last_row = match reversed.last_mut() {
                 Some(last_row) if should_reflow(last_row) => last_row,
                 _ => {
                     reversed.push(row);
+                    if let Some(r) = remap.as_mut() {
+                        r.new_pos[old_len - 1 - i] = (reversed.len() - 1) as i64;
+                    }
                     continue;
                 }
             };
@@ -137,8 +156,13 @@ impl Grid<Square> {
             let len = min(row.len(), num_wrapped);
 
             // Insert leading spacer when there's not enough room for reflowing wide char.
+            let mut first_cell_moved = true;
             let mut cells = if matches!(row[Column(len - 1)].wide(), Wide::Wide) {
                 num_wrapped -= 1;
+
+                // With a single free column, only the spacer is
+                // appended and the wide char stays on this row.
+                first_cell_moved = len > 1;
 
                 let mut cells = row.front_split_off(len - 1);
 
@@ -153,6 +177,17 @@ impl Grid<Square> {
 
             // Add removed cells to previous row and reflow content.
             last_row.append(&mut cells);
+
+            // The old row's first cell just landed at the end of the
+            // merge target, unless the wide-char spacer case kept it
+            // on this row; then it lands with the push below (the
+            // dropped-as-clear paths are unreachable while the row
+            // still holds the wide char).
+            if first_cell_moved {
+                if let Some(r) = remap.as_mut() {
+                    r.new_pos[old_len - 1 - i] = merge_target as i64;
+                }
+            }
 
             let cursor_buffer_line = self.lines - self.cursor.pos.row.0 as usize - 1;
 
@@ -197,6 +232,11 @@ impl Grid<Square> {
             }
 
             reversed.push(row);
+            if !first_cell_moved {
+                if let Some(r) = remap.as_mut() {
+                    r.new_pos[old_len - 1 - i] = (reversed.len() - 1) as i64;
+                }
+            }
         }
 
         // Make sure we have at least the viewport filled.
@@ -229,6 +269,8 @@ impl Grid<Square> {
 
         // Clamp display offset in case lines above it got merged.
         self.display_offset = min(self.display_offset, self.history_size());
+
+        self.reflow_remap = remap;
     }
 
     /// Shrink number of columns in each row, reflowing if necessary.
@@ -245,7 +287,28 @@ impl Grid<Square> {
         let mut buffered: Option<Vec<Square>> = None;
 
         let mut rows = self.raw.take_all();
+        let old_len = rows.len();
+        // See `grow_columns`; `base_abs + position` also survives the
+        // cap truncation below because dropping the N oldest rows
+        // advances the eviction base by the same N.
+        let mut remap = self.track_reflow_remap.then(|| ReflowRemap {
+            base_abs: self.lines_evicted(),
+            new_pos: vec![-1; old_len],
+        });
+
+        // Each old row's first cell, as (old position, offset from the
+        // head of the not-yet-pushed cell stream). Recorded at the
+        // push that consumes the cell. Offsets survive across old-row
+        // iterations because a displaced wide char can travel in the
+        // buffered tail into the next iteration's first push.
+        let mut trackers: Vec<(usize, i64)> = Vec::new();
+
         for (i, mut row) in rows.drain(..).enumerate().rev() {
+            if remap.is_some() {
+                let own_first = buffered.as_ref().map_or(0, |b| b.len()) as i64;
+                trackers.push((old_len - 1 - i, own_first));
+            }
+
             // Append lines left over from the previous row.
             if let Some(buffered) = buffered.take() {
                 // Add a column for every cell added before the cursor, if it goes beyond the new
@@ -275,12 +338,18 @@ impl Grid<Square> {
                         } else {
                             // Since it fits, just push the existing line without any reflow.
                             new_raw.push(row);
+                            if let Some(r) = remap.as_mut() {
+                                for (p, _) in trackers.drain(..) {
+                                    r.new_pos[p] = (new_raw.len() - 1) as i64;
+                                }
+                            }
                             break;
                         }
                     }
                 };
 
                 // Insert spacer if a wide char would be wrapped into the last column.
+                let mut displaced = 0i64;
                 if row.len() >= columns
                     && matches!(row[Column(columns - 1)].wide(), Wide::Wide)
                 {
@@ -289,6 +358,7 @@ impl Grid<Square> {
 
                     let wide_char = mem::replace(&mut row[Column(columns - 1)], spacer);
                     wrapped.insert(0, wide_char);
+                    displaced = 1;
                 }
 
                 // Remove wide char spacer before shrinking.
@@ -297,6 +367,11 @@ impl Grid<Square> {
                     if len == 1 {
                         row[Column(columns - 1)].set_wrapline(true);
                         new_raw.push(row);
+                        if let Some(r) = remap.as_mut() {
+                            for (p, _) in trackers.drain(..) {
+                                r.new_pos[p] = (new_raw.len() - 1) as i64;
+                            }
+                        }
                         break;
                     } else {
                         // Remove the leading spacer from the end of the wrapped row.
@@ -306,6 +381,23 @@ impl Grid<Square> {
                 }
 
                 new_raw.push(row);
+                if let Some(r) = remap.as_mut() {
+                    // This push consumed `columns` cells of the
+                    // stream, minus a wide char the spacer displaced
+                    // into the next row.
+                    let consumed = columns as i64 - displaced;
+                    trackers.retain(|&(p, off)| {
+                        if off < consumed {
+                            r.new_pos[p] = (new_raw.len() - 1) as i64;
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    for t in trackers.iter_mut() {
+                        t.1 -= consumed;
+                    }
+                }
 
                 // Set line as wrapped if cells got removed.
                 if let Some(cell) = new_raw.last_mut().and_then(|r| r.last_mut()) {
@@ -386,5 +478,7 @@ impl Grid<Square> {
 
         // Clamp the saved cursor to the grid.
         self.saved_cursor.pos.col = min(self.saved_cursor.pos.col, Column(columns - 1));
+
+        self.reflow_remap = remap;
     }
 }
