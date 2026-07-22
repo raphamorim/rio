@@ -1263,7 +1263,7 @@ impl<U: EventListener> Crosswords<U> {
     /// Shift sixel/iTerm2 placements with a partial scroll region
     /// (DECSTBM): content inside the region moves by `delta` rows and
     /// clips at the region boundary, exactly like text; content
-    /// outside is untouched. Full-screen scrolls never come here —
+    /// outside is untouched. Full-screen scrolls never come here;
     /// absolute anchoring already handles them.
     fn shift_atlas_placements_in_region(
         &mut self,
@@ -1323,7 +1323,7 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     /// A top-anchored partial scroll region grows history while the
-    /// rows below the region stay visually fixed — which advances
+    /// rows below the region stay visually fixed, which advances
     /// their absolute coordinates. Shift placements on those rows
     /// (splitting any placement straddling the boundary) so they stay
     /// glued to their fixed content.
@@ -1645,7 +1645,7 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
 
-        // A Noop/CursorOnly frame normally has nothing to copy — but rows
+        // A Noop/CursorOnly frame normally has nothing to copy, but rows
         // written after the damage event was consumed (e.g. a graphics
         // insert racing a redraw) still carry their dirty bit. Fall
         // through when any row is dirty so the snapshot can't go stale.
@@ -4417,7 +4417,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if overlay_changed {
             self.graphics.kitty_graphics_dirty = true;
             // Placement-only deletes produce no cell damage, and the
-            // damage event is what drives a repaint — without this a
+            // damage event is what drives a repaint; without this a
             // deleted image stays visible until unrelated output.
             self.mark_fully_damaged();
         }

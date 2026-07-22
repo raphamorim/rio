@@ -89,7 +89,7 @@ pub struct ExtrasTable {
     /// hyperlink and zero-width data whose slots stay referenced by
     /// cells until their rows scroll off the ring; without a periodic
     /// sweep, hyperlink-heavy workloads exhaust the u16 id space and
-    /// new hyperlinks silently drop. (Images no longer live here —
+    /// new hyperlinks silently drop. (Images no longer live here;
     /// placements own them with deterministic cleanup.)
     allocs_since_reclaim: usize,
 }
@@ -144,7 +144,7 @@ impl ExtrasTable {
         id
     }
 
-    /// Nearly out of slot ids — time for `Grid::reclaim_extras`.
+    /// Nearly out of slot ids: time for `Grid::reclaim_extras`.
     pub fn under_pressure(&self) -> bool {
         self.slots.len() >= u16::MAX as usize && self.free.len() < 256
     }
@@ -238,7 +238,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     }
 
     fn decrease_scroll_limit(&mut self, count: usize) {
-        // NOTE: not counted into `total_lines_scrolled` — the only
+        // NOTE: not counted into `total_lines_scrolled`. The only
         // caller is `grow_lines`, which trims the surplus rows created
         // by growing the visible area; no content leaves the ring.
         let count = min(count, self.history_size());
@@ -452,7 +452,7 @@ impl<T> Grid<T> {
         }
     }
 
-    /// Absolute index of the oldest row still in the ring — the base
+    /// Absolute index of the oldest row still in the ring: the base
     /// of the stable absolute row space image placements anchor in.
     #[inline]
     pub fn lines_evicted(&self) -> u64 {
@@ -539,8 +539,8 @@ impl Grid<Square> {
     /// Free extras slots no longer referenced by any cell.
     ///
     /// Cells are overwritten and rows drop off the scrollback ring without
-    /// freeing their extras slot, so a session heavy on per-cell extras —
-    /// inline graphics above all — eventually exhausts the u16 id space.
+    /// freeing their extras slot, so a session heavy on per-cell extras
+    /// eventually exhausts the u16 id space.
     /// Mark every slot referenced by a live row (visible + history) or a
     /// cursor template, then free the rest. Swept graphic slots drop their
     /// slot contents (hyperlinks, zero-width overlays).

@@ -5054,7 +5054,7 @@ fn test_overlay_clips_to_panel_rect() {
 }
 
 /// Guards the split/window-resize contract: at constant font, images
-/// keep their cell span (kitty semantics — the protocol has no
+/// keep their cell span (kitty semantics: the protocol has no
 /// re-negotiation) and the renderer clips them at the narrowed
 /// panel's grid edge instead of painting across a split divider.
 #[test]
@@ -5088,7 +5088,7 @@ fn test_narrowing_terminal_keeps_image_span_and_clips_at_edge() {
     );
 
     // Render side: geometry unchanged, then clipped at the 40-column
-    // grid edge — exactly the split-divider case.
+    // grid edge, exactly the split-divider case.
     let viewport = OverlayViewport {
         cell_width: 10.0,
         cell_height: 20.0,
@@ -5134,7 +5134,7 @@ fn test_narrowing_terminal_keeps_image_span_and_clips_at_edge() {
 #[test]
 fn test_height_grow_keeps_absolute_base_stable() {
     // B1 guard: growing the window height must not advance the
-    // absolute row base — no content leaves the ring.
+    // absolute row base, since no content leaves the ring.
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 4),
         crate::ansi::CursorShape::Block,

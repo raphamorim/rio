@@ -1654,7 +1654,7 @@ impl Renderer {
 
     /// Drop the cached GPU texture for one image key. Called when the
     /// image's pixel data is removed (scrolled out of scrollback,
-    /// kitty eviction) — without this, sequential atlas ids from e.g.
+    /// kitty eviction); without this, sequential atlas ids from e.g.
     /// sixel animations would grow the texture cache without bound.
     #[inline]
     pub fn evict_image_texture(&mut self, key: u64) {

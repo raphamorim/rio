@@ -470,7 +470,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         sugarloaf.remove_image(key);
                     }
 
-                    // Mark the panel dirty — the renderer skips non-dirty
+                    // Mark the panel dirty: the renderer skips non-dirty
                     // panels, so a bare redraw after the pixels arrive
                     // would no-op and leave the image blank until the
                     // next unrelated damage.

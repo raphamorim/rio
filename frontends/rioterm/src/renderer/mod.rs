@@ -529,7 +529,7 @@ impl Renderer {
                     );
                 }
             } else if rc.kitty_graphics_dirty {
-                // All placements (kitty and atlas) were removed — drop
+                // All placements (kitty and atlas) were removed, so drop
                 // this panel's overlay vec.
                 sugarloaf.clear_image_overlays_for(context.rich_text_id);
             }
