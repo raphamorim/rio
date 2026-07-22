@@ -82,23 +82,48 @@ pub struct Grid<T> {
 /// sentinel — `Square::extras_id() == None` corresponds to id 0. Slots are
 /// reused via a free list when cells are cleared.
 #[derive(Clone, Debug, Default, PartialEq)]
+/// A counter that raises a flag every `period` ticks. Owns the whole
+/// mechanism: tick on the event, ask `is_due`, `reset` after acting.
+#[derive(Debug)]
+pub struct Cadence {
+    period: usize,
+    count: usize,
+}
+
+impl Cadence {
+    pub const fn every(period: usize) -> Self {
+        Self { period, count: 0 }
+    }
+
+    #[inline]
+    pub fn tick(&mut self) {
+        self.count += 1;
+    }
+
+    #[inline]
+    pub fn is_due(&self) -> bool {
+        self.count >= self.period
+    }
+
+    #[inline]
+    pub fn reset(&mut self) {
+        self.count = 0;
+    }
+}
+
 pub struct ExtrasTable {
     slots: Vec<Option<crate::crosswords::square::Extras>>,
     free: Vec<u16>,
-    /// Allocations since the last mark-and-sweep. The table holds
-    /// hyperlink and zero-width data whose slots stay referenced by
-    /// cells until their rows scroll off the ring; without a periodic
-    /// sweep, hyperlink-heavy workloads exhaust the u16 id space and
-    /// new hyperlinks silently drop. (Images no longer live here;
-    /// placements own them with deterministic cleanup.)
-    allocs_since_reclaim: usize,
+    /// Mark-and-sweep pacing. The table holds hyperlink and zero-width
+    /// data whose slots stay referenced by cells until their rows
+    /// scroll off the ring; without a periodic sweep, hyperlink-heavy
+    /// workloads exhaust the u16 id space and new hyperlinks silently
+    /// drop. (Images no longer live here; placements own them with
+    /// deterministic cleanup.) One sweep per 4096 allocations keeps
+    /// the amortized cost per allocation sub-microsecond while dead
+    /// slots are recycled within a bounded drift window.
+    reclaim_cadence: Cadence,
 }
-
-/// One `reclaim_extras` mark-and-sweep per this many allocations. The
-/// mark walks history rows gated by `has_extras`, so the amortized
-/// cost per allocation stays sub-microsecond while dead slots are
-/// recycled within a bounded drift window.
-const EXTRAS_RECLAIM_CADENCE: usize = 4096;
 
 impl ExtrasTable {
     pub fn new() -> Self {
@@ -107,7 +132,7 @@ impl ExtrasTable {
         Self {
             slots: vec![None],
             free: Vec::new(),
-            allocs_since_reclaim: 0,
+            reclaim_cadence: Cadence::every(4096),
         }
     }
 
@@ -130,7 +155,7 @@ impl ExtrasTable {
         &mut self,
         extras: crate::crosswords::square::Extras,
     ) -> crate::crosswords::square::ExtrasId {
-        self.allocs_since_reclaim += 1;
+        self.reclaim_cadence.tick();
         if let Some(id) = self.free.pop() {
             self.slots[id as usize] = Some(extras);
             return id;
@@ -152,11 +177,11 @@ impl ExtrasTable {
     /// Whether the caller should run `reclaim_extras` now: either the
     /// allocation cadence elapsed, or the id space is nearly full.
     pub fn should_reclaim(&self) -> bool {
-        self.allocs_since_reclaim >= EXTRAS_RECLAIM_CADENCE || self.under_pressure()
+        self.reclaim_cadence.is_due() || self.under_pressure()
     }
 
     pub(crate) fn reset_reclaim_cadence(&mut self) {
-        self.allocs_since_reclaim = 0;
+        self.reclaim_cadence.reset();
     }
 
     /// Free every allocated slot whose bit is not set in `live`.
