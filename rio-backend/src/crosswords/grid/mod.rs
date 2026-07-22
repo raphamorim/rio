@@ -539,7 +539,7 @@ impl Grid<Square> {
     /// inline graphics above all — eventually exhausts the u16 id space.
     /// Mark every slot referenced by a live row (visible + history) or a
     /// cursor template, then free the rest. Swept graphic slots drop their
-    /// `TextureRef`, which queues the image removal downstream.
+    /// slot contents (hyperlinks, zero-width overlays).
     pub fn gc_extras(&mut self) {
         self.extras_table.reset_gc_cadence();
         #[inline]
