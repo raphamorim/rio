@@ -4,6 +4,7 @@ pub mod macos;
 /// Escape shell-sensitive characters in a string by prefixing each
 /// with a backslash. Suitable for inserting paths into a live
 /// terminal buffer, e.g. on file drag and drop.
+#[inline]
 pub fn shell_escape(s: &str) -> String {
     let mut escaped = String::with_capacity(s.len());
     for c in s.chars() {
