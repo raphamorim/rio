@@ -62,6 +62,27 @@ extern "C" {
 }
 
 fn default_shell_command(shell: &str, args: &[String]) {
+    // Ignored signal dispositions survive exec (unlike caught
+    // handlers), so the shell inherits whatever the launcher left
+    // ignored: SIGINT/SIGQUIT from a background-job launch, and
+    // SIGPIPE which the Rust runtime always sets to ignore. Reset
+    // the full set to default before exec.
+    unsafe {
+        libc::signal(libc::SIGABRT, libc::SIG_DFL);
+        libc::signal(libc::SIGALRM, libc::SIG_DFL);
+        libc::signal(libc::SIGBUS, libc::SIG_DFL);
+        libc::signal(libc::SIGCHLD, libc::SIG_DFL);
+        libc::signal(libc::SIGFPE, libc::SIG_DFL);
+        libc::signal(libc::SIGHUP, libc::SIG_DFL);
+        libc::signal(libc::SIGILL, libc::SIG_DFL);
+        libc::signal(libc::SIGINT, libc::SIG_DFL);
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+        libc::signal(libc::SIGSEGV, libc::SIG_DFL);
+        libc::signal(libc::SIGTERM, libc::SIG_DFL);
+        libc::signal(libc::SIGTRAP, libc::SIG_DFL);
+    }
+
     let program = match CString::new(shell) {
         Ok(program) => program,
         Err(_) => return,
