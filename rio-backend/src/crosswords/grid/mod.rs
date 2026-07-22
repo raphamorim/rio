@@ -76,6 +76,47 @@ pub struct Grid<T> {
     /// Per-grid storage for the rare per-cell data that used to live inside
     /// `CellExtra` (zero-width chars, hyperlinks, sixel/iterm graphics).
     pub extras_table: ExtrasTable,
+
+    /// When set before `resize`, the column reflow records an exact
+    /// old-row to new-row mapping into `reflow_remap` so the caller
+    /// can re-anchor image placements to wherever their rows landed.
+    /// Costs one Vec sized to the ring, so it is only requested when
+    /// placements exist.
+    pub track_reflow_remap: bool,
+
+    /// Output of the last tracked column reflow; `None` when tracking
+    /// was off or the column count did not change.
+    pub reflow_remap: Option<ReflowRemap>,
+}
+
+/// Exact row mapping recorded during a column reflow, in oldest-first
+/// ring positions. A row's absolute index is `base_abs + position`;
+/// this holds on both sides of the reflow because cap truncation drops
+/// oldest rows and advances the eviction base by the same amount.
+#[derive(Debug, Clone)]
+pub struct ReflowRemap {
+    /// Absolute index of ring position 0 when the reflow started.
+    pub base_abs: u64,
+    /// For each old position, the position where that row's first
+    /// cell landed, or `-1` if the row's content was dropped.
+    pub new_pos: Vec<i64>,
+}
+
+impl ReflowRemap {
+    /// Remap an absolute row through the reflow. `None` means the row
+    /// was dropped. Rows already off the ring pass through unchanged;
+    /// scrollback expiry owns those.
+    pub fn remap_abs(&self, abs: i64) -> Option<i64> {
+        let pos = abs - self.base_abs as i64;
+        if pos < 0 {
+            return Some(abs);
+        }
+        let new = *self.new_pos.get(pos as usize)?;
+        if new < 0 {
+            return None;
+        }
+        Some(self.base_abs as i64 + new)
+    }
 }
 
 /// Slot table for `square::Extras`. Index `0` is reserved as the "no extras"
@@ -195,6 +236,8 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
             raw: Storage::with_capacity(lines, columns),
             max_scroll_limit,
             total_lines_scrolled: 0,
+            track_reflow_remap: false,
+            reflow_remap: None,
             display_offset: 0,
             saved_cursor: Cursor::default(),
             cursor: Cursor::default(),
