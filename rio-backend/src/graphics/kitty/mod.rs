@@ -4753,3 +4753,61 @@ fn test_iterm2_parse_cursor_movement_params() {
     let (_, movement) = iterm2_image_protocol::parse(&params).expect("parses");
     assert_eq!(movement, CURSOR_DO_NOT_MOVE);
 }
+
+#[test]
+fn test_gc_cadence_reclaims_scrolled_out_image_slots() {
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 4),
+        crate::ansi::CursorShape::Block,
+        TestEventListener,
+        unsafe { WindowId::dummy() },
+        0,
+        2, // two lines of scrollback: images fall off the ring fast
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // 30x40 image: occupies 2 rows.
+    term.insert_graphic(atlas_graphic(), None, None);
+    assert!(
+        term.graphics.texture_operations.lock().is_empty(),
+        "texture alive while rows reference it"
+    );
+
+    // Scroll the image out of the screen AND the 2-line history.
+    for _ in 0..10 {
+        term.linefeed();
+    }
+
+    // The sweep finds no cell referencing the slot; dropping it drops
+    // the TextureRef, which queues the GPU texture removal.
+    term.grid.gc_extras();
+    let ops = term.graphics.texture_operations.lock();
+    assert_eq!(
+        ops.as_slice(),
+        &[crate::sugarloaf::atlas_image_key(1)],
+        "scrolled-out image queues its texture for removal"
+    );
+}
+
+#[test]
+fn test_gc_cadence_trigger() {
+    let mut term = geometry_test_term();
+    assert!(!term.grid.extras_table.should_gc());
+
+    // Burn through the allocation cadence with throwaway slots.
+    for _ in 0..4096 {
+        let id = term
+            .grid
+            .extras_table
+            .alloc(crate::crosswords::square::Extras::default());
+        term.grid.extras_table.free(id);
+    }
+    assert!(term.grid.extras_table.should_gc(), "cadence elapsed");
+
+    term.grid.gc_extras();
+    assert!(
+        !term.grid.extras_table.should_gc(),
+        "sweep resets the cadence"
+    );
+}
