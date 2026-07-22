@@ -77,7 +77,18 @@ pub struct Grid<T> {
 pub struct ExtrasTable {
     slots: Vec<Option<crate::crosswords::square::Extras>>,
     free: Vec<u16>,
+    /// Allocations since the last mark-and-sweep. Slots referenced
+    /// only by rows that scrolled out of the ring leak until a sweep,
+    /// pinning their pixel data and GPU textures — so the sweep runs
+    /// on an allocation cadence instead of only at id exhaustion.
+    allocs_since_gc: usize,
 }
+
+/// One `gc_extras` mark-and-sweep per this many allocations. The mark
+/// walks history rows gated by `has_extras`, so the amortized cost per
+/// allocation stays sub-microsecond while dead slots (and the images
+/// they pin) are reclaimed within a bounded drift window.
+const EXTRAS_GC_ALLOC_CADENCE: usize = 4096;
 
 impl ExtrasTable {
     pub fn new() -> Self {
@@ -86,6 +97,7 @@ impl ExtrasTable {
         Self {
             slots: vec![None],
             free: Vec::new(),
+            allocs_since_gc: 0,
         }
     }
 
@@ -108,6 +120,7 @@ impl ExtrasTable {
         &mut self,
         extras: crate::crosswords::square::Extras,
     ) -> crate::crosswords::square::ExtrasId {
+        self.allocs_since_gc += 1;
         if let Some(id) = self.free.pop() {
             self.slots[id as usize] = Some(extras);
             return id;
@@ -124,6 +137,16 @@ impl ExtrasTable {
     /// Nearly out of slot ids — time for `Grid::gc_extras`.
     pub fn under_pressure(&self) -> bool {
         self.slots.len() >= u16::MAX as usize && self.free.len() < 256
+    }
+
+    /// Whether the caller should run `gc_extras` now: either the
+    /// allocation cadence elapsed, or the id space is nearly full.
+    pub fn should_gc(&self) -> bool {
+        self.allocs_since_gc >= EXTRAS_GC_ALLOC_CADENCE || self.under_pressure()
+    }
+
+    pub(crate) fn reset_gc_cadence(&mut self) {
+        self.allocs_since_gc = 0;
     }
 
     /// Free every allocated slot whose bit is not set in `live`.
@@ -496,6 +519,7 @@ impl Grid<Square> {
     /// cursor template, then free the rest. Swept graphic slots drop their
     /// `TextureRef`, which queues the image removal downstream.
     pub fn gc_extras(&mut self) {
+        self.extras_table.reset_gc_cadence();
         #[inline]
         fn mark(live: &mut [u64], sq: &Square) {
             if matches!(
