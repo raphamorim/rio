@@ -3564,6 +3564,13 @@ impl Screen<'_> {
                 .messenger
                 .send_write(&b"\x1b[201~"[..]);
         } else {
+            // Input reaching the shell scrolls back to the prompt and
+            // drops the selection, exactly like typed text does; this
+            // path carries Esc bindings (arrow keys, backspace) and
+            // pastes into applications without bracketed mode.
+            self.scroll_bottom_when_cursor_not_visible();
+            self.clear_selection();
+
             let payload = if bracketed {
                 // In non-bracketed (ie: normal) mode, terminal applications cannot distinguish
                 // pasted data from keystrokes.
