@@ -1978,7 +1978,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                let path: String = path.to_string_lossy().into();
+                let path = crate::platform::shell_escape(&path.to_string_lossy());
                 route.window.screen.paste(&(path + " "), true);
             }
 
