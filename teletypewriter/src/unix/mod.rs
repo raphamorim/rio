@@ -61,6 +61,40 @@ extern "C" {
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
+/// Expand a leading `~` against `$HOME`. Returns None (with a
+/// warning) when the expansion is impossible.
+fn expand_tilde(dir: &str) -> Option<String> {
+    if dir == "~" || dir.starts_with("~/") {
+        match std::env::var("HOME") {
+            Ok(home) => Some(format!("{home}{}", &dir[1..])),
+            Err(_) => {
+                tracing::warn!(
+                    "working-dir {dir:?} needs $HOME, which is unset; inheriting the current directory"
+                );
+                None
+            }
+        }
+    } else {
+        Some(dir.to_string())
+    }
+}
+
+/// Expand a leading `~` and validate the configured working
+/// directory. Unusable values fall back to inheriting the parent's
+/// directory with a warning instead of failing the spawn or silently
+/// landing somewhere unexpected.
+pub fn resolve_working_dir(dir: &Option<String>) -> Option<String> {
+    let expanded = expand_tilde(dir.as_deref()?)?;
+    if std::path::Path::new(&expanded).is_dir() {
+        Some(expanded)
+    } else {
+        tracing::warn!(
+            "working-dir {expanded:?} is not a directory; inheriting the current directory"
+        );
+        None
+    }
+}
+
 fn default_shell_command(shell: &str, args: &[String]) {
     // Ignored signal dispositions survive exec (unlike caught
     // handlers), so the shell inherits whatever the launcher left
@@ -479,6 +513,11 @@ pub fn create_pty_with_spawn(
     width: u16,
     height: u16,
 ) -> Result<Pty, Error> {
+    // Only expanded here: the flatpak branch below hands the path to
+    // the host, which may see directories this sandbox cannot, so
+    // existence is validated at the local use site instead.
+    let working_directory = working_directory.as_deref().and_then(expand_tilde);
+
     #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
     let mut is_controling_terminal = true;
 
@@ -560,7 +599,7 @@ pub fn create_pty_with_spawn(
                 "--env=TERM=rio".to_string(),
             ];
 
-            if let Some(directory) = working_directory {
+            if let Some(directory) = &working_directory {
                 with_args.push(format!(
                     "--directory={}",
                     std::path::Path::new(directory).display()
@@ -623,7 +662,13 @@ pub fn create_pty_with_spawn(
 
     // Handle set working directory option.
     if let Some(dir) = &working_directory {
-        builder.current_dir(dir);
+        if std::path::Path::new(dir).is_dir() {
+            builder.current_dir(dir);
+        } else {
+            tracing::warn!(
+                "working-dir {dir:?} is not a directory; inheriting the current directory"
+            );
+        }
     }
 
     // Prepare signal handling before spawning child.
@@ -675,11 +720,16 @@ pub fn create_pty_with_spawn(
 pub fn create_pty_with_fork(
     shell: &str,
     args: &[String],
+    working_directory: &Option<String>,
     columns: u16,
     rows: u16,
     width: u16,
     height: u16,
 ) -> Result<Pty, Error> {
+    // Resolved in the parent so the failure path can log; the fork
+    // child only consumes the already-validated CString.
+    let working_directory =
+        resolve_working_dir(working_directory).and_then(|dir| CString::new(dir).ok());
     let mut main = 0;
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
@@ -715,6 +765,11 @@ pub fn create_pty_with_fork(
         )
     } {
         0 => {
+            if let Some(dir) = &working_directory {
+                unsafe {
+                    libc::chdir(dir.as_ptr());
+                }
+            }
             default_shell_command(shell_program, args);
             Err(Error::other(format!(
                 "forkpty has reach unreachable with {shell_program}"
@@ -1049,6 +1104,51 @@ where
             .spawn()?
             .wait()
             .map(|_| ())
+    }
+}
+
+#[cfg(test)]
+mod resolve_working_dir_tests {
+    use super::resolve_working_dir;
+
+    #[test]
+    fn none_stays_none() {
+        assert_eq!(resolve_working_dir(&None), None);
+    }
+
+    #[test]
+    fn tilde_expands_to_home() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(resolve_working_dir(&Some("~".into())), Some(home));
+    }
+
+    #[test]
+    fn tilde_slash_expands_under_home() {
+        // Use a path guaranteed to exist under $HOME on any system
+        // running the tests: $HOME itself via `~/.`.
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(
+            resolve_working_dir(&Some("~/.".into())),
+            Some(format!("{home}/."))
+        );
+    }
+
+    #[test]
+    fn absolute_dir_passes_through() {
+        assert_eq!(resolve_working_dir(&Some("/".into())), Some("/".into()));
+    }
+
+    #[test]
+    fn missing_dir_falls_back_to_inherit() {
+        assert_eq!(
+            resolve_working_dir(&Some("/definitely/not/a/real/dir".into())),
+            None
+        );
+    }
+
+    #[test]
+    fn mid_string_tilde_is_not_expanded() {
+        assert_eq!(resolve_working_dir(&Some("/tmp/~x".into())), None);
     }
 }
 

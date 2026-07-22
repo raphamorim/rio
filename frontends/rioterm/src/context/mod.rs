@@ -263,6 +263,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 pty = match create_pty_with_fork(
                     &Cow::Borrowed(&config.shell.program),
                     &config.shell.args,
+                    &config.working_dir,
                     cols,
                     rows,
                     initial_winsize.width,
