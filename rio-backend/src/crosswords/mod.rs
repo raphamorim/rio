@@ -1814,7 +1814,6 @@ impl<U: EventListener> Crosswords<U> {
                 drop(removals);
                 stale.atlas_placements.clear();
                 stale.atlas_key_refs.clear();
-                drop(stale);
                 self.send_graphics_updates();
             }
         }
