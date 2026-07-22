@@ -122,6 +122,7 @@ impl Renderer {
                 named_colors.tabs,
                 named_colors.tabs_active,
                 config.navigation.hide_if_single,
+                config.navigation.max_tab_width,
             ))
         } else {
             None

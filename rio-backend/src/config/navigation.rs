@@ -7,6 +7,23 @@ pub fn default_unfocused_split_opacity() -> f32 {
     0.7
 }
 
+#[inline]
+pub fn default_max_tab_width() -> f32 {
+    240.0
+}
+
+/// Clamp `max_tab_width` to `[80.0, 2000.0]`.
+///
+/// Below the lower bound the close button and title no longer fit; the
+/// upper bound just keeps a typo from producing a strip-wide tab.
+#[inline]
+pub fn clamp_max_tab_width(v: f32) -> f32 {
+    if !v.is_finite() {
+        return default_max_tab_width();
+    }
+    v.clamp(80.0, 2000.0)
+}
+
 /// Clamp `unfocused_split_opacity` to `[0.15, 1.0]`.
 ///
 /// A value of `0.0` makes the inactive pane invisible, which is never what
@@ -150,6 +167,11 @@ pub struct Navigation {
         rename = "unfocused-split-fill"
     )]
     pub unfocused_split_fill: Option<ColorArray>,
+    /// Maximum width of a tab in logical pixels. Tabs shrink below
+    /// this as more open; the cap only limits how wide a tab grows
+    /// when few are open. Clamped to `[80.0, 2000.0]` at load time.
+    #[serde(default = "default_max_tab_width", rename = "max-tab-width")]
+    pub max_tab_width: f32,
 }
 
 impl Default for Navigation {
@@ -165,6 +187,7 @@ impl Default for Navigation {
             unfocused_split_opacity: default_unfocused_split_opacity(),
             unfocused_split_fill: None,
             open_config_with_split: true,
+            max_tab_width: default_max_tab_width(),
         }
     }
 }
