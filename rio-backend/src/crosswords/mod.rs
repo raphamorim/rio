@@ -2769,6 +2769,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             } else {
                 let mut extras = crate::crosswords::square::Extras::default();
                 extras.zerowidth.push(c);
+                if self.grid.extras_table.should_gc() {
+                    self.grid.gc_extras();
+                }
                 let id = self.grid.extras_table.alloc(extras);
                 let cell = &mut self.grid[row][column];
                 cell.set_extras_id(Some(id));
@@ -3237,14 +3240,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // subsequent cell write picks up the id via
         // `write_at_cursor`'s `template_extras_id` propagation.
         //
-        // Stage 1 limitation: extras slots are not reference-counted.
-        // Each new hyperlink leaks one slot until the grid is reset
-        // (`clear_history` / `Grid::reset`). The bound is `u16::MAX`
-        // distinct slots per session, which is generous for normal
-        // workloads. A future ref-counting pass can free slots when
-        // the last cell referencing them is overwritten.
+        // Extras slots are not reference-counted; a slot lives until
+        // the cadence-driven `gc_extras` mark-and-sweep finds no cell
+        // referencing it (bounded drift, see `ExtrasTable::should_gc`).
+        // A future ref-counting pass could free slots the moment the
+        // last referencing cell is overwritten, but the template flow
+        // in `write_at_cursor` puts that bookkeeping on the hot print
+        // path, so it needs its own careful change.
         match hyperlink {
             Some(hl) => {
+                if self.grid.extras_table.should_gc() {
+                    self.grid.gc_extras();
+                }
                 let id =
                     self.grid
                         .extras_table
@@ -3801,9 +3808,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.graphics
             .register_placed_texture(graphic_id, Arc::downgrade(&texture));
 
-        // Reclaim slots dropped off the scrollback ring before allocating
-        // this image's rows against a nearly-full table.
-        if self.grid.extras_table.under_pressure() {
+        // Reclaim slots referenced only by rows that scrolled off the
+        // ring (they pin pixel data and GPU textures) before allocating
+        // this image's rows. Runs on an allocation cadence, not just at
+        // id exhaustion.
+        if self.grid.extras_table.should_gc() {
             self.grid.gc_extras();
         }
 
