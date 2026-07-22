@@ -544,6 +544,20 @@ impl Grid<Square> {
     /// Mark every slot referenced by a live row (visible + history) or a
     /// cursor template, then free the rest. Swept graphic slots drop their
     /// slot contents (hyperlinks, zero-width overlays).
+    /// Allocate an extras slot, transparently running the cadence
+    /// mark-and-sweep when it is due. Callers never orchestrate
+    /// reclamation; the table counts allocations internally and this
+    /// is the only place that acts on the signal.
+    pub fn alloc_extras(
+        &mut self,
+        extras: crate::crosswords::square::Extras,
+    ) -> crate::crosswords::square::ExtrasId {
+        if self.extras_table.should_reclaim() {
+            self.reclaim_extras();
+        }
+        self.extras_table.alloc(extras)
+    }
+
     pub fn reclaim_extras(&mut self) {
         self.extras_table.reset_reclaim_cadence();
         #[inline]
