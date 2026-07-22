@@ -1433,23 +1433,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        // Trigger hints highlighted by the mouse
-                        if button == MouseButton::Left
-                            && route
-                                .window
-                                .screen
-                                .trigger_hint(&mut self.router.clipboard)
-                        {
-                            return;
-                        }
-
-                        if let MouseButton::Left | MouseButton::Right = button {
-                            if self.config.copy_on_select {
-                                route.window.screen.copy_selection(
-                                    ClipboardType::Clipboard,
-                                    &mut self.router.clipboard,
-                                );
+                        // Releasing a drag selection copies it (with
+                        // copy-on-select) and must not activate a hint
+                        // sitting under the release point; hints fire on
+                        // plain clicks only, when no selection exists.
+                        if route.window.screen.selection_is_empty() {
+                            if button == MouseButton::Left
+                                && route
+                                    .window
+                                    .screen
+                                    .trigger_hint(&mut self.router.clipboard)
+                            {
+                                return;
                             }
+                        } else if matches!(button, MouseButton::Left | MouseButton::Right)
+                            && self.config.copy_on_select
+                        {
+                            route.window.screen.copy_selection(
+                                ClipboardType::Clipboard,
+                                &mut self.router.clipboard,
+                            );
                         }
                     }
                 }
