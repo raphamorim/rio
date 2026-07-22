@@ -454,11 +454,37 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 
-                    // Atlas graphics (sixel/iTerm2) share the per-image
-                    // texture store with kitty images, in a disjoint key
-                    // namespace.
+                    // Removals before inserts: an evict-then-retransmit of
+                    // the same kitty id lands in one batch, and the fresh
+                    // pixels must survive the eviction of the old ones.
+                    // The store is shared by every terminal in the window
+                    // while both protocols allocate ids per terminal, so
+                    // every key is scoped to the originating route and its
+                    // id space — a kitty removal must not delete an atlas
+                    // entry (or another tab's image) and leak the texture
+                    // the cells still reference.
+                    for removal in queues.remove_queue {
+                        let key = match removal {
+                            rio_backend::ansi::graphics::GraphicRemoval::Atlas(id) => {
+                                rio_backend::sugarloaf::ImageKey::atlas(
+                                    route_id,
+                                    id.get(),
+                                )
+                            }
+                            rio_backend::ansi::graphics::GraphicRemoval::Kitty(id) => {
+                                rio_backend::sugarloaf::ImageKey::kitty(route_id, id)
+                            }
+                        };
+                        sugarloaf.remove_image(key);
+                    }
+
+                    // Atlas graphics (sixel/iTerm2) → the same per-image
+                    // texture store the overlay pipeline draws from.
                     for graphic_data in queues.pending {
-                        let key = crate::renderer::atlas_image_key(graphic_data.id.get());
+                        let key = rio_backend::sugarloaf::ImageKey::atlas(
+                            route_id,
+                            graphic_data.id.get(),
+                        );
                         sugarloaf.image_data.insert(
                             key,
                             rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
@@ -467,21 +493,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         );
                     }
 
-                    // Image textures (kitty) → separate store, no clone
+                    // Image textures (kitty) → same store, no clone
                     for (image_id, graphic_data) in queues.pending_images {
                         sugarloaf.image_data.insert(
-                            crate::renderer::kitty_image_key(image_id),
+                            rio_backend::sugarloaf::ImageKey::kitty(route_id, image_id),
                             rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
                                 graphic_data,
                             ),
                         );
-                    }
-
-                    // Removals arrive as final image keys (atlas refs
-                    // dropped off scrollback, kitty evictions) and free
-                    // both the pixel store and the cached GPU texture.
-                    for key in queues.remove_queue {
-                        sugarloaf.remove_image(key);
                     }
 
                     // Mark the panel dirty: the renderer skips non-dirty

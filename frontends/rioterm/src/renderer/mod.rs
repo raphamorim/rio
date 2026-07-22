@@ -23,7 +23,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::{ImageKey, Sugarloaf};
 
 /// The window-bg clear alpha that flows into sugarloaf's
 /// `set_background_color`. Stored on the renderer and re-applied on
@@ -42,8 +42,6 @@ fn window_bg_alpha(config: &Config) -> f32 {
         config.window.opacity.clamp(0.0, 1.0)
     }
 }
-
-pub use rio_backend::sugarloaf::{atlas_image_key, kitty_image_key};
 
 pub struct Renderer {
     is_vi_mode_enabled: bool,
@@ -460,7 +458,10 @@ impl Renderer {
                             continue;
                         };
                         let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
-                            image_id: p.image_key,
+                            // Per-route atlas key: the window store is shared
+                            // across tabs while GraphicIds restart per
+                            // terminal, so scope by route.
+                            image_id: ImageKey::atlas(context.route_id, p.image_key),
                             x: geometry.x,
                             y: geometry.y,
                             width: geometry.width,
@@ -497,8 +498,12 @@ impl Renderer {
                         else {
                             continue;
                         };
+                        // Per-route image key: the window-level store is
+                        // shared across tabs while kitty ids are
+                        // per-terminal, so scope by route to avoid
+                        // cross-tab collisions.
                         let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
-                            image_id: kitty_image_key(p.image_id),
+                            image_id: ImageKey::kitty(context.route_id, p.image_id),
                             x: geometry.x,
                             y: geometry.y,
                             width: geometry.width,
@@ -522,6 +527,7 @@ impl Renderer {
                     Self::push_virtual_placeholder_overlays(
                         overlays,
                         rc,
+                        context.route_id,
                         origin_x,
                         origin_y,
                         cell_width,
@@ -786,6 +792,7 @@ impl Renderer {
     fn push_virtual_placeholder_overlays(
         overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
         rc: &RenderableContent,
+        route_id: usize,
         origin_x: f32,
         origin_y: f32,
         cell_width: f32,
@@ -820,6 +827,7 @@ impl Renderer {
                         flush_run(
                             overlays,
                             rc,
+                            route_id,
                             p.complete(),
                             line_idx,
                             start_col,
@@ -856,6 +864,7 @@ impl Renderer {
                             flush_run(
                                 overlays,
                                 rc,
+                                route_id,
                                 p.complete(),
                                 line_idx,
                                 start_col,
@@ -886,6 +895,7 @@ impl Renderer {
                 flush_run(
                     overlays,
                     rc,
+                    route_id,
                     p.complete(),
                     line_idx,
                     start_col,
@@ -909,6 +919,7 @@ impl Renderer {
         fn flush_run(
             overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
             rc: &RenderableContent,
+            route_id: usize,
             run: PlaceholderRun,
             screen_line: usize,
             start_screen_col: usize,
@@ -951,7 +962,7 @@ impl Renderer {
             };
 
             let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
-                image_id: kitty_image_key(run.image_id),
+                image_id: ImageKey::kitty(route_id, run.image_id),
                 x: geom.x,
                 y: geom.y,
                 width: geom.width,

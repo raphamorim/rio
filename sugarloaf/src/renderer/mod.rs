@@ -759,16 +759,16 @@ const IMAGE_TEXTURE_BUDGET_BYTES: usize = 256 << 20;
 /// Pick which textures to evict to get `total_bytes` back under
 /// `budget`. Never evicts entries referenced by the current frame.
 /// Returns the chosen keys; pure so the policy is unit-testable.
-fn select_texture_evictions(
-    entries: impl Iterator<Item = (u64, u64, usize)>,
+fn select_texture_evictions<K: Copy>(
+    entries: impl Iterator<Item = (K, u64, usize)>,
     total_bytes: usize,
     budget: usize,
     current_frame: u64,
-) -> Vec<u64> {
+) -> Vec<K> {
     if total_bytes <= budget {
         return Vec::new();
     }
-    let mut candidates: Vec<(u64, u64, usize)> = entries
+    let mut candidates: Vec<(K, u64, usize)> = entries
         .filter(|&(_, last_used, _)| last_used < current_frame)
         .collect();
     candidates.sort_by_key(|&(_, last_used, _)| last_used);
@@ -827,7 +827,7 @@ pub(crate) const IMAGE_BG_LIMIT: i32 = i32::MIN / 2;
 
 /// A single image draw command for the image pipeline.
 struct ImageDraw {
-    image_id: u64,
+    image_id: crate::sugarloaf::graphics::ImageKey,
     instance: ImageInstance,
     layer: ImageLayer,
 }
@@ -847,7 +847,7 @@ pub struct Renderer {
     draw_cmds: Vec<batch::DrawCmd>,
     images: ImageCache,
     /// Per-image GPU textures (one map, any backend).
-    image_textures: FxHashMap<u64, ImageTextureEntry>,
+    image_textures: FxHashMap<crate::sugarloaf::graphics::ImageKey, ImageTextureEntry>,
     /// Sum of `bytes` across `image_textures`; compared against
     /// `IMAGE_TEXTURE_BUDGET_BYTES` after uploads.
     image_texture_bytes: usize,
@@ -1073,7 +1073,7 @@ impl Renderer {
         _state: &crate::sugarloaf::state::SugarState,
         _graphics: &mut Graphics,
         image_data: &mut rustc_hash::FxHashMap<
-            u64,
+            crate::sugarloaf::graphics::ImageKey,
             crate::sugarloaf::graphics::GraphicDataEntry,
         >,
         image_overlays: &rustc_hash::FxHashMap<
@@ -1197,7 +1197,7 @@ impl Renderer {
         &mut self,
         context: &mut crate::context::Context,
         image_data: &mut rustc_hash::FxHashMap<
-            u64,
+            crate::sugarloaf::graphics::ImageKey,
             crate::sugarloaf::graphics::GraphicDataEntry,
         >,
         overlays: &[&crate::sugarloaf::graphics::GraphicOverlay],
@@ -1438,7 +1438,10 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     fn draw_images_metal(
         image_draws: &[ImageDraw],
-        image_textures: &FxHashMap<u64, ImageTextureEntry>,
+        image_textures: &FxHashMap<
+            crate::sugarloaf::graphics::ImageKey,
+            ImageTextureEntry,
+        >,
         brush: &MetalRenderer,
         render_encoder: &metal::RenderCommandEncoderRef,
         layer: ImageLayer,
@@ -1657,7 +1660,7 @@ impl Renderer {
     /// kitty eviction); without this, sequential atlas ids from e.g.
     /// sixel animations would grow the texture cache without bound.
     #[inline]
-    pub fn evict_image_texture(&mut self, key: u64) {
+    pub fn evict_image_texture(&mut self, key: crate::sugarloaf::graphics::ImageKey) {
         if let Some(old) = self.image_textures.remove(&key) {
             self.image_texture_bytes -= old.bytes;
         }
