@@ -17,6 +17,7 @@
 use std::os::raw::c_void;
 
 use crate::event_loop::{ActiveEventLoop, EventLoopBuilder};
+use crate::keyboard::ModifiersState;
 use crate::monitor::MonitorHandle;
 use crate::window::{Window, WindowAttributes};
 
@@ -105,6 +106,21 @@ pub trait WindowExtMacOS {
 
     /// Getter for the [`WindowExtMacOS::set_option_as_alt`].
     fn option_as_alt(&self) -> OptionAsAlt;
+
+    /// Set which modifier keys cause a key event to be forwarded to the macOS
+    /// IME (`interpretKeyEvents:`).
+    ///
+    /// A key event is forwarded to the IME when no modifier is pressed, OR
+    /// when the pressed modifiers intersect this mask. Otherwise the event is
+    /// handled directly by the application without going through the IME.
+    ///
+    /// This is useful for input methods (e.g. SKK) that need to receive
+    /// `Ctrl`/`Shift` combinations directly instead of having them processed
+    /// as terminal control sequences.
+    fn set_forward_to_ime_modifier_mask(&self, mask: ModifiersState);
+
+    /// Getter for the [`WindowExtMacOS::set_forward_to_ime_modifier_mask`].
+    fn forward_to_ime_modifier_mask(&self) -> ModifiersState;
 
     /// Makes the titlebar bigger, effectively adding more space around the
     /// window controls if the titlebar is invisible.
@@ -218,6 +234,18 @@ impl WindowExtMacOS for Window {
     #[inline]
     fn option_as_alt(&self) -> OptionAsAlt {
         self.window.maybe_wait_on_main(|w| w.option_as_alt())
+    }
+
+    #[inline]
+    fn set_forward_to_ime_modifier_mask(&self, mask: ModifiersState) {
+        self.window
+            .maybe_queue_on_main(move |w| w.set_forward_to_ime_modifier_mask(mask))
+    }
+
+    #[inline]
+    fn forward_to_ime_modifier_mask(&self) -> ModifiersState {
+        self.window
+            .maybe_wait_on_main(|w| w.forward_to_ime_modifier_mask())
     }
 
     #[inline]
