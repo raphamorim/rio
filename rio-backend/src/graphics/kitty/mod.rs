@@ -4994,3 +4994,61 @@ fn test_region_scroll_shifts_and_clips_atlas_placements() {
     assert_eq!(after.rows, 1);
     assert_eq!(after.src_y, 20, "surviving row shows the bottom slice");
 }
+
+#[test]
+fn test_overlay_clips_to_panel_rect() {
+    use crate::ansi::graphics::clip_overlay_to_rect;
+    use crate::sugarloaf::GraphicOverlay;
+
+    // The split-pane bug: a 600px-wide image in a panel whose grid
+    // ends at x=400 must clip at the divider, showing only the left
+    // two-thirds of the texture.
+    let mut overlay = GraphicOverlay {
+        image_id: 1,
+        x: 100.0,
+        y: 50.0,
+        width: 600.0,
+        height: 200.0,
+        z_index: -1,
+        source_rect: [0.0, 0.0, 1.0, 1.0],
+    };
+    assert!(clip_overlay_to_rect(
+        &mut overlay,
+        100.0,
+        50.0,
+        400.0,
+        450.0
+    ));
+    assert_eq!(overlay.x, 100.0);
+    assert_eq!(overlay.width, 300.0, "clipped at the divider");
+    assert_eq!(overlay.height, 200.0, "vertical untouched");
+    assert_eq!(overlay.source_rect, [0.0, 0.0, 0.5, 1.0]);
+
+    // Fully outside the panel: dropped.
+    let mut outside = GraphicOverlay {
+        image_id: 1,
+        x: 500.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+        z_index: -1,
+        source_rect: [0.0, 0.0, 1.0, 1.0],
+    };
+    assert!(!clip_overlay_to_rect(&mut outside, 0.0, 0.0, 400.0, 400.0));
+
+    // Partial scroll off the panel top with an existing crop: the
+    // source rect shrinks within the crop, not the full texture.
+    let mut scrolled = GraphicOverlay {
+        image_id: 1,
+        x: 0.0,
+        y: -50.0,
+        width: 100.0,
+        height: 100.0,
+        z_index: -1,
+        source_rect: [0.25, 0.5, 0.75, 1.0],
+    };
+    assert!(clip_overlay_to_rect(&mut scrolled, 0.0, 0.0, 400.0, 400.0));
+    assert_eq!(scrolled.y, 0.0);
+    assert_eq!(scrolled.height, 50.0);
+    assert_eq!(scrolled.source_rect, [0.25, 0.75, 0.75, 1.0]);
+}
