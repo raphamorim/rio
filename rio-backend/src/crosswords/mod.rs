@@ -7068,6 +7068,113 @@ mod tests {
         }
     }
 
+    /// End-to-end: yazi's kgp driver (yazi-adapter/src/drivers/kgp.rs)
+    /// transmits with `a=T,C=1,U=1` and NO `c=`/`r=` grid params, sets
+    /// the fg via semicolon-form RGB, and writes 2 diacritics per
+    /// placeholder cell. The placement must register and the implied
+    /// grid must come from the image's pixel size, not collapse to a
+    /// 1×1 cell box (the 0.4.12 yazi-preview regression from #1314).
+    #[test]
+    fn yazi_kgp_wire_sequence_implies_grid_from_image_size() {
+        use crate::ansi::kitty_virtual::{DIACRITICS, PLACEHOLDER};
+
+        let size = CrosswordsSize::new(40, 20);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = crate::performer::handler::Processor::default();
+
+        // yazi: id = pid % 0xffffff → 24 bits, no high-byte diacritic.
+        let image_id: u32 = 0x0A12BF;
+        let r = (image_id >> 16) & 0xFF;
+        let g = (image_id >> 8) & 0xFF;
+        let b = image_id & 0xFF;
+
+        // Combined transmit+display, virtual, no c=/r=. 2×2 RGBA image
+        // (base64 of 16 bytes of 0xFF).
+        let xmit = format!(
+            "\x1b_Gq=2,a=T,C=1,U=1,f=32,s=2,v=2,i={image_id},m=0;/////////////////////w==\x1b\\"
+        );
+        processor.advance(&mut cw, xmit.as_bytes());
+
+        // Placeholder grid 4 cols × 2 rows, absolute cursor moves per
+        // row, semicolon-form RGB fg carrying the image id.
+        let cols = 4usize;
+        let rows = 2usize;
+        let mut cells = format!("\x1b[38;2;{r};{g};{b}m");
+        for row in 0..rows {
+            cells.push_str(&format!("\x1b[{};1H", row + 1));
+            for col in 0..cols {
+                cells.push(PLACEHOLDER);
+                cells.push(DIACRITICS[row]);
+                cells.push(DIACRITICS[col]);
+            }
+        }
+        cells.push_str("\x1b[0m");
+        processor.advance(&mut cw, cells.as_bytes());
+
+        let vp = cw
+            .graphics
+            .kitty_virtual_placements
+            .get(&(image_id, 0))
+            .expect("a=T,U=1 must register a virtual placement");
+        assert_eq!((vp.columns, vp.rows), (0, 0), "c=/r= omitted on the wire");
+        assert!(
+            cw.graphics.get_kitty_image(image_id).is_some(),
+            "image stored under id {image_id:#X}"
+        );
+
+        // Placeholder cells landed with both diacritics.
+        let extras = cw.grid.extras_table.clone();
+        for row in 0..rows {
+            let sq = cw.grid[Line(row as i32)][Column(0)];
+            assert_eq!(sq.c(), PLACEHOLDER);
+            let zw = sq
+                .extras_id()
+                .and_then(|id| extras.get(id))
+                .map(|e| e.zerowidth.as_slice())
+                .unwrap_or(&[]);
+            assert_eq!(zw, &[DIACRITICS[row], DIACRITICS[0]]);
+        }
+
+        // The renderer's geometry for each row's run: with the grid
+        // implied from a 2×2 px image on 1×2 px cells (2 cols × 1 row),
+        // row 0 is visible and drawn 1:1. Before the fix the placement
+        // box collapsed to one cell and row 1 of a taller image drew
+        // nothing while row 0 squeezed the whole image.
+        let run = crate::ansi::kitty_virtual::PlaceholderRun {
+            image_id,
+            placement_id: 0,
+            row: 0,
+            col: 0,
+            width: cols as u32,
+        };
+        let geom = crate::ansi::kitty_virtual::compute_run_geometry(
+            &run,
+            vp.columns,
+            vp.rows,
+            2,
+            2,
+            (vp.x, vp.y, vp.width, vp.height),
+            1.0,
+            2.0,
+            0.0,
+            0.0,
+            0,
+            0,
+        )
+        .expect("implied-grid run must be drawable");
+        assert_eq!(geom.width, 2.0);
+        assert_eq!(geom.height, 2.0);
+        assert_eq!(geom.source_rect, [0.0, 0.0, 1.0, 1.0]);
+    }
+
     /// `place_virtual_graphic` is the handler for `_Ga=p,U=1,…\e\` — the
     /// virtual-placement registration used by `kitten icat
     /// --unicode-placeholder`. Per the kitty protocol spec the command

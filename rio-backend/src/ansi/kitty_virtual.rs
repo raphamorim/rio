@@ -588,9 +588,22 @@ pub fn compute_run_geometry(
     let crop_w = crop_w as f32;
     let crop_h = crop_h as f32;
 
-    // 1. Placement box in pixels.
-    let p_cols_px = placement_cols.max(1) as f32 * cell_width;
-    let p_rows_px = placement_rows.max(1) as f32 * cell_height;
+    // 1. Placement box in pixels. `c=`/`r=` are optional on virtual
+    // placements (yazi's kgp driver omits both); any missing side is
+    // implied from the crop's pixel size rounded up to whole cells,
+    // so the image keeps its native cell footprint.
+    let p_cols = if placement_cols > 0 {
+        placement_cols as f32
+    } else {
+        (crop_w / cell_width).ceil().max(1.0)
+    };
+    let p_rows = if placement_rows > 0 {
+        placement_rows as f32
+    } else {
+        (crop_h / cell_height).ceil().max(1.0)
+    };
+    let p_cols_px = p_cols * cell_width;
+    let p_rows_px = p_rows * cell_height;
 
     // 2. Aspect-fit + centering.
     let scale = (p_cols_px / crop_w).min(p_rows_px / crop_h);
@@ -1109,6 +1122,154 @@ mod tests {
             0,
         );
         assert!(none.is_none());
+    }
+
+    #[test]
+    fn geom_implied_grid_when_cols_rows_omitted() {
+        // yazi's kgp driver transmits `a=T,U=1` with no `c=`/`r=`:
+        // placement_cols/rows arrive as 0 and the grid is implied from
+        // the image's natural size. Image 100×40, cell 10×20 → 10 cols
+        // × 2 rows, drawn 1:1.
+        //
+        // Row 0, cells 0..=9: top half of the image, full width.
+        let g = compute_run_geometry(
+            &run(0, 0, 10),
+            0,
+            0,
+            100,
+            40,
+            (0, 0, 0, 0),
+            10.0,
+            20.0,
+            0.0,
+            0.0,
+            0,
+            0,
+        )
+        .expect("row 0 visible");
+        approx(g.x, 0.0);
+        approx(g.y, 0.0);
+        approx(g.width, 100.0);
+        approx(g.height, 20.0);
+        approx(g.source_rect[0], 0.0);
+        approx(g.source_rect[1], 0.0);
+        approx(g.source_rect[2], 1.0);
+        approx(g.source_rect[3], 0.5);
+
+        // Row 1: bottom half. Regression: this returned None (and row 0
+        // squeezed the whole image into one cell) when omitted `c=`/`r=`
+        // fell through as a 1×1 placement box.
+        let g = compute_run_geometry(
+            &run(1, 0, 10),
+            0,
+            0,
+            100,
+            40,
+            (0, 0, 0, 0),
+            10.0,
+            20.0,
+            0.0,
+            0.0,
+            1,
+            0,
+        )
+        .expect("row 1 visible");
+        approx(g.y, 20.0);
+        approx(g.height, 20.0);
+        approx(g.source_rect[1], 0.5);
+        approx(g.source_rect[3], 1.0);
+    }
+
+    #[test]
+    fn geom_implied_grid_rounds_up_to_whole_cells() {
+        // Image 95×30, cell 10×20: implied grid rounds up to 10×2
+        // (box 100×40). The usual aspect-fit then applies: scale
+        // 100/95, fit 100×31.58, centered vertically (pad_y 4.21).
+        // Row 1 shows the bottom half of the image.
+        let g = compute_run_geometry(
+            &run(1, 0, 10),
+            0,
+            0,
+            95,
+            30,
+            (0, 0, 0, 0),
+            10.0,
+            20.0,
+            0.0,
+            0.0,
+            1,
+            0,
+        )
+        .expect("visible");
+        approx(g.y, 20.0);
+        approx(g.width, 100.0);
+        approx(g.height, 300.0 / 19.0);
+        approx(g.source_rect[1], 0.5);
+        approx(g.source_rect[3], 1.0);
+
+        // A run past the image's implied rows draws nothing.
+        let none = compute_run_geometry(
+            &run(2, 0, 10),
+            0,
+            0,
+            95,
+            30,
+            (0, 0, 0, 0),
+            10.0,
+            20.0,
+            0.0,
+            0.0,
+            2,
+            0,
+        );
+        assert!(none.is_none(), "run below the image should be culled");
+    }
+
+    #[test]
+    fn geom_implied_rows_from_image_when_only_cols_given() {
+        // `c=5` with `r=` omitted: rows come from the image's native
+        // height, ceil(50/10) = 5, so the box is 50×50. Image 100×50
+        // aspect-fits at scale 0.5 (fit 50×25), centered vertically
+        // (pad_y 12.5). Row 0 lies entirely in the top padding.
+        let none = compute_run_geometry(
+            &run(0, 0, 5),
+            5,
+            0,
+            100,
+            50,
+            (0, 0, 0, 0),
+            10.0,
+            10.0,
+            0.0,
+            0.0,
+            0,
+            0,
+        );
+        assert!(none.is_none(), "top-padding run should be culled");
+
+        // Row 1 clips against the padding and shows the image top.
+        let g = compute_run_geometry(
+            &run(1, 0, 5),
+            5,
+            0,
+            100,
+            50,
+            (0, 0, 0, 0),
+            10.0,
+            10.0,
+            0.0,
+            0.0,
+            1,
+            0,
+        )
+        .expect("visible");
+        approx(g.x, 0.0);
+        approx(g.y, 12.5);
+        approx(g.width, 50.0);
+        approx(g.height, 7.5);
+        approx(g.source_rect[1], 0.0);
+        approx(g.source_rect[2], 1.0);
+        approx(g.source_rect[3], 0.3);
     }
 
     #[test]
