@@ -271,6 +271,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         }
 
         if cause == StartCause::MacOSReopen && !self.router.routes.is_empty() {
+            // Reopen (dock click) with every window minimized should
+            // restore one; otherwise clicking the dock icon does
+            // nothing at all.
+            let all_minimized = self
+                .router
+                .routes
+                .values()
+                .all(|route| route.window.winit_window.is_minimized() == Some(true));
+            if all_minimized {
+                if let Some(route) = self.router.routes.values().next() {
+                    route.window.winit_window.set_minimized(false);
+                    route.window.winit_window.focus_window();
+                }
+            }
             return;
         }
 
