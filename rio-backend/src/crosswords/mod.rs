@@ -4604,11 +4604,11 @@ impl Dimensions for CrosswordsSize {
     }
 
     fn square_width(&self) -> f32 {
-        0.
+        self.square_width as f32
     }
 
     fn square_height(&self) -> f32 {
-        0.
+        self.square_height as f32
     }
 }
 
