@@ -81,11 +81,6 @@ pub struct Screen<'screen> {
     last_chrome_press: Option<ChromePress>,
     last_close_press: Option<(std::time::Instant, f32)>,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
-    /// Resident sixel/iTerm2 image runs per panel (route_id), indexed
-    /// by visible row. Rebuilt only when the row rebuilds; converted
-    /// to overlay quads each presented frame with the same origin and
-    /// cell stride the grid uniforms carry.
-    image_runs: rustc_hash::FxHashMap<usize, crate::grid_emit::PanelImageRuns>,
     pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
 }
 
@@ -321,7 +316,6 @@ impl Screen<'_> {
             last_chrome_press: None,
             last_close_press: None,
             grids: rustc_hash::FxHashMap::default(),
-            image_runs: rustc_hash::FxHashMap::default(),
             grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
         })
     }
@@ -4039,7 +4033,6 @@ impl Screen<'_> {
 
             let rasterizer = &mut self.grid_rasterizer;
             let renderer_ref = &self.renderer;
-            let image_runs_map = &mut self.image_runs;
             for (route_id, grid) in self.grids.iter_mut() {
                 let Some(p) = panels.iter_mut().find(|p| p.route_id == *route_id) else {
                     continue;
@@ -4182,18 +4175,6 @@ impl Screen<'_> {
                         grid.write_row(y as u32, &bg_scratch, &fg_scratch);
                     };
 
-                // Image runs are resident like CellBg/CellText: they
-                // rebuild only with their row (below), so clean frames
-                // do no image extraction work at all.
-                let panel_runs = image_runs_map.entry(*route_id).or_default();
-                if panel_runs.rows.len() != p.visible_rows.len() {
-                    panel_runs.rows.clear();
-                    panel_runs.rows.resize_with(p.visible_rows.len(), Vec::new);
-                    panel_runs.quads_key = None;
-                }
-                let mut runs_changed = false;
-                let mut run_scratch: Vec<crate::grid_emit::ImageRun> = Vec::new();
-
                 match rows_to_rebuild {
                     RowsToRebuild::None => {
                         // Nothing to rebuild — previous frame's
@@ -4209,15 +4190,6 @@ impl Screen<'_> {
                         #[allow(clippy::needless_range_loop)]
                         for y in 0..p.visible_rows.len() {
                             rebuild_row(p, y, grid, rasterizer);
-                            crate::grid_emit::build_row_images(
-                                &p.visible_rows[y],
-                                &p.extras,
-                                &mut run_scratch,
-                            );
-                            if run_scratch != panel_runs.rows[y] {
-                                std::mem::swap(&mut run_scratch, &mut panel_runs.rows[y]);
-                                runs_changed = true;
-                            }
                         }
                     }
                     RowsToRebuild::Dirty => {
@@ -4231,15 +4203,6 @@ impl Screen<'_> {
                                 continue;
                             }
                             rebuild_row(p, y, grid, rasterizer);
-                            crate::grid_emit::build_row_images(
-                                &p.visible_rows[y],
-                                &p.extras,
-                                &mut run_scratch,
-                            );
-                            if run_scratch != panel_runs.rows[y] {
-                                std::mem::swap(&mut run_scratch, &mut panel_runs.rows[y]);
-                                runs_changed = true;
-                            }
                             p.visible_rows[y].dirty = false;
                         }
                     }
@@ -4375,52 +4338,6 @@ impl Screen<'_> {
                 };
 
                 frame_grids.push((grid, uniforms));
-
-                // Rebuild this panel's resident image quads only when
-                // the runs or the geometry changed; clean frames leave
-                // the entry untouched (never re-appended, so quads can
-                // never accumulate). Positions use the exact origin and
-                // cell stride the grid uniforms above carry — image and
-                // text can't drift apart.
-                if let Some(panel_runs) = image_runs_map.get_mut(route_id) {
-                    let key = (
-                        panel_left.to_bits(),
-                        panel_top.to_bits(),
-                        p.cell_w.to_bits(),
-                        p.cell_h.to_bits(),
-                    );
-                    let has_runs = panel_runs.rows.iter().any(|runs| !runs.is_empty());
-                    if has_runs {
-                        let needs_quads = runs_changed
-                            || panel_runs.quads_key != Some(key)
-                            || !self
-                                .sugarloaf
-                                .grid_image_overlays
-                                .contains_key(&p.rich_text_id);
-                        if needs_quads {
-                            let mut quads = Vec::new();
-                            for (y, runs) in panel_runs.rows.iter().enumerate() {
-                                for run in runs {
-                                    if let Some(overlay) =
-                                        crate::grid_emit::image_run_overlay(
-                                            run, y, panel_left, panel_top, p.cell_w,
-                                            p.cell_h,
-                                        )
-                                    {
-                                        quads.push(overlay);
-                                    }
-                                }
-                            }
-                            self.sugarloaf
-                                .grid_image_overlays
-                                .insert(p.rich_text_id, quads);
-                            panel_runs.quads_key = Some(key);
-                        }
-                    } else if panel_runs.quads_key.take().is_some() {
-                        // Last image row gone — drop the entry.
-                        self.sugarloaf.grid_image_overlays.remove(&p.rich_text_id);
-                    }
-                }
             }
 
             if should_present {

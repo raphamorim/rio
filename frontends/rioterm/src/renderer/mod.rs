@@ -389,6 +389,8 @@ impl Renderer {
                             .sort_by_key(|p| (p.z_index, p.image_id, p.placement_id));
                         placements
                     };
+                    context.renderable_content.atlas_placements =
+                        terminal.graphics.atlas_placements.clone();
                     context.renderable_content.kitty_graphics_dirty = true;
                     terminal.graphics.kitty_graphics_dirty = false;
                 } else {
@@ -404,7 +406,8 @@ impl Renderer {
             let rc = &context.renderable_content;
             let has_overlays = !rc.kitty_placements.is_empty();
             let has_virtual = !rc.kitty_virtual_placements.is_empty();
-            if has_overlays || has_virtual {
+            let has_atlas = !rc.atlas_placements.is_empty();
+            if has_overlays || has_virtual || has_atlas {
                 let layout = context.dimension;
                 // Canonical integer cell stride — line_height already
                 // baked into `cell.cell_height`. Same value the GPU
@@ -420,19 +423,42 @@ impl Renderer {
                     .or_default();
                 overlays.clear();
 
-                if has_overlays {
-                    let viewport = rio_backend::ansi::graphics::OverlayViewport {
-                        cell_width,
-                        cell_height,
-                        origin_x,
-                        origin_y,
-                        // Absolute lines above the screen top: ring
-                        // evictions + current history.
-                        history_size: rc.lines_evicted as i64 + rc.history_size as i64,
-                        display_offset: rc.display_offset as i64,
-                        screen_lines: rc.screen_lines as i64,
-                    };
+                let viewport = rio_backend::ansi::graphics::OverlayViewport {
+                    cell_width,
+                    cell_height,
+                    origin_x,
+                    origin_y,
+                    // Absolute lines above the screen top: ring
+                    // evictions + current history.
+                    history_size: rc.lines_evicted as i64 + rc.history_size as i64,
+                    display_offset: rc.display_offset as i64,
+                    screen_lines: rc.screen_lines as i64,
+                };
 
+                if has_atlas {
+                    // Sixel/iTerm2 grid-plane images draw below text
+                    // and below kitty overlays at the same z.
+                    for p in &rc.atlas_placements {
+                        let Some(geometry) =
+                            rio_backend::ansi::graphics::atlas_overlay_geometry(
+                                p, &viewport,
+                            )
+                        else {
+                            continue;
+                        };
+                        overlays.push(rio_backend::sugarloaf::GraphicOverlay {
+                            image_id: p.image_key,
+                            x: geometry.x,
+                            y: geometry.y,
+                            width: geometry.width,
+                            height: geometry.height,
+                            z_index: -1,
+                            source_rect: geometry.source_rect,
+                        });
+                    }
+                }
+
+                if has_overlays {
                     for p in &rc.kitty_placements {
                         let (image_width, image_height) = rc
                             .kitty_images
@@ -472,13 +498,9 @@ impl Renderer {
                     );
                 }
             } else if rc.kitty_graphics_dirty {
-                // Placements were removed — drop this panel's kitty
-                // overlay vec. Grid-content image quads (sixel/iTerm2)
-                // live in `grid_image_overlays`, maintained by the
-                // screen emit loop with its own residency.
-                if let Some(v) = sugarloaf.image_overlays.get_mut(&context.rich_text_id) {
-                    v.clear();
-                }
+                // All placements (kitty and atlas) were removed — drop
+                // this panel's overlay vec.
+                sugarloaf.clear_image_overlays_for(context.rich_text_id);
             }
 
             context.renderable_content.has_blinking_enabled =

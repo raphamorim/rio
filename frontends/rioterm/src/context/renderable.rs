@@ -1,4 +1,6 @@
-use rio_backend::ansi::graphics::{KittyPlacement, StoredImage, VirtualPlacement};
+use rio_backend::ansi::graphics::{
+    AtlasPlacement, KittyPlacement, StoredImage, VirtualPlacement,
+};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::grid::row::Row;
@@ -92,6 +94,8 @@ pub struct RenderableContent {
     /// Lines ever evicted off the scrollback ring; base of the
     /// absolute row space image placements anchor in.
     pub lines_evicted: u64,
+    /// Sixel/iTerm2 placements (snapshot; DEC grid-plane semantics).
+    pub atlas_placements: Vec<AtlasPlacement>,
     /// `true` when the terminal has cursor blink enabled this frame.
     pub blinking_cursor: bool,
     /// Kitty graphics state captured under the snapshot lock. Owned
@@ -127,6 +131,7 @@ impl RenderableContent {
             screen_lines: 0,
             history_size: 0,
             lines_evicted: 0,
+            atlas_placements: Vec::new(),
             blinking_cursor: false,
             kitty_virtual_placements: FxHashMap::default(),
             kitty_images: FxHashMap::default(),

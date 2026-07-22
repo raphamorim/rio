@@ -61,13 +61,6 @@ pub struct Sugarloaf<'a> {
     /// Rebuilt by `Renderer::run` for dirty panels each frame.
     pub image_overlays:
         rustc_hash::FxHashMap<usize, Vec<crate::sugarloaf::graphics::GraphicOverlay>>,
-    /// Per-panel (rich_text_id) quads for grid-content images
-    /// (sixel/iTerm2 rows). Resident: the screen emit loop replaces a
-    /// panel's entry only when its rows or geometry change, so clean
-    /// frames touch nothing. Kept separate from `image_overlays`,
-    /// whose clear/rebuild cadence is per-dirty-panel.
-    pub grid_image_overlays:
-        rustc_hash::FxHashMap<usize, Vec<crate::sugarloaf::graphics::GraphicOverlay>>,
     /// Owned context (device + swapchain + queue). Last so the device
     /// outlives every Vulkan-handle-owning field above. See note at
     /// the top of the struct.
@@ -310,7 +303,6 @@ impl Sugarloaf<'_> {
             font_cache,
             text,
             image_overlays: rustc_hash::FxHashMap::default(),
-            grid_image_overlays: rustc_hash::FxHashMap::default(),
         };
 
         Ok(instance)
@@ -870,7 +862,6 @@ impl Sugarloaf<'_> {
         if let Some(v) = self.image_overlays.get_mut(&panel_id) {
             v.clear();
         }
-        self.grid_image_overlays.remove(&panel_id);
     }
 
     #[inline]
@@ -961,7 +952,6 @@ impl Sugarloaf<'_> {
             &mut self.graphics,
             &mut self.image_data,
             &self.image_overlays,
-            &self.grid_image_overlays,
         );
 
         match self.ctx.inner {
@@ -1005,7 +995,6 @@ impl Sugarloaf<'_> {
             &self.text,
             &crate::renderer::cpu::ImageLayers {
                 overlays: &self.image_overlays,
-                grid_overlays: &self.grid_image_overlays,
                 data: &self.image_data,
             },
         );

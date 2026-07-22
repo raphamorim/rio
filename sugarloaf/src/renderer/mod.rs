@@ -1080,10 +1080,6 @@ impl Renderer {
             usize,
             Vec<crate::sugarloaf::graphics::GraphicOverlay>,
         >,
-        grid_image_overlays: &rustc_hash::FxHashMap<
-            usize,
-            Vec<crate::sugarloaf::graphics::GraphicOverlay>,
-        >,
     ) {
         self.instances.clear();
         self.vertices.clear();
@@ -1101,14 +1097,7 @@ impl Renderer {
         // overlays for hidden panels (callers `clear_image_overlays_for`
         // on hide / panel removal). The renderer just drains whatever
         // `image_overlays` currently holds.
-        // Grid-content images (sixel/iTerm2) draw before kitty
-        // overlays within the same z layer, so floated kitty
-        // placements composite on top of inline images.
-        let overlays: Vec<_> = grid_image_overlays
-            .values()
-            .chain(image_overlays.values())
-            .flat_map(|v| v.iter())
-            .collect();
+        let overlays: Vec<_> = image_overlays.values().flat_map(|v| v.iter()).collect();
         if !overlays.is_empty() {
             self.render_graphic_overlays(context, image_data, &overlays);
         } else {

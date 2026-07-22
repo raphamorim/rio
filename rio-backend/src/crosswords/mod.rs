@@ -1189,6 +1189,32 @@ impl<U: EventListener> Crosswords<U> {
                 .retain(|_, p| p.dest_row + p.rows as i64 > base);
             self.graphics.kitty_graphics_dirty = true;
         }
+        self.expire_atlas_placements();
+    }
+
+    /// Drop sixel/iTerm2 placements whose rows all scrolled off the
+    /// ring, releasing their image keys (last release frees the pixel
+    /// store and GPU texture).
+    fn expire_atlas_placements(&mut self) {
+        if self.graphics.atlas_placements.is_empty() {
+            return;
+        }
+        let base = self.grid.lines_evicted() as i64;
+        let mut released: smallvec::SmallVec<[u64; 4]> = smallvec::SmallVec::new();
+        self.graphics.atlas_placements.retain(|p| {
+            let live = p.abs_row + p.rows as i64 > base;
+            if !live {
+                released.push(p.image_key);
+            }
+            live
+        });
+        if !released.is_empty() {
+            for key in released {
+                self.graphics.release_atlas_key(key);
+            }
+            self.graphics.kitty_graphics_dirty = true;
+            self.send_graphics_updates();
+        }
     }
 
     #[inline(always)]
@@ -3791,6 +3817,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
             0
         };
 
+        // Anchor of the image's top row in the stable absolute space,
+        // captured before the fill loop scrolls anything. DECSDM
+        // (no scrolling) draws from the screen's top-left instead.
+        let anchor_abs_row = self.grid.lines_evicted() as i64
+            + self.history_size() as i64
+            + if scrolling {
+                self.grid.cursor.pos.row.0 as i64
+            } else {
+                0
+            };
+
         // A very simple optimization is to detect is a new graphic is replacing
         // completely a previous one. This happens if the following conditions
         // are met:
@@ -3951,6 +3988,34 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     self.grid.cursor.should_wrap = false;
                 }
             }
+        }
+
+        // Record the placement: the single source of truth for where
+        // this image lives on the grid. Cell fills above remain only
+        // until the extras-based path is removed.
+        {
+            let key = crate::sugarloaf::atlas_image_key(graphic_id.get());
+            let placement_columns = (width as usize).div_ceil(cell_width);
+            let placement_rows = (height as usize).div_ceil(cell_height);
+            self.graphics.retain_atlas_key(key);
+            self.graphics
+                .atlas_placements
+                .push(crate::ansi::graphics::AtlasPlacement {
+                    image_key: key,
+                    abs_row: anchor_abs_row,
+                    col: leftmost,
+                    columns: placement_columns,
+                    rows: placement_rows,
+                    src_x: 0,
+                    src_y: 0,
+                    src_width: width as u32,
+                    src_height: height as u32,
+                    total_width: width as u32,
+                    total_height: height as u32,
+                    insert_cell_w: cell_width as u16,
+                    insert_cell_h: cell_height as u16,
+                });
+            self.graphics.kitty_graphics_dirty = true;
         }
 
         // Add the graphic data to the pending queue.
