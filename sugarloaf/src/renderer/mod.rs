@@ -2457,6 +2457,8 @@ impl Renderer {
         self.background_image_texture = Some(ImageTextureEntry {
             gpu: ImageTexture::Vulkan(texture),
             transmit_time: std::time::Instant::now(),
+            bytes: (pixels.width as usize) * (pixels.height as usize) * 4,
+            last_used: 0,
         });
     }
 
