@@ -4661,9 +4661,9 @@ fn test_iterm2_parse_cursor_movement_params() {
 }
 
 #[test]
-fn test_gc_cadence_trigger() {
+fn test_reclaim_cadence_trigger() {
     let mut term = geometry_test_term();
-    assert!(!term.grid.extras_table.should_gc());
+    assert!(!term.grid.extras_table.should_reclaim());
 
     // Burn through the allocation cadence with throwaway slots.
     for _ in 0..4096 {
@@ -4673,11 +4673,11 @@ fn test_gc_cadence_trigger() {
             .alloc(crate::crosswords::square::Extras::default());
         term.grid.extras_table.free(id);
     }
-    assert!(term.grid.extras_table.should_gc(), "cadence elapsed");
+    assert!(term.grid.extras_table.should_reclaim(), "cadence elapsed");
 
-    term.grid.gc_extras();
+    term.grid.reclaim_extras();
     assert!(
-        !term.grid.extras_table.should_gc(),
+        !term.grid.extras_table.should_reclaim(),
         "sweep resets the cadence"
     );
 }

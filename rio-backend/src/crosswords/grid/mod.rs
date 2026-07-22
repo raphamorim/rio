@@ -85,18 +85,20 @@ pub struct Grid<T> {
 pub struct ExtrasTable {
     slots: Vec<Option<crate::crosswords::square::Extras>>,
     free: Vec<u16>,
-    /// Allocations since the last mark-and-sweep. Slots referenced
-    /// only by rows that scrolled out of the ring leak until a sweep,
-    /// pinning their pixel data and GPU textures — so the sweep runs
-    /// on an allocation cadence instead of only at id exhaustion.
-    allocs_since_gc: usize,
+    /// Allocations since the last mark-and-sweep. The table holds
+    /// hyperlink and zero-width data whose slots stay referenced by
+    /// cells until their rows scroll off the ring; without a periodic
+    /// sweep, hyperlink-heavy workloads exhaust the u16 id space and
+    /// new hyperlinks silently drop. (Images no longer live here —
+    /// placements own them with deterministic cleanup.)
+    allocs_since_reclaim: usize,
 }
 
-/// One `gc_extras` mark-and-sweep per this many allocations. The mark
-/// walks history rows gated by `has_extras`, so the amortized cost per
-/// allocation stays sub-microsecond while dead slots (and the images
-/// they pin) are reclaimed within a bounded drift window.
-const EXTRAS_GC_ALLOC_CADENCE: usize = 4096;
+/// One `reclaim_extras` mark-and-sweep per this many allocations. The
+/// mark walks history rows gated by `has_extras`, so the amortized
+/// cost per allocation stays sub-microsecond while dead slots are
+/// recycled within a bounded drift window.
+const EXTRAS_RECLAIM_CADENCE: usize = 4096;
 
 impl ExtrasTable {
     pub fn new() -> Self {
@@ -105,7 +107,7 @@ impl ExtrasTable {
         Self {
             slots: vec![None],
             free: Vec::new(),
-            allocs_since_gc: 0,
+            allocs_since_reclaim: 0,
         }
     }
 
@@ -128,7 +130,7 @@ impl ExtrasTable {
         &mut self,
         extras: crate::crosswords::square::Extras,
     ) -> crate::crosswords::square::ExtrasId {
-        self.allocs_since_gc += 1;
+        self.allocs_since_reclaim += 1;
         if let Some(id) = self.free.pop() {
             self.slots[id as usize] = Some(extras);
             return id;
@@ -142,19 +144,19 @@ impl ExtrasTable {
         id
     }
 
-    /// Nearly out of slot ids — time for `Grid::gc_extras`.
+    /// Nearly out of slot ids — time for `Grid::reclaim_extras`.
     pub fn under_pressure(&self) -> bool {
         self.slots.len() >= u16::MAX as usize && self.free.len() < 256
     }
 
-    /// Whether the caller should run `gc_extras` now: either the
+    /// Whether the caller should run `reclaim_extras` now: either the
     /// allocation cadence elapsed, or the id space is nearly full.
-    pub fn should_gc(&self) -> bool {
-        self.allocs_since_gc >= EXTRAS_GC_ALLOC_CADENCE || self.under_pressure()
+    pub fn should_reclaim(&self) -> bool {
+        self.allocs_since_reclaim >= EXTRAS_RECLAIM_CADENCE || self.under_pressure()
     }
 
-    pub(crate) fn reset_gc_cadence(&mut self) {
-        self.allocs_since_gc = 0;
+    pub(crate) fn reset_reclaim_cadence(&mut self) {
+        self.allocs_since_reclaim = 0;
     }
 
     /// Free every allocated slot whose bit is not set in `live`.
@@ -542,8 +544,8 @@ impl Grid<Square> {
     /// Mark every slot referenced by a live row (visible + history) or a
     /// cursor template, then free the rest. Swept graphic slots drop their
     /// slot contents (hyperlinks, zero-width overlays).
-    pub fn gc_extras(&mut self) {
-        self.extras_table.reset_gc_cadence();
+    pub fn reclaim_extras(&mut self) {
+        self.extras_table.reset_reclaim_cadence();
         #[inline]
         fn mark(live: &mut [u64], sq: &Square) {
             if matches!(

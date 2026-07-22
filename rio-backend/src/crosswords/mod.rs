@@ -2910,8 +2910,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
             } else {
                 let mut extras = crate::crosswords::square::Extras::default();
                 extras.zerowidth.push(c);
-                if self.grid.extras_table.should_gc() {
-                    self.grid.gc_extras();
+                if self.grid.extras_table.should_reclaim() {
+                    self.grid.reclaim_extras();
                 }
                 let id = self.grid.extras_table.alloc(extras);
                 let cell = &mut self.grid[row][column];
@@ -3406,16 +3406,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // `write_at_cursor`'s `template_extras_id` propagation.
         //
         // Extras slots are not reference-counted; a slot lives until
-        // the cadence-driven `gc_extras` mark-and-sweep finds no cell
-        // referencing it (bounded drift, see `ExtrasTable::should_gc`).
+        // the cadence-driven `reclaim_extras` mark-and-sweep finds no cell
+        // referencing it (bounded drift, see `ExtrasTable::should_reclaim`).
         // A future ref-counting pass could free slots the moment the
         // last referencing cell is overwritten, but the template flow
         // in `write_at_cursor` puts that bookkeeping on the hot print
         // path, so it needs its own careful change.
         match hyperlink {
             Some(hl) => {
-                if self.grid.extras_table.should_gc() {
-                    self.grid.gc_extras();
+                if self.grid.extras_table.should_reclaim() {
+                    self.grid.reclaim_extras();
                 }
                 let id =
                     self.grid
