@@ -3553,7 +3553,12 @@ impl Screen<'_> {
             // We remove `\x1b` to ensure it's impossible for the pasted text to write the bracketed
             // paste end escape `\x1b[201~` and `\x03` since some shells incorrectly terminate
             // bracketed paste on its receival.
-            let filtered = text.replace(['\x1b', '\x03'], "");
+            //
+            // CRLF collapses to `\r` even in bracketed mode: the
+            // Windows clipboard terminates every line with `\r\n`,
+            // and shells treat that as two breaks, doubling every
+            // newline pasted into WSL or ssh. Lone `\n` stays as is.
+            let filtered = text.replace(['\x1b', '\x03'], "").replace("\r\n", "\r");
             self.ctx_mut()
                 .current_mut()
                 .messenger
