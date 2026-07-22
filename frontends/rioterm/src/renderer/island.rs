@@ -22,7 +22,7 @@ const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
 const TITLE_FONT_SIZE: f32 = 12.0;
 
 const TAB_PADDING_X: f32 = 27.0;
-const MAX_TAB_WIDTH: f32 = 180.0;
+const MAX_TAB_WIDTH: f32 = 240.0;
 const TAB_GAP: f32 = 6.0;
 const TAB_INSET_Y: f32 = 7.0;
 const TAB_RADIUS: f32 = 6.0;
