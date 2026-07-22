@@ -12,17 +12,15 @@ pub fn default_max_tab_width() -> f32 {
     240.0
 }
 
-/// Clamp `max_tab_width` to `[80.0, 480.0]`.
+/// Clamp `max_tab_width` to `[80.0, 280.0]`.
 ///
 /// Below the lower bound the close button and title no longer fit.
-/// The window width already bounds how wide a tab can actually get,
-/// so the upper bound only keeps configured values in a sane range.
 #[inline]
 pub fn clamp_max_tab_width(v: f32) -> f32 {
     if !v.is_finite() {
         return default_max_tab_width();
     }
-    v.clamp(80.0, 480.0)
+    v.clamp(80.0, 280.0)
 }
 
 /// Clamp `unfocused_split_opacity` to `[0.15, 1.0]`.
@@ -170,7 +168,7 @@ pub struct Navigation {
     pub unfocused_split_fill: Option<ColorArray>,
     /// Maximum width of a tab in logical pixels. Tabs shrink below
     /// this as more open; the cap only limits how wide a tab grows
-    /// when few are open. Clamped to `[80.0, 480.0]` at load time.
+    /// when few are open. Clamped to `[80.0, 280.0]` at load time.
     #[serde(default = "default_max_tab_width", rename = "max-tab-width")]
     pub max_tab_width: f32,
 }

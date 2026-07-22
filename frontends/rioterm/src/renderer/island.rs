@@ -1702,9 +1702,9 @@ mod tests {
         assert_eq!(layout.tabs_width, 480.0);
 
         // The cap is configurable via navigation.max-tab-width.
-        let layout = tab_strip_layout(3000.0, 2.0, 2, 400.0);
-        assert_eq!(layout.tab_width, 400.0);
-        assert_eq!(layout.tabs_width, 800.0);
+        let layout = tab_strip_layout(3000.0, 2.0, 2, 280.0);
+        assert_eq!(layout.tab_width, 280.0);
+        assert_eq!(layout.tabs_width, 560.0);
         // The tabs region ends well before the 1500 logical px strip.
         assert!(layout.left_margin + layout.tabs_width < 1500.0);
 
