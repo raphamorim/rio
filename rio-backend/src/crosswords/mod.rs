@@ -676,6 +676,13 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Lines ever evicted off the scrollback ring (see
+    /// `Grid::lines_evicted`).
+    #[inline]
+    pub fn lines_evicted(&self) -> u64 {
+        self.grid.lines_evicted()
+    }
+
     #[inline]
     pub fn bottommost_line(&self) -> Line {
         self.grid.bottommost_line()
@@ -795,8 +802,9 @@ impl<U: EventListener> Crosswords<U> {
         // delta naturally falls out to zero and placements stay put
         // — which is what we want, since neither the cursor nor the
         // image actually moved relative to the buffer.
-        let pre_resize_cursor_abs =
-            history_size as i64 + self.grid.cursor.pos.row.0 as i64;
+        let pre_resize_cursor_abs = self.grid.lines_evicted() as i64
+            + history_size as i64
+            + self.grid.cursor.pos.row.0 as i64;
 
         let is_alt = self.mode.contains(Mode::ALT_SCREEN);
         self.grid.resize(!is_alt, num_lines, num_cols);
@@ -837,8 +845,9 @@ impl<U: EventListener> Crosswords<U> {
         // *absolute* cursor row (history + cursor.row), not screen
         // row, so vertical resizes (which move cursor.row but keep
         // the absolute row constant) don't shift placements.
-        let post_resize_cursor_abs =
-            self.history_size() as i64 + self.grid.cursor.pos.row.0 as i64;
+        let post_resize_cursor_abs = self.grid.lines_evicted() as i64
+            + self.history_size() as i64
+            + self.grid.cursor.pos.row.0 as i64;
         let dest_row_shift = post_resize_cursor_abs - pre_resize_cursor_abs;
 
         // Rescale overlay placements for the new cell size (cell-sized
@@ -1171,6 +1180,13 @@ impl<U: EventListener> Crosswords<U> {
             self.damage.damage_line(line as usize);
         }
         if !self.graphics.kitty_placements.is_empty() {
+            // Placements whose rows all scrolled off the ring expire,
+            // like kitty: the image data survives for future
+            // placements, the placement itself dies with its content.
+            let base = self.grid.lines_evicted() as i64;
+            self.graphics
+                .kitty_placements
+                .retain(|_, p| p.dest_row + p.rows as i64 > base);
             self.graphics.kitty_graphics_dirty = true;
         }
     }
@@ -4597,8 +4613,12 @@ impl<U: EventListener> Crosswords<U> {
         // image, never the destination cell.
         let dest_col = self.grid.cursor.pos.col.0;
         let cursor_row = self.grid.cursor.pos.row.0;
-        // Absolute row = history_size + screen-relative row
-        let dest_row = self.history_size() as i64 + cursor_row as i64;
+        // Absolute row in the stable space: lines ever evicted off the
+        // ring + current history + screen-relative row. Stays glued to
+        // content even after scrollback saturates.
+        let dest_row = self.grid.lines_evicted() as i64
+            + self.history_size() as i64
+            + cursor_row as i64;
 
         // kitty spec the `X=`/`Y=` sub-cell offset must be smaller
         // than the cell size. The stored value stays raw (a later cell

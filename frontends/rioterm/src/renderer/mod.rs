@@ -364,6 +364,7 @@ impl Renderer {
                 context.renderable_content.columns = snapshot_cols;
                 context.renderable_content.screen_lines = terminal.screen_lines();
                 context.renderable_content.history_size = terminal.history_size();
+                context.renderable_content.lines_evicted = terminal.lines_evicted();
                 context.renderable_content.blinking_cursor = terminal.blinking_cursor;
                 context.renderable_content.cursor.state = terminal.cursor();
                 if terminal.graphics.kitty_graphics_dirty {
@@ -425,7 +426,9 @@ impl Renderer {
                         cell_height,
                         origin_x,
                         origin_y,
-                        history_size: rc.history_size as i64,
+                        // Absolute lines above the screen top: ring
+                        // evictions + current history.
+                        history_size: rc.lines_evicted as i64 + rc.history_size as i64,
                         display_offset: rc.display_offset as i64,
                         screen_lines: rc.screen_lines as i64,
                     };
