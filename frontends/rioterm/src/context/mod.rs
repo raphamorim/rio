@@ -797,7 +797,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &mut self,
         route_id: usize,
     ) -> Option<&mut ContextGridItem<T>> {
-        self.contexts[self.current_index].get_by_route_id(route_id)
+        // Backend events (PtyWrite/DSR replies, ColorRequest, ClipboardLoad,
+        // TerminalDamaged, …) carry the originating panel's `route_id` and
+        // must reach it regardless of which tab is currently visible.
+        // Looking only at the active tab silently drops replies destined for
+        // hidden tabs — most visibly, a shell on a hidden tab that issued a
+        // cursor-position query waits out its full timeout (~10s in fish)
+        // before continuing, freezing visible input echo on that tab.
+        self.contexts
+            .iter_mut()
+            .find_map(|grid| grid.get_by_route_id(route_id))
     }
 
     #[inline]
@@ -1259,6 +1268,33 @@ pub mod test {
             ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         context_manager.increase_capacity(3);
         assert_eq!(context_manager.capacity, 8);
+    }
+
+    /// Regression: backend events (PTY-reply targets, color requests,
+    /// damage notifications) carry a `route_id` that identifies the
+    /// originating panel, not the visible one. `get_by_route_id` used to
+    /// scan only the active tab, so a reply destined for a hidden tab was
+    /// silently dropped — most visibly, a shell on the hidden tab that had
+    /// issued a cursor-position query would wait out its full timeout
+    /// before continuing, freezing visible input echo on that tab.
+    #[test]
+    fn test_get_by_route_id_finds_hidden_tab() {
+        let window_id: WindowId = WindowId::from(0);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        let hidden_route_id = context_manager.contexts[0].current().route_id;
+
+        context_manager.add_context(true, 0);
+        assert_eq!(
+            context_manager.current_index, 1,
+            "second tab should be active after add_context(redirect=true, …)"
+        );
+
+        let found = context_manager
+            .get_by_route_id(hidden_route_id)
+            .expect("hidden tab's route_id must still resolve via get_by_route_id");
+        assert_eq!(found.val.route_id, hidden_route_id);
     }
 
     #[test]
