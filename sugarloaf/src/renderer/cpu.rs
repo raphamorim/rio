@@ -21,6 +21,9 @@ use wide::{u32x4, u32x8};
 /// Image overlays and their pixel stores for a CPU frame.
 pub struct ImageLayers<'a> {
     pub overlays: &'a FxHashMap<usize, Vec<GraphicOverlay>>,
+    /// Grid-content image quads (sixel/iTerm2), drawn below kitty
+    /// overlays within the same z layer.
+    pub grid_overlays: &'a FxHashMap<usize, Vec<GraphicOverlay>>,
     pub data: &'a FxHashMap<u64, GraphicDataEntry>,
 }
 
@@ -308,8 +311,12 @@ pub fn render_cpu(
     // from the frontend, so equal keys keep their per-panel paint
     // order. Never key on screen position: it changes with scroll,
     // and f32 bit patterns don't order correctly once negative.
-    let mut image_overlays: Vec<&GraphicOverlay> =
-        images.overlays.values().flatten().collect();
+    let mut image_overlays: Vec<&GraphicOverlay> = images
+        .grid_overlays
+        .values()
+        .chain(images.overlays.values())
+        .flatten()
+        .collect();
     image_overlays.sort_by_key(|o| (o.z_index, o.image_id));
 
     let vertices = renderer.vertices();
