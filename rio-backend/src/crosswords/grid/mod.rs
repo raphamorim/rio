@@ -59,6 +59,14 @@ pub struct Grid<T> {
     /// Maximum number of lines in history.
     max_scroll_limit: usize,
 
+    /// Total lines ever evicted off the scrollback ring (dropped from
+    /// history at the cap, shrunk by a config change, or purged by
+    /// `clear_history`). Together with `history_size` this defines a
+    /// stable absolute row space: image placements anchor at
+    /// `total_lines_scrolled + history_size + screen_row` and stay
+    /// glued to their content even after the ring saturates.
+    total_lines_scrolled: u64,
+
     /// Per-grid intern table for cell styles. Cells store only a `StyleId`;
     /// the actual fg/bg/underline_color/sgr-flags live here and are looked up
     /// at render/SGR-mutation time. The renderer snapshots a clone under the
@@ -184,6 +192,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         Grid {
             raw: Storage::with_capacity(lines, columns),
             max_scroll_limit,
+            total_lines_scrolled: 0,
             display_offset: 0,
             saved_cursor: Cursor::default(),
             cursor: Cursor::default(),
@@ -198,7 +207,9 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     pub fn update_history(&mut self, history_size: usize) {
         let current_history_size = self.history_size();
         if current_history_size > history_size {
-            self.raw.shrink_lines(current_history_size - history_size);
+            let dropped = current_history_size - history_size;
+            self.total_lines_scrolled += dropped as u64;
+            self.raw.shrink_lines(dropped);
         }
         self.display_offset = min(self.display_offset, history_size);
         self.max_scroll_limit = history_size;
@@ -227,6 +238,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     fn decrease_scroll_limit(&mut self, count: usize) {
         let count = min(count, self.history_size());
         if count != 0 {
+            self.total_lines_scrolled += count as u64;
             self.raw.shrink_lines(min(count, self.history_size()));
             self.display_offset = min(self.display_offset, self.history_size());
         }
@@ -326,7 +338,10 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
         // Only rotate the entire history if the active region starts at the top.
         if region.start == 0 {
-            // Create scrollback for the new lines.
+            // Create scrollback for the new lines. Whatever the cap
+            // refuses to grow is evicted off the ring instead.
+            let grown = min(positions, self.max_scroll_limit - self.history_size());
+            self.total_lines_scrolled += (positions - grown) as u64;
             self.increase_scroll_limit(positions);
 
             // Swap the lines fixed at the top to their target positions after rotation.
@@ -434,8 +449,16 @@ impl<T> Grid<T> {
     }
 
     #[inline]
+    /// Absolute index of the oldest row still in the ring — the base
+    /// of the stable absolute row space image placements anchor in.
+    #[inline]
+    pub fn lines_evicted(&self) -> u64 {
+        self.total_lines_scrolled
+    }
+
     pub fn clear_history(&mut self) {
         // Explicitly purge all lines from history.
+        self.total_lines_scrolled += self.history_size() as u64;
         self.raw.shrink_lines(self.history_size());
 
         // Reset display offset.

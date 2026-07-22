@@ -4811,3 +4811,90 @@ fn test_gc_cadence_trigger() {
         "sweep resets the cadence"
     );
 }
+
+#[test]
+fn test_kitty_placement_glued_across_ring_saturation_and_expiry() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    // 4-line screen, 3-line scrollback cap.
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 4),
+        crate::ansi::CursorShape::Block,
+        TestEventListener,
+        unsafe { WindowId::dummy() },
+        0,
+        3,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // 30x40 image: 2 rows, anchored at absolute row 0.
+    let pixels = vec![255u8; 30 * 40 * 4];
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 30,
+        height: 40,
+        color_type: ColorType::Rgba,
+        pixels,
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    term.store_graphic(graphic);
+    let mut placement = placement_request(20);
+    placement.cursor_movement = 1;
+    term.place_graphic(placement);
+    assert_eq!(
+        term.graphics
+            .kitty_placements
+            .get(&(1, 20))
+            .unwrap()
+            .dest_row,
+        0
+    );
+
+    // Fill the screen, then scroll into history up to the cap.
+    for _ in 0..6 {
+        term.linefeed();
+    }
+    assert_eq!(term.history_size(), 3);
+    assert_eq!(term.lines_evicted(), 0);
+
+    // One more line: the ring is at cap, the oldest row (the image's
+    // first) is evicted.
+    term.linefeed();
+    assert_eq!(term.lines_evicted(), 1);
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 20))
+        .expect("placement survives while a row remains in the ring");
+
+    // Scrolled fully back: the image's second row is the topmost
+    // retained line, so the placement renders one row above the
+    // viewport top (negative y, partially visible). Without the
+    // absolute base it would drift a full row down.
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: (term.lines_evicted() + term.history_size() as u64) as i64,
+        display_offset: term.history_size() as i64,
+        screen_lines: 4,
+    };
+    let geometry =
+        kitty_overlay_geometry(stored, 30, 40, &viewport).expect("partially visible");
+    assert_eq!(geometry.y, -20.0, "glued: first image row evicted");
+
+    // One more eviction takes the image's last row off the ring: the
+    // placement expires like kitty's do.
+    term.linefeed();
+    assert_eq!(term.lines_evicted(), 2);
+    assert!(
+        !term.graphics.kitty_placements.contains_key(&(1, 20)),
+        "placement expires with its content"
+    );
+}
