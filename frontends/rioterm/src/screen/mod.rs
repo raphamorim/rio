@@ -2265,8 +2265,28 @@ impl Screen<'_> {
         #[cfg(target_os = "macos")]
         self.exec("open", [&processed_uri]);
 
+        // Going through `cmd /c start` re-quotes the argument and
+        // mangles URLs (metacharacters plus cmd.exe batch escaping);
+        // hand the URL to the default handler directly instead.
         #[cfg(windows)]
-        self.exec("cmd", ["/c", "start", "", &processed_uri]);
+        {
+            use std::os::windows::ffi::OsStrExt;
+            let uri: Vec<u16> = std::ffi::OsStr::new(&processed_uri)
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+            let operation: Vec<u16> = "open\0".encode_utf16().collect();
+            unsafe {
+                windows_sys::Win32::UI::Shell::ShellExecuteW(
+                    std::ptr::null_mut(),
+                    operation.as_ptr(),
+                    uri.as_ptr(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+                );
+            }
+        }
     }
 
     pub fn exec<I, S>(&self, program: &str, args: I)
