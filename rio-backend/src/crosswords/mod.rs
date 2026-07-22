@@ -1140,6 +1140,9 @@ impl<U: EventListener> Crosswords<U> {
         // Scroll between origin and bottom
         self.grid.scroll_down(&region, lines);
         self.mark_fully_damaged();
+        // Partial-region scrolls move grid-plane images with their
+        // content (kitty placements float and are not adjusted).
+        self.shift_atlas_placements_in_region(&region, lines as i64);
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
         }
@@ -1189,36 +1192,202 @@ impl<U: EventListener> Crosswords<U> {
                 .retain(|_, p| p.dest_row + p.rows as i64 > base);
             self.graphics.kitty_graphics_dirty = true;
         }
+        // Grid-plane images follow their content through region
+        // scrolls; kitty placements float and are not adjusted.
+        if region.start.0 == 0 {
+            if (region.end.0 as usize) < self.grid.screen_lines() {
+                // History grew under the fixed bottom rows.
+                self.shift_atlas_placements_below(region.end, lines as i64);
+            }
+            // In-region content keeps its absolute rows (they moved
+            // into history), so nothing else to do.
+        } else {
+            self.shift_atlas_placements_in_region(&region, -(lines as i64));
+        }
         self.expire_atlas_placements();
     }
 
     /// Drop sixel/iTerm2 placements whose rows all scrolled off the
-    /// ring, releasing their image keys (last release frees the pixel
-    /// store and GPU texture).
+    /// ring; the key recount frees images that lost their last
+    /// placement (pixel store and GPU texture).
     fn expire_atlas_placements(&mut self) {
         if self.graphics.atlas_placements.is_empty() {
             return;
         }
         let base = self.grid.lines_evicted() as i64;
-        let mut released: smallvec::SmallVec<[u64; 4]> = smallvec::SmallVec::new();
-        self.graphics.atlas_placements.retain(|p| {
-            let live = p.abs_row + p.rows as i64 > base;
-            if !live {
-                released.push(p.image_key);
-            }
-            live
-        });
-        if !released.is_empty() {
-            for key in released {
-                self.graphics.release_atlas_key(key);
-            }
+        let before = self.graphics.atlas_placements.len();
+        self.graphics
+            .atlas_placements
+            .retain(|p| p.abs_row + p.rows as i64 > base);
+        if self.graphics.atlas_placements.len() != before {
+            self.graphics.recount_atlas_keys();
             self.graphics.kitty_graphics_dirty = true;
             self.send_graphics_updates();
         }
     }
 
+    /// Clip sixel/iTerm2 placements against a cell-aligned hole in
+    /// visible screen coordinates (DEC semantics: text and erasure
+    /// remove exactly the covered image cells; the surviving pieces
+    /// keep referencing the same texture with adjusted crops).
+    pub fn clip_atlas_placements(
+        &mut self,
+        screen_row_start: i32,
+        screen_row_end: i32,
+        col_start: usize,
+        col_end: usize,
+    ) {
+        if self.graphics.atlas_placements.is_empty() {
+            return;
+        }
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64;
+        let hr0 = base + screen_row_start as i64;
+        let hr1 = base + screen_row_end as i64;
+
+        let old = std::mem::take(&mut self.graphics.atlas_placements);
+        let mut next: Vec<crate::ansi::graphics::AtlasPlacement> =
+            Vec::with_capacity(old.len());
+        let mut changed = false;
+        for placement in old {
+            match placement.subtract_rect(hr0, hr1, col_start, col_end, &mut next) {
+                None => next.push(placement),
+                Some(()) => changed = true,
+            }
+        }
+        self.graphics.atlas_placements = next;
+        if changed {
+            self.graphics.recount_atlas_keys();
+            self.graphics.kitty_graphics_dirty = true;
+            self.send_graphics_updates();
+        }
+    }
+
+    /// Shift sixel/iTerm2 placements with a partial scroll region
+    /// (DECSTBM): content inside the region moves by `delta` rows and
+    /// clips at the region boundary, exactly like text; content
+    /// outside is untouched. Full-screen scrolls never come here —
+    /// absolute anchoring already handles them.
+    fn shift_atlas_placements_in_region(
+        &mut self,
+        region: &std::ops::Range<Line>,
+        delta: i64,
+    ) {
+        if self.graphics.atlas_placements.is_empty() {
+            return;
+        }
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64;
+        let r0 = base + region.start.0 as i64;
+        let r1 = base + region.end.0 as i64;
+
+        let old = std::mem::take(&mut self.graphics.atlas_placements);
+        let mut next: Vec<crate::ansi::graphics::AtlasPlacement> =
+            Vec::with_capacity(old.len());
+        let mut changed = false;
+        for placement in old {
+            let p_r0 = placement.abs_row;
+            let p_r1 = placement.abs_row + placement.rows as i64;
+            if p_r1 <= r0 || p_r0 >= r1 {
+                next.push(placement);
+                continue;
+            }
+            changed = true;
+            // Pieces outside the region stay put.
+            placement.subtract_rect(r0, r1, 0, usize::MAX, &mut next);
+            // The piece inside shifts, then clips at the region bounds.
+            let ir0 = p_r0.max(r0);
+            let ir1 = p_r1.min(r1);
+            let inside = placement.slice(
+                ir0,
+                ir1,
+                placement.col,
+                placement.col + placement.columns,
+            );
+            let shifted_r0 = (inside.abs_row + delta).max(r0);
+            let shifted_r1 = (inside.abs_row + delta + inside.rows as i64).min(r1);
+            if shifted_r1 > shifted_r0 {
+                // Clip in the pre-shift frame, then translate.
+                let mut clipped = inside.slice(
+                    shifted_r0 - delta,
+                    shifted_r1 - delta,
+                    inside.col,
+                    inside.col + inside.columns,
+                );
+                clipped.abs_row += delta;
+                next.push(clipped);
+            }
+        }
+        self.graphics.atlas_placements = next;
+        if changed {
+            self.graphics.recount_atlas_keys();
+            self.graphics.kitty_graphics_dirty = true;
+            self.send_graphics_updates();
+        }
+    }
+
+    /// A top-anchored partial scroll region grows history while the
+    /// rows below the region stay visually fixed — which advances
+    /// their absolute coordinates. Shift placements on those rows
+    /// (splitting any placement straddling the boundary) so they stay
+    /// glued to their fixed content.
+    fn shift_atlas_placements_below(&mut self, boundary: Line, delta: i64) {
+        if self.graphics.atlas_placements.is_empty() {
+            return;
+        }
+        // The boundary in the space placements were anchored in,
+        // BEFORE this scroll grew history by `delta`.
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64 - delta;
+        let b = base + boundary.0 as i64;
+
+        let old = std::mem::take(&mut self.graphics.atlas_placements);
+        let mut next: Vec<crate::ansi::graphics::AtlasPlacement> =
+            Vec::with_capacity(old.len());
+        let mut changed = false;
+        for placement in old {
+            let p_r0 = placement.abs_row;
+            let p_r1 = placement.abs_row + placement.rows as i64;
+            if p_r1 <= b {
+                next.push(placement);
+                continue;
+            }
+            changed = true;
+            if p_r0 < b {
+                next.push(placement.slice(
+                    p_r0,
+                    b,
+                    placement.col,
+                    placement.col + placement.columns,
+                ));
+            }
+            let mut below = placement.slice(
+                p_r0.max(b),
+                p_r1,
+                placement.col,
+                placement.col + placement.columns,
+            );
+            below.abs_row += delta;
+            next.push(below);
+        }
+        self.graphics.atlas_placements = next;
+        if changed {
+            self.graphics.recount_atlas_keys();
+            self.graphics.kitty_graphics_dirty = true;
+        }
+    }
+
     #[inline(always)]
     pub fn write_at_cursor(&mut self, c: char) {
+        // DEC semantics: printing into a cell covered by a sixel or
+        // iTerm2 image clips exactly that cell out of the placement.
+        // One branch when no images exist.
+        if !self.graphics.atlas_placements.is_empty() {
+            let pos = self.grid.cursor.pos;
+            self.clip_atlas_placements(
+                pos.row.0,
+                pos.row.0 + 1,
+                pos.col.0,
+                pos.col.0 + 1,
+            );
+        }
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
         let style_id = self.grid.cursor.template.style_id();
         let template_extras_id = self.grid.cursor.template.extras_id();
@@ -2479,6 +2648,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[start..end] {
             *cell = blank;
         }
+        self.clip_atlas_placements(line.0, line.0 + 1, start.0, end.0);
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
         }
@@ -2511,6 +2681,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[end..] {
             *cell = blank;
         }
+        // Image cells in the shifted tail stop showing their slices
+        // (placement-model approximation, like other placement-based
+        // terminals).
+        self.clip_atlas_placements(line.0, line.0 + 1, start, columns);
     }
 
     #[inline]
@@ -2554,6 +2728,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[source.0..destination] {
             *cell = blank;
         }
+        // Placement-model approximation: image cells from the insert
+        // point onward stop showing their slices.
+        let columns = self.grid.columns();
+        self.clip_atlas_placements(line.0, line.0 + 1, source.0, columns);
     }
 
     #[inline]
@@ -3172,6 +3350,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let range = Line(0)..=cursor.row;
                 self.selection =
                     self.selection.take().filter(|s| !s.intersects_range(range));
+
+                let columns = self.grid.columns();
+                self.clip_atlas_placements(0, cursor.row.0, 0, columns);
+                self.clip_atlas_placements(cursor.row.0, cursor.row.0 + 1, 0, end.0);
             }
             ClearMode::Below => {
                 let cursor = self.grid.cursor.pos;
@@ -3186,11 +3368,30 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let range = cursor.row..Line(screen_lines as i32);
                 self.selection =
                     self.selection.take().filter(|s| !s.intersects_range(range));
+
+                let columns = self.grid.columns();
+                self.clip_atlas_placements(
+                    cursor.row.0,
+                    cursor.row.0 + 1,
+                    cursor.col.0,
+                    columns,
+                );
+                self.clip_atlas_placements(
+                    cursor.row.0 + 1,
+                    screen_lines as i32,
+                    0,
+                    columns,
+                );
             }
             ClearMode::All => {
                 if self.mode.contains(Mode::ALT_SCREEN) {
                     self.grid.reset_region(..);
+                    let columns = self.grid.columns();
+                    self.clip_atlas_placements(0, screen_lines as i32, 0, columns);
                 } else {
+                    // The viewport scrolls into history below; atlas
+                    // placements are absolutely anchored and follow
+                    // their content into scrollback untouched.
                     let old_offset = self.grid.display_offset();
 
                     self.grid.clear_viewport();
@@ -3206,6 +3407,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             ClearMode::Saved if self.history_size() > 0 => {
                 self.grid.clear_history();
+                self.expire_atlas_placements();
 
                 self.vi_mode_cursor.pos.row = self
                     .vi_mode_cursor
@@ -3492,6 +3694,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
         self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+        self.clip_atlas_placements(point.row.0, point.row.0 + 1, left.0, right.0);
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
         }
@@ -3997,7 +4200,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             let key = crate::sugarloaf::atlas_image_key(graphic_id.get());
             let placement_columns = (width as usize).div_ceil(cell_width);
             let placement_rows = (height as usize).div_ceil(cell_height);
-            self.graphics.retain_atlas_key(key);
             self.graphics
                 .atlas_placements
                 .push(crate::ansi::graphics::AtlasPlacement {
@@ -4015,6 +4217,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     insert_cell_w: cell_width as u16,
                     insert_cell_h: cell_height as u16,
                 });
+            self.graphics.recount_atlas_keys();
             self.graphics.kitty_graphics_dirty = true;
         }
 

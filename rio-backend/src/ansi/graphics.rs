@@ -415,6 +415,88 @@ pub struct AtlasPlacement {
     pub insert_cell_h: u16,
 }
 
+impl AtlasPlacement {
+    /// Child covering `rows` [row0, row1) x `cols` [col0, col1) of this
+    /// placement (caller guarantees a non-empty intersection with the
+    /// placement's rect). The crop follows in display-pixel space;
+    /// edges that coincide with the parent's keep its exact bounds so
+    /// partial edge cells stay partial.
+    pub(crate) fn slice(
+        &self,
+        row0: i64,
+        row1: i64,
+        col0: usize,
+        col1: usize,
+    ) -> AtlasPlacement {
+        let icw = self.insert_cell_w as u32;
+        let ich = self.insert_cell_h as u32;
+        let src_x0 = self.src_x + (col0 - self.col) as u32 * icw;
+        let src_y0 = self.src_y + (row0 - self.abs_row) as u32 * ich;
+        let src_x1 = (self.src_x + (col1 - self.col) as u32 * icw)
+            .min(self.src_x + self.src_width);
+        let src_y1 = (self.src_y + (row1 - self.abs_row) as u32 * ich)
+            .min(self.src_y + self.src_height);
+        AtlasPlacement {
+            image_key: self.image_key,
+            abs_row: row0,
+            col: col0,
+            columns: col1 - col0,
+            rows: (row1 - row0) as usize,
+            src_x: src_x0,
+            src_y: src_y0,
+            src_width: src_x1.saturating_sub(src_x0),
+            src_height: src_y1.saturating_sub(src_y0),
+            total_width: self.total_width,
+            total_height: self.total_height,
+            insert_cell_w: self.insert_cell_w,
+            insert_cell_h: self.insert_cell_h,
+        }
+    }
+
+    /// Subtract a cell-aligned hole (rows [hr0, hr1) x cols [hc0, hc1))
+    /// from this placement. Returns `None` when the hole misses the
+    /// placement entirely (keep it as is); otherwise the surviving
+    /// pieces — up to four children referencing the same texture with
+    /// adjusted crops, zero pixel copies — are appended to `out` (an
+    /// empty append means the hole swallowed the whole placement).
+    pub fn subtract_rect(
+        &self,
+        hr0: i64,
+        hr1: i64,
+        hc0: usize,
+        hc1: usize,
+        out: &mut Vec<AtlasPlacement>,
+    ) -> Option<()> {
+        let p_r0 = self.abs_row;
+        let p_r1 = self.abs_row + self.rows as i64;
+        let p_c0 = self.col;
+        let p_c1 = self.col + self.columns;
+        if hr1 <= p_r0 || hr0 >= p_r1 || hc1 <= p_c0 || hc0 >= p_c1 {
+            return None;
+        }
+        let ir0 = hr0.max(p_r0);
+        let ir1 = hr1.min(p_r1);
+        // Top and bottom keep the full placement width; left and right
+        // cover only the hole's rows.
+        if ir0 > p_r0 {
+            out.push(self.slice(p_r0, ir0, p_c0, p_c1));
+        }
+        if ir1 < p_r1 {
+            out.push(self.slice(ir1, p_r1, p_c0, p_c1));
+        }
+        if hc0 > p_c0 {
+            out.push(self.slice(ir0, ir1, p_c0, hc0.min(p_c1)));
+        }
+        if hc1 < p_c1 {
+            out.push(self.slice(ir0, ir1, hc1.max(p_c0), p_c1));
+        }
+        out.retain(|c| {
+            c.columns > 0 && c.rows > 0 && c.src_width > 0 && c.src_height > 0
+        });
+        Some(())
+    }
+}
+
 /// Compute where an atlas placement lands on screen. Same viewport
 /// contract as `kitty_overlay_geometry`; display size scales from the
 /// insert-time cell stride to the live one so images track font size.
@@ -696,21 +778,24 @@ impl Graphics {
     /// keeps its own image cache, placements, number mappings, and
     /// virtual placements. Marks the kitty overlay layer dirty so the
     /// renderer rebuilds its overlay set against the new active screen.
-    /// Take one reference on an atlas image key (placement created).
-    pub fn retain_atlas_key(&mut self, key: u64) {
-        *self.atlas_key_refs.entry(key).or_insert(0) += 1;
-    }
-
-    /// Drop one reference; the last one queues the key so the frontend
-    /// frees the pixel store and the GPU texture.
-    pub fn release_atlas_key(&mut self, key: u64) {
-        if let Some(refs) = self.atlas_key_refs.get_mut(&key) {
-            *refs -= 1;
-            if *refs == 0 {
-                self.atlas_key_refs.remove(&key);
-                self.texture_operations.lock().push(key);
+    /// Recount atlas image key references from the placement vec (the
+    /// single source of truth) after any placement mutation. Keys that
+    /// lost their last placement are queued so the frontend frees the
+    /// pixel store and the GPU texture. The vec is tiny, so a full
+    /// recount beats distributed per-child bookkeeping.
+    pub fn recount_atlas_keys(&mut self) {
+        let mut refs: FxHashMap<u64, u32> = FxHashMap::default();
+        for placement in &self.atlas_placements {
+            *refs.entry(placement.image_key).or_insert(0) += 1;
+        }
+        let mut removals = self.texture_operations.lock();
+        for key in self.atlas_key_refs.keys() {
+            if !refs.contains_key(key) {
+                removals.push(*key);
             }
         }
+        drop(removals);
+        self.atlas_key_refs = refs;
     }
 
     pub fn swap_kitty_screen_state(&mut self) {
