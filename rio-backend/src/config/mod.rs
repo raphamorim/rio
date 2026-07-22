@@ -119,7 +119,7 @@ pub struct Config {
     pub fonts: SugarloafFonts,
     #[serde(default = "default_editor")]
     pub editor: Shell,
-    #[serde(default = "default_margin", alias = "margin")]
+    #[serde(default = "default_margin", alias = "padding")]
     pub margin: Margin,
     #[serde(default = "Panel::default")]
     pub panel: Panel,
@@ -984,6 +984,23 @@ mod tests {
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
         assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_legacy_padding_alias_maps_to_margin() {
+        // Backward compatibility: configs written before the `padding` ->
+        // `margin` rename must keep working via the serde alias.
+        let result = create_temporary_config(
+            "legacy-padding-alias",
+            r#"
+            padding = [10, 5, 15, 20]
+        "#,
+        );
+
+        assert_eq!(result.margin.top, 10.0);
+        assert_eq!(result.margin.right, 5.0);
+        assert_eq!(result.margin.bottom, 15.0);
+        assert_eq!(result.margin.left, 20.0);
     }
 
     #[test]
