@@ -3895,6 +3895,93 @@ fn test_resize_narrow_with_prompt_after_image() {
     );
 }
 
+#[test]
+fn test_resize_widen_unwraps_sixel_follows() {
+    // Sixel analog of the kitty widen test: a wrapped command above a
+    // sixel unwraps when the window widens, so the placement must move
+    // up by one row with the text, and the resize must mark the
+    // overlay dirty so the renderer refreshes its placement snapshot.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(20, 10),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+        10_000,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // 32 chars wrap onto 2 rows at columns=20, fit on 1 at columns=50.
+    type_text(&mut term, "$ convert image.png sixel:- 1234");
+    term.linefeed();
+    term.carriage_return();
+
+    term.insert_graphic(atlas_graphic(), None, None);
+    let initial_abs_row = term.graphics.atlas_placements[0].abs_row;
+    term.graphics.kitty_graphics_dirty = false;
+
+    term.resize(ReflowDim {
+        columns: 50,
+        lines: 10,
+    });
+
+    let final_abs_row = term.graphics.atlas_placements[0].abs_row;
+    assert_eq!(
+        final_abs_row,
+        initial_abs_row - 1,
+        "widening should shift the sixel up with the unwrapped command"
+    );
+    assert!(
+        term.graphics.kitty_graphics_dirty,
+        "resize with sixel placements must mark the overlay dirty, or \
+         the renderer keeps painting from a stale placement snapshot"
+    );
+}
+
+#[test]
+fn test_resize_narrow_wraps_sixel_follows() {
+    // Mirror case: the command above the sixel wraps when the window
+    // narrows, so the placement must move down by one row.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(50, 10),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+        10_000,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    type_text(&mut term, "$ convert image.png sixel:- 1234");
+    term.linefeed();
+    term.carriage_return();
+
+    term.insert_graphic(atlas_graphic(), None, None);
+    let initial_abs_row = term.graphics.atlas_placements[0].abs_row;
+    term.graphics.kitty_graphics_dirty = false;
+
+    term.resize(ReflowDim {
+        columns: 20,
+        lines: 10,
+    });
+
+    let final_abs_row = term.graphics.atlas_placements[0].abs_row;
+    assert_eq!(
+        final_abs_row,
+        initial_abs_row + 1,
+        "narrowing should shift the sixel down with the wrapped command"
+    );
+    assert!(term.graphics.kitty_graphics_dirty);
+}
+
 // Animation actions surface EINVAL (regression).
 
 #[test]

@@ -894,9 +894,38 @@ impl<U: EventListener> Crosswords<U> {
                     .kitty_placements
                     .is_empty();
         }
+
+        // Sixel/iTerm2 placements live in the same absolute row space
+        // and must follow the reflowed text just like kitty ones. The
+        // dirty flag is required even when the shift is zero: the
+        // renderer only refreshes its placement snapshot when it sees
+        // the flag, and resize invalidates positions regardless.
+        if !self.graphics.atlas_placements.is_empty()
+            || !self
+                .graphics
+                .kitty_inactive_screen
+                .atlas_placements
+                .is_empty()
+        {
+            if dest_row_shift != 0 {
+                for p in self.graphics.atlas_placements.iter_mut() {
+                    p.abs_row += dest_row_shift;
+                }
+                for p in self
+                    .graphics
+                    .kitty_inactive_screen
+                    .atlas_placements
+                    .iter_mut()
+                {
+                    p.abs_row += dest_row_shift;
+                }
+            }
+            overlay_changed = true;
+        }
         if overlay_changed {
             self.graphics.kitty_graphics_dirty = true;
         }
+        self.expire_atlas_placements();
     }
 
     /// Toggle the vi mode.
