@@ -5130,3 +5130,81 @@ fn test_narrowing_terminal_keeps_image_span_and_clips_at_edge() {
         "sixel raster is immutable under window resizes"
     );
 }
+
+#[test]
+fn test_height_grow_keeps_absolute_base_stable() {
+    // B1 guard: growing the window height must not advance the
+    // absolute row base — no content leaves the ring.
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 4),
+        crate::ansi::CursorShape::Block,
+        TestEventListener,
+        unsafe { WindowId::dummy() },
+        0,
+        10,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    let anchor = term.graphics.atlas_placements[0].abs_row;
+
+    // Build two lines of history, then grow the window taller.
+    for _ in 0..5 {
+        term.linefeed();
+    }
+    assert_eq!(term.history_size(), 2);
+    assert_eq!(term.lines_evicted(), 0);
+    term.resize(crate::crosswords::CrosswordsSize::new_with_dimensions(
+        80, 6, 800, 120, 10, 20,
+    ));
+
+    assert_eq!(term.lines_evicted(), 0, "height grow evicts nothing");
+    assert_eq!(
+        term.graphics.atlas_placements[0].abs_row, anchor,
+        "image stays glued to its content"
+    );
+}
+
+#[test]
+fn test_full_reset_clears_atlas_placements() {
+    // B2 guard: RIS must not leave sixel/iTerm2 images on screen.
+    let mut term = geometry_test_term();
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    assert_eq!(term.graphics.atlas_placements.len(), 1);
+    let key = term.graphics.atlas_placements[0].image_key;
+
+    term.reset_state();
+
+    assert!(term.graphics.atlas_placements.is_empty());
+    assert!(term.graphics.atlas_key_refs.is_empty());
+    // The removal was dispatched (queue drained by the update event),
+    // so re-queueing the same key must not happen on a later recount.
+    term.graphics.recount_atlas_keys();
+    assert!(term.graphics.texture_operations.lock().is_empty());
+    let _ = key;
+}
+
+#[test]
+fn test_alt_screen_reentry_drops_stale_placements() {
+    // B3 guard: images from a previous alt session must not reappear.
+    let mut term = geometry_test_term();
+
+    // Enter alt, draw an image there, leave.
+    term.swap_alt();
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    assert_eq!(term.graphics.atlas_placements.len(), 1);
+    term.swap_alt();
+    assert!(
+        term.graphics.atlas_placements.is_empty(),
+        "main screen has no image"
+    );
+
+    // Re-enter alt: the stale placement died with the reset contents.
+    term.swap_alt();
+    assert!(
+        term.graphics.atlas_placements.is_empty(),
+        "previous alt session's image does not come back"
+    );
+    assert!(term.graphics.atlas_key_refs.is_empty());
+}
