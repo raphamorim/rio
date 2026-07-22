@@ -4263,8 +4263,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 overlay_changed = true;
 
                 if delete.delete_data {
-                    self.graphics.kitty_images.clear();
-                    self.graphics.kitty_image_numbers.clear();
+                    // Route through delete_kitty_images so the byte
+                    // accounting deflates and the window-level textures
+                    // are queued for removal.
+                    self.graphics.delete_kitty_images(|_, _| true);
                 }
             }
             b'i' | b'I' => {

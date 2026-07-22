@@ -2580,6 +2580,32 @@ fn test_delete_uppercase_a_clears_all_image_data() {
 }
 
 #[test]
+fn test_delete_uppercase_a_deflates_byte_accounting() {
+    // d=A must give the stored bytes back to the accounting; otherwise
+    // total_bytes ratchets until every new store evicts live images.
+    let mut term = make_test_term();
+    store_red_pixel(&mut term, 1);
+    store_red_pixel(&mut term, 2);
+    assert_eq!(term.graphics.total_bytes, 8);
+
+    let delete = DeleteRequest {
+        action: b'a',
+        image_id: 0,
+        image_number: 0,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        z_index: 0,
+        delete_data: true,
+    };
+    term.delete_graphics(delete);
+
+    assert!(term.graphics.kitty_images.is_empty());
+    assert!(term.graphics.kitty_image_numbers.is_empty());
+    assert_eq!(term.graphics.total_bytes, 0);
+}
+
+#[test]
 fn test_delete_lowercase_a_keeps_image_data() {
     // Per spec: lowercase deletes placements only, image data stays so a
     // future `a=p` can still place the same image.
