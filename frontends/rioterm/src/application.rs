@@ -1807,11 +1807,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match delta {
                     MouseScrollDelta::LineDelta(columns, lines) => {
-                        let font_size =
-                            route.window.screen.ctx().current().dimension.font_size;
-                        if font_size > 0.0 {
-                            let new_scroll_px_x = columns * font_size;
-                            let new_scroll_px_y = lines * font_size;
+                        // One wheel notch is one line/column. Convert
+                        // with the cell size: scroll() divides the
+                        // accumulated pixels by it, and converting
+                        // with font_size (smaller than a cell) made
+                        // single notches floor to zero lines (#1350).
+                        let cell =
+                            route.window.screen.ctx().current().dimension.dimension;
+                        if cell.width > 0.0 && cell.height > 0.0 {
+                            let new_scroll_px_x = columns * cell.width;
+                            let new_scroll_px_y = lines * cell.height;
                             route
                                 .window
                                 .screen
