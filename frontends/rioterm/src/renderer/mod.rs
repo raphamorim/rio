@@ -468,13 +468,14 @@ impl Renderer {
                         cell_height,
                     );
                 }
-            } else {
-                // No kitty placements — drop this panel's overlay vec
-                // unconditionally. The screen emit loop appends grid
-                // image runs (sixel/iTerm2) after this pass each
-                // frame, so the vec must start from a known-empty
-                // state or stale run quads would double up.
-                sugarloaf.clear_image_overlays_for(context.rich_text_id);
+            } else if rc.kitty_graphics_dirty {
+                // Placements were removed — drop this panel's kitty
+                // overlay vec. Grid-content image quads (sixel/iTerm2)
+                // live in `grid_image_overlays`, maintained by the
+                // screen emit loop with its own residency.
+                if let Some(v) = sugarloaf.image_overlays.get_mut(&context.rich_text_id) {
+                    v.clear();
+                }
             }
 
             context.renderable_content.has_blinking_enabled =

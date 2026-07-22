@@ -789,6 +789,14 @@ impl Graphics {
         for graphic in &self.pending {
             if let Some(&timestamp) = self.image_timestamps.get(&graphic.id) {
                 let is_used = used_ids.contains(&graphic.id.get());
+                // A used pending graphic has grid cells referencing it
+                // while its pixels haven't reached the renderer yet;
+                // evicting it here would blank those cells permanently
+                // (nothing re-triggers the upload). Prefer briefly
+                // exceeding the byte budget over losing the image.
+                if is_used {
+                    continue;
+                }
                 let bytes = Self::calculate_graphic_bytes(graphic);
                 candidates.push((
                     graphic.id,
@@ -1206,17 +1214,18 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
     used_ids.insert(1); // Mark as used
 
-    // Try to add another 90KB (total would be 180KB, exceeds limit)
-    // Will evict the first one even though it's in use (per kitty spec)
+    // Try to add another 90KB (total would be 180KB, exceeds limit).
+    // A used pending graphic must NOT be evicted: its cells reference
+    // pixels that haven't reached the renderer yet, so eviction would
+    // blank them permanently. The byte budget is soft here.
     let pixels2_len = 90_000;
     let success = graphics.evict_images(pixels2_len, &used_ids);
 
     assert!(
-        success,
-        "Eviction should succeed by evicting used images if necessary"
+        !success,
+        "no evictable candidates: the pending image is in use"
     );
-    // The used image should be evicted
-    assert_eq!(graphics.pending.len(), 0);
+    assert_eq!(graphics.pending.len(), 1, "used pending image survives");
 }
 
 #[test]
