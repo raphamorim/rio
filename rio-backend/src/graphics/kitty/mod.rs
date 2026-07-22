@@ -5052,3 +5052,81 @@ fn test_overlay_clips_to_panel_rect() {
     assert_eq!(scrolled.height, 50.0);
     assert_eq!(scrolled.source_rect, [0.25, 0.75, 0.75, 1.0]);
 }
+
+/// Guards the split/window-resize contract: at constant font, images
+/// keep their cell span (kitty semantics — the protocol has no
+/// re-negotiation) and the renderer clips them at the narrowed
+/// panel's grid edge instead of painting across a split divider.
+#[test]
+fn test_narrowing_terminal_keeps_image_span_and_clips_at_edge() {
+    use crate::ansi::graphics::{
+        clip_overlay_to_rect, kitty_overlay_geometry, OverlayViewport,
+    };
+    use crate::sugarloaf::GraphicOverlay;
+
+    let mut term = geometry_test_term();
+
+    // Wide kitty placement: c=50, r=2 on the 80-column screen.
+    let mut placement = placement_request(30);
+    placement.columns = 50;
+    placement.rows = 2;
+    placement.cursor_movement = 1;
+    term.place_graphic(placement);
+    let stored = term.graphics.kitty_placements.get(&(1, 30)).unwrap();
+    assert_eq!(stored.pixel_width, 500, "50 cells at 10px");
+
+    // Split/narrow: 80 -> 40 columns, same 10x20 cell metrics.
+    term.resize(crate::crosswords::CrosswordsSize::new_with_dimensions(
+        40, 24, 400, 480, 10, 20,
+    ));
+
+    let stored = term.graphics.kitty_placements.get(&(1, 30)).unwrap();
+    assert_eq!(
+        (stored.columns, stored.pixel_width),
+        (50, 500),
+        "cell span survives the narrow (font unchanged)"
+    );
+
+    // Render side: geometry unchanged, then clipped at the 40-column
+    // grid edge — exactly the split-divider case.
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: (term.lines_evicted() + term.history_size() as u64) as i64,
+        display_offset: 0,
+        screen_lines: 24,
+    };
+    let geometry = kitty_overlay_geometry(stored, 100, 100, &viewport).unwrap();
+    let mut overlay = GraphicOverlay {
+        image_id: 1,
+        x: geometry.x,
+        y: geometry.y,
+        width: geometry.width,
+        height: geometry.height,
+        z_index: 0,
+        source_rect: geometry.source_rect,
+    };
+    assert!(clip_overlay_to_rect(&mut overlay, 0.0, 0.0, 400.0, 480.0));
+    assert_eq!(overlay.width, 400.0, "clipped at the new grid edge");
+    assert!(
+        (overlay.source_rect[2] - 0.8).abs() < 1e-6,
+        "shows the left 400/500 of the image: {:?}",
+        overlay.source_rect
+    );
+
+    // Same contract for a sixel/iTerm2 placement.
+    term.grid.cursor.pos = Pos::new(Line(5), Column(0));
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    let before = term.graphics.atlas_placements[0].clone();
+    term.resize(crate::crosswords::CrosswordsSize::new_with_dimensions(
+        20, 24, 200, 480, 10, 20,
+    ));
+    let after = &term.graphics.atlas_placements[0];
+    assert_eq!(
+        (after.columns, after.src_width),
+        (before.columns, before.src_width),
+        "sixel raster is immutable under window resizes"
+    );
+}
