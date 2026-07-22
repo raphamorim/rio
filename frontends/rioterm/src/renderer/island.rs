@@ -22,7 +22,6 @@ const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
 const TITLE_FONT_SIZE: f32 = 12.0;
 
 const TAB_PADDING_X: f32 = 27.0;
-const MAX_TAB_WIDTH: f32 = 180.0;
 const TAB_GAP: f32 = 6.0;
 const TAB_INSET_Y: f32 = 7.0;
 const TAB_RADIUS: f32 = 6.0;
@@ -136,10 +135,12 @@ pub struct TabStripLayout {
 }
 
 /// Compute the tab strip layout from the physical window width.
+/// `max_tab_width` comes from `navigation.max-tab-width` (logical px).
 pub fn tab_strip_layout(
     window_width: f32,
     scale_factor: f32,
     num_tabs: usize,
+    max_tab_width: f32,
 ) -> TabStripLayout {
     #[cfg(target_os = "macos")]
     let left_margin = ISLAND_MARGIN_LEFT_MACOS;
@@ -148,7 +149,8 @@ pub fn tab_strip_layout(
 
     let available_width =
         (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
-    let tab_width = (available_width / num_tabs.max(1) as f32).clamp(0.0, MAX_TAB_WIDTH);
+    let tab_width =
+        (available_width / num_tabs.max(1) as f32).clamp(0.0, max_tab_width.max(0.0));
     TabStripLayout {
         left_margin,
         tab_width,
@@ -303,6 +305,8 @@ fn draw_close_button(
 
 pub struct Island {
     pub hide_if_single: bool,
+    /// Cap on tab width in logical px (`navigation.max-tab-width`).
+    pub max_tab_width: f32,
     pub inactive_text_color: [f32; 4],
     pub active_text_color: [f32; 4],
     /// Current progress bar state
@@ -344,9 +348,11 @@ impl Island {
         inactive_text_color: [f32; 4],
         active_text_color: [f32; 4],
         hide_if_single: bool,
+        max_tab_width: f32,
     ) -> Self {
         Self {
             hide_if_single,
+            max_tab_width,
             inactive_text_color,
             active_text_color,
             progress_state: None,
@@ -746,7 +752,8 @@ impl Island {
         self.slide_springs
             .retain(|_, s| s.update(dt, DRAG_ANIMATION_LENGTH));
 
-        let layout = tab_strip_layout(window_width, scale_factor, num_tabs);
+        let layout =
+            tab_strip_layout(window_width, scale_factor, num_tabs, self.max_tab_width);
         let TabStripLayout {
             left_margin,
             tab_width,
@@ -1085,7 +1092,7 @@ impl Island {
             left_margin,
             tab_width,
             ..
-        } = tab_strip_layout(window_width, scale_factor, num_tabs);
+        } = tab_strip_layout(window_width, scale_factor, num_tabs, self.max_tab_width);
         let tab_x = left_margin + picker_tab as f32 * tab_width;
 
         // Picker is rendered just below the island
@@ -1394,7 +1401,6 @@ mod tests {
     fn island_geometry_invariants() {
         const {
             assert!(TAB_INSET_Y * 2.0 < ISLAND_HEIGHT);
-            assert!(TAB_GAP < MAX_TAB_WIDTH);
             assert!(CLOSE_MARGIN_RIGHT + CLOSE_HIT_HALF_WIDTH < CLOSE_MIN_ISLAND_WIDTH);
             assert!(CLOSE_HOVER_HALF * 2.0 <= ISLAND_HEIGHT - TAB_INSET_Y * 2.0);
         }
@@ -1459,7 +1465,7 @@ mod tests {
         let inactive_color = [0.5, 0.5, 0.5, 1.0];
         let active_color = [0.9, 0.9, 0.9, 1.0];
 
-        let island = Island::new(inactive_color, active_color, true);
+        let island = Island::new(inactive_color, active_color, true, 240.0);
 
         assert_eq!(island.inactive_text_color, inactive_color);
         assert_eq!(island.active_text_color, active_color);
@@ -1468,12 +1474,13 @@ mod tests {
 
     #[test]
     fn test_island_height() {
-        let island = Island::new([0.8, 0.8, 0.8, 1.0], [1.0, 1.0, 1.0, 1.0], false);
+        let island =
+            Island::new([0.8, 0.8, 0.8, 1.0], [1.0, 1.0, 1.0, 1.0], false, 240.0);
         assert_eq!(island.height(), ISLAND_HEIGHT);
     }
 
     fn test_island() -> Island {
-        Island::new([0.5, 0.5, 0.5, 1.0], [0.9, 0.9, 0.9, 1.0], false)
+        Island::new([0.5, 0.5, 0.5, 1.0], [0.9, 0.9, 0.9, 1.0], false, 240.0)
     }
 
     #[test]
@@ -1669,7 +1676,7 @@ mod tests {
         // 1000 physical px @ 2x scale → 500 logical px window. Slots
         // stay below the cap here, so the math matches the old
         // fill-the-strip layout.
-        let layout = tab_strip_layout(1000.0, 2.0, 4);
+        let layout = tab_strip_layout(1000.0, 2.0, 4, 240.0);
         #[cfg(target_os = "macos")]
         {
             assert_eq!(layout.left_margin, ISLAND_MARGIN_LEFT_MACOS);
@@ -1683,20 +1690,27 @@ mod tests {
             assert_eq!(layout.tabs_width, 492.0);
         }
         // Zero tabs clamps the divisor.
-        assert!(tab_strip_layout(1000.0, 2.0, 0).tab_width.is_finite());
+        assert!(tab_strip_layout(1000.0, 2.0, 0, 240.0)
+            .tab_width
+            .is_finite());
     }
 
     #[test]
     fn tab_strip_layout_caps_slot_width() {
-        let layout = tab_strip_layout(3000.0, 2.0, 2);
-        assert_eq!(layout.tab_width, MAX_TAB_WIDTH);
-        assert_eq!(layout.tabs_width, MAX_TAB_WIDTH * 2.0);
+        let layout = tab_strip_layout(3000.0, 2.0, 2, 240.0);
+        assert_eq!(layout.tab_width, 240.0);
+        assert_eq!(layout.tabs_width, 480.0);
+
+        // The cap is configurable via navigation.max-tab-width.
+        let layout = tab_strip_layout(3000.0, 2.0, 2, 280.0);
+        assert_eq!(layout.tab_width, 280.0);
+        assert_eq!(layout.tabs_width, 560.0);
         // The tabs region ends well before the 1500 logical px strip.
         assert!(layout.left_margin + layout.tabs_width < 1500.0);
 
         // Pathologically narrow window: width clamps at 0 instead of
         // going negative.
-        let layout = tab_strip_layout(10.0, 2.0, 4);
+        let layout = tab_strip_layout(10.0, 2.0, 4, 240.0);
         assert_eq!(layout.tab_width, 0.0);
         assert_eq!(layout.tabs_width, 0.0);
     }

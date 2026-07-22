@@ -449,6 +449,7 @@ impl Screen<'_> {
         self.renderer.is_window_focused = was_focused;
         if let Some(mut island) = old_island {
             island.update_colors(config.colors.tabs, config.colors.tabs_active);
+            island.max_tab_width = config.navigation.max_tab_width;
             self.renderer.island = Some(island);
         }
 
@@ -2655,10 +2656,17 @@ impl Screen<'_> {
 
     #[inline]
     fn island_tab_layout(&self, num_tabs: usize) -> TabStripLayout {
+        let max_tab_width = self
+            .renderer
+            .island
+            .as_ref()
+            .map(|island| island.max_tab_width)
+            .unwrap_or_else(rio_backend::config::navigation::default_max_tab_width);
         island::tab_strip_layout(
             self.sugarloaf.window_size().width,
             self.sugarloaf.scale_factor(),
             num_tabs,
+            max_tab_width,
         )
     }
 
