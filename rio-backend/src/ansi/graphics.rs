@@ -8,9 +8,8 @@ use crate::crosswords::grid::Dimensions;
 use crate::sugarloaf::{GraphicData, GraphicId};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use smallvec::SmallVec;
 use std::mem;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tracing::debug;
 
 #[derive(Debug, Clone)]
@@ -24,70 +23,6 @@ pub struct UpdateQueues {
     /// Image keys removed from the grid or evicted
     /// (`sugarloaf::graphics::kitty_image_key` / `atlas_image_key`).
     pub remove_queue: Vec<u64>,
-}
-
-#[derive(Clone, Debug)]
-pub struct TextureRef {
-    /// Graphic identifier.
-    pub id: GraphicId,
-
-    /// Width, in pixels, of the graphic.
-    pub width: u16,
-
-    /// Height, in pixels, of the graphic.
-    pub height: u16,
-
-    /// Width, in pixels, of the cell when the graphic was inserted.
-    pub cell_width: usize,
-
-    /// Height, in pixels, of the cell when the graphic was inserted.
-    pub cell_height: usize,
-
-    /// Queue to track removed textures (final image keys).
-    pub texture_operations: Weak<Mutex<Vec<u64>>>,
-}
-
-impl PartialEq for TextureRef {
-    fn eq(&self, t: &Self) -> bool {
-        // Ignore texture_operations.
-        self.id == t.id
-    }
-}
-
-impl Eq for TextureRef {}
-
-impl Drop for TextureRef {
-    fn drop(&mut self) {
-        if let Some(texture_operations) = self.texture_operations.upgrade() {
-            texture_operations
-                .lock()
-                .push(crate::sugarloaf::atlas_image_key(self.id.get()));
-        }
-    }
-}
-
-/// A list of graphics in a single cell.
-pub type GraphicsCell = SmallVec<[GraphicCell; 1]>;
-
-/// Graphic data stored in a cell's extras slot.
-///
-/// One `GraphicCell` (one extras slot) is shared by every covered cell of
-/// an image row — a slot per cell would exhaust the u16 extras id space in
-/// a dozen large images. A cell's actual x offset is derived positionally:
-/// `offset_x + (col - anchor_col) * texture.cell_width`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GraphicCell {
-    /// Texture to draw the graphic in this cell.
-    pub texture: Arc<TextureRef>,
-
-    /// Offset in the x direction, at `anchor_col`.
-    pub offset_x: u16,
-
-    /// Offset in the y direction.
-    pub offset_y: u16,
-
-    /// Grid column `offset_x` is measured at.
-    pub anchor_col: u16,
 }
 
 /// Kitty graphics Unicode placeholder character
@@ -632,9 +567,8 @@ pub struct Graphics {
 
     /// Weak references to placed textures, for O(1) liveness checks.
     /// Avoids scanning the entire grid to find which graphics are in use.
-    /// When the Arc<TextureRef> in grid cells is fully dropped, the Weak
+    /// When an image loses its last placement, the
     /// will report strong_count() == 0, meaning the graphic is no longer displayed.
-    pub placed_textures: FxHashMap<GraphicId, Weak<TextureRef>>,
 
     /// Kitty graphics: Overlay placements.
     /// Key is (image_id, placement_id). Rendered as overlays, not in grid cells.
@@ -688,7 +622,6 @@ impl Default for Graphics {
             total_bytes: 0,
             total_limit: 320 * 1024 * 1024, // 320MB per kitty spec
             image_timestamps: FxHashMap::default(),
-            placed_textures: FxHashMap::default(),
             kitty_placements: FxHashMap::default(),
             atlas_placements: Vec::new(),
             atlas_key_refs: FxHashMap::default(),
@@ -1132,30 +1065,15 @@ impl Graphics {
         freed_bytes >= bytes_to_free
     }
 
-    /// Register a placed texture for liveness tracking.
-    /// Call this after creating the Arc<TextureRef> in insert_graphic.
-    pub fn register_placed_texture(
-        &mut self,
-        graphic_id: GraphicId,
-        weak: Weak<TextureRef>,
-    ) {
-        self.placed_textures.insert(graphic_id, weak);
-    }
-
-    /// Collect IDs of graphics still displayed in the grid or as overlays.
-    /// O(number of placements) instead of O(rows * cols).
+    /// Collect IDs of graphics still displayed on the grid or as
+    /// overlays. O(number of placements).
     pub fn collect_active_graphic_ids(&mut self) -> std::collections::HashSet<u64> {
-        // Clean up stale entries and collect live ones in one pass
         let mut active = std::collections::HashSet::new();
-        // Cell-based (sixel) liveness
-        self.placed_textures.retain(|id, weak| {
-            if weak.strong_count() > 0 {
-                active.insert(id.get());
-                true
-            } else {
-                false
-            }
-        });
+        // Sixel/iTerm2 liveness: placements are the single owners.
+        for placement in &self.atlas_placements {
+            // Atlas keys live above 2^32; recover the GraphicId part.
+            active.insert(placement.image_key - (1u64 << 32));
+        }
         // Overlay-based (kitty) liveness — use image_id directly
         for placement in self.kitty_placements.values() {
             active.insert(placement.image_id as u64);

@@ -1107,140 +1107,89 @@ fn test_place_nonexistent_graphic() {
 // and test_delete_by_specific_placement_id.
 
 #[test]
-fn test_no_double_push_on_graphic_cell_drop() {
-    use crate::ansi::graphics::{GraphicCell, TextureRef};
-    use parking_lot::Mutex;
-    use std::sync::Arc;
+fn test_recount_releases_key_exactly_once() {
+    let mut graphics = crate::ansi::graphics::Graphics::default();
+    let key = crate::sugarloaf::atlas_image_key(99);
+    graphics
+        .atlas_placements
+        .push(crate::ansi::graphics::AtlasPlacement {
+            image_key: key,
+            abs_row: 0,
+            col: 0,
+            columns: 2,
+            rows: 1,
+            src_x: 0,
+            src_y: 0,
+            src_width: 20,
+            src_height: 20,
+            total_width: 20,
+            total_height: 20,
+            insert_cell_w: 10,
+            insert_cell_h: 20,
+        });
+    graphics.recount_atlas_keys();
+    assert!(graphics.texture_operations.lock().is_empty());
 
-    let texture_ops: Arc<Mutex<Vec<u64>>> = Arc::new(Mutex::new(Vec::new()));
+    // Splitting into two pieces keeps the key alive.
+    let p = graphics.atlas_placements.pop().unwrap();
+    let mut pieces = Vec::new();
+    p.subtract_rect(0, 1, 1, 2, &mut pieces).unwrap();
+    graphics.atlas_placements = pieces;
+    graphics.recount_atlas_keys();
+    assert!(graphics.texture_operations.lock().is_empty());
 
-    let texture = Arc::new(TextureRef {
-        id: GraphicId::new(99),
-        width: 10,
-        height: 20,
-        cell_width: 10,
-        cell_height: 20,
-        texture_operations: Arc::downgrade(&texture_ops),
-    });
-
-    // Create two GraphicCells referencing the same texture (simulating multi-cell image)
-    let cell1 = GraphicCell {
-        texture: texture.clone(),
-        offset_x: 0,
-        offset_y: 0,
-        anchor_col: 0,
-    };
-    let cell2 = GraphicCell {
-        texture: texture.clone(),
-        offset_x: 10,
-        offset_y: 0,
-        anchor_col: 0,
-    };
-
-    // Drop both cells — should NOT push to texture_operations (GraphicCell has no Drop impl)
-    drop(cell1);
-    drop(cell2);
-    assert!(
-        texture_ops.lock().is_empty(),
-        "GraphicCell drop should NOT push to texture_operations"
-    );
-
-    // Drop the last Arc<TextureRef> — should push exactly once
-    drop(texture);
-    let ops = texture_ops.lock();
+    // Dropping the last piece queues the removal exactly once.
+    graphics.atlas_placements.clear();
+    graphics.recount_atlas_keys();
+    assert_eq!(graphics.texture_operations.lock().as_slice(), &[key]);
+    graphics.recount_atlas_keys();
     assert_eq!(
-        ops.len(),
+        graphics.texture_operations.lock().len(),
         1,
-        "TextureRef drop should push exactly once, got {}",
-        ops.len()
+        "no double push on repeated recounts"
     );
-    assert_eq!(ops[0], crate::sugarloaf::atlas_image_key(99));
 }
 
-#[test]
-fn test_placed_textures_tracks_inserts() {
-    let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
-
-    let mut term: Crosswords<TestEventListener> = Crosswords::new(
-        crate::crosswords::CrosswordsSize::new(80, 24),
-        crate::ansi::CursorShape::Block,
-        event_listener,
-        window_id,
-        0,
-        10_000,
-    );
-
-    term.graphics.cell_width = 10.0;
-    term.graphics.cell_height = 20.0;
-
-    assert!(
-        term.graphics.placed_textures.is_empty(),
-        "Should start with no placed textures"
-    );
-
-    // Insert a graphic
-    let pixels = vec![255u8; 10 * 20 * 4];
-    let graphic = GraphicData {
-        id: GraphicId::new(1),
-        width: 10,
-        height: 20,
+/// 30x40 px graphic at 10x20 cells: 3 columns, 2 rows.
+fn atlas_graphic() -> GraphicData {
+    GraphicData {
+        id: GraphicId::new(0),
+        width: 30,
+        height: 40,
         color_type: ColorType::Rgba,
-        pixels,
+        pixels: vec![255u8; 30 * 40 * 4],
         is_opaque: true,
         resize: None,
         display_width: None,
         display_height: None,
         transmit_time: std::time::Instant::now(),
-    };
-    term.insert_graphic(graphic, None, Some(0));
-
-    assert_eq!(
-        term.graphics.placed_textures.len(),
-        1,
-        "Should track 1 placed texture after insert"
-    );
+    }
 }
 
 #[test]
-fn test_collect_active_ids_uses_weak_refs() {
-    use crate::ansi::graphics::TextureRef;
-    use std::sync::Arc;
+fn test_collect_active_ids_from_placements() {
+    let mut term = geometry_test_term();
+    assert!(term.graphics.collect_active_graphic_ids().is_empty());
 
-    let mut graphics = crate::ansi::graphics::Graphics::default();
-
-    // Simulate placing a texture
-    let texture_ops = graphics.texture_operations.clone();
-    let texture = Arc::new(TextureRef {
-        id: GraphicId::new(1),
-        width: 10,
-        height: 20,
-        cell_width: 10,
-        cell_height: 20,
-        texture_operations: Arc::downgrade(&texture_ops),
-    });
-    graphics.register_placed_texture(GraphicId::new(1), Arc::downgrade(&texture));
-
-    // While texture is alive, it should appear in active IDs
-    let active = graphics.collect_active_graphic_ids();
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    let active = term.graphics.collect_active_graphic_ids();
     assert!(
         active.contains(&1),
-        "Active texture should appear in collect_active_graphic_ids"
+        "placed image appears in active ids: {active:?}"
     );
 
-    // Drop the texture — weak ref becomes dead
-    drop(texture);
-
-    // Now it should be cleaned up
-    let active = graphics.collect_active_graphic_ids();
+    // Cover it completely with a second image: the first placement is
+    // clipped away entirely and stops being active.
+    term.grid.cursor.pos = Pos::new(Line(0), Column(0));
+    let mut replacement = atlas_graphic();
+    replacement.id = GraphicId::new(0);
+    term.insert_graphic(replacement, None, Some(1));
+    let active = term.graphics.collect_active_graphic_ids();
     assert!(
         !active.contains(&1),
-        "Dropped texture should NOT appear in collect_active_graphic_ids"
+        "fully covered image dropped: {active:?}"
     );
-    assert!(
-        graphics.placed_textures.is_empty(),
-        "Stale entry should be cleaned up"
-    );
+    assert!(active.contains(&2), "the covering image is active");
 }
 
 // Overlay placement tests
@@ -4627,49 +4576,6 @@ fn test_image_key_namespaces_are_disjoint() {
 }
 
 #[test]
-fn test_texture_ref_drop_queues_atlas_key() {
-    use crate::ansi::graphics::TextureRef;
-    use crate::sugarloaf::atlas_image_key;
-    use parking_lot::Mutex;
-    use std::sync::Arc;
-
-    let ops = Arc::new(Mutex::new(Vec::new()));
-    {
-        let _texture = TextureRef {
-            id: GraphicId::new(3),
-            width: 10,
-            height: 10,
-            cell_width: 10,
-            cell_height: 20,
-            texture_operations: Arc::downgrade(&ops),
-        };
-    }
-    assert_eq!(
-        *ops.lock(),
-        vec![atlas_image_key(3)],
-        "dropping the last grid reference queues the atlas key for GPU cleanup"
-    );
-}
-
-// Atlas (sixel/iTerm2) cursor placement tests
-
-/// 30x40 px graphic at 10x20 cells: 3 columns, 2 rows.
-fn atlas_graphic() -> GraphicData {
-    GraphicData {
-        id: GraphicId::new(0),
-        width: 30,
-        height: 40,
-        color_type: ColorType::Rgba,
-        pixels: vec![255u8; 30 * 40 * 4],
-        is_opaque: true,
-        resize: None,
-        display_width: None,
-        display_height: None,
-        transmit_time: std::time::Instant::now(),
-    }
-}
-
-#[test]
 fn test_sixel_cursor_lands_on_last_row_start_column() {
     let mut term = geometry_test_term();
 
@@ -4752,42 +4658,6 @@ fn test_iterm2_parse_cursor_movement_params() {
     let params: Vec<&[u8]> = vec![b"1337", b"File=inline=1", no_move.as_bytes()];
     let (_, movement) = iterm2_image_protocol::parse(&params).expect("parses");
     assert_eq!(movement, CURSOR_DO_NOT_MOVE);
-}
-
-#[test]
-fn test_gc_cadence_reclaims_scrolled_out_image_slots() {
-    let mut term: Crosswords<TestEventListener> = Crosswords::new(
-        crate::crosswords::CrosswordsSize::new(80, 4),
-        crate::ansi::CursorShape::Block,
-        TestEventListener,
-        unsafe { WindowId::dummy() },
-        0,
-        2, // two lines of scrollback: images fall off the ring fast
-    );
-    term.graphics.cell_width = 10.0;
-    term.graphics.cell_height = 20.0;
-
-    // 30x40 image: occupies 2 rows.
-    term.insert_graphic(atlas_graphic(), None, None);
-    assert!(
-        term.graphics.texture_operations.lock().is_empty(),
-        "texture alive while rows reference it"
-    );
-
-    // Scroll the image out of the screen AND the 2-line history.
-    for _ in 0..10 {
-        term.linefeed();
-    }
-
-    // The sweep finds no cell referencing the slot; dropping it drops
-    // the TextureRef, which queues the GPU texture removal.
-    term.grid.gc_extras();
-    let ops = term.graphics.texture_operations.lock();
-    assert_eq!(
-        ops.as_slice(),
-        &[crate::sugarloaf::atlas_image_key(1)],
-        "scrolled-out image queues its texture for removal"
-    );
 }
 
 #[test]
