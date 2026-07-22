@@ -380,6 +380,81 @@ pub fn kitty_overlay_geometry(
     })
 }
 
+/// One displayed sixel/iTerm2 image region, anchored to grid content
+/// (DEC semantics — unlike floating kitty placements, these clip under
+/// text and erase operations and shift with region scrolls).
+///
+/// The source rectangle lives in display-pixel space at insert time:
+/// initially `(0, 0, total_w, total_h)`; overwrite splits subtract
+/// cell-aligned holes, producing children referencing the same texture
+/// with adjusted crops (no pixel copies). Normalized texture
+/// coordinates fall out directly since display space is a uniform
+/// scale of the image.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AtlasPlacement {
+    /// Texture key (`atlas_image_key(GraphicId)`).
+    pub image_key: u64,
+    /// Anchor row in the stable absolute space
+    /// (`lines_evicted + history + screen_row` at insert).
+    pub abs_row: i64,
+    /// Leftmost grid column.
+    pub col: usize,
+    /// Cell span of this (possibly split) region.
+    pub columns: usize,
+    pub rows: usize,
+    /// Crop in display pixels at insert scale.
+    pub src_x: u32,
+    pub src_y: u32,
+    pub src_width: u32,
+    pub src_height: u32,
+    /// Full display size at insert (normalization denominator).
+    pub total_width: u32,
+    pub total_height: u32,
+    /// Cell stride at insert; rendering scales by live/insert.
+    pub insert_cell_w: u16,
+    pub insert_cell_h: u16,
+}
+
+/// Compute where an atlas placement lands on screen. Same viewport
+/// contract as `kitty_overlay_geometry`; display size scales from the
+/// insert-time cell stride to the live one so images track font size.
+pub fn atlas_overlay_geometry(
+    placement: &AtlasPlacement,
+    viewport: &OverlayViewport,
+) -> Option<KittyOverlayGeometry> {
+    let screen_row =
+        placement.abs_row - (viewport.history_size - viewport.display_offset);
+    let bottom_row = screen_row + placement.rows as i64;
+    if bottom_row <= 0 || screen_row >= viewport.screen_lines {
+        return None;
+    }
+    if placement.src_width == 0
+        || placement.src_height == 0
+        || placement.total_width == 0
+        || placement.total_height == 0
+    {
+        return None;
+    }
+
+    let scale_x = viewport.cell_width / placement.insert_cell_w.max(1) as f32;
+    let scale_y = viewport.cell_height / placement.insert_cell_h.max(1) as f32;
+    let total_w = placement.total_width as f32;
+    let total_h = placement.total_height as f32;
+
+    Some(KittyOverlayGeometry {
+        x: viewport.origin_x + placement.col as f32 * viewport.cell_width,
+        y: viewport.origin_y + screen_row as f32 * viewport.cell_height,
+        width: placement.src_width as f32 * scale_x,
+        height: placement.src_height as f32 * scale_y,
+        source_rect: [
+            placement.src_x as f32 / total_w,
+            placement.src_y as f32 / total_h,
+            (placement.src_x + placement.src_width) as f32 / total_w,
+            (placement.src_y + placement.src_height) as f32 / total_h,
+        ],
+    })
+}
+
 /// Virtual placement metadata for Kitty graphics protocol
 /// Stored separately from direct graphics in cells
 #[derive(Debug, Clone, PartialEq)]
@@ -414,6 +489,8 @@ pub struct KittyScreenState {
     pub kitty_image_numbers: FxHashMap<u32, u32>,
     pub kitty_placements: FxHashMap<(u32, u32), KittyPlacement>,
     pub kitty_virtual_placements: FxHashMap<(u32, u32), VirtualPlacement>,
+    pub atlas_placements: Vec<AtlasPlacement>,
+    pub atlas_key_refs: FxHashMap<u64, u32>,
 }
 
 /// Track changes in the grid to add or to remove graphics.
@@ -481,6 +558,14 @@ pub struct Graphics {
     /// Key is (image_id, placement_id). Rendered as overlays, not in grid cells.
     pub kitty_placements: FxHashMap<(u32, u32), KittyPlacement>,
 
+    /// Sixel/iTerm2 placements (DEC grid-plane semantics: clip under
+    /// text/erase, shift with region scrolls, expire off the ring).
+    pub atlas_placements: Vec<AtlasPlacement>,
+
+    /// How many placements reference each atlas image key; the last
+    /// release queues the key for pixel-store + GPU texture removal.
+    pub atlas_key_refs: FxHashMap<u64, u32>,
+
     /// Kitty graphics state for the *inactive* screen.
     /// When the terminal toggles between main and alt screens this is
     /// swapped with the active fields (`kitty_images`, `kitty_placements`,
@@ -523,6 +608,8 @@ impl Default for Graphics {
             image_timestamps: FxHashMap::default(),
             placed_textures: FxHashMap::default(),
             kitty_placements: FxHashMap::default(),
+            atlas_placements: Vec::new(),
+            atlas_key_refs: FxHashMap::default(),
             kitty_inactive_screen: KittyScreenState::default(),
             next_internal_placement_id: 0,
             kitty_graphics_dirty: false,
@@ -609,6 +696,23 @@ impl Graphics {
     /// keeps its own image cache, placements, number mappings, and
     /// virtual placements. Marks the kitty overlay layer dirty so the
     /// renderer rebuilds its overlay set against the new active screen.
+    /// Take one reference on an atlas image key (placement created).
+    pub fn retain_atlas_key(&mut self, key: u64) {
+        *self.atlas_key_refs.entry(key).or_insert(0) += 1;
+    }
+
+    /// Drop one reference; the last one queues the key so the frontend
+    /// frees the pixel store and the GPU texture.
+    pub fn release_atlas_key(&mut self, key: u64) {
+        if let Some(refs) = self.atlas_key_refs.get_mut(&key) {
+            *refs -= 1;
+            if *refs == 0 {
+                self.atlas_key_refs.remove(&key);
+                self.texture_operations.lock().push(key);
+            }
+        }
+    }
+
     pub fn swap_kitty_screen_state(&mut self) {
         std::mem::swap(
             &mut self.kitty_images,
@@ -625,6 +729,14 @@ impl Graphics {
         std::mem::swap(
             &mut self.kitty_virtual_placements,
             &mut self.kitty_inactive_screen.kitty_virtual_placements,
+        );
+        std::mem::swap(
+            &mut self.atlas_placements,
+            &mut self.kitty_inactive_screen.atlas_placements,
+        );
+        std::mem::swap(
+            &mut self.atlas_key_refs,
+            &mut self.kitty_inactive_screen.atlas_key_refs,
         );
         self.kitty_graphics_dirty = true;
     }
