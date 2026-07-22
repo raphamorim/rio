@@ -236,9 +236,11 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     }
 
     fn decrease_scroll_limit(&mut self, count: usize) {
+        // NOTE: not counted into `total_lines_scrolled` — the only
+        // caller is `grow_lines`, which trims the surplus rows created
+        // by growing the visible area; no content leaves the ring.
         let count = min(count, self.history_size());
         if count != 0 {
-            self.total_lines_scrolled += count as u64;
             self.raw.shrink_lines(min(count, self.history_size()));
             self.display_offset = min(self.display_offset, self.history_size());
         }

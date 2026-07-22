@@ -1800,6 +1800,23 @@ impl<U: EventListener> Crosswords<U> {
 
             // Reset alternate screen contents.
             self.inactive_grid.reset_region(..);
+
+            // The alt screen starts blank: sixel/iTerm2 placements
+            // stashed from a previous alt session die with its
+            // contents (DEC grid-plane semantics; kitty state
+            // intentionally persists per screen).
+            let stale = &mut self.graphics.kitty_inactive_screen;
+            if !stale.atlas_placements.is_empty() {
+                let mut removals = self.graphics.texture_operations.lock();
+                for key in stale.atlas_key_refs.keys() {
+                    removals.push(*key);
+                }
+                drop(removals);
+                stale.atlas_placements.clear();
+                stale.atlas_key_refs.clear();
+                drop(stale);
+                self.send_graphics_updates();
+            }
         }
 
         mem::swap(
@@ -2674,10 +2691,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.keyboard_mode_stack = Default::default();
         self.inactive_keyboard_mode_stack = Default::default();
 
-        // Clear kitty graphics on full reset (both active and inactive
-        // screens, so a reset doesn't leave stale images on the other
-        // screen waiting to come back).
+        // Clear all graphics on full reset (both screens, kitty and
+        // sixel/iTerm2) and dispatch the queued texture removals.
         self.graphics.clear_all_kitty_state();
+        self.send_graphics_updates();
 
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
@@ -4400,6 +4417,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         if overlay_changed {
             self.graphics.kitty_graphics_dirty = true;
+            // Placement-only deletes produce no cell damage, and the
+            // damage event is what drives a repaint — without this a
+            // deleted image stays visible until unrelated output.
+            self.mark_fully_damaged();
         }
         self.send_graphics_updates();
     }
