@@ -692,13 +692,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::UpdateConfig) => {
-                let (mut config, config_error) =
-                    match rio_backend::config::Config::try_load() {
-                        Ok(config) => (config, None),
-                        Err(error) => {
-                            (rio_backend::config::Config::default(), Some(error))
+                // A broken save (a typo mid-edit, a missing theme) keeps the
+                // live config instead of resetting fonts, colors and
+                // bindings to defaults. The error shows on every route and
+                // the next good save applies. Startup has nothing live to
+                // keep, so `Config::load` still falls back to defaults.
+                let mut config = match rio_backend::config::Config::try_load() {
+                    Ok(config) => config,
+                    Err(error) => {
+                        tracing::warn!(
+                            "config reload failed; keeping the previous config"
+                        );
+                        for (_id, route) in self.router.routes.iter_mut() {
+                            route.report_error(&error.to_owned().into());
+                            route.request_redraw();
                         }
-                    };
+                        return;
+                    }
+                };
                 self.overrides.apply(&mut config);
 
                 let has_font_updates = self.config.fonts != config.fonts;
@@ -759,11 +770,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     route.window.configure_window(&self.config);
 
-                    if let Some(error) = &config_error {
-                        route.report_error(&error.to_owned().into());
-                    } else {
-                        route.clear_errors();
-                    }
+                    // The reload parsed: drop any error screen left from a
+                    // previously broken save.
+                    route.clear_errors();
 
                     route.request_redraw();
                 }
