@@ -417,6 +417,14 @@ impl Renderer {
                 let origin_x = panel_rect[0] + grid_scaled_margin.left;
                 let origin_y = panel_rect[1] + grid_scaled_margin.top;
 
+                // Images clip to the panel's cell grid, exactly like
+                // text: without this a wide image paints across split
+                // dividers onto neighbor panels.
+                let clip_x0 = origin_x;
+                let clip_y0 = origin_y;
+                let clip_x1 = origin_x + rc.columns as f32 * cell_width;
+                let clip_y1 = origin_y + rc.screen_lines as f32 * cell_height;
+
                 let overlays = sugarloaf
                     .image_overlays
                     .entry(context.rich_text_id)
@@ -446,7 +454,7 @@ impl Renderer {
                         else {
                             continue;
                         };
-                        overlays.push(rio_backend::sugarloaf::GraphicOverlay {
+                        let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
                             image_id: p.image_key,
                             x: geometry.x,
                             y: geometry.y,
@@ -454,7 +462,16 @@ impl Renderer {
                             height: geometry.height,
                             z_index: -1,
                             source_rect: geometry.source_rect,
-                        });
+                        };
+                        if rio_backend::ansi::graphics::clip_overlay_to_rect(
+                            &mut overlay,
+                            clip_x0,
+                            clip_y0,
+                            clip_x1,
+                            clip_y1,
+                        ) {
+                            overlays.push(overlay);
+                        }
                     }
                 }
 
@@ -475,7 +492,7 @@ impl Renderer {
                         else {
                             continue;
                         };
-                        overlays.push(rio_backend::sugarloaf::GraphicOverlay {
+                        let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
                             image_id: kitty_image_key(p.image_id),
                             x: geometry.x,
                             y: geometry.y,
@@ -483,7 +500,16 @@ impl Renderer {
                             height: geometry.height,
                             z_index: p.z_index,
                             source_rect: geometry.source_rect,
-                        });
+                        };
+                        if rio_backend::ansi::graphics::clip_overlay_to_rect(
+                            &mut overlay,
+                            clip_x0,
+                            clip_y0,
+                            clip_x1,
+                            clip_y1,
+                        ) {
+                            overlays.push(overlay);
+                        }
                     }
                 }
 
@@ -495,6 +521,7 @@ impl Renderer {
                         origin_y,
                         cell_width,
                         cell_height,
+                        (clip_x0, clip_y0, clip_x1, clip_y1),
                     );
                 }
             } else if rc.kitty_graphics_dirty {
@@ -750,6 +777,7 @@ impl Renderer {
     ///    partial visibility (placement scrolled half off-screen) and
     ///    cells that fall in the centering padding
     ///    (`renderPlacement`, `graphics_unicode.zig:212-329`).
+    #[allow(clippy::too_many_arguments)]
     fn push_virtual_placeholder_overlays(
         overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
         rc: &RenderableContent,
@@ -757,6 +785,7 @@ impl Renderer {
         origin_y: f32,
         cell_width: f32,
         cell_height: f32,
+        clip: (f32, f32, f32, f32),
     ) {
         use rio_backend::ansi::kitty_virtual::{
             IncompletePlacement, PlaceholderRun, PLACEHOLDER,
@@ -794,6 +823,7 @@ impl Renderer {
                             cell_width,
                             cell_height,
                             VIRTUAL_Z_INDEX,
+                            clip,
                         );
                     }
                     continue;
@@ -829,6 +859,7 @@ impl Renderer {
                                 cell_width,
                                 cell_height,
                                 VIRTUAL_Z_INDEX,
+                                clip,
                             );
                         }
                         // Default missing row/col on the FIRST cell of a
@@ -858,6 +889,7 @@ impl Renderer {
                     cell_width,
                     cell_height,
                     VIRTUAL_Z_INDEX,
+                    clip,
                 );
             }
         }
@@ -880,6 +912,7 @@ impl Renderer {
             cell_width: f32,
             cell_height: f32,
             z_index: i32,
+            clip: (f32, f32, f32, f32),
         ) {
             let vp = rc
                 .kitty_virtual_placements
@@ -912,7 +945,7 @@ impl Renderer {
                 None => return,
             };
 
-            overlays.push(rio_backend::sugarloaf::GraphicOverlay {
+            let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
                 image_id: kitty_image_key(run.image_id),
                 x: geom.x,
                 y: geom.y,
@@ -920,7 +953,16 @@ impl Renderer {
                 height: geom.height,
                 z_index,
                 source_rect: geom.source_rect,
-            });
+            };
+            if rio_backend::ansi::graphics::clip_overlay_to_rect(
+                &mut overlay,
+                clip.0,
+                clip.1,
+                clip.2,
+                clip.3,
+            ) {
+                overlays.push(overlay);
+            }
         }
     }
 }
