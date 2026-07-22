@@ -2910,10 +2910,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             } else {
                 let mut extras = crate::crosswords::square::Extras::default();
                 extras.zerowidth.push(c);
-                if self.grid.extras_table.should_reclaim() {
-                    self.grid.reclaim_extras();
-                }
-                let id = self.grid.extras_table.alloc(extras);
+                let id = self.grid.alloc_extras(extras);
                 let cell = &mut self.grid[row][column];
                 cell.set_extras_id(Some(id));
                 cell.insert_cell_flag(CellFlags::GRAPHEME);
@@ -3414,16 +3411,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // path, so it needs its own careful change.
         match hyperlink {
             Some(hl) => {
-                if self.grid.extras_table.should_reclaim() {
-                    self.grid.reclaim_extras();
-                }
-                let id =
-                    self.grid
-                        .extras_table
-                        .alloc(crate::crosswords::square::Extras {
-                            hyperlink: Some(hl),
-                            ..Default::default()
-                        });
+                let id = self.grid.alloc_extras(crate::crosswords::square::Extras {
+                    hyperlink: Some(hl),
+                    ..Default::default()
+                });
                 self.grid.cursor.template.set_extras_id(Some(id));
                 self.grid
                     .cursor
