@@ -1107,6 +1107,20 @@ impl Renderer {
             self.image_draws.clear();
         }
 
+        // Evict GPU textures whose CPU-side pixels are gone. `image_data`
+        // is the source of truth: a texture is only ever inserted for a
+        // key that exists in `image_data`, and rio drops that entry when
+        // the graphic is freed (atlas graphic's last cell dropped, kitty
+        // image deleted). A texture with no matching `image_data` key can
+        // never be drawn again and would otherwise leak forever (upstream
+        // #1591 — atlas ids are monotonic, so every image was a fresh
+        // texture kept for the life of the window). An off-screen-but-
+        // scrollable image keeps its `image_data` entry and so keeps its
+        // texture. The sweep is O(live GPU textures) — a set this eviction
+        // itself keeps small — so it adds no meaningful per-frame cost.
+        self.image_textures
+            .retain(|id, _| image_data.contains_key(id));
+
         // Upload pending background image (if any) before the render pass
         // begins. The texture stays cached until a new image arrives or
         // `set_background_image_pixels(None)` is called.
@@ -1204,7 +1218,8 @@ impl Renderer {
     ) {
         // Off-screen textures are kept until the byte budget below
         // forces the least-recently-drawn ones out; they re-upload
-        // from `image_data` when scrolled back into view.
+        // from `image_data` when scrolled back into view. Genuinely-freed
+        // textures (no `image_data` entry) are swept in `prepare`.
         self.image_frame_counter += 1;
         let current_frame = self.image_frame_counter;
 
