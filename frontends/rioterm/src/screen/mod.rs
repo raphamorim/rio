@@ -3785,8 +3785,6 @@ impl Screen<'_> {
         {
             struct PanelFrame {
                 route_id: usize,
-                /// Overlay-map key for this panel (`Sugarloaf::image_overlays`).
-                rich_text_id: usize,
                 layout_rect: [f32; 4],
                 cols: u32,
                 rows: u32,
@@ -3979,7 +3977,6 @@ impl Screen<'_> {
                     .unwrap_or(self.renderer.named_colors.cursor);
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
-                    rich_text_id: ctx.rich_text_id,
                     layout_rect: item.layout_rect,
                     cols: ctx.renderable_content.columns.max(1) as u32,
                     rows: ctx.renderable_content.screen_lines.max(1) as u32,

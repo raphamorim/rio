@@ -5,7 +5,7 @@ use crate::ansi::graphics::KittyPlacement;
 use crate::ansi::kitty_graphics_protocol::{
     self, DeleteRequest, KittyGraphicsState, PlacementRequest,
 };
-use crate::crosswords::pos::Column;
+use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::Crosswords;
 use crate::event::{EventListener, RioEvent, WindowId};
 use crate::performer::handler::Handler;
@@ -5000,4 +5000,127 @@ fn test_atlas_placement_expires_off_the_ring() {
         term.graphics.atlas_key_refs.is_empty(),
         "last placement released the image key"
     );
+}
+
+fn test_placement() -> crate::ansi::graphics::AtlasPlacement {
+    crate::ansi::graphics::AtlasPlacement {
+        image_key: 9,
+        abs_row: 10,
+        col: 2,
+        columns: 4,
+        rows: 3,
+        src_x: 0,
+        src_y: 0,
+        src_width: 38,
+        src_height: 55,
+        total_width: 38,
+        total_height: 55,
+        insert_cell_w: 10,
+        insert_cell_h: 20,
+    }
+}
+
+#[test]
+fn test_subtract_rect_center_hole_yields_four_slices() {
+    let p = test_placement();
+    let mut out = Vec::new();
+    // 1-cell hole at row 11, col 4 (the middle).
+    assert!(p.subtract_rect(11, 12, 4, 5, &mut out).is_some());
+    assert_eq!(out.len(), 4);
+
+    // Top: full width, row 10.
+    assert_eq!(
+        (out[0].abs_row, out[0].rows, out[0].col, out[0].columns),
+        (10, 1, 2, 4)
+    );
+    assert_eq!((out[0].src_y, out[0].src_height), (0, 20));
+    // Bottom: full width, row 12; keeps the exact partial bottom edge.
+    assert_eq!((out[1].abs_row, out[1].rows), (12, 1));
+    assert_eq!((out[1].src_y, out[1].src_height), (40, 15));
+    // Left: hole row, cols 2..4.
+    assert_eq!((out[2].abs_row, out[2].col, out[2].columns), (11, 2, 2));
+    assert_eq!(
+        (
+            out[2].src_x,
+            out[2].src_width,
+            out[2].src_y,
+            out[2].src_height
+        ),
+        (0, 20, 20, 20)
+    );
+    // Right: hole row, col 5..6; keeps the exact partial right edge.
+    assert_eq!((out[3].abs_row, out[3].col, out[3].columns), (11, 5, 1));
+    assert_eq!((out[3].src_x, out[3].src_width), (30, 8));
+}
+
+#[test]
+fn test_subtract_rect_miss_and_full_cover() {
+    let p = test_placement();
+    let mut out = Vec::new();
+    assert!(p.subtract_rect(0, 5, 0, 100, &mut out).is_none(), "miss");
+    assert!(out.is_empty());
+    assert!(
+        p.subtract_rect(10, 13, 2, 6, &mut out).is_some(),
+        "swallowed"
+    );
+    assert!(out.is_empty(), "no survivors");
+}
+
+#[test]
+fn test_text_over_image_clips_exactly_that_cell() {
+    let mut term = geometry_test_term();
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    assert_eq!(term.graphics.atlas_placements.len(), 1);
+
+    // Print into the image's middle cell (row 1, col 1).
+    term.grid.cursor.pos = Pos::new(Line(1), Column(1));
+    term.write_at_cursor('x');
+
+    // The placement split; no surviving piece covers (1, 1), but the
+    // rest of the image is intact.
+    let placements = &term.graphics.atlas_placements;
+    assert!(placements.len() >= 2, "placement split: {placements:?}");
+    let covers = |row: i64, col: usize| {
+        placements.iter().any(|p| {
+            row >= p.abs_row
+                && row < p.abs_row + p.rows as i64
+                && col >= p.col
+                && col < p.col + p.columns
+        })
+    };
+    assert!(!covers(1, 1), "written cell is clipped out");
+    assert!(covers(0, 0) && covers(0, 2) && covers(1, 0) && covers(1, 2));
+    assert_eq!(
+        term.graphics.atlas_key_refs.values().sum::<u32>() as usize,
+        placements.len(),
+        "key refs track the split pieces"
+    );
+}
+
+#[test]
+fn test_region_scroll_shifts_and_clips_atlas_placements() {
+    let mut term = geometry_test_term();
+    // DECSTBM rows 2..10 (1-based 3..10): interior region.
+    term.set_scrolling_region(3, Some(10));
+    // Image at rows 4-5 inside the region (cursor goto is
+    // origin-relative unless DECOM; goto absolute via direct set).
+    term.grid.cursor.pos = Pos::new(Line(4), Column(0));
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    let before = term.graphics.atlas_placements[0].clone();
+    assert_eq!(before.abs_row, 4);
+
+    // Scroll the region up by two lines: content at rows 4-5 moves to
+    // rows 2-3, still inside the region.
+    term.scroll_up_relative(Line(2), 2);
+    let after = &term.graphics.atlas_placements[0];
+    assert_eq!(after.abs_row, 2, "image follows region content");
+    assert_eq!(after.rows, 2, "fully inside, no clipping yet");
+
+    // Scroll again: the image's top row crosses the region top and is
+    // destroyed like text; the bottom row survives at the boundary.
+    term.scroll_up_relative(Line(2), 1);
+    let after = &term.graphics.atlas_placements[0];
+    assert_eq!(after.abs_row, 2, "clipped at the region top");
+    assert_eq!(after.rows, 1);
+    assert_eq!(after.src_y, 20, "surviving row shows the bottom slice");
 }

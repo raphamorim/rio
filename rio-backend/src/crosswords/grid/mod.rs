@@ -448,7 +448,6 @@ impl<T> Grid<T> {
         }
     }
 
-    #[inline]
     /// Absolute index of the oldest row still in the ring — the base
     /// of the stable absolute row space image placements anchor in.
     #[inline]
