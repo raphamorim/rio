@@ -3402,13 +3402,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // subsequent cell write picks up the id via
         // `write_at_cursor`'s `template_extras_id` propagation.
         //
-        // Extras slots are not reference-counted; a slot lives until
-        // the cadence-driven `reclaim_extras` mark-and-sweep finds no cell
-        // referencing it (bounded drift, see `ExtrasTable::should_reclaim`).
-        // A future ref-counting pass could free slots the moment the
-        // last referencing cell is overwritten, but the template flow
-        // in `write_at_cursor` puts that bookkeeping on the hot print
-        // path, so it needs its own careful change.
+        // Extras slots are not reference-counted by design; a slot
+        // lives until the cadence-driven `reclaim_extras` mark-and-sweep
+        // finds no cell referencing it (bounded drift, see
+        // `ExtrasTable::should_reclaim`). Ref-counting would free slots
+        // sooner but requires Clone/Drop hooks on `Square`, taxing row
+        // drops and template copies even when no extras exist; the
+        // sweep costs nothing unless extras are actually allocated.
         match hyperlink {
             Some(hl) => {
                 let id = self.grid.alloc_extras(crate::crosswords::square::Extras {
