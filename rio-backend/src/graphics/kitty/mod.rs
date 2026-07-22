@@ -4650,3 +4650,106 @@ fn test_texture_ref_drop_queues_atlas_key() {
         "dropping the last grid reference queues the atlas key for GPU cleanup"
     );
 }
+
+// Atlas (sixel/iTerm2) cursor placement tests
+
+/// 30x40 px graphic at 10x20 cells: 3 columns, 2 rows.
+fn atlas_graphic() -> GraphicData {
+    GraphicData {
+        id: GraphicId::new(0),
+        width: 30,
+        height: 40,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 30 * 40 * 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    }
+}
+
+#[test]
+fn test_sixel_cursor_lands_on_last_row_start_column() {
+    let mut term = geometry_test_term();
+
+    // Start mid-line: the image anchors at the cursor column.
+    term.grid.cursor.pos.col = Column(5);
+    term.insert_graphic(atlas_graphic(), None, None);
+
+    // DEC STD 070: cursor on the last text row the image touches, at
+    // the image's start column (foot, xterm, contour agree).
+    assert_eq!(term.grid.cursor.pos.row.0, 1, "last image row");
+    assert_eq!(term.grid.cursor.pos.col.0, 5, "image start column");
+    assert!(!term.grid.cursor.should_wrap);
+}
+
+#[test]
+fn test_sixel_mode_8452_cursor_right_of_image() {
+    let mut term = geometry_test_term();
+    term.set_private_mode(crate::ansi::mode::PrivateMode::Unknown(8452));
+
+    term.grid.cursor.pos.col = Column(5);
+    term.insert_graphic(atlas_graphic(), None, None);
+
+    assert_eq!(term.grid.cursor.pos.row.0, 1, "last image row");
+    assert_eq!(
+        term.grid.cursor.pos.col.0, 8,
+        "first column right of the image"
+    );
+}
+
+#[test]
+fn test_sixel_display_mode_leaves_cursor_untouched() {
+    let mut term = geometry_test_term();
+    // DECSDM set: sixel scrolling disabled, image at page top-left,
+    // cursor unmodified.
+    term.set_private_mode(crate::ansi::mode::PrivateMode::Unknown(80));
+
+    term.grid.cursor.pos.col = Column(5);
+    term.insert_graphic(atlas_graphic(), None, None);
+
+    assert_eq!(term.grid.cursor.pos.row.0, 0);
+    assert_eq!(term.grid.cursor.pos.col.0, 5);
+}
+
+#[test]
+fn test_iterm2_cursor_right_of_image_and_do_not_move() {
+    use crate::ansi::iterm2_image_protocol::{CURSOR_DO_NOT_MOVE, CURSOR_RIGHT_OF_IMAGE};
+
+    let mut term = geometry_test_term();
+    term.grid.cursor.pos.col = Column(2);
+    term.insert_graphic(atlas_graphic(), None, Some(CURSOR_RIGHT_OF_IMAGE));
+
+    // iTerm2 behavior: last image row, first column after the image.
+    assert_eq!(term.grid.cursor.pos.row.0, 1);
+    assert_eq!(term.grid.cursor.pos.col.0, 5, "right of the 3-cell image");
+
+    // doNotMoveCursor=1 (WezTerm extension): cursor untouched.
+    let mut term = geometry_test_term();
+    term.grid.cursor.pos.col = Column(2);
+    term.insert_graphic(atlas_graphic(), None, Some(CURSOR_DO_NOT_MOVE));
+    assert_eq!(term.grid.cursor.pos.row.0, 0);
+    assert_eq!(term.grid.cursor.pos.col.0, 2);
+}
+
+#[test]
+fn test_iterm2_parse_cursor_movement_params() {
+    use crate::ansi::iterm2_image_protocol::{
+        self, CURSOR_DO_NOT_MOVE, CURSOR_RIGHT_OF_IMAGE,
+    };
+
+    const PNG_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+
+    let default_params = format!("File=inline=1:{PNG_B64}");
+    let params: Vec<&[u8]> = vec![b"1337", default_params.as_bytes()];
+    let (_, movement) = iterm2_image_protocol::parse(&params).expect("parses");
+    assert_eq!(movement, CURSOR_RIGHT_OF_IMAGE);
+
+    // vte splits OSC params on ';': each key=value arrives separately,
+    // with the payload after ':' in the last one.
+    let no_move = format!("doNotMoveCursor=1:{PNG_B64}");
+    let params: Vec<&[u8]> = vec![b"1337", b"File=inline=1", no_move.as_bytes()];
+    let (_, movement) = iterm2_image_protocol::parse(&params).expect("parses");
+    assert_eq!(movement, CURSOR_DO_NOT_MOVE);
+}

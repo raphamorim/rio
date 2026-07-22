@@ -15,8 +15,16 @@ use std::str;
 use crate::simd_base64;
 use crate::simd_utf8;
 
+/// Cursor movement after an inline image: iTerm2 leaves the cursor on
+/// the image's last row, in the first column after the image
+/// (`insert_graphic` movement value 2). `doNotMoveCursor=1` is a
+/// WezTerm extension used by TUIs drawing on the bottom row (value 1).
+pub const CURSOR_RIGHT_OF_IMAGE: u8 = 2;
+pub const CURSOR_DO_NOT_MOVE: u8 = 1;
+
 /// Parse the OSC 1337 parameters to add a graphic to the grid.
-pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
+/// Returns the graphic plus the cursor movement it requires.
+pub fn parse(params: &[&[u8]]) -> Option<(GraphicData, u8)> {
     let (params, contents) = param_values(params)?;
 
     if params.get("inline") != Some(&"1") {
@@ -39,9 +47,15 @@ pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
         }
     };
 
+    let cursor_movement = if params.get("doNotMoveCursor") == Some(&"1") {
+        CURSOR_DO_NOT_MOVE
+    } else {
+        CURSOR_RIGHT_OF_IMAGE
+    };
+
     let mut graphics = GraphicData::from_dynamic_image(GraphicId::new(1), image);
     graphics.resize = resize_param(&params);
-    Some(graphics)
+    Some((graphics, cursor_movement))
 }
 
 /// Extract parameter values.
