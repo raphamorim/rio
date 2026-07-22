@@ -1149,8 +1149,11 @@ impl<U: Handler> Perform for Performer<'_, U> {
             b"1337" => {
                 if let Some((name, value)) = osc::parse_set_user_var(params) {
                     self.handler.set_user_var(name, value);
-                } else if let Some(graphic) = iterm2_image_protocol::parse(params) {
-                    self.handler.insert_graphic(graphic, None, None);
+                } else if let Some((graphic, cursor_movement)) =
+                    iterm2_image_protocol::parse(params)
+                {
+                    self.handler
+                        .insert_graphic(graphic, None, Some(cursor_movement));
                 }
             }
 
