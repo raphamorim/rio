@@ -414,8 +414,12 @@ impl Renderer {
                 // grid uniform paints with.
                 let cell_width = layout.cell.cell_width as f32;
                 let cell_height = layout.cell.cell_height as f32;
-                let origin_x = panel_rect[0] + grid_scaled_margin.left;
-                let origin_y = panel_rect[1] + grid_scaled_margin.top;
+                // Rounded like the grid's own paint origin
+                // (screen/mod.rs panel_left/panel_top), so image quads
+                // and the clip rect sit exactly on the painted cell
+                // grid instead of up to half a pixel off.
+                let origin_x = (panel_rect[0] + grid_scaled_margin.left).round();
+                let origin_y = (panel_rect[1] + grid_scaled_margin.top).round();
 
                 // Images clip to the panel's cell grid, exactly like
                 // text: without this a wide image paints across split

@@ -460,23 +460,31 @@ impl AtlasPlacement {
         }
         let ir0 = hr0.max(p_r0);
         let ir1 = hr1.min(p_r1);
+        // Filter at each push (not a whole-vec retain: `out` may
+        // accumulate children of many placements in the clip loops).
+        let mut push = |child: AtlasPlacement| {
+            if child.columns > 0
+                && child.rows > 0
+                && child.src_width > 0
+                && child.src_height > 0
+            {
+                out.push(child);
+            }
+        };
         // Top and bottom keep the full placement width; left and right
         // cover only the hole's rows.
         if ir0 > p_r0 {
-            out.push(self.slice(p_r0, ir0, p_c0, p_c1));
+            push(self.slice(p_r0, ir0, p_c0, p_c1));
         }
         if ir1 < p_r1 {
-            out.push(self.slice(ir1, p_r1, p_c0, p_c1));
+            push(self.slice(ir1, p_r1, p_c0, p_c1));
         }
         if hc0 > p_c0 {
-            out.push(self.slice(ir0, ir1, p_c0, hc0.min(p_c1)));
+            push(self.slice(ir0, ir1, p_c0, hc0.min(p_c1)));
         }
         if hc1 < p_c1 {
-            out.push(self.slice(ir0, ir1, hc1.max(p_c0), p_c1));
+            push(self.slice(ir0, ir1, hc1.max(p_c0), p_c1));
         }
-        out.retain(|c| {
-            c.columns > 0 && c.rows > 0 && c.src_width > 0 && c.src_height > 0
-        });
         Some(())
     }
 }
@@ -824,6 +832,22 @@ impl Graphics {
         self.kitty_image_numbers.clear();
         self.kitty_placements.clear();
         self.kitty_virtual_placements.clear();
+
+        // Sixel/iTerm2 placements die with the reset too; queue every
+        // referenced key (both screens) so the frontend frees the
+        // pixel store and GPU textures.
+        {
+            let mut removals = self.texture_operations.lock();
+            for key in self.atlas_key_refs.keys() {
+                removals.push(*key);
+            }
+            for key in self.kitty_inactive_screen.atlas_key_refs.keys() {
+                removals.push(*key);
+            }
+        }
+        self.atlas_placements.clear();
+        self.atlas_key_refs.clear();
+
         self.kitty_inactive_screen = KittyScreenState::default();
         self.kitty_graphics_dirty = true;
     }

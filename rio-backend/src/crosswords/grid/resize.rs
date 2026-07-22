@@ -360,7 +360,13 @@ impl Grid<Square> {
 
         // Reverse iterator and use it as the new grid storage.
         let mut reversed: Vec<Row<Square>> = new_raw.drain(..).rev().collect();
-        reversed.truncate(self.max_scroll_limit + self.lines);
+        // Reflow can overflow the scrollback cap; the oldest lines
+        // fall off the ring and must advance the absolute row base.
+        let cap = self.max_scroll_limit + self.lines;
+        if reversed.len() > cap {
+            self.total_lines_scrolled += (reversed.len() - cap) as u64;
+        }
+        reversed.truncate(cap);
         self.raw.replace_inner(reversed);
 
         // Clamp display offset in case some lines went off.
