@@ -59,6 +59,17 @@ impl Application<'_> {
         if let Some(error) = config_error {
             router.propagate_error_to_next_route(error.into());
         }
+        // A broken triggers.toml must be as visible as a broken
+        // config.toml; a config error and a triggers error can't both
+        // be pending here (a failed config load never loads triggers).
+        if let Some(message) = &config.triggers_load_error {
+            router.propagate_error_to_next_route(rio_backend::error::RioError {
+                report: rio_backend::error::RioErrorType::InvalidTriggersFormat(
+                    message.clone(),
+                ),
+                level: rio_backend::error::RioErrorLevel::Warning,
+            });
+        }
 
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
@@ -145,8 +156,8 @@ impl Application<'_> {
         }
     }
 
-    fn handle_desktop_notification(&self, title: &str, body: &str) {
-        rio_notifier::send_notification(title, body);
+    fn handle_desktop_notification(&self, title: &str, body: &str, urgency: u8) {
+        rio_notifier::send_notification(title, body, urgency);
     }
 
     pub fn run(
@@ -539,7 +550,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     None
                 };
 
+                // A triggers.toml typo mid-edit must not silently wipe the
+                // live rules (and their highlights): the failed load left
+                // the fresh config's triggers empty, so keep the running
+                // ones until the file parses again, and surface the parse
+                // error the same way a config.toml one is surfaced.
+                let previous_triggers = if config.triggers_load_error.is_some() {
+                    Some(std::mem::take(&mut self.config.triggers))
+                } else {
+                    None
+                };
                 self.config = config;
+                if let Some(triggers) = previous_triggers {
+                    tracing::warn!(
+                        "triggers.toml failed to parse; keeping the previous rules"
+                    );
+                    self.config.triggers = triggers;
+                }
 
                 // Dropping the old manager unregisters its hotkeys, so
                 // ToggleQuake binding edits apply without restarting.
@@ -587,6 +614,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     route.request_redraw();
+                }
+
+                // After clear_errors and the renderer rebuilds above, or
+                // the overlay would be wiped by the very reload that
+                // should show it: a triggers.toml typo must be as visible
+                // as a config.toml one.
+                if let Some(message) = &self.config.triggers_load_error {
+                    let error = rio_backend::error::RioError {
+                        report: rio_backend::error::RioErrorType::InvalidTriggersFormat(
+                            message.clone(),
+                        ),
+                        level: rio_backend::error::RioErrorLevel::Warning,
+                    };
+                    for (_id, route) in self.router.routes.iter_mut() {
+                        route.report_error(&error);
+                        route.request_redraw();
+                    }
                 }
             }
             RioEventType::Rio(RioEvent::Exit | RioEvent::Quit) => {
@@ -647,6 +691,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .sugarloaf
                         .font_library()
                         .remove_glyph_registry(route_id);
+
+                    // Drop this route's trigger dedup state so it doesn't
+                    // accumulate for the window's lifetime.
+                    route.window.screen.triggers.forget_route(route_id);
 
                     if route
                         .window
@@ -720,7 +768,136 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {
-                self.handle_desktop_notification(&title, &body);
+                self.handle_desktop_notification(&title, &body, 1);
+            }
+            RioEventType::Rio(RioEvent::TriggerFired { route_id, action }) => {
+                use rio_backend::event::TriggerEventAction as Action;
+                match action {
+                    Action::Notify {
+                        title,
+                        body,
+                        urgency,
+                    } => {
+                        self.handle_desktop_notification(&title, &body, urgency);
+                    }
+                    Action::Run { program, args } => {
+                        if let Some(route) = self.router.routes.get(&window_id) {
+                            route.window.screen.exec(&program, &args);
+                        }
+                    }
+                    Action::SendText { text } => {
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            if let Some(item) = route
+                                .window
+                                .screen
+                                .context_manager
+                                .get_by_route_id(route_id)
+                            {
+                                item.val.messenger.send_bytes(text.into_bytes());
+                            }
+                        }
+                    }
+                    Action::Coprocess {
+                        program,
+                        args,
+                        stdin,
+                    } => {
+                        // Capture stdout off-thread so a slow command never
+                        // blocks the UI, then write it into the PTY. When
+                        // `stdin` is set, the visible screen is piped to the
+                        // command (small payload, no deadlock risk). The
+                        // child is bounded by a deadline: a hung coprocess
+                        // would otherwise leak this thread + pipes forever,
+                        // and its eventual stdout would be typed into
+                        // whatever runs in the pane much later.
+                        const COPROCESS_DEADLINE: std::time::Duration =
+                            std::time::Duration::from_secs(10);
+                        let proxy = self.event_proxy.clone();
+                        std::thread::spawn(move || {
+                            use std::io::{Read, Write};
+                            use std::process::Stdio;
+                            let mut command = std::process::Command::new(&program);
+                            command
+                                .args(&args)
+                                .stdout(Stdio::piped())
+                                .stderr(Stdio::null());
+                            if stdin.is_some() {
+                                command.stdin(Stdio::piped());
+                            }
+                            let mut child = match command.spawn() {
+                                Ok(child) => child,
+                                Err(err) => {
+                                    tracing::warn!(
+                                        "trigger coprocess {program:?} failed: {err}"
+                                    );
+                                    return;
+                                }
+                            };
+                            // Write stdin on its own thread so we can drain
+                            // stdout concurrently: a coprocess that emits more
+                            // than one pipe buffer before reading its input
+                            // would otherwise deadlock against a blocking
+                            // write_all here.
+                            if let Some(input) = stdin {
+                                if let Some(mut pipe) = child.stdin.take() {
+                                    std::thread::spawn(move || {
+                                        let _ = pipe.write_all(input.as_bytes());
+                                    });
+                                }
+                            }
+                            // Drain stdout on its own thread too, so the
+                            // deadline loop below never blocks on a pipe;
+                            // the reader finishes when the pipe closes
+                            // (child exit or kill).
+                            let stdout_rx = child.stdout.take().map(|mut pipe| {
+                                let (tx, rx) = std::sync::mpsc::channel();
+                                std::thread::spawn(move || {
+                                    let mut buf = Vec::new();
+                                    let _ = pipe.read_to_end(&mut buf);
+                                    let _ = tx.send(buf);
+                                });
+                                rx
+                            });
+                            let deadline = std::time::Instant::now() + COPROCESS_DEADLINE;
+                            let timed_out = loop {
+                                match child.try_wait() {
+                                    Ok(Some(_)) => break false,
+                                    Ok(None) => {}
+                                    Err(err) => {
+                                        tracing::warn!(
+                                            "trigger coprocess {program:?} failed: {err}"
+                                        );
+                                        break true;
+                                    }
+                                }
+                                if std::time::Instant::now() >= deadline {
+                                    tracing::warn!(
+                                        "trigger coprocess {program:?} exceeded {COPROCESS_DEADLINE:?}; killing"
+                                    );
+                                    let _ = child.kill();
+                                    let _ = child.wait();
+                                    break true;
+                                }
+                                std::thread::sleep(std::time::Duration::from_millis(50));
+                            };
+                            if timed_out {
+                                return;
+                            }
+                            if let Some(rx) = stdout_rx {
+                                if let Ok(buf) = rx.recv() {
+                                    if !buf.is_empty() {
+                                        let text =
+                                            String::from_utf8_lossy(&buf).into_owned();
+                                        proxy.send_event(
+                                            RioEvent::PtyWrite(route_id, text).into(),
+                                            window_id,
+                                        );
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
             }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
                 if let Some(route) = self.router.routes.get(&window_id) {

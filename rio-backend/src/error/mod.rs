@@ -33,6 +33,10 @@ impl From<ConfigError> for RioError {
                 report: RioErrorType::InvalidConfigurationTheme(message),
                 level: RioErrorLevel::Warning,
             },
+            ConfigError::ErrLoadingTriggers(message) => RioError {
+                report: RioErrorType::InvalidTriggersFormat(message),
+                level: RioErrorLevel::Warning,
+            },
             ConfigError::PathNotFound => RioError {
                 report: RioErrorType::ConfigurationNotFound,
                 level: RioErrorLevel::Warning,
@@ -54,6 +58,8 @@ pub enum RioErrorType {
     ConfigurationNotFound,
     // configuration file have an invalid format
     InvalidConfigurationFormat(String),
+    // triggers.toml has an invalid format
+    InvalidTriggersFormat(String),
     // configuration invalid theme
     InvalidConfigurationTheme(String),
 
@@ -87,6 +93,9 @@ impl std::fmt::Display for RioErrorType {
             RioErrorType::IgnoredReport => write!(f, ""),
             RioErrorType::InvalidConfigurationFormat(message) => {
                 write!(f, "Found an issue loading the configuration file:\n\n{message}\n\nRio will proceed with the default configuration")
+            }
+            RioErrorType::InvalidTriggersFormat(message) => {
+                write!(f, "Found an issue loading triggers.toml:\n\n{message}\n\nExisting trigger rules stay in effect until the file parses")
             }
             RioErrorType::InvalidConfigurationTheme(message) => {
                 write!(f, "Found an issue in the configured theme:\n\n{message}")

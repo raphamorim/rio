@@ -889,6 +889,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn event_proxy(&self) -> &T {
+        &self.event_proxy
+    }
+
+    #[inline]
+    pub fn window_id(&self) -> WindowId {
+        self.window_id
+    }
+
+    #[inline]
     pub fn current_route(&self) -> usize {
         self.current_route
     }
