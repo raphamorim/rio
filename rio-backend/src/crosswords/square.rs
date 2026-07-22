@@ -135,7 +135,9 @@ bitflags! {
         const WRAPLINE         = 1 << 0;
  /// Cell carries graphics data (sixel / iTerm2 inline image piece).
  /// Look up the actual graphic in `Grid::extras_table` via `extras_id`.
-        const GRAPHICS         = 1 << 1;
+        // Bit 1 is reserved (was the per-cell graphics flag before
+        // sixel/iTerm2 moved to placements).
+        const RESERVED_GRAPHICS = 1 << 1;
  /// Cell carries hyperlink metadata. Lookup via extras_id.
         const HYPERLINK        = 1 << 2;
  /// Cell carries multi-codepoint grapheme cluster. Lookup via extras_id.
@@ -201,13 +203,12 @@ pub type ExtrasId = u16;
 pub struct Extras {
     pub zerowidth: Vec<char>,
     pub hyperlink: Option<Hyperlink>,
-    pub graphic: Option<crate::ansi::graphics::GraphicsCell>,
 }
 
 impl Extras {
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.zerowidth.is_empty() && self.hyperlink.is_none() && self.graphic.is_none()
+        self.zerowidth.is_empty() && self.hyperlink.is_none()
     }
 }
 
@@ -453,11 +454,6 @@ impl Square {
     #[inline]
     pub fn has_hyperlink(self) -> bool {
         self.contains_cell_flag(CellFlags::HYPERLINK)
-    }
-
-    #[inline]
-    pub fn has_graphics(self) -> bool {
-        self.contains_cell_flag(CellFlags::GRAPHICS)
     }
 }
 
