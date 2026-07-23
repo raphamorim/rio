@@ -351,6 +351,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         cursor_state: (&Cursor, bool),
         event_proxy: T,
@@ -358,17 +359,33 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         route_id: usize,
         rich_text_id: usize,
         ctx_config: ContextManagerConfig,
+        initial_shell: Option<Shell>,
         size: ContextDimension,
         scaled_margin: Margin,
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
+        // A one-shot shell (`rio -e ...`) runs only in the very first
+        // context; the manager keeps the regular config so new tabs,
+        // splits and windows spawn the configured shell (#1020).
+        let initial_ctx_config = match initial_shell {
+            Some(shell) => {
+                let mut one_shot = ctx_config.clone();
+                one_shot.shell = shell;
+                #[cfg(not(target_os = "windows"))]
+                {
+                    one_shot.use_fork = false;
+                }
+                one_shot
+            }
+            None => ctx_config.clone(),
+        };
         let initial_context = match ContextManager::create_context(
             cursor_state,
             event_proxy.clone(),
             window_id,
             rich_text_id,
             size,
-            &ctx_config,
+            &initial_ctx_config,
         ) {
             Ok(context) => context,
             Err(err_message) => {

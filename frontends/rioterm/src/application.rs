@@ -36,6 +36,9 @@ pub struct Application<'a> {
     router: Router<'a>,
     scheduler: Scheduler,
     app_id: Option<String>,
+    /// One-shot shell from `rio -e ...`; consumed by the first window's
+    /// first context only.
+    cli_shell: Option<rio_backend::config::Shell>,
     global_hotkey: Option<crate::global_hotkey::GlobalHotkeys>,
     /// Frontmost app when the quake window was shown, re-activated
     /// when it hides so focus returns where the user was.
@@ -49,6 +52,7 @@ impl Application<'_> {
         config_error: Option<rio_backend::config::ConfigError>,
         event_loop: &EventLoop<EventPayload>,
         app_id: Option<String>,
+        cli_shell: Option<rio_backend::config::Shell>,
     ) -> Application<'app> {
         // SAFETY: Since this takes a pointer to the winit event loop, it MUST be dropped first,
         // which is done in `exiting`.
@@ -80,6 +84,7 @@ impl Application<'_> {
             router,
             scheduler,
             app_id,
+            cli_shell,
             global_hotkey: None,
             #[cfg(target_os = "macos")]
             quake_previous_app: None,
@@ -313,6 +318,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             self.event_proxy.clone(),
             &self.config,
             None,
+            self.cli_shell.take(),
             self.app_id.as_deref(),
         );
 
@@ -910,6 +916,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     self.event_proxy.clone(),
                     &self.config,
                     None,
+                    None,
                     self.app_id.as_deref(),
                 );
             }
@@ -1076,6 +1083,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     self.event_proxy.clone(),
                     config,
                     Some(url),
+                    None,
                     self.app_id.as_deref(),
                 );
             }
