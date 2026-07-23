@@ -37,9 +37,9 @@ pub use swash::{Attributes, Stretch, Style, Weight};
 pub use crate::font_cache::ResolvedGlyph;
 pub use crate::sugarloaf::{
     graphics::{
-        atlas_image_key, kitty_image_key, ColorType, Graphic, GraphicData,
-        GraphicDataEntry, GraphicId, GraphicOverlay, Graphics, ResizeCommand,
-        ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
+        ColorType, Graphic, GraphicData, GraphicDataEntry, GraphicId, GraphicOverlay,
+        Graphics, ImageKey, ImageSource, ResizeCommand, ResizeParameter,
+        MAX_GRAPHIC_DIMENSIONS,
     },
     primitives::{
         is_private_user_area, Corners, CursorKind, ImageProperties, Quad, Rect,

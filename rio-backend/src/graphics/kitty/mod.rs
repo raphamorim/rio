@@ -1109,7 +1109,7 @@ fn test_place_nonexistent_graphic() {
 #[test]
 fn test_recount_releases_key_exactly_once() {
     let mut graphics = crate::ansi::graphics::Graphics::default();
-    let key = crate::sugarloaf::atlas_image_key(99);
+    let key: u64 = 99;
     graphics
         .atlas_placements
         .push(crate::ansi::graphics::AtlasPlacement {
@@ -1141,7 +1141,12 @@ fn test_recount_releases_key_exactly_once() {
     // Dropping the last piece queues the removal exactly once.
     graphics.atlas_placements.clear();
     graphics.recount_atlas_keys();
-    assert_eq!(graphics.texture_operations.lock().as_slice(), &[key]);
+    assert_eq!(
+        graphics.texture_operations.lock().as_slice(),
+        &[crate::ansi::graphics::GraphicRemoval::Atlas(
+            crate::sugarloaf::GraphicId::new(key)
+        )]
+    );
     graphics.recount_atlas_keys();
     assert_eq!(
         graphics.texture_operations.lock().len(),
@@ -2572,6 +2577,32 @@ fn test_delete_uppercase_a_clears_all_image_data() {
         "d=A must clear all image data, not just placements"
     );
     assert!(term.graphics.kitty_image_numbers.is_empty());
+}
+
+#[test]
+fn test_delete_uppercase_a_deflates_byte_accounting() {
+    // d=A must give the stored bytes back to the accounting; otherwise
+    // total_bytes ratchets until every new store evicts live images.
+    let mut term = make_test_term();
+    store_red_pixel(&mut term, 1);
+    store_red_pixel(&mut term, 2);
+    assert_eq!(term.graphics.total_bytes, 8);
+
+    let delete = DeleteRequest {
+        action: b'a',
+        image_id: 0,
+        image_number: 0,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        z_index: 0,
+        delete_data: true,
+    };
+    term.delete_graphics(delete);
+
+    assert!(term.graphics.kitty_images.is_empty());
+    assert!(term.graphics.kitty_image_numbers.is_empty());
+    assert_eq!(term.graphics.total_bytes, 0);
 }
 
 #[test]
@@ -4776,18 +4807,6 @@ fn test_transmit_and_display_refreshes_sibling_placements() {
 }
 
 #[test]
-fn test_image_key_namespaces_are_disjoint() {
-    use crate::sugarloaf::{atlas_image_key, kitty_image_key};
-
-    // kitty clients may pick any u32 image id (kitten icat uses random
-    // ones); the atlas namespace must live entirely above that range.
-    assert_eq!(kitty_image_key(u32::MAX), u32::MAX as u64);
-    assert_eq!(kitty_image_key(0x8000_0001), 0x8000_0001);
-    assert!(atlas_image_key(0) > u32::MAX as u64);
-    assert_eq!(atlas_image_key(7), (1u64 << 32) + 7);
-}
-
-#[test]
 fn test_sixel_cursor_lands_on_last_row_start_column() {
     let mut term = geometry_test_term();
 
@@ -4989,7 +5008,7 @@ fn test_atlas_placement_created_on_insert() {
 
     assert_eq!(term.graphics.atlas_placements.len(), 1);
     let p = &term.graphics.atlas_placements[0];
-    assert_eq!(p.image_key, crate::sugarloaf::atlas_image_key(1));
+    assert_eq!(p.image_key, 1);
     assert_eq!(p.abs_row, 0);
     assert_eq!(p.col, 5, "anchored at the cursor column");
     assert_eq!((p.columns, p.rows), (3, 2), "30x40 at 10x20 cells");
@@ -5216,7 +5235,7 @@ fn test_overlay_clips_to_panel_rect() {
     // ends at x=400 must clip at the divider, showing only the left
     // two-thirds of the texture.
     let mut overlay = GraphicOverlay {
-        image_id: 1,
+        image_id: crate::sugarloaf::ImageKey::kitty(0, 1),
         x: 100.0,
         y: 50.0,
         width: 600.0,
@@ -5238,7 +5257,7 @@ fn test_overlay_clips_to_panel_rect() {
 
     // Fully outside the panel: dropped.
     let mut outside = GraphicOverlay {
-        image_id: 1,
+        image_id: crate::sugarloaf::ImageKey::kitty(0, 1),
         x: 500.0,
         y: 0.0,
         width: 100.0,
@@ -5251,7 +5270,7 @@ fn test_overlay_clips_to_panel_rect() {
     // Partial scroll off the panel top with an existing crop: the
     // source rect shrinks within the crop, not the full texture.
     let mut scrolled = GraphicOverlay {
-        image_id: 1,
+        image_id: crate::sugarloaf::ImageKey::kitty(0, 1),
         x: 0.0,
         y: -50.0,
         width: 100.0,
@@ -5312,7 +5331,7 @@ fn test_narrowing_terminal_keeps_image_span_and_clips_at_edge() {
     };
     let geometry = kitty_overlay_geometry(stored, 100, 100, &viewport).unwrap();
     let mut overlay = GraphicOverlay {
-        image_id: 1,
+        image_id: crate::sugarloaf::ImageKey::kitty(0, 1),
         x: geometry.x,
         y: geometry.y,
         width: geometry.width,

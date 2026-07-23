@@ -12,6 +12,22 @@ use std::mem;
 use std::sync::Arc;
 use tracing::debug;
 
+/// A graphic scheduled for removal, tagged with the id space it lives in.
+///
+/// Atlas graphics (sixel/iTerm2) and kitty images don't share an id
+/// space: both allocate per terminal and can collide numerically. The
+/// window-level store is keyed by `sugarloaf::ImageKey` (route, source,
+/// id), and the frontend needs this tag to build the source part — a
+/// bare id can't tell the removal handler which entry to target, so a
+/// kitty removal could delete an atlas entry and leak the real one.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum GraphicRemoval {
+    /// Sixel/iTerm2 atlas graphic (`GraphicId` space).
+    Atlas(GraphicId),
+    /// Kitty image (raw protocol `image_id` space).
+    Kitty(u32),
+}
+
 #[derive(Debug, Clone)]
 pub struct UpdateQueues {
     /// Atlas graphics (sixel/iTerm2) read from the PTY.
@@ -20,9 +36,8 @@ pub struct UpdateQueues {
     /// Image textures (kitty) keyed by image_id.
     pub pending_images: Vec<(u32, GraphicData)>,
 
-    /// Image keys removed from the grid or evicted
-    /// (`sugarloaf::graphics::kitty_image_key` / `atlas_image_key`).
-    pub remove_queue: Vec<u64>,
+    /// Graphics removed from the grid, tagged with their id space.
+    pub remove_queue: Vec<GraphicRemoval>,
 }
 
 /// Kitty graphics Unicode placeholder character
@@ -376,7 +391,10 @@ pub fn kitty_overlay_geometry(
 /// scale of the image.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AtlasPlacement {
-    /// Texture key (`atlas_image_key(GraphicId)`).
+    /// Raw `GraphicId` of the atlas graphic. The frontend scopes it to
+    /// the owning terminal via `ImageKey::atlas(route_id, image_key)`;
+    /// the `ImageKey` source discriminant keeps it disjoint from kitty
+    /// ids, so no numeric shift is needed here.
     pub image_key: u64,
     /// Anchor row in the stable absolute space
     /// (`lines_evicted + history + screen_row` at insert).
@@ -579,8 +597,8 @@ pub struct Graphics {
     /// New image textures (kitty), keyed by image_id.
     pub pending_images: Vec<(u32, GraphicData)>,
 
-    /// Graphics removed from the grid.
-    pub texture_operations: Arc<Mutex<Vec<u64>>>,
+    /// Graphics removed from the grid, tagged with their id space.
+    pub texture_operations: Arc<Mutex<Vec<GraphicRemoval>>>,
 
     /// Shared palette for Sixel graphics.
     pub sixel_shared_palette: Option<Vec<ColorRgb>>,
@@ -621,6 +639,11 @@ pub struct Graphics {
     /// Tracks when each graphic was added (for eviction priority)
     /// Maps GraphicId to insertion timestamp
     pub image_timestamps: FxHashMap<GraphicId, std::time::Instant>,
+
+    /// Byte size of each tracked atlas graphic, so `untrack_graphic` can
+    /// subtract the exact amount from `total_bytes` when a graphic's last
+    /// referencing cell is dropped (the removal path only knows the id).
+    pub graphic_bytes: FxHashMap<GraphicId, usize>,
 
     /// Weak references to placed textures, for O(1) liveness checks.
     /// Avoids scanning the entire grid to find which graphics are in use.
@@ -679,6 +702,7 @@ impl Default for Graphics {
             total_bytes: 0,
             total_limit: 320 * 1024 * 1024, // 320MB per kitty spec
             image_timestamps: FxHashMap::default(),
+            graphic_bytes: FxHashMap::default(),
             kitty_placements: FxHashMap::default(),
             atlas_placements: Vec::new(),
             atlas_key_refs: FxHashMap::default(),
@@ -728,6 +752,15 @@ impl Graphics {
             && self.pending_images.is_empty()
         {
             return None;
+        }
+
+        // Deflate the byte accounting for atlas graphics whose last
+        // referencing cell was just dropped. Kitty removals deflate at
+        // their delete/evict site, where the image size is still known.
+        for removal in &remove_queue {
+            if let GraphicRemoval::Atlas(id) = removal {
+                self.untrack_graphic_by_id(*id);
+            }
         }
 
         Some(UpdateQueues {
@@ -792,7 +825,7 @@ impl Graphics {
     fn recount_atlas_keys_for(
         placements: &[AtlasPlacement],
         key_refs: &mut FxHashMap<u64, u32>,
-        texture_operations: &std::sync::Arc<parking_lot::Mutex<Vec<u64>>>,
+        texture_operations: &std::sync::Arc<parking_lot::Mutex<Vec<GraphicRemoval>>>,
     ) {
         let mut refs: FxHashMap<u64, u32> = FxHashMap::default();
         for placement in placements {
@@ -801,7 +834,7 @@ impl Graphics {
         let mut removals = texture_operations.lock();
         for key in key_refs.keys() {
             if !refs.contains_key(key) {
-                removals.push(*key);
+                removals.push(GraphicRemoval::Atlas(GraphicId::new(*key)));
             }
         }
         drop(removals);
@@ -838,15 +871,25 @@ impl Graphics {
 
     /// Clear all kitty graphics state on both screens. Used by full reset.
     pub fn clear_all_kitty_state(&mut self) {
-        // Subtract bytes from the inactive screen before dropping it,
-        // since total_bytes is the *global* counter.
-        let inactive_bytes: usize = self
-            .kitty_inactive_screen
-            .kitty_images
-            .values()
-            .map(|s| s.data.pixels.len())
-            .sum();
-        self.total_bytes = self.total_bytes.saturating_sub(inactive_bytes);
+        // total_bytes is the *global* counter and every stored image on
+        // either screen inflated it once, so deflate per entry. Both
+        // screens drop their copy, so the window-level texture goes too —
+        // queue each id once (the two screens may share an id).
+        let mut freed = 0usize;
+        {
+            let mut removals = self.texture_operations.lock();
+            for (&id, stored) in &self.kitty_images {
+                freed += stored.data.pixels.len();
+                removals.push(GraphicRemoval::Kitty(id));
+            }
+            for (&id, stored) in &self.kitty_inactive_screen.kitty_images {
+                freed += stored.data.pixels.len();
+                if !self.kitty_images.contains_key(&id) {
+                    removals.push(GraphicRemoval::Kitty(id));
+                }
+            }
+        }
+        self.deflate_total_bytes(freed);
 
         self.kitty_images.clear();
         self.kitty_image_numbers.clear();
@@ -859,10 +902,10 @@ impl Graphics {
         {
             let mut removals = self.texture_operations.lock();
             for key in self.atlas_key_refs.keys() {
-                removals.push(*key);
+                removals.push(GraphicRemoval::Atlas(GraphicId::new(*key)));
             }
             for key in self.kitty_inactive_screen.atlas_key_refs.keys() {
-                removals.push(*key);
+                removals.push(GraphicRemoval::Atlas(GraphicId::new(*key)));
             }
         }
         self.atlas_placements.clear();
@@ -898,7 +941,8 @@ impl Graphics {
 
         // If replacing an existing image, subtract its bytes first
         if let Some(old) = self.kitty_images.get(&image_id) {
-            self.total_bytes = self.total_bytes.saturating_sub(old.data.pixels.len());
+            let old_bytes = old.data.pixels.len();
+            self.deflate_total_bytes(old_bytes);
         }
 
         self.kitty_images.insert(
@@ -930,15 +974,37 @@ impl Graphics {
             .and_then(|id| self.kitty_images.get(id))
     }
 
-    /// Delete kitty graphics images
+    /// Delete kitty graphics images from the active screen's cache.
+    ///
+    /// Deflates `total_bytes` for every image actually dropped and queues
+    /// a `GraphicRemoval::Kitty` — unless the inactive screen still holds
+    /// the same id: both screens share the window-level texture key, so
+    /// the texture must survive until neither screen references it.
     pub fn delete_kitty_images(
         &mut self,
         predicate: impl Fn(&u32, &StoredImage) -> bool,
     ) {
         let before = self.kitty_images.len();
-        self.kitty_images.retain(|id, img| !predicate(id, img));
-        if self.kitty_images.len() != before {
-            self.kitty_graphics_dirty = true;
+        let inactive = &self.kitty_inactive_screen.kitty_images;
+        let mut freed = 0usize;
+        let mut removals: Vec<GraphicRemoval> = Vec::new();
+        self.kitty_images.retain(|id, img| {
+            if !predicate(id, img) {
+                return true;
+            }
+            freed += img.data.pixels.len();
+            if !inactive.contains_key(id) {
+                removals.push(GraphicRemoval::Kitty(*id));
+            }
+            false
+        });
+        if self.kitty_images.len() == before {
+            return;
+        }
+        self.kitty_graphics_dirty = true;
+        self.deflate_total_bytes(freed);
+        if !removals.is_empty() {
+            self.texture_operations.lock().append(&mut removals);
         }
         // Clean up stale number mappings
         self.kitty_image_numbers
@@ -1094,36 +1160,46 @@ impl Graphics {
         // Actually remove the evicted graphics from the right home.
         for (id, source) in evicted {
             let evicted_u32 = id.get() as u32;
-            match source {
+            // Tag the removal with its id space so the handler targets the
+            // correct `image_data` key — an atlas key for `Pending`, the
+            // raw protocol id for either kitty screen. A kitty id living
+            // on both screens shares one window-level texture: queue its
+            // removal only once neither screen references it.
+            let removal = match source {
                 CandidateSource::Pending => {
                     self.pending.retain(|g| g.id != id);
+                    // Byte size is already accounted below via freed_bytes,
+                    // but the per-id bookkeeping still needs clearing.
+                    self.graphic_bytes.remove(&id);
+                    Some(GraphicRemoval::Atlas(id))
                 }
                 CandidateSource::ActiveKitty => {
                     self.kitty_images.remove(&evicted_u32);
                     self.kitty_image_numbers.retain(|_, v| *v != evicted_u32);
                     self.kitty_graphics_dirty = true;
+                    (!self
+                        .kitty_inactive_screen
+                        .kitty_images
+                        .contains_key(&evicted_u32))
+                    .then_some(GraphicRemoval::Kitty(evicted_u32))
                 }
                 CandidateSource::InactiveKitty => {
                     self.kitty_inactive_screen.kitty_images.remove(&evicted_u32);
                     self.kitty_inactive_screen
                         .kitty_image_numbers
                         .retain(|_, v| *v != evicted_u32);
+                    (!self.kitty_images.contains_key(&evicted_u32))
+                        .then_some(GraphicRemoval::Kitty(evicted_u32))
                 }
-            }
+            };
 
             // Remove timestamp (only used for pending atlas graphics)
             self.image_timestamps.remove(&id);
 
-            // Add to removal queue so GPU textures get cleaned up.
-            // The key namespace depends on where the image lived:
-            // kitty ids map verbatim, atlas graphics live above 2^32.
-            let key = match source {
-                CandidateSource::Pending => crate::sugarloaf::atlas_image_key(id.get()),
-                CandidateSource::ActiveKitty | CandidateSource::InactiveKitty => {
-                    crate::sugarloaf::kitty_image_key(id.get() as u32)
-                }
-            };
-            self.texture_operations.lock().push(key);
+            // Add to removal queue so GPU textures get cleaned up
+            if let Some(removal) = removal {
+                self.texture_operations.lock().push(removal);
+            }
         }
 
         // Sweep dangling placements on both screens. A placement is
@@ -1149,7 +1225,7 @@ impl Graphics {
             .retain(|_, p| inactive_ids.contains(&p.image_id));
 
         // Update total_bytes
-        self.total_bytes = self.total_bytes.saturating_sub(freed_bytes);
+        self.deflate_total_bytes(freed_bytes);
 
         debug!(
             "Evicted {} bytes, new total: {}",
@@ -1164,8 +1240,7 @@ impl Graphics {
         let mut active = std::collections::HashSet::new();
         // Sixel/iTerm2 liveness: placements are the single owners.
         for placement in &self.atlas_placements {
-            // Atlas keys live above 2^32; recover the GraphicId part.
-            active.insert(placement.image_key - (1u64 << 32));
+            active.insert(placement.image_key);
         }
         // Overlay-based (kitty) liveness — use image_id directly
         for placement in self.kitty_placements.values() {
@@ -1178,6 +1253,7 @@ impl Graphics {
     pub fn track_graphic(&mut self, graphic_id: GraphicId, bytes: usize) {
         self.image_timestamps
             .insert(graphic_id, std::time::Instant::now());
+        self.graphic_bytes.insert(graphic_id, bytes);
         self.total_bytes += bytes;
         debug!(
             "Tracked graphic id={}, bytes={}, total_bytes={}",
@@ -1185,14 +1261,38 @@ impl Graphics {
         );
     }
 
+    /// Subtract freed bytes from the running total, saturating at zero.
+    fn deflate_total_bytes(&mut self, bytes: usize) {
+        self.total_bytes = self.total_bytes.saturating_sub(bytes);
+    }
+
     /// Update total_bytes when a graphic is removed
     pub fn untrack_graphic(&mut self, graphic_id: GraphicId, bytes: usize) {
         self.image_timestamps.remove(&graphic_id);
-        self.total_bytes = self.total_bytes.saturating_sub(bytes);
+        self.graphic_bytes.remove(&graphic_id);
+        self.deflate_total_bytes(bytes);
         debug!(
             "Untracked graphic id={}, bytes={}, total_bytes={}",
             graphic_id.0, bytes, self.total_bytes
         );
+    }
+
+    /// Untrack an atlas graphic whose last referencing cell was just
+    /// dropped (id known, byte size looked up from `graphic_bytes`).
+    ///
+    /// Called from the removal queue drain so `total_bytes` deflates as
+    /// soon as a graphic is freed rather than ratcheting forever — the
+    /// 320MB accounting then reflects live pixel data. No-op if the id
+    /// was already untracked (idempotent under duplicate queue entries).
+    pub fn untrack_graphic_by_id(&mut self, graphic_id: GraphicId) {
+        if let Some(bytes) = self.graphic_bytes.remove(&graphic_id) {
+            self.image_timestamps.remove(&graphic_id);
+            self.deflate_total_bytes(bytes);
+            debug!(
+                "Untracked graphic id={}, bytes={}, total_bytes={}",
+                graphic_id.0, bytes, self.total_bytes
+            );
+        }
     }
 }
 
@@ -1240,6 +1340,104 @@ fn check_opaque_region() {
 
     assert!(graphic.is_filled(0, 0, 3, 3));
     assert!(!graphic.is_filled(1, 1, 4, 4));
+}
+
+#[cfg(test)]
+fn test_kitty_pixels(bytes: usize) -> GraphicData {
+    GraphicData {
+        id: GraphicId::new(0),
+        width: 1,
+        height: 1,
+        color_type: sugarloaf::ColorType::Rgba,
+        pixels: vec![255u8; bytes],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    }
+}
+
+#[test]
+fn test_delete_kitty_images_deflates_and_queues_removal() {
+    let mut graphics = Graphics::default();
+    graphics.store_kitty_image(1, Some(9), test_kitty_pixels(64));
+    graphics.store_kitty_image(2, None, test_kitty_pixels(32));
+    assert_eq!(graphics.total_bytes, 96);
+
+    graphics.delete_kitty_images(|id, _| *id == 1);
+
+    assert_eq!(graphics.total_bytes, 32);
+    assert!(graphics.kitty_image_numbers.is_empty());
+    assert_eq!(
+        graphics.texture_operations.lock().as_slice(),
+        &[GraphicRemoval::Kitty(1)]
+    );
+}
+
+#[test]
+fn test_delete_kitty_image_shared_with_inactive_screen() {
+    let mut graphics = Graphics::default();
+    graphics.store_kitty_image(1, None, test_kitty_pixels(64));
+    graphics.swap_kitty_screen_state();
+    graphics.store_kitty_image(1, None, test_kitty_pixels(32));
+    assert_eq!(graphics.total_bytes, 96);
+
+    graphics.delete_kitty_images(|_, _| true);
+
+    // Only the active copy's bytes deflate; the inactive screen still
+    // owns the window-level texture, so no removal may be queued.
+    assert_eq!(graphics.total_bytes, 64);
+    assert!(graphics.texture_operations.lock().is_empty());
+}
+
+#[test]
+fn test_clear_all_kitty_state_deflates_and_queues_once() {
+    let mut graphics = Graphics::default();
+    graphics.store_kitty_image(1, None, test_kitty_pixels(64));
+    graphics.swap_kitty_screen_state();
+    graphics.store_kitty_image(1, None, test_kitty_pixels(32));
+    graphics.store_kitty_image(2, None, test_kitty_pixels(16));
+    assert_eq!(graphics.total_bytes, 112);
+
+    graphics.clear_all_kitty_state();
+
+    assert_eq!(graphics.total_bytes, 0);
+    assert!(graphics.kitty_images.is_empty());
+    assert!(graphics.kitty_inactive_screen.kitty_images.is_empty());
+    let ops = graphics.texture_operations.lock();
+    let mut ids: Vec<u32> = ops
+        .iter()
+        .map(|removal| match removal {
+            GraphicRemoval::Kitty(id) => *id,
+            other => panic!("unexpected removal {other:?}"),
+        })
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, [1, 2], "each id queued exactly once across screens");
+}
+
+#[test]
+fn test_eviction_of_shared_id_queues_single_removal() {
+    let mut graphics = Graphics {
+        total_limit: 100,
+        ..Graphics::default()
+    };
+    graphics.store_kitty_image(1, None, test_kitty_pixels(60));
+    graphics.swap_kitty_screen_state();
+    graphics.store_kitty_image(1, None, test_kitty_pixels(40));
+    assert_eq!(graphics.total_bytes, 100);
+
+    // Freeing 80 bytes forces both copies out; the shared window-level
+    // texture must be queued exactly once, after neither screen holds it.
+    let used = std::collections::HashSet::new();
+    assert!(graphics.evict_images(80, &used));
+
+    assert_eq!(graphics.total_bytes, 0);
+    assert_eq!(
+        graphics.texture_operations.lock().as_slice(),
+        &[GraphicRemoval::Kitty(1)]
+    );
 }
 
 #[test]

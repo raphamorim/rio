@@ -1853,7 +1853,9 @@ impl<U: EventListener> Crosswords<U> {
             if !stale.atlas_placements.is_empty() {
                 let mut removals = self.graphics.texture_operations.lock();
                 for key in stale.atlas_key_refs.keys() {
-                    removals.push(*key);
+                    removals.push(crate::ansi::graphics::GraphicRemoval::Atlas(
+                        sugarloaf::GraphicId::new(*key),
+                    ));
                 }
                 drop(removals);
                 stale.atlas_placements.clear();
@@ -4067,7 +4069,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // this image lives on the grid. Cell fills above remain only
         // until the extras-based path is removed.
         {
-            let key = crate::sugarloaf::atlas_image_key(graphic_id.get());
+            let key = graphic_id.get();
             let placement_columns = (width as usize).div_ceil(cell_width);
             let placement_rows = (height as usize).div_ceil(cell_height);
 
@@ -4261,8 +4263,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 overlay_changed = true;
 
                 if delete.delete_data {
-                    self.graphics.kitty_images.clear();
-                    self.graphics.kitty_image_numbers.clear();
+                    // Route through delete_kitty_images so the byte
+                    // accounting deflates and the window-level textures
+                    // are queued for removal.
+                    self.graphics.delete_kitty_images(|_, _| true);
                 }
             }
             b'i' | b'I' => {
