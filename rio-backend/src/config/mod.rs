@@ -585,6 +585,9 @@ impl Config {
             if let Some(fill) = navigation_overwrite.unfocused_split_fill {
                 self.navigation.unfocused_split_fill = Some(fill);
             }
+            if let Some(max_tab_width) = navigation_overwrite.max_tab_width {
+                self.navigation.max_tab_width = max_tab_width;
+            }
         }
 
         // Clamp after platform merge so both the base and any override go
@@ -593,6 +596,8 @@ impl Config {
             crate::config::navigation::clamp_unfocused_split_opacity(
                 self.navigation.unfocused_split_opacity,
             );
+        self.navigation.max_tab_width =
+            crate::config::navigation::clamp_max_tab_width(self.navigation.max_tab_width);
 
         // Merge renderer fields individually
         if let Some(renderer_overwrite) = &platform_config.renderer {
@@ -1271,6 +1276,30 @@ mod tests {
         "#,
         );
         assert_eq!(result.scrollback_history_limit, 0);
+    }
+
+    #[test]
+    fn test_window_quake_config() {
+        let result = create_temporary_config(
+            "window-quake",
+            r#"
+            [window]
+            quake-width-percentage = 0.8
+            quake-height-percentage = 0.5
+        "#,
+        );
+        assert_eq!(result.window.quake_width_percentage, 0.8);
+        assert_eq!(result.window.quake_height_percentage, 0.5);
+
+        let result = create_temporary_config(
+            "window-quake-defaults",
+            r#"
+            [window]
+            width = 800
+        "#,
+        );
+        assert_eq!(result.window.quake_width_percentage, 1.0);
+        assert_eq!(result.window.quake_height_percentage, 0.4);
     }
 
     #[test]

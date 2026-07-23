@@ -130,8 +130,10 @@ impl ImageCache {
                 let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("rich_text mask atlas"),
                     size: wgpu::Extent3d {
-                        width: SIZE as u32,
-                        height: SIZE as u32,
+                        // Clamped to the device limit: downlevel GPUs
+                        // (GLES 3.1 class) report 2048 and reject 4096.
+                        width: max_texture_size as u32,
+                        height: max_texture_size as u32,
                         depth_or_array_layers: 1,
                     },
                     view_formats: &[],
@@ -149,8 +151,8 @@ impl ImageCache {
                 let color_texture = device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("rich_text color atlas 0"),
                     size: wgpu::Extent3d {
-                        width: SIZE as u32,
-                        height: SIZE as u32,
+                        width: max_texture_size as u32,
+                        height: max_texture_size as u32,
                         depth_or_array_layers: 1,
                     },
                     view_formats: &[],

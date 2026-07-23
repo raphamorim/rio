@@ -1,4 +1,6 @@
-use rio_backend::ansi::graphics::{KittyPlacement, StoredImage, VirtualPlacement};
+use rio_backend::ansi::graphics::{
+    AtlasPlacement, KittyPlacement, StoredImage, VirtualPlacement,
+};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::grid::row::Row;
@@ -28,12 +30,10 @@ pub struct Cursor {
     pub is_ime_enabled: bool,
 }
 
-/// Hint label information for rendering
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 pub struct HintLabel {
     pub position: rio_backend::crosswords::pos::Pos,
-    pub label: Vec<char>,
+    pub label: char,
     pub is_first: bool,
 }
 
@@ -45,7 +45,7 @@ pub struct RenderableContent {
     pub is_blinking_cursor_visible: bool,
     pub selection_range: Option<SelectionRange>,
     pub hyperlink_range: Option<SelectionRange>,
-    pub hint_labels: Vec<HintLabel>,
+    pub hint_labels: Option<Vec<HintLabel>>,
     pub highlighted_hint: Option<crate::hints::HintMatch>,
     pub hint_matches: Option<Vec<rio_backend::crosswords::search::Match>>,
     pub last_typing: Option<Instant>,
@@ -91,6 +91,11 @@ pub struct RenderableContent {
     pub columns: usize,
     pub screen_lines: usize,
     pub history_size: usize,
+    /// Lines ever evicted off the scrollback ring; base of the
+    /// absolute row space image placements anchor in.
+    pub lines_evicted: u64,
+    /// Sixel/iTerm2 placements (snapshot; DEC grid-plane semantics).
+    pub atlas_placements: Vec<AtlasPlacement>,
     /// `true` when the terminal has cursor blink enabled this frame.
     pub blinking_cursor: bool,
     /// Kitty graphics state captured under the snapshot lock. Owned
@@ -107,7 +112,7 @@ impl RenderableContent {
             cursor,
             has_blinking_enabled: false,
             selection_range: None,
-            hint_labels: Vec::new(),
+            hint_labels: None,
             highlighted_hint: None,
             hint_matches: None,
             last_typing: None,
@@ -125,6 +130,8 @@ impl RenderableContent {
             columns: 0,
             screen_lines: 0,
             history_size: 0,
+            lines_evicted: 0,
+            atlas_placements: Vec::new(),
             blinking_cursor: false,
             kitty_virtual_placements: FxHashMap::default(),
             kitty_images: FxHashMap::default(),

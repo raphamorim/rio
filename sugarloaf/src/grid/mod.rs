@@ -101,6 +101,21 @@ impl GridRenderer {
         }
     }
 
+    /// Drop every cached glyph and force a full row rebuild. Must be
+    /// called when the font library is swapped, since atlas slots are keyed
+    /// by font id and the new library reuses the same ids.
+    pub fn clear_atlas(&mut self) {
+        match self {
+            #[cfg(target_os = "macos")]
+            GridRenderer::Metal(r) => r.clear_atlas(),
+            #[cfg(feature = "wgpu")]
+            GridRenderer::Wgpu(r) => r.clear_atlas(),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.clear_atlas(),
+            GridRenderer::Cpu(r) => r.clear_atlas(),
+        }
+    }
+
     /// Overwrite `row`'s background + foreground cells. `bg` must have
     /// exactly `cols` entries; `fg` is variable length (base glyph +
     /// decorations). Callers that want to clear a row should use
@@ -132,51 +147,15 @@ impl GridRenderer {
         }
     }
 
-    /// Replace the block cursor sprite slot. Drawn FIRST in the text
-    /// pass (`fg_rows[0]`) — sits BEHIND row glyphs so text inversion
-    /// composites on top of the block.
-    /// `Contents.setCursor` for the `.block` style.
-    pub fn set_block_cursor(&mut self, cells: &[CellText]) {
+    pub fn set_cursor(&mut self, block: &[CellText], non_block: &[CellText]) {
         match self {
             #[cfg(target_os = "macos")]
-            GridRenderer::Metal(r) => r.set_block_cursor(cells),
+            GridRenderer::Metal(r) => r.set_cursor(block, non_block),
             #[cfg(feature = "wgpu")]
-            GridRenderer::Wgpu(r) => r.set_block_cursor(cells),
+            GridRenderer::Wgpu(r) => r.set_cursor(block, non_block),
             #[cfg(target_os = "linux")]
-            GridRenderer::Vulkan(r) => r.set_block_cursor(cells),
-            GridRenderer::Cpu(r) => r.set_block_cursor(cells),
-        }
-    }
-
-    /// Replace the non-block cursor sprite slot. Drawn on top of all
-    /// row glyphs in the text pass — used for hollow / bar /
-    /// underline cursor sprites that overlay text. Pass `&[]` to
-    /// clear. `Contents.setCursor` writing into
-    /// `fg_rows[rows + 1]`.
-    pub fn set_non_block_cursor(&mut self, cells: &[CellText]) {
-        match self {
-            #[cfg(target_os = "macos")]
-            GridRenderer::Metal(r) => r.set_non_block_cursor(cells),
-            #[cfg(feature = "wgpu")]
-            GridRenderer::Wgpu(r) => r.set_non_block_cursor(cells),
-            #[cfg(target_os = "linux")]
-            GridRenderer::Vulkan(r) => r.set_non_block_cursor(cells),
-            GridRenderer::Cpu(r) => r.set_non_block_cursor(cells),
-        }
-    }
-
-    /// Empty both cursor slots (block + non-block). Call once per
-    /// frame before deciding whether to emit a cursor sprite for
-    /// this panel.
-    pub fn clear_cursor(&mut self) {
-        match self {
-            #[cfg(target_os = "macos")]
-            GridRenderer::Metal(r) => r.clear_cursor(),
-            #[cfg(feature = "wgpu")]
-            GridRenderer::Wgpu(r) => r.clear_cursor(),
-            #[cfg(target_os = "linux")]
-            GridRenderer::Vulkan(r) => r.clear_cursor(),
-            GridRenderer::Cpu(r) => r.clear_cursor(),
+            GridRenderer::Vulkan(r) => r.set_cursor(block, non_block),
+            GridRenderer::Cpu(r) => r.set_cursor(block, non_block),
         }
     }
 

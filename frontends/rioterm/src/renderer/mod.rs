@@ -1,5 +1,6 @@
 pub mod assistant;
 pub mod command_palette;
+pub mod confirm_quit;
 pub mod custom_cursor;
 pub mod helpers;
 pub mod island;
@@ -13,7 +14,6 @@ use taffy::NodeId;
 
 use crate::context::renderable::{PendingUpdate, RenderableContent};
 use crate::context::ContextManager;
-use crate::crosswords::pos::Pos;
 use crate::crosswords::style::{Style as CellStyle, StyleFlags};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
@@ -43,9 +43,12 @@ fn window_bg_alpha(config: &Config) -> f32 {
     }
 }
 
+pub use rio_backend::sugarloaf::{atlas_image_key, kitty_image_key};
+
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
+    pub is_window_focused: bool,
     draw_bold_text_with_light_colors: bool,
     use_drawable_chars: bool,
     pub named_colors: Colors,
@@ -66,6 +69,7 @@ pub struct Renderer {
     pub(crate) ignore_selection_fg_color: bool,
     pub search: search::SearchOverlay,
     pub assistant: assistant::AssistantOverlay,
+    pub confirm_quit: confirm_quit::ConfirmQuit,
     pub scrollbar: scrollbar::Scrollbar,
     #[allow(unused)]
     pub option_as_alt: String,
@@ -117,8 +121,8 @@ impl Renderer {
             Some(island::Island::new(
                 named_colors.tabs,
                 named_colors.tabs_active,
-                named_colors.tab_border,
                 config.navigation.hide_if_single,
+                config.navigation.max_tab_width,
             ))
         } else {
             None
@@ -136,6 +140,7 @@ impl Renderer {
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_vi_mode_enabled: false,
             config_has_blinking_enabled: config.cursor.blinking,
+            is_window_focused: true,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
             navigation: config.navigation.clone(),
@@ -153,6 +158,7 @@ impl Renderer {
             window_bg_alpha: target_bg_alpha,
             search: search::SearchOverlay::default(),
             assistant: assistant::AssistantOverlay::default(),
+            confirm_quit: confirm_quit::ConfirmQuit::default(),
             scrollbar: scrollbar::Scrollbar::new(config.enable_scroll_bar),
             is_game_mode_enabled: config.renderer.strategy.is_game(),
             custom_mouse_cursor: config.effects.custom_mouse_cursor,
@@ -280,24 +286,6 @@ impl Renderer {
             self.last_active = Some(active_key);
         }
 
-        // Update per-panel scroll state for scrollbar rendering (all panels, not just dirty ones)
-        if self.scrollbar.is_enabled() {
-            self.scrollbar.clear_panel_states();
-            for grid_context in grid.contexts_mut().values() {
-                let panel_rect = grid_context.layout_rect;
-                let ctx = grid_context.context();
-                let terminal = ctx.terminal.lock();
-                self.scrollbar
-                    .push_panel_state(scrollbar::PanelScrollState {
-                        rich_text_id: ctx.rich_text_id,
-                        panel_rect,
-                        display_offset: terminal.display_offset(),
-                        history_size: terminal.history_size(),
-                        screen_lines: terminal.screen_lines(),
-                    });
-            }
-        }
-
         for (_key, grid_context) in grid.contexts_mut().iter_mut() {
             let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
@@ -377,28 +365,38 @@ impl Renderer {
                 context.renderable_content.columns = snapshot_cols;
                 context.renderable_content.screen_lines = terminal.screen_lines();
                 context.renderable_content.history_size = terminal.history_size();
+                context.renderable_content.lines_evicted = terminal.lines_evicted();
                 context.renderable_content.blinking_cursor = terminal.blinking_cursor;
                 context.renderable_content.cursor.state = terminal.cursor();
-                context.renderable_content.kitty_virtual_placements =
-                    terminal.graphics.kitty_virtual_placements.clone();
-                context.renderable_content.kitty_images =
-                    terminal.graphics.kitty_images.clone();
-                context.renderable_content.kitty_placements = {
-                    let mut placements: Vec<_> = terminal
-                        .graphics
-                        .kitty_placements
-                        .values()
-                        .filter(|p| {
-                            terminal.graphics.kitty_images.contains_key(&p.image_id)
-                        })
-                        .cloned()
-                        .collect();
-                    placements.sort_by_key(|p| p.z_index);
-                    placements
-                };
-                context.renderable_content.kitty_graphics_dirty =
-                    terminal.graphics.kitty_graphics_dirty;
-                terminal.graphics.kitty_graphics_dirty = false;
+                if terminal.graphics.kitty_graphics_dirty {
+                    context.renderable_content.kitty_virtual_placements =
+                        terminal.graphics.kitty_virtual_placements.clone();
+                    context.renderable_content.kitty_images =
+                        terminal.graphics.kitty_images.clone();
+                    context.renderable_content.kitty_placements = {
+                        let mut placements: Vec<_> = terminal
+                            .graphics
+                            .kitty_placements
+                            .values()
+                            .filter(|p| {
+                                terminal.graphics.kitty_images.contains_key(&p.image_id)
+                            })
+                            .cloned()
+                            .collect();
+                        // Tie-break on the unique key so equal
+                        // z-indexes keep a stable paint order across
+                        // frames (map iteration order is not).
+                        placements
+                            .sort_by_key(|p| (p.z_index, p.image_id, p.placement_id));
+                        placements
+                    };
+                    context.renderable_content.atlas_placements =
+                        terminal.graphics.atlas_placements.clone();
+                    context.renderable_content.kitty_graphics_dirty = true;
+                    terminal.graphics.kitty_graphics_dirty = false;
+                } else {
+                    context.renderable_content.kitty_graphics_dirty = false;
+                }
                 context.renderable_content.frame_damage = damage;
                 drop(terminal);
             }
@@ -409,15 +407,28 @@ impl Renderer {
             let rc = &context.renderable_content;
             let has_overlays = !rc.kitty_placements.is_empty();
             let has_virtual = !rc.kitty_virtual_placements.is_empty();
-            if has_overlays || has_virtual {
+            let has_atlas = !rc.atlas_placements.is_empty();
+            if has_overlays || has_virtual || has_atlas {
                 let layout = context.dimension;
                 // Canonical integer cell stride — line_height already
                 // baked into `cell.cell_height`. Same value the GPU
                 // grid uniform paints with.
                 let cell_width = layout.cell.cell_width as f32;
                 let cell_height = layout.cell.cell_height as f32;
-                let origin_x = panel_rect[0] + grid_scaled_margin.left;
-                let origin_y = panel_rect[1] + grid_scaled_margin.top;
+                // Rounded like the grid's own paint origin
+                // (screen/mod.rs panel_left/panel_top), so image quads
+                // and the clip rect sit exactly on the painted cell
+                // grid instead of up to half a pixel off.
+                let origin_x = (panel_rect[0] + grid_scaled_margin.left).round();
+                let origin_y = (panel_rect[1] + grid_scaled_margin.top).round();
+
+                // Images clip to the panel's cell grid, exactly like
+                // text: without this a wide image paints across split
+                // dividers onto neighbor panels.
+                let clip_x0 = origin_x;
+                let clip_y0 = origin_y;
+                let clip_x1 = origin_x + rc.columns as f32 * cell_width;
+                let clip_y1 = origin_y + rc.screen_lines as f32 * cell_height;
 
                 let overlays = sugarloaf
                     .image_overlays
@@ -425,33 +436,85 @@ impl Renderer {
                     .or_default();
                 overlays.clear();
 
-                if has_overlays {
-                    let history_size = rc.history_size as i64;
-                    let display_offset = rc.display_offset as i64;
-                    let screen_lines = rc.screen_lines as i64;
+                let viewport = rio_backend::ansi::graphics::OverlayViewport {
+                    cell_width,
+                    cell_height,
+                    origin_x,
+                    origin_y,
+                    // Absolute lines above the screen top: ring
+                    // evictions + current history.
+                    history_size: rc.lines_evicted as i64 + rc.history_size as i64,
+                    display_offset: rc.display_offset as i64,
+                    screen_lines: rc.screen_lines as i64,
+                };
 
-                    for p in &rc.kitty_placements {
-                        let screen_row = p.dest_row - (history_size - display_offset);
-                        let image_bottom_row = screen_row + p.rows as i64;
-                        // Cull only if fully off-screen (like )
-                        if image_bottom_row <= 0 || screen_row >= screen_lines {
+                if has_atlas {
+                    // Sixel/iTerm2 grid-plane images draw below text
+                    // and below kitty overlays at the same z.
+                    for p in &rc.atlas_placements {
+                        let Some(geometry) =
+                            rio_backend::ansi::graphics::atlas_overlay_geometry(
+                                p, &viewport,
+                            )
+                        else {
                             continue;
+                        };
+                        let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
+                            image_id: p.image_key,
+                            x: geometry.x,
+                            y: geometry.y,
+                            width: geometry.width,
+                            height: geometry.height,
+                            z_index: -1,
+                            source_rect: geometry.source_rect,
+                        };
+                        if rio_backend::ansi::graphics::clip_overlay_to_rect(
+                            &mut overlay,
+                            clip_x0,
+                            clip_y0,
+                            clip_x1,
+                            clip_y1,
+                        ) {
+                            overlays.push(overlay);
                         }
-                        overlays.push(rio_backend::sugarloaf::GraphicOverlay {
-                            image_id: p.image_id,
-                            // kitty X=/Y= offset, supports sub-cell positioning
-                            x: origin_x
-                                + p.dest_col as f32 * cell_width
-                                + p.cell_x_offset as f32,
-                            y: origin_y
-                                + screen_row as f32 * cell_height
-                                + p.cell_y_offset as f32,
-                            width: p.pixel_width as f32,
-                            height: p.pixel_height as f32,
+                    }
+                }
+
+                if has_overlays {
+                    for p in &rc.kitty_placements {
+                        let (image_width, image_height) = rc
+                            .kitty_images
+                            .get(&p.image_id)
+                            .map(|stored| (stored.data.width, stored.data.height))
+                            .unwrap_or((0, 0));
+                        let Some(geometry) =
+                            rio_backend::ansi::graphics::kitty_overlay_geometry(
+                                p,
+                                image_width,
+                                image_height,
+                                &viewport,
+                            )
+                        else {
+                            continue;
+                        };
+                        let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
+                            image_id: kitty_image_key(p.image_id),
+                            x: geometry.x,
+                            y: geometry.y,
+                            width: geometry.width,
+                            height: geometry.height,
                             z_index: p.z_index,
-                            source_rect:
-                                rio_backend::sugarloaf::GraphicOverlay::FULL_SOURCE_RECT,
-                        });
+                            source_rect: geometry.source_rect,
+                        };
+                        if rio_backend::ansi::graphics::clip_overlay_to_rect(
+                            &mut overlay,
+                            clip_x0,
+                            clip_y0,
+                            clip_x1,
+                            clip_y1,
+                        ) {
+                            overlays.push(overlay);
+                        }
                     }
                 }
 
@@ -463,10 +526,12 @@ impl Renderer {
                         origin_y,
                         cell_width,
                         cell_height,
+                        (clip_x0, clip_y0, clip_x1, clip_y1),
                     );
                 }
             } else if rc.kitty_graphics_dirty {
-                // Placements were removed — clear overlays
+                // All placements (kitty and atlas) were removed, so drop
+                // this panel's overlay vec.
                 sugarloaf.clear_image_overlays_for(context.rich_text_id);
             }
 
@@ -476,7 +541,7 @@ impl Renderer {
             if context.renderable_content.blinking_cursor {
                 let has_selection = context.renderable_content.selection_range.is_some();
                 if !has_selection {
-                    let mut should_blink = true;
+                    let mut should_blink = self.is_window_focused;
                     if let Some(last_typing_time) = context.renderable_content.last_typing
                     {
                         if last_typing_time.elapsed() < std::time::Duration::from_secs(1)
@@ -515,6 +580,23 @@ impl Renderer {
                     context.renderable_content.is_blinking_cursor_visible = true;
                     context.renderable_content.last_blink_toggle = None;
                 }
+            }
+        }
+
+        if self.scrollbar.is_enabled() {
+            self.scrollbar.clear_panel_states();
+            for grid_context in grid.contexts_mut().values() {
+                let panel_rect = grid_context.layout_rect;
+                let ctx = grid_context.context();
+                let rc = &ctx.renderable_content;
+                self.scrollbar
+                    .push_panel_state(scrollbar::PanelScrollState {
+                        rich_text_id: ctx.rich_text_id,
+                        panel_rect,
+                        display_offset: rc.display_offset,
+                        history_size: rc.history_size,
+                        screen_lines: rc.screen_lines,
+                    });
             }
         }
 
@@ -567,12 +649,9 @@ impl Renderer {
         }
 
         if let Some(island) = &mut self.island {
-            // The floating-drag tab needs an opaque fill matching what
-            // the window actually shows: the last effective bg (follows
-            // OSC 11), falling back to the theme bg on the first frame.
             let island_bg = self
                 .last_window_bg
-                .map(|c| [c.r as f32, c.g as f32, c.b as f32, 1.0])
+                .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32])
                 .unwrap_or(self.named_colors.background.0);
             island.render(
                 sugarloaf,
@@ -593,6 +672,11 @@ impl Renderer {
         );
 
         self.command_palette.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
+
+        self.confirm_quit.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
         );
@@ -683,19 +767,6 @@ impl Renderer {
         }
     }
 
-    /// Find hint label at the specified position
-    #[allow(dead_code)]
-    fn find_hint_label_at_position<'a>(
-        &self,
-        renderable_content: &'a RenderableContent,
-        pos: Pos,
-    ) -> Option<&'a crate::context::renderable::HintLabel> {
-        renderable_content
-            .hint_labels
-            .iter()
-            .find(|label| label.position == pos)
-    }
-
     /// Scan visible rows for kitty Unicode-placeholder cells (U+10EEEE) and
     /// push one `GraphicOverlay` per row-run. Implements four key behaviors
     /// of the Kitty graphics Unicode-placeholder protocol:
@@ -711,6 +782,7 @@ impl Renderer {
     ///    partial visibility (placement scrolled half off-screen) and
     ///    cells that fall in the centering padding
     ///    (`renderPlacement`, `graphics_unicode.zig:212-329`).
+    #[allow(clippy::too_many_arguments)]
     fn push_virtual_placeholder_overlays(
         overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
         rc: &RenderableContent,
@@ -718,6 +790,7 @@ impl Renderer {
         origin_y: f32,
         cell_width: f32,
         cell_height: f32,
+        clip: (f32, f32, f32, f32),
     ) {
         use rio_backend::ansi::kitty_virtual::{
             IncompletePlacement, PlaceholderRun, PLACEHOLDER,
@@ -755,6 +828,7 @@ impl Renderer {
                             cell_width,
                             cell_height,
                             VIRTUAL_Z_INDEX,
+                            clip,
                         );
                     }
                     continue;
@@ -790,6 +864,7 @@ impl Renderer {
                                 cell_width,
                                 cell_height,
                                 VIRTUAL_Z_INDEX,
+                                clip,
                             );
                         }
                         // Default missing row/col on the FIRST cell of a
@@ -819,6 +894,7 @@ impl Renderer {
                     cell_width,
                     cell_height,
                     VIRTUAL_Z_INDEX,
+                    clip,
                 );
             }
         }
@@ -841,6 +917,7 @@ impl Renderer {
             cell_width: f32,
             cell_height: f32,
             z_index: i32,
+            clip: (f32, f32, f32, f32),
         ) {
             let vp = rc
                 .kitty_virtual_placements
@@ -861,6 +938,7 @@ impl Renderer {
                 vp.rows,
                 img.data.width as u32,
                 img.data.height as u32,
+                (vp.x, vp.y, vp.width, vp.height),
                 cell_width,
                 cell_height,
                 origin_x,
@@ -872,15 +950,24 @@ impl Renderer {
                 None => return,
             };
 
-            overlays.push(rio_backend::sugarloaf::GraphicOverlay {
-                image_id: run.image_id,
+            let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
+                image_id: kitty_image_key(run.image_id),
                 x: geom.x,
                 y: geom.y,
                 width: geom.width,
                 height: geom.height,
                 z_index,
                 source_rect: geom.source_rect,
-            });
+            };
+            if rio_backend::ansi::graphics::clip_overlay_to_rect(
+                &mut overlay,
+                clip.0,
+                clip.1,
+                clip.2,
+                clip.3,
+            ) {
+                overlays.push(overlay);
+            }
         }
     }
 }

@@ -142,6 +142,7 @@ impl VulkanGlyphAtlas {
             descriptor_pool,
             descriptor_set_layout,
             sampler,
+            true,
         )
     }
 
@@ -158,9 +159,11 @@ impl VulkanGlyphAtlas {
             descriptor_pool,
             descriptor_set_layout,
             sampler,
+            false,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new(
         ctx: &VulkanContext,
         format: vk::Format,
@@ -168,21 +171,26 @@ impl VulkanGlyphAtlas {
         descriptor_pool: vk::DescriptorPool,
         descriptor_set_layout: vk::DescriptorSetLayout,
         sampler: vk::Sampler,
+        eager_first_page: bool,
     ) -> Self {
         let shared = ctx.shared().clone();
         let queue = ctx.queue;
         let queue_family_index = ctx.queue_family_index;
-        let initial_page = make_page(
-            &shared,
-            queue,
-            queue_family_index,
-            format,
-            descriptor_pool,
-            descriptor_set_layout,
-            sampler,
-        );
+        let pages = if eager_first_page {
+            vec![make_page(
+                &shared,
+                queue,
+                queue_family_index,
+                format,
+                descriptor_pool,
+                descriptor_set_layout,
+                sampler,
+            )]
+        } else {
+            Vec::new()
+        };
         Self {
-            pages: vec![initial_page],
+            pages,
             slots: FxHashMap::default(),
             format,
             bytes_per_pixel,
@@ -372,6 +380,16 @@ impl VulkanGlyphAtlas {
             bytes: glyph.bytes.to_vec(),
         });
         Some(slot)
+    }
+
+    /// Forget every cached glyph. Pages are kept and their allocators
+    /// reset; the caller forces a full row rebuild before the next draw.
+    pub fn clear(&mut self) {
+        self.slots.clear();
+        for page in &mut self.pages {
+            page.allocator.clear();
+            page.pending.clear();
+        }
     }
 }
 
@@ -859,42 +877,21 @@ impl VulkanGridRenderer {
         self.bg_dirty = [true; FRAMES_IN_FLIGHT];
     }
 
-    pub fn set_block_cursor(&mut self, cells: &[CellText]) {
-        if let Some(slot) = self.fg_rows.first_mut() {
-            if slot.is_empty() && cells.is_empty() {
-                return;
-            }
-            slot.clear();
-            slot.extend_from_slice(cells);
-            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
-        }
-    }
-
-    pub fn set_non_block_cursor(&mut self, cells: &[CellText]) {
-        let idx = self.fg_rows.len().saturating_sub(1);
-        if let Some(slot) = self.fg_rows.get_mut(idx) {
-            if slot.is_empty() && cells.is_empty() {
-                return;
-            }
-            slot.clear();
-            slot.extend_from_slice(cells);
-            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
-        }
-    }
-
-    pub fn clear_cursor(&mut self) {
+    pub fn set_cursor(&mut self, block: &[CellText], non_block: &[CellText]) {
         let mut changed = false;
         if let Some(slot) = self.fg_rows.first_mut() {
-            if !slot.is_empty() {
+            if slot.as_slice() != block {
                 slot.clear();
+                slot.extend_from_slice(block);
                 changed = true;
             }
         }
         let last = self.fg_rows.len().saturating_sub(1);
         if last > 0 {
             if let Some(slot) = self.fg_rows.get_mut(last) {
-                if !slot.is_empty() {
+                if slot.as_slice() != non_block {
                     slot.clear();
+                    slot.extend_from_slice(non_block);
                     changed = true;
                 }
             }
@@ -914,23 +911,44 @@ impl VulkanGridRenderer {
         self.atlas_color.lookup(key)
     }
 
-    #[inline]
+    /// Drop every cached glyph and force a full rebuild. Called when
+    /// the font library is swapped, since the new library reuses font ids.
+    pub fn clear_atlas(&mut self) {
+        self.atlas_grayscale.clear();
+        self.atlas_color.clear();
+        self.needs_full_rebuild = true;
+        self.fg_dirty = [true; FRAMES_IN_FLIGHT];
+        self.bg_dirty = [true; FRAMES_IN_FLIGHT];
+    }
+
+    /// The atlas's own `insert` walks existing pages and appends a
+    /// new one when none fit. At `MAX_PAGES` the atlas is cleared
+    /// once and every row rebuilt.
     pub fn insert_glyph(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        // The atlas's own `insert` walks existing pages and appends a
-        // new one when none fit, so the renderer doesn't need to retry.
+        if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
+            return Some(slot);
+        }
+        self.atlas_grayscale.clear();
+        self.needs_full_rebuild = true;
+        self.fg_dirty = [true; FRAMES_IN_FLIGHT];
         self.atlas_grayscale.insert(key, glyph)
     }
 
-    #[inline]
     pub fn insert_glyph_color(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
+        if let Some(slot) = self.atlas_color.insert(key, glyph) {
+            return Some(slot);
+        }
+        self.atlas_color.clear();
+        self.needs_full_rebuild = true;
+        self.fg_dirty = [true; FRAMES_IN_FLIGHT];
         self.atlas_color.insert(key, glyph)
     }
 

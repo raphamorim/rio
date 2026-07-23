@@ -38,8 +38,9 @@ pub struct Sugarloaf<'a> {
     pub graphics: Graphics,
     #[cfg(feature = "wgpu")]
     filters_brush: Option<FiltersBrush>,
-    /// Pixel data for standalone image textures, keyed by ImageId.
-    pub image_data: rustc_hash::FxHashMap<u32, GraphicDataEntry>,
+    /// Pixel data for standalone image textures, keyed by image key
+    /// (`graphics::kitty_image_key` / `graphics::atlas_image_key`).
+    pub image_data: rustc_hash::FxHashMap<u64, GraphicDataEntry>,
     /// Persistent state for the CPU rasterizer (glyph cache + frame hash).
     /// Unused on GPU backends.
     cpu_cache: crate::renderer::cpu::CpuCache,
@@ -57,6 +58,7 @@ pub struct Sugarloaf<'a> {
     text: crate::text::Text,
     /// Per-panel (rich_text_id) image overlays. Driven by the kitty
     /// graphics frontend path; read by the renderer's image pass.
+    /// Rebuilt by `Renderer::run` for dirty panels each frame.
     pub image_overlays:
         rustc_hash::FxHashMap<usize, Vec<crate::sugarloaf::graphics::GraphicOverlay>>,
     /// Owned context (device + swapchain + queue). Last so the device
@@ -903,6 +905,14 @@ impl Sugarloaf<'_> {
         self.text.clear();
     }
 
+    /// Remove an image's pixel data and its cached GPU texture.
+    /// `key` is a `graphics::kitty_image_key` / `graphics::atlas_image_key`.
+    #[inline]
+    pub fn remove_image(&mut self, key: u64) {
+        self.image_data.remove(&key);
+        self.renderer.evict_image_texture(key);
+    }
+
     /// Drop everything this frame's immediate-mode producers pushed
     /// without submitting a draw. Callers use this when they
     /// decided mid-frame to skip `render` / `render_with_grids`
@@ -983,6 +993,10 @@ impl Sugarloaf<'_> {
             bg,
             grids,
             &self.text,
+            &crate::renderer::cpu::ImageLayers {
+                overlays: &self.image_overlays,
+                data: &self.image_data,
+            },
         );
 
         self.reset();
@@ -1226,7 +1240,7 @@ impl Sugarloaf<'_> {
             filters_brush.render(ctx, &mut encoder, &frame.texture, &frame.texture);
         }
         ctx.queue.submit(Some(encoder.finish()));
-        frame.present();
+        ctx.queue.present(frame);
         self.reset();
     }
 }

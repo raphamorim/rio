@@ -161,6 +161,11 @@ impl CpuGridAtlas {
         true
     }
 
+    pub fn clear(&mut self) {
+        self.allocator.clear();
+        self.slots.clear();
+    }
+
     #[inline]
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
@@ -247,29 +252,16 @@ impl CpuGridRenderer {
         }
     }
 
-    pub fn set_block_cursor(&mut self, cells: &[CellText]) {
+    pub fn set_cursor(&mut self, block: &[CellText], non_block: &[CellText]) {
         if let Some(slot) = self.fg_rows.first_mut() {
             slot.clear();
-            slot.extend_from_slice(cells);
-        }
-    }
-
-    pub fn set_non_block_cursor(&mut self, cells: &[CellText]) {
-        let idx = self.fg_rows.len().saturating_sub(1);
-        if let Some(slot) = self.fg_rows.get_mut(idx) {
-            slot.clear();
-            slot.extend_from_slice(cells);
-        }
-    }
-
-    pub fn clear_cursor(&mut self) {
-        if let Some(slot) = self.fg_rows.first_mut() {
-            slot.clear();
+            slot.extend_from_slice(block);
         }
         let last = self.fg_rows.len().saturating_sub(1);
         if last > 0 {
             if let Some(slot) = self.fg_rows.get_mut(last) {
                 slot.clear();
+                slot.extend_from_slice(non_block);
             }
         }
     }
@@ -279,18 +271,33 @@ impl CpuGridRenderer {
         self.atlas_grayscale.lookup(key)
     }
 
+    /// Drop every cached glyph and force a full rebuild. Called when
+    /// the font library is swapped, since the new library reuses font ids.
+    pub fn clear_atlas(&mut self) {
+        self.atlas_grayscale.clear();
+        self.atlas_color.clear();
+        self.needs_full_rebuild = true;
+    }
+
     pub fn insert_glyph(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
-            return Some(slot);
-        }
-        if self.atlas_grayscale.grow() {
-            self.atlas_grayscale.insert(key, glyph)
-        } else {
-            None
+        let mut cleared = false;
+        loop {
+            if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
+                return Some(slot);
+            }
+            if self.atlas_grayscale.grow() {
+                continue;
+            }
+            if cleared {
+                return None;
+            }
+            self.atlas_grayscale.clear();
+            self.needs_full_rebuild = true;
+            cleared = true;
         }
     }
 
@@ -304,13 +311,20 @@ impl CpuGridRenderer {
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        if let Some(slot) = self.atlas_color.insert(key, glyph) {
-            return Some(slot);
-        }
-        if self.atlas_color.grow() {
-            self.atlas_color.insert(key, glyph)
-        } else {
-            None
+        let mut cleared = false;
+        loop {
+            if let Some(slot) = self.atlas_color.insert(key, glyph) {
+                return Some(slot);
+            }
+            if self.atlas_color.grow() {
+                continue;
+            }
+            if cleared {
+                return None;
+            }
+            self.atlas_color.clear();
+            self.needs_full_rebuild = true;
+            cleared = true;
         }
     }
 

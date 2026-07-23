@@ -42,6 +42,48 @@ pub(super) enum PaletteReset {
     Indices(Vec<u8>),
 }
 
+/// Parse an OSC 133 semantic prompt sequence into the row mark it
+/// should set, if any. `A` and `P` mark the cursor row as a prompt
+/// (`P;k=c` / `P;k=s` as a continuation); the remaining subcommands
+/// (`B`, `C`, `D`, `I`, `L`, `N`) and all `key=value` options are
+/// accepted and ignored, matching the spec's leniency.
+pub(super) fn parse_semantic_prompt(
+    params: &[&[u8]],
+) -> Option<crate::crosswords::grid::row::SemanticPrompt> {
+    use crate::crosswords::grid::row::SemanticPrompt;
+
+    let subcommand = *params.get(1)?.first()?;
+    match subcommand {
+        b'A' => Some(SemanticPrompt::Prompt),
+        b'P' => {
+            for option in &params[2..] {
+                if let Some(kind) = option.strip_prefix(b"k=") {
+                    if kind == b"c" || kind == b"s" {
+                        return Some(SemanticPrompt::PromptContinuation);
+                    }
+                }
+            }
+            Some(SemanticPrompt::Prompt)
+        }
+        _ => None,
+    }
+}
+
+/// Parse `OSC 1337 ; SetUserVar=name=<base64 value>`. The value is
+/// base64 per iTerm2's spec; anything undecodable is dropped.
+pub(super) fn parse_set_user_var(params: &[&[u8]]) -> Option<(String, String)> {
+    let payload = params.get(1)?.strip_prefix(b"SetUserVar=")?;
+    let mut parts = payload.splitn(2, |byte| *byte == b'=');
+    let name = simd_utf8::from_utf8_fast(parts.next()?).ok()?;
+    if name.is_empty() {
+        return None;
+    }
+    let encoded = parts.next()?;
+    let decoded = crate::simd_base64::decode(encoded)?;
+    let value = String::from_utf8(decoded).ok()?;
+    Some((name.to_string(), value))
+}
+
 /// Parse an `xterm`-style color value (`#rgb`, `#rrggbb`, `rgb:r/g/b`).
 pub(super) fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
     if !color.is_empty() && color[0] == b'#' {

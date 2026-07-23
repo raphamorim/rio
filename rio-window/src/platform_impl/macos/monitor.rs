@@ -20,6 +20,42 @@ use objc2_foundation::{
 use super::ffi;
 use crate::dpi::{LogicalPosition, PhysicalPosition, PhysicalSize};
 
+/// The display currently under the mouse cursor. `CGEvent` reports
+/// the cursor in the same top-left-origin global space that
+/// `CGDisplayBounds` uses, so no coordinate flip is needed.
+pub fn cursor_monitor() -> Option<MonitorHandle> {
+    use core_graphics::event::CGEvent;
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState).ok()?;
+    let location = CGEvent::new(source).ok()?.location();
+    let mut display_id: CGDirectDisplayID = 0;
+    let mut count: u32 = 0;
+    let result = unsafe {
+        cursor_ffi::CGGetDisplaysWithPoint(location, 1, &mut display_id, &mut count)
+    };
+    if result == 0 && count > 0 {
+        Some(MonitorHandle::new(display_id))
+    } else {
+        None
+    }
+}
+
+mod cursor_ffi {
+    use core_graphics::display::CGDirectDisplayID;
+    use core_graphics::geometry::CGPoint;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        pub fn CGGetDisplaysWithPoint(
+            point: CGPoint,
+            max_displays: u32,
+            displays: *mut CGDirectDisplayID,
+            matching_display_count: *mut u32,
+        ) -> i32;
+    }
+}
+
 #[derive(Clone)]
 pub struct VideoModeHandle {
     size: PhysicalSize<u32>,

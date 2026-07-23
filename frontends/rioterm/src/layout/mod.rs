@@ -1175,6 +1175,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     pub fn update_scaled_margin(&mut self, scaled_margin: Margin) {
         self.scaled_margin = scaled_margin;
+        // Keep the taffy root size in sync with the new margins,
+        // otherwise panels keep stale sizes until the next window
+        // resize recomputes the available space.
+        let _ = self.try_update_size(self.width, self.height);
     }
 
     pub fn update_line_height(&mut self, line_height: f32) {

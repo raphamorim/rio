@@ -144,7 +144,6 @@ impl WgpuGlyphAtlas {
         Some(slot)
     }
 
-    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.allocator.clear();
         self.slots.clear();
@@ -373,42 +372,21 @@ impl WgpuGridRenderer {
         self.bg_dirty = true;
     }
 
-    pub fn set_block_cursor(&mut self, cells: &[CellText]) {
-        if let Some(slot) = self.fg_rows.first_mut() {
-            if slot.is_empty() && cells.is_empty() {
-                return;
-            }
-            slot.clear();
-            slot.extend_from_slice(cells);
-            self.fg_dirty = true;
-        }
-    }
-
-    pub fn set_non_block_cursor(&mut self, cells: &[CellText]) {
-        let idx = self.fg_rows.len().saturating_sub(1);
-        if let Some(slot) = self.fg_rows.get_mut(idx) {
-            if slot.is_empty() && cells.is_empty() {
-                return;
-            }
-            slot.clear();
-            slot.extend_from_slice(cells);
-            self.fg_dirty = true;
-        }
-    }
-
-    pub fn clear_cursor(&mut self) {
+    pub fn set_cursor(&mut self, block: &[CellText], non_block: &[CellText]) {
         let mut changed = false;
         if let Some(slot) = self.fg_rows.first_mut() {
-            if !slot.is_empty() {
+            if slot.as_slice() != block {
                 slot.clear();
+                slot.extend_from_slice(block);
                 changed = true;
             }
         }
         let last = self.fg_rows.len().saturating_sub(1);
         if last > 0 {
             if let Some(slot) = self.fg_rows.get_mut(last) {
-                if !slot.is_empty() {
+                if slot.as_slice() != non_block {
                     slot.clear();
+                    slot.extend_from_slice(non_block);
                     changed = true;
                 }
             }
@@ -426,11 +404,29 @@ impl WgpuGridRenderer {
         self.atlas_color.lookup(key)
     }
 
+    /// Drop every cached glyph and force a full rebuild. Called when
+    /// the font library is swapped, since the new library reuses font ids.
+    pub fn clear_atlas(&mut self) {
+        self.atlas_grayscale.clear();
+        self.atlas_color.clear();
+        self.needs_full_rebuild = true;
+        self.fg_dirty = true;
+        self.bg_dirty = true;
+    }
+
+    /// The wgpu atlas is fixed-size (no grow yet), so on atlas-full
+    /// clear it once and rebuild every row.
     pub fn insert_glyph(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
+        if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
+            return Some(slot);
+        }
+        self.atlas_grayscale.clear();
+        self.needs_full_rebuild = true;
+        self.fg_dirty = true;
         self.atlas_grayscale.insert(key, glyph)
     }
 
@@ -439,6 +435,12 @@ impl WgpuGridRenderer {
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
+        if let Some(slot) = self.atlas_color.insert(key, glyph) {
+            return Some(slot);
+        }
+        self.atlas_color.clear();
+        self.needs_full_rebuild = true;
+        self.fg_dirty = true;
         self.atlas_color.insert(key, glyph)
     }
 
@@ -809,7 +811,7 @@ fn build_text_pipeline(
         vertex: wgpu::VertexState {
             module: shader,
             entry_point: Some("grid_text_vertex"),
-            buffers: &[vbuf_layout],
+            buffers: &[Some(vbuf_layout)],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
