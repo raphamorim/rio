@@ -12,6 +12,22 @@ use std::mem;
 use std::sync::Arc;
 use tracing::debug;
 
+/// A graphic scheduled for removal, tagged with the id space it lives in.
+///
+/// Atlas graphics (sixel/iTerm2) and kitty images don't share an id
+/// space: both allocate per terminal and can collide numerically. The
+/// window-level store is keyed by `sugarloaf::ImageKey` (route, source,
+/// id), and the frontend needs this tag to build the source part — a
+/// bare id can't tell the removal handler which entry to target, so a
+/// kitty removal could delete an atlas entry and leak the real one.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum GraphicRemoval {
+    /// Sixel/iTerm2 atlas graphic (`GraphicId` space).
+    Atlas(GraphicId),
+    /// Kitty image (raw protocol `image_id` space).
+    Kitty(u32),
+}
+
 #[derive(Debug, Clone)]
 pub struct UpdateQueues {
     /// Atlas graphics (sixel/iTerm2) read from the PTY.
@@ -20,9 +36,8 @@ pub struct UpdateQueues {
     /// Image textures (kitty) keyed by image_id.
     pub pending_images: Vec<(u32, GraphicData)>,
 
-    /// Image keys removed from the grid or evicted
-    /// (`sugarloaf::graphics::kitty_image_key` / `atlas_image_key`).
-    pub remove_queue: Vec<u64>,
+    /// Graphics removed from the grid, tagged with their id space.
+    pub remove_queue: Vec<GraphicRemoval>,
 }
 
 /// Kitty graphics Unicode placeholder character
@@ -376,7 +391,10 @@ pub fn kitty_overlay_geometry(
 /// scale of the image.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AtlasPlacement {
-    /// Texture key (`atlas_image_key(GraphicId)`).
+    /// Raw `GraphicId` of the atlas graphic. The frontend scopes it to
+    /// the owning terminal via `ImageKey::atlas(route_id, image_key)`;
+    /// the `ImageKey` source discriminant keeps it disjoint from kitty
+    /// ids, so no numeric shift is needed here.
     pub image_key: u64,
     /// Anchor row in the stable absolute space
     /// (`lines_evicted + history + screen_row` at insert).
@@ -579,8 +597,8 @@ pub struct Graphics {
     /// New image textures (kitty), keyed by image_id.
     pub pending_images: Vec<(u32, GraphicData)>,
 
-    /// Graphics removed from the grid.
-    pub texture_operations: Arc<Mutex<Vec<u64>>>,
+    /// Graphics removed from the grid, tagged with their id space.
+    pub texture_operations: Arc<Mutex<Vec<GraphicRemoval>>>,
 
     /// Shared palette for Sixel graphics.
     pub sixel_shared_palette: Option<Vec<ColorRgb>>,
@@ -792,7 +810,7 @@ impl Graphics {
     fn recount_atlas_keys_for(
         placements: &[AtlasPlacement],
         key_refs: &mut FxHashMap<u64, u32>,
-        texture_operations: &std::sync::Arc<parking_lot::Mutex<Vec<u64>>>,
+        texture_operations: &std::sync::Arc<parking_lot::Mutex<Vec<GraphicRemoval>>>,
     ) {
         let mut refs: FxHashMap<u64, u32> = FxHashMap::default();
         for placement in placements {
@@ -801,7 +819,7 @@ impl Graphics {
         let mut removals = texture_operations.lock();
         for key in key_refs.keys() {
             if !refs.contains_key(key) {
-                removals.push(*key);
+                removals.push(GraphicRemoval::Atlas(GraphicId::new(*key)));
             }
         }
         drop(removals);
@@ -859,10 +877,10 @@ impl Graphics {
         {
             let mut removals = self.texture_operations.lock();
             for key in self.atlas_key_refs.keys() {
-                removals.push(*key);
+                removals.push(GraphicRemoval::Atlas(GraphicId::new(*key)));
             }
             for key in self.kitty_inactive_screen.atlas_key_refs.keys() {
-                removals.push(*key);
+                removals.push(GraphicRemoval::Atlas(GraphicId::new(*key)));
             }
         }
         self.atlas_placements.clear();
@@ -1114,16 +1132,16 @@ impl Graphics {
             // Remove timestamp (only used for pending atlas graphics)
             self.image_timestamps.remove(&id);
 
-            // Add to removal queue so GPU textures get cleaned up.
-            // The key namespace depends on where the image lived:
-            // kitty ids map verbatim, atlas graphics live above 2^32.
-            let key = match source {
-                CandidateSource::Pending => crate::sugarloaf::atlas_image_key(id.get()),
+            // Add to removal queue so GPU textures get cleaned up. Tag
+            // with the id space the graphic lived in so the frontend
+            // builds the matching `ImageKey` source.
+            let removal = match source {
+                CandidateSource::Pending => GraphicRemoval::Atlas(id),
                 CandidateSource::ActiveKitty | CandidateSource::InactiveKitty => {
-                    crate::sugarloaf::kitty_image_key(id.get() as u32)
+                    GraphicRemoval::Kitty(id.get() as u32)
                 }
             };
-            self.texture_operations.lock().push(key);
+            self.texture_operations.lock().push(removal);
         }
 
         // Sweep dangling placements on both screens. A placement is
@@ -1164,8 +1182,7 @@ impl Graphics {
         let mut active = std::collections::HashSet::new();
         // Sixel/iTerm2 liveness: placements are the single owners.
         for placement in &self.atlas_placements {
-            // Atlas keys live above 2^32; recover the GraphicId part.
-            active.insert(placement.image_key - (1u64 << 32));
+            active.insert(placement.image_key);
         }
         // Overlay-based (kitty) liveness — use image_id directly
         for placement in self.kitty_placements.values() {
