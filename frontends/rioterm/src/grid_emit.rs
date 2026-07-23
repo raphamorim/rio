@@ -1761,12 +1761,7 @@ pub fn build_row_fg(
             // cell blank (a trailing space) so the overflow lands on
             // empty space rather than real content.
             if let Some((_, slot, is_color, span)) = ensure_custom_glyph_by_codepoint(
-                grid,
-                registry,
-                ch as u32,
-                cell_w_u32,
-                cell_h,
-                color,
+                grid, registry, ch as u32, cell_w_u32, cell_h, color,
             ) {
                 if slot.w != 0 && slot.h != 0 {
                     // Center the rasterised glyph in its render-span box
@@ -1780,8 +1775,7 @@ pub fn build_row_fg(
                     // `(cell_h + glyph_h) / 2`.
                     let span_w_px =
                         (cell_w_u32 * span as u32).min(i16::MAX as u32) as i16;
-                    let cell_h_i16 =
-                        cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
+                    let cell_h_i16 = cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
                     let glyph_w = slot.w.min(i16::MAX as u16) as i16;
                     let glyph_h = slot.h.min(i16::MAX as u16) as i16;
                     let bearing_x = (span_w_px - glyph_w) / 2;

@@ -106,9 +106,9 @@ impl StoredPayload {
 pub struct RegisteredGlyph {
     pub payload: Arc<StoredPayload>,
     pub upm: u16,
-    /// Declared Unicode width (spec §8.5): `1` (narrow) or `2` (wide).
-    /// Authoritative for all terminal layout decisions — UAX #11 is
-    /// never consulted for a registered codepoint.
+    /// Declared render span: `1` (narrow) or `2` (wide). A render-time
+    /// hint only; the codepoint's logical cell width stays at system
+    /// wcwidth, the renderer overflows the extra cell in pixels.
     pub width: u8,
     /// Stable render-side index in `0..GLOSSARY_CAPACITY`. The
     /// renderer's glyph-id field is u16, so the slot id fits directly.
@@ -299,15 +299,6 @@ impl GlyphRegistry {
     /// Look up a registration.
     pub fn get(&self, cp: u32) -> Option<RegisteredGlyph> {
         self.inner.read().by_cp.get(&cp).cloned()
-    }
-
-    /// Declared cell width (`1` or `2`) of a live registration, or
-    /// `None` if `cp` is not registered. Cheaper than [`get`] for the
-    /// per-codepoint input hot path: it reads the width under the lock
-    /// without cloning the payload `Arc`.
-    #[inline]
-    pub fn width_of(&self, cp: u32) -> Option<u8> {
-        self.inner.read().by_cp.get(&cp).map(|g| g.width)
     }
 
     /// True iff `cp` has a live custom registration.

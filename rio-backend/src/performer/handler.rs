@@ -419,7 +419,8 @@ pub trait Handler {
     /// size is within bounds, and `width` is `1` or `2`. The `payload`
     /// carries format-specific data: monochrome `glyf`, or a
     /// `colrv0`/`colrv1` colour container. `width` is the declared
-    /// Unicode width (spec §8.5), authoritative for layout.
+    /// render span, honoured at render time only; the codepoint's
+    /// logical cell width stays at system wcwidth.
     /// `Err(reason)` causes the dispatcher to emit an error response.
     fn glyph_register(
         &mut self,
@@ -855,22 +856,20 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                 payload,
                 reply,
                 width,
-            }) => {
-                match self.handler.glyph_register(cp, payload, width) {
-                    Ok(()) => {
-                        if reply.emit_success() {
-                            let resp = glyph_protocol::format_register_ok(cp);
-                            self.handler.glyph_protocol_response(resp);
-                        }
-                    }
-                    Err(reason) => {
-                        if reply.emit_error() {
-                            let resp = glyph_protocol::format_register_error(cp, reason);
-                            self.handler.glyph_protocol_response(resp);
-                        }
+            }) => match self.handler.glyph_register(cp, payload, width) {
+                Ok(()) => {
+                    if reply.emit_success() {
+                        let resp = glyph_protocol::format_register_ok(cp);
+                        self.handler.glyph_protocol_response(resp);
                     }
                 }
-            }
+                Err(reason) => {
+                    if reply.emit_error() {
+                        let resp = glyph_protocol::format_register_error(cp, reason);
+                        self.handler.glyph_protocol_response(resp);
+                    }
+                }
+            },
             Ok(glyph_protocol::GlyphCommand::Clear { cp }) => {
                 self.handler.glyph_clear(cp);
                 let resp = glyph_protocol::format_clear_ok(cp);

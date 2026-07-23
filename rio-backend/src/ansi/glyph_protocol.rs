@@ -67,10 +67,11 @@ pub enum GlyphCommand {
     /// `colrv0`/`colrv1` colour container wrapping OpenType tables).
     /// The `reply` level controls which replies (if any) the
     /// dispatcher emits — see [`ReplyMode`] for the three tiers.
-    /// `width` is the registration's declared Unicode width (spec
-    /// §8.5): `1` (narrow, the default) or `2` (wide). It is
-    /// authoritative for all terminal layout decisions — UAX #11 is
-    /// never consulted for a registered codepoint.
+    /// `width` is the registration's declared render span: `1`
+    /// (narrow, the default) or `2` (wide). It never changes the
+    /// codepoint's logical cell width; the renderer paints the glyph
+    /// across that many cells in pixels while layout, cursor and
+    /// selection keep following system wcwidth.
     Register {
         cp: u32,
         payload: GlyphPayload,

@@ -60,11 +60,12 @@ pub struct RasterizedPayload {
 /// painter graph (RGBA8 output). Returns `None` on malformed payload
 /// or degenerate sizing.
 ///
-/// The scale fits the authored em square inside ONE cell box
-/// (`min(cell_w, cell_h) / upm`) — registered codepoints occupy a
-/// single cell unless declared otherwise, so scaling by font size
-/// (which is ~2× the cell width in a monospace grid) would bleed
-/// every full-em icon into the neighbouring cell.
+/// The scale fits the authored em square inside the caller's box
+/// (`min(cell_w, cell_h) / upm`). The renderer passes the declared
+/// render span as `cell_width_px` (1 or 2 cell widths), so a wide
+/// registration gets the whole span while scaling by font size
+/// (roughly 2x the cell width in a monospace grid) would bleed
+/// every full-em icon past it.
 pub fn rasterize_payload(
     payload: &crate::font::glyph_registry::StoredPayload,
     upm: u16,
@@ -121,8 +122,7 @@ fn glyph_cell_scale(
         return None;
     }
     let em_fit = cell_width_px.min(cell_height_px) as f32 / upm as f32;
-    let contain =
-        (cell_width_px as f32 / bbox_w).min(cell_height_px as f32 / bbox_h);
+    let contain = (cell_width_px as f32 / bbox_w).min(cell_height_px as f32 / bbox_h);
     Some(em_fit.min(contain))
 }
 

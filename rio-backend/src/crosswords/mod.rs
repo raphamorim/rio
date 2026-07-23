@@ -534,7 +534,6 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
-
     #[inline]
     pub fn is_fully_damaged(&self) -> bool {
         self.damage.full
