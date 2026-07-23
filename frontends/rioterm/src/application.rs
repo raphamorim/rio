@@ -1011,6 +1011,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::ToggleMaximized) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    let maximized = route.window.winit_window.is_maximized();
+                    route.window.winit_window.set_maximized(!maximized);
+                }
+            }
             RioEventType::Rio(RioEvent::ToggleAppearanceTheme) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     use rio_backend::config::theme::AppearanceTheme;
