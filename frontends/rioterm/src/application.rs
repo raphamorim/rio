@@ -520,10 +520,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::UpdateConfig) => {
-                let (config, config_error) = match rio_backend::config::Config::try_load()
-                {
-                    Ok(config) => (config, None),
-                    Err(error) => (rio_backend::config::Config::default(), Some(error)),
+                // A config.toml typo saved mid-edit must not reset the
+                // live config (fonts, colors, bindings) to defaults: keep
+                // running on the current one, surface the error, and pick
+                // up the next successful save. Startup differs — there is
+                // nothing live to keep, so main's load still falls back to
+                // defaults.
+                let config = match rio_backend::config::Config::try_load() {
+                    Ok(config) => config,
+                    Err(error) => {
+                        tracing::warn!(
+                            "config.toml failed to parse; keeping the previous config"
+                        );
+                        for (_id, route) in self.router.routes.iter_mut() {
+                            route.report_error(&error.to_owned().into());
+                            route.request_redraw();
+                        }
+                        return;
+                    }
                 };
 
                 let has_font_updates = self.config.fonts != config.fonts;
@@ -580,11 +594,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     );
                     route.window.configure_window(&self.config);
 
-                    if let Some(error) = &config_error {
-                        route.report_error(&error.to_owned().into());
-                    } else {
-                        route.clear_errors();
-                    }
+                    // The reload parsed: drop any error screen left from a
+                    // previously broken save.
+                    route.clear_errors();
 
                     route.request_redraw();
                 }
