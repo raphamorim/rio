@@ -598,6 +598,15 @@ impl Processor {
                 let new_len = self.state.sync_state.buffer.len() - bsu_offset;
                 self.state.sync_state.buffer.copy_within(bsu_offset.., 0);
                 self.state.sync_state.buffer.truncate(new_len);
+
+                // The bytes we just replayed above may contain an inline
+                // ESU, which (see the `('l', [b'?'])` dispatch arm) clears
+                // the timeout. But a new BSU is still open in what's left
+                // of the buffer, so the sync must stay pending.
+                self.state
+                    .sync_state
+                    .timeout
+                    .set_timeout(SYNC_UPDATE_TIMEOUT);
             }
             // Report mode and clear state if no new BSU is present.
             None => {
@@ -1318,6 +1327,17 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
             ('l', [b'?']) => {
                 for param in params_iter.map(|param| param[0]) {
+                    // ConPTY can re-emit a synchronized update's BSU+ESU
+                    // pair glued together in one chunk, ahead of the frame
+                    // content that was actually between them. That means
+                    // the ESU can be parsed here, inline, instead of going
+                    // through `advance_sync`/`stop_sync_internal`. Without
+                    // clearing the timeout, it stays armed and all
+                    // subsequent content gets buffered until it expires.
+                    if param == NamedPrivateMode::SyncUpdate as u16 {
+                        self.state.sync_state.timeout.clear_timeout();
+                    }
+
                     handler.unset_private_mode(PrivateMode::new(param))
                 }
             }
@@ -2778,5 +2798,94 @@ mod tests {
 
         // Buffer should maintain capacity
         assert!(state.buffer.capacity() >= first_len);
+    }
+
+    // Synchronized update (DECSET/DECRST 2026) tests.
+    //
+    // Regression coverage for ConPTY reordering the VT stream: on Windows,
+    // conhost can re-emit a BSU+ESU pair glued together in one chunk before
+    // the frame content that was actually between them arrives in later
+    // chunks. See the fix in `csi_dispatch`'s `('l', [b'?'])` arm and in
+    // `stop_sync_internal`.
+
+    /// Minimal [`Handler`] mock that just records the characters it
+    /// receives via [`Handler::input`]. All other methods use the trait's
+    /// no-op defaults, mirroring the `TestHandler` pattern used in
+    /// `graphics/kitty/mod.rs`.
+    #[derive(Default)]
+    struct TestHandler {
+        received: Vec<char>,
+    }
+
+    impl Handler for TestHandler {
+        fn input(&mut self, c: char) {
+            self.received.push(c);
+        }
+    }
+
+    #[test]
+    fn sync_esu_inline_clears_pending_timeout() {
+        let mut processor = Processor::default();
+        let mut handler = TestHandler::default();
+
+        // ConPTY can glue BSU+ESU together with no content in between; the
+        // ESU is then parsed inline (through the normal parser path, not
+        // `advance_sync`), and must still disarm the sync timeout.
+        processor.advance(&mut handler, b"\x1b[?2026h\x1b[?2026l");
+        assert_eq!(
+            processor.sync_timeout().sync_timeout(),
+            None,
+            "inline ESU must clear the pending sync timeout"
+        );
+
+        // Content that follows must be parsed normally, not buffered.
+        processor.advance(&mut handler, b"abc");
+        assert_eq!(
+            processor.sync_bytes_count(),
+            0,
+            "content after an inline ESU must not be buffered"
+        );
+        assert_eq!(handler.received, vec!['a', 'b', 'c']);
+    }
+
+    #[test]
+    fn sync_esu_followed_by_new_bsu_stays_pending() {
+        let mut processor = Processor::default();
+        let mut handler = TestHandler::default();
+
+        // Open a synchronized update.
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+
+        // The buffered frame closes the update and immediately reopens a
+        // new one in the same chunk: "xy" is the flushed frame, then ESU,
+        // then a fresh BSU followed by more (still pending) content.
+        processor.advance(&mut handler, b"xy\x1b[?2026l\x1b[?2026habc");
+
+        // A new BSU is open, so the sync must remain pending.
+        assert!(
+            processor.sync_timeout().sync_timeout().is_some(),
+            "a new BSU after the ESU must keep the sync pending"
+        );
+        assert_eq!(handler.received, vec!['x', 'y']);
+        // The new BSU (8 bytes) plus the still-unflushed "abc" (3 bytes)
+        // remain in the sync buffer.
+        assert_eq!(processor.sync_bytes_count(), 11);
+    }
+
+    #[test]
+    fn sync_split_esu_still_flushes() {
+        let mut processor = Processor::default();
+        let mut handler = TestHandler::default();
+
+        // Non-regression: the normal case where the ESU arrives in its own
+        // chunk, after the frame content, must still flush and clear.
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        processor.advance(&mut handler, b"abc");
+        processor.advance(&mut handler, b"\x1b[?2026l");
+
+        assert_eq!(processor.sync_timeout().sync_timeout(), None);
+        assert_eq!(processor.sync_bytes_count(), 0);
+        assert_eq!(handler.received, vec!['a', 'b', 'c']);
     }
 }
