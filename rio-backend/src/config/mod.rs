@@ -585,8 +585,8 @@ impl Config {
             if let Some(fill) = navigation_overwrite.unfocused_split_fill {
                 self.navigation.unfocused_split_fill = Some(fill);
             }
-            if let Some(max_tab_width) = navigation_overwrite.max_tab_width {
-                self.navigation.max_tab_width = max_tab_width;
+            if let Some(tab_max_width) = navigation_overwrite.tab_max_width {
+                self.navigation.tab_max_width = tab_max_width;
             }
         }
 
@@ -596,8 +596,7 @@ impl Config {
             crate::config::navigation::clamp_unfocused_split_opacity(
                 self.navigation.unfocused_split_opacity,
             );
-        self.navigation.max_tab_width =
-            crate::config::navigation::clamp_max_tab_width(self.navigation.max_tab_width);
+        self.navigation.clamp_tab_geometry();
 
         // Merge renderer fields individually
         if let Some(renderer_overwrite) = &platform_config.renderer {
