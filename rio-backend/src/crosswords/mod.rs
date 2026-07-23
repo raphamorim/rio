@@ -604,6 +604,15 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Non-destructive per-line damage probe for `Partial` frames, so a
+    /// screen-walking consumer (terminal triggers) can skip lines whose
+    /// cells did not change. Unknown lines report damaged (safe side);
+    /// full damage marks every line damaged.
+    #[inline]
+    pub fn peek_line_damaged(&self, line: usize) -> bool {
+        self.damage.full || self.damage.lines.get(line).is_none_or(|l| l.is_damaged())
+    }
+
     #[inline]
     pub fn reset_damage(&mut self) {
         self.damage.reset();
