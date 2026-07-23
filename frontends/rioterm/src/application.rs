@@ -1461,12 +1461,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 return;
                             }
                         } else if matches!(button, MouseButton::Left | MouseButton::Right)
-                            && self.config.copy_on_select
                         {
+                            // Always mirror the selection into the primary
+                            // buffer so middle-click paste works (standard
+                            // X11/Wayland behavior). copy_selection is a
+                            // no-op when the selection is empty.
                             route.window.screen.copy_selection(
-                                ClipboardType::Clipboard,
+                                ClipboardType::Selection,
                                 &mut self.router.clipboard,
                             );
+                            if self.config.copy_on_select {
+                                route.window.screen.copy_selection(
+                                    ClipboardType::Clipboard,
+                                    &mut self.router.clipboard,
+                                );
+                            }
                         }
                     }
                 }
