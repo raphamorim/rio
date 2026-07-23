@@ -9,7 +9,7 @@ use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::font_cache::{compute_advance, resolve_with, FontCache, ResolvedGlyph};
 use crate::layout::RootStyle;
 use crate::renderer::Renderer;
-use crate::sugarloaf::graphics::{GraphicDataEntry, Graphics};
+use crate::sugarloaf::graphics::{GraphicDataEntry, Graphics, ImageKey};
 use swash::Attributes;
 
 use crate::context::Context;
@@ -38,9 +38,11 @@ pub struct Sugarloaf<'a> {
     pub graphics: Graphics,
     #[cfg(feature = "wgpu")]
     filters_brush: Option<FiltersBrush>,
-    /// Pixel data for standalone image textures, keyed by image key
-    /// (`graphics::kitty_image_key` / `graphics::atlas_image_key`).
-    pub image_data: rustc_hash::FxHashMap<u64, GraphicDataEntry>,
+    /// Pixel data for standalone image textures. Keyed by the composite
+    /// `ImageKey` — this store is window-level while protocol ids are
+    /// per-terminal, so the key must carry the owning terminal and the
+    /// source id space alongside the id.
+    pub image_data: rustc_hash::FxHashMap<ImageKey, GraphicDataEntry>,
     /// Persistent state for the CPU rasterizer (glyph cache + frame hash).
     /// Unused on GPU backends.
     cpu_cache: crate::renderer::cpu::CpuCache,
@@ -906,9 +908,9 @@ impl Sugarloaf<'_> {
     }
 
     /// Remove an image's pixel data and its cached GPU texture.
-    /// `key` is a `graphics::kitty_image_key` / `graphics::atlas_image_key`.
+    /// `key` is an `ImageKey` (`ImageKey::kitty` / `ImageKey::atlas`).
     #[inline]
-    pub fn remove_image(&mut self, key: u64) {
+    pub fn remove_image(&mut self, key: ImageKey) {
         self.image_data.remove(&key);
         self.renderer.evict_image_texture(key);
     }
