@@ -28,8 +28,8 @@ use crate::windows::{cmdline, win32_string, Pty};
 /// next to `rio.exe`, otherwise fall back to the in-box Windows API.
 ///
 /// A modern `conpty.dll` from the Windows Terminal project (ConPTY 1.22+)
-/// does synchronous VT passthrough: the child's output — including sixel
-/// (DCS), iTerm2 (OSC 1337), and kitty graphics (APC) escape sequences —
+/// does synchronous VT passthrough: the child's output, including sixel
+/// (DCS), iTerm2 (OSC 1337), and kitty graphics (APC) escape sequences,
 /// reaches Rio unmodified, so image protocols work. The in-box ConPTY
 /// that ships with most Windows builds is older and rewrites/strips those
 /// sequences, which is why terminal graphics are broken on stock Windows
@@ -41,12 +41,23 @@ use crate::windows::{cmdline, win32_string, Pty};
 /// two files must be deployed together next to `rio.exe`, architecture
 /// matched (`conpty.dll` = app arch, `OpenConsole.exe` = system arch).
 /// Both are redistributable (MIT) via the `Microsoft.Windows.Console.ConPTY`
-/// NuGet package. This is the same mechanism WezTerm uses.
+/// NuGet package.
 ///
 /// Loaded by name via the default search order, which resolves the
 /// executable's own directory first (SafeDllSearchMode excludes the working
 /// directory), so a co-located `conpty.dll` is preferred over any in-box
 /// one.
+/// `PSEUDOCONSOLE_RESIZE_QUIRK`, an internal ConPTY flag (not in the public
+/// SDK header, so not exported by `windows-sys`; defined here). Without it,
+/// on resize ConPTY re-emits its reflowed buffer sized to the buffer's own
+/// line count and overwrites what is on screen, so after the window grows
+/// the child's content stays confined to a stale sub-region
+/// (microsoft/terminal#16911; rio#1759). With it, ConPTY skips that repaint
+/// and defers reflow to the terminal, which owns its grid. Honored by both
+/// the in-box and the sideloaded 1.22+ ConPTY; being folded into the
+/// default upstream, so it is a no-op on the newest hosts.
+const PSEUDOCONSOLE_RESIZE_QUIRK: u32 = 0x2;
+
 type CreatePseudoConsoleFn =
     unsafe extern "system" fn(COORD, HANDLE, HANDLE, u32, *mut HPCON) -> HRESULT;
 type ResizePseudoConsoleFn = unsafe extern "system" fn(HPCON, COORD) -> HRESULT;
@@ -77,8 +88,8 @@ impl ConptyApi {
         }
     }
 
-    /// Try loading ConptyApi from a sideloaded `conpty.dll`. Same as
-    /// WezTerm: load by name and let the loader prefer a co-located DLL.
+    /// Try loading ConptyApi from a sideloaded `conpty.dll`: load by name
+    /// and let the loader prefer a co-located DLL over the in-box one.
     fn load_conpty() -> Option<Self> {
         type LoadedFn = unsafe extern "system" fn() -> isize;
         unsafe {
@@ -141,13 +152,16 @@ pub fn new(
         ws_ypixel: 0 as libc::c_ushort,
     };
 
-    // Create the Pseudo Console, using the pipes.
+    // Create the Pseudo Console, using the pipes. RESIZE_QUIRK makes
+    // ConPTY defer resize repaints to Rio (which lays out its own grid),
+    // avoiding the content-confined-to-a-stale-region artifact after the
+    // window grows (pronounced with the sideloaded 1.22+ ConPTY, #1759).
     let result = unsafe {
         (api.create)(
             winsize.into(),
             conin_pty_handle.into_raw_handle() as HANDLE,
             conout_pty_handle.into_raw_handle() as HANDLE,
-            0,
+            PSEUDOCONSOLE_RESIZE_QUIRK,
             &mut pty_handle as *mut _,
         )
     };
