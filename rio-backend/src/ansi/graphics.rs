@@ -8,9 +8,8 @@ use crate::crosswords::grid::Dimensions;
 use crate::sugarloaf::{GraphicData, GraphicId};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use smallvec::SmallVec;
 use std::mem;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tracing::debug;
 
 #[derive(Debug, Clone)]
@@ -21,59 +20,9 @@ pub struct UpdateQueues {
     /// Image textures (kitty) keyed by image_id.
     pub pending_images: Vec<(u32, GraphicData)>,
 
-    /// Graphics removed from the grid.
-    pub remove_queue: Vec<GraphicId>,
-}
-
-#[derive(Clone, Debug)]
-pub struct TextureRef {
-    /// Graphic identifier.
-    pub id: GraphicId,
-
-    /// Width, in pixels, of the graphic.
-    pub width: u16,
-
-    /// Height, in pixels, of the graphic.
-    pub height: u16,
-
-    /// Height, in pixels, of the cell when the graphic was inserted.
-    pub cell_height: usize,
-
-    /// Queue to track removed textures.
-    pub texture_operations: Weak<Mutex<Vec<GraphicId>>>,
-}
-
-impl PartialEq for TextureRef {
-    fn eq(&self, t: &Self) -> bool {
-        // Ignore texture_operations.
-        self.id == t.id
-    }
-}
-
-impl Eq for TextureRef {}
-
-impl Drop for TextureRef {
-    fn drop(&mut self) {
-        if let Some(texture_operations) = self.texture_operations.upgrade() {
-            texture_operations.lock().push(self.id);
-        }
-    }
-}
-
-/// A list of graphics in a single cell.
-pub type GraphicsCell = SmallVec<[GraphicCell; 1]>;
-
-/// Graphic data stored in a single cell.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GraphicCell {
-    /// Texture to draw the graphic in this cell.
-    pub texture: Arc<TextureRef>,
-
-    /// Offset in the x direction.
-    pub offset_x: u16,
-
-    /// Offset in the y direction.
-    pub offset_y: u16,
+    /// Image keys removed from the grid or evicted
+    /// (`sugarloaf::graphics::kitty_image_key` / `atlas_image_key`).
+    pub remove_queue: Vec<u64>,
 }
 
 /// Kitty graphics Unicode placeholder character
@@ -101,7 +50,11 @@ pub struct KittyPlacement {
     pub image_id: u32,
     /// Kitty protocol placement ID (p= parameter).
     pub placement_id: u32,
-    /// Source rectangle within the image (pixels).
+    /// Source rectangle within the image, exactly as requested
+    /// (`x=`/`y=`/`w=`/`h=`; zero width/height means "to the image
+    /// edge"). Stored raw and resolved against the image's current
+    /// dimensions at read time, so a retransmit that changes the
+    /// image size re-clamps instead of showing a stale crop.
     pub source_x: u32,
     pub source_y: u32,
     pub source_width: u32,
@@ -113,7 +66,14 @@ pub struct KittyPlacement {
     /// Display size in cells.
     pub columns: u32,
     pub rows: u32,
-    /// Actual display pixel dimensions.
+    /// The `c=`/`r=` span the client requested (0 = derived). Kept
+    /// separate from `columns`/`rows` so a cell size change can tell
+    /// cell-sized placements (which track the grid) apart from
+    /// native-size ones (which keep their pixel size).
+    pub requested_columns: u32,
+    pub requested_rows: u32,
+    /// Cached display pixel size for grid footprint bookkeeping. The
+    /// render path resolves size per frame and never reads these.
     pub pixel_width: u32,
     pub pixel_height: u32,
     /// Sub-cell pixel offset.
@@ -125,6 +85,450 @@ pub struct KittyPlacement {
     pub transmit_time: std::time::Instant,
 }
 
+/// Resolve a raw kitty source rectangle against the image's current
+/// dimensions: origin clamped to the edges, zero width/height meaning
+/// "to the edge". Returns `None` when nothing of the crop lies inside
+/// the image (or the image is empty).
+pub fn resolve_source_rect(
+    source_x: u32,
+    source_y: u32,
+    source_width: u32,
+    source_height: u32,
+    image_width: usize,
+    image_height: usize,
+) -> Option<(usize, usize, usize, usize)> {
+    if image_width == 0 || image_height == 0 {
+        return None;
+    }
+    let x = (source_x as usize).min(image_width);
+    let y = (source_y as usize).min(image_height);
+    let width = if source_width > 0 {
+        (source_width as usize).min(image_width - x)
+    } else {
+        image_width - x
+    };
+    let height = if source_height > 0 {
+        (source_height as usize).min(image_height - y)
+    } else {
+        image_height - y
+    };
+    if width == 0 || height == 0 {
+        return None;
+    }
+    Some((x, y, width, height))
+}
+
+/// Display pixel size for a kitty placement: the source rectangle
+/// scaled to the requested cell span, keeping aspect when only one
+/// axis is given, or shown at native size when no span is requested.
+pub fn kitty_display_size(
+    source_width: usize,
+    source_height: usize,
+    requested_columns: u32,
+    requested_rows: u32,
+    cell_width: usize,
+    cell_height: usize,
+) -> (usize, usize) {
+    if source_width == 0 || source_height == 0 {
+        return (0, 0);
+    }
+    match (requested_columns, requested_rows) {
+        (0, 0) => (source_width, source_height),
+        (c, 0) => {
+            let w = c as usize * cell_width;
+            let h =
+                (source_height as f64 * w as f64 / source_width as f64).round() as usize;
+            (w, h)
+        }
+        (0, r) => {
+            let h = r as usize * cell_height;
+            let w =
+                (source_width as f64 * h as f64 / source_height as f64).round() as usize;
+            (w, h)
+        }
+        (c, r) => (c as usize * cell_width, r as usize * cell_height),
+    }
+}
+
+impl KittyPlacement {
+    /// Recompute display size and cell span against the image's
+    /// current dimensions and a cell size. Cell-sized placements
+    /// track the grid; native-size ones keep their pixel dimensions
+    /// but re-derive how many cells they cover. Called on resize and
+    /// retransmission.
+    pub fn rescale(
+        &mut self,
+        image_width: usize,
+        image_height: usize,
+        cell_width: usize,
+        cell_height: usize,
+    ) {
+        if cell_width == 0 || cell_height == 0 {
+            return;
+        }
+        let Some((_, _, source_width, source_height)) = resolve_source_rect(
+            self.source_x,
+            self.source_y,
+            self.source_width,
+            self.source_height,
+            image_width,
+            image_height,
+        ) else {
+            // Nothing of the crop is inside the image: invisible, no
+            // cell footprint.
+            self.pixel_width = 0;
+            self.pixel_height = 0;
+            self.columns = 0;
+            self.rows = 0;
+            return;
+        };
+        let (w, h) = kitty_display_size(
+            source_width,
+            source_height,
+            self.requested_columns,
+            self.requested_rows,
+            cell_width,
+            cell_height,
+        );
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.pixel_width = w as u32;
+        self.pixel_height = h as u32;
+        // Offsets are stored raw and clamped where they're read, so a
+        // shrink-then-grow of the cell size can't lose the original.
+        let x_offset = (self.cell_x_offset as usize).min(cell_width - 1);
+        let y_offset = (self.cell_y_offset as usize).min(cell_height - 1);
+        self.columns = if self.requested_columns > 0 {
+            self.requested_columns
+        } else {
+            (w + x_offset).div_ceil(cell_width) as u32
+        };
+        self.rows = if self.requested_rows > 0 {
+            self.requested_rows
+        } else {
+            (h + y_offset).div_ceil(cell_height) as u32
+        };
+    }
+}
+
+/// On-screen quad for a direct kitty placement, in physical pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct KittyOverlayGeometry {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    /// Normalized source rectangle within the image texture.
+    pub source_rect: [f32; 4],
+}
+
+/// Clip an overlay quad to a panel's content rectangle, shrinking the
+/// normalized source rect proportionally so the visible slice shows
+/// exactly the covered part of the image. Returns `false` when nothing
+/// of the quad lies inside the rect (drop the overlay).
+///
+/// Without this, an image wider or taller than its panel paints across
+/// split dividers onto neighbor panels, since the image pipeline draws
+/// global quads with no per-panel scissor.
+pub fn clip_overlay_to_rect(
+    overlay: &mut crate::sugarloaf::GraphicOverlay,
+    clip_x0: f32,
+    clip_y0: f32,
+    clip_x1: f32,
+    clip_y1: f32,
+) -> bool {
+    if overlay.width <= 0.0 || overlay.height <= 0.0 {
+        return false;
+    }
+    let x0 = overlay.x;
+    let y0 = overlay.y;
+    let x1 = overlay.x + overlay.width;
+    let y1 = overlay.y + overlay.height;
+
+    let nx0 = x0.max(clip_x0);
+    let ny0 = y0.max(clip_y0);
+    let nx1 = x1.min(clip_x1);
+    let ny1 = y1.min(clip_y1);
+    if nx1 <= nx0 || ny1 <= ny0 {
+        return false;
+    }
+
+    let [u0, v0, u1, v1] = overlay.source_rect;
+    let fx0 = (nx0 - x0) / overlay.width;
+    let fx1 = (nx1 - x0) / overlay.width;
+    let fy0 = (ny0 - y0) / overlay.height;
+    let fy1 = (ny1 - y0) / overlay.height;
+    overlay.source_rect = [
+        u0 + (u1 - u0) * fx0,
+        v0 + (v1 - v0) * fy0,
+        u0 + (u1 - u0) * fx1,
+        v0 + (v1 - v0) * fy1,
+    ];
+    overlay.x = nx0;
+    overlay.y = ny0;
+    overlay.width = nx1 - nx0;
+    overlay.height = ny1 - ny0;
+    true
+}
+
+/// Viewport parameters for placement geometry: the panel content
+/// origin in physical pixels, the canonical cell stride the grid
+/// paints with, and the scroll state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverlayViewport {
+    pub cell_width: f32,
+    pub cell_height: f32,
+    pub origin_x: f32,
+    pub origin_y: f32,
+    pub history_size: i64,
+    pub display_offset: i64,
+    pub screen_lines: i64,
+}
+
+/// Compute where a direct kitty placement lands on screen.
+///
+/// The crop and display size are resolved here, per frame, against
+/// the image's current dimensions and the viewport's cell stride —
+/// nothing baked at place time can go stale when the image is
+/// retransmitted or the cell size changes. The viewport cell stride
+/// must be the same one the grid paints with, so image position and
+/// text stay in lockstep. Returns `None` when the placement is fully
+/// outside the viewport or resolves to nothing visible; a partially
+/// visible placement keeps its full quad and the GPU clips it.
+pub fn kitty_overlay_geometry(
+    placement: &KittyPlacement,
+    image_width: usize,
+    image_height: usize,
+    viewport: &OverlayViewport,
+) -> Option<KittyOverlayGeometry> {
+    // dest_row is absolute (scrollback aware); the viewport top sits
+    // at history_size - display_offset, so scrolling up moves the
+    // placement down relative to the viewport.
+    let screen_row =
+        placement.dest_row - (viewport.history_size - viewport.display_offset);
+    let bottom_row = screen_row + placement.rows as i64;
+    if bottom_row <= 0 || screen_row >= viewport.screen_lines {
+        return None;
+    }
+
+    let (source_x, source_y, source_width, source_height) = resolve_source_rect(
+        placement.source_x,
+        placement.source_y,
+        placement.source_width,
+        placement.source_height,
+        image_width,
+        image_height,
+    )?;
+
+    let cell_width_px = viewport.cell_width.round() as usize;
+    let cell_height_px = viewport.cell_height.round() as usize;
+    if cell_width_px == 0 || cell_height_px == 0 {
+        return None;
+    }
+    let (display_width, display_height) = kitty_display_size(
+        source_width,
+        source_height,
+        placement.requested_columns,
+        placement.requested_rows,
+        cell_width_px,
+        cell_height_px,
+    );
+    if display_width == 0 || display_height == 0 {
+        return None;
+    }
+
+    // Normalized `[u0, v0, u1, v1]` (origin, end), the convention all
+    // three image shaders share.
+    let image_width = image_width as f32;
+    let image_height = image_height as f32;
+    let source_rect = [
+        source_x as f32 / image_width,
+        source_y as f32 / image_height,
+        (source_x + source_width) as f32 / image_width,
+        (source_y + source_height) as f32 / image_height,
+    ];
+
+    // Per the kitty spec the sub-cell offset stays inside the cell
+    // box; stored values are raw, so clamp against the current cell
+    // size here.
+    let x_offset = (placement.cell_x_offset as f32).min(viewport.cell_width - 1.0);
+    let y_offset = (placement.cell_y_offset as f32).min(viewport.cell_height - 1.0);
+
+    Some(KittyOverlayGeometry {
+        x: viewport.origin_x + placement.dest_col as f32 * viewport.cell_width + x_offset,
+        y: viewport.origin_y + screen_row as f32 * viewport.cell_height + y_offset,
+        width: display_width as f32,
+        height: display_height as f32,
+        source_rect,
+    })
+}
+
+/// One displayed sixel/iTerm2 image region, anchored to grid content
+/// (DEC semantics: unlike floating kitty placements, these clip under
+/// text and erase operations and shift with region scrolls).
+///
+/// The source rectangle lives in display-pixel space at insert time:
+/// initially `(0, 0, total_w, total_h)`; overwrite splits subtract
+/// cell-aligned holes, producing children referencing the same texture
+/// with adjusted crops (no pixel copies). Normalized texture
+/// coordinates fall out directly since display space is a uniform
+/// scale of the image.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AtlasPlacement {
+    /// Texture key (`atlas_image_key(GraphicId)`).
+    pub image_key: u64,
+    /// Anchor row in the stable absolute space
+    /// (`lines_evicted + history + screen_row` at insert).
+    pub abs_row: i64,
+    /// Leftmost grid column.
+    pub col: usize,
+    /// Cell span of this (possibly split) region.
+    pub columns: usize,
+    pub rows: usize,
+    /// Crop in display pixels at insert scale.
+    pub src_x: u32,
+    pub src_y: u32,
+    pub src_width: u32,
+    pub src_height: u32,
+    /// Full display size at insert (normalization denominator).
+    pub total_width: u32,
+    pub total_height: u32,
+    /// Cell stride at insert; rendering scales by live/insert.
+    pub insert_cell_w: u16,
+    pub insert_cell_h: u16,
+}
+
+impl AtlasPlacement {
+    /// Child covering `rows` [row0, row1) x `cols` [col0, col1) of this
+    /// placement (caller guarantees a non-empty intersection with the
+    /// placement's rect). The crop follows in display-pixel space;
+    /// edges that coincide with the parent's keep its exact bounds so
+    /// partial edge cells stay partial.
+    pub(crate) fn slice(
+        &self,
+        row0: i64,
+        row1: i64,
+        col0: usize,
+        col1: usize,
+    ) -> AtlasPlacement {
+        let icw = self.insert_cell_w as u32;
+        let ich = self.insert_cell_h as u32;
+        let src_x0 = self.src_x + (col0 - self.col) as u32 * icw;
+        let src_y0 = self.src_y + (row0 - self.abs_row) as u32 * ich;
+        let src_x1 = (self.src_x + (col1 - self.col) as u32 * icw)
+            .min(self.src_x + self.src_width);
+        let src_y1 = (self.src_y + (row1 - self.abs_row) as u32 * ich)
+            .min(self.src_y + self.src_height);
+        AtlasPlacement {
+            image_key: self.image_key,
+            abs_row: row0,
+            col: col0,
+            columns: col1 - col0,
+            rows: (row1 - row0) as usize,
+            src_x: src_x0,
+            src_y: src_y0,
+            src_width: src_x1.saturating_sub(src_x0),
+            src_height: src_y1.saturating_sub(src_y0),
+            total_width: self.total_width,
+            total_height: self.total_height,
+            insert_cell_w: self.insert_cell_w,
+            insert_cell_h: self.insert_cell_h,
+        }
+    }
+
+    /// Subtract a cell-aligned hole (rows [hr0, hr1) x cols [hc0, hc1))
+    /// from this placement. Returns `None` when the hole misses the
+    /// placement entirely (keep it as is); otherwise the surviving
+    /// pieces are appended to `out`: up to four children referencing the
+    /// same texture with adjusted crops, zero pixel copies (an
+    /// empty append means the hole swallowed the whole placement).
+    pub fn subtract_rect(
+        &self,
+        hr0: i64,
+        hr1: i64,
+        hc0: usize,
+        hc1: usize,
+        out: &mut Vec<AtlasPlacement>,
+    ) -> Option<()> {
+        let p_r0 = self.abs_row;
+        let p_r1 = self.abs_row + self.rows as i64;
+        let p_c0 = self.col;
+        let p_c1 = self.col + self.columns;
+        if hr1 <= p_r0 || hr0 >= p_r1 || hc1 <= p_c0 || hc0 >= p_c1 {
+            return None;
+        }
+        let ir0 = hr0.max(p_r0);
+        let ir1 = hr1.min(p_r1);
+        // Filter at each push (not a whole-vec retain: `out` may
+        // accumulate children of many placements in the clip loops).
+        let mut push = |child: AtlasPlacement| {
+            if child.columns > 0
+                && child.rows > 0
+                && child.src_width > 0
+                && child.src_height > 0
+            {
+                out.push(child);
+            }
+        };
+        // Top and bottom keep the full placement width; left and right
+        // cover only the hole's rows.
+        if ir0 > p_r0 {
+            push(self.slice(p_r0, ir0, p_c0, p_c1));
+        }
+        if ir1 < p_r1 {
+            push(self.slice(ir1, p_r1, p_c0, p_c1));
+        }
+        if hc0 > p_c0 {
+            push(self.slice(ir0, ir1, p_c0, hc0.min(p_c1)));
+        }
+        if hc1 < p_c1 {
+            push(self.slice(ir0, ir1, hc1.max(p_c0), p_c1));
+        }
+        Some(())
+    }
+}
+
+/// Compute where an atlas placement lands on screen. Same viewport
+/// contract as `kitty_overlay_geometry`; display size scales from the
+/// insert-time cell stride to the live one so images track font size.
+pub fn atlas_overlay_geometry(
+    placement: &AtlasPlacement,
+    viewport: &OverlayViewport,
+) -> Option<KittyOverlayGeometry> {
+    let screen_row =
+        placement.abs_row - (viewport.history_size - viewport.display_offset);
+    let bottom_row = screen_row + placement.rows as i64;
+    if bottom_row <= 0 || screen_row >= viewport.screen_lines {
+        return None;
+    }
+    if placement.src_width == 0
+        || placement.src_height == 0
+        || placement.total_width == 0
+        || placement.total_height == 0
+    {
+        return None;
+    }
+
+    let scale_x = viewport.cell_width / placement.insert_cell_w.max(1) as f32;
+    let scale_y = viewport.cell_height / placement.insert_cell_h.max(1) as f32;
+    let total_w = placement.total_width as f32;
+    let total_h = placement.total_height as f32;
+
+    Some(KittyOverlayGeometry {
+        x: viewport.origin_x + placement.col as f32 * viewport.cell_width,
+        y: viewport.origin_y + screen_row as f32 * viewport.cell_height,
+        width: placement.src_width as f32 * scale_x,
+        height: placement.src_height as f32 * scale_y,
+        source_rect: [
+            placement.src_x as f32 / total_w,
+            placement.src_y as f32 / total_h,
+            (placement.src_x + placement.src_width) as f32 / total_w,
+            (placement.src_y + placement.src_height) as f32 / total_h,
+        ],
+    })
+}
+
 /// Virtual placement metadata for Kitty graphics protocol
 /// Stored separately from direct graphics in cells
 #[derive(Debug, Clone, PartialEq)]
@@ -133,8 +537,13 @@ pub struct VirtualPlacement {
     pub placement_id: u32,
     pub columns: u32,
     pub rows: u32,
+    /// Raw source rectangle (`x=`/`y=`/`w=`/`h=`), resolved against
+    /// the image's current dimensions at render time like direct
+    /// placements.
     pub x: u32,
     pub y: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Per-screen Kitty graphics state.
@@ -154,6 +563,8 @@ pub struct KittyScreenState {
     pub kitty_image_numbers: FxHashMap<u32, u32>,
     pub kitty_placements: FxHashMap<(u32, u32), KittyPlacement>,
     pub kitty_virtual_placements: FxHashMap<(u32, u32), VirtualPlacement>,
+    pub atlas_placements: Vec<AtlasPlacement>,
+    pub atlas_key_refs: FxHashMap<u64, u32>,
 }
 
 /// Track changes in the grid to add or to remove graphics.
@@ -169,7 +580,7 @@ pub struct Graphics {
     pub pending_images: Vec<(u32, GraphicData)>,
 
     /// Graphics removed from the grid.
-    pub texture_operations: Arc<Mutex<Vec<GraphicId>>>,
+    pub texture_operations: Arc<Mutex<Vec<u64>>>,
 
     /// Shared palette for Sixel graphics.
     pub sixel_shared_palette: Option<Vec<ColorRgb>>,
@@ -213,13 +624,20 @@ pub struct Graphics {
 
     /// Weak references to placed textures, for O(1) liveness checks.
     /// Avoids scanning the entire grid to find which graphics are in use.
-    /// When the Arc<TextureRef> in grid cells is fully dropped, the Weak
+    /// When an image loses its last placement, the
     /// will report strong_count() == 0, meaning the graphic is no longer displayed.
-    pub placed_textures: FxHashMap<GraphicId, Weak<TextureRef>>,
 
     /// Kitty graphics: Overlay placements.
     /// Key is (image_id, placement_id). Rendered as overlays, not in grid cells.
     pub kitty_placements: FxHashMap<(u32, u32), KittyPlacement>,
+
+    /// Sixel/iTerm2 placements (DEC grid-plane semantics: clip under
+    /// text/erase, shift with region scrolls, expire off the ring).
+    pub atlas_placements: Vec<AtlasPlacement>,
+
+    /// How many placements reference each atlas image key; the last
+    /// release queues the key for pixel-store + GPU texture removal.
+    pub atlas_key_refs: FxHashMap<u64, u32>,
 
     /// Kitty graphics state for the *inactive* screen.
     /// When the terminal toggles between main and alt screens this is
@@ -261,8 +679,9 @@ impl Default for Graphics {
             total_bytes: 0,
             total_limit: 320 * 1024 * 1024, // 320MB per kitty spec
             image_timestamps: FxHashMap::default(),
-            placed_textures: FxHashMap::default(),
             kitty_placements: FxHashMap::default(),
+            atlas_placements: Vec::new(),
+            atlas_key_refs: FxHashMap::default(),
             kitty_inactive_screen: KittyScreenState::default(),
             next_internal_placement_id: 0,
             kitty_graphics_dirty: false,
@@ -349,6 +768,46 @@ impl Graphics {
     /// keeps its own image cache, placements, number mappings, and
     /// virtual placements. Marks the kitty overlay layer dirty so the
     /// renderer rebuilds its overlay set against the new active screen.
+    /// Recount atlas image key references from the placement vec (the
+    /// single source of truth) after any placement mutation. Keys that
+    /// lost their last placement are queued so the frontend frees the
+    /// pixel store and the GPU texture. The vec is tiny, so a full
+    /// recount beats distributed per-child bookkeeping.
+    pub fn recount_atlas_keys(&mut self) {
+        Self::recount_atlas_keys_for(
+            &self.atlas_placements,
+            &mut self.atlas_key_refs,
+            &self.texture_operations,
+        );
+    }
+
+    pub fn recount_inactive_atlas_keys(&mut self) {
+        Self::recount_atlas_keys_for(
+            &self.kitty_inactive_screen.atlas_placements,
+            &mut self.kitty_inactive_screen.atlas_key_refs,
+            &self.texture_operations,
+        );
+    }
+
+    fn recount_atlas_keys_for(
+        placements: &[AtlasPlacement],
+        key_refs: &mut FxHashMap<u64, u32>,
+        texture_operations: &std::sync::Arc<parking_lot::Mutex<Vec<u64>>>,
+    ) {
+        let mut refs: FxHashMap<u64, u32> = FxHashMap::default();
+        for placement in placements {
+            *refs.entry(placement.image_key).or_insert(0) += 1;
+        }
+        let mut removals = texture_operations.lock();
+        for key in key_refs.keys() {
+            if !refs.contains_key(key) {
+                removals.push(*key);
+            }
+        }
+        drop(removals);
+        *key_refs = refs;
+    }
+
     pub fn swap_kitty_screen_state(&mut self) {
         std::mem::swap(
             &mut self.kitty_images,
@@ -365,6 +824,14 @@ impl Graphics {
         std::mem::swap(
             &mut self.kitty_virtual_placements,
             &mut self.kitty_inactive_screen.kitty_virtual_placements,
+        );
+        std::mem::swap(
+            &mut self.atlas_placements,
+            &mut self.kitty_inactive_screen.atlas_placements,
+        );
+        std::mem::swap(
+            &mut self.atlas_key_refs,
+            &mut self.kitty_inactive_screen.atlas_key_refs,
         );
         self.kitty_graphics_dirty = true;
     }
@@ -385,6 +852,22 @@ impl Graphics {
         self.kitty_image_numbers.clear();
         self.kitty_placements.clear();
         self.kitty_virtual_placements.clear();
+
+        // Sixel/iTerm2 placements die with the reset too; queue every
+        // referenced key (both screens) so the frontend frees the
+        // pixel store and GPU textures.
+        {
+            let mut removals = self.texture_operations.lock();
+            for key in self.atlas_key_refs.keys() {
+                removals.push(*key);
+            }
+            for key in self.kitty_inactive_screen.atlas_key_refs.keys() {
+                removals.push(*key);
+            }
+        }
+        self.atlas_placements.clear();
+        self.atlas_key_refs.clear();
+
         self.kitty_inactive_screen = KittyScreenState::default();
         self.kitty_graphics_dirty = true;
     }
@@ -529,6 +1012,14 @@ impl Graphics {
         for graphic in &self.pending {
             if let Some(&timestamp) = self.image_timestamps.get(&graphic.id) {
                 let is_used = used_ids.contains(&graphic.id.get());
+                // A used pending graphic has grid cells referencing it
+                // while its pixels haven't reached the renderer yet;
+                // evicting it here would blank those cells permanently
+                // (nothing re-triggers the upload). Prefer briefly
+                // exceeding the byte budget over losing the image.
+                if is_used {
+                    continue;
+                }
                 let bytes = Self::calculate_graphic_bytes(graphic);
                 candidates.push((
                     graphic.id,
@@ -623,8 +1114,16 @@ impl Graphics {
             // Remove timestamp (only used for pending atlas graphics)
             self.image_timestamps.remove(&id);
 
-            // Add to removal queue so GPU textures get cleaned up
-            self.texture_operations.lock().push(id);
+            // Add to removal queue so GPU textures get cleaned up.
+            // The key namespace depends on where the image lived:
+            // kitty ids map verbatim, atlas graphics live above 2^32.
+            let key = match source {
+                CandidateSource::Pending => crate::sugarloaf::atlas_image_key(id.get()),
+                CandidateSource::ActiveKitty | CandidateSource::InactiveKitty => {
+                    crate::sugarloaf::kitty_image_key(id.get() as u32)
+                }
+            };
+            self.texture_operations.lock().push(key);
         }
 
         // Sweep dangling placements on both screens. A placement is
@@ -659,30 +1158,15 @@ impl Graphics {
         freed_bytes >= bytes_to_free
     }
 
-    /// Register a placed texture for liveness tracking.
-    /// Call this after creating the Arc<TextureRef> in insert_graphic.
-    pub fn register_placed_texture(
-        &mut self,
-        graphic_id: GraphicId,
-        weak: Weak<TextureRef>,
-    ) {
-        self.placed_textures.insert(graphic_id, weak);
-    }
-
-    /// Collect IDs of graphics still displayed in the grid or as overlays.
-    /// O(number of placements) instead of O(rows * cols).
+    /// Collect IDs of graphics still displayed on the grid or as
+    /// overlays. O(number of placements).
     pub fn collect_active_graphic_ids(&mut self) -> std::collections::HashSet<u64> {
-        // Clean up stale entries and collect live ones in one pass
         let mut active = std::collections::HashSet::new();
-        // Cell-based (sixel) liveness
-        self.placed_textures.retain(|id, weak| {
-            if weak.strong_count() > 0 {
-                active.insert(id.get());
-                true
-            } else {
-                false
-            }
-        });
+        // Sixel/iTerm2 liveness: placements are the single owners.
+        for placement in &self.atlas_placements {
+            // Atlas keys live above 2^32; recover the GraphicId part.
+            active.insert(placement.image_key - (1u64 << 32));
+        }
         // Overlay-based (kitty) liveness — use image_id directly
         for placement in self.kitty_placements.values() {
             active.insert(placement.image_id as u64);
@@ -938,17 +1422,18 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
     used_ids.insert(1); // Mark as used
 
-    // Try to add another 90KB (total would be 180KB, exceeds limit)
-    // Will evict the first one even though it's in use (per kitty spec)
+    // Try to add another 90KB (total would be 180KB, exceeds limit).
+    // A used pending graphic must NOT be evicted: its cells reference
+    // pixels that haven't reached the renderer yet, so eviction would
+    // blank them permanently. The byte budget is soft here.
     let pixels2_len = 90_000;
     let success = graphics.evict_images(pixels2_len, &used_ids);
 
     assert!(
-        success,
-        "Eviction should succeed by evicting used images if necessary"
+        !success,
+        "no evictable candidates: the pending image is in use"
     );
-    // The used image should be evicted
-    assert_eq!(graphics.pending.len(), 0);
+    assert_eq!(graphics.pending.len(), 1, "used pending image survives");
 }
 
 #[test]

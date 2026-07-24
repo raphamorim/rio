@@ -1212,6 +1212,17 @@ pub struct GridGlyphRasterizer {
     #[cfg(target_os = "macos")]
     handle_cache: FxHashMap<u32, rio_backend::sugarloaf::font::macos::FontHandle>,
 
+    /// Library-wide `(hinting, features)` snapshot, refreshed lazily
+    /// after `clear_font_caches` so shaping and rasterization don't
+    /// take the library lock per run.
+    lib_settings: Option<(
+        bool,
+        std::sync::Arc<Vec<rio_backend::sugarloaf::swash::Setting<u16>>>,
+    )>,
+    /// Per-font `wght` axis pin, mirrored from `FontData.wght_variation`.
+    #[cfg(not(target_os = "macos"))]
+    wght_cache: FxHashMap<u32, Option<f32>>,
+
     // non-macOS: swash wants UTF-8, so keep a `String` scratch.
     #[cfg(not(target_os = "macos"))]
     run_str_scratch: String,
@@ -1255,6 +1266,9 @@ impl GridGlyphRasterizer {
             run_str_scratch: String::new(),
             #[cfg(target_os = "macos")]
             handle_cache: FxHashMap::default(),
+            lib_settings: None,
+            #[cfg(not(target_os = "macos"))]
+            wght_cache: FxHashMap::default(),
             #[cfg(not(target_os = "macos"))]
             shape_ctx: rio_backend::sugarloaf::swash::shape::ShapeContext::new(),
             #[cfg(not(target_os = "macos"))]
@@ -1262,6 +1276,41 @@ impl GridGlyphRasterizer {
             #[cfg(not(target_os = "macos"))]
             font_data_cache: FxHashMap::default(),
         }
+    }
+
+    /// Drop every cache keyed by `font_id`; a swapped font library
+    /// reuses the same ids.
+    pub fn clear_font_caches(&mut self) {
+        self.font_resolve.clear();
+        self.ascent_cache.clear();
+        self.synthesis_cache.clear();
+        for bucket in &mut self.run_cache {
+            bucket.clear();
+        }
+        self.lib_settings = None;
+        #[cfg(target_os = "macos")]
+        self.handle_cache.clear();
+        #[cfg(not(target_os = "macos"))]
+        {
+            self.wght_cache.clear();
+            self.font_data_cache.clear();
+        }
+    }
+
+    /// Library-wide `(hinting, features)`, cached until the next
+    /// `clear_font_caches`.
+    fn library_settings(
+        &mut self,
+        font_library: &FontLibrary,
+    ) -> (
+        bool,
+        std::sync::Arc<Vec<rio_backend::sugarloaf::swash::Setting<u16>>>,
+    ) {
+        if self.lib_settings.is_none() {
+            let lib = font_library.inner.read();
+            self.lib_settings = Some((lib.hinting, lib.features.clone()));
+        }
+        self.lib_settings.clone().unwrap()
     }
 
     #[inline]
@@ -1439,10 +1488,20 @@ fn shape_run_ct(
     size_bucket: u16,
     font_library: &FontLibrary,
 ) -> Option<(Vec<ShapedGlyph>, i16)> {
+    let (_, features) = rasterizer.library_settings(font_library);
     let handle = match rasterizer.handle_cache.entry(font_id) {
         std::collections::hash_map::Entry::Occupied(e) => e.into_mut().clone(),
         std::collections::hash_map::Entry::Vacant(e) => {
             let h = font_library.ct_font(font_id as usize)?;
+            // Configured OpenType features are baked into the cached
+            // CTFont so both shaping and rasterization honor them.
+            let h = if features.is_empty() {
+                h
+            } else {
+                let pairs: Vec<(u32, u16)> =
+                    features.iter().map(|s| (s.tag, s.value)).collect();
+                h.clone().with_features(&pairs).unwrap_or(h)
+            };
             e.insert(h.clone());
             h
         }
@@ -1486,7 +1545,14 @@ fn shape_run_swash(
     size_bucket: u16,
     font_library: &FontLibrary,
 ) -> Option<(Vec<ShapedGlyph>, i16)> {
-    use rio_backend::sugarloaf::swash::FontRef;
+    use rio_backend::sugarloaf::swash::{FontRef, Setting};
+
+    let (_, features) = rasterizer.library_settings(font_library);
+    let wght = *rasterizer.wght_cache.entry(font_id).or_insert_with(|| {
+        let lib = font_library.inner.read();
+        lib.try_get(&(font_id as usize))
+            .and_then(|f| f.wght_variation)
+    });
 
     let font_entry = rasterizer
         .font_data_cache
@@ -1510,10 +1576,17 @@ fn shape_run_swash(
             m.ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
         });
 
+    const WGHT_TAG: u32 = u32::from_be_bytes(*b"wght");
+    let wght_var = wght.map(|v| Setting {
+        tag: WGHT_TAG,
+        value: v,
+    });
     let mut shaper = rasterizer
         .shape_ctx
         .builder(font_ref)
         .size(size_u16 as f32)
+        .features(features.iter().copied())
+        .variations(wght_var.iter().copied())
         .build();
     shaper.add_str(&rasterizer.run_str_scratch);
     let mut glyphs: Vec<ShapedGlyph> = Vec::new();
@@ -1659,21 +1732,6 @@ pub fn build_row_fg(
                 continue;
             };
 
-            // Borrow the primary font's ascent at this size if the
-            // run-shaper has populated it; otherwise approximate at
-            // 80% of the glyph size. The approximation only fires
-            // when no regular text has been laid out at this size yet
-            // — once the user types real text the cache fills and
-            // subsequent registered cells use the precise ascent.
-            let ascent_px = rasterizer
-                .ascent_cache
-                .get(&(
-                    rio_backend::sugarloaf::font::FONT_ID_REGULAR as u32,
-                    size_bucket,
-                ))
-                .copied()
-                .unwrap_or_else(|| (size_u16 as i16).saturating_mul(4) / 5);
-
             // fg colour, mirroring the regular emit loop's
             // selection / hint precedence.
             let style = resolve_style(style_table, sq);
@@ -1695,17 +1753,34 @@ pub fn build_row_fg(
                 }
             };
 
-            if let Some((_, slot, is_color)) = ensure_custom_glyph_by_codepoint(
-                grid,
-                registry,
-                ch as u32,
-                size_bucket,
-                size_u16,
-                cell_h,
-                ascent_px,
-                color,
+            // The render span comes from the registration's declared
+            // `width` (a render hint), NOT the cell layout: a width=2
+            // glyph overflows rightward into the following cell(s) in
+            // pixels while the grid still treats this codepoint as one
+            // logical column. The author is expected to leave that next
+            // cell blank (a trailing space) so the overflow lands on
+            // empty space rather than real content.
+            if let Some((_, slot, is_color, span)) = ensure_custom_glyph_by_codepoint(
+                grid, registry, ch as u32, cell_w_u32, cell_h, color,
             ) {
                 if slot.w != 0 && slot.h != 0 {
+                    // Center the rasterised glyph in its render-span box
+                    // (`span × cell_w` wide, `cell_h` tall). The raster
+                    // is already contained within that box, so centering
+                    // keeps it inside the span regardless of the
+                    // outline's own bearings. `bearings.x` is the offset
+                    // from the cell's left edge; `bearings.y` is measured
+                    // from the cell *bottom* (the shader flips it), so a
+                    // vertically-centred glyph's top sits at
+                    // `(cell_h + glyph_h) / 2`.
+                    let span_w_px =
+                        (cell_w_u32 * span as u32).min(i16::MAX as u32) as i16;
+                    let cell_h_i16 = cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
+                    let glyph_w = slot.w.min(i16::MAX as u16) as i16;
+                    let glyph_h = slot.h.min(i16::MAX as u16) as i16;
+                    let bearing_x = (span_w_px - glyph_w) / 2;
+                    let bearing_y = (cell_h_i16 + glyph_h) / 2;
+
                     // Colour atlas entries are pre-painted (palette
                     // applied during COLR rasterisation), so the
                     // shader multiplies by white. Mono entries take
@@ -1719,7 +1794,7 @@ pub fn build_row_fg(
                     fg_scratch.push(CellText {
                         glyph_pos: [slot.x as u32, slot.y as u32],
                         glyph_size: [slot.w as u32, slot.h as u32],
-                        bearings: [slot.bearing_x, slot.bearing_y],
+                        bearings: [bearing_x, bearing_y],
                         grid_pos: [x as u16, y],
                         color,
                         atlas,
@@ -2361,54 +2436,75 @@ fn ensure_glyph_by_id(
 ///
 /// Returns `None` when the registration was cleared between font
 /// resolution and render, or when rasterisation produces no pixels
-/// (zero-area outline, malformed COLR, etc.).
+/// (zero-area outline, malformed COLR, etc.). On success the 4th tuple
+/// element is the declared render span in cells (1 or 2) so the caller
+/// can center the glyph across its overflow box.
 #[allow(clippy::too_many_arguments)]
 fn ensure_custom_glyph_by_codepoint(
     grid: &mut GridRenderer,
     registry: &rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry,
     codepoint: u32,
-    size_bucket: u16,
-    size_u16: u16,
+    cell_w_u32: u32,
     cell_h: f32,
-    ascent_px: i16,
     foreground_rgba: [u8; 4],
-) -> Option<(GlyphKey, AtlasSlot, bool)> {
+) -> Option<(GlyphKey, AtlasSlot, bool, u16)> {
     use rio_backend::sugarloaf::font::glyph_registry::pack_atlas_glyph_id;
 
-    // Fetch first so we know the registration's version. The lookup
-    // happens under the registry's RwLock read; the entry's payload is
-    // cloned out so the lock drops before we hit tiny-skia.
+    // Fetch first so we know the registration's version + declared
+    // width. The lookup happens under the registry's RwLock read; the
+    // entry's payload is cloned out so the lock drops before tiny-skia.
     let entry = registry.get(codepoint)?;
+
+    // The declared `width` is a render hint: the glyph rasterises into a
+    // `span × cell_w` box and overflows rightward in pixels. The grid
+    // still treats the codepoint as one logical column (no cell was
+    // reserved), so this is purely visual. Clamp to the protocol's 1..=2.
+    let span = (entry.width as u16).clamp(1, 2);
+    let span_w_px = (cell_w_u32 * span as u32).min(u16::MAX as u32) as u16;
+    let cell_h_px = cell_h.round().clamp(0.0, u16::MAX as f32) as u16;
+    let cell_w_px = cell_w_u32.min(u16::MAX as u32) as u16;
+    // The cached slot is now a pure function of (cp, version, upm,
+    // scale) — the bitmap and its raster-intrinsic bearings depend only
+    // on the scale `min(span_w, cell_h)/upm`, and `upm`/version ride in
+    // `glyph_id`. So the key only has to capture the geometry that feeds
+    // the scale: cell_w, cell_h and the 1-vs-2-cell span. Pack them the
+    // same way the cursor sprite key does (span in bit 15, low cell_w
+    // bits in 12..15, cell_h in the low 12) so a line-height-only change
+    // re-keys instead of serving a stale raster. (Within a font family
+    // cell_h pins cell_w, so the 3 low cell_w bits are ample.) The font
+    // ascent is no longer part of the slot — it's applied per-emit — so
+    // it can't alias here.
     let key = GlyphKey {
         font_id: CUSTOM_GLYPH_FONT_ID_U32,
         glyph_id: pack_atlas_glyph_id(codepoint, entry.version),
-        size_bucket,
+        size_bucket: (((span >= 2) as u16) << 15)
+            | ((cell_w_px & 0x7) << 12)
+            | (cell_h_px & 0xFFF),
     };
     if let Some(slot) = grid.lookup_glyph(key) {
-        return Some((key, slot, false));
+        return Some((key, slot, false, span));
     }
     if let Some(slot) = grid.lookup_glyph_color(key) {
-        return Some((key, slot, true));
+        return Some((key, slot, true, span));
     }
 
     let raster = rio_backend::sugarloaf::glyph_protocol::rasterize_payload(
         &entry.payload,
         entry.upm,
-        size_u16,
+        span_w_px,
+        cell_h_px,
         foreground_rgba,
     )?;
 
-    let bearing_y = {
-        let cell_h_i16 = cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
-        cell_h_i16
-            .saturating_sub(ascent_px)
-            .saturating_add(raster.top.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
-    };
+    // Bearings are NOT baked into the cached slot: the caller centers
+    // the glyph in its cell box from `slot.w/h` + the cell metrics at
+    // emit time, so placement always tracks the current geometry and
+    // the slot stays a pure (cp, version, scale) → bitmap mapping.
     let raster_in = RasterizedGlyph {
         width: raster.width,
         height: raster.height,
-        bearing_x: raster.left.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-        bearing_y,
+        bearing_x: 0,
+        bearing_y: 0,
         bytes: &raster.data,
     };
 
@@ -2417,7 +2513,7 @@ fn ensure_custom_glyph_by_codepoint(
     } else {
         grid.insert_glyph(key, raster_in)?
     };
-    Some((key, slot, raster.is_color))
+    Some((key, slot, raster.is_color, span))
 }
 
 /// Platform-agnostic raw-glyph struct. Both backends populate this
@@ -2477,7 +2573,7 @@ fn rasterize_glyph_native(
             Render, Source, StrikeWith,
         },
         zeno::{Angle, Format, Transform},
-        FontRef,
+        FontRef, Setting,
     };
 
     let font_entry = rasterizer.font_data_cache.get(&font_id)?.clone();
@@ -2487,12 +2583,29 @@ fn rasterize_glyph_native(
         key: font_entry.2,
     };
 
-    let hinting = font_library_hinting(rasterizer);
+    // Shaping runs before rasterization, so `lib_settings` and
+    // `wght_cache` are already populated for this font.
+    let hinting = rasterizer
+        .lib_settings
+        .as_ref()
+        .map(|s| s.0)
+        .unwrap_or(true);
+    const WGHT_TAG: u32 = u32::from_be_bytes(*b"wght");
+    let wght_var = rasterizer
+        .wght_cache
+        .get(&font_id)
+        .copied()
+        .flatten()
+        .map(|v| Setting {
+            tag: WGHT_TAG,
+            value: v,
+        });
     let mut scaler = rasterizer
         .scale_ctx
         .builder(font_ref)
         .hint(hinting)
         .size(size_u16 as f32)
+        .variations(wght_var.iter().copied())
         .build();
 
     let sources: &[Source] = &[
@@ -2530,18 +2643,6 @@ fn rasterize_glyph_native(
         is_color,
         bytes: image.data,
     })
-}
-
-/// Hinting is a library-wide setting. Read once per rasterize; the
-/// RwLock read is cheap. (Caching it locally would require reset
-/// plumbing on config reload.)
-#[cfg(not(target_os = "macos"))]
-#[inline]
-fn font_library_hinting(_r: &GridGlyphRasterizer) -> bool {
-    // TODO: thread through from a cache to avoid the lock per glyph.
-    // For now the lock on swash rasterize is a small fraction of
-    // render time; optimise if profiling flags it.
-    true
 }
 
 #[cfg(test)]

@@ -381,6 +381,16 @@ impl VulkanGlyphAtlas {
         });
         Some(slot)
     }
+
+    /// Forget every cached glyph. Pages are kept and their allocators
+    /// reset; the caller forces a full row rebuild before the next draw.
+    pub fn clear(&mut self) {
+        self.slots.clear();
+        for page in &mut self.pages {
+            page.allocator.clear();
+            page.pending.clear();
+        }
+    }
 }
 
 /// Allocate a fresh atlas page: create the image + view, transition
@@ -901,23 +911,44 @@ impl VulkanGridRenderer {
         self.atlas_color.lookup(key)
     }
 
-    #[inline]
+    /// Drop every cached glyph and force a full rebuild. Called when
+    /// the font library is swapped, since the new library reuses font ids.
+    pub fn clear_atlas(&mut self) {
+        self.atlas_grayscale.clear();
+        self.atlas_color.clear();
+        self.needs_full_rebuild = true;
+        self.fg_dirty = [true; FRAMES_IN_FLIGHT];
+        self.bg_dirty = [true; FRAMES_IN_FLIGHT];
+    }
+
+    /// The atlas's own `insert` walks existing pages and appends a
+    /// new one when none fit. At `MAX_PAGES` the atlas is cleared
+    /// once and every row rebuilt.
     pub fn insert_glyph(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
-        // The atlas's own `insert` walks existing pages and appends a
-        // new one when none fit, so the renderer doesn't need to retry.
+        if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
+            return Some(slot);
+        }
+        self.atlas_grayscale.clear();
+        self.needs_full_rebuild = true;
+        self.fg_dirty = [true; FRAMES_IN_FLIGHT];
         self.atlas_grayscale.insert(key, glyph)
     }
 
-    #[inline]
     pub fn insert_glyph_color(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
+        if let Some(slot) = self.atlas_color.insert(key, glyph) {
+            return Some(slot);
+        }
+        self.atlas_color.clear();
+        self.needs_full_rebuild = true;
+        self.fg_dirty = [true; FRAMES_IN_FLIGHT];
         self.atlas_color.insert(key, glyph)
     }
 

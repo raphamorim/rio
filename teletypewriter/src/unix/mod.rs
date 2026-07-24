@@ -61,29 +61,61 @@ extern "C" {
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
-#[cfg(target_os = "macos")]
-fn default_shell_command(shell: &str) {
-    let command_shell_string = CString::new(shell).unwrap();
-    let command_pointer = command_shell_string.as_ptr();
-    let args = CString::new("--login").unwrap();
-    let args_pointer = args.as_ptr();
+fn default_shell_command(shell: &str, args: &[String]) {
+    // Ignored signal dispositions survive exec (unlike caught
+    // handlers), so the shell inherits whatever the launcher left
+    // ignored: SIGINT/SIGQUIT from a background-job launch, and
+    // SIGPIPE which the Rust runtime always sets to ignore. Reset
+    // the full set to default before exec.
     unsafe {
-        libc::execvp(command_pointer, vec![args_pointer].as_ptr());
+        libc::signal(libc::SIGABRT, libc::SIG_DFL);
+        libc::signal(libc::SIGALRM, libc::SIG_DFL);
+        libc::signal(libc::SIGBUS, libc::SIG_DFL);
+        libc::signal(libc::SIGCHLD, libc::SIG_DFL);
+        libc::signal(libc::SIGFPE, libc::SIG_DFL);
+        libc::signal(libc::SIGHUP, libc::SIG_DFL);
+        libc::signal(libc::SIGILL, libc::SIG_DFL);
+        libc::signal(libc::SIGINT, libc::SIG_DFL);
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+        libc::signal(libc::SIGSEGV, libc::SIG_DFL);
+        libc::signal(libc::SIGTERM, libc::SIG_DFL);
+        libc::signal(libc::SIGTRAP, libc::SIG_DFL);
     }
-}
 
-#[cfg(not(target_os = "macos"))]
-fn default_shell_command(shell: &str) {
-    let command_shell_string = CString::new(shell).unwrap();
-    let command_pointer = command_shell_string.as_ptr();
-    // let home = std::env::var("HOME").unwrap();
-    // let args = CString::new(home).unwrap();
-    // let args_pointer = args.as_ptr() as *const i8;
+    let program = match CString::new(shell) {
+        Ok(program) => program,
+        Err(_) => return,
+    };
+
+    // argv[0] is the program itself, except on macOS with no custom
+    // args: there a bare shell becomes a login shell via the classic
+    // convention of prefixing argv[0] with '-' (what login(1) does),
+    // which every shell understands without flag parsing.
+    #[allow(unused_mut)]
+    let mut arg0 = program.clone();
+    #[cfg(target_os = "macos")]
+    if args.is_empty() {
+        let name = shell.rsplit('/').next().unwrap_or(shell);
+        if let Ok(login_arg0) = CString::new(format!("-{name}")) {
+            arg0 = login_arg0;
+        }
+    }
+    let mut argv_owned: Vec<CString> = vec![arg0];
+    for arg in args {
+        match CString::new(arg.as_str()) {
+            Ok(arg) => argv_owned.push(arg),
+            Err(_) => return,
+        }
+    }
+
+    // execvp requires a null-terminated argv.
+    let mut argv: Vec<*const libc::c_char> =
+        argv_owned.iter().map(|arg| arg.as_ptr()).collect();
+    argv.push(std::ptr::null());
+
     unsafe {
-        libc::execvp(
-            command_pointer,
-            vec![command_pointer, std::ptr::null()].as_ptr(),
-        );
+        libc::execvp(program.as_ptr(), argv.as_ptr());
     }
 }
 
@@ -386,6 +418,50 @@ impl ShellUser {
 }
 
 ///
+/// Build the argv passed to login(1) on macOS.
+///
+/// A custom command (non empty args) goes straight into login's argv:
+/// login execvp's it, so args pass through as single words with no
+/// intermediate shell that could word split them.
+///
+/// A bare shell becomes a login shell through a bash intermediate that
+/// execs it with `-l`, which prepends the dash to argv[0]. bash runs
+/// with `--noprofile --norc` so user startup files cannot interfere
+/// with the exec.
+#[cfg(any(target_os = "macos", test))]
+fn login_argv(
+    hushlogin: bool,
+    username: &str,
+    shell_program: &str,
+    args: &[String],
+) -> Vec<String> {
+    let mut argv: Vec<String> = Vec::with_capacity(args.len() + 8);
+
+    // -f: Bypasses authentication for already-logged-in user
+    // -l: Skips changing directory to $HOME
+    // -p: Preserves environment
+    // -q: Act as if .hushlogin exists
+    if hushlogin {
+        argv.push("-q".to_string());
+    }
+    argv.push("-flp".to_string());
+    argv.push(username.to_string());
+
+    if args.is_empty() {
+        let quoted = shell_program.replace('\'', "'\\''");
+        argv.push("/bin/bash".to_string());
+        argv.push("--noprofile".to_string());
+        argv.push("--norc".to_string());
+        argv.push("-c".to_string());
+        argv.push(format!("exec -l '{quoted}'"));
+    } else {
+        argv.push(shell_program.to_string());
+        argv.extend(args.iter().cloned());
+    }
+
+    argv
+}
+
 /// Creates a pseudoterminal using spawn.
 ///
 /// The [`create_pty`] creates a pseudoterminal with similar behavior as tty,
@@ -454,37 +530,10 @@ pub fn create_pty_with_spawn(
         {
             // On macOS, use /usr/bin/login to ensure proper login shell environment
             // This ensures PATH includes directories like /usr/local/bin
-            let shell_name = shell_program.rsplit('/').next().unwrap_or(shell_program);
+            let hushlogin = std::path::Path::new(&user.home).join(".hushlogin").exists();
+
             let mut login_cmd = Command::new("/usr/bin/login");
-
-            // Check for .hushlogin in home directory
-            let hushlogin_path = std::path::Path::new(&user.home).join(".hushlogin");
-            let flags = if hushlogin_path.exists() {
-                "-qflp"
-            } else {
-                "-flp"
-            };
-
-            // -f: Bypasses authentication for already-logged-in user
-            // -l: Skips changing directory to $HOME
-            // -p: Preserves environment
-            // -q: Act as if .hushlogin exists
-            login_cmd.args([flags, &user.user]);
-
-            // Build the exec command to replace the intermediate shell with our target shell
-            let exec_cmd = if args.is_empty() {
-                format!("exec -a -{shell_name} {shell_program}")
-            } else {
-                format!(
-                    "exec -a -{} {} {}",
-                    shell_name,
-                    shell_program,
-                    args.join(" ")
-                )
-            };
-
-            // Use /bin/zsh as intermediate shell because it supports 'exec -a'
-            login_cmd.args(["/bin/zsh", "-fc", &exec_cmd]);
+            login_cmd.args(login_argv(hushlogin, &user.user, shell_program, &args));
 
             login_cmd
         }
@@ -625,6 +674,7 @@ pub fn create_pty_with_spawn(
 ///
 pub fn create_pty_with_fork(
     shell: &str,
+    args: &[String],
     columns: u16,
     rows: u16,
     width: u16,
@@ -665,7 +715,7 @@ pub fn create_pty_with_fork(
         )
     } {
         0 => {
-            default_shell_command(shell_program);
+            default_shell_command(shell_program, args);
             Err(Error::other(format!(
                 "forkpty has reach unreachable with {shell_program}"
             )))
@@ -999,5 +1049,56 @@ where
             .spawn()?
             .wait()
             .map(|_| ())
+    }
+}
+
+#[cfg(test)]
+mod login_argv_tests {
+    use super::login_argv;
+
+    #[test]
+    fn bare_shell_becomes_login_shell() {
+        let argv = login_argv(false, "rapha", "/bin/zsh", &[]);
+        assert_eq!(
+            argv,
+            vec![
+                "-flp",
+                "rapha",
+                "/bin/bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                "exec -l '/bin/zsh'",
+            ]
+        );
+    }
+
+    #[test]
+    fn hushlogin_adds_quiet_flag() {
+        let argv = login_argv(true, "rapha", "/bin/zsh", &[]);
+        assert_eq!(argv[0], "-q");
+        assert_eq!(argv[1], "-flp");
+    }
+
+    #[test]
+    fn custom_command_goes_directly_to_login() {
+        let args = vec!["-c".to_string(), "echo hello world; sleep 1".to_string()];
+        let argv = login_argv(false, "rapha", "/bin/bash", &args);
+        assert_eq!(
+            argv,
+            vec![
+                "-flp",
+                "rapha",
+                "/bin/bash",
+                "-c",
+                "echo hello world; sleep 1",
+            ]
+        );
+    }
+
+    #[test]
+    fn quotes_in_shell_path_are_escaped() {
+        let argv = login_argv(false, "rapha", "/tmp/it's a shell", &[]);
+        assert_eq!(argv.last().unwrap(), "exec -l '/tmp/it'\\''s a shell'");
     }
 }

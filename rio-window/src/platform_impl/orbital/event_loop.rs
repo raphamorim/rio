@@ -840,6 +840,10 @@ impl ActiveEventLoop {
         Some(MonitorHandle)
     }
 
+    pub fn cursor_monitor(&self) -> Option<MonitorHandle> {
+        None
+    }
+
     pub fn available_monitors(&self) -> VecDeque<MonitorHandle> {
         let mut v = VecDeque::with_capacity(1);
         v.push_back(MonitorHandle);

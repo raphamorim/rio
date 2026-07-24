@@ -61,7 +61,7 @@ impl SugarState {
         advance_brush: &mut Renderer,
         context: &mut super::Context,
         graphics: &mut Graphics,
-        image_data: &mut rustc_hash::FxHashMap<u32, super::graphics::GraphicDataEntry>,
+        image_data: &mut rustc_hash::FxHashMap<u64, super::graphics::GraphicDataEntry>,
         image_overlays: &rustc_hash::FxHashMap<
             usize,
             Vec<super::graphics::GraphicOverlay>,

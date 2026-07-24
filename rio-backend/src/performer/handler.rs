@@ -95,6 +95,12 @@ pub trait Handler {
     /// OSC to set current directory.
     fn set_current_directory(&mut self, _: std::path::PathBuf) {}
 
+    /// OSC 133: mark the cursor row as a semantic prompt row.
+    fn set_semantic_prompt(&mut self, _: crate::crosswords::grid::row::SemanticPrompt) {}
+
+    /// OSC 1337 SetUserVar: record a shell-provided variable.
+    fn set_user_var(&mut self, _name: String, _value: String) {}
+
     /// Set the cursor style.
     fn set_cursor_style(&mut self, _style: Option<CursorShape>, _blinking: bool) {}
 
@@ -409,15 +415,18 @@ pub trait Handler {
     fn glyph_protocol_response(&mut self, _response: String) {}
 
     /// Register a custom glyph at a client-chosen PUA codepoint. The
-    /// parser has already verified `cp` is in PUA and the container
-    /// size is within bounds. The `payload` carries format-specific
-    /// data: monochrome `glyf`, or a `colrv0`/`colrv1` colour
-    /// container. `Err(reason)` causes the dispatcher to emit an error
-    /// response.
+    /// parser has already verified `cp` is in PUA, the container
+    /// size is within bounds, and `width` is `1` or `2`. The `payload`
+    /// carries format-specific data: monochrome `glyf`, or a
+    /// `colrv0`/`colrv1` colour container. `width` is the declared
+    /// render span, honoured at render time only; the codepoint's
+    /// logical cell width stays at system wcwidth.
+    /// `Err(reason)` causes the dispatcher to emit an error response.
     fn glyph_register(
         &mut self,
         _cp: u32,
         _payload: glyph_protocol::GlyphPayload,
+        _width: u8,
     ) -> Result<(), glyph_protocol::RegisterError> {
         Ok(())
     }
@@ -842,22 +851,25 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                 // reply back to the originating pane's PTY directly.
                 self.handler.glyph_query(cp);
             }
-            Ok(glyph_protocol::GlyphCommand::Register { cp, payload, reply }) => {
-                match self.handler.glyph_register(cp, payload) {
-                    Ok(()) => {
-                        if reply.emit_success() {
-                            let resp = glyph_protocol::format_register_ok(cp);
-                            self.handler.glyph_protocol_response(resp);
-                        }
-                    }
-                    Err(reason) => {
-                        if reply.emit_error() {
-                            let resp = glyph_protocol::format_register_error(cp, reason);
-                            self.handler.glyph_protocol_response(resp);
-                        }
+            Ok(glyph_protocol::GlyphCommand::Register {
+                cp,
+                payload,
+                reply,
+                width,
+            }) => match self.handler.glyph_register(cp, payload, width) {
+                Ok(()) => {
+                    if reply.emit_success() {
+                        let resp = glyph_protocol::format_register_ok(cp);
+                        self.handler.glyph_protocol_response(resp);
                     }
                 }
-            }
+                Err(reason) => {
+                    if reply.emit_error() {
+                        let resp = glyph_protocol::format_register_error(cp, reason);
+                        self.handler.glyph_protocol_response(resp);
+                    }
+                }
+            },
             Ok(glyph_protocol::GlyphCommand::Clear { cp }) => {
                 self.handler.glyph_clear(cp);
                 let resp = glyph_protocol::format_clear_ok(cp);
@@ -1061,6 +1073,13 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 }
             }
 
+            // OSC 133 - semantic prompt zones (shell integration).
+            b"133" => {
+                if let Some(mark) = osc::parse_semantic_prompt(params) {
+                    self.handler.set_semantic_prompt(mark);
+                }
+            }
+
             // OSC 777 - rxvt notification.
             b"777" if params.len() >= 4 && params[1] == b"notify" => {
                 let title = std::str::from_utf8(params[2])
@@ -1132,10 +1151,15 @@ impl<U: Handler> Perform for Performer<'_, U> {
             b"111" => self.handler.reset_color(NamedColor::Background as usize),
             b"112" => self.handler.reset_color(NamedColor::Cursor as usize),
 
-            // OSC 1337 — iTerm2 inline image protocol.
+            // OSC 1337 - iTerm2 user vars and inline image protocol.
             b"1337" => {
-                if let Some(graphic) = iterm2_image_protocol::parse(params) {
-                    self.handler.insert_graphic(graphic, None, None);
+                if let Some((name, value)) = osc::parse_set_user_var(params) {
+                    self.handler.set_user_var(name, value);
+                } else if let Some((graphic, cursor_movement)) =
+                    iterm2_image_protocol::parse(params)
+                {
+                    self.handler
+                        .insert_graphic(graphic, None, Some(cursor_movement));
                 }
             }
 
@@ -2090,6 +2114,50 @@ fn get_termcap_capability(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn semantic_prompt_parsing() {
+        use crate::crosswords::grid::row::SemanticPrompt;
+        use crate::performer::osc::parse_semantic_prompt as parse;
+
+        assert_eq!(parse(&[b"133", b"A"]), Some(SemanticPrompt::Prompt));
+        assert_eq!(
+            parse(&[b"133", b"A", b"aid=1"]),
+            Some(SemanticPrompt::Prompt)
+        );
+        assert_eq!(parse(&[b"133", b"P"]), Some(SemanticPrompt::Prompt));
+        assert_eq!(parse(&[b"133", b"P", b"k=i"]), Some(SemanticPrompt::Prompt));
+        assert_eq!(
+            parse(&[b"133", b"P", b"k=s"]),
+            Some(SemanticPrompt::PromptContinuation)
+        );
+        assert_eq!(
+            parse(&[b"133", b"P", b"k=c"]),
+            Some(SemanticPrompt::PromptContinuation)
+        );
+        // Accepted subcommands that set no row mark.
+        assert_eq!(parse(&[b"133", b"B"]), None);
+        assert_eq!(parse(&[b"133", b"C"]), None);
+        assert_eq!(parse(&[b"133", b"D", b"0"]), None);
+        assert_eq!(parse(&[b"133"]), None);
+        assert_eq!(parse(&[b"133", b""]), None);
+    }
+
+    #[test]
+    fn set_user_var_parsing() {
+        use crate::performer::osc::parse_set_user_var as parse;
+
+        // "hello" in base64.
+        assert_eq!(
+            parse(&[b"1337", b"SetUserVar=foo=aGVsbG8="]),
+            Some(("foo".to_string(), "hello".to_string()))
+        );
+        assert_eq!(parse(&[b"1337", b"SetUserVar=foo"]), None);
+        assert_eq!(parse(&[b"1337", b"SetUserVar==aGVsbG8="]), None);
+        assert_eq!(parse(&[b"1337", b"SetUserVar=foo=!!!"]), None);
+        assert_eq!(parse(&[b"1337", b"File=inline=1"]), None);
+        assert_eq!(parse(&[b"1337"]), None);
+    }
 
     #[test]
     fn test_hex_encoding() {

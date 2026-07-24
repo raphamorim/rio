@@ -743,6 +743,46 @@ enum ImageTexture {
 struct ImageTextureEntry {
     gpu: ImageTexture,
     transmit_time: std::time::Instant,
+    /// GPU memory this texture occupies (width * height * 4).
+    bytes: usize,
+    /// Frame counter value of the last frame that referenced this
+    /// texture; drives the LRU budget eviction.
+    last_used: u64,
+}
+
+/// VRAM budget for the per-image texture cache. Textures are
+/// regenerable from `image_data`, so exceeding the budget evicts the
+/// least-recently-drawn ones; scrolling them back into view re-uploads
+/// on demand.
+const IMAGE_TEXTURE_BUDGET_BYTES: usize = 256 << 20;
+
+/// Pick which textures to evict to get `total_bytes` back under
+/// `budget`. Never evicts entries referenced by the current frame.
+/// Returns the chosen keys; pure so the policy is unit-testable.
+fn select_texture_evictions(
+    entries: impl Iterator<Item = (u64, u64, usize)>,
+    total_bytes: usize,
+    budget: usize,
+    current_frame: u64,
+) -> Vec<u64> {
+    if total_bytes <= budget {
+        return Vec::new();
+    }
+    let mut candidates: Vec<(u64, u64, usize)> = entries
+        .filter(|&(_, last_used, _)| last_used < current_frame)
+        .collect();
+    candidates.sort_by_key(|&(_, last_used, _)| last_used);
+
+    let mut to_free = total_bytes - budget;
+    let mut evict = Vec::new();
+    for (key, _, bytes) in candidates {
+        if to_free == 0 {
+            break;
+        }
+        evict.push(key);
+        to_free = to_free.saturating_sub(bytes);
+    }
+    evict
 }
 
 /// Per-instance data for image rendering (one instance = one image placement).
@@ -783,11 +823,11 @@ enum ImageLayer {
 /// Threshold separating `BelowBg` from `BelowText`. Matches ghostty's
 /// `bg_limit = std.math.minInt(i32) / 2` at
 /// `renderer/image.zig:377`.
-const IMAGE_BG_LIMIT: i32 = i32::MIN / 2;
+pub(crate) const IMAGE_BG_LIMIT: i32 = i32::MIN / 2;
 
 /// A single image draw command for the image pipeline.
 struct ImageDraw {
-    image_id: u32,
+    image_id: u64,
     instance: ImageInstance,
     layer: ImageLayer,
 }
@@ -807,7 +847,12 @@ pub struct Renderer {
     draw_cmds: Vec<batch::DrawCmd>,
     images: ImageCache,
     /// Per-image GPU textures (one map, any backend).
-    image_textures: FxHashMap<u32, ImageTextureEntry>,
+    image_textures: FxHashMap<u64, ImageTextureEntry>,
+    /// Sum of `bytes` across `image_textures`; compared against
+    /// `IMAGE_TEXTURE_BUDGET_BYTES` after uploads.
+    image_texture_bytes: usize,
+    /// Monotonic frame counter for texture LRU stamping.
+    image_frame_counter: u64,
     /// Image draw commands for the current frame.
     image_draws: Vec<ImageDraw>,
     /// Pending background image upload (consumed by `prepare`).
@@ -948,6 +993,8 @@ fn upload_background_image_texture(
     Some(ImageTextureEntry {
         gpu,
         transmit_time: std::time::Instant::now(),
+        bytes: (pixels.width as usize) * (pixels.height as usize) * 4,
+        last_used: 0,
     })
 }
 
@@ -984,6 +1031,8 @@ impl Renderer {
             draw_cmds: vec![],
             images: ImageCache::new(context),
             image_textures: FxHashMap::default(),
+            image_texture_bytes: 0,
+            image_frame_counter: 0,
             image_draws: Vec::new(),
             background_image_dirty: None,
             background_image_texture: None,
@@ -1024,7 +1073,7 @@ impl Renderer {
         _state: &crate::sugarloaf::state::SugarState,
         _graphics: &mut Graphics,
         image_data: &mut rustc_hash::FxHashMap<
-            u32,
+            u64,
             crate::sugarloaf::graphics::GraphicDataEntry,
         >,
         image_overlays: &rustc_hash::FxHashMap<
@@ -1148,14 +1197,16 @@ impl Renderer {
         &mut self,
         context: &mut crate::context::Context,
         image_data: &mut rustc_hash::FxHashMap<
-            u32,
+            u64,
             crate::sugarloaf::graphics::GraphicDataEntry,
         >,
         overlays: &[&crate::sugarloaf::graphics::GraphicOverlay],
     ) {
-        // Note: don't evict textures not in the current overlay set —
-        // images may be temporarily off-screen and need their texture
-        // when scrolling back into view.
+        // Off-screen textures are kept until the byte budget below
+        // forces the least-recently-drawn ones out; they re-upload
+        // from `image_data` when scrolled back into view.
+        self.image_frame_counter += 1;
+        let current_frame = self.image_frame_counter;
 
         // Upload/update per-image textures
         for overlay in overlays {
@@ -1165,8 +1216,9 @@ impl Renderer {
             };
 
             // Skip if texture is current
-            if let Some(existing) = self.image_textures.get(&overlay.image_id) {
+            if let Some(existing) = self.image_textures.get_mut(&overlay.image_id) {
                 if existing.transmit_time == entry.transmit_time {
+                    existing.last_used = current_frame;
                     continue;
                 }
             }
@@ -1184,7 +1236,9 @@ impl Renderer {
                 continue;
             }
 
-            // CPU backend: image overlays not supported in v1, skip.
+            // CPU backend composites overlays directly from
+            // `image_data` in `cpu::render_cpu`; no GPU texture to
+            // upload here.
             if matches!(&context.inner, crate::context::ContextType::Cpu(_)) {
                 continue;
             }
@@ -1208,13 +1262,19 @@ impl Renderer {
                     brush.image_texture_descriptor_set_layout,
                     brush.image_sampler,
                 );
-                self.image_textures.insert(
+                let bytes = (width as usize) * (height as usize) * 4;
+                if let Some(old) = self.image_textures.insert(
                     overlay.image_id,
                     ImageTextureEntry {
                         gpu: ImageTexture::Vulkan(texture),
                         transmit_time: entry.transmit_time,
+                        bytes,
+                        last_used: current_frame,
                     },
-                );
+                ) {
+                    self.image_texture_bytes -= old.bytes;
+                }
+                self.image_texture_bytes += bytes;
                 continue;
             }
             let gpu = match &context.inner {
@@ -1306,13 +1366,38 @@ impl Renderer {
                 crate::context::ContextType::_Phantom(_) => continue,
             };
 
-            self.image_textures.insert(
+            let bytes = (width as usize) * (height as usize) * 4;
+            if let Some(old) = self.image_textures.insert(
                 overlay.image_id,
                 ImageTextureEntry {
                     gpu,
                     transmit_time: entry.transmit_time,
+                    bytes,
+                    last_used: current_frame,
                 },
+            ) {
+                self.image_texture_bytes -= old.bytes;
+            }
+            self.image_texture_bytes += bytes;
+        }
+
+        // Enforce the VRAM budget: drop the least-recently-drawn
+        // textures not referenced this frame. Their pixel data stays
+        // in `image_data`, so they re-upload on demand.
+        if self.image_texture_bytes > IMAGE_TEXTURE_BUDGET_BYTES {
+            let evict = select_texture_evictions(
+                self.image_textures
+                    .iter()
+                    .map(|(&k, e)| (k, e.last_used, e.bytes)),
+                self.image_texture_bytes,
+                IMAGE_TEXTURE_BUDGET_BYTES,
+                current_frame,
             );
+            for key in evict {
+                if let Some(old) = self.image_textures.remove(&key) {
+                    self.image_texture_bytes -= old.bytes;
+                }
+            }
         }
 
         // Build image draw commands (one instance per image placement)
@@ -1353,7 +1438,7 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     fn draw_images_metal(
         image_draws: &[ImageDraw],
-        image_textures: &FxHashMap<u32, ImageTextureEntry>,
+        image_textures: &FxHashMap<u64, ImageTextureEntry>,
         brush: &MetalRenderer,
         render_encoder: &metal::RenderCommandEncoderRef,
         layer: ImageLayer,
@@ -1563,13 +1648,26 @@ impl Renderer {
     #[inline]
     pub fn reset(&mut self) {
         self.image_textures.clear();
+        self.image_texture_bytes = 0;
         self.image_draws.clear();
+    }
+
+    /// Drop the cached GPU texture for one image key. Called when the
+    /// image's pixel data is removed (scrolled out of scrollback,
+    /// kitty eviction); without this, sequential atlas ids from e.g.
+    /// sixel animations would grow the texture cache without bound.
+    #[inline]
+    pub fn evict_image_texture(&mut self, key: u64) {
+        if let Some(old) = self.image_textures.remove(&key) {
+            self.image_texture_bytes -= old.bytes;
+        }
     }
 
     #[inline]
     pub fn clear_atlas(&mut self) {
         self.images.clear_atlas();
         self.image_textures.clear();
+        self.image_texture_bytes = 0;
         self.image_draws.clear();
         tracing::info!("Renderer atlas cleared");
     }
@@ -2348,6 +2446,8 @@ impl Renderer {
         self.background_image_texture = Some(ImageTextureEntry {
             gpu: ImageTexture::Vulkan(texture),
             transmit_time: std::time::Instant::now(),
+            bytes: (pixels.width as usize) * (pixels.height as usize) * 4,
+            last_used: 0,
         });
     }
 
@@ -3249,5 +3349,41 @@ mod rect_positioning_tests {
             !last_rendered_graphic.contains(&graphic_id),
             "After clear, graphic should be renderable again"
         );
+    }
+}
+
+#[cfg(test)]
+mod texture_budget_tests {
+    use super::select_texture_evictions;
+
+    #[test]
+    fn under_budget_evicts_nothing() {
+        let entries = [(1u64, 5u64, 100usize), (2, 6, 100)];
+        let evict = select_texture_evictions(entries.iter().copied(), 200, 300, 10);
+        assert!(evict.is_empty());
+    }
+
+    #[test]
+    fn evicts_least_recently_drawn_first() {
+        // Over budget by 150: entries stamped at frames 3, 7, 5.
+        let entries = [(1u64, 7u64, 100usize), (2, 3, 100), (3, 5, 100)];
+        let evict = select_texture_evictions(entries.iter().copied(), 300, 150, 10);
+        assert_eq!(evict, vec![2, 3], "oldest frames go first");
+    }
+
+    #[test]
+    fn never_evicts_textures_used_this_frame() {
+        // Everything referenced this frame: budget stays exceeded
+        // rather than dropping a texture the frame needs.
+        let entries = [(1u64, 10u64, 100usize), (2, 10, 100)];
+        let evict = select_texture_evictions(entries.iter().copied(), 200, 50, 10);
+        assert!(evict.is_empty());
+    }
+
+    #[test]
+    fn stops_once_under_budget() {
+        let entries = [(1u64, 1u64, 400usize), (2, 2, 400), (3, 3, 400)];
+        let evict = select_texture_evictions(entries.iter().copied(), 1200, 800, 10);
+        assert_eq!(evict, vec![1], "freeing 400 reaches the budget");
     }
 }
