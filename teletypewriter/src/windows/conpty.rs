@@ -24,15 +24,29 @@ use windows_sys::Win32::System::Threading::{
 use crate::windows::child::ChildExitWatcher;
 use crate::windows::{cmdline, win32_string, Pty};
 
-/// Load the pseudoconsole API from conpty.dll if possible, otherwise use the
-/// standard Windows API.
+/// Load the pseudoconsole API from a sideloaded `conpty.dll` if one sits
+/// next to `rio.exe`, otherwise fall back to the in-box Windows API.
 ///
-/// The conpty.dll from the Windows Terminal project
-/// supports loading OpenConsole.exe, which offers many improvements and
-/// bugfixes compared to the standard conpty that ships with Windows.
+/// A modern `conpty.dll` from the Windows Terminal project (ConPTY 1.22+)
+/// does synchronous VT passthrough: the child's output — including sixel
+/// (DCS), iTerm2 (OSC 1337), and kitty graphics (APC) escape sequences —
+/// reaches Rio unmodified, so image protocols work. The in-box ConPTY
+/// that ships with most Windows builds is older and rewrites/strips those
+/// sequences, which is why terminal graphics are broken on stock Windows
+/// (issues #729, #1759).
 ///
-/// The conpty.dll and OpenConsole.exe files will be searched in PATH and in
-/// the directory where Rio's executable is located.
+/// `conpty.dll` locates its console host (`OpenConsole.exe`) in **its own
+/// directory**; without a matching `OpenConsole.exe` it silently reverts
+/// to the in-box `conhost.exe` and the passthrough benefit is lost. So the
+/// two files must be deployed together next to `rio.exe`, architecture
+/// matched (`conpty.dll` = app arch, `OpenConsole.exe` = system arch).
+/// Both are redistributable (MIT) via the `Microsoft.Windows.Console.ConPTY`
+/// NuGet package. This is the same mechanism WezTerm uses.
+///
+/// Loaded by name via the default search order, which resolves the
+/// executable's own directory first (SafeDllSearchMode excludes the working
+/// directory), so a co-located `conpty.dll` is preferred over any in-box
+/// one.
 type CreatePseudoConsoleFn =
     unsafe extern "system" fn(COORD, HANDLE, HANDLE, u32, *mut HPCON) -> HRESULT;
 type ResizePseudoConsoleFn = unsafe extern "system" fn(HPCON, COORD) -> HRESULT;
@@ -63,7 +77,8 @@ impl ConptyApi {
         }
     }
 
-    /// Try loading ConptyApi from conpty.dll library.
+    /// Try loading ConptyApi from a sideloaded `conpty.dll`. Same as
+    /// WezTerm: load by name and let the loader prefer a co-located DLL.
     fn load_conpty() -> Option<Self> {
         type LoadedFn = unsafe extern "system" fn() -> isize;
         unsafe {
