@@ -15,7 +15,8 @@ struct InstanceInput {
     @location(0) dest_pos: vec2<f32>,
     // Size of the image on screen (physical pixels).
     @location(1) dest_size: vec2<f32>,
-    // Source rectangle in the texture: xy = origin, zw = size (normalized 0..1).
+    // Source rectangle in the texture: xy = origin, zw = end
+    // (normalized 0..1), matching the Metal and Vulkan shaders.
     @location(2) source_rect: vec4<f32>,
 }
 
@@ -37,8 +38,9 @@ fn vs_main(
     corner.x = f32(vid == 1u || vid == 3u);
     corner.y = f32(vid == 2u || vid == 3u);
 
-    // Texture coordinates from source rect
-    var tex_coord = instance.source_rect.xy + instance.source_rect.zw * corner;
+    // Texture coordinates from source rect (origin at corner 0,
+    // end at corner 1)
+    var tex_coord = mix(instance.source_rect.xy, instance.source_rect.zw, corner);
 
     // Screen position
     var image_pos = instance.dest_pos + instance.dest_size * corner;

@@ -282,8 +282,14 @@ pub fn compute_cell_metrics(
         {
             font_library.inner.try_read().and_then(|lib| {
                 let id = 0;
-                let (data, offset, _key) = lib.get_data(&id)?;
-                let font_ref = swash::FontRef::from_index(&data, offset as usize)?;
+                let (data, offset, key) = lib.get_data(&id)?;
+                // `offset` is a table-directory byte offset, not a
+                // collection face index.
+                let font_ref = swash::FontRef {
+                    data: data.as_ref(),
+                    offset,
+                    key,
+                };
                 let m = font_ref.metrics(&[]);
                 let upem = m.units_per_em as f32;
                 let s = font_size / upem;

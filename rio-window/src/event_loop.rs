@@ -446,6 +446,17 @@ impl ActiveEventLoop {
             .map(|inner| MonitorHandle { inner })
     }
 
+    /// Returns the monitor currently under the mouse cursor, regardless
+    /// of which application is focused.
+    ///
+    /// ## Platform-specific
+    ///
+    /// **Linux / Web / Orbital:** Always returns `None` for now.
+    #[inline]
+    pub fn cursor_monitor(&self) -> Option<MonitorHandle> {
+        self.p.cursor_monitor().map(|inner| MonitorHandle { inner })
+    }
+
     /// Returns the primary monitor of the system.
     ///
     /// Returns `None` if it can't identify any monitor as a primary one.

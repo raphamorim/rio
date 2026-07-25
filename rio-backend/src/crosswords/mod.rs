@@ -22,10 +22,8 @@ pub mod square;
 pub mod style;
 pub mod vi_mode;
 
-use crate::ansi::graphics::GraphicCell;
 use crate::ansi::graphics::Graphics;
 use crate::ansi::graphics::KittyPlacement;
-use crate::ansi::graphics::TextureRef;
 use crate::ansi::graphics::UpdateQueues;
 use crate::ansi::mode::NamedMode;
 use crate::ansi::mode::NamedPrivateMode;
@@ -454,6 +452,8 @@ where
     pub route_id: usize,
     title_stack: Vec<String>,
     pub current_directory: Option<std::path::PathBuf>,
+    /// Shell state from `OSC 1337 ; SetUserVar` (iTerm2 style).
+    pub user_vars: rustc_hash::FxHashMap<String, String>,
 
     /// Whether a `TerminalDamaged` event is already in flight to the renderer.
     /// Set by PTY thread before sending; cleared by renderer after extracting damage.
@@ -513,6 +513,7 @@ impl<U: EventListener> Crosswords<U> {
             route_id,
             title_stack: Default::default(),
             current_directory: None,
+            user_vars: rustc_hash::FxHashMap::default(),
             damage_event_in_flight: false,
             keyboard_mode_stack: Default::default(),
             keyboard_mode_idx: 0,
@@ -618,6 +619,36 @@ impl<U: EventListener> Crosswords<U> {
         self.clear_screen(ClearMode::Saved);
     }
 
+    /// Scroll so the previous (`forward = false`) or next prompt row
+    /// starts at the top of the viewport. Prompts come from OSC 133
+    /// marks; a run of consecutive prompt rows counts as one prompt.
+    pub fn scroll_to_prompt(&mut self, forward: bool) {
+        use crate::crosswords::grid::row::SemanticPrompt;
+
+        let display_offset = self.grid.display_offset() as i32;
+        let history = self.grid.history_size() as i32;
+        let screen_lines = self.grid.screen_lines() as i32;
+        let top = -display_offset;
+
+        let is_marked =
+            |line: i32| self.grid[Line(line)].semantic_prompt != SemanticPrompt::None;
+        // First row of a prompt run: marked, with an unmarked row (or
+        // the top of history) above it.
+        let is_prompt_start =
+            |line: i32| is_marked(line) && (line == -history || !is_marked(line - 1));
+
+        let target = if forward {
+            (top + 1..screen_lines).find(|line| is_prompt_start(*line))
+        } else {
+            (-history..top).rev().find(|line| is_prompt_start(*line))
+        };
+
+        if let Some(line) = target {
+            let new_offset = (-line).max(0);
+            self.scroll_display(Scroll::Delta(new_offset - display_offset));
+        }
+    }
+
     #[inline]
     pub fn scroll_display(&mut self, scroll: Scroll) {
         let old_display_offset = self.grid.display_offset();
@@ -641,6 +672,13 @@ impl<U: EventListener> Crosswords<U> {
                 self.graphics.kitty_graphics_dirty = true;
             }
         }
+    }
+
+    /// Lines ever evicted off the scrollback ring (see
+    /// `Grid::lines_evicted`).
+    #[inline]
+    pub fn lines_evicted(&self) -> u64 {
+        self.grid.lines_evicted()
     }
 
     #[inline]
@@ -691,6 +729,52 @@ impl<U: EventListener> Crosswords<U> {
         let num_lines = size.screen_lines();
 
         if old_cols == num_cols && old_lines == num_lines {
+            // Same grid, but the cell size may still have changed (a
+            // font or DPI change that kept cols/rows constant). Keep
+            // the graphics cell metrics and placements in sync so
+            // cell-sized images keep tracking the grid.
+            if self.graphics.cell_width != size.square_width()
+                || self.graphics.cell_height != size.square_height()
+            {
+                self.graphics.resize(&size);
+                let cell_w = self.graphics.cell_width.round() as usize;
+                let cell_h = self.graphics.cell_height.round() as usize;
+                if cell_w > 0 && cell_h > 0 {
+                    for p in self.graphics.kitty_placements.values_mut() {
+                        let (iw, ih) = self
+                            .graphics
+                            .kitty_images
+                            .get(&p.image_id)
+                            .map(|s| (s.data.width, s.data.height))
+                            .unwrap_or((0, 0));
+                        p.rescale(iw, ih, cell_w, cell_h);
+                    }
+                    for p in self
+                        .graphics
+                        .kitty_inactive_screen
+                        .kitty_placements
+                        .values_mut()
+                    {
+                        let (iw, ih) = self
+                            .graphics
+                            .kitty_inactive_screen
+                            .kitty_images
+                            .get(&p.image_id)
+                            .map(|s| (s.data.width, s.data.height))
+                            .unwrap_or((0, 0));
+                        p.rescale(iw, ih, cell_w, cell_h);
+                    }
+                    if !self.graphics.kitty_placements.is_empty()
+                        || !self
+                            .graphics
+                            .kitty_inactive_screen
+                            .kitty_placements
+                            .is_empty()
+                    {
+                        self.graphics.kitty_graphics_dirty = true;
+                    }
+                }
+            }
             info!("Crosswords::resize dimensions unchanged");
             return;
         }
@@ -703,25 +787,35 @@ impl<U: EventListener> Crosswords<U> {
         delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
         self.vi_mode_cursor.pos.row += delta;
 
-        // Snapshot the cursor's *absolute* row (history + screen row)
-        // before the grid is reflowed. Kitty placements live in the
-        // same absolute coordinate space, and we use the cursor as a
-        // proxy for "where the surrounding text is". When reflow
-        // unwraps a row above the cursor (e.g. a long prompt fits on
-        // one line after the window widens), the cursor moves up to
-        // follow its content; we shift placements by the same amount
-        // so the image moves with the text. For grow_lines pulling
-        // from history the cursor's *absolute* row is invariant
-        // (history shrinks by N, cursor.row grows by N), so the
-        // delta naturally falls out to zero and placements stay put
-        // — which is what we want, since neither the cursor nor the
-        // image actually moved relative to the buffer.
-        let pre_resize_cursor_abs =
-            history_size as i64 + self.grid.cursor.pos.row.0 as i64;
+        // Image placements (kitty and sixel/iTerm2) anchor at absolute
+        // rows. A column reflow moves content to different rows, so ask
+        // each grid to record an exact old-row to new-row mapping while
+        // it reflows, but only when that grid's screen actually has
+        // placements; tracking costs a Vec sized to the ring. Vertical
+        // resizes never move content in absolute row space and produce
+        // no remap.
+        let active_has_placements = !self.graphics.kitty_placements.is_empty()
+            || !self.graphics.atlas_placements.is_empty();
+        let inactive_has_placements = !self
+            .graphics
+            .kitty_inactive_screen
+            .kitty_placements
+            .is_empty()
+            || !self
+                .graphics
+                .kitty_inactive_screen
+                .atlas_placements
+                .is_empty();
 
         let is_alt = self.mode.contains(Mode::ALT_SCREEN);
+        self.grid.track_reflow_remap = active_has_placements;
+        self.inactive_grid.track_reflow_remap = inactive_has_placements;
         self.grid.resize(!is_alt, num_lines, num_cols);
         self.inactive_grid.resize(is_alt, num_lines, num_cols);
+        self.grid.track_reflow_remap = false;
+        self.inactive_grid.track_reflow_remap = false;
+        let active_remap = self.grid.reflow_remap.take();
+        let inactive_remap = self.inactive_grid.reflow_remap.take();
 
         // Invalidate selection and tabs only when necessary.
         if old_cols != num_cols {
@@ -753,33 +847,21 @@ impl<U: EventListener> Crosswords<U> {
         // Update size information for graphics.
         self.graphics.resize(&size);
 
-        // Compute the placement dest_row shift. See the comment above
-        // where we captured `pre_resize_cursor_abs`. Note: we use the
-        // *absolute* cursor row (history + cursor.row), not screen
-        // row, so vertical resizes (which move cursor.row but keep
-        // the absolute row constant) don't shift placements.
-        let post_resize_cursor_abs =
-            self.history_size() as i64 + self.grid.cursor.pos.row.0 as i64;
-        let dest_row_shift = post_resize_cursor_abs - pre_resize_cursor_abs;
-
-        // Recompute overlay placement pixel dimensions for new cell
-        // size, and shift dest_row to follow the text. Active and
-        // inactive screens both get the treatment so alt-screen
-        // images aren't stale on swap-back.
-        let cell_w = self.graphics.cell_width as usize;
-        let cell_h = self.graphics.cell_height as usize;
-        let mut overlay_changed = false;
+        // Rescale overlay placements for the new cell size (cell-sized
+        // placements track the grid; native-size ones keep their pixel
+        // dimensions). Active and inactive screens both get the
+        // treatment so alt-screen images aren't stale on swap-back.
+        let cell_w = self.graphics.cell_width.round() as usize;
+        let cell_h = self.graphics.cell_height.round() as usize;
         if cell_w > 0 && cell_h > 0 {
             for p in self.graphics.kitty_placements.values_mut() {
-                if p.columns > 0 {
-                    p.pixel_width = (p.columns as usize * cell_w) as u32;
-                }
-                if p.rows > 0 {
-                    p.pixel_height = (p.rows as usize * cell_h) as u32;
-                }
-                if dest_row_shift != 0 {
-                    p.dest_row += dest_row_shift;
-                }
+                let (iw, ih) = self
+                    .graphics
+                    .kitty_images
+                    .get(&p.image_id)
+                    .map(|s| (s.data.width, s.data.height))
+                    .unwrap_or((0, 0));
+                p.rescale(iw, ih, cell_w, cell_h);
             }
             for p in self
                 .graphics
@@ -787,26 +869,78 @@ impl<U: EventListener> Crosswords<U> {
                 .kitty_placements
                 .values_mut()
             {
-                if p.columns > 0 {
-                    p.pixel_width = (p.columns as usize * cell_w) as u32;
-                }
-                if p.rows > 0 {
-                    p.pixel_height = (p.rows as usize * cell_h) as u32;
-                }
-                if dest_row_shift != 0 {
-                    p.dest_row += dest_row_shift;
-                }
-            }
-            overlay_changed = !self.graphics.kitty_placements.is_empty()
-                || !self
+                let (iw, ih) = self
                     .graphics
                     .kitty_inactive_screen
-                    .kitty_placements
-                    .is_empty();
+                    .kitty_images
+                    .get(&p.image_id)
+                    .map(|s| (s.data.width, s.data.height))
+                    .unwrap_or((0, 0));
+                p.rescale(iw, ih, cell_w, cell_h);
+            }
         }
-        if overlay_changed {
+
+        // Re-anchor placements through the exact reflow row mapping:
+        // each one moves to wherever its anchor row's content landed.
+        // Kitty placements on a dropped row stay put (they float and
+        // get culled off screen); sixel/iTerm2 placements are grid
+        // content and are destroyed, along with any that a truncation
+        // pushed past the ring end.
+        if let Some(remap) = &active_remap {
+            let max_abs =
+                self.grid.lines_evicted() as i64 + self.grid.total_lines() as i64;
+            for p in self.graphics.kitty_placements.values_mut() {
+                if let Some(abs) = remap.remap_abs(p.dest_row) {
+                    p.dest_row = abs;
+                }
+            }
+            let before = self.graphics.atlas_placements.len();
+            self.graphics.atlas_placements.retain_mut(|p| {
+                match remap.remap_abs(p.abs_row) {
+                    Some(abs) if abs < max_abs => {
+                        p.abs_row = abs;
+                        true
+                    }
+                    _ => false,
+                }
+            });
+            if self.graphics.atlas_placements.len() != before {
+                self.graphics.recount_atlas_keys();
+                self.send_graphics_updates();
+            }
+        }
+        if let Some(remap) = &inactive_remap {
+            let max_abs = self.inactive_grid.lines_evicted() as i64
+                + self.inactive_grid.total_lines() as i64;
+            let inactive = &mut self.graphics.kitty_inactive_screen;
+            for p in inactive.kitty_placements.values_mut() {
+                if let Some(abs) = remap.remap_abs(p.dest_row) {
+                    p.dest_row = abs;
+                }
+            }
+            let before = inactive.atlas_placements.len();
+            inactive
+                .atlas_placements
+                .retain_mut(|p| match remap.remap_abs(p.abs_row) {
+                    Some(abs) if abs < max_abs => {
+                        p.abs_row = abs;
+                        true
+                    }
+                    _ => false,
+                });
+            if inactive.atlas_placements.len() != before {
+                self.graphics.recount_inactive_atlas_keys();
+                self.send_graphics_updates();
+            }
+        }
+
+        // The renderer only refreshes its placement snapshot when it
+        // sees the dirty flag, and resize invalidates positions even
+        // when no placement field changed (history and viewport moved).
+        if active_has_placements || inactive_has_placements {
             self.graphics.kitty_graphics_dirty = true;
         }
+        self.expire_atlas_placements();
     }
 
     /// Toggle the vi mode.
@@ -1048,6 +1182,9 @@ impl<U: EventListener> Crosswords<U> {
         // Scroll between origin and bottom
         self.grid.scroll_down(&region, lines);
         self.mark_fully_damaged();
+        // Partial-region scrolls move grid-plane images with their
+        // content (kitty placements float and are not adjusted).
+        self.shift_atlas_placements_in_region(&region, lines as i64);
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
         }
@@ -1088,12 +1225,211 @@ impl<U: EventListener> Crosswords<U> {
             self.damage.damage_line(line as usize);
         }
         if !self.graphics.kitty_placements.is_empty() {
+            // Placements whose rows all scrolled off the ring expire,
+            // like kitty: the image data survives for future
+            // placements, the placement itself dies with its content.
+            let base = self.grid.lines_evicted() as i64;
+            self.graphics
+                .kitty_placements
+                .retain(|_, p| p.dest_row + p.rows as i64 > base);
+            self.graphics.kitty_graphics_dirty = true;
+        }
+        // Grid-plane images follow their content through region
+        // scrolls; kitty placements float and are not adjusted.
+        if region.start.0 == 0 {
+            if (region.end.0 as usize) < self.grid.screen_lines() {
+                // History grew under the fixed bottom rows.
+                self.shift_atlas_placements_below(region.end, lines as i64);
+            }
+            // In-region content keeps its absolute rows (they moved
+            // into history), so nothing else to do.
+        } else {
+            self.shift_atlas_placements_in_region(&region, -(lines as i64));
+        }
+        self.expire_atlas_placements();
+    }
+
+    /// Drop sixel/iTerm2 placements whose rows all scrolled off the
+    /// ring; the key recount frees images that lost their last
+    /// placement (pixel store and GPU texture).
+    fn expire_atlas_placements(&mut self) {
+        if self.graphics.atlas_placements.is_empty() {
+            return;
+        }
+        let base = self.grid.lines_evicted() as i64;
+        let before = self.graphics.atlas_placements.len();
+        self.graphics
+            .atlas_placements
+            .retain(|p| p.abs_row + p.rows as i64 > base);
+        if self.graphics.atlas_placements.len() != before {
+            self.graphics.recount_atlas_keys();
+            self.graphics.kitty_graphics_dirty = true;
+            self.send_graphics_updates();
+        }
+    }
+
+    /// Clip sixel/iTerm2 placements against a cell-aligned hole in
+    /// visible screen coordinates (DEC semantics: text and erasure
+    /// remove exactly the covered image cells; the surviving pieces
+    /// keep referencing the same texture with adjusted crops).
+    pub fn clip_atlas_placements(
+        &mut self,
+        screen_row_start: i32,
+        screen_row_end: i32,
+        col_start: usize,
+        col_end: usize,
+    ) {
+        if self.graphics.atlas_placements.is_empty() {
+            return;
+        }
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64;
+        let hr0 = base + screen_row_start as i64;
+        let hr1 = base + screen_row_end as i64;
+
+        let old = std::mem::take(&mut self.graphics.atlas_placements);
+        let mut next: Vec<crate::ansi::graphics::AtlasPlacement> =
+            Vec::with_capacity(old.len());
+        let mut changed = false;
+        for placement in old {
+            match placement.subtract_rect(hr0, hr1, col_start, col_end, &mut next) {
+                None => next.push(placement),
+                Some(()) => changed = true,
+            }
+        }
+        self.graphics.atlas_placements = next;
+        if changed {
+            self.graphics.recount_atlas_keys();
+            self.graphics.kitty_graphics_dirty = true;
+            self.send_graphics_updates();
+        }
+    }
+
+    /// Shift sixel/iTerm2 placements with a partial scroll region
+    /// (DECSTBM): content inside the region moves by `delta` rows and
+    /// clips at the region boundary, exactly like text; content
+    /// outside is untouched. Full-screen scrolls never come here;
+    /// absolute anchoring already handles them.
+    fn shift_atlas_placements_in_region(
+        &mut self,
+        region: &std::ops::Range<Line>,
+        delta: i64,
+    ) {
+        if self.graphics.atlas_placements.is_empty() {
+            return;
+        }
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64;
+        let r0 = base + region.start.0 as i64;
+        let r1 = base + region.end.0 as i64;
+
+        let old = std::mem::take(&mut self.graphics.atlas_placements);
+        let mut next: Vec<crate::ansi::graphics::AtlasPlacement> =
+            Vec::with_capacity(old.len());
+        let mut changed = false;
+        for placement in old {
+            let p_r0 = placement.abs_row;
+            let p_r1 = placement.abs_row + placement.rows as i64;
+            if p_r1 <= r0 || p_r0 >= r1 {
+                next.push(placement);
+                continue;
+            }
+            changed = true;
+            // Pieces outside the region stay put.
+            placement.subtract_rect(r0, r1, 0, usize::MAX, &mut next);
+            // The piece inside shifts, then clips at the region bounds.
+            let ir0 = p_r0.max(r0);
+            let ir1 = p_r1.min(r1);
+            let inside = placement.slice(
+                ir0,
+                ir1,
+                placement.col,
+                placement.col + placement.columns,
+            );
+            let shifted_r0 = (inside.abs_row + delta).max(r0);
+            let shifted_r1 = (inside.abs_row + delta + inside.rows as i64).min(r1);
+            if shifted_r1 > shifted_r0 {
+                // Clip in the pre-shift frame, then translate.
+                let mut clipped = inside.slice(
+                    shifted_r0 - delta,
+                    shifted_r1 - delta,
+                    inside.col,
+                    inside.col + inside.columns,
+                );
+                clipped.abs_row += delta;
+                next.push(clipped);
+            }
+        }
+        self.graphics.atlas_placements = next;
+        if changed {
+            self.graphics.recount_atlas_keys();
+            self.graphics.kitty_graphics_dirty = true;
+            self.send_graphics_updates();
+        }
+    }
+
+    /// A top-anchored partial scroll region grows history while the
+    /// rows below the region stay visually fixed, which advances
+    /// their absolute coordinates. Shift placements on those rows
+    /// (splitting any placement straddling the boundary) so they stay
+    /// glued to their fixed content.
+    fn shift_atlas_placements_below(&mut self, boundary: Line, delta: i64) {
+        if self.graphics.atlas_placements.is_empty() {
+            return;
+        }
+        // The boundary in the space placements were anchored in,
+        // BEFORE this scroll grew history by `delta`.
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64 - delta;
+        let b = base + boundary.0 as i64;
+
+        let old = std::mem::take(&mut self.graphics.atlas_placements);
+        let mut next: Vec<crate::ansi::graphics::AtlasPlacement> =
+            Vec::with_capacity(old.len());
+        let mut changed = false;
+        for placement in old {
+            let p_r0 = placement.abs_row;
+            let p_r1 = placement.abs_row + placement.rows as i64;
+            if p_r1 <= b {
+                next.push(placement);
+                continue;
+            }
+            changed = true;
+            if p_r0 < b {
+                next.push(placement.slice(
+                    p_r0,
+                    b,
+                    placement.col,
+                    placement.col + placement.columns,
+                ));
+            }
+            let mut below = placement.slice(
+                p_r0.max(b),
+                p_r1,
+                placement.col,
+                placement.col + placement.columns,
+            );
+            below.abs_row += delta;
+            next.push(below);
+        }
+        self.graphics.atlas_placements = next;
+        if changed {
+            self.graphics.recount_atlas_keys();
             self.graphics.kitty_graphics_dirty = true;
         }
     }
 
     #[inline(always)]
     pub fn write_at_cursor(&mut self, c: char) {
+        // DEC semantics: printing into a cell covered by a sixel or
+        // iTerm2 image clips exactly that cell out of the placement.
+        // One branch when no images exist.
+        if !self.graphics.atlas_placements.is_empty() {
+            let pos = self.grid.cursor.pos;
+            self.clip_atlas_placements(
+                pos.row.0,
+                pos.row.0 + 1,
+                pos.col.0,
+                pos.col.0 + 1,
+            );
+        }
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
         let style_id = self.grid.cursor.template.style_id();
         let template_extras_id = self.grid.cursor.template.extras_id();
@@ -1305,22 +1641,6 @@ impl<U: EventListener> Crosswords<U> {
         cell.extras_id()
     }
 
-    /// Read the first graphic (if any) for the cell at `(line, col)`.
-    /// Looks up the cell's `extras_id` in the per-grid extras table.
-    #[inline]
-    pub fn cell_graphic(&self, line: Line, col: Column) -> Option<&GraphicCell> {
-        let cell = &self.grid[line][col];
-        if !cell.has_graphics() {
-            return None;
-        }
-        let extras_id = cell.extras_id()?;
-        self.grid
-            .extras_table
-            .get(extras_id)
-            .and_then(|e| e.graphic.as_ref())
-            .and_then(|g| g.first())
-    }
-
     #[inline]
     pub fn visible_rows(&self) -> Vec<Row<Square>> {
         let mut buf = Vec::with_capacity(self.grid.screen_lines());
@@ -1369,8 +1689,15 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
 
+        // A Noop/CursorOnly frame normally has nothing to copy, but rows
+        // written after the damage event was consumed (e.g. a graphics
+        // insert racing a redraw) still carry their dirty bit. Fall
+        // through when any row is dirty so the snapshot can't go stale.
         if matches!(damage, TerminalDamage::Noop | TerminalDamage::CursorOnly) {
-            return;
+            let any_dirty = (0..count as i32).any(|y| self.grid[Line(start + y)].dirty);
+            if !any_dirty {
+                return;
+            }
         }
 
         #[allow(clippy::needless_range_loop)]
@@ -1405,6 +1732,11 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
         for sq in &row.inner {
+            // Bg-only cells reuse the extras_id bits for the bg color;
+            // reading them would insert junk map entries.
+            if sq.is_bg_only() {
+                continue;
+            }
             if let Some(id) = sq.extras_id() {
                 if let Some(live) = self.grid.extras_table.get(id) {
                     extras.insert(id, live.clone());
@@ -1512,6 +1844,22 @@ impl<U: EventListener> Crosswords<U> {
 
             // Reset alternate screen contents.
             self.inactive_grid.reset_region(..);
+
+            // The alt screen starts blank: sixel/iTerm2 placements
+            // stashed from a previous alt session die with its
+            // contents (DEC grid-plane semantics; kitty state
+            // intentionally persists per screen).
+            let stale = &mut self.graphics.kitty_inactive_screen;
+            if !stale.atlas_placements.is_empty() {
+                let mut removals = self.graphics.texture_operations.lock();
+                for key in stale.atlas_key_refs.keys() {
+                    removals.push(*key);
+                }
+                drop(removals);
+                stale.atlas_placements.clear();
+                stale.atlas_key_refs.clear();
+                self.send_graphics_updates();
+            }
         }
 
         mem::swap(
@@ -1785,78 +2133,7 @@ impl<U: EventListener> Crosswords<U> {
 }
 
 impl<U: EventListener> Crosswords<U> {
-    /// Clear the graphic data from a cell's extras slot.
-    /// If the extras slot becomes empty after removing the graphic,
-    /// free the slot entirely.
-    #[inline]
-    fn clear_cell_graphic(extras_table: &mut grid::ExtrasTable, cell: &mut Square) {
-        if let Some(eid) = cell.extras_id() {
-            if let Some(extras) = extras_table.get_mut(eid) {
-                extras.graphic = None;
-                if extras.is_empty() {
-                    extras_table.free(eid);
-                    cell.set_extras_id(None);
-                }
-            }
-        }
-        cell.remove_cell_flag(CellFlags::GRAPHICS);
-    }
-
-    /// Delete all graphics from the visible grid
-    fn delete_all_graphics(&mut self) {
-        for line_idx in 0..self.grid.screen_lines() {
-            let line = Line(line_idx as i32);
-            for col_idx in 0..self.grid.columns() {
-                let cell = &mut self.grid.raw[line][Column(col_idx)];
-                if cell.has_graphics() {
-                    Self::clear_cell_graphic(&mut self.grid.extras_table, cell);
-                }
-            }
-            self.mark_line_damaged(line);
-        }
-    }
-
-    /// Delete graphic at a specific position
-    fn delete_graphic_at_position(&mut self, col: Column, row: Line) {
-        if row.0 >= 0
-            && (row.0 as usize) < self.grid.screen_lines()
-            && col.0 < self.grid.columns()
-        {
-            let cell = &mut self.grid.raw[row][col];
-            if cell.has_graphics() {
-                Self::clear_cell_graphic(&mut self.grid.extras_table, cell);
-                self.mark_line_damaged(row);
-            }
-        }
-    }
-
-    /// Delete all graphics in a column
-    fn delete_graphics_in_column(&mut self, col: Column) {
-        if col.0 < self.grid.columns() {
-            for line_idx in 0..self.grid.screen_lines() {
-                let line = Line(line_idx as i32);
-                let cell = &mut self.grid.raw[line][col];
-                if cell.has_graphics() {
-                    Self::clear_cell_graphic(&mut self.grid.extras_table, cell);
-                    self.mark_line_damaged(line);
-                }
-            }
-        }
-    }
-
-    /// Delete all graphics in a row
-    fn delete_graphics_in_row(&mut self, row: Line) {
-        if row.0 >= 0 && (row.0 as usize) < self.grid.screen_lines() {
-            for col_idx in 0..self.grid.columns() {
-                let cell = &mut self.grid.raw[row][Column(col_idx)];
-                if cell.has_graphics() {
-                    Self::clear_cell_graphic(&mut self.grid.extras_table, cell);
-                }
-            }
-            self.mark_line_damaged(row);
-        }
-    }
-
+    /// Ids of graphics still displayed (atlas placements + kitty).
     fn collect_used_graphic_ids(&mut self) -> std::collections::HashSet<u64> {
         self.graphics.collect_active_graphic_ids()
     }
@@ -2336,6 +2613,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[start..end] {
             *cell = blank;
         }
+        self.clip_atlas_placements(line.0, line.0 + 1, start.0, end.0);
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
         }
@@ -2368,6 +2646,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[end..] {
             *cell = blank;
         }
+        // Image cells in the shifted tail stop showing their slices
+        // (placement-model approximation, like other placement-based
+        // terminals).
+        self.clip_atlas_placements(line.0, line.0 + 1, start, columns);
     }
 
     #[inline]
@@ -2411,6 +2693,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[source.0..destination] {
             *cell = blank;
         }
+        // Placement-model approximation: image cells from the insert
+        // point onward stop showing their slices.
+        let columns = self.grid.columns();
+        self.clip_atlas_placements(line.0, line.0 + 1, source.0, columns);
     }
 
     #[inline]
@@ -2448,10 +2734,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.keyboard_mode_stack = Default::default();
         self.inactive_keyboard_mode_stack = Default::default();
 
-        // Clear kitty graphics on full reset (both active and inactive
-        // screens, so a reset doesn't leave stale images on the other
-        // screen waiting to come back).
+        // Clear all graphics on full reset (both screens, kitty and
+        // sixel/iTerm2) and dispatch the queued texture removals.
         self.graphics.clear_all_kitty_state();
+        self.send_graphics_updates();
 
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
@@ -2557,6 +2843,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.current_directory = Some(path);
     }
 
+    fn set_semantic_prompt(
+        &mut self,
+        mark: crate::crosswords::grid::row::SemanticPrompt,
+    ) {
+        let row = self.grid.cursor.pos.row;
+        self.grid[row].semantic_prompt = mark;
+    }
+
+    fn set_user_var(&mut self, name: String, value: String) {
+        self.user_vars.insert(name, value);
+    }
+
     #[inline]
     fn set_cursor_style(&mut self, style: Option<CursorShape>, blinking: bool) {
         if let Some(cursor_shape) = style {
@@ -2618,6 +2916,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline(never)]
     fn input(&mut self, c: char) {
+        // A Glyph Protocol registration does NOT change a codepoint's
+        // logical width: the cell layout stays consistent with system
+        // `wcwidth` so the cursor / selection / copy never desync with a
+        // width-unaware consumer (a shell line editor, etc.). The
+        // declared `width` is honoured purely at render time, where the
+        // glyph overflows into the following cell(s) in pixels.
         let width = match crate::codepoint_width::codepoint_width(c as u32) {
             Some(w) => w as usize,
             None => return,
@@ -2656,7 +2960,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             } else {
                 let mut extras = crate::crosswords::square::Extras::default();
                 extras.zerowidth.push(c);
-                let id = self.grid.extras_table.alloc(extras);
+                let id = self.grid.alloc_extras(extras);
                 let cell = &mut self.grid[row][column];
                 cell.set_extras_id(Some(id));
                 cell.insert_cell_flag(CellFlags::GRAPHEME);
@@ -2740,6 +3044,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         for &cp in codepoints {
             let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+            // Registered glyphs keep their system `wcwidth` here (see the
+            // note in `input`); the declared width is a render-time hint
+            // only, applied as pixel overflow in the renderer.
             let width = match crate::codepoint_width::codepoint_width(cp) {
                 Some(w) => w,
                 None => continue,
@@ -2872,7 +3179,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         match intermediate {
             None => {
                 trace!("Reporting primary device attributes");
-                let text = String::from("\x1b[?62;4;6;22c");
+                // 62: VT220, 4: sixel, 6: selective erase, 22: ANSI
+                // color, 52: clipboard access via OSC 52 (probed by
+                // tcell and others before enabling clipboard writes).
+                let text = String::from("\x1b[?62;4;6;22;52c");
                 self.event_proxy
                     .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
             }
@@ -3014,6 +3324,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let range = Line(0)..=cursor.row;
                 self.selection =
                     self.selection.take().filter(|s| !s.intersects_range(range));
+
+                let columns = self.grid.columns();
+                self.clip_atlas_placements(0, cursor.row.0, 0, columns);
+                self.clip_atlas_placements(cursor.row.0, cursor.row.0 + 1, 0, end.0);
             }
             ClearMode::Below => {
                 let cursor = self.grid.cursor.pos;
@@ -3028,11 +3342,30 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let range = cursor.row..Line(screen_lines as i32);
                 self.selection =
                     self.selection.take().filter(|s| !s.intersects_range(range));
+
+                let columns = self.grid.columns();
+                self.clip_atlas_placements(
+                    cursor.row.0,
+                    cursor.row.0 + 1,
+                    cursor.col.0,
+                    columns,
+                );
+                self.clip_atlas_placements(
+                    cursor.row.0 + 1,
+                    screen_lines as i32,
+                    0,
+                    columns,
+                );
             }
             ClearMode::All => {
                 if self.mode.contains(Mode::ALT_SCREEN) {
                     self.grid.reset_region(..);
+                    let columns = self.grid.columns();
+                    self.clip_atlas_placements(0, screen_lines as i32, 0, columns);
                 } else {
+                    // The viewport scrolls into history below; atlas
+                    // placements are absolutely anchored and follow
+                    // their content into scrollback untouched.
                     let old_offset = self.grid.display_offset();
 
                     self.grid.clear_viewport();
@@ -3048,6 +3381,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             ClearMode::Saved if self.history_size() > 0 => {
                 self.grid.clear_history();
+                self.expire_atlas_placements();
 
                 self.vi_mode_cursor.pos.row = self
                     .vi_mode_cursor
@@ -3124,21 +3458,19 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // subsequent cell write picks up the id via
         // `write_at_cursor`'s `template_extras_id` propagation.
         //
-        // Stage 1 limitation: extras slots are not reference-counted.
-        // Each new hyperlink leaks one slot until the grid is reset
-        // (`clear_history` / `Grid::reset`). The bound is `u16::MAX`
-        // distinct slots per session, which is generous for normal
-        // workloads. A future ref-counting pass can free slots when
-        // the last cell referencing them is overwritten.
+        // Extras slots are not reference-counted by design; a slot
+        // lives until the cadence-driven `reclaim_extras` mark-and-sweep
+        // finds no cell referencing it (bounded drift, see
+        // `ExtrasTable::should_reclaim`). Ref-counting would free slots
+        // sooner but requires Clone/Drop hooks on `Square`, taxing row
+        // drops and template copies even when no extras exist; the
+        // sweep costs nothing unless extras are actually allocated.
         match hyperlink {
             Some(hl) => {
-                let id =
-                    self.grid
-                        .extras_table
-                        .alloc(crate::crosswords::square::Extras {
-                            hyperlink: Some(hl),
-                            ..Default::default()
-                        });
+                let id = self.grid.alloc_extras(crate::crosswords::square::Extras {
+                    hyperlink: Some(hl),
+                    ..Default::default()
+                });
                 self.grid.cursor.template.set_extras_id(Some(id));
                 self.grid
                     .cursor
@@ -3330,6 +3662,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
         self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+        self.clip_atlas_placements(point.row.0, point.row.0 + 1, left.0, right.0);
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
         }
@@ -3644,44 +3977,32 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let scrolling = !self.mode.contains(Mode::SIXEL_DISPLAY);
 
+        // For "don't move the cursor" placements, the fill loop below
+        // still linefeeds through the image rows; the position is
+        // restored afterwards.
+        let saved_cursor = self.grid.cursor.pos;
+
         let leftmost = if scrolling {
             self.grid.cursor.pos.col.0
         } else {
             0
         };
 
-        // A very simple optimization is to detect is a new graphic is replacing
-        // completely a previous one. This happens if the following conditions
-        // are met:
-        //
-        // - Both graphics are attached to the same top-left cell.
-        // - Both graphics have the same size.
-        // - The new graphic does not contain transparent pixels.
-        //
-        // In this case, we will ignore cells with a reference to the replaced
-        // graphic.
+        // Anchor of the image's top row in the stable absolute space,
+        // captured before the fill loop scrolls anything. DECSDM
+        // (no scrolling) draws from the screen's top-left instead.
+        let anchor_abs_row = self.grid.lines_evicted() as i64
+            + self.history_size() as i64
+            + if scrolling {
+                self.grid.cursor.pos.row.0 as i64
+            } else {
+                0
+            };
 
-        // Fill the cells under the graphic with GraphicCell entries
-        // in the per-grid extras table.
-
-        // Fill the cells under the graphic.
-        //
-        // The cell in the first column contains a reference to the
-        // graphic, with the offset from the start. The rest of the
-        // cells are not overwritten, allowing any text behind
-        // transparent portions of the image to be visible.
-
-        let texture = Arc::new(TextureRef {
-            id: graphic_id,
-            width,
-            height,
-            cell_height,
-            texture_operations: Arc::downgrade(&self.graphics.texture_operations),
-        });
-
-        self.graphics
-            .register_placed_texture(graphic_id, Arc::downgrade(&texture));
-
+        // Advance through the image's rows: damage each covered row and
+        // scroll as the image grows past the bottom margin. The
+        // placement below carries the pixels; cells stay untouched
+        // (DEC semantics are enforced by placement clipping instead).
         for (top, offset_y) in (0..).zip((0..height).step_by(cell_height)) {
             let line = if scrolling {
                 self.grid.cursor.pos.row
@@ -3694,47 +4015,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 Line(top)
             };
 
-            // Store a reference to the graphic in the first column.
-            let row_len = self.grid[line].len();
-            for (left, offset_x) in (leftmost..).zip((0..width).step_by(cell_width)) {
-                if left >= row_len {
-                    break;
-                }
-
-                let graphic_cell = GraphicCell {
-                    texture: texture.clone(),
-                    offset_x,
-                    offset_y,
-                };
-
-                let cell_ref = &mut self.grid.raw[line][Column(left)];
-
-                // Bg-only cells (BgPalette/BgRgb) reuse the upper 32
-                // bits for the background color — `extras_id()` and
-                // `set_extras_id()` would read/write garbage. Reset
-                // to a plain Codepoint cell so the extras slot is
-                // usable.
-                if cell_ref.is_bg_only() {
-                    cell_ref.clear();
-                }
-
-                // If the cell already has an extras slot (e.g. hyperlink),
-                // merge the graphic into it; otherwise allocate a new one.
-                if let Some(eid) = cell_ref.extras_id() {
-                    if let Some(extras) = self.grid.extras_table.get_mut(eid) {
-                        extras.graphic = Some(smallvec::smallvec![graphic_cell]);
-                    }
-                } else {
-                    let eid = self.grid.extras_table.alloc(square::Extras {
-                        graphic: Some(smallvec::smallvec![graphic_cell]),
-                        ..Default::default()
-                    });
-                    cell_ref.set_extras_id(Some(eid));
-                }
-                cell_ref.insert_cell_flag(CellFlags::GRAPHICS);
-                self.grid.raw[line].has_extras = true;
-            }
-
             self.mark_line_damaged(line);
 
             if scrolling && offset_y < height.saturating_sub(cell_height as u16) {
@@ -3746,36 +4026,103 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // - None: Sixel (traditional behavior - move to next line after image)
         // - Some(0): Kitty C=0 (cursor stays on last row of image)
         // - Some(1): Kitty C=1 (cursor doesn't move at all)
+        // Display width in cells, from the size actually drawn (the
+        // requested display size, not the source pixel size).
+        let graphic_columns = (width as usize).div_ceil(cell_width);
+
         match cursor_movement {
             None => {
-                // Sixel graphics - cursor stays on last row of image
-                if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-                    let graphic_columns = graphic.width.div_ceil(cell_width);
-                    self.move_forward(Column(graphic_columns));
-                } else if scrolling {
-                    self.carriage_return();
-                }
-            }
-            Some(0) => {
-                // Kitty C=0: Move cursor to start of current line (ON last row of image)
-                if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-                    let graphic_columns = graphic.width.div_ceil(cell_width);
-                    self.move_forward(Column(graphic_columns));
-                } else if scrolling {
-                    // For Kitty: cursor stays ON the last row of the image
-                    // The loop already did all necessary linefeeds
-                    self.carriage_return();
+                // Sixel: the fill loop left the cursor on the image's
+                // last row; the column follows DEC STD 070 (image start
+                // column), or mode 8452 (first column right of the
+                // image). This matches foot, xterm and contour.
+                if scrolling {
+                    let col = if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
+                        (leftmost + graphic_columns).min(self.grid.columns() - 1)
+                    } else {
+                        leftmost
+                    };
+                    self.grid.cursor.pos.col = Column(col);
+                    self.grid.cursor.should_wrap = false;
                 }
             }
             Some(1) => {
-                // Kitty C=1: Don't move cursor at all
+                // Don't move the cursor at all (kitty C=1, and the
+                // OSC 1337 doNotMoveCursor=1 extension). The fill
+                // loop advanced through the image rows; put the
+                // cursor back where the image was requested.
+                self.grid.cursor.pos = saved_cursor;
             }
-            Some(_) => {
-                // Unknown cursor movement value, treat as C=0
-                if scrolling && !self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-                    self.carriage_return();
+            Some(2) => {
+                // OSC 1337 inline image: iTerm2 leaves the cursor on
+                // the image's last row, in the first column after the
+                // image.
+                if scrolling {
+                    let col = (leftmost + graphic_columns).min(self.grid.columns() - 1);
+                    self.grid.cursor.pos.col = Column(col);
+                    self.grid.cursor.should_wrap = false;
                 }
             }
+            Some(_) => {
+                // Legacy/unknown values: last row, image start column.
+                if scrolling {
+                    self.grid.cursor.pos.col = Column(leftmost);
+                    self.grid.cursor.should_wrap = false;
+                }
+            }
+        }
+
+        // Record the placement: the single source of truth for where
+        // this image lives on the grid. Cell fills above remain only
+        // until the extras-based path is removed.
+        {
+            let key = crate::sugarloaf::atlas_image_key(graphic_id.get());
+            let placement_columns = (width as usize).div_ceil(cell_width);
+            let placement_rows = (height as usize).div_ceil(cell_height);
+
+            // A new image overwrites what it covers, like text does:
+            // clip existing placements against its rect so a fully
+            // covered predecessor drops (the recount below frees its
+            // texture).
+            if !self.graphics.atlas_placements.is_empty() {
+                let old = std::mem::take(&mut self.graphics.atlas_placements);
+                let mut next = Vec::with_capacity(old.len());
+                for placement in old {
+                    if placement
+                        .subtract_rect(
+                            anchor_abs_row,
+                            anchor_abs_row + placement_rows as i64,
+                            leftmost,
+                            leftmost + placement_columns,
+                            &mut next,
+                        )
+                        .is_none()
+                    {
+                        next.push(placement);
+                    }
+                }
+                self.graphics.atlas_placements = next;
+            }
+
+            self.graphics
+                .atlas_placements
+                .push(crate::ansi::graphics::AtlasPlacement {
+                    image_key: key,
+                    abs_row: anchor_abs_row,
+                    col: leftmost,
+                    columns: placement_columns,
+                    rows: placement_rows,
+                    src_x: 0,
+                    src_y: 0,
+                    src_width: width as u32,
+                    src_height: height as u32,
+                    total_width: width as u32,
+                    total_height: height as u32,
+                    insert_cell_w: cell_width as u16,
+                    insert_cell_h: cell_height as u16,
+                });
+            self.graphics.recount_atlas_keys();
+            self.graphics.kitty_graphics_dirty = true;
         }
 
         // Add the graphic data to the pending queue.
@@ -3802,7 +4149,25 @@ impl<U: EventListener> Handler for Crosswords<U> {
             "Storing kitty graphic: id={}, {}x{}",
             image_id, graphic.width, graphic.height
         );
+        // Retransmission of an id with live placements: refresh their
+        // grid footprint against the new dimensions and push the new
+        // pixels so the display updates without a re-place.
+        let has_placements = self
+            .graphics
+            .kitty_placements
+            .keys()
+            .any(|(id, _)| *id == image_id);
+        let image_width = graphic.width;
+        let image_height = graphic.height;
+        let pixel_data = has_placements.then(|| graphic.clone());
         self.graphics.store_kitty_image(image_id, None, graphic);
+
+        if let Some(pixel_data) = pixel_data {
+            self.refresh_placements_for_image(image_id, image_width, image_height);
+            self.graphics.pending_images.push((image_id, pixel_data));
+            self.graphics.kitty_graphics_dirty = true;
+            self.send_graphics_updates();
+        }
     }
 
     fn kitty_transmit_and_display(
@@ -3824,10 +4189,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // `pending_images`, so we have to do that here — otherwise the
         // GPU never sees the pixel data and the placeholder cells render
         // as blank space.
+        // Like the a=t path, a retransmission with live direct
+        // placements of this id must refresh their grid footprint
+        // against the new dimensions.
+        let image_width = graphic_data.width;
+        let image_height = graphic_data.height;
+
         if placement.virtual_placement {
             let pixel_data = graphic_data.clone();
             self.graphics
                 .store_kitty_image(image_id, None, graphic_data);
+            self.refresh_placements_for_image(image_id, image_width, image_height);
             self.graphics.pending_images.push((image_id, pixel_data));
             self.graphics.kitty_graphics_dirty = true;
             self.send_graphics_updates();
@@ -3838,6 +4210,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Store takes ownership and sets transmit_time.
         self.graphics
             .store_kitty_image(image_id, None, graphic_data);
+        self.refresh_placements_for_image(image_id, image_width, image_height);
 
         // Place as overlay — handles GPU upload internally.
         self.place_kitty_overlay(image_id, &placement);
@@ -3892,8 +4265,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         match delete.action {
             b'a' | b'A' => {
-                // Delete all graphics from visible grid (cell-based)
-                self.delete_all_graphics();
                 // Delete all overlay placements
                 self.graphics.kitty_placements.clear();
                 overlay_changed = true;
@@ -3925,10 +4296,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             b'c' | b'C' => {
                 let cursor_pos = self.grid.cursor.pos;
-                self.delete_graphic_at_position(cursor_pos.col, cursor_pos.row);
                 // Delete overlays intersecting cursor
                 let col = cursor_pos.col.0;
-                let abs_row = self.history_size() as i64 + cursor_pos.row.0 as i64;
+                let abs_row = self.grid.lines_evicted() as i64
+                    + self.history_size() as i64
+                    + cursor_pos.row.0 as i64;
                 let before = self.graphics.kitty_placements.len();
                 self.graphics.kitty_placements.retain(|_, p| {
                     !(p.dest_col <= col
@@ -3946,9 +4318,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 if delete.x > 0 && delete.y > 0 {
                     let col = Column((delete.x - 1) as usize);
                     let row = Line((delete.y - 1) as i32);
-                    self.delete_graphic_at_position(col, row);
                     // Delete overlays at position
-                    let abs_row = self.history_size() as i64 + row.0 as i64;
+                    let abs_row = self.grid.lines_evicted() as i64
+                        + self.history_size() as i64
+                        + row.0 as i64;
                     let c = col.0;
                     let before = self.graphics.kitty_placements.len();
                     self.graphics.kitty_placements.retain(|_, p| {
@@ -3967,7 +4340,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             b'x' | b'X' => {
                 if delete.x > 0 {
                     let col = Column((delete.x - 1) as usize);
-                    self.delete_graphics_in_column(col);
                     let c = col.0;
                     let before = self.graphics.kitty_placements.len();
                     self.graphics.kitty_placements.retain(|_, p| {
@@ -3983,8 +4355,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             b'y' | b'Y' => {
                 if delete.y > 0 {
                     let row = Line((delete.y - 1) as i32);
-                    self.delete_graphics_in_row(row);
-                    let abs_row = self.history_size() as i64 + row.0 as i64;
+                    let abs_row = self.grid.lines_evicted() as i64
+                        + self.history_size() as i64
+                        + row.0 as i64;
                     let before = self.graphics.kitty_placements.len();
                     self.graphics.kitty_placements.retain(|_, p| {
                         !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64)
@@ -4043,7 +4416,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     let row = Line((delete.y - 1) as i32);
                     // Delete overlays at position with z-index filter
                     let z = delete.z_index;
-                    let abs_row = self.history_size() as i64 + row.0 as i64;
+                    let abs_row = self.grid.lines_evicted() as i64
+                        + self.history_size() as i64
+                        + row.0 as i64;
                     let c = col.0;
                     let before = self.graphics.kitty_placements.len();
                     self.graphics.kitty_placements.retain(|_, p| {
@@ -4088,6 +4463,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         if overlay_changed {
             self.graphics.kitty_graphics_dirty = true;
+            // Placement-only deletes produce no cell damage, and the
+            // damage event is what drives a repaint; without this a
+            // deleted image stays visible until unrelated output.
+            self.mark_fully_damaged();
         }
         self.send_graphics_updates();
     }
@@ -4115,6 +4494,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         &mut self,
         cp: u32,
         payload: crate::ansi::glyph_protocol::GlyphPayload,
+        width: u8,
     ) -> Result<(), crate::ansi::glyph_protocol::RegisterError> {
         use crate::ansi::glyph_protocol::{is_pua, GlyphPayload, RegisterError};
         use sugarloaf::font::glyf_decode;
@@ -4181,7 +4561,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let was_uninitialised = self.glyph_registry.is_none();
         let registry = self.glyph_registry.get_or_insert_with(GlyphRegistry::new);
 
-        let result = match registry.register(cp, stored, upm) {
+        let result = match registry.register_with_width(cp, stored, upm, width) {
             Ok(_evicted) => Ok(()),
             Err(RegisterRejection::OutOfNamespace) => {
                 // Unreachable given the is_pua check above, but the
@@ -4201,6 +4581,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
             );
         }
 
+        // §7.3: re-registering a codepoint must repaint cells already
+        // showing it — partial damage can't know which rows hold the
+        // codepoint, so a register is a full-screen invalidation.
+        if result.is_ok() {
+            self.mark_fully_damaged();
+        }
+
         result
     }
 
@@ -4213,6 +4600,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             None => registry.clear_all(),
             Some(cp) => registry.clear_one(cp),
         }
+        // §7.3: cleared codepoints fall back to font rendering on the
+        // next frame — repaint everything that might show them.
+        self.mark_fully_damaged();
     }
 
     fn glyph_query(&mut self, cp: u32) {
@@ -4292,11 +4682,11 @@ impl Dimensions for CrosswordsSize {
     }
 
     fn square_width(&self) -> f32 {
-        0.
+        self.square_width as f32
     }
 
     fn square_height(&self) -> f32 {
-        0.
+        self.square_height as f32
     }
 }
 
@@ -4345,44 +4735,49 @@ impl<U: EventListener> Crosswords<U> {
         };
         let mut graphic_data = stored.data.clone();
 
-        // Apply resize from placement parameters
-        if placement.columns > 0 || placement.rows > 0 {
-            let both_specified = placement.columns > 0 && placement.rows > 0;
-            graphic_data.resize = Some(sugarloaf::ResizeCommand {
-                width: if placement.columns > 0 {
-                    sugarloaf::ResizeParameter::Cells(placement.columns)
-                } else {
-                    sugarloaf::ResizeParameter::Auto
-                },
-                height: if placement.rows > 0 {
-                    sugarloaf::ResizeParameter::Cells(placement.rows)
-                } else {
-                    sugarloaf::ResizeParameter::Auto
-                },
-                preserve_aspect_ratio: !both_specified,
-            });
+        let image_width = graphic_data.width;
+        let image_height = graphic_data.height;
+        if image_width == 0 || image_height == 0 {
+            return;
         }
 
-        let cell_width = self.graphics.cell_width as usize;
-        let cell_height = self.graphics.cell_height as usize;
+        let cell_width = self.graphics.cell_width.round() as usize;
+        let cell_height = self.graphics.cell_height.round() as usize;
 
         if cell_width == 0 || cell_height == 0 {
             return;
         }
 
-        // Compute display dimensions
-        let view_width = cell_width * self.grid.columns();
-        let view_height = cell_height * self.grid.screen_lines();
-        let (display_w, display_h) = graphic_data.compute_display_dimensions(
-            cell_width,
-            cell_height,
-            view_width,
-            view_height,
-        );
+        // Resolve the source rectangle (kitty `x=`/`y=`/`w=`/`h=`)
+        // against the image. The crop is what gets displayed; it
+        // never affects where the placement lands. Both crop and
+        // display size are re-resolved at render time, so these
+        // values only drive the grid footprint (spans and cursor
+        // movement). A crop fully outside the image still stores the
+        // placement — it renders nothing and occupies no cells, and
+        // can become visible after a retransmission with larger
+        // dimensions.
+        let (display_w, display_h) = match crate::ansi::graphics::resolve_source_rect(
+            placement.x,
+            placement.y,
+            placement.width,
+            placement.height,
+            image_width,
+            image_height,
+        ) {
+            Some((_, _, source_width, source_height)) => {
+                crate::ansi::graphics::kitty_display_size(
+                    source_width,
+                    source_height,
+                    placement.columns,
+                    placement.rows,
+                    cell_width,
+                    cell_height,
+                )
+            }
+            None => (0, 0),
+        };
 
-        if display_w == 0 || display_h == 0 {
-            return;
-        }
         if display_w > MAX_GRAPHIC_DIMENSIONS[0] || display_h > MAX_GRAPHIC_DIMENSIONS[1]
         {
             return;
@@ -4402,23 +4797,22 @@ impl<U: EventListener> Crosswords<U> {
 
         // Memory is managed in store_kitty_image (eviction happens there)
 
-        // Compute cursor position for placement
-        let dest_col = if placement.x > 0 {
-            placement.x as usize
-        } else {
-            self.grid.cursor.pos.col.0
-        };
-        let cursor_row = if placement.y > 0 {
-            placement.y as i32
-        } else {
-            self.grid.cursor.pos.row.0
-        };
-        // Absolute row = history_size + screen-relative row
-        let dest_row = self.history_size() as i64 + cursor_row as i64;
+        // Per the kitty spec a placement always renders at the cursor
+        // position; `x=`/`y=` select the source rectangle within the
+        // image, never the destination cell.
+        let dest_col = self.grid.cursor.pos.col.0;
+        let cursor_row = self.grid.cursor.pos.row.0;
+        // Absolute row in the stable space: lines ever evicted off the
+        // ring + current history + screen-relative row. Stays glued to
+        // content even after scrollback saturates.
+        let dest_row = self.grid.lines_evicted() as i64
+            + self.history_size() as i64
+            + cursor_row as i64;
 
         // kitty spec the `X=`/`Y=` sub-cell offset must be smaller
-        // than the cell size; kitty clamps out-of-range values to the
-        // cell box
+        // than the cell size. The stored value stays raw (a later cell
+        // size change re-clamps at read time without losing the
+        // original); these clamped copies only drive span derivation.
         let cell_x_offset = (placement.cell_x_offset as usize).min(cell_width - 1);
         let cell_y_offset = (placement.cell_y_offset as usize).min(cell_height - 1);
 
@@ -4427,16 +4821,22 @@ impl<U: EventListener> Crosswords<U> {
         // the trick is the sub-cell offset shifts the image
         // within its first cell, so it can spill into one extra
         // row/column. Include it so cursor movement and row occupation
-        // cover the full image.
-        let columns = if placement.columns > 0 {
-            placement.columns
+        // cover the full image. An invisible placement (degenerate
+        // crop) occupies no cells at all.
+        let (columns, rows) = if display_w == 0 || display_h == 0 {
+            (0, 0)
         } else {
-            (display_w + cell_x_offset).div_ceil(cell_width) as u32
-        };
-        let rows = if placement.rows > 0 {
-            placement.rows
-        } else {
-            (display_h + cell_y_offset).div_ceil(cell_height) as u32
+            let columns = if placement.columns > 0 {
+                placement.columns
+            } else {
+                (display_w + cell_x_offset).div_ceil(cell_width) as u32
+            };
+            let rows = if placement.rows > 0 {
+                placement.rows
+            } else {
+                (display_h + cell_y_offset).div_ceil(cell_height) as u32
+            };
+            (columns, rows)
         };
 
         // Create overlay placement.
@@ -4463,10 +4863,12 @@ impl<U: EventListener> Crosswords<U> {
             dest_row,
             columns,
             rows,
+            requested_columns: placement.columns,
+            requested_rows: placement.rows,
             pixel_width: display_w as u32,
             pixel_height: display_h as u32,
-            cell_x_offset: cell_x_offset as u32,
-            cell_y_offset: cell_y_offset as u32,
+            cell_x_offset: placement.cell_x_offset,
+            cell_y_offset: placement.cell_y_offset,
             z_index: placement.z_index,
             transmit_time,
         };
@@ -4497,24 +4899,61 @@ impl<U: EventListener> Crosswords<U> {
         match placement.cursor_movement {
             0 => {
                 // C=0: Move cursor to after the image
-                let rows_to_advance = rows.saturating_sub(1) as usize;
-                for _ in 0..rows_to_advance {
-                    self.linefeed();
-                }
-                self.carriage_return();
+                self.advance_cursor_past_placement(dest_col, columns, rows);
             }
             1 => {
                 // C=1: Don't move cursor
             }
             _ => {
                 // Default: treat as C=0
-                let rows_to_advance = rows.saturating_sub(1) as usize;
-                for _ in 0..rows_to_advance {
-                    self.linefeed();
-                }
-                self.carriage_return();
+                self.advance_cursor_past_placement(dest_col, columns, rows);
             }
         }
+    }
+
+    /// Refresh the grid footprint of every live placement of an image
+    /// after its pixel data changed dimensions.
+    pub fn refresh_placements_for_image(
+        &mut self,
+        image_id: u32,
+        image_width: usize,
+        image_height: usize,
+    ) {
+        let cell_w = self.graphics.cell_width.round() as usize;
+        let cell_h = self.graphics.cell_height.round() as usize;
+        for ((id, _), p) in self.graphics.kitty_placements.iter_mut() {
+            if *id == image_id {
+                p.rescale(image_width, image_height, cell_w, cell_h);
+            }
+        }
+    }
+
+    /// Move the cursor past a placement (`C=0`): linefeed once per
+    /// occupied row so the whole image scrolls into view, then land on
+    /// the image's last row at the first column after it, clamped to
+    /// the grid edge. An invisible placement (zero span) leaves the
+    /// cursor untouched.
+    fn advance_cursor_past_placement(
+        &mut self,
+        dest_col: usize,
+        columns: u32,
+        rows: u32,
+    ) {
+        if rows == 0 {
+            return;
+        }
+        for _ in 0..rows {
+            self.linefeed();
+        }
+        if self.grid.cursor.pos.row.0 > 0 {
+            self.grid.cursor.pos.row -= 1;
+        }
+        let col = (dest_col + columns as usize).min(self.grid.columns() - 1);
+        self.grid.cursor.pos.col = Column(col);
+        // Any cursor repositioning discards a pending wrap, otherwise
+        // the next printed character wraps a row below the intended
+        // caption position.
+        self.grid.cursor.should_wrap = false;
     }
 
     /// Register a virtual placement (kitty graphics `a=p,U=1`).
@@ -4545,6 +4984,8 @@ impl<U: EventListener> Crosswords<U> {
             rows: placement.rows,
             x: placement.x,
             y: placement.y,
+            width: placement.width,
+            height: placement.height,
         };
         self.graphics
             .kitty_virtual_placements
@@ -4595,6 +5036,116 @@ mod tests {
     }
 
     #[test]
+    fn semantic_prompt_marks_and_navigation() {
+        use crate::crosswords::grid::row::SemanticPrompt;
+
+        let mut cw = make_crosswords();
+        // Three prompts, each followed by two lines of output. The
+        // 4-row screen pushes earlier prompts into scrollback.
+        for _ in 0..3 {
+            cw.set_semantic_prompt(SemanticPrompt::Prompt);
+            cw.linefeed();
+            cw.linefeed();
+            cw.linefeed();
+        }
+        assert_eq!(cw.grid.history_size(), 6);
+        assert_eq!(cw.grid[Line(-6)].semantic_prompt, SemanticPrompt::Prompt);
+        assert_eq!(cw.grid[Line(-3)].semantic_prompt, SemanticPrompt::Prompt);
+        assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);
+
+        cw.scroll_to_prompt(false);
+        assert_eq!(cw.display_offset(), 3);
+        cw.scroll_to_prompt(false);
+        assert_eq!(cw.display_offset(), 6);
+        // No prompt further up: stays put.
+        cw.scroll_to_prompt(false);
+        assert_eq!(cw.display_offset(), 6);
+
+        cw.scroll_to_prompt(true);
+        assert_eq!(cw.display_offset(), 3);
+        cw.scroll_to_prompt(true);
+        assert_eq!(cw.display_offset(), 0);
+        cw.scroll_to_prompt(true);
+        assert_eq!(cw.display_offset(), 0);
+    }
+
+    #[test]
+    fn semantic_prompt_run_counts_as_one() {
+        use crate::crosswords::grid::row::SemanticPrompt;
+
+        let mut cw = make_crosswords();
+        for _ in 0..6 {
+            cw.linefeed();
+        }
+        // A two-row prompt: continuation directly below the start.
+        cw.grid[Line(-3)].semantic_prompt = SemanticPrompt::Prompt;
+        cw.grid[Line(-2)].semantic_prompt = SemanticPrompt::PromptContinuation;
+
+        cw.scroll_to_prompt(false);
+        assert_eq!(cw.display_offset(), 3);
+        cw.scroll_to_prompt(false);
+        assert_eq!(cw.display_offset(), 3);
+    }
+
+    #[test]
+    fn shell_integration_oscs_dispatch_from_raw_bytes() {
+        use crate::crosswords::grid::row::SemanticPrompt;
+        use crate::performer::handler::Processor;
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = Processor::default();
+
+        // A prompt mark, a full A/B/C/D cycle with options, and a
+        // user var ("hello" in base64), bell-terminated like shells
+        // emit them.
+        let bytes = b"]133;A;aid=1prompt]133;Bcmd
+]133;Cout
+]133;D;0]1337;SetUserVar=foo=aGVsbG8=";
+        processor.advance(&mut cw, bytes);
+
+        assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);
+        assert_eq!(cw.grid[Line(1)].semantic_prompt, SemanticPrompt::None);
+        assert_eq!(cw.user_vars.get("foo").map(String::as_str), Some("hello"));
+    }
+
+    #[test]
+    fn grid_iterator_survives_narrow_rows() {
+        let mut cw = make_crosswords();
+        for _ in 0..6 {
+            cw.linefeed();
+        }
+        // History rows keep their old length across column growth;
+        // simulate one narrower than the grid (#1713).
+        cw.grid[Line(-2)].inner.truncate(2);
+        let start = Pos::new(Line(-3), Column(0));
+        // Must not panic; may end early at the narrow row.
+        let _ = cw.grid.iter_from(start).count();
+
+        // A stale position beyond the grid's history must end the
+        // iteration instead of panicking.
+        let stale = Pos::new(Line(-40), Column(0));
+        assert_eq!(cw.grid.iter_from(stale).count(), 0);
+    }
+
+    #[test]
+    fn user_vars_are_stored() {
+        let mut cw = make_crosswords();
+        assert!(cw.user_vars.is_empty());
+        cw.set_user_var("k".to_string(), "v".to_string());
+        cw.set_user_var("k".to_string(), "v2".to_string());
+        assert_eq!(cw.user_vars.get("k").map(String::as_str), Some("v2"));
+    }
+
+    #[test]
     fn glyph_registry_is_none_until_first_register() {
         let cw = make_crosswords();
         assert!(cw.glyph_registry.is_none());
@@ -4606,7 +5157,7 @@ mod tests {
 
         let glyf = minimal_glyf_bytes();
         // E0A0 is the Powerline branch codepoint — in basic PUA.
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(glyf, 1000));
+        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(glyf, 1000), 1);
         assert!(res.is_ok());
         assert!(cw.glyph_registry.is_some());
         assert!(registry_contains(&cw, 0xE0A0));
@@ -4622,6 +5173,7 @@ mod tests {
             &mut cw,
             0x61,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
         );
         assert_eq!(res, Err(RegisterError::OutOfNamespace));
         assert!(cw.glyph_registry.is_none());
@@ -4642,7 +5194,7 @@ mod tests {
         v.extend_from_slice(&0i16.to_be_bytes());
         v.extend_from_slice(&0i16.to_be_bytes());
 
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(v, 1000));
+        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(v, 1000), 1);
         assert_eq!(res, Err(RegisterError::HintingUnsupported));
         // Decode failed before the registry was touched, so it stays
         // uninitialised.
@@ -4664,12 +5216,14 @@ mod tests {
             &mut cw,
             0xE0A0,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
         )
         .unwrap();
         Handler::glyph_register(
             &mut cw,
             0xE0A1,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
         )
         .unwrap();
         assert_eq!(registry_len(&cw), 2);
@@ -4682,18 +5236,69 @@ mod tests {
     }
 
     #[test]
+    fn glyph_protocol_width_does_not_change_layout() {
+        use crate::crosswords::square::Wide;
+        let mut cw = make_crosswords();
+
+        // A width=2 registration must NOT reserve two cells: the
+        // declared width is a render-time hint only, so the logical
+        // layout stays consistent with system wcwidth (PUA = 1). This
+        // keeps the cursor / selection / copy in sync with width-unaware
+        // consumers; the glyph overflows into the next cell in pixels at
+        // render time.
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+            2,
+        )
+        .unwrap();
+        Handler::input(&mut cw, '\u{E0A0}');
+
+        let row = cw.grid.cursor.pos.row;
+        assert!(matches!(cw.grid[row][Column(0)].wide(), Wide::Narrow));
+        assert_eq!(
+            cw.grid.cursor.pos.col,
+            Column(1),
+            "registered glyph advances the cursor by one cell"
+        );
+    }
+
+    #[test]
+    fn glyph_protocol_register_and_clear_mark_full_damage() {
+        let mut cw = make_crosswords();
+        cw.reset_damage();
+        assert!(!cw.is_fully_damaged());
+
+        Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
+        )
+        .unwrap();
+        assert!(cw.is_fully_damaged(), "register must repaint (§7.3)");
+
+        cw.reset_damage();
+        Handler::glyph_clear(&mut cw, Some(0xE0A0));
+        assert!(cw.is_fully_damaged(), "clear must repaint (§7.3)");
+    }
+
+    #[test]
     fn glyph_protocol_clear_one_leaves_others_intact() {
         let mut cw = make_crosswords();
         Handler::glyph_register(
             &mut cw,
             0xE0A0,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
         )
         .unwrap();
         Handler::glyph_register(
             &mut cw,
             0xE0A1,
             glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
         )
         .unwrap();
 
@@ -6118,8 +6723,7 @@ mod tests {
     /// image span carries the GRAPHICS flag with a valid extras_id
     /// pointing to a GraphicCell in the extras table.
     #[test]
-    fn sixel_stores_graphic_in_extras_table() {
-        // 20×20 pixel image, 10×10 cell size → 2×2 cells
+    fn sixel_stores_placement_spanning_cells() {
         let size = CrosswordsSize::new(20, 10);
         let window_id = crate::event::WindowId::from(0);
         let mut cw = Crosswords::new(
@@ -6130,13 +6734,11 @@ mod tests {
             0,
             10_000,
         );
-
-        // Set cell dimensions so insert_graphic can compute layout.
         cw.graphics.cell_width = 10.0;
         cw.graphics.cell_height = 10.0;
 
         let graphic = GraphicData {
-            id: sugarloaf::GraphicId::new(0), // will be reassigned
+            id: sugarloaf::GraphicId::new(0),
             width: 20,
             height: 20,
             pixels: vec![0u8; 20 * 20 * 4],
@@ -6150,40 +6752,19 @@ mod tests {
 
         cw.insert_graphic(graphic, None, None);
 
-        // The image spans rows 0..2, cols 0..2.
-        for row in 0..2 {
-            for col in 0..2 {
-                let cell = &cw.grid[Line(row)][Column(col)];
-                assert!(
-                    cell.has_graphics(),
-                    "cell ({row},{col}) should have GRAPHICS flag"
-                );
-                let eid = cell.extras_id().expect("cell should have extras_id");
-                let extras = cw
-                    .grid
-                    .extras_table
-                    .get(eid)
-                    .expect("extras slot should exist");
-                let gc = extras
-                    .graphic
-                    .as_ref()
-                    .expect("extras should have graphic")
-                    .first()
-                    .expect("graphic SmallVec should have one entry");
-
-                // Verify offsets match the cell position.
-                assert_eq!(gc.offset_x, (col * 10) as u16);
-                assert_eq!(gc.offset_y, (row * 10) as u16);
-            }
-        }
-
-        // Cell outside the image should NOT have graphics.
-        assert!(!cw.grid[Line(0)][Column(2)].has_graphics());
+        // One placement spanning rows 0..2 x cols 0..2; cells stay
+        // untouched (placements are the single source of truth).
+        assert_eq!(cw.graphics.atlas_placements.len(), 1);
+        let p = &cw.graphics.atlas_placements[0];
+        assert_eq!((p.abs_row, p.col, p.columns, p.rows), (0, 0, 2, 2));
+        assert!(cw.grid[Line(0)][Column(0)].extras_id().is_none());
+        // The placement holds the image key alive.
+        assert_eq!(cw.graphics.atlas_key_refs.len(), 1);
     }
 
     /// Verify that `cell_graphic()` reads the first GraphicCell back.
     #[test]
-    fn cell_graphic_accessor() {
+    fn insert_graphic_creates_and_replaces_placements() {
         let size = CrosswordsSize::new(20, 10);
         let window_id = crate::event::WindowId::from(0);
         let mut cw = Crosswords::new(
@@ -6209,67 +6790,17 @@ mod tests {
             resize: None,
             transmit_time: std::time::Instant::now(),
         };
+        cw.insert_graphic(graphic.clone(), None, Some(1));
 
-        cw.insert_graphic(graphic, None, None);
+        assert_eq!(cw.graphics.atlas_placements.len(), 1);
+        let p = &cw.graphics.atlas_placements[0];
+        assert_eq!((p.abs_row, p.col, p.columns, p.rows), (0, 0, 1, 1));
 
-        let gc = cw
-            .cell_graphic(Line(0), Column(0))
-            .expect("cell_graphic should return a GraphicCell");
-        assert_eq!(gc.offset_x, 0);
-        assert_eq!(gc.offset_y, 0);
-        // The graphic id should be non-zero (assigned by next_id).
-        assert!(gc.texture.id.get() > 0);
-    }
-
-    /// `delete_all_graphics` should clear the GRAPHICS flag and free
-    /// extras slots.
-    #[test]
-    fn delete_all_graphics_frees_extras() {
-        let size = CrosswordsSize::new(20, 10);
-        let window_id = crate::event::WindowId::from(0);
-        let mut cw = Crosswords::new(
-            size,
-            CursorShape::Block,
-            VoidListener {},
-            window_id,
-            0,
-            10_000,
-        );
-        cw.graphics.cell_width = 10.0;
-        cw.graphics.cell_height = 10.0;
-
-        let graphic = GraphicData {
-            id: sugarloaf::GraphicId::new(0),
-            width: 20,
-            height: 20,
-            pixels: vec![0u8; 20 * 20 * 4],
-            color_type: sugarloaf::ColorType::Rgba,
-            is_opaque: true,
-            display_width: None,
-            display_height: None,
-            resize: None,
-            transmit_time: std::time::Instant::now(),
-        };
-
-        cw.insert_graphic(graphic, None, None);
-
-        // Confirm graphics exist before deletion.
-        assert!(cw.grid[Line(0)][Column(0)].has_graphics());
-
-        cw.delete_all_graphics();
-
-        for row in 0..2 {
-            for col in 0..2 {
-                let cell = &cw.grid[Line(row)][Column(col)];
-                assert!(
-                    !cell.has_graphics(),
-                    "cell ({row},{col}) should no longer have GRAPHICS"
-                );
-            }
-        }
-
-        // The accessor should also return None.
-        assert!(cw.cell_graphic(Line(0), Column(0)).is_none());
+        // A second image fully covering the first replaces it.
+        cw.grid.cursor.pos = Pos::new(Line(0), Column(0));
+        cw.insert_graphic(graphic, None, Some(1));
+        assert_eq!(cw.graphics.atlas_placements.len(), 1);
+        assert_eq!(cw.graphics.atlas_key_refs.len(), 1);
     }
 
     // ------------------------------------------------------------------
@@ -6612,6 +7143,113 @@ mod tests {
                 "row {past} (no placeholders) must not have the flag set",
             );
         }
+    }
+
+    /// End-to-end: yazi's kgp driver (yazi-adapter/src/drivers/kgp.rs)
+    /// transmits with `a=T,C=1,U=1` and NO `c=`/`r=` grid params, sets
+    /// the fg via semicolon-form RGB, and writes 2 diacritics per
+    /// placeholder cell. The placement must register and the implied
+    /// grid must come from the image's pixel size, not collapse to a
+    /// 1×1 cell box (the 0.4.12 yazi-preview regression from #1314).
+    #[test]
+    fn yazi_kgp_wire_sequence_implies_grid_from_image_size() {
+        use crate::ansi::kitty_virtual::{DIACRITICS, PLACEHOLDER};
+
+        let size = CrosswordsSize::new(40, 20);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = crate::performer::handler::Processor::default();
+
+        // yazi: id = pid % 0xffffff → 24 bits, no high-byte diacritic.
+        let image_id: u32 = 0x0A12BF;
+        let r = (image_id >> 16) & 0xFF;
+        let g = (image_id >> 8) & 0xFF;
+        let b = image_id & 0xFF;
+
+        // Combined transmit+display, virtual, no c=/r=. 2×2 RGBA image
+        // (base64 of 16 bytes of 0xFF).
+        let xmit = format!(
+            "\x1b_Gq=2,a=T,C=1,U=1,f=32,s=2,v=2,i={image_id},m=0;/////////////////////w==\x1b\\"
+        );
+        processor.advance(&mut cw, xmit.as_bytes());
+
+        // Placeholder grid 4 cols × 2 rows, absolute cursor moves per
+        // row, semicolon-form RGB fg carrying the image id.
+        let cols = 4usize;
+        let rows = 2usize;
+        let mut cells = format!("\x1b[38;2;{r};{g};{b}m");
+        for row in 0..rows {
+            cells.push_str(&format!("\x1b[{};1H", row + 1));
+            for col in 0..cols {
+                cells.push(PLACEHOLDER);
+                cells.push(DIACRITICS[row]);
+                cells.push(DIACRITICS[col]);
+            }
+        }
+        cells.push_str("\x1b[0m");
+        processor.advance(&mut cw, cells.as_bytes());
+
+        let vp = cw
+            .graphics
+            .kitty_virtual_placements
+            .get(&(image_id, 0))
+            .expect("a=T,U=1 must register a virtual placement");
+        assert_eq!((vp.columns, vp.rows), (0, 0), "c=/r= omitted on the wire");
+        assert!(
+            cw.graphics.get_kitty_image(image_id).is_some(),
+            "image stored under id {image_id:#X}"
+        );
+
+        // Placeholder cells landed with both diacritics.
+        let extras = cw.grid.extras_table.clone();
+        for row in 0..rows {
+            let sq = cw.grid[Line(row as i32)][Column(0)];
+            assert_eq!(sq.c(), PLACEHOLDER);
+            let zw = sq
+                .extras_id()
+                .and_then(|id| extras.get(id))
+                .map(|e| e.zerowidth.as_slice())
+                .unwrap_or(&[]);
+            assert_eq!(zw, &[DIACRITICS[row], DIACRITICS[0]]);
+        }
+
+        // The renderer's geometry for each row's run: with the grid
+        // implied from a 2×2 px image on 1×2 px cells (2 cols × 1 row),
+        // row 0 is visible and drawn 1:1. Before the fix the placement
+        // box collapsed to one cell and row 1 of a taller image drew
+        // nothing while row 0 squeezed the whole image.
+        let run = crate::ansi::kitty_virtual::PlaceholderRun {
+            image_id,
+            placement_id: 0,
+            row: 0,
+            col: 0,
+            width: cols as u32,
+        };
+        let geom = crate::ansi::kitty_virtual::compute_run_geometry(
+            &run,
+            vp.columns,
+            vp.rows,
+            2,
+            2,
+            (vp.x, vp.y, vp.width, vp.height),
+            1.0,
+            2.0,
+            0.0,
+            0.0,
+            0,
+            0,
+        )
+        .expect("implied-grid run must be drawable");
+        assert_eq!(geom.width, 2.0);
+        assert_eq!(geom.height, 2.0);
+        assert_eq!(geom.source_rect, [0.0, 0.0, 1.0, 1.0]);
     }
 
     /// `place_virtual_graphic` is the handler for `_Ga=p,U=1,…\e\` — the

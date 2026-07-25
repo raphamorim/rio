@@ -153,8 +153,14 @@ pub(crate) fn compute_advance(
     font_id: usize,
     ch: char,
 ) -> Option<AdvanceInfo> {
-    let (data, offset, _key) = font_ctx.get_data(&font_id)?;
-    let font_ref = swash::FontRef::from_index(&data, offset as usize)?;
+    let (data, offset, key) = font_ctx.get_data(&font_id)?;
+    // `offset` is a table-directory byte offset, not a collection face
+    // index, so reconstruct the FontRef directly.
+    let font_ref = swash::FontRef {
+        data: data.as_ref(),
+        offset,
+        key,
+    };
     let glyph_id = font_ref.charmap().map(ch as u32);
     let metrics = font_ref.glyph_metrics(&[]);
     Some(AdvanceInfo {

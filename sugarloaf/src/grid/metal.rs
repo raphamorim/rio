@@ -253,7 +253,6 @@ impl MetalGlyphAtlas {
         Some(slot)
     }
 
-    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.allocator.clear();
         self.slots.clear();
@@ -436,22 +435,43 @@ impl MetalGridRenderer {
         self.atlas_grayscale.lookup(key)
     }
 
+    /// Drop every cached glyph and force a full rebuild. Called when
+    /// the font library is swapped, since the new library reuses font ids.
+    pub fn clear_atlas(&mut self) {
+        self.atlas_grayscale.clear();
+        if let Some(atlas) = &mut self.atlas_color {
+            atlas.clear();
+        }
+        self.needs_full_rebuild = true;
+        self.fg_dirty = [true; FRAMES_IN_FLIGHT];
+        self.bg_dirty = [true; FRAMES_IN_FLIGHT];
+    }
+
     /// Pack + upload a grayscale rasterized glyph. On atlas-full,
     /// grows the atlas (doubles the texture, blits old texels into
-    /// the top-left) and retries once. Returns `None` only if the
-    /// atlas is at `ATLAS_MAX_SIZE` and still can't fit the glyph.
+    /// the top-left) and retries. At `ATLAS_MAX_SIZE` the atlas is
+    /// cleared once and every row rebuilt; `None` only for a glyph
+    /// too large for the max-size atlas.
     pub fn insert_glyph(
         &mut self,
         key: GlyphKey,
         glyph: RasterizedGlyph<'_>,
     ) -> Option<AtlasSlot> {
+        let mut cleared = false;
         loop {
             if let Some(slot) = self.atlas_grayscale.insert(key, glyph) {
                 return Some(slot);
             }
-            if !self.atlas_grayscale.grow(&self.device, &self.command_queue) {
+            if self.atlas_grayscale.grow(&self.device, &self.command_queue) {
+                continue;
+            }
+            if cleared {
                 return None;
             }
+            self.atlas_grayscale.clear();
+            self.needs_full_rebuild = true;
+            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
+            cleared = true;
         }
     }
 
@@ -471,13 +491,21 @@ impl MetalGridRenderer {
             self.atlas_color = Some(MetalGlyphAtlas::new_color(&self.device));
         }
         let atlas = self.atlas_color.as_mut().unwrap();
+        let mut cleared = false;
         loop {
             if let Some(slot) = atlas.insert(key, glyph) {
                 return Some(slot);
             }
-            if !atlas.grow(&self.device, &self.command_queue) {
+            if atlas.grow(&self.device, &self.command_queue) {
+                continue;
+            }
+            if cleared {
                 return None;
             }
+            atlas.clear();
+            self.needs_full_rebuild = true;
+            self.fg_dirty = [true; FRAMES_IN_FLIGHT];
+            cleared = true;
         }
     }
 

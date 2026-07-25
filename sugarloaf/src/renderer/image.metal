@@ -15,7 +15,7 @@ struct ImageInstanceInput {
     float2 dest_pos [[attribute(0)]];
  // Size of the image on screen (physical pixels).
     float2 dest_size [[attribute(1)]];
- // Source rectangle: xy = origin, zw = size (normalized 0..1).
+ // Source rectangle: xy = origin, zw = end (normalized 0..1).
     float4 source_rect [[attribute(2)]];
 };
 

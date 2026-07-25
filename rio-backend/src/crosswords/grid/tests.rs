@@ -358,3 +358,72 @@ fn wrap_cell(c: char) -> Square {
     cell.set_wrapline(true);
     cell
 }
+
+fn wide_cell(c: char) -> Square {
+    let mut cell = cell(c);
+    cell.set_wide(crate::crosswords::square::Wide::Wide);
+    cell
+}
+
+fn spacer_cell() -> Square {
+    let mut cell = Square::default();
+    cell.set_wide(crate::crosswords::square::Wide::Spacer);
+    cell
+}
+
+#[test]
+fn shrink_reflow_remap_tracks_displaced_wide_char() {
+    // A wrapped tail of exactly `columns - 1` cells is buffered into
+    // the next row, whose first cell is a wide char. The spacer logic
+    // displaces that wide char into the following push, so the remap
+    // must record the row after the one receiving the buffered tail.
+    let mut grid = Grid::<Square>::new(3, 8, 4);
+    for (n, c) in "1234567".chars().enumerate() {
+        grid[Line(0)][Column(n)] = cell(c);
+    }
+    grid[Line(0)][Column(6)] = wrap_cell('7');
+    grid[Line(1)][Column(0)] = wide_cell('W');
+    grid[Line(1)][Column(1)] = spacer_cell();
+    grid[Line(1)][Column(2)] = cell('x');
+
+    grid.track_reflow_remap = true;
+    grid.resize(true, 3, 4);
+    grid.track_reflow_remap = false;
+
+    let remap = grid.reflow_remap.take().expect("remap must be recorded");
+    assert_eq!(remap.base_abs, 0);
+    // Old row 0 lands at 0; the wide-char row's first cell lands at 2
+    // (position 1 holds the buffered "567" tail plus the spacer); the
+    // trailing blank row lands at 3.
+    assert_eq!(remap.new_pos, vec![0, 2, 3]);
+
+    // Cross-check against where the wide char actually sits.
+    let total = grid.total_lines() as i32;
+    let screen = grid.screen_lines() as i32;
+    let wide_line = Line(2 - (total - screen));
+    assert_eq!(grid[wide_line][Column(0)], wide_cell('W'));
+}
+
+#[test]
+fn grow_reflow_remap_tracks_unmerged_wide_char() {
+    // The merge target has exactly one free column, so only a leading
+    // spacer is appended and the wide char stays on its own row. The
+    // remap must record the pushed remainder row, not the merge
+    // target.
+    let mut grid = Grid::<Square>::new(2, 4, 2);
+    for (n, c) in "1234".chars().enumerate() {
+        grid[Line(0)][Column(n)] = cell(c);
+    }
+    grid[Line(0)][Column(3)] = wrap_cell('4');
+    grid[Line(1)][Column(0)] = wide_cell('W');
+    grid[Line(1)][Column(1)] = spacer_cell();
+
+    grid.track_reflow_remap = true;
+    grid.resize(true, 2, 5);
+    grid.track_reflow_remap = false;
+
+    let remap = grid.reflow_remap.take().expect("remap must be recorded");
+    assert_eq!(remap.base_abs, 0);
+    assert_eq!(remap.new_pos, vec![0, 1]);
+    assert_eq!(grid[Line(1)][Column(0)], wide_cell('W'));
+}

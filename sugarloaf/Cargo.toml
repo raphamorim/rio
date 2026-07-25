@@ -62,7 +62,7 @@ half = "2.6.0"
 num-traits = "0.2.19"
 yazi = { version = "0.2.1", optional = true }
 zeno = "0.3.3"
-swash = "0.2.7"
+swash = "0.2.10"
 futures = { workspace = true }
 tiny-skia = "0.12.0"
 wide = "1.2.0"

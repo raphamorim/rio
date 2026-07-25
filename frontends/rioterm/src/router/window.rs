@@ -20,6 +20,7 @@ pub fn create_window_builder(
     config: &Config,
     #[allow(unused_variables)] tab_id: Option<&str>,
     #[allow(unused_variables)] app_id: Option<&str>,
+    quake: bool,
 ) -> WindowAttributes {
     let image_icon = image_rs::load_from_memory(LOGO_ICON).unwrap();
     let icon = Icon::from_rgba(
@@ -40,6 +41,12 @@ pub fn create_window_builder(
         .with_transparent(config.window.opacity < 1.)
         .with_blur(config.window.blur.into())
         .with_window_icon(Some(icon));
+
+    if quake {
+        window_builder = window_builder
+            .with_decorations(false)
+            .with_window_level(rio_window::window::WindowLevel::AlwaysOnTop);
+    }
 
     match config.window.decorations {
         Decorations::Disabled => {
@@ -143,22 +150,27 @@ pub fn create_window_builder(
         window_builder = window_builder.with_cloaked(true);
     }
 
-    match config.window.mode {
-        WindowMode::Fullscreen => {
-            window_builder =
-                window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
-        }
-        WindowMode::Maximized => {
-            window_builder = window_builder.with_maximized(true);
-        }
-        _ => {
-            window_builder =
-                window_builder.with_inner_size(rio_window::dpi::LogicalSize {
-                    width: config.window.width,
-                    height: config.window.height,
-                })
-        }
-    };
+    // The quake window ignores `window.mode`: a fullscreen or
+    // maximized mode would defeat the dropdown, and its geometry is
+    // recomputed from the target monitor on every show anyway.
+    if !quake {
+        match config.window.mode {
+            WindowMode::Fullscreen => {
+                window_builder =
+                    window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
+            }
+            WindowMode::Maximized => {
+                window_builder = window_builder.with_maximized(true);
+            }
+            _ => {
+                window_builder =
+                    window_builder.with_inner_size(rio_window::dpi::LogicalSize {
+                        width: config.window.width,
+                        height: config.window.height,
+                    })
+            }
+        };
+    }
 
     window_builder
 }

@@ -5,6 +5,7 @@ use crate::ansi::graphics::KittyPlacement;
 use crate::ansi::kitty_graphics_protocol::{
     self, DeleteRequest, KittyGraphicsState, PlacementRequest,
 };
+use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::Crosswords;
 use crate::event::{EventListener, RioEvent, WindowId};
 use crate::performer::handler::Handler;
@@ -423,8 +424,11 @@ fn test_cursor_movement_default() {
     let final_cursor_row = term.grid.cursor.pos.row.0;
     let final_cursor_col = term.grid.cursor.pos.col.0;
 
-    // With cursor_movement=0 (Kitty default), cursor stays ON last row of image
-    // For a 2-row image starting at row 0 (occupies rows 0-1), cursor should be at row 1, col 0
+    // With cursor_movement=0 (Kitty default), the cursor ends on the
+    // image's last row at the first column after the image, so text
+    // printed next never overwrites the image. 2-row image at row 0
+    // occupies rows 0-1; r=2 with a 100x100 image in 10x20 cells gives
+    // a 40x40 display, i.e. 4 columns.
     assert_eq!(
         final_cursor_row, 1,
         "Cursor should be at row 1 (last row of image) with cursor_movement=0. Initial: {}, Final: {}",
@@ -432,8 +436,8 @@ fn test_cursor_movement_default() {
         final_cursor_row
     );
     assert_eq!(
-        final_cursor_col, 0,
-        "Cursor should be at column 0 after carriage return"
+        final_cursor_col, 4,
+        "Cursor should be at the first column after the image"
     );
 }
 
@@ -676,8 +680,9 @@ fn test_subcell_offset_forwarded_and_clamped() {
     assert_eq!(stored.cell_x_offset, 7);
     assert_eq!(stored.cell_y_offset, 9);
 
-    // Per kitty spec the offset must be smaller than the cell size;
-    // out-of-range values are clamped to the cell box.
+    // Per kitty spec the offset must be smaller than the cell size.
+    // The stored value stays raw (re-clamped at read time so cell
+    // size changes don't lose it); span derivation uses the clamp.
     let placement = kitty_graphics_protocol::PlacementRequest {
         image_id: 1,
         placement_id: 8,
@@ -701,8 +706,11 @@ fn test_subcell_offset_forwarded_and_clamped() {
         .kitty_placements
         .get(&(1, 8))
         .expect("placement stored");
-    assert_eq!(stored.cell_x_offset, 9, "clamped to cell_width - 1");
-    assert_eq!(stored.cell_y_offset, 19, "clamped to cell_height - 1");
+    assert_eq!(stored.cell_x_offset, 999, "raw offset is kept");
+    assert_eq!(stored.cell_y_offset, 999);
+    // 40x40 image, 10x20 cells, offsets clamped to 9/19 for spans.
+    assert_eq!(stored.columns, 5, "ceil((40 + 9) / 10)");
+    assert_eq!(stored.rows, 3, "ceil((40 + 19) / 20)");
 }
 
 #[test]
@@ -1099,136 +1107,89 @@ fn test_place_nonexistent_graphic() {
 // and test_delete_by_specific_placement_id.
 
 #[test]
-fn test_no_double_push_on_graphic_cell_drop() {
-    use crate::ansi::graphics::{GraphicCell, TextureRef};
-    use parking_lot::Mutex;
-    use std::sync::Arc;
+fn test_recount_releases_key_exactly_once() {
+    let mut graphics = crate::ansi::graphics::Graphics::default();
+    let key = crate::sugarloaf::atlas_image_key(99);
+    graphics
+        .atlas_placements
+        .push(crate::ansi::graphics::AtlasPlacement {
+            image_key: key,
+            abs_row: 0,
+            col: 0,
+            columns: 2,
+            rows: 1,
+            src_x: 0,
+            src_y: 0,
+            src_width: 20,
+            src_height: 20,
+            total_width: 20,
+            total_height: 20,
+            insert_cell_w: 10,
+            insert_cell_h: 20,
+        });
+    graphics.recount_atlas_keys();
+    assert!(graphics.texture_operations.lock().is_empty());
 
-    let texture_ops: Arc<Mutex<Vec<GraphicId>>> = Arc::new(Mutex::new(Vec::new()));
+    // Splitting into two pieces keeps the key alive.
+    let p = graphics.atlas_placements.pop().unwrap();
+    let mut pieces = Vec::new();
+    p.subtract_rect(0, 1, 1, 2, &mut pieces).unwrap();
+    graphics.atlas_placements = pieces;
+    graphics.recount_atlas_keys();
+    assert!(graphics.texture_operations.lock().is_empty());
 
-    let texture = Arc::new(TextureRef {
-        id: GraphicId::new(99),
-        width: 10,
-        height: 20,
-        cell_height: 20,
-        texture_operations: Arc::downgrade(&texture_ops),
-    });
-
-    // Create two GraphicCells referencing the same texture (simulating multi-cell image)
-    let cell1 = GraphicCell {
-        texture: texture.clone(),
-        offset_x: 0,
-        offset_y: 0,
-    };
-    let cell2 = GraphicCell {
-        texture: texture.clone(),
-        offset_x: 10,
-        offset_y: 0,
-    };
-
-    // Drop both cells — should NOT push to texture_operations (GraphicCell has no Drop impl)
-    drop(cell1);
-    drop(cell2);
-    assert!(
-        texture_ops.lock().is_empty(),
-        "GraphicCell drop should NOT push to texture_operations"
-    );
-
-    // Drop the last Arc<TextureRef> — should push exactly once
-    drop(texture);
-    let ops = texture_ops.lock();
+    // Dropping the last piece queues the removal exactly once.
+    graphics.atlas_placements.clear();
+    graphics.recount_atlas_keys();
+    assert_eq!(graphics.texture_operations.lock().as_slice(), &[key]);
+    graphics.recount_atlas_keys();
     assert_eq!(
-        ops.len(),
+        graphics.texture_operations.lock().len(),
         1,
-        "TextureRef drop should push exactly once, got {}",
-        ops.len()
+        "no double push on repeated recounts"
     );
-    assert_eq!(ops[0], GraphicId::new(99));
 }
 
-#[test]
-fn test_placed_textures_tracks_inserts() {
-    let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
-
-    let mut term: Crosswords<TestEventListener> = Crosswords::new(
-        crate::crosswords::CrosswordsSize::new(80, 24),
-        crate::ansi::CursorShape::Block,
-        event_listener,
-        window_id,
-        0,
-        10_000,
-    );
-
-    term.graphics.cell_width = 10.0;
-    term.graphics.cell_height = 20.0;
-
-    assert!(
-        term.graphics.placed_textures.is_empty(),
-        "Should start with no placed textures"
-    );
-
-    // Insert a graphic
-    let pixels = vec![255u8; 10 * 20 * 4];
-    let graphic = GraphicData {
-        id: GraphicId::new(1),
-        width: 10,
-        height: 20,
+/// 30x40 px graphic at 10x20 cells: 3 columns, 2 rows.
+fn atlas_graphic() -> GraphicData {
+    GraphicData {
+        id: GraphicId::new(0),
+        width: 30,
+        height: 40,
         color_type: ColorType::Rgba,
-        pixels,
+        pixels: vec![255u8; 30 * 40 * 4],
         is_opaque: true,
         resize: None,
         display_width: None,
         display_height: None,
         transmit_time: std::time::Instant::now(),
-    };
-    term.insert_graphic(graphic, None, Some(0));
-
-    assert_eq!(
-        term.graphics.placed_textures.len(),
-        1,
-        "Should track 1 placed texture after insert"
-    );
+    }
 }
 
 #[test]
-fn test_collect_active_ids_uses_weak_refs() {
-    use crate::ansi::graphics::TextureRef;
-    use std::sync::Arc;
+fn test_collect_active_ids_from_placements() {
+    let mut term = geometry_test_term();
+    assert!(term.graphics.collect_active_graphic_ids().is_empty());
 
-    let mut graphics = crate::ansi::graphics::Graphics::default();
-
-    // Simulate placing a texture
-    let texture_ops = graphics.texture_operations.clone();
-    let texture = Arc::new(TextureRef {
-        id: GraphicId::new(1),
-        width: 10,
-        height: 20,
-        cell_height: 20,
-        texture_operations: Arc::downgrade(&texture_ops),
-    });
-    graphics.register_placed_texture(GraphicId::new(1), Arc::downgrade(&texture));
-
-    // While texture is alive, it should appear in active IDs
-    let active = graphics.collect_active_graphic_ids();
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    let active = term.graphics.collect_active_graphic_ids();
     assert!(
         active.contains(&1),
-        "Active texture should appear in collect_active_graphic_ids"
+        "placed image appears in active ids: {active:?}"
     );
 
-    // Drop the texture — weak ref becomes dead
-    drop(texture);
-
-    // Now it should be cleaned up
-    let active = graphics.collect_active_graphic_ids();
+    // Cover it completely with a second image: the first placement is
+    // clipped away entirely and stops being active.
+    term.grid.cursor.pos = Pos::new(Line(0), Column(0));
+    let mut replacement = atlas_graphic();
+    replacement.id = GraphicId::new(0);
+    term.insert_graphic(replacement, None, Some(1));
+    let active = term.graphics.collect_active_graphic_ids();
     assert!(
         !active.contains(&1),
-        "Dropped texture should NOT appear in collect_active_graphic_ids"
+        "fully covered image dropped: {active:?}"
     );
-    assert!(
-        graphics.placed_textures.is_empty(),
-        "Stale entry should be cleaned up"
-    );
+    assert!(active.contains(&2), "the covering image is active");
 }
 
 // Overlay placement tests
@@ -1300,6 +1261,8 @@ fn test_kitty_placement_insert_and_delete() {
         dest_row: 0,
         columns: 10,
         rows: 5,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: 100,
         pixel_height: 50,
         cell_x_offset: 0,
@@ -1333,6 +1296,8 @@ fn test_kitty_placement_delete_by_z_index() {
         dest_row: 0,
         columns: 1,
         rows: 1,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: 10,
         pixel_height: 10,
         cell_x_offset: 0,
@@ -1375,6 +1340,8 @@ fn test_collect_active_ids_includes_overlay_placements() {
         dest_row: 0,
         columns: 1,
         rows: 1,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: 10,
         pixel_height: 10,
         cell_x_offset: 0,
@@ -1430,6 +1397,8 @@ fn test_eviction_removes_dangling_placements() {
         dest_row: 0,
         columns: 1,
         rows: 1,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: 10,
         pixel_height: 10,
         cell_x_offset: 0,
@@ -1471,6 +1440,8 @@ fn make_test_placement(
         dest_row,
         columns,
         rows,
+        requested_columns: 0,
+        requested_rows: 0,
         pixel_width: columns * 10,
         pixel_height: rows * 20,
         cell_x_offset: 0,
@@ -3924,6 +3895,218 @@ fn test_resize_narrow_with_prompt_after_image() {
     );
 }
 
+#[test]
+fn test_resize_widen_unwraps_sixel_follows() {
+    // Sixel analog of the kitty widen test: a wrapped command above a
+    // sixel unwraps when the window widens, so the placement must move
+    // up by one row with the text, and the resize must mark the
+    // overlay dirty so the renderer refreshes its placement snapshot.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(20, 10),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+        10_000,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // 32 chars wrap onto 2 rows at columns=20, fit on 1 at columns=50.
+    type_text(&mut term, "$ convert image.png sixel:- 1234");
+    term.linefeed();
+    term.carriage_return();
+
+    term.insert_graphic(atlas_graphic(), None, None);
+    let initial_abs_row = term.graphics.atlas_placements[0].abs_row;
+    term.graphics.kitty_graphics_dirty = false;
+
+    term.resize(ReflowDim {
+        columns: 50,
+        lines: 10,
+    });
+
+    let final_abs_row = term.graphics.atlas_placements[0].abs_row;
+    assert_eq!(
+        final_abs_row,
+        initial_abs_row - 1,
+        "widening should shift the sixel up with the unwrapped command"
+    );
+    assert!(
+        term.graphics.kitty_graphics_dirty,
+        "resize with sixel placements must mark the overlay dirty, or \
+         the renderer keeps painting from a stale placement snapshot"
+    );
+}
+
+#[test]
+fn test_resize_narrow_wraps_sixel_follows() {
+    // Mirror case: the command above the sixel wraps when the window
+    // narrows, so the placement must move down by one row.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(50, 10),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+        10_000,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    type_text(&mut term, "$ convert image.png sixel:- 1234");
+    term.linefeed();
+    term.carriage_return();
+
+    term.insert_graphic(atlas_graphic(), None, None);
+    let initial_abs_row = term.graphics.atlas_placements[0].abs_row;
+    term.graphics.kitty_graphics_dirty = false;
+
+    term.resize(ReflowDim {
+        columns: 20,
+        lines: 10,
+    });
+
+    let final_abs_row = term.graphics.atlas_placements[0].abs_row;
+    assert_eq!(
+        final_abs_row,
+        initial_abs_row + 1,
+        "narrowing should shift the sixel down with the wrapped command"
+    );
+    assert!(term.graphics.kitty_graphics_dirty);
+}
+
+#[test]
+fn test_resize_widen_sixel_above_wrap_change_stays_put() {
+    // A wrapped line BETWEEN the image and the cursor unwraps when the
+    // window widens. Only content below the image moved, so the image
+    // must stay anchored. A global cursor-derived shift gets this
+    // wrong (the cursor moves up, the image does not); the exact
+    // reflow row remap keeps it in place.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(20, 10),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+        10_000,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // Row 0: short label, no wrap. Rows 1-2: the sixel.
+    type_text(&mut term, "img");
+    term.linefeed();
+    term.carriage_return();
+    term.insert_graphic(atlas_graphic(), None, None);
+    term.linefeed();
+    term.carriage_return();
+
+    // Below the image: 32 chars wrap onto 2 rows at columns=20.
+    type_text(&mut term, "$ convert image.png sixel:- 1234");
+    term.linefeed();
+    term.carriage_return();
+
+    let initial_abs_row = term.graphics.atlas_placements[0].abs_row;
+    let cursor_before = term.grid.cursor.pos.row.0;
+
+    term.resize(ReflowDim {
+        columns: 50,
+        lines: 10,
+    });
+
+    assert_eq!(
+        term.grid.cursor.pos.row.0,
+        cursor_before - 1,
+        "test setup: the line below the image should have unwrapped"
+    );
+    assert_eq!(
+        term.graphics.atlas_placements[0].abs_row, initial_abs_row,
+        "unwrapping below the image must not move it"
+    );
+}
+
+#[test]
+fn test_resize_widen_kitty_above_wrap_change_stays_put() {
+    // Kitty twin of the sixel test above: dest_row goes through the
+    // same exact reflow remap.
+    use crate::performer::handler::Handler;
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(20, 10),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+        10_000,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    type_text(&mut term, "img");
+    term.linefeed();
+    term.carriage_return();
+
+    store_red_pixel(&mut term, 1);
+    let placement = kitty_graphics_protocol::PlacementRequest {
+        image_id: 1,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        virtual_placement: false,
+        unicode_placeholder: 0,
+        cursor_movement: 1,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+    };
+    term.place_graphic(placement);
+    term.linefeed();
+    term.carriage_return();
+
+    type_text(&mut term, "$ convert image.png sixel:- 1234");
+    term.linefeed();
+    term.carriage_return();
+
+    let initial_dest_row = term
+        .graphics
+        .kitty_placements
+        .values()
+        .next()
+        .unwrap()
+        .dest_row;
+
+    term.resize(ReflowDim {
+        columns: 50,
+        lines: 10,
+    });
+
+    assert_eq!(
+        term.graphics
+            .kitty_placements
+            .values()
+            .next()
+            .unwrap()
+            .dest_row,
+        initial_dest_row,
+        "unwrapping below the image must not move it"
+    );
+}
+
 // Animation actions surface EINVAL (regression).
 
 #[test]
@@ -3945,4 +4128,1295 @@ fn test_animation_action_surfaces_unsupported_response() {
         .expect("response body must contain EINVAL marker");
     assert!(body.contains("EINVAL:unsupported action"));
     assert!(body.contains("i=1"));
+}
+
+// Placement geometry tests
+
+fn geometry_test_term() -> Crosswords<TestEventListener> {
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 24),
+        crate::ansi::CursorShape::Block,
+        TestEventListener,
+        unsafe { WindowId::dummy() },
+        0,
+        10_000,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 100,
+        height: 100,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 100 * 100 * 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    term.store_graphic(graphic);
+    term
+}
+
+fn placement_request(placement_id: u32) -> PlacementRequest {
+    PlacementRequest {
+        image_id: 1,
+        placement_id,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 0,
+        rows: 0,
+        z_index: 0,
+        virtual_placement: false,
+        unicode_placeholder: 0,
+        cursor_movement: 1,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+    }
+}
+
+#[test]
+fn test_source_crop_keeps_placement_at_cursor() {
+    let mut term = geometry_test_term();
+
+    // x=/y= select the source rectangle, never the destination cell.
+    let mut placement = placement_request(5);
+    placement.x = 30;
+    placement.y = 40;
+    term.place_graphic(placement);
+
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 5))
+        .expect("placement stored");
+    assert_eq!(stored.dest_col, 0, "placement lands at the cursor column");
+    assert_eq!(stored.dest_row, 0, "placement lands at the cursor row");
+    assert_eq!(stored.source_x, 30, "crop is stored raw");
+    assert_eq!(stored.source_y, 40);
+    assert_eq!(stored.source_width, 0, "raw zero means to the edge");
+    assert_eq!(stored.source_height, 0);
+    assert_eq!(stored.pixel_width, 70, "footprint shows only the crop");
+    assert_eq!(stored.pixel_height, 60);
+    assert_eq!(stored.columns, 7);
+    assert_eq!(stored.rows, 3);
+}
+
+#[test]
+fn test_source_crop_clamped_and_degenerate_invisible() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    let mut term = geometry_test_term();
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: 0,
+        display_offset: 0,
+        screen_lines: 24,
+    };
+
+    // Crop wider than the image clamps to the edge at render time.
+    let mut placement = placement_request(6);
+    placement.x = 90;
+    placement.width = 50;
+    term.place_graphic(placement);
+
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 6))
+        .expect("placement stored");
+    assert_eq!(stored.source_x, 90, "raw request kept");
+    assert_eq!(stored.source_width, 50);
+    assert_eq!(stored.pixel_width, 10, "footprint uses the clamped crop");
+    assert_eq!(stored.pixel_height, 100);
+    let geometry = kitty_overlay_geometry(stored, 100, 100, &viewport).expect("visible");
+    assert_eq!(geometry.width, 10.0, "clamped to image width");
+    assert_eq!(geometry.source_rect, [0.9, 0.0, 1.0, 1.0]);
+
+    // A crop fully outside the image is stored (kitty answers OK) but
+    // renders nothing and occupies no cells.
+    let mut placement = placement_request(7);
+    placement.y = 100;
+    placement.cursor_movement = 0;
+    let cursor_before = term.grid.cursor.pos;
+    term.place_graphic(placement);
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 7))
+        .expect("degenerate placement still stored");
+    assert_eq!(stored.columns, 0, "no cell footprint");
+    assert_eq!(stored.rows, 0);
+    assert!(
+        kitty_overlay_geometry(stored, 100, 100, &viewport).is_none(),
+        "degenerate crop renders nothing"
+    );
+    assert_eq!(
+        term.grid.cursor.pos, cursor_before,
+        "invisible placement leaves the cursor untouched"
+    );
+}
+
+#[test]
+fn test_crop_scaled_to_requested_columns() {
+    let mut term = geometry_test_term();
+
+    // 50x25 crop over c=10 columns: width = 10 cells * 10px, height
+    // keeps the crop aspect ratio.
+    let mut placement = placement_request(8);
+    placement.width = 50;
+    placement.height = 25;
+    placement.columns = 10;
+    term.place_graphic(placement);
+
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 8))
+        .expect("placement stored");
+    assert_eq!(stored.pixel_width, 100);
+    assert_eq!(stored.pixel_height, 50, "aspect follows the crop");
+    assert_eq!(stored.columns, 10);
+    assert_eq!(stored.rows, 3, "ceil(50 / 20)");
+}
+
+#[test]
+fn test_overlay_geometry_scroll_and_pixel_position() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    let placement = KittyPlacement {
+        image_id: 1,
+        placement_id: 1,
+        source_x: 50,
+        source_y: 25,
+        source_width: 100,
+        source_height: 50,
+        dest_col: 4,
+        dest_row: 55,
+        columns: 2,
+        rows: 3,
+        requested_columns: 0,
+        requested_rows: 0,
+        pixel_width: 25,
+        pixel_height: 45,
+        cell_x_offset: 3,
+        cell_y_offset: 7,
+        z_index: 0,
+        transmit_time: std::time::Instant::now(),
+    };
+
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 100.0,
+        origin_y: 50.0,
+        history_size: 80,
+        display_offset: 30,
+        screen_lines: 24,
+    };
+
+    // Scrolled back 30 rows into 80 rows of history: the absolute row
+    // 55 sits 5 rows below the viewport top (80 - 30).
+    let geometry = kitty_overlay_geometry(&placement, 200, 100, &viewport)
+        .expect("visible placement");
+    assert_eq!(geometry.x, 100.0 + 4.0 * 10.0 + 3.0);
+    assert_eq!(geometry.y, 50.0 + 5.0 * 20.0 + 7.0);
+    // Display size resolves per frame: no cell span requested, so the
+    // 100x50 crop shows at native size.
+    assert_eq!(geometry.width, 100.0);
+    assert_eq!(geometry.height, 50.0);
+    // (origin, end): crop (50, 25)-(150, 75) of a 200x100 image.
+    assert_eq!(geometry.source_rect, [0.25, 0.25, 0.75, 0.75]);
+
+    // At the live view (no scroll) the same placement is 25 rows above
+    // the viewport and fully culled.
+    let live = OverlayViewport {
+        display_offset: 0,
+        ..viewport
+    };
+    assert!(kitty_overlay_geometry(&placement, 200, 100, &live).is_none());
+
+    // One row past the bottom edge is culled too.
+    let mut below = placement.clone();
+    below.dest_row = 80 + 24;
+    assert!(kitty_overlay_geometry(&below, 200, 100, &live).is_none());
+}
+
+#[test]
+fn test_overlay_geometry_partial_visibility_and_full_source() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    let placement = KittyPlacement {
+        image_id: 1,
+        placement_id: 1,
+        source_x: 0,
+        source_y: 0,
+        source_width: 0,
+        source_height: 0,
+        dest_col: 0,
+        dest_row: 48,
+        columns: 2,
+        rows: 3,
+        requested_columns: 0,
+        requested_rows: 0,
+        pixel_width: 20,
+        pixel_height: 60,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        z_index: 0,
+        transmit_time: std::time::Instant::now(),
+    };
+
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: 50,
+        display_offset: 0,
+        screen_lines: 24,
+    };
+
+    // Two of three rows scrolled off the top: keep the quad with a
+    // negative y and let the GPU clip it.
+    let geometry = kitty_overlay_geometry(&placement, 20, 60, &viewport)
+        .expect("partially visible placement");
+    assert_eq!(geometry.y, -40.0);
+
+    // Zero crop falls back to the full texture.
+    assert_eq!(geometry.source_rect, [0.0, 0.0, 1.0, 1.0]);
+}
+
+#[test]
+fn test_rescale_keeps_native_size_and_tracks_cell_span() {
+    use crate::ansi::graphics::KittyPlacement;
+
+    // Native-size placement: 25x45 crop, 10x20 cells.
+    let mut native = KittyPlacement {
+        image_id: 1,
+        placement_id: 1,
+        source_x: 0,
+        source_y: 0,
+        source_width: 25,
+        source_height: 45,
+        dest_col: 0,
+        dest_row: 0,
+        columns: 3,
+        rows: 3,
+        requested_columns: 0,
+        requested_rows: 0,
+        pixel_width: 25,
+        pixel_height: 45,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+        z_index: 0,
+        transmit_time: std::time::Instant::now(),
+    };
+
+    // Font grows to 12x24 cells: the image must NOT stretch to its
+    // cell box; only the derived span shrinks.
+    native.rescale(25, 45, 12, 24);
+    assert_eq!(native.pixel_width, 25, "native pixel size is kept");
+    assert_eq!(native.pixel_height, 45);
+    assert_eq!(native.columns, 3, "ceil(25 / 12)");
+    assert_eq!(native.rows, 2, "ceil(45 / 24)");
+
+    // Cell-sized placement (c=4, r=2) tracks the grid instead.
+    let mut cell_sized = KittyPlacement {
+        requested_columns: 4,
+        requested_rows: 2,
+        columns: 4,
+        rows: 2,
+        pixel_width: 40,
+        pixel_height: 40,
+        ..native.clone()
+    };
+    cell_sized.rescale(25, 45, 12, 24);
+    assert_eq!(cell_sized.pixel_width, 48);
+    assert_eq!(cell_sized.pixel_height, 48);
+    assert_eq!(cell_sized.columns, 4);
+    assert_eq!(cell_sized.rows, 2);
+}
+
+#[test]
+fn test_crop_scaled_to_requested_rows_and_both_axes() {
+    let mut term = geometry_test_term();
+
+    // r= only: height = 2 cells * 20px, width keeps the crop aspect.
+    let mut placement = placement_request(9);
+    placement.width = 50;
+    placement.height = 25;
+    placement.rows = 2;
+    term.place_graphic(placement);
+
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 9))
+        .expect("placement stored");
+    assert_eq!(stored.pixel_height, 40);
+    assert_eq!(stored.pixel_width, 80, "aspect follows the crop");
+    assert_eq!(stored.rows, 2);
+    assert_eq!(stored.columns, 8, "ceil(80 / 10)");
+
+    // c= and r= both: exact fit, aspect not preserved.
+    let mut placement = placement_request(10);
+    placement.width = 50;
+    placement.height = 25;
+    placement.columns = 3;
+    placement.rows = 4;
+    term.place_graphic(placement);
+
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 10))
+        .expect("placement stored");
+    assert_eq!(stored.pixel_width, 30);
+    assert_eq!(stored.pixel_height, 80, "stretched to the exact span");
+    assert_eq!(stored.columns, 3);
+    assert_eq!(stored.rows, 4);
+}
+
+#[test]
+fn test_overlay_geometry_clamps_raw_offsets() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    // Raw offsets larger than the current cell box clamp at read
+    // time; the stored value survives cell size changes.
+    let placement = KittyPlacement {
+        image_id: 1,
+        placement_id: 1,
+        source_x: 0,
+        source_y: 0,
+        source_width: 0,
+        source_height: 0,
+        dest_col: 2,
+        dest_row: 0,
+        columns: 1,
+        rows: 1,
+        requested_columns: 0,
+        requested_rows: 0,
+        pixel_width: 8,
+        pixel_height: 8,
+        cell_x_offset: 999,
+        cell_y_offset: 999,
+        z_index: 0,
+        transmit_time: std::time::Instant::now(),
+    };
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: 0,
+        display_offset: 0,
+        screen_lines: 24,
+    };
+    let geometry =
+        kitty_overlay_geometry(&placement, 8, 8, &viewport).expect("visible placement");
+    assert_eq!(geometry.x, 2.0 * 10.0 + 9.0, "offset clamped to cell box");
+    assert_eq!(geometry.y, 19.0);
+}
+
+#[test]
+fn test_retransmit_reclamps_crop_and_updates_footprint() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    let mut term = geometry_test_term();
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: 0,
+        display_offset: 0,
+        screen_lines: 24,
+    };
+
+    // Crop the bottom half of the 100x100 image.
+    let mut placement = placement_request(11);
+    placement.y = 50;
+    term.place_graphic(placement);
+
+    let stored = term.graphics.kitty_placements.get(&(1, 11)).unwrap();
+    assert_eq!(stored.rows, 3, "ceil(50 / 20)");
+    let geometry = kitty_overlay_geometry(stored, 100, 100, &viewport).unwrap();
+    assert_eq!(geometry.height, 50.0);
+    assert_eq!(geometry.source_rect, [0.0, 0.5, 1.0, 1.0]);
+
+    // Retransmit the same id as 100x60: the crop re-resolves against
+    // the new dimensions instead of showing a stale region, and the
+    // grid footprint follows.
+    term.graphics.kitty_graphics_dirty = false;
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 100,
+        height: 60,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 100 * 60 * 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    term.store_graphic(graphic);
+
+    let stored = term.graphics.kitty_placements.get(&(1, 11)).unwrap();
+    assert_eq!(stored.pixel_height, 10, "60 - 50 remaining below the crop");
+    assert_eq!(stored.rows, 1);
+    let geometry = kitty_overlay_geometry(stored, 100, 60, &viewport).unwrap();
+    assert_eq!(geometry.height, 10.0);
+    let [_, v0, _, v1] = geometry.source_rect;
+    assert!((v0 - 50.0 / 60.0).abs() < 1e-6);
+    assert_eq!(v1, 1.0);
+
+    // The new pixels were dispatched for upload without a re-place
+    // (send_graphics_updates drains the queue into an event, so the
+    // dirty flag is the observable side).
+    assert!(term.graphics.kitty_graphics_dirty);
+}
+
+#[test]
+fn test_retransmit_can_make_degenerate_placement_visible() {
+    let mut term = geometry_test_term();
+
+    // Fully outside the 100x100 image: invisible, zero footprint.
+    let mut placement = placement_request(12);
+    placement.y = 100;
+    term.place_graphic(placement);
+    assert_eq!(
+        term.graphics.kitty_placements.get(&(1, 12)).unwrap().rows,
+        0
+    );
+
+    // Retransmit taller: the placement comes alive.
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 100,
+        height: 200,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 100 * 200 * 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    term.store_graphic(graphic);
+
+    let stored = term.graphics.kitty_placements.get(&(1, 12)).unwrap();
+    assert_eq!(stored.pixel_height, 100, "rows 100..200 of the new image");
+    assert_eq!(stored.rows, 5, "ceil(100 / 20)");
+}
+
+#[test]
+fn test_cursor_movement_scrolls_at_screen_bottom() {
+    let mut term = geometry_test_term();
+
+    // Park the cursor on the bottom row.
+    for _ in 0..23 {
+        term.linefeed();
+    }
+    assert_eq!(term.grid.cursor.pos.row.0, 23);
+
+    // 100x100 image in 10x20 cells: 5 rows, 10 columns.
+    let mut placement = placement_request(13);
+    placement.cursor_movement = 0;
+    term.place_graphic(placement);
+
+    // The image scrolled into view (5 linefeeds at the bottom) and the
+    // cursor sits on its last row, first column after it.
+    assert_eq!(term.grid.cursor.pos.row.0, 22);
+    assert_eq!(term.grid.cursor.pos.col.0, 10);
+    assert_eq!(term.history_size(), 5, "five rows scrolled into history");
+}
+
+#[test]
+fn test_virtual_run_geometry_honors_source_crop() {
+    use crate::ansi::kitty_virtual::{compute_run_geometry, PlaceholderRun};
+
+    let run = PlaceholderRun {
+        image_id: 1,
+        placement_id: 1,
+        row: 0,
+        col: 0,
+        width: 5,
+    };
+
+    // Right half of a 100x50 image (crop 50x50) into a 5x5 cell
+    // placement at 10x10 cells: the crop fits the 50x50 box exactly.
+    let g = compute_run_geometry(
+        &run,
+        5,
+        5,
+        100,
+        50,
+        (50, 0, 50, 50),
+        10.0,
+        10.0,
+        0.0,
+        0.0,
+        0,
+        0,
+    )
+    .expect("visible run");
+    assert_eq!(g.width, 50.0);
+    assert_eq!(g.height, 10.0, "one cell row");
+    // u spans the right half of the image; v the top fifth of the crop.
+    assert_eq!(g.source_rect, [0.5, 0.0, 1.0, 0.2]);
+
+    // Without a crop the full image aspect-fits with letterboxing;
+    // the top run sits entirely in the padding, while the second row
+    // maps to the full-image left edge.
+    assert!(compute_run_geometry(
+        &run,
+        5,
+        5,
+        100,
+        50,
+        (0, 0, 0, 0),
+        10.0,
+        10.0,
+        0.0,
+        0.0,
+        0,
+        0,
+    )
+    .is_none());
+    let second_row = PlaceholderRun { row: 1, ..run };
+    let g = compute_run_geometry(
+        &second_row,
+        5,
+        5,
+        100,
+        50,
+        (0, 0, 0, 0),
+        10.0,
+        10.0,
+        0.0,
+        0.0,
+        1,
+        0,
+    )
+    .expect("visible run");
+    assert_eq!(g.source_rect[0], 0.0, "full-image left edge");
+    assert_eq!(g.source_rect[1], 0.0, "crop origin maps to image top");
+}
+
+#[test]
+fn test_cursor_movement_clears_pending_wrap() {
+    let mut term = geometry_test_term();
+
+    // A character printed into the last column arms the wrap flag; a
+    // C=0 placement repositions the cursor and must disarm it, or the
+    // next printed character wraps below the intended position.
+    term.grid.cursor.pos.col = Column(79);
+    term.grid.cursor.should_wrap = true;
+
+    let mut placement = placement_request(14);
+    placement.cursor_movement = 0;
+    term.place_graphic(placement);
+
+    assert!(
+        !term.grid.cursor.should_wrap,
+        "cursor repositioning discards a pending wrap"
+    );
+}
+
+#[test]
+fn test_transmit_and_display_refreshes_sibling_placements() {
+    let mut term = geometry_test_term();
+
+    // Direct placement of the 100x100 image: 5 rows at 20px cells.
+    let mut placement = placement_request(15);
+    placement.cursor_movement = 1;
+    term.place_graphic(placement);
+    assert_eq!(
+        term.graphics.kitty_placements.get(&(1, 15)).unwrap().rows,
+        5
+    );
+
+    // a=T retransmit of the same id (new 100x200 pixels + a second
+    // placement): the first placement's footprint must follow the new
+    // dimensions like the a=t path.
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 100,
+        height: 200,
+        color_type: ColorType::Rgba,
+        pixels: vec![255u8; 100 * 200 * 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    let mut second = placement_request(16);
+    second.cursor_movement = 1;
+    term.kitty_transmit_and_display(graphic, second);
+
+    assert_eq!(
+        term.graphics.kitty_placements.get(&(1, 15)).unwrap().rows,
+        10,
+        "sibling placement footprint follows the retransmit"
+    );
+    assert_eq!(
+        term.graphics.kitty_placements.get(&(1, 16)).unwrap().rows,
+        10
+    );
+}
+
+#[test]
+fn test_image_key_namespaces_are_disjoint() {
+    use crate::sugarloaf::{atlas_image_key, kitty_image_key};
+
+    // kitty clients may pick any u32 image id (kitten icat uses random
+    // ones); the atlas namespace must live entirely above that range.
+    assert_eq!(kitty_image_key(u32::MAX), u32::MAX as u64);
+    assert_eq!(kitty_image_key(0x8000_0001), 0x8000_0001);
+    assert!(atlas_image_key(0) > u32::MAX as u64);
+    assert_eq!(atlas_image_key(7), (1u64 << 32) + 7);
+}
+
+#[test]
+fn test_sixel_cursor_lands_on_last_row_start_column() {
+    let mut term = geometry_test_term();
+
+    // Start mid-line: the image anchors at the cursor column.
+    term.grid.cursor.pos.col = Column(5);
+    term.insert_graphic(atlas_graphic(), None, None);
+
+    // DEC STD 070: cursor on the last text row the image touches, at
+    // the image's start column (foot, xterm, contour agree).
+    assert_eq!(term.grid.cursor.pos.row.0, 1, "last image row");
+    assert_eq!(term.grid.cursor.pos.col.0, 5, "image start column");
+    assert!(!term.grid.cursor.should_wrap);
+}
+
+#[test]
+fn test_sixel_mode_8452_cursor_right_of_image() {
+    let mut term = geometry_test_term();
+    term.set_private_mode(crate::ansi::mode::PrivateMode::Unknown(8452));
+
+    term.grid.cursor.pos.col = Column(5);
+    term.insert_graphic(atlas_graphic(), None, None);
+
+    assert_eq!(term.grid.cursor.pos.row.0, 1, "last image row");
+    assert_eq!(
+        term.grid.cursor.pos.col.0, 8,
+        "first column right of the image"
+    );
+}
+
+#[test]
+fn test_sixel_display_mode_leaves_cursor_untouched() {
+    let mut term = geometry_test_term();
+    // DECSDM set: sixel scrolling disabled, image at page top-left,
+    // cursor unmodified.
+    term.set_private_mode(crate::ansi::mode::PrivateMode::Unknown(80));
+
+    term.grid.cursor.pos.col = Column(5);
+    term.insert_graphic(atlas_graphic(), None, None);
+
+    assert_eq!(term.grid.cursor.pos.row.0, 0);
+    assert_eq!(term.grid.cursor.pos.col.0, 5);
+}
+
+#[test]
+fn test_iterm2_cursor_right_of_image_and_do_not_move() {
+    use crate::ansi::iterm2_image_protocol::{CURSOR_DO_NOT_MOVE, CURSOR_RIGHT_OF_IMAGE};
+
+    let mut term = geometry_test_term();
+    term.grid.cursor.pos.col = Column(2);
+    term.insert_graphic(atlas_graphic(), None, Some(CURSOR_RIGHT_OF_IMAGE));
+
+    // iTerm2 behavior: last image row, first column after the image.
+    assert_eq!(term.grid.cursor.pos.row.0, 1);
+    assert_eq!(term.grid.cursor.pos.col.0, 5, "right of the 3-cell image");
+
+    // doNotMoveCursor=1 (WezTerm extension): cursor untouched.
+    let mut term = geometry_test_term();
+    term.grid.cursor.pos.col = Column(2);
+    term.insert_graphic(atlas_graphic(), None, Some(CURSOR_DO_NOT_MOVE));
+    assert_eq!(term.grid.cursor.pos.row.0, 0);
+    assert_eq!(term.grid.cursor.pos.col.0, 2);
+}
+
+#[test]
+fn test_iterm2_parse_cursor_movement_params() {
+    use crate::ansi::iterm2_image_protocol::{
+        self, CURSOR_DO_NOT_MOVE, CURSOR_RIGHT_OF_IMAGE,
+    };
+
+    const PNG_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+
+    let default_params = format!("File=inline=1:{PNG_B64}");
+    let params: Vec<&[u8]> = vec![b"1337", default_params.as_bytes()];
+    let (_, movement) = iterm2_image_protocol::parse(&params).expect("parses");
+    assert_eq!(movement, CURSOR_RIGHT_OF_IMAGE);
+
+    // vte splits OSC params on ';': each key=value arrives separately,
+    // with the payload after ':' in the last one.
+    let no_move = format!("doNotMoveCursor=1:{PNG_B64}");
+    let params: Vec<&[u8]> = vec![b"1337", b"File=inline=1", no_move.as_bytes()];
+    let (_, movement) = iterm2_image_protocol::parse(&params).expect("parses");
+    assert_eq!(movement, CURSOR_DO_NOT_MOVE);
+}
+
+#[test]
+fn test_reclaim_cadence_trigger() {
+    let mut term = geometry_test_term();
+    assert!(!term.grid.extras_table.should_reclaim());
+
+    // Burn through the allocation cadence with throwaway slots.
+    for _ in 0..4096 {
+        let id = term
+            .grid
+            .extras_table
+            .alloc(crate::crosswords::square::Extras::default());
+        term.grid.extras_table.free(id);
+    }
+    assert!(term.grid.extras_table.should_reclaim(), "cadence elapsed");
+
+    term.grid.reclaim_extras();
+    assert!(
+        !term.grid.extras_table.should_reclaim(),
+        "sweep resets the cadence"
+    );
+}
+
+#[test]
+fn test_kitty_placement_glued_across_ring_saturation_and_expiry() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    // 4-line screen, 3-line scrollback cap.
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 4),
+        crate::ansi::CursorShape::Block,
+        TestEventListener,
+        unsafe { WindowId::dummy() },
+        0,
+        3,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // 30x40 image: 2 rows, anchored at absolute row 0.
+    let pixels = vec![255u8; 30 * 40 * 4];
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 30,
+        height: 40,
+        color_type: ColorType::Rgba,
+        pixels,
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    term.store_graphic(graphic);
+    let mut placement = placement_request(20);
+    placement.cursor_movement = 1;
+    term.place_graphic(placement);
+    assert_eq!(
+        term.graphics
+            .kitty_placements
+            .get(&(1, 20))
+            .unwrap()
+            .dest_row,
+        0
+    );
+
+    // Fill the screen, then scroll into history up to the cap.
+    for _ in 0..6 {
+        term.linefeed();
+    }
+    assert_eq!(term.history_size(), 3);
+    assert_eq!(term.lines_evicted(), 0);
+
+    // One more line: the ring is at cap, the oldest row (the image's
+    // first) is evicted.
+    term.linefeed();
+    assert_eq!(term.lines_evicted(), 1);
+    let stored = term
+        .graphics
+        .kitty_placements
+        .get(&(1, 20))
+        .expect("placement survives while a row remains in the ring");
+
+    // Scrolled fully back: the image's second row is the topmost
+    // retained line, so the placement renders one row above the
+    // viewport top (negative y, partially visible). Without the
+    // absolute base it would drift a full row down.
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: (term.lines_evicted() + term.history_size() as u64) as i64,
+        display_offset: term.history_size() as i64,
+        screen_lines: 4,
+    };
+    let geometry =
+        kitty_overlay_geometry(stored, 30, 40, &viewport).expect("partially visible");
+    assert_eq!(geometry.y, -20.0, "glued: first image row evicted");
+
+    // One more eviction takes the image's last row off the ring: the
+    // placement expires like kitty's do.
+    term.linefeed();
+    assert_eq!(term.lines_evicted(), 2);
+    assert!(
+        !term.graphics.kitty_placements.contains_key(&(1, 20)),
+        "placement expires with its content"
+    );
+}
+
+#[test]
+fn test_atlas_placement_created_on_insert() {
+    let mut term = geometry_test_term();
+    term.grid.cursor.pos.col = Column(5);
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+
+    assert_eq!(term.graphics.atlas_placements.len(), 1);
+    let p = &term.graphics.atlas_placements[0];
+    assert_eq!(p.image_key, crate::sugarloaf::atlas_image_key(1));
+    assert_eq!(p.abs_row, 0);
+    assert_eq!(p.col, 5, "anchored at the cursor column");
+    assert_eq!((p.columns, p.rows), (3, 2), "30x40 at 10x20 cells");
+    assert_eq!(
+        (p.src_x, p.src_y, p.src_width, p.src_height),
+        (0, 0, 30, 40),
+        "initial crop covers the whole display"
+    );
+    assert_eq!((p.insert_cell_w, p.insert_cell_h), (10, 20));
+    assert_eq!(
+        term.graphics.atlas_key_refs.get(&p.image_key),
+        Some(&1),
+        "one placement references the key"
+    );
+}
+
+#[test]
+fn test_atlas_overlay_geometry_scaling_and_scroll() {
+    use crate::ansi::graphics::{
+        atlas_overlay_geometry, AtlasPlacement, OverlayViewport,
+    };
+
+    let placement = AtlasPlacement {
+        image_key: 7,
+        abs_row: 55,
+        col: 4,
+        columns: 3,
+        rows: 2,
+        src_x: 0,
+        src_y: 20,
+        src_width: 30,
+        src_height: 20,
+        total_width: 30,
+        total_height: 40,
+        insert_cell_w: 10,
+        insert_cell_h: 20,
+    };
+    // Scrolled back 30 rows into 80 rows above the screen top.
+    let viewport = OverlayViewport {
+        cell_width: 12.0,
+        cell_height: 24.0,
+        origin_x: 100.0,
+        origin_y: 50.0,
+        history_size: 80,
+        display_offset: 30,
+        screen_lines: 24,
+    };
+    let g = atlas_overlay_geometry(&placement, &viewport).expect("visible");
+    assert_eq!(g.x, 100.0 + 4.0 * 12.0);
+    assert_eq!(g.y, 50.0 + 5.0 * 24.0);
+    // Live cells grew 10x20 -> 12x24: display scales with the font.
+    assert_eq!(g.width, 30.0 * 1.2);
+    assert_eq!(g.height, 20.0 * 1.2);
+    // Bottom half of the display space.
+    assert_eq!(g.source_rect, [0.0, 0.5, 1.0, 1.0]);
+
+    // Fully above the viewport: culled.
+    let live = OverlayViewport {
+        display_offset: 0,
+        ..viewport
+    };
+    assert!(atlas_overlay_geometry(&placement, &live).is_none());
+}
+
+#[test]
+fn test_atlas_placement_expires_off_the_ring() {
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 4),
+        crate::ansi::CursorShape::Block,
+        TestEventListener,
+        unsafe { WindowId::dummy() },
+        0,
+        2,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    assert_eq!(term.graphics.atlas_placements.len(), 1);
+
+    // Push the image's two rows out of the screen and the 2-line ring.
+    for _ in 0..10 {
+        term.linefeed();
+    }
+    assert!(
+        term.graphics.atlas_placements.is_empty(),
+        "placement expires with its content"
+    );
+    assert!(
+        term.graphics.atlas_key_refs.is_empty(),
+        "last placement released the image key"
+    );
+}
+
+fn test_placement() -> crate::ansi::graphics::AtlasPlacement {
+    crate::ansi::graphics::AtlasPlacement {
+        image_key: 9,
+        abs_row: 10,
+        col: 2,
+        columns: 4,
+        rows: 3,
+        src_x: 0,
+        src_y: 0,
+        src_width: 38,
+        src_height: 55,
+        total_width: 38,
+        total_height: 55,
+        insert_cell_w: 10,
+        insert_cell_h: 20,
+    }
+}
+
+#[test]
+fn test_subtract_rect_center_hole_yields_four_slices() {
+    let p = test_placement();
+    let mut out = Vec::new();
+    // 1-cell hole at row 11, col 4 (the middle).
+    assert!(p.subtract_rect(11, 12, 4, 5, &mut out).is_some());
+    assert_eq!(out.len(), 4);
+
+    // Top: full width, row 10.
+    assert_eq!(
+        (out[0].abs_row, out[0].rows, out[0].col, out[0].columns),
+        (10, 1, 2, 4)
+    );
+    assert_eq!((out[0].src_y, out[0].src_height), (0, 20));
+    // Bottom: full width, row 12; keeps the exact partial bottom edge.
+    assert_eq!((out[1].abs_row, out[1].rows), (12, 1));
+    assert_eq!((out[1].src_y, out[1].src_height), (40, 15));
+    // Left: hole row, cols 2..4.
+    assert_eq!((out[2].abs_row, out[2].col, out[2].columns), (11, 2, 2));
+    assert_eq!(
+        (
+            out[2].src_x,
+            out[2].src_width,
+            out[2].src_y,
+            out[2].src_height
+        ),
+        (0, 20, 20, 20)
+    );
+    // Right: hole row, col 5..6; keeps the exact partial right edge.
+    assert_eq!((out[3].abs_row, out[3].col, out[3].columns), (11, 5, 1));
+    assert_eq!((out[3].src_x, out[3].src_width), (30, 8));
+}
+
+#[test]
+fn test_subtract_rect_miss_and_full_cover() {
+    let p = test_placement();
+    let mut out = Vec::new();
+    assert!(p.subtract_rect(0, 5, 0, 100, &mut out).is_none(), "miss");
+    assert!(out.is_empty());
+    assert!(
+        p.subtract_rect(10, 13, 2, 6, &mut out).is_some(),
+        "swallowed"
+    );
+    assert!(out.is_empty(), "no survivors");
+}
+
+#[test]
+fn test_text_over_image_clips_exactly_that_cell() {
+    let mut term = geometry_test_term();
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    assert_eq!(term.graphics.atlas_placements.len(), 1);
+
+    // Print into the image's middle cell (row 1, col 1).
+    term.grid.cursor.pos = Pos::new(Line(1), Column(1));
+    term.write_at_cursor('x');
+
+    // The placement split; no surviving piece covers (1, 1), but the
+    // rest of the image is intact.
+    let placements = &term.graphics.atlas_placements;
+    assert!(placements.len() >= 2, "placement split: {placements:?}");
+    let covers = |row: i64, col: usize| {
+        placements.iter().any(|p| {
+            row >= p.abs_row
+                && row < p.abs_row + p.rows as i64
+                && col >= p.col
+                && col < p.col + p.columns
+        })
+    };
+    assert!(!covers(1, 1), "written cell is clipped out");
+    assert!(covers(0, 0) && covers(0, 2) && covers(1, 0) && covers(1, 2));
+    assert_eq!(
+        term.graphics.atlas_key_refs.values().sum::<u32>() as usize,
+        placements.len(),
+        "key refs track the split pieces"
+    );
+}
+
+#[test]
+fn test_region_scroll_shifts_and_clips_atlas_placements() {
+    let mut term = geometry_test_term();
+    // DECSTBM rows 2..10 (1-based 3..10): interior region.
+    term.set_scrolling_region(3, Some(10));
+    // Image at rows 4-5 inside the region (cursor goto is
+    // origin-relative unless DECOM; goto absolute via direct set).
+    term.grid.cursor.pos = Pos::new(Line(4), Column(0));
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    let before = term.graphics.atlas_placements[0].clone();
+    assert_eq!(before.abs_row, 4);
+
+    // Scroll the region up by two lines: content at rows 4-5 moves to
+    // rows 2-3, still inside the region.
+    term.scroll_up_relative(Line(2), 2);
+    let after = &term.graphics.atlas_placements[0];
+    assert_eq!(after.abs_row, 2, "image follows region content");
+    assert_eq!(after.rows, 2, "fully inside, no clipping yet");
+
+    // Scroll again: the image's top row crosses the region top and is
+    // destroyed like text; the bottom row survives at the boundary.
+    term.scroll_up_relative(Line(2), 1);
+    let after = &term.graphics.atlas_placements[0];
+    assert_eq!(after.abs_row, 2, "clipped at the region top");
+    assert_eq!(after.rows, 1);
+    assert_eq!(after.src_y, 20, "surviving row shows the bottom slice");
+}
+
+#[test]
+fn test_overlay_clips_to_panel_rect() {
+    use crate::ansi::graphics::clip_overlay_to_rect;
+    use crate::sugarloaf::GraphicOverlay;
+
+    // The split-pane bug: a 600px-wide image in a panel whose grid
+    // ends at x=400 must clip at the divider, showing only the left
+    // two-thirds of the texture.
+    let mut overlay = GraphicOverlay {
+        image_id: 1,
+        x: 100.0,
+        y: 50.0,
+        width: 600.0,
+        height: 200.0,
+        z_index: -1,
+        source_rect: [0.0, 0.0, 1.0, 1.0],
+    };
+    assert!(clip_overlay_to_rect(
+        &mut overlay,
+        100.0,
+        50.0,
+        400.0,
+        450.0
+    ));
+    assert_eq!(overlay.x, 100.0);
+    assert_eq!(overlay.width, 300.0, "clipped at the divider");
+    assert_eq!(overlay.height, 200.0, "vertical untouched");
+    assert_eq!(overlay.source_rect, [0.0, 0.0, 0.5, 1.0]);
+
+    // Fully outside the panel: dropped.
+    let mut outside = GraphicOverlay {
+        image_id: 1,
+        x: 500.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+        z_index: -1,
+        source_rect: [0.0, 0.0, 1.0, 1.0],
+    };
+    assert!(!clip_overlay_to_rect(&mut outside, 0.0, 0.0, 400.0, 400.0));
+
+    // Partial scroll off the panel top with an existing crop: the
+    // source rect shrinks within the crop, not the full texture.
+    let mut scrolled = GraphicOverlay {
+        image_id: 1,
+        x: 0.0,
+        y: -50.0,
+        width: 100.0,
+        height: 100.0,
+        z_index: -1,
+        source_rect: [0.25, 0.5, 0.75, 1.0],
+    };
+    assert!(clip_overlay_to_rect(&mut scrolled, 0.0, 0.0, 400.0, 400.0));
+    assert_eq!(scrolled.y, 0.0);
+    assert_eq!(scrolled.height, 50.0);
+    assert_eq!(scrolled.source_rect, [0.25, 0.75, 0.75, 1.0]);
+}
+
+/// Guards the split/window-resize contract: at constant font, images
+/// keep their cell span (kitty semantics: the protocol has no
+/// re-negotiation) and the renderer clips them at the narrowed
+/// panel's grid edge instead of painting across a split divider.
+#[test]
+fn test_narrowing_terminal_keeps_image_span_and_clips_at_edge() {
+    use crate::ansi::graphics::{
+        clip_overlay_to_rect, kitty_overlay_geometry, OverlayViewport,
+    };
+    use crate::sugarloaf::GraphicOverlay;
+
+    let mut term = geometry_test_term();
+
+    // Wide kitty placement: c=50, r=2 on the 80-column screen.
+    let mut placement = placement_request(30);
+    placement.columns = 50;
+    placement.rows = 2;
+    placement.cursor_movement = 1;
+    term.place_graphic(placement);
+    let stored = term.graphics.kitty_placements.get(&(1, 30)).unwrap();
+    assert_eq!(stored.pixel_width, 500, "50 cells at 10px");
+
+    // Split/narrow: 80 -> 40 columns, same 10x20 cell metrics.
+    term.resize(crate::crosswords::CrosswordsSize::new_with_dimensions(
+        40, 24, 400, 480, 10, 20,
+    ));
+
+    let stored = term.graphics.kitty_placements.get(&(1, 30)).unwrap();
+    assert_eq!(
+        (stored.columns, stored.pixel_width),
+        (50, 500),
+        "cell span survives the narrow (font unchanged)"
+    );
+
+    // Render side: geometry unchanged, then clipped at the 40-column
+    // grid edge, exactly the split-divider case.
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: (term.lines_evicted() + term.history_size() as u64) as i64,
+        display_offset: 0,
+        screen_lines: 24,
+    };
+    let geometry = kitty_overlay_geometry(stored, 100, 100, &viewport).unwrap();
+    let mut overlay = GraphicOverlay {
+        image_id: 1,
+        x: geometry.x,
+        y: geometry.y,
+        width: geometry.width,
+        height: geometry.height,
+        z_index: 0,
+        source_rect: geometry.source_rect,
+    };
+    assert!(clip_overlay_to_rect(&mut overlay, 0.0, 0.0, 400.0, 480.0));
+    assert_eq!(overlay.width, 400.0, "clipped at the new grid edge");
+    assert!(
+        (overlay.source_rect[2] - 0.8).abs() < 1e-6,
+        "shows the left 400/500 of the image: {:?}",
+        overlay.source_rect
+    );
+
+    // Same contract for a sixel/iTerm2 placement.
+    term.grid.cursor.pos = Pos::new(Line(5), Column(0));
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    let before = term.graphics.atlas_placements[0].clone();
+    term.resize(crate::crosswords::CrosswordsSize::new_with_dimensions(
+        20, 24, 200, 480, 10, 20,
+    ));
+    let after = &term.graphics.atlas_placements[0];
+    assert_eq!(
+        (after.columns, after.src_width),
+        (before.columns, before.src_width),
+        "sixel raster is immutable under window resizes"
+    );
+}
+
+#[test]
+fn test_height_grow_keeps_absolute_base_stable() {
+    // B1 guard: growing the window height must not advance the
+    // absolute row base, since no content leaves the ring.
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 4),
+        crate::ansi::CursorShape::Block,
+        TestEventListener,
+        unsafe { WindowId::dummy() },
+        0,
+        10,
+    );
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    let anchor = term.graphics.atlas_placements[0].abs_row;
+
+    // Build two lines of history, then grow the window taller.
+    for _ in 0..5 {
+        term.linefeed();
+    }
+    assert_eq!(term.history_size(), 2);
+    assert_eq!(term.lines_evicted(), 0);
+    term.resize(crate::crosswords::CrosswordsSize::new_with_dimensions(
+        80, 6, 800, 120, 10, 20,
+    ));
+
+    assert_eq!(term.lines_evicted(), 0, "height grow evicts nothing");
+    assert_eq!(
+        term.graphics.atlas_placements[0].abs_row, anchor,
+        "image stays glued to its content"
+    );
+}
+
+#[test]
+fn test_full_reset_clears_atlas_placements() {
+    // B2 guard: RIS must not leave sixel/iTerm2 images on screen.
+    let mut term = geometry_test_term();
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    assert_eq!(term.graphics.atlas_placements.len(), 1);
+    let key = term.graphics.atlas_placements[0].image_key;
+
+    term.reset_state();
+
+    assert!(term.graphics.atlas_placements.is_empty());
+    assert!(term.graphics.atlas_key_refs.is_empty());
+    // The removal was dispatched (queue drained by the update event),
+    // so re-queueing the same key must not happen on a later recount.
+    term.graphics.recount_atlas_keys();
+    assert!(term.graphics.texture_operations.lock().is_empty());
+    let _ = key;
+}
+
+#[test]
+fn test_alt_screen_reentry_drops_stale_placements() {
+    // B3 guard: images from a previous alt session must not reappear.
+    let mut term = geometry_test_term();
+
+    // Enter alt, draw an image there, leave.
+    term.swap_alt();
+    term.insert_graphic(atlas_graphic(), None, Some(1));
+    assert_eq!(term.graphics.atlas_placements.len(), 1);
+    term.swap_alt();
+    assert!(
+        term.graphics.atlas_placements.is_empty(),
+        "main screen has no image"
+    );
+
+    // Re-enter alt: the stale placement died with the reset contents.
+    term.swap_alt();
+    assert!(
+        term.graphics.atlas_placements.is_empty(),
+        "previous alt session's image does not come back"
+    );
+    assert!(term.graphics.atlas_key_refs.is_empty());
 }

@@ -236,6 +236,9 @@ impl From<String> for Action {
             "increasefontsize" => Some(Action::IncreaseFontSize),
             "decreasefontsize" => Some(Action::DecreaseFontSize),
             "createwindow" => Some(Action::WindowCreateNew),
+            "togglequake" => Some(Action::ToggleQuake),
+            "scrolltoprevprompt" => Some(Action::ScrollToPrevPrompt),
+            "scrolltonextprompt" => Some(Action::ScrollToNextPrompt),
             "createtab" => Some(Action::TabCreateNew),
             "movecurrenttabtoprev" => Some(Action::MoveCurrentTabToPrev),
             "movecurrenttabtonext" => Some(Action::MoveCurrentTabToNext),
@@ -458,6 +461,17 @@ pub enum Action {
 
     /// Select everything, including the scrollback history.
     SelectAll,
+
+    /// Show or hide the quake-style dropdown window. Also registered
+    /// as a system-wide hotkey when bound in `[bindings]`.
+    ToggleQuake,
+
+    /// Scroll so the previous OSC 133 prompt is at the top of the
+    /// viewport. Requires shell integration emitting semantic prompts.
+    ScrollToPrevPrompt,
+
+    /// Scroll so the next OSC 133 prompt is at the top of the viewport.
+    ScrollToNextPrompt,
 
     /// Toggle vi mode.
     ToggleViMode,
@@ -762,20 +776,40 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
             "home" => (Key::Named(Home), KeyLocation::Standard),
             "space" => (Key::Named(Space), KeyLocation::Standard),
             "delete" => (Key::Named(Delete), KeyLocation::Standard),
-            "esc" => (Key::Named(Escape), KeyLocation::Standard),
+            "esc" | "escape" => (Key::Named(Escape), KeyLocation::Standard),
             "insert" => (Key::Named(Insert), KeyLocation::Standard),
             "pageup" => (Key::Named(PageUp), KeyLocation::Standard),
             "pagedown" => (Key::Named(PageDown), KeyLocation::Standard),
             "end" => (Key::Named(End), KeyLocation::Standard),
             "up" => (Key::Named(ArrowUp), KeyLocation::Standard),
-            "back" => (Key::Named(Backspace), KeyLocation::Standard),
+            "back" | "backspace" => (Key::Named(Backspace), KeyLocation::Standard),
             "down" => (Key::Named(ArrowDown), KeyLocation::Standard),
             "left" => (Key::Named(ArrowLeft), KeyLocation::Standard),
             "right" => (Key::Named(ArrowRight), KeyLocation::Standard),
             "@" => (Key::Character("@".into()), KeyLocation::Standard),
             "colon" => (Key::Character(":".into()), KeyLocation::Standard),
             "." => (Key::Character(".".into()), KeyLocation::Standard),
-            "return" => (Key::Named(Enter), KeyLocation::Standard),
+            "return" | "enter" => (Key::Named(Enter), KeyLocation::Standard),
+            "f1" => (Key::Named(F1), KeyLocation::Standard),
+            "f2" => (Key::Named(F2), KeyLocation::Standard),
+            "f3" => (Key::Named(F3), KeyLocation::Standard),
+            "f4" => (Key::Named(F4), KeyLocation::Standard),
+            "f5" => (Key::Named(F5), KeyLocation::Standard),
+            "f6" => (Key::Named(F6), KeyLocation::Standard),
+            "f7" => (Key::Named(F7), KeyLocation::Standard),
+            "f8" => (Key::Named(F8), KeyLocation::Standard),
+            "f9" => (Key::Named(F9), KeyLocation::Standard),
+            "f10" => (Key::Named(F10), KeyLocation::Standard),
+            "f11" => (Key::Named(F11), KeyLocation::Standard),
+            "f12" => (Key::Named(F12), KeyLocation::Standard),
+            "f13" => (Key::Named(F13), KeyLocation::Standard),
+            "f14" => (Key::Named(F14), KeyLocation::Standard),
+            "f15" => (Key::Named(F15), KeyLocation::Standard),
+            "f16" => (Key::Named(F16), KeyLocation::Standard),
+            "f17" => (Key::Named(F17), KeyLocation::Standard),
+            "f18" => (Key::Named(F18), KeyLocation::Standard),
+            "f19" => (Key::Named(F19), KeyLocation::Standard),
+            "f20" => (Key::Named(F20), KeyLocation::Standard),
             "[" => (Key::Character("[".into()), KeyLocation::Standard),
             "]" => (Key::Character("]".into()), KeyLocation::Standard),
             "{" => (Key::Character("{".into()), KeyLocation::Standard),
@@ -839,7 +873,17 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         }
     }
 
-    let mut action: Action = config_key_binding.action.into();
+    let action_str = config_key_binding.action;
+    let mut action: Action = action_str.clone().into();
+    // An unknown action parses as `None`, which would silently unbind
+    // the default on this key. Reject it so the config error is loud
+    // and the default stays.
+    if action == Action::None
+        && !action_str.is_empty()
+        && action_str.to_lowercase() != "none"
+    {
+        return Err(format!("unknown action '{action_str}'"));
+    }
     if !config_key_binding.esc.is_empty() {
         action = Action::Esc(config_key_binding.esc);
     }
@@ -872,6 +916,77 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         action,
         mode: res_mode.mode,
         notmode: res_mode.not_mode,
+    })
+}
+
+/// Legacy (non-kitty) C0 byte for a ctrl+character combo, using the
+/// same table and modifier discipline as kitty. The platform is
+/// inconsistent about synthesizing these (ctrl+6, ctrl+/), so the byte
+/// is computed here instead of trusting the reported text. Returns
+/// `None` when the combo has no C0 identity or carries modifiers
+/// beyond ctrl (plus alt, which the caller encodes as an ESC prefix,
+/// and shift when it only serves to produce the character itself).
+///
+/// `i`, `m` and `[` are intentionally absent per fixterms: their C0
+/// bytes collide with Tab, Enter and Escape, and the platform text
+/// already carries them in legacy mode.
+pub fn ctrl_seq(key: &Key, text: &str, mods: ModifiersState) -> Option<u8> {
+    if !mods.control_key() {
+        return None;
+    }
+
+    let mut c = {
+        let mut it = text.chars();
+        match (it.next(), it.next()) {
+            (Some(c), None) if c.is_ascii() => c,
+            _ => {
+                // No single-byte text: fall back to the logical key.
+                // Covers layouts whose key produces a non-ASCII char
+                // (cyrillic) and platforms reporting no text at all.
+                let Key::Character(ch) = key else {
+                    return None;
+                };
+                let mut it = ch.chars();
+                let (Some(c), None) = (it.next(), it.next()) else {
+                    return None;
+                };
+                if !c.is_ascii() {
+                    return None;
+                }
+                c
+            }
+        }
+    };
+
+    let mut rest = mods & !(ModifiersState::CONTROL | ModifiersState::ALT);
+    // Shift is consumed when it only produced the character itself
+    // (ctrl+shift+6 arrives as '^'); for letters it stays, so
+    // ctrl+shift+a remains distinguishable from ctrl+a.
+    if rest.shift_key() && !c.is_ascii_uppercase() && c != '@' {
+        rest &= !ModifiersState::SHIFT;
+    }
+    if c.is_ascii_uppercase() && !rest.shift_key() {
+        // Caps lock without shift.
+        c = c.to_ascii_lowercase();
+    }
+    if !rest.is_empty() {
+        return None;
+    }
+
+    Some(match c {
+        ' ' | '2' | '@' => 0x00,
+        '3' => 0x1b,
+        '4' | '\\' => 0x1c,
+        '5' | ']' => 0x1d,
+        '6' | '^' | '~' => 0x1e,
+        '7' | '/' | '_' => 0x1f,
+        '8' | '?' => 0x7f,
+        '0' => b'0',
+        '1' => b'1',
+        '9' => b'9',
+        'i' | 'm' => return None,
+        c @ 'a'..='z' => (c as u8) - b'a' + 1,
+        _ => return None,
     })
 }
 
@@ -995,8 +1110,6 @@ pub fn platform_key_bindings(
         "0", ModifiersState::SUPER; Action::ResetFontSize;
         "=", ModifiersState::SUPER; Action::IncreaseFontSize;
         "+", ModifiersState::SUPER; Action::IncreaseFontSize;
-        "+", ModifiersState::SUPER; Action::IncreaseFontSize;
-        "-", ModifiersState::SUPER; Action::DecreaseFontSize;
         "-", ModifiersState::SUPER; Action::DecreaseFontSize;
         Key::Named(Insert), ModifiersState::SHIFT, ~BindingMode::VI, ~BindingMode::SEARCH;
             Action::Esc("\x1b[2;2~".into());
@@ -1093,8 +1206,6 @@ pub fn platform_key_bindings(
         "0", ModifiersState::CONTROL;  Action::ResetFontSize;
         "=", ModifiersState::CONTROL;  Action::IncreaseFontSize;
         "+", ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "+", ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
@@ -1157,8 +1268,6 @@ pub fn platform_key_bindings(
         "0", ModifiersState::CONTROL; Action::ResetFontSize;
         "=", ModifiersState::CONTROL; Action::IncreaseFontSize;
         "+", ModifiersState::CONTROL; Action::IncreaseFontSize;
-        "+", ModifiersState::CONTROL; Action::IncreaseFontSize;
-        "-", ModifiersState::CONTROL; Action::DecreaseFontSize;
         "-", ModifiersState::CONTROL; Action::DecreaseFontSize;
         Key::Named(Enter), ModifiersState::ALT; Action::ToggleFullscreen;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
@@ -1531,6 +1640,94 @@ mod tests {
             .iter()
             .any(|b| matches!(b.action, Action::Scroll(_)));
         assert!(has_scroll_actions);
+    }
+
+    #[test]
+    fn ctrl_seq_map() {
+        let ctrl = ModifiersState::CONTROL;
+        let shift = ModifiersState::SHIFT;
+        let alt = ModifiersState::ALT;
+        let key = |s: &str| Key::Character(s.into());
+
+        // macOS shape: the platform reports the plain char as text.
+        assert_eq!(ctrl_seq(&key("6"), "6", ctrl), Some(0x1e));
+        assert_eq!(ctrl_seq(&key("/"), "/", ctrl), Some(0x1f));
+        // Windows shape: no text at all.
+        assert_eq!(ctrl_seq(&key("6"), "", ctrl), Some(0x1e));
+        // ctrl+shift+6 arrives as '^': shift is consumed.
+        assert_eq!(ctrl_seq(&key("^"), "^", ctrl | shift), Some(0x1e));
+        // Alt passes through; the caller adds the ESC prefix.
+        assert_eq!(ctrl_seq(&key("6"), "6", ctrl | alt), Some(0x1e));
+        // Letters map, except the fixterms exclusions.
+        assert_eq!(ctrl_seq(&key("q"), "q", ctrl), Some(0x11));
+        assert_eq!(ctrl_seq(&key("i"), "i", ctrl), None);
+        assert_eq!(ctrl_seq(&key("m"), "m", ctrl), None);
+        // ctrl+shift+letter stays distinguishable: no C0 collapse.
+        assert_eq!(ctrl_seq(&key("A"), "A", ctrl | shift), None);
+        // Digit passthrough per kitty.
+        assert_eq!(ctrl_seq(&key("1"), "1", ctrl), Some(b'1'));
+        // Super combos never collapse to C0.
+        assert_eq!(ctrl_seq(&key("6"), "6", ctrl | ModifiersState::SUPER), None);
+        assert_eq!(ctrl_seq(&key("6"), "6", ModifiersState::empty()), None);
+        assert_eq!(ctrl_seq(&Key::Named(Enter), "", ctrl), None);
+    }
+
+    #[test]
+    fn unknown_action_is_rejected_and_default_survives() {
+        let bindings = bindings!(
+            KeyBinding;
+            "q", ModifiersState::SUPER; Action::Quit;
+        );
+        let config_bindings = vec![ConfigKeyBinding {
+            key: String::from("q"),
+            action: String::from("quitt"),
+            with: String::from("super"),
+            esc: String::from(""),
+            mode: String::from(""),
+        }];
+        let new_bindings = config_key_bindings(config_bindings, bindings);
+        assert_eq!(new_bindings.len(), 1);
+        assert_eq!(new_bindings[0].action, Action::Quit);
+    }
+
+    #[test]
+    fn function_keys_parse_in_config() {
+        for (name, named) in [("f1", F1), ("f5", F5), ("f12", F12), ("f20", F20)] {
+            let config_bindings = vec![ConfigKeyBinding {
+                key: String::from(name),
+                action: String::from("quit"),
+                with: String::from(""),
+                esc: String::from(""),
+                mode: String::from(""),
+            }];
+            let new_bindings = config_key_bindings(config_bindings, Vec::new());
+            assert_eq!(new_bindings.len(), 1, "{name} must parse");
+            assert_eq!(
+                new_bindings[0].trigger,
+                BindingKey::Keycode {
+                    key: Key::Named(named),
+                    location: KeyLocation::Standard
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn defaults_have_no_duplicate_triggers() {
+        let config = rio_backend::config::Config::default();
+        let bindings = default_key_bindings(&config);
+        for (i, a) in bindings.iter().enumerate() {
+            for b in bindings.iter().skip(i + 1) {
+                assert!(
+                    !(a.trigger == b.trigger
+                        && a.mods == b.mods
+                        && a.mode == b.mode
+                        && a.notmode == b.notmode
+                        && a.action == b.action),
+                    "duplicate default binding: {a:?}"
+                );
+            }
+        }
     }
 
     #[test]
