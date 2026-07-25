@@ -407,6 +407,10 @@ impl Text {
                 .shape_ctx
                 .builder(font_ref)
                 .size(size_u16 as f32)
+                // The shape context keeps one coord buffer that
+                // `variations()` only overwrites: clear it so an
+                // unweighted run doesn't inherit the last `wght`.
+                .normalized_coords(core::iter::empty::<i16>())
                 .variations(var_slice.iter().copied())
                 .build();
             shaper.add_str(text);
@@ -1240,6 +1244,9 @@ fn rasterize_swash_glyph(
         .builder(font_ref)
         .hint(hint)
         .size(size_px)
+        // Same shared coord buffer as shaping: start from the default
+        // instance before applying this font's `wght`.
+        .normalized_coords(core::iter::empty::<i16>())
         .variations(var_slice.iter().copied())
         .build();
 
