@@ -63,3 +63,6 @@ wayland = [
 # native Vulkan/Metal backends aren't available, and as an opt-in for
 # librashader CRT/scanline filters on Linux/macOS).
 wgpu = ["dep:wgpu", "sugarloaf/wgpu"]
+
+[dev-dependencies]
+mock_instant = "0.6.0"
