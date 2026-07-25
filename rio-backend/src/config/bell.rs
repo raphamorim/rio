@@ -34,34 +34,27 @@ pub enum AudioBell {
     System,
 }
 
+/// A named on/off switch. Accepts a bool or `"on"`/`"off"` in TOML and
+/// serializes back as a bool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Toggle {
+    Disabled,
+    Enabled,
+}
+
+impl Toggle {
+    pub fn is_enabled(self) -> bool {
+        matches!(self, Toggle::Enabled)
+    }
+}
+
 /// Whether the bell sets the window urgency / attention hint (taskbar/dock
-/// flash) when it fires in an unfocused window. Accepts a bool or
-/// `"on"`/`"off"`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UrgencyHint {
-    Disabled,
-    Enabled,
-}
+/// flash) when it fires in an unfocused window.
+pub type UrgencyHint = Toggle;
 
-/// Whether the bell raises a desktop notification when it fires in an unfocused
-/// window. Accepts a bool or `"on"`/`"off"`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BellNotification {
-    Disabled,
-    Enabled,
-}
-
-impl UrgencyHint {
-    pub fn is_enabled(self) -> bool {
-        matches!(self, UrgencyHint::Enabled)
-    }
-}
-
-impl BellNotification {
-    pub fn is_enabled(self) -> bool {
-        matches!(self, BellNotification::Enabled)
-    }
-}
+/// Whether the bell raises a desktop notification when it fires in an
+/// unfocused window.
+pub type BellNotification = Toggle;
 
 impl Default for Bell {
     fn default() -> Self {
@@ -144,42 +137,20 @@ impl Serialize for AudioBell {
     }
 }
 
-impl<'de> Deserialize<'de> for UrgencyHint {
+impl<'de> Deserialize<'de> for Toggle {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         Ok(if toggle_from(deserializer)? {
-            UrgencyHint::Enabled
+            Toggle::Enabled
         } else {
-            UrgencyHint::Disabled
+            Toggle::Disabled
         })
     }
 }
 
-impl Serialize for UrgencyHint {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_bool(self.is_enabled())
-    }
-}
-
-impl<'de> Deserialize<'de> for BellNotification {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(if toggle_from(deserializer)? {
-            BellNotification::Enabled
-        } else {
-            BellNotification::Disabled
-        })
-    }
-}
-
-impl Serialize for BellNotification {
+impl Serialize for Toggle {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
