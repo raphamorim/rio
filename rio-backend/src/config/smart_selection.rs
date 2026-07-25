@@ -13,15 +13,8 @@ use tracing::warn;
 
 use crate::crosswords::smart_select::SmartRule;
 
-/// Precision constants. Higher wins; ties broken by match length.
-/// Using `u8` keeps comparisons integer-only and reserves room for
-/// future user rules without exhausting the space.
-pub const PRECISION_URL: u8 = 200;
-pub const PRECISION_HIGH: u8 = 150;
-pub const PRECISION_MEDIUM: u8 = 130;
-pub const PRECISION_LOW: u8 = 50;
-
-/// `(name, pattern, precision)` for every built-in rule.
+/// `(name, pattern, precision)` for every built-in rule. Precision is
+/// `0..=255`, higher wins, ties broken by match length.
 ///
 /// Patterns use the subset of regex syntax supported by
 /// `regex_automata::hybrid::dfa` — notably, no look-around and ASCII
@@ -37,29 +30,21 @@ pub fn default_rules() -> Vec<(&'static str, &'static str, u8)> {
             // bracketed URL preserved should emit OSC 8 (handled by
             // the fast path).
             r#"(?:https?|ftp|file|ssh|git|mailto|gemini|gopher|news|magnet|ipfs|ipns)://?[^\s<>"\\{}\^\x00-\x1f\[\]()]+"#,
-            PRECISION_URL,
+            200,
         ),
-        (
-            "file_line",
-            r"[\w./~-]+\.[\w]+:\d+(?::\d+)?",
-            PRECISION_HIGH,
-        ),
+        ("file_line", r"[\w./~-]+\.[\w]+:\d+(?::\d+)?", 150),
         (
             "uuid",
             r"(?-u:\b)[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}(?-u:\b)",
-            PRECISION_MEDIUM + 10,
+            140,
         ),
-        (
-            "ipv4",
-            r"(?-u:\b)(?:\d{1,3}\.){3}\d{1,3}(?-u:\b)",
-            PRECISION_MEDIUM,
-        ),
+        ("ipv4", r"(?-u:\b)(?:\d{1,3}\.){3}\d{1,3}(?-u:\b)", 130),
         (
             "email",
             r"(?-u:\b)[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}(?-u:\b)",
-            PRECISION_MEDIUM,
+            130,
         ),
-        ("git_sha", r"(?-u:\b)[0-9a-f]{7,40}(?-u:\b)", PRECISION_LOW),
+        ("git_sha", r"(?-u:\b)[0-9a-f]{7,40}(?-u:\b)", 50),
     ]
 }
 
@@ -194,14 +179,13 @@ mod tests {
 
     #[test]
     fn all_default_rules_compile() {
-        let rules = compile_default_rules();
-        assert_eq!(rules.len(), default_rules().len());
-    }
-
-    #[test]
-    fn default_config_compiles_to_default_rules() {
-        let cfg = SmartSelectionConfig::default();
-        assert_eq!(cfg.compile().len(), default_rules().len());
+        // compile_default_rules() panics on a bad built-in pattern; the
+        // default config must reach the same rule set through compile().
+        assert_eq!(compile_default_rules().len(), default_rules().len());
+        assert_eq!(
+            SmartSelectionConfig::default().compile().len(),
+            default_rules().len()
+        );
     }
 
     #[test]

@@ -59,11 +59,9 @@ impl SmartSelector {
         }
     }
 
-    /// Replace the rule set with one freshly compiled from `config`.
-    /// Called on config reload; cheap relative to a click, but heavy
-    /// enough (compiles every regex) to be off the click hot path.
+    /// Recompile the rule set after a config edit.
     pub fn reload(&mut self, config: &SmartSelectionConfig) {
-        self.rules = config.compile();
+        *self = Self::new(config);
     }
 
     /// Resolve the click against the active rule set.
@@ -73,15 +71,6 @@ impl SmartSelector {
         click: Pos,
     ) -> Option<SelectionRange> {
         smart_select_at(term, &mut self.rules, click)
-    }
-
-    /// Number of active rules. Useful for assertions; not on a hot path.
-    pub fn len(&self) -> usize {
-        self.rules.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.rules.is_empty()
     }
 }
 

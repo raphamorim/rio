@@ -6,7 +6,7 @@
 //! two rows still selects as one range.
 
 use crate::crosswords::grid::Dimensions;
-use crate::crosswords::pos::{Column, Pos};
+use crate::crosswords::pos::{Column, Direction, Pos};
 use crate::crosswords::Crosswords;
 use crate::event::EventListener;
 use crate::selection::SelectionRange;
@@ -19,58 +19,46 @@ pub fn hyperlink_span_at<T: EventListener>(
     click: Pos,
 ) -> Option<SelectionRange> {
     let id = term.cell_hyperlink_id(click.row, click.col)?;
-    let start = walk_left(term, click, id);
-    let end = walk_right(term, click, id);
     Some(SelectionRange {
-        start,
-        end,
+        start: walk(term, click, id, Direction::Left),
+        end: walk(term, click, id, Direction::Right),
         is_block: false,
     })
 }
 
-fn walk_left<T: EventListener>(term: &Crosswords<T>, mut pos: Pos, id: u16) -> Pos {
-    let topmost = term.grid.topmost_line();
+/// Step outward from `pos` while cells keep the same `extras_id`,
+/// following the `wrapline` flag across soft-wrapped row boundaries.
+fn walk<T: EventListener>(
+    term: &Crosswords<T>,
+    mut pos: Pos,
+    id: u16,
+    dir: Direction,
+) -> Pos {
     let last_col = term.grid.last_column();
     loop {
-        if pos.col > Column(0) {
-            let prev = Pos::new(pos.row, pos.col - 1);
-            if term.cell_hyperlink_id(prev.row, prev.col) == Some(id) {
-                pos = prev;
-                continue;
+        let candidate = match dir {
+            Direction::Left if pos.col > Column(0) => Pos::new(pos.row, pos.col - 1),
+            Direction::Right if pos.col < last_col => Pos::new(pos.row, pos.col + 1),
+            // At a row edge: only continue if the row that feeds this
+            // one was soft-wrapped rather than hard-broken.
+            Direction::Left
+                if pos.row > term.grid.topmost_line()
+                    && term.grid[pos.row - 1i32][last_col].wrapline() =>
+            {
+                Pos::new(pos.row - 1i32, last_col)
             }
+            Direction::Right
+                if pos.row < term.grid.bottommost_line()
+                    && term.grid[pos.row][last_col].wrapline() =>
+            {
+                Pos::new(pos.row + 1i32, Column(0))
+            }
+            _ => return pos,
+        };
+        if term.cell_hyperlink_id(candidate.row, candidate.col) != Some(id) {
             return pos;
         }
-        if pos.row > topmost
-            && term.grid[pos.row - 1i32][last_col].wrapline()
-            && term.cell_hyperlink_id(pos.row - 1i32, last_col) == Some(id)
-        {
-            pos = Pos::new(pos.row - 1i32, last_col);
-            continue;
-        }
-        return pos;
-    }
-}
-
-fn walk_right<T: EventListener>(term: &Crosswords<T>, mut pos: Pos, id: u16) -> Pos {
-    let bottommost = term.grid.bottommost_line();
-    let last_col = term.grid.last_column();
-    loop {
-        if pos.col < last_col {
-            let next = Pos::new(pos.row, pos.col + 1);
-            if term.cell_hyperlink_id(next.row, next.col) == Some(id) {
-                pos = next;
-                continue;
-            }
-            return pos;
-        }
-        if pos.row < bottommost
-            && term.grid[pos.row][last_col].wrapline()
-            && term.cell_hyperlink_id(pos.row + 1i32, Column(0)) == Some(id)
-        {
-            pos = Pos::new(pos.row + 1i32, Column(0));
-            continue;
-        }
-        return pos;
+        pos = candidate;
     }
 }
 
