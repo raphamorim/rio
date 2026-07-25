@@ -403,6 +403,60 @@ This section documents the *[renderer]* table of the configuration file.
 
 	Default: _3_
 
+# SMART SELECTION
+
+This section documents the *[smart-selection]* table of the configuration file.
+
+Double-clicking inside the terminal selects the token under the cursor. The
+resolution order is:
+
+. OSC 8 hyperlink span (the producer-emitted link, including non-URL anchor
+	text and soft-wrapped spans).
+. Smart-selection rules listed here: each rule's regex is matched against the
+	soft-wrapped logical line containing the click; the highest-precision
+	match that covers the click wins, with longest match as the tiebreaker.
+. The classic semantic selection (word-by-word stopping at the separator
+	characters).
+
+Steps 2 and 3 only run when step 1 doesn't apply, so producers that emit
+OSC 8 always win.
+
+*enabled* = _true_ | _false_
+
+	Master switch for the rule engine. When _false_, double-click goes
+	straight from the OSC 8 fast path to the semantic fallback.
+
+	Default: _true_
+
+*rules* = [{ name = _"<string>"_, regex = _"<string>"_, precision = _<integer>_, enabled = _true_ | _false_ },]
+
+	User-defined rules layered on top of the built-in set. Matching by
+	*name* against a default _replaces_ that rule; setting *enabled = false*
+	on a default's name _removes_ it; a fresh name _appends_ a new rule.
+	*precision* is a _0..=255_ integer (higher wins, ties broken by match
+	length).
+
+	Built-in rules (with their precisions): *url* (200), *file_line* (150),
+	*uuid* (140), *ipv4* (130), *email* (130), *git_sha* (50). Patterns use
+	the regex-automata DFA subset — no look-around, ASCII word boundaries
+	only (_(?-u:\\b)_).
+
+	Example:
+
+```
+	[smart-selection]
+	enabled = true
+
+	[[smart-selection.rules]]
+	name = "jira-ticket"
+	regex = "[A-Z]{2,10}-\\\\d+"
+	precision = 100
+
+	[[smart-selection.rules]]
+	name = "git_sha"
+	enabled = false
+```
+
 # DEVELOPER
 
 This section documents the *[developer]* table of the configuration file.
