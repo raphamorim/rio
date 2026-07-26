@@ -95,7 +95,7 @@ final class PanelSession {
 
     private(set) var surface: OpaquePointer?
     private(set) var renderState: OpaquePointer?
-    private(set) var renderer: OpaquePointer?
+    private(set) var cpuRenderer: CPURenderer?
     private var surfaceID: Int = 0
     private var lastCols: UInt16 = 0
     private var lastRows: UInt16 = 0
@@ -118,24 +118,17 @@ final class PanelSession {
         guard bounds.width > 1, bounds.height > 1, surfaceView.window != nil else {
             return
         }
-        let scale = Float(surfaceView.window?.backingScaleFactor ?? 2.0)
         let pixelSize = surfaceView.convertToBacking(bounds).size
 
-        let viewPtr = Unmanaged.passUnretained(surfaceView).toOpaque()
-        guard
-            let renderer = rio_renderer_new(
-                viewPtr,
-                Float(pixelSize.width),
-                Float(pixelSize.height),
-                scale,
-                RioEngine.fontSize)
-        else { return }
-        self.renderer = renderer
+        // All drawing happens on the Swift side now (CPU). The renderer
+        // owns the font + cell geometry that the grid size is derived from.
+        let renderer = CPURenderer(fontSize: CGFloat(RioEngine.fontSize))
+        self.cpuRenderer = renderer
+        surfaceView.session = self
 
-        var cellWidth: Float = 0
-        var cellHeight: Float = 0
-        rio_renderer_cell_size(renderer, &cellWidth, &cellHeight)
-        let pad = rio_renderer_padding(renderer)
+        let cellWidth = Float(renderer.metrics.cellWidth)
+        let cellHeight = Float(renderer.metrics.cellHeight)
+        let pad = Float(renderer.metrics.padding)
         let cols = gridCols(
             logical: Float(bounds.width), cell: cellWidth, padding: pad)
         let rows = gridCols(
@@ -161,7 +154,7 @@ final class PanelSession {
     }
 
     func syncSize() {
-        guard let surface, let renderer else {
+        guard let surface, let renderer = cpuRenderer else {
             startIfNeeded()
             return
         }
@@ -169,15 +162,10 @@ final class PanelSession {
         let bounds = surfaceView.bounds
         guard bounds.width > 1, bounds.height > 1 else { return }
         let pixelSize = surfaceView.convertToBacking(bounds).size
-        rio_renderer_resize(
-            renderer,
-            UInt32(max(pixelSize.width, 1)),
-            UInt32(max(pixelSize.height, 1)))
 
-        var cellWidth: Float = 0
-        var cellHeight: Float = 0
-        rio_renderer_cell_size(renderer, &cellWidth, &cellHeight)
-        let pad = rio_renderer_padding(renderer)
+        let cellWidth = Float(renderer.metrics.cellWidth)
+        let cellHeight = Float(renderer.metrics.cellHeight)
+        let pad = Float(renderer.metrics.padding)
         let cols = gridCols(logical: Float(bounds.width), cell: cellWidth, padding: pad)
         let rows = gridCols(logical: Float(bounds.height), cell: cellHeight, padding: pad)
         if cols != lastCols || rows != lastRows {
@@ -194,15 +182,27 @@ final class PanelSession {
     }
 
     func rescale(_ scale: Float) {
-        guard let renderer else { return }
-        rio_renderer_rescale(renderer, scale)
+        // CPU rendering draws in points; AppKit maps to the backing store,
+        // so a scale change just needs a re-layout + redraw.
         syncSize()
     }
 
+    /// Draw the current render state into the surface view. Called from
+    /// `RioSurfaceNSView.draw(_:)` with the AppKit graphics context active.
+    func drawSurface() {
+        guard let renderState, let renderer = cpuRenderer else { return }
+        let view = hostView.surfaceView
+        let focused =
+            (view.window?.isKeyWindow ?? false)
+            && (view.window?.firstResponder === hostView)
+        renderer.render(
+            state: renderState, bounds: view.bounds, focused: focused)
+    }
+
     func render() {
-        guard let renderState, let renderer else { return }
+        guard let renderState else { return }
         rio_render_state_update(renderState)
-        rio_renderer_draw(renderer, renderState)
+        hostView.surfaceView.setNeedsDisplay(hostView.surfaceView.bounds)
     }
 
     func sendText(_ text: String) {
@@ -227,14 +227,13 @@ final class PanelSession {
     }
 
     func cellAt(_ point: NSPoint) -> (line: Int32, col: UInt16)? {
-        guard let renderer else { return nil }
-        var cellWidth: Float = 0
-        var cellHeight: Float = 0
-        rio_renderer_cell_size(renderer, &cellWidth, &cellHeight)
+        guard let renderer = cpuRenderer else { return nil }
+        let cellWidth = renderer.metrics.cellWidth
+        let cellHeight = renderer.metrics.cellHeight
         guard cellWidth > 0, cellHeight > 0 else { return nil }
-        let pad = CGFloat(rio_renderer_padding(renderer))
-        let col = Int((point.x - pad) / CGFloat(cellWidth))
-        let line = Int((point.y - pad) / CGFloat(cellHeight))
+        let pad = renderer.metrics.padding
+        let col = Int((point.x - pad) / cellWidth)
+        let line = Int((point.y - pad) / cellHeight)
         let maxCol = max(Int(lastCols) - 1, 0)
         let maxLine = max(Int(lastRows) - 1, 0)
         return (
@@ -269,33 +268,28 @@ final class PanelSession {
     }
 
     func setPreedit(_ text: String?) {
-        guard let renderer else { return }
-        if let text, !text.isEmpty {
-            text.withCString { rio_renderer_set_preedit(renderer, $0) }
-        } else {
-            rio_renderer_set_preedit(renderer, nil)
-        }
+        guard let renderer = cpuRenderer else { return }
+        renderer.preedit = (text?.isEmpty ?? true) ? nil : text
         render()
     }
 
     func setFontSize(_ size: Float) {
-        guard let renderer else { return }
-        rio_renderer_set_font_size(renderer, size)
+        RioEngine.fontSize = size
+        cpuRenderer?.setFontSize(CGFloat(size))
         syncSize()
     }
 
     func cursorRect() -> NSRect? {
-        guard let renderState, let renderer else { return nil }
+        guard let renderState, let renderer = cpuRenderer else { return nil }
         let cursor = rio_render_state_cursor(renderState)
-        var cellWidth: Float = 0
-        var cellHeight: Float = 0
-        rio_renderer_cell_size(renderer, &cellWidth, &cellHeight)
-        let pad = CGFloat(rio_renderer_padding(renderer))
+        let cellWidth = renderer.metrics.cellWidth
+        let cellHeight = renderer.metrics.cellHeight
+        let pad = renderer.metrics.padding
         return NSRect(
-            x: pad + CGFloat(cursor.column) * CGFloat(cellWidth),
-            y: pad + CGFloat(cursor.line) * CGFloat(cellHeight),
-            width: CGFloat(cellWidth),
-            height: CGFloat(cellHeight))
+            x: pad + CGFloat(cursor.column) * cellWidth,
+            y: pad + CGFloat(cursor.line) * cellHeight,
+            width: cellWidth,
+            height: cellHeight)
     }
 
     func shutdown() {
@@ -305,14 +299,12 @@ final class PanelSession {
         if let renderState {
             rio_render_state_free(renderState)
         }
-        if let renderer {
-            rio_renderer_free(renderer)
-        }
+        cpuRenderer = nil
         if let surface {
             rio_surface_free(surface)
         }
         renderState = nil
-        renderer = nil
+        cpuRenderer = nil
         surface = nil
     }
 }

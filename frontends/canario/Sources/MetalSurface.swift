@@ -30,7 +30,15 @@ final class SurfaceRegistry {
 }
 
 final class RioSurfaceNSView: NSView {
+    weak var session: PanelSession?
+
     override var isFlipped: Bool { true }
+
+    // CPU rendering: the session paints the current render state straight
+    // into this view's AppKit graphics context.
+    override func draw(_ dirtyRect: NSRect) {
+        session?.drawSurface()
+    }
 }
 
 final class PanelHostView: NSView {
@@ -56,6 +64,25 @@ final class PanelHostView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    // Cursor style depends on focus, so redraw whenever it changes.
+    private func redrawForFocusChange() {
+        surfaceView.setNeedsDisplay(surfaceView.bounds)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        redrawForFocusChange()
+        return super.becomeFirstResponder()
+    }
+
+    override func resignFirstResponder() -> Bool {
+        redrawForFocusChange()
+        return super.resignFirstResponder()
+    }
+
+    @objc private func windowKeyChanged() {
+        redrawForFocusChange()
+    }
+
     override func layout() {
         super.layout()
         surfaceView.frame = bounds
@@ -64,10 +91,21 @@ final class PanelHostView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let session, window != nil else { return }
+        NotificationCenter.default.removeObserver(
+            self, name: NSWindow.didBecomeKeyNotification, object: nil)
+        NotificationCenter.default.removeObserver(
+            self, name: NSWindow.didResignKeyNotification, object: nil)
+        guard let session, let window else { return }
+        for name in [
+            NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
+        ] {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(windowKeyChanged), name: name,
+                object: window)
+        }
         session.startIfNeeded()
         if session.terminal.focusedPanelID == session.panelID {
-            window?.makeFirstResponder(self)
+            window.makeFirstResponder(self)
         }
     }
 
