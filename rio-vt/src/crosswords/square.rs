@@ -232,6 +232,24 @@ impl Square {
         s
     }
 
+    /// Build a cell by OR-ing a codepoint into a `template` whose codepoint
+    /// field is zero (i.e. style / extras / flags only). One store, no
+    /// read-modify-write — used by the print-run fast path where the
+    /// template is hoisted out of the per-cell loop. Because a codepoint is
+    /// 21 bits at shift 0 and the template's codepoint bits are zero, the OR
+    /// is exactly `default() + set_style_id + set_extras_id + set_cell_flags
+    /// + set_c(c)`.
+    #[inline]
+    pub fn from_template(template: Square, c: char) -> Self {
+        let cp = c as u32 as u64;
+        debug_assert!(cp <= CODEPOINT_MASK, "codepoint exceeds 21 bits");
+        debug_assert!(
+            template.0 & CODEPOINT_MASK == 0,
+            "template must have a zero codepoint field"
+        );
+        Square(template.0 | cp)
+    }
+
     /// Read the underlying packed bits. Used by render hot loops that want
     /// to extract multiple fields from a single cell load — calling the
     /// individual accessors would otherwise reload the cell from memory
