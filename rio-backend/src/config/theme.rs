@@ -29,7 +29,7 @@ pub enum AppearanceTheme {
 }
 
 impl AppearanceTheme {
-    #[cfg(feature = "winit")]
+    #[cfg(feature = "rio-window")]
     pub fn to_window_theme(self) -> rio_window::window::Theme {
         match self {
             AppearanceTheme::Dark => rio_window::window::Theme::Dark,
@@ -37,7 +37,7 @@ impl AppearanceTheme {
         }
     }
 
-    #[cfg(feature = "winit")]
+    #[cfg(feature = "rio-window")]
     pub fn from_window_theme(theme: rio_window::window::Theme) -> Self {
         match theme {
             rio_window::window::Theme::Light => AppearanceTheme::Light,
