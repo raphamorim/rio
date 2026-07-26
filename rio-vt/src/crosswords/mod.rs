@@ -1419,6 +1419,25 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline(always)]
     pub fn write_at_cursor(&mut self, c: char) {
+        let c = self.grid.cursor.charsets[self.active_charset].map(c);
+        let style_id = self.grid.cursor.template.style_id();
+        let extras_id = self.grid.cursor.template.extras_id();
+        let flags = self.grid.cursor.template.cell_flags();
+        self.write_cell(c, style_id, extras_id, flags);
+    }
+
+    /// Write an already-charset-mapped `c` into the cursor cell with the given
+    /// template attributes. Split out of `write_at_cursor` so a print run
+    /// (`input_str`) can hoist the charset map and the cursor-template reads
+    /// out of its inner loop and call this per cell.
+    #[inline]
+    fn write_cell(
+        &mut self,
+        c: char,
+        style_id: crate::crosswords::style::StyleId,
+        template_extras_id: Option<crate::crosswords::square::ExtrasId>,
+        template_flags: CellFlags,
+    ) {
         // DEC semantics: printing into a cell covered by a sixel or
         // iTerm2 image clips exactly that cell out of the placement.
         // One branch when no images exist.
@@ -1431,10 +1450,6 @@ impl<U: EventListener> Crosswords<U> {
                 pos.col.0 + 1,
             );
         }
-        let c = self.grid.cursor.charsets[self.active_charset].map(c);
-        let style_id = self.grid.cursor.template.style_id();
-        let template_extras_id = self.grid.cursor.template.extras_id();
-        let template_flags = self.grid.cursor.template.cell_flags();
 
         let cursor_square = self.grid.cursor_square();
         if matches!(
@@ -3131,6 +3146,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
             return;
         }
 
+        // The cursor template (colors + flags) is constant across a printable
+        // run, and ASCII needs no charset map — hoist both out of the per-cell
+        // loop below and write cells via `write_cell` directly.
+        let style_id = self.grid.cursor.template.style_id();
+        let extras_id = self.grid.cursor.template.extras_id();
+        let flags = self.grid.cursor.template.cell_flags();
+
         let bytes = s.as_bytes();
         let mut idx = 0;
         while idx < bytes.len() {
@@ -3160,7 +3182,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             let take = (bytes.len() - idx).min(remaining_in_row);
             for i in 0..take {
                 let c = bytes[idx + i] as char;
-                self.write_at_cursor(c);
+                self.write_cell(c, style_id, extras_id, flags);
                 if self.grid.cursor.pos.col + 1 < columns {
                     self.grid.cursor.pos.col += 1;
                 } else {
