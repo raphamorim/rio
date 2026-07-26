@@ -39,7 +39,7 @@ default = ["renderer", "wayland", "x11", "winit"]
 # The renderer (sugarloaf) backend. Off makes rio-backend a lean terminal
 # core with no GPU/font-shaping deps — this is what `librio-vt` embeds.
 renderer = ["dep:sugarloaf", "rio-vt/renderer"]
-winit = ["dep:rio-window", "rio-vt/winit"]
+winit = ["dep:rio-window", "rio-vt/rio-window"]
 x11 = ["rio-vt/x11"]
 wayland = ["rio-vt/wayland"]
 # Enable the wgpu backend in sugarloaf (needed on Windows where the

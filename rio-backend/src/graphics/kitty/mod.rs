@@ -125,7 +125,7 @@ fn test_parse_png_format() {
 #[test]
 fn test_png_transmit_and_display() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -363,7 +363,7 @@ fn test_multiple_graphics_in_sequence() {
 #[test]
 fn test_cursor_movement_default() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -444,7 +444,7 @@ fn test_cursor_movement_default() {
 #[test]
 fn test_cursor_movement_no_move() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -551,7 +551,7 @@ fn test_protocol_parses_cursor_movement() {
 #[test]
 fn test_image_row_occupation_exact_fit() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -624,7 +624,7 @@ fn test_image_row_occupation_exact_fit() {
 #[test]
 fn test_subcell_offset_forwarded_and_clamped() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -716,7 +716,7 @@ fn test_subcell_offset_forwarded_and_clamped() {
 #[test]
 fn test_subcell_offset_extends_row_occupation() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -785,7 +785,7 @@ fn test_subcell_offset_extends_row_occupation() {
 #[test]
 fn test_image_row_occupation_single_row() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -855,7 +855,7 @@ fn test_image_row_occupation_single_row() {
 #[test]
 fn test_image_row_occupation_three_rows() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -926,7 +926,7 @@ fn test_image_row_occupation_three_rows() {
 #[test]
 fn test_image_row_occupation_from_middle() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -1000,7 +1000,7 @@ fn test_image_row_occupation_from_middle() {
 #[test]
 fn test_delete_all() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -1032,7 +1032,7 @@ fn test_delete_all() {
 #[test]
 fn test_store_graphic() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -1069,7 +1069,7 @@ fn test_store_graphic() {
 #[test]
 fn test_place_nonexistent_graphic() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -2498,7 +2498,7 @@ fn make_test_term() -> Crosswords<TestEventListener> {
         crate::crosswords::CrosswordsSize::new(80, 24),
         crate::ansi::CursorShape::Block,
         TestEventListener,
-        unsafe { WindowId::dummy() },
+        WindowId::from(0),
         0,
         10_000,
     )
@@ -3175,7 +3175,7 @@ fn test_resize_widen_unwraps_command_image_follows() {
     // pinned to the spot just below the (now shorter) command.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(20, 10),
         crate::ansi::CursorShape::Block,
@@ -3257,7 +3257,7 @@ fn test_resize_narrow_wraps_command_image_follows() {
     // the image below it must shift *down* by 1.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 10),
         crate::ansi::CursorShape::Block,
@@ -3374,7 +3374,7 @@ fn test_debug_widen_visible_layout() {
     // command wrapped onto 2 rows, then widens.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(20, 24),
         crate::ansi::CursorShape::Block,
@@ -3434,7 +3434,7 @@ fn test_debug_narrow_visible_layout() {
     // shrink_columns actually does to cursor and content positioning.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 24),
         crate::ansi::CursorShape::Block,
@@ -3496,7 +3496,7 @@ fn test_resize_narrow_combined_col_and_row_change() {
     // Cursor delta accumulates from both.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 24),
         crate::ansi::CursorShape::Block,
@@ -3592,7 +3592,7 @@ fn test_resize_narrow_with_multi_row_image() {
     // *above* the cursor. Then the next prompt sits below the image.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 24),
         crate::ansi::CursorShape::Block,
@@ -3702,7 +3702,7 @@ fn test_resize_narrow_with_cursor_at_bottom_of_screen() {
     // than 1.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 24),
         crate::ansi::CursorShape::Block,
@@ -3813,7 +3813,7 @@ fn test_resize_narrow_with_prompt_after_image() {
     // delta math.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 10),
         crate::ansi::CursorShape::Block,
@@ -3903,7 +3903,7 @@ fn test_resize_widen_unwraps_sixel_follows() {
     // overlay dirty so the renderer refreshes its placement snapshot.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(20, 10),
         crate::ansi::CursorShape::Block,
@@ -3948,7 +3948,7 @@ fn test_resize_narrow_wraps_sixel_follows() {
     // narrows, so the placement must move down by one row.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 10),
         crate::ansi::CursorShape::Block,
@@ -3991,7 +3991,7 @@ fn test_resize_widen_sixel_above_wrap_change_stays_put() {
     // reflow row remap keeps it in place.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(20, 10),
         crate::ansi::CursorShape::Block,
@@ -4041,7 +4041,7 @@ fn test_resize_widen_kitty_above_wrap_change_stays_put() {
     // same exact reflow remap.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(20, 10),
         crate::ansi::CursorShape::Block,
@@ -4137,7 +4137,7 @@ fn geometry_test_term() -> Crosswords<TestEventListener> {
         crate::crosswords::CrosswordsSize::new(80, 24),
         crate::ansi::CursorShape::Block,
         TestEventListener,
-        unsafe { WindowId::dummy() },
+        WindowId::from(0),
         0,
         10_000,
     );
@@ -4903,7 +4903,7 @@ fn test_kitty_placement_glued_across_ring_saturation_and_expiry() {
         crate::crosswords::CrosswordsSize::new(80, 4),
         crate::ansi::CursorShape::Block,
         TestEventListener,
-        unsafe { WindowId::dummy() },
+        WindowId::from(0),
         0,
         3,
     );
@@ -5060,7 +5060,7 @@ fn test_atlas_placement_expires_off_the_ring() {
         crate::crosswords::CrosswordsSize::new(80, 4),
         crate::ansi::CursorShape::Block,
         TestEventListener,
-        unsafe { WindowId::dummy() },
+        WindowId::from(0),
         0,
         2,
     );
@@ -5351,7 +5351,7 @@ fn test_height_grow_keeps_absolute_base_stable() {
         crate::crosswords::CrosswordsSize::new(80, 4),
         crate::ansi::CursorShape::Block,
         TestEventListener,
-        unsafe { WindowId::dummy() },
+        WindowId::from(0),
         0,
         10,
     );
