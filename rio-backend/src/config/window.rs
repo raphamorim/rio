@@ -1,5 +1,6 @@
 use crate::config::defaults::*;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "renderer")]
 use sugarloaf::ImageProperties;
 
 #[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
@@ -200,6 +201,7 @@ pub struct Window {
     pub opacity_cells: bool,
     #[serde(default)]
     pub blur: WindowBlur,
+    #[cfg(feature = "renderer")]
     #[serde(rename = "background-image", skip_serializing)]
     pub background_image: Option<ImageProperties>,
     #[serde(default = "Decorations::default")]
@@ -251,6 +253,7 @@ impl Default for Window {
             mode: WindowMode::default(),
             opacity: default_opacity(),
             opacity_cells: false,
+            #[cfg(feature = "renderer")]
             background_image: None,
             decorations: Decorations::default(),
             blur: WindowBlur::default(),
@@ -280,6 +283,7 @@ fn default_quake_height_percentage() -> f32 {
 }
 
 impl Colorspace {
+    #[cfg(feature = "renderer")]
     pub fn to_sugarloaf_colorspace(&self) -> sugarloaf::Colorspace {
         match self {
             Colorspace::Srgb => sugarloaf::Colorspace::Srgb,

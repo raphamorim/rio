@@ -2585,10 +2585,10 @@ dependencies = [
 name = "librio-vt"
 version = "0.1.0-alpha.1"
 dependencies = [
- "bitflags 2.13.0",
+ "bitflags 2.13.1",
  "corcovado",
  "rio-backend",
- "rustc-hash 2.1.2",
+ "rustc-hash 2.1.3",
  "teletypewriter",
  "tracing",
 ]
@@ -4007,6 +4007,7 @@ dependencies = [
  "regex",
  "regex-automata",
  "rio-grapheme-width",
+ "rio-graphics",
  "rio-window",
  "rustc-hash 2.1.3",
  "serde",
@@ -4028,6 +4029,18 @@ version = "0.4.12"
 dependencies = [
  "phf",
  "ucd-trie",
+]
+
+[[package]]
+name = "rio-graphics"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "parking_lot",
+ "rustc-hash 2.1.3",
+ "skrifa 0.37.0",
+ "tracing",
+ "wgpu",
 ]
 
 [[package]]
@@ -4676,6 +4689,7 @@ dependencies = [
  "png 0.17.16",
  "raw-window-handle",
  "rayon",
+ "rio-graphics",
  "rio-window",
  "rustc-hash 2.1.3",
  "serde",

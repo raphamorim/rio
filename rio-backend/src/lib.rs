@@ -13,4 +13,5 @@ pub mod simd_utf8;
 #[cfg(test)]
 mod graphics;
 
+#[cfg(feature = "renderer")]
 pub use sugarloaf;

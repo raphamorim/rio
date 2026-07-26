@@ -3,6 +3,7 @@ members = [
     "sugarloaf",
     "teletypewriter",
     "corcovado",
+    "rio-graphics",
     "rio-backend",
     "rio-grapheme-width",
     "rio-window",
@@ -37,6 +38,7 @@ rio-notifier = { path = "rio-notifier", version = "0.4.12" }
 rio-grapheme-width = { path = "rio-grapheme-width", version = "0.4.12" }
 sugarloaf = { path = "sugarloaf", version = "0.4.12" }
 corcovado = { path = "corcovado", version = "0.4.12" }
+rio-graphics = { path = "rio-graphics", version = "0.1.0" }
 
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.5", features = [

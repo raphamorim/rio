@@ -116,63 +116,11 @@ pub enum SugarloafBackend {
     Cpu,
 }
 
-/// RGBA color in linear-light 0..1 space. Mirrors `wgpu::Color`'s
-/// shape so callers don't have to depend on `wgpu`. Sugarloaf's
-/// public API takes/returns this type; the wgpu render path
-/// converts at the boundary.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Color {
-    pub r: f64,
-    pub g: f64,
-    pub b: f64,
-    pub a: f64,
-}
-
-impl Color {
-    pub const TRANSPARENT: Self = Self {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: 0.0,
-    };
-    pub const BLACK: Self = Self {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const WHITE: Self = Self {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    };
-}
-
-#[cfg(feature = "wgpu")]
-impl From<Color> for wgpu::Color {
-    fn from(c: Color) -> Self {
-        wgpu::Color {
-            r: c.r,
-            g: c.g,
-            b: c.b,
-            a: c.a,
-        }
-    }
-}
-
-#[cfg(feature = "wgpu")]
-impl From<wgpu::Color> for Color {
-    fn from(c: wgpu::Color) -> Self {
-        Color {
-            r: c.r,
-            g: c.g,
-            b: c.b,
-            a: c.a,
-        }
-    }
-}
+// `Color` (the trivial `{r,g,b,a: f64}` POD) now lives in `rio-graphics`
+// so config/color code can use it without depending on sugarloaf. The
+// wgpu `From` conversions live alongside it there under the crate's
+// `wgpu` feature (orphan rule: both sides would be foreign here).
+pub use rio_graphics::Color;
 
 pub struct SugarloafRenderer {
     pub backend: SugarloafBackend,

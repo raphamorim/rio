@@ -10,7 +10,7 @@ use cursor_icon::CursorIcon;
 use std::mem;
 use std::time::Duration;
 use std::time::Instant;
-use sugarloaf::GraphicData;
+use rio_graphics::GraphicData;
 use tracing::{debug, warn};
 
 use crate::crosswords::attr::Attr;

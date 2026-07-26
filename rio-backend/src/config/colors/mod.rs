@@ -8,10 +8,10 @@ use serde::{de, Deserialize};
 use std::num::ParseIntError;
 use std::ops::Mul;
 
-// `ColorWGPU` is the legacy name; `sugarloaf::Color` is the actual
+// `ColorWGPU` is the legacy name; `rio_graphics::Color` is the actual
 // type now (mirrors `wgpu::Color`'s shape, but doesn't drag wgpu
 // into the dep tree on Linux/macOS native builds).
-pub type ColorWGPU = sugarloaf::Color;
+pub type ColorWGPU = rio_graphics::Color;
 pub type ColorArray = [f32; 4];
 pub type ColorComposition = (ColorArray, ColorWGPU);
 
@@ -576,8 +576,8 @@ impl ColorBuilder {
         }
     }
 
-    pub fn to_wgpu(&self) -> sugarloaf::Color {
-        sugarloaf::Color {
+    pub fn to_wgpu(&self) -> rio_graphics::Color {
+        rio_graphics::Color {
             r: self.red,
             g: self.green,
             b: self.blue,
@@ -728,7 +728,7 @@ mod tests {
 
     #[test]
     fn test_conversion_from_hex_sgb_255() {
-        let color: sugarloaf::Color =
+        let color: rio_graphics::Color =
             ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
                 .unwrap()
                 .to_wgpu();
@@ -757,7 +757,7 @@ mod tests {
 
     #[test]
     fn test_conversion_from_hex_sgb_1() {
-        let color: sugarloaf::Color =
+        let color: rio_graphics::Color =
             ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_255)
                 .unwrap()
                 .to_wgpu();
