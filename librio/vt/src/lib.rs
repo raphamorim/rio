@@ -372,6 +372,18 @@ impl Surface {
     /// Dump the whole buffer (scrollback + screen) to plain text, so a
     /// frontend can persist it and replay it as inert scrollback on
     /// restore. Trailing blank rows are trimmed by `bounds_to_string`.
+    /// Inject bytes into the terminal's DISPLAY (the VT parser), as if they
+    /// came from the child process — NOT into the PTY input. Used to replay
+    /// saved scrollback on restore; the shell never sees these bytes, so it
+    /// can't execute them. Bytes are plain output (convert `\n` to `\r\n`
+    /// upstream if you want proper line starts).
+    pub fn inject_output(&self, bytes: &[u8]) {
+        use rio_vt::performer::handler::Processor;
+        let mut term = self.terminal.lock();
+        let mut processor = Processor::default();
+        processor.advance(&mut *term, bytes);
+    }
+
     pub fn dump(&self) -> String {
         let term = self.terminal.lock();
         let rows = term.screen_lines() as i32;
