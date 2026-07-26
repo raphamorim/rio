@@ -1,6 +1,6 @@
 [package]
 name = "librio-sugarloaf"
-version = "0.1.0-alpha.1"
+version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,7 +17,7 @@ default = []
 capi = ["librio-vt/capi", "dep:raw-window-handle"]
 
 [dependencies]
-librio-vt = { path = "../vt", version = "0.1.0-alpha.1" }
+librio-vt = { path = "../vt", version = "0.4.12" }
 sugarloaf = { workspace = true }
 raw-window-handle = { workspace = true, optional = true }
 

@@ -1,6 +1,6 @@
 [package]
 name = "librio-vt"
-version = "0.1.0-alpha.1"
+version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,7 +17,7 @@ default = []
 capi = []
 
 [dependencies]
-rio-backend = { path = "../../rio-backend", version = "0.4.10", default-features = false }
+rio-vt = { path = "../../rio-vt", version = "0.4.12" }
 teletypewriter = { workspace = true }
 corcovado = { workspace = true }
 rustc-hash = { workspace = true }

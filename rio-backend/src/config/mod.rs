@@ -1,6 +1,8 @@
 pub mod bell;
 pub mod bindings;
-pub mod colors;
+// `colors` and `ConfigError` moved to the `rio-vt` core crate; re-export
+// so `rio_backend::config::{colors, ConfigError}` keep resolving.
+pub use rio_vt::config::{colors, ConfigError};
 pub mod defaults;
 pub mod effects;
 pub mod hints;
@@ -34,13 +36,6 @@ use std::{default::Default, fs::File};
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, AppearanceTheme, Theme};
 use tracing::warn;
-
-#[derive(Clone, Debug)]
-pub enum ConfigError {
-    ErrLoadingConfig(String),
-    ErrLoadingTheme(String),
-    PathNotFound,
-}
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Shell {

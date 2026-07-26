@@ -2573,7 +2573,7 @@ dependencies = [
 
 [[package]]
 name = "librio-sugarloaf"
-version = "0.1.0-alpha.1"
+version = "0.4.12"
 dependencies = [
  "librio-vt",
  "raw-window-handle",
@@ -2583,11 +2583,11 @@ dependencies = [
 
 [[package]]
 name = "librio-vt"
-version = "0.1.0-alpha.1"
+version = "0.4.12"
 dependencies = [
  "bitflags 2.13.1",
  "corcovado",
- "rio-backend",
+ "rio-vt",
  "rustc-hash 2.1.3",
  "teletypewriter",
  "tracing",
@@ -3990,37 +3990,18 @@ name = "rio-backend"
 version = "0.4.12"
 dependencies = [
  "base64",
- "bitflags 2.13.1",
- "bytemuck",
- "copypasta",
- "corcovado",
- "cursor-icon",
  "dirs",
- "flate2",
- "image",
- "lazy_static",
- "libc",
- "memchr",
  "onig",
- "parking_lot",
- "raw-window-handle",
  "regex",
- "regex-automata",
- "rio-grapheme-width",
  "rio-graphics",
+ "rio-vt",
  "rio-window",
- "rustc-hash 2.1.3",
  "serde",
- "simdutf",
- "smallvec",
  "sugarloaf",
- "teletypewriter",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
- "unicode-width-16",
  "url",
  "wgpu",
- "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4033,7 +4014,7 @@ dependencies = [
 
 [[package]]
 name = "rio-graphics"
-version = "0.1.0"
+version = "0.4.12"
 dependencies = [
  "image",
  "parking_lot",
@@ -4054,6 +4035,41 @@ dependencies = [
  "objc2-user-notifications",
  "windows 0.62.2",
  "zbus",
+]
+
+[[package]]
+name = "rio-vt"
+version = "0.4.12"
+dependencies = [
+ "base64",
+ "bitflags 2.13.1",
+ "bytemuck",
+ "copypasta",
+ "corcovado",
+ "cursor-icon",
+ "flate2",
+ "image",
+ "lazy_static",
+ "libc",
+ "memchr",
+ "onig",
+ "parking_lot",
+ "raw-window-handle",
+ "regex",
+ "regex-automata",
+ "rio-grapheme-width",
+ "rio-graphics",
+ "rio-window",
+ "rustc-hash 2.1.3",
+ "serde",
+ "simdutf",
+ "smallvec",
+ "sugarloaf",
+ "teletypewriter",
+ "tracing",
+ "unicode-width-16",
+ "url",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

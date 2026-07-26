@@ -5,20 +5,20 @@ mod render_state;
 
 pub use key::{encode as encode_key, Key, KeyEvent, Modifiers};
 pub use render_state::{RenderState, ViewportSelection};
-pub use rio_backend::clipboard::ClipboardType;
-pub use rio_backend::config::colors::{AnsiColor, ColorRgb, NamedColor};
-pub use rio_backend::crosswords::pos::Column;
-pub use rio_backend::crosswords::square::Square;
-pub use rio_backend::crosswords::style::{Style, StyleFlags};
-pub use rio_backend::selection::SelectionRange;
+pub use rio_vt::clipboard::ClipboardType;
+pub use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
+pub use rio_vt::crosswords::pos::Column;
+pub use rio_vt::crosswords::square::Square;
+pub use rio_vt::crosswords::style::{Style, StyleFlags};
+pub use rio_vt::selection::SelectionRange;
 
-use rio_backend::ansi::CursorShape;
-use rio_backend::crosswords::pos::{Column as PosColumn, Line, Pos, Side};
-use rio_backend::crosswords::{Crosswords, Mode};
-use rio_backend::event::sync::FairMutex;
-use rio_backend::event::{EventListener, Msg, RioEvent, WindowId};
-use rio_backend::performer::Machine;
-use rio_backend::selection::{Selection, SelectionType};
+use rio_vt::ansi::CursorShape;
+use rio_vt::crosswords::pos::{Column as PosColumn, Line, Pos, Side};
+use rio_vt::crosswords::{Crosswords, Mode};
+use rio_vt::event::sync::FairMutex;
+use rio_vt::event::{EventListener, Msg, RioEvent, WindowId};
+use rio_vt::performer::Machine;
+use rio_vt::selection::{Selection, SelectionType};
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -51,7 +51,7 @@ struct GridSize {
     cols: usize,
 }
 
-impl rio_backend::crosswords::grid::Dimensions for GridSize {
+impl rio_vt::crosswords::grid::Dimensions for GridSize {
     fn total_lines(&self) -> usize {
         self.rows
     }
@@ -215,7 +215,7 @@ pub struct Surface {
     shell_pid: u32,
     _io_thread: std::thread::JoinHandle<(
         Machine<teletypewriter::Pty, Listener>,
-        rio_backend::performer::State,
+        rio_vt::performer::State,
     )>,
 }
 
@@ -322,7 +322,7 @@ impl Surface {
     }
 
     pub fn scroll(&self, delta_lines: i32) {
-        use rio_backend::crosswords::grid::Scroll;
+        use rio_vt::crosswords::grid::Scroll;
         self.terminal
             .lock()
             .scroll_display(Scroll::Delta(delta_lines));
