@@ -77,6 +77,24 @@ assert!(line.starts_with("hello world"));
 > [`examples/quickstart.rs`](examples/quickstart.rs)
 > (`cargo run -p rio-vt --example quickstart`).
 
+## Examples
+
+Each is runnable with `cargo run -p rio-vt --example <name>`:
+
+| Example | Shows |
+| --- | --- |
+| [`quickstart`](examples/quickstart.rs) | Create a grid, feed bytes, read cells back. |
+| [`sixel`](examples/sixel.rs) | Decode a Sixel image, captured via `RioEvent::UpdateGraphics`. |
+| [`kitty_image`](examples/kitty_image.rs) | Transmit a Kitty graphics-protocol image and capture it. |
+| [`selection`](examples/selection.rs) | Select a range and read it back as text. |
+| [`resize`](examples/resize.rs) | Resize the terminal and watch the grid follow. |
+
+The `sixel` and `kitty_image` examples double as a reference for the
+event-driven graphics flow: received images are drained into a
+`RioEvent::UpdateGraphics` event (with `pending` for Sixel/iTerm2 and
+`pending_images` for Kitty), which a frontend records through its
+`EventListener`.
+
 ## Receiving events
 
 Instead of `VoidListener`, implement `EventListener` to react to what the
