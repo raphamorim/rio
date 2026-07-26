@@ -125,7 +125,7 @@ impl WindowBlur {
     }
 }
 
-#[cfg(feature = "winit")]
+#[cfg(feature = "rio-window")]
 impl From<WindowBlur> for rio_window::window::BlurStyle {
     fn from(b: WindowBlur) -> Self {
         match b {
@@ -292,7 +292,7 @@ impl Colorspace {
         }
     }
 
-    #[cfg(all(target_os = "macos", feature = "winit"))]
+    #[cfg(all(target_os = "macos", feature = "rio-window"))]
     pub fn to_rio_window_colorspace(&self) -> rio_window::platform::macos::Colorspace {
         match self {
             Colorspace::Srgb => rio_window::platform::macos::Colorspace::Srgb,
@@ -301,7 +301,7 @@ impl Colorspace {
         }
     }
 
-    #[cfg(all(not(target_os = "macos"), feature = "winit"))]
+    #[cfg(all(not(target_os = "macos"), feature = "rio-window"))]
     pub fn to_rio_window_colorspace(&self) {
         // No-op for non-macOS platforms
     }

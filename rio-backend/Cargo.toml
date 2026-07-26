@@ -35,11 +35,13 @@ wgpu = { workspace = true, optional = true }
 rio-window = { workspace = true, optional = true }
 
 [features]
-default = ["renderer", "wayland", "x11", "winit"]
+default = ["renderer", "wayland", "x11", "rio-window"]
 # The renderer (sugarloaf) backend. Off makes rio-backend a lean terminal
 # core with no GPU/font-shaping deps — this is what `librio-vt` embeds.
 renderer = ["dep:sugarloaf", "rio-vt/renderer"]
-winit = ["dep:rio-window", "rio-vt/rio-window"]
+# Rio's window layer (rio-window, a winit fork). Pulls in the window types
+# and bridges the core's WindowId to rio-window at the frontend boundary.
+rio-window = ["dep:rio-window", "rio-vt/rio-window"]
 x11 = ["rio-vt/x11"]
 wayland = ["rio-vt/wayland"]
 # Enable the wgpu backend in sugarloaf (needed on Windows where the
