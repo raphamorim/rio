@@ -1,4 +1,5 @@
 use crate::config::ConfigError;
+#[cfg(feature = "renderer")]
 use crate::sugarloaf::font::SugarloafFont;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -44,6 +45,7 @@ impl From<ConfigError> for RioError {
 #[derive(Clone, PartialEq)]
 pub enum RioErrorType {
     // font was not found
+    #[cfg(feature = "renderer")]
     FontsNotFound(Vec<SugarloafFont>),
 
     // navigation configuration has changed
@@ -67,6 +69,7 @@ pub enum RioErrorType {
 impl std::fmt::Display for RioErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            #[cfg(feature = "renderer")]
             RioErrorType::FontsNotFound(fonts) => {
                 let mut font_str = String::from("");
                 for font in fonts.iter() {

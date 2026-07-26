@@ -2,7 +2,7 @@ use crate::simd_base64;
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
+use rio_graphics::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 use tracing::debug;
 
 /// Maximum width or height (per axis) we accept for a kitty-graphics

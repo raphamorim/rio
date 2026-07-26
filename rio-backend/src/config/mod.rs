@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
 use std::{default::Default, fs::File};
+#[cfg(feature = "renderer")]
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, AppearanceTheme, Theme};
 use tracing::warn;
@@ -115,6 +116,7 @@ pub struct Config {
         rename = "adaptive-theme"
     )]
     pub adaptive_theme: Option<AdaptiveTheme>,
+    #[cfg(feature = "renderer")]
     #[serde(default = "SugarloafFonts::default")]
     pub fonts: SugarloafFonts,
     #[serde(default = "default_editor")]
@@ -517,6 +519,7 @@ impl Config {
             if let Some(blur) = window_overwrite.blur {
                 self.window.blur = blur;
             }
+            #[cfg(feature = "renderer")]
             if let Some(bg_image) = &window_overwrite.background_image {
                 self.window.background_image = Some(bg_image.clone());
             }
@@ -646,6 +649,7 @@ impl Default for Config {
             title: Title::default(),
             developer: Developer::default(),
             env_vars: vec![],
+            #[cfg(feature = "renderer")]
             fonts: SugarloafFonts::default(),
             line_height: default_line_height(),
             navigation: Navigation::default(),

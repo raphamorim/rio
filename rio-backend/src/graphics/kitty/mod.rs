@@ -9,7 +9,7 @@ use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::Crosswords;
 use crate::event::{EventListener, RioEvent, WindowId};
 use crate::performer::handler::Handler;
-use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
+use rio_graphics::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 
 // Common test utilities
 
@@ -1109,7 +1109,7 @@ fn test_place_nonexistent_graphic() {
 #[test]
 fn test_recount_releases_key_exactly_once() {
     let mut graphics = crate::ansi::graphics::Graphics::default();
-    let key = crate::sugarloaf::atlas_image_key(99);
+    let key = rio_graphics::atlas_image_key(99);
     graphics
         .atlas_placements
         .push(crate::ansi::graphics::AtlasPlacement {
@@ -2384,7 +2384,7 @@ fn test_chunked_quiet_flag_inheritance() {
 fn test_aspect_ratio_with_only_columns() {
     // Test: aspect ratio with only columns
     // A 16:9 image with c=10 should compute height preserving aspect ratio
-    use sugarloaf::GraphicData;
+    use rio_graphics::GraphicData;
 
     let data = GraphicData {
         id: GraphicId::new(1),
@@ -2393,9 +2393,9 @@ fn test_aspect_ratio_with_only_columns() {
         color_type: ColorType::Rgba,
         pixels: vec![],
         is_opaque: true,
-        resize: Some(sugarloaf::ResizeCommand {
-            width: sugarloaf::ResizeParameter::Cells(10),
-            height: sugarloaf::ResizeParameter::Auto,
+        resize: Some(rio_graphics::ResizeCommand {
+            width: rio_graphics::ResizeParameter::Cells(10),
+            height: rio_graphics::ResizeParameter::Auto,
             preserve_aspect_ratio: true,
         }),
         display_width: None,
@@ -2416,7 +2416,7 @@ fn test_aspect_ratio_with_only_columns() {
 #[test]
 fn test_aspect_ratio_with_only_rows() {
     // Test: aspect ratio with only rows
-    use sugarloaf::GraphicData;
+    use rio_graphics::GraphicData;
 
     let data = GraphicData {
         id: GraphicId::new(1),
@@ -2425,9 +2425,9 @@ fn test_aspect_ratio_with_only_rows() {
         color_type: ColorType::Rgba,
         pixels: vec![],
         is_opaque: true,
-        resize: Some(sugarloaf::ResizeCommand {
-            width: sugarloaf::ResizeParameter::Auto,
-            height: sugarloaf::ResizeParameter::Cells(5),
+        resize: Some(rio_graphics::ResizeCommand {
+            width: rio_graphics::ResizeParameter::Auto,
+            height: rio_graphics::ResizeParameter::Cells(5),
             preserve_aspect_ratio: true,
         }),
         display_width: None,
@@ -4777,7 +4777,7 @@ fn test_transmit_and_display_refreshes_sibling_placements() {
 
 #[test]
 fn test_image_key_namespaces_are_disjoint() {
-    use crate::sugarloaf::{atlas_image_key, kitty_image_key};
+    use rio_graphics::{atlas_image_key, kitty_image_key};
 
     // kitty clients may pick any u32 image id (kitten icat uses random
     // ones); the atlas namespace must live entirely above that range.
@@ -4989,7 +4989,7 @@ fn test_atlas_placement_created_on_insert() {
 
     assert_eq!(term.graphics.atlas_placements.len(), 1);
     let p = &term.graphics.atlas_placements[0];
-    assert_eq!(p.image_key, crate::sugarloaf::atlas_image_key(1));
+    assert_eq!(p.image_key, rio_graphics::atlas_image_key(1));
     assert_eq!(p.abs_row, 0);
     assert_eq!(p.col, 5, "anchored at the cursor column");
     assert_eq!((p.columns, p.rows), (3, 2), "30x40 at 10x20 cells");
@@ -5210,7 +5210,7 @@ fn test_region_scroll_shifts_and_clips_atlas_placements() {
 #[test]
 fn test_overlay_clips_to_panel_rect() {
     use crate::ansi::graphics::clip_overlay_to_rect;
-    use crate::sugarloaf::GraphicOverlay;
+    use rio_graphics::GraphicOverlay;
 
     // The split-pane bug: a 600px-wide image in a panel whose grid
     // ends at x=400 must clip at the divider, showing only the left
@@ -5274,7 +5274,7 @@ fn test_narrowing_terminal_keeps_image_span_and_clips_at_edge() {
     use crate::ansi::graphics::{
         clip_overlay_to_rect, kitty_overlay_geometry, OverlayViewport,
     };
-    use crate::sugarloaf::GraphicOverlay;
+    use rio_graphics::GraphicOverlay;
 
     let mut term = geometry_test_term();
 

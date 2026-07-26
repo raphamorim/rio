@@ -108,7 +108,7 @@ pub enum RioEvent {
     /// existing handle are visible without re-firing.
     GlyphProtocolInstalled {
         route_id: usize,
-        registry: sugarloaf::font::glyph_registry::GlyphRegistry,
+        registry: rio_graphics::glyph::glyph_registry::GlyphRegistry,
     },
     /// A `q` (query) request arrived from the PTY in `route_id`. The
     /// frontend computes the four-state status — System and/or

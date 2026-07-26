@@ -33,7 +33,8 @@ image_rs = { workspace = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
-sugarloaf = { workspace = true }
+rio-graphics = { workspace = true, features = ["glyph"] }
+sugarloaf = { workspace = true, optional = true }
 rio-grapheme-width = { workspace = true }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
@@ -52,7 +53,10 @@ lazy_static = { workspace = true }
 windows-sys = { version = "0.60.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
 
 [features]
-default = ["wayland", "x11", "winit"]
+default = ["renderer", "wayland", "x11", "winit"]
+# The renderer (sugarloaf) backend. Off makes rio-backend a lean terminal
+# core with no GPU/font-shaping deps — this is what `librio-vt` embeds.
+renderer = ["dep:sugarloaf"]
 winit = ["dep:rio-window"]
 x11 = [
     "copypasta/x11"
@@ -62,5 +66,5 @@ wayland = [
 ]
 # Enable the wgpu backend in sugarloaf (needed on Windows where the
 # native Vulkan/Metal backends aren't available, and as an opt-in for
-# librashader CRT/scanline filters on Linux/macOS).
-wgpu = ["dep:wgpu", "sugarloaf/wgpu"]
+# librashader CRT/scanline filters on Linux/macOS). Implies `renderer`.
+wgpu = ["renderer", "dep:wgpu", "sugarloaf/wgpu"]

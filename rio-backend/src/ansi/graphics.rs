@@ -5,7 +5,7 @@
 use crate::ansi::sixel;
 use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Dimensions;
-use crate::sugarloaf::{GraphicData, GraphicId};
+use rio_graphics::{GraphicData, GraphicId};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::mem;
@@ -21,7 +21,7 @@ pub struct UpdateQueues {
     pub pending_images: Vec<(u32, GraphicData)>,
 
     /// Image keys removed from the grid or evicted
-    /// (`sugarloaf::graphics::kitty_image_key` / `atlas_image_key`).
+    /// (`rio_graphics::graphics::kitty_image_key` / `atlas_image_key`).
     pub remove_queue: Vec<u64>,
 }
 
@@ -232,7 +232,7 @@ pub struct KittyOverlayGeometry {
 /// split dividers onto neighbor panels, since the image pipeline draws
 /// global quads with no per-panel scissor.
 pub fn clip_overlay_to_rect(
-    overlay: &mut crate::sugarloaf::GraphicOverlay,
+    overlay: &mut rio_graphics::GraphicOverlay,
     clip_x0: f32,
     clip_y0: f32,
     clip_x1: f32,
@@ -1118,9 +1118,9 @@ impl Graphics {
             // The key namespace depends on where the image lived:
             // kitty ids map verbatim, atlas graphics live above 2^32.
             let key = match source {
-                CandidateSource::Pending => crate::sugarloaf::atlas_image_key(id.get()),
+                CandidateSource::Pending => rio_graphics::atlas_image_key(id.get()),
                 CandidateSource::ActiveKitty | CandidateSource::InactiveKitty => {
-                    crate::sugarloaf::kitty_image_key(id.get() as u32)
+                    rio_graphics::kitty_image_key(id.get() as u32)
                 }
             };
             self.texture_operations.lock().push(key);
@@ -1198,7 +1198,7 @@ impl Graphics {
 
 #[test]
 fn check_opaque_region() {
-    use sugarloaf::ColorType;
+    use rio_graphics::ColorType;
     let graphic = GraphicData {
         id: GraphicId::new(1),
         width: 10,
@@ -1244,7 +1244,7 @@ fn check_opaque_region() {
 
 #[test]
 fn test_graphics_memory_tracking() {
-    use sugarloaf::ColorType;
+    use rio_graphics::ColorType;
     let mut graphics = Graphics::default();
 
     // Create a small graphic (100x100 RGBA = 40,000 bytes)
@@ -1278,7 +1278,7 @@ fn test_graphics_memory_tracking() {
 
 #[test]
 fn test_graphics_eviction_unused_first() {
-    use sugarloaf::ColorType;
+    use rio_graphics::ColorType;
     let mut graphics = Graphics {
         total_limit: 100_000, // 100KB limit for testing
         ..Graphics::default()
@@ -1339,7 +1339,7 @@ fn test_graphics_eviction_unused_first() {
 
 #[test]
 fn test_graphics_eviction_oldest_first() {
-    use sugarloaf::ColorType;
+    use rio_graphics::ColorType;
     let mut graphics = Graphics {
         total_limit: 100_000, // 100KB limit
         ..Graphics::default()
@@ -1396,7 +1396,7 @@ fn test_graphics_eviction_oldest_first() {
 
 #[test]
 fn test_graphics_eviction_fails_when_not_enough_space() {
-    use sugarloaf::ColorType;
+    use rio_graphics::ColorType;
     let mut graphics = Graphics {
         total_limit: 100_000, // 100KB limit
         ..Graphics::default()
@@ -1438,7 +1438,7 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
 
 #[test]
 fn test_graphics_no_eviction_when_under_limit() {
-    use sugarloaf::ColorType;
+    use rio_graphics::ColorType;
     let mut graphics = Graphics {
         total_limit: 200_000, // 200KB limit
         ..Graphics::default()

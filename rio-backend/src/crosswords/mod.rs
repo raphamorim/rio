@@ -57,7 +57,7 @@ use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
-use sugarloaf::{GraphicData, MAX_GRAPHIC_DIMENSIONS};
+use rio_graphics::{GraphicData, MAX_GRAPHIC_DIMENSIONS};
 use tracing::{debug, info, trace, warn};
 use vi_mode::{ViModeCursor, ViMotion};
 
@@ -444,7 +444,7 @@ where
     /// Two tabs can register conflicting glyphs for the same
     /// codepoint; each `Crosswords` owns its own registry once
     /// initialised.
-    pub glyph_registry: Option<sugarloaf::font::glyph_registry::GlyphRegistry>,
+    pub glyph_registry: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
@@ -4076,7 +4076,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // this image lives on the grid. Cell fills above remain only
         // until the extras-based path is removed.
         {
-            let key = crate::sugarloaf::atlas_image_key(graphic_id.get());
+            let key = rio_graphics::atlas_image_key(graphic_id.get());
             let placement_columns = (width as usize).div_ceil(cell_width);
             let placement_rows = (height as usize).div_ceil(cell_height);
 
@@ -4497,8 +4497,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         width: u8,
     ) -> Result<(), crate::ansi::glyph_protocol::RegisterError> {
         use crate::ansi::glyph_protocol::{is_pua, GlyphPayload, RegisterError};
-        use sugarloaf::font::glyf_decode;
-        use sugarloaf::font::glyph_registry::{
+        use rio_graphics::glyph::glyf_decode;
+        use rio_graphics::glyph::glyph_registry::{
             GlyphRegistry, RegisterRejection, StoredPayload,
         };
 
@@ -6738,11 +6738,11 @@ mod tests {
         cw.graphics.cell_height = 10.0;
 
         let graphic = GraphicData {
-            id: sugarloaf::GraphicId::new(0),
+            id: rio_graphics::GraphicId::new(0),
             width: 20,
             height: 20,
             pixels: vec![0u8; 20 * 20 * 4],
-            color_type: sugarloaf::ColorType::Rgba,
+            color_type: rio_graphics::ColorType::Rgba,
             is_opaque: true,
             display_width: None,
             display_height: None,
@@ -6779,11 +6779,11 @@ mod tests {
         cw.graphics.cell_height = 10.0;
 
         let graphic = GraphicData {
-            id: sugarloaf::GraphicId::new(0),
+            id: rio_graphics::GraphicId::new(0),
             width: 10,
             height: 10,
             pixels: vec![0u8; 10 * 10 * 4],
-            color_type: sugarloaf::ColorType::Rgba,
+            color_type: rio_graphics::ColorType::Rgba,
             is_opaque: true,
             display_width: None,
             display_height: None,

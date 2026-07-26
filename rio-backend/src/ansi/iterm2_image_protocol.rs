@@ -7,7 +7,7 @@
 //
 // This implementation also supports `width` and `height` parameters to resize the image.
 
-use sugarloaf::{GraphicData, GraphicId, ResizeCommand, ResizeParameter};
+use rio_graphics::{GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 
 use rustc_hash::FxHashMap;
 use std::str;
