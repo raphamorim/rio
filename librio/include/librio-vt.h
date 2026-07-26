@@ -81,8 +81,12 @@ typedef struct {
 } rio_surface_config_s;
 
 typedef struct {
+  /* Original form: RIO_COLOR_NAMED / _INDEXED / _RGB. `value` holds the
+     named-color id or palette index for the first two. */
   uint8_t kind;
   uint16_t value;
+  /* Always the resolved RGB, regardless of `kind`, so a CPU renderer can
+     read r/g/b directly without owning a palette. */
   uint8_t r;
   uint8_t g;
   uint8_t b;
