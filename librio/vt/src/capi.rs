@@ -543,6 +543,40 @@ pub unsafe extern "C" fn rio_text_free(text: *mut c_char) {
     }));
 }
 
+/// The shell's current working directory (OSC 7), or NULL if unknown.
+/// Caller owns the returned string; free it with `rio_text_free`.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_working_dir(
+    surface: *const Surface,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return std::ptr::null_mut();
+        }
+        match unsafe { &*surface }.working_dir() {
+            Some(dir) => CString::new(dir).unwrap_or_default().into_raw(),
+            None => std::ptr::null_mut(),
+        }
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Dump the whole buffer (scrollback + screen) as UTF-8 text, for
+/// persisting and replaying on restore. Caller owns the returned string;
+/// free it with `rio_text_free`.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_dump(surface: *const Surface) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return std::ptr::null_mut();
+        }
+        CString::new(unsafe { &*surface }.dump())
+            .unwrap_or_default()
+            .into_raw()
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_selection(
     state: *const RenderState,
@@ -728,5 +762,42 @@ mod color_tests {
         }));
         assert_eq!(c.kind, RIO_COLOR_RGB);
         assert_eq!((c.r, c.g, c.b), (1, 2, 3));
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    use crate::{SurfaceDelegate, SurfaceId};
+    use std::sync::Arc;
+
+    struct NopDelegate;
+    impl SurfaceDelegate for NopDelegate {
+        fn wakeup(&self, _: SurfaceId) {}
+        fn action(&self, _: SurfaceId, _: crate::Action) {}
+        fn clipboard_write(&self, _: SurfaceId, _: crate::ClipboardType, _: String) {}
+        fn close_surface(&self, _: SurfaceId) {}
+    }
+
+    #[test]
+    fn dump_captures_written_text() {
+        let engine = crate::Engine::new(Arc::new(NopDelegate));
+        let surface = engine
+            .create_surface(&crate::SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec![],
+                working_dir: None,
+                cols: 80,
+                rows: 24,
+                pixel_width: 640,
+                pixel_height: 384,
+                scrollback: 1000,
+            })
+            .expect("surface");
+        // Drive bytes straight into the terminal (no PTY round-trip).
+        surface.write(b"hello persistence".to_vec());
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let dump = surface.dump();
+        assert!(dump.contains("hello persistence"), "dump was: {dump:?}");
     }
 }
