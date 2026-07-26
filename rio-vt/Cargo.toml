@@ -57,8 +57,10 @@ default = []
 # Expose the app-level `RioErrorType::FontsNotFound` variant (needs a
 # sugarloaf font type). Enabled by rio-backend's own `renderer` feature.
 renderer = ["dep:sugarloaf"]
-# Use rio-window's real `WindowId` / event loop instead of the standalone id.
-winit = ["dep:rio-window"]
+# Bridge to rio-window: `From` conversions between the core's `WindowId`
+# and `rio_window::window::WindowId`, plus the event-loop proxy listener.
+# (Rio's window layer is `rio-window`, a winit fork; hence not "winit".)
+rio-window = ["dep:rio-window"]
 x11 = ["copypasta/x11"]
 wayland = ["copypasta/wayland"]
 wgpu = ["renderer", "dep:sugarloaf", "sugarloaf/wgpu"]

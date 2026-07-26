@@ -7,7 +7,7 @@ use crate::crosswords::grid::Scroll;
 use crate::crosswords::pos::{Direction, Pos};
 use crate::crosswords::search::{Match, RegexSearch};
 use crate::error::RioError;
-#[cfg(feature = "winit")]
+#[cfg(feature = "rio-window")]
 use rio_window::event::Event as RioWindowEvent;
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -16,20 +16,40 @@ use std::fmt::Formatter;
 use std::sync::Arc;
 use teletypewriter::WinsizeBuilder;
 
-#[cfg(feature = "winit")]
+#[cfg(feature = "rio-window")]
 use rio_window::event_loop::EventLoopProxy;
 
-#[cfg(feature = "winit")]
-pub type WindowId = rio_window::window::WindowId;
-
-#[cfg(not(feature = "winit"))]
+/// The core's own window identifier. `rio-vt` never aliases this to a
+/// windowing crate's type: it is always a plain id, so the terminal core
+/// stays independent of `rio-window`. With the `rio-window` feature,
+/// `From` conversions bridge to/from `rio_window::window::WindowId` at the
+/// frontend boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WindowId(u64);
 
-#[cfg(not(feature = "winit"))]
 impl From<u64> for WindowId {
     fn from(id: u64) -> Self {
         WindowId(id)
+    }
+}
+
+impl From<WindowId> for u64 {
+    fn from(id: WindowId) -> Self {
+        id.0
+    }
+}
+
+#[cfg(feature = "rio-window")]
+impl From<WindowId> for rio_window::window::WindowId {
+    fn from(id: WindowId) -> Self {
+        rio_window::window::WindowId::from(id.0)
+    }
+}
+
+#[cfg(feature = "rio-window")]
+impl From<rio_window::window::WindowId> for WindowId {
+    fn from(id: rio_window::window::WindowId) -> Self {
+        WindowId(u64::from(id))
     }
 }
 
@@ -346,7 +366,7 @@ impl EventPayload {
     }
 }
 
-#[cfg(feature = "winit")]
+#[cfg(feature = "rio-window")]
 impl From<EventPayload> for RioWindowEvent<EventPayload> {
     fn from(event: EventPayload) -> Self {
         RioWindowEvent::UserEvent(event)
@@ -386,12 +406,12 @@ impl EventListener for VoidListener {
 }
 
 #[derive(Debug, Clone)]
-#[cfg(feature = "winit")]
+#[cfg(feature = "rio-window")]
 pub struct EventProxy {
     proxy: EventLoopProxy<EventPayload>,
 }
 
-#[cfg(feature = "winit")]
+#[cfg(feature = "rio-window")]
 impl EventProxy {
     pub fn new(proxy: EventLoopProxy<EventPayload>) -> Self {
         Self { proxy }
@@ -402,7 +422,7 @@ impl EventProxy {
     }
 }
 
-#[cfg(feature = "winit")]
+#[cfg(feature = "rio-window")]
 impl EventListener for EventProxy {
     fn event(&self) -> (std::option::Option<RioEvent>, bool) {
         (None, false)

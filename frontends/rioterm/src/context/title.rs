@@ -244,7 +244,7 @@ pub mod test {
     use rio_backend::config::layout::Margin;
     use rio_backend::event::VoidListener;
     use rio_backend::sugarloaf::layout::TextDimensions;
-    use rio_window::window::WindowId;
+    use rio_backend::event::WindowId;
 
     #[test]
     fn test_update_title() {

@@ -190,7 +190,7 @@ impl Application<'_> {
     /// centered, sized by the configured percentages, then show it.
     fn show_quake_window(
         &mut self,
-        id: rio_window::window::WindowId,
+        id: rio_backend::event::WindowId,
         event_loop: &ActiveEventLoop,
     ) {
         #[cfg(target_os = "macos")]
@@ -325,7 +325,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         if !self.scheduler.scheduled(timer_id) {
             self.scheduler.schedule(
                 EventPayload::new(RioEventType::Rio(RioEvent::UpdateTitles), unsafe {
-                    rio_window::window::WindowId::dummy()
+                    rio_window::window::WindowId::dummy().into()
                 }),
                 Duration::from_secs(2),
                 true,
@@ -1120,6 +1120,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         if Self::skip_window_event(&event) {
             return;
         }
+
+        // The event loop keys on rio-window's id; the router keys on the
+        // core's `WindowId`. Convert once at this boundary.
+        let window_id: rio_backend::event::WindowId = window_id.into();
 
         let route = match self.router.routes.get_mut(&window_id) {
             Some(window) => window,

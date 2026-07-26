@@ -271,7 +271,7 @@ impl Screen<'_> {
             // config.cursor.blinking
             (&cursor, config.cursor.blinking),
             event_proxy,
-            window_id,
+            window_id.into(),
             0,
             rich_text_id,
             context_manager_config,

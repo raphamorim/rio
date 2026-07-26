@@ -28,10 +28,15 @@ selection and search all compile with no windowing or renderer stack.
 
 | Feature | Default | Effect |
 | --- | --- | --- |
-| _(none)_ | ✓ | Lean core. Standalone `WindowId(u64)`, no renderer, no windowing. |
-| `winit` | | Use `rio-window`'s real `WindowId` and event-loop proxy instead of the standalone id. |
+| _(none)_ | ✓ | Lean core. No renderer, no windowing. |
+| `rio-window` | | `From` conversions between the core's `WindowId` and `rio_window::window::WindowId`, plus the event-loop proxy listener. |
 | `renderer` | | Expose the app-level `RioErrorType::FontsNotFound` variant (pulls a `sugarloaf` font type). Enabled transitively by `rio-backend`'s renderer. |
 | `x11` / `wayland` | | Forward the matching clipboard backend feature. |
+
+`WindowId` is **always** the core's own `WindowId(u64)` (with
+`From<u64>`/`Into<u64>`); `rio-vt` never aliases it to the windowing
+layer's type. The `rio-window` feature only adds the boundary `From`
+conversions.
 
 ## Quick start (headless)
 
@@ -152,8 +157,3 @@ while this crate carries the reusable core.
 
 The public API of `rio-vt` is safe Rust. All `unsafe` and raw-pointer
 handling lives in the separate `librio-vt` C-ABI shim.
-
-## Provenance
-
-Rio's `crosswords` module was originally derived from Alacritty's `term`
-module and has been maintained and extended in Rio since. Licensed under MIT.

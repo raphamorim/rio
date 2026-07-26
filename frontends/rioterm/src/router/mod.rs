@@ -19,7 +19,8 @@ use rio_window::keyboard::{Key, NamedKey};
 use rio_window::platform::startup_notify::{
     self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
 };
-use rio_window::window::{Window, WindowId};
+use rio_backend::event::WindowId;
+use rio_window::window::Window;
 use routes::{assistant, RoutePath};
 use rustc_hash::FxHashMap;
 use std::time::{Duration, Instant};
@@ -467,7 +468,7 @@ impl Router<'_> {
             None,
             false,
         );
-        let id = window.winit_window.id();
+        let id: WindowId = window.winit_window.id().into();
         let route = Route::new(Assistant::new(), RoutePath::Terminal, window);
         self.routes.insert(id, route);
         self.config_route = Some(id);
@@ -531,7 +532,7 @@ impl Router<'_> {
             app_id,
             false,
         );
-        let id = window.winit_window.id();
+        let id: WindowId = window.winit_window.id().into();
 
         let mut route = Route {
             window,
@@ -567,7 +568,7 @@ impl Router<'_> {
             None,
             true,
         );
-        let id = window.winit_window.id();
+        let id: WindowId = window.winit_window.id().into();
         self.routes.insert(
             id,
             Route {
@@ -601,7 +602,7 @@ impl Router<'_> {
             false,
         );
         self.routes.insert(
-            window.winit_window.id(),
+            window.winit_window.id().into(),
             Route {
                 window,
                 path: RoutePath::Terminal,
