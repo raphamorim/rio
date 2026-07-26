@@ -543,6 +543,24 @@ pub unsafe extern "C" fn rio_text_free(text: *mut c_char) {
     }));
 }
 
+/// Inject bytes into the terminal's display (VT parser), NOT the PTY input.
+/// Used to replay persisted scrollback on restore without the shell seeing
+/// (and executing) it.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_inject_output(
+    surface: *mut Surface,
+    bytes: *const c_char,
+    len: usize,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() || bytes.is_null() {
+            return;
+        }
+        let slice = unsafe { std::slice::from_raw_parts(bytes as *const u8, len) };
+        unsafe { &*surface }.inject_output(slice);
+    }));
+}
+
 /// The shell's current working directory (OSC 7), or NULL if unknown.
 /// Caller owns the returned string; free it with `rio_text_free`.
 #[no_mangle]

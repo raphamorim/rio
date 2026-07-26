@@ -164,12 +164,21 @@ final class PanelSession {
         self.renderState = rio_render_state_new(surface)
         RioEngine.shared.register(self, id: surfaceID)
 
-        // Replay saved scrollback once, as inert text.
+        // Replay saved scrollback once, into the DISPLAY (not the shell).
         if let text = terminal.panelScrollback[panelID], !text.isEmpty {
-            sendText(text)
+            injectOutput(text.replacingOccurrences(of: "\n", with: "\r\n"))
             terminal.panelScrollback[panelID] = nil
         }
         render()
+    }
+
+    /// Write bytes to the terminal display without sending them to the PTY,
+    /// so the shell never executes replayed scrollback.
+    func injectOutput(_ text: String) {
+        guard let surface else { return }
+        text.withCString { pointer in
+            rio_surface_inject_output(surface, pointer, strlen(pointer))
+        }
     }
 
     /// Snapshot for session persistence: the live cwd (OSC 7) and the
