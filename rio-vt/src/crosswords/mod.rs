@@ -1420,27 +1420,23 @@ impl<U: EventListener> Crosswords<U> {
     #[inline(always)]
     pub fn write_at_cursor(&mut self, c: char) {
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
-        let style_id = self.grid.cursor.template.style_id();
-        let extras_id = self.grid.cursor.template.extras_id();
-        let flags = self.grid.cursor.template.cell_flags();
-        self.write_cell(c, style_id, extras_id, flags);
+        let template = self.cell_template();
+        self.write_cell(c, template);
     }
 
-    /// Write an already-charset-mapped `c` into the cursor cell with the given
-    /// template attributes. Split out of `write_at_cursor` so a print run
-    /// (`input_str`) can hoist the charset map and the cursor-template reads
-    /// out of its inner loop and call this per cell.
+    /// Write an already-charset-mapped `c` into the cursor cell, taking a
+    /// prebuilt `template` (a `Square` carrying the cursor's style / extras /
+    /// flags with a zero codepoint). Split out of `write_at_cursor` so a
+    /// print run (`input_str`) hoists the charset map and template build out
+    /// of its per-cell loop; the write is then a single packed store, and the
+    /// cursor cell is resolved once (not twice) in the common narrow case.
     #[inline]
-    fn write_cell(
-        &mut self,
-        c: char,
-        style_id: crate::crosswords::style::StyleId,
-        template_extras_id: Option<crate::crosswords::square::ExtrasId>,
-        template_flags: CellFlags,
-    ) {
-        // DEC semantics: printing into a cell covered by a sixel or
-        // iTerm2 image clips exactly that cell out of the placement.
-        // One branch when no images exist.
+    fn write_cell(&mut self, c: char, template: crate::crosswords::square::Square) {
+        use crate::crosswords::square::{Square, Wide};
+
+        // DEC semantics: printing into a cell covered by a sixel or iTerm2
+        // image clips exactly that cell out of the placement. One branch
+        // when no images exist.
         if !self.graphics.atlas_placements.is_empty() {
             let pos = self.grid.cursor.pos;
             self.clip_atlas_placements(
@@ -1451,48 +1447,52 @@ impl<U: EventListener> Crosswords<U> {
             );
         }
 
+        let has_extras = template.extras_id().is_some();
         let cursor_square = self.grid.cursor_square();
-        if matches!(
-            cursor_square.wide(),
-            crate::crosswords::square::Wide::Wide
-                | crate::crosswords::square::Wide::Spacer
-        ) {
-            // Remove wide char and spacer.
-            let wide =
-                matches!(cursor_square.wide(), crate::crosswords::square::Wide::Wide);
-            let point = self.grid.cursor.pos;
-            if wide && point.col < self.grid.last_column() {
-                self.grid[point.row][point.col + 1]
-                    .set_wide(crate::crosswords::square::Wide::Narrow);
-            } else if point.col > 0 {
-                self.grid[point.row][point.col - 1].clear();
-            }
 
-            // Remove leading spacers.
-            if point.col <= 1 && point.row != self.grid.topmost_line() {
-                let column = self.grid.last_column();
-                let prev = &mut self.grid[point.row - 1i32][column];
-                if matches!(prev.wide(), crate::crosswords::square::Wide::LeadingSpacer) {
-                    prev.set_wide(crate::crosswords::square::Wide::Narrow);
-                }
+        // Fast path: overwriting a narrow cell. One resolve, one packed store.
+        if !matches!(cursor_square.wide(), Wide::Wide | Wide::Spacer) {
+            *cursor_square = Square::from_template(template, c);
+            if has_extras {
+                let row = self.grid.cursor.pos.row;
+                self.grid[row].has_extras = true;
+            }
+            return;
+        }
+
+        // Slow path: overwriting a wide char / spacer needs neighbour cleanup.
+        let wide = matches!(cursor_square.wide(), Wide::Wide);
+        let point = self.grid.cursor.pos;
+        if wide && point.col < self.grid.last_column() {
+            self.grid[point.row][point.col + 1].set_wide(Wide::Narrow);
+        } else if point.col > 0 {
+            self.grid[point.row][point.col - 1].clear();
+        }
+        // Remove leading spacers.
+        if point.col <= 1 && point.row != self.grid.topmost_line() {
+            let column = self.grid.last_column();
+            let prev = &mut self.grid[point.row - 1i32][column];
+            if matches!(prev.wide(), Wide::LeadingSpacer) {
+                prev.set_wide(Wide::Narrow);
             }
         }
 
-        let cursor_square = self.grid.cursor_cell();
-        let mut cell = crate::crosswords::square::Square::default();
-        cell.set_c(c);
-        cell.set_style_id(style_id);
-        cell.set_extras_id(template_extras_id);
-        // Propagate per-cell flags from the cursor template (HYPERLINK,
-        // GRAPHICS). WRAPLINE and GRAPHEME are set per-cell elsewhere
-        // and are never set on the template, so this can copy the
-        // whole flag set without filtering.
-        cell.set_cell_flags(template_flags);
-        *cursor_square = cell;
-        if template_extras_id.is_some() {
+        *self.grid.cursor_cell() = Square::from_template(template, c);
+        if has_extras {
             let row = self.grid.cursor.pos.row;
             self.grid[row].has_extras = true;
         }
+    }
+
+    /// Build the cursor's current style/extras/flags into a zero-codepoint
+    /// `Square` template for `write_cell`.
+    #[inline]
+    fn cell_template(&self) -> crate::crosswords::square::Square {
+        let mut t = crate::crosswords::square::Square::default();
+        t.set_style_id(self.grid.cursor.template.style_id());
+        t.set_extras_id(self.grid.cursor.template.extras_id());
+        t.set_cell_flags(self.grid.cursor.template.cell_flags());
+        t
     }
 
     /// If the previous cell is a narrow, text-presentation emoji base whose
@@ -3147,11 +3147,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         // The cursor template (colors + flags) is constant across a printable
-        // run, and ASCII needs no charset map — hoist both out of the per-cell
-        // loop below and write cells via `write_cell` directly.
-        let style_id = self.grid.cursor.template.style_id();
-        let extras_id = self.grid.cursor.template.extras_id();
-        let flags = self.grid.cursor.template.cell_flags();
+        // run, and ASCII needs no charset map — build the cell template once
+        // and write each cell as a single packed store via `write_cell`.
+        let template = self.cell_template();
 
         let bytes = s.as_bytes();
         let mut idx = 0;
@@ -3182,7 +3180,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             let take = (bytes.len() - idx).min(remaining_in_row);
             for i in 0..take {
                 let c = bytes[idx + i] as char;
-                self.write_cell(c, style_id, extras_id, flags);
+                self.write_cell(c, template);
                 if self.grid.cursor.pos.col + 1 < columns {
                     self.grid.cursor.pos.col += 1;
                 } else {
