@@ -4,7 +4,7 @@ use crate::{
     Action, Engine, Key, KeyEvent, Modifiers, RenderState, SelectionKind, Surface,
     SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
-use rio_backend::config::colors::AnsiColor;
+use rio_vt::config::colors::AnsiColor;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;

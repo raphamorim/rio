@@ -1,12 +1,12 @@
 use crate::{Listener, Surface};
-use rio_backend::crosswords::grid::row::Row;
-use rio_backend::crosswords::grid::Dimensions;
-use rio_backend::crosswords::pos::Column;
-use rio_backend::crosswords::square::{Extras, Square};
-use rio_backend::crosswords::style::Style;
-use rio_backend::crosswords::Crosswords;
-use rio_backend::event::sync::FairMutex;
-use rio_backend::event::TerminalDamage;
+use rio_vt::crosswords::grid::row::Row;
+use rio_vt::crosswords::grid::Dimensions;
+use rio_vt::crosswords::pos::Column;
+use rio_vt::crosswords::square::{Extras, Square};
+use rio_vt::crosswords::style::Style;
+use rio_vt::crosswords::Crosswords;
+use rio_vt::event::sync::FairMutex;
+use rio_vt::event::TerminalDamage;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
