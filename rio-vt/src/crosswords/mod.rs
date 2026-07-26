@@ -3148,8 +3148,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         // The cursor template (colors + flags) is constant across a printable
         // run, and ASCII needs no charset map — build the cell template once
-        // and write each cell as a single packed store via `write_cell`.
+        // and write each cell as a single packed store.
         let template = self.cell_template();
+        // Two per-run invariants, hoisted out of the cell loop below: whether
+        // any image placement could clip a cell, and whether the template
+        // carries extras (so `has_extras` is set once for the whole run).
+        let has_atlas = !self.graphics.atlas_placements.is_empty();
+        let template_has_extras = template.extras_id().is_some();
 
         let bytes = s.as_bytes();
         let mut idx = 0;
@@ -3178,14 +3183,51 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
 
             let take = (bytes.len() - idx).min(remaining_in_row);
-            for i in 0..take {
-                let c = bytes[idx + i] as char;
-                self.write_cell(c, template);
-                if self.grid.cursor.pos.col + 1 < columns {
-                    self.grid.cursor.pos.col += 1;
+
+            // Bulk fill: when no image can clip this run, classify the target
+            // cells and, if none needs wide-char cleanup, store the whole run
+            // as `template | codepoint`. Splitting the scan from the fill lets
+            // the compiler vectorize both, versus the branchy per-cell path.
+            let mut wrote_bulk = false;
+            if !has_atlas {
+                let line = self.grid.cursor.pos.row;
+                let row = &mut self.grid[line];
+                let cells = &mut row[Column(cursor_col)..Column(cursor_col + take)];
+                if !cells.iter().any(|c| c.needs_wide_cleanup()) {
+                    let src = &bytes[idx..idx + take];
+                    for (cell, &b) in cells.iter_mut().zip(src) {
+                        *cell = crate::crosswords::square::Square::from_template(
+                            template, b as char,
+                        );
+                    }
+                    if template_has_extras {
+                        row.has_extras = true;
+                    }
+                    wrote_bulk = true;
+                }
+            }
+
+            if wrote_bulk {
+                // The run wrote columns `cursor_col ..= cursor_col + take - 1`.
+                // A full row means park on the last column with a pending wrap;
+                // otherwise advance past the last written cell.
+                let end = cursor_col + take;
+                if end < columns {
+                    self.grid.cursor.pos.col = Column(end);
                 } else {
+                    self.grid.cursor.pos.col = Column(columns - 1);
                     self.grid.cursor.should_wrap = true;
-                    break;
+                }
+            } else {
+                for i in 0..take {
+                    let c = bytes[idx + i] as char;
+                    self.write_cell(c, template);
+                    if self.grid.cursor.pos.col + 1 < columns {
+                        self.grid.cursor.pos.col += 1;
+                    } else {
+                        self.grid.cursor.should_wrap = true;
+                        break;
+                    }
                 }
             }
 

@@ -273,6 +273,14 @@ impl Square {
         self.0 = (self.0 & !CODEPOINT_MASK) | ((cp & CODEPOINT_MASK) << CODEPOINT_SHIFT);
     }
 
+    /// True if overwriting this cell needs wide-char neighbour cleanup (it is
+    /// a wide lead or its trailing spacer). A cheap bit test so a print run
+    /// can bulk-classify its target cells before a vectorized fill.
+    #[inline]
+    pub fn needs_wide_cleanup(self) -> bool {
+        matches!(self.wide(), Wide::Wide | Wide::Spacer)
+    }
+
     #[inline]
     pub fn wide(self) -> Wide {
         Wide::from_bits(self.0)
