@@ -64,3 +64,11 @@ rio-window = ["dep:rio-window"]
 x11 = ["copypasta/x11"]
 wayland = ["copypasta/wayland"]
 wgpu = ["renderer", "dep:sugarloaf", "sugarloaf/wgpu"]
+
+[dev-dependencies]
+criterion = { workspace = true }
+vt100 = "0.15"
+
+[[bench]]
+name = "snapshot"
+harness = false
