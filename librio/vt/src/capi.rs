@@ -4,7 +4,7 @@ use crate::{
     Action, Engine, Key, KeyEvent, Modifiers, RenderState, SelectionKind, Surface,
     SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
-use rio_vt::config::colors::AnsiColor;
+use rio_vt::config::colors::{AnsiColor, NamedColor};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
@@ -189,24 +189,121 @@ impl SurfaceDelegate for CDelegate {
     }
 }
 
+/// Standard xterm 16-color palette (the conventional defaults). Used to
+/// resolve named / low-indexed colors to concrete RGB.
+fn ansi16(i: u8) -> (u8, u8, u8) {
+    const P: [(u8, u8, u8); 16] = [
+        (0, 0, 0),
+        (205, 0, 0),
+        (0, 205, 0),
+        (205, 205, 0),
+        (0, 0, 238),
+        (205, 0, 205),
+        (0, 205, 205),
+        (229, 229, 229),
+        (127, 127, 127),
+        (255, 0, 0),
+        (0, 255, 0),
+        (255, 255, 0),
+        (92, 92, 255),
+        (255, 0, 255),
+        (0, 255, 255),
+        (255, 255, 255),
+    ];
+    P[(i & 0x0f) as usize]
+}
+
+/// Resolve a 256-color index to RGB (16 ANSI, 6x6x6 cube, 24 grays).
+fn indexed_rgb(i: u8) -> (u8, u8, u8) {
+    match i {
+        0..=15 => ansi16(i),
+        16..=231 => {
+            const STEPS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+            let i = i - 16;
+            (
+                STEPS[(i / 36) as usize],
+                STEPS[((i / 6) % 6) as usize],
+                STEPS[(i % 6) as usize],
+            )
+        }
+        _ => {
+            let v = 8u8.saturating_add((i - 232).saturating_mul(10));
+            (v, v, v)
+        }
+    }
+}
+
+fn dim((r, g, b): (u8, u8, u8)) -> (u8, u8, u8) {
+    (r * 2 / 3, g * 2 / 3, b * 2 / 3)
+}
+
+/// Resolve a named color to RGB. Default foreground/background match Rio's
+/// built-in theme; the ANSI slots use the standard xterm palette.
+fn named_rgb(n: NamedColor) -> (u8, u8, u8) {
+    use NamedColor::*;
+    match n {
+        Black => ansi16(0),
+        Red => ansi16(1),
+        Green => ansi16(2),
+        Yellow => ansi16(3),
+        Blue => ansi16(4),
+        Magenta => ansi16(5),
+        Cyan => ansi16(6),
+        White => ansi16(7),
+        LightBlack => ansi16(8),
+        LightRed => ansi16(9),
+        LightGreen => ansi16(10),
+        LightYellow => ansi16(11),
+        LightBlue => ansi16(12),
+        LightMagenta => ansi16(13),
+        LightCyan => ansi16(14),
+        LightWhite => ansi16(15),
+        Foreground | LightForeground => (0xf8, 0xf8, 0xf2),
+        DimForeground => (0x9a, 0x9a, 0x9a),
+        Background => (0x0f, 0x0d, 0x0e),
+        Cursor => (0xf8, 0xf8, 0xf2),
+        DimBlack => dim(ansi16(0)),
+        DimRed => dim(ansi16(1)),
+        DimGreen => dim(ansi16(2)),
+        DimYellow => dim(ansi16(3)),
+        DimBlue => dim(ansi16(4)),
+        DimMagenta => dim(ansi16(5)),
+        DimCyan => dim(ansi16(6)),
+        DimWhite => dim(ansi16(7)),
+    }
+}
+
+/// Convert a terminal color to the C representation. `kind`/`value` keep
+/// the original form (named / indexed / rgb) for callers that want it, but
+/// `r`/`g`/`b` are ALWAYS the resolved RGB so a CPU renderer can read them
+/// directly without owning a palette.
 fn color_to_c(color: AnsiColor) -> rio_color_s {
+    let (r, g, b) = match color {
+        AnsiColor::Named(named) => named_rgb(named),
+        AnsiColor::Indexed(index) => indexed_rgb(index),
+        AnsiColor::Spec(rgb) => (rgb.r, rgb.g, rgb.b),
+    };
     match color {
         AnsiColor::Named(named) => rio_color_s {
             kind: RIO_COLOR_NAMED,
             value: named as u16,
-            ..Default::default()
+            r,
+            g,
+            b,
         },
         AnsiColor::Indexed(index) => rio_color_s {
             kind: RIO_COLOR_INDEXED,
             value: index as u16,
-            ..Default::default()
+            r,
+            g,
+            b,
         },
-        AnsiColor::Spec(rgb) => rio_color_s {
+        AnsiColor::Spec(_) => rio_color_s {
             kind: RIO_COLOR_RGB,
             value: 0,
-            r: rgb.r,
-            g: rgb.g,
-            b: rgb.b,
+            r,
+            g,
+            b,
         },
     }
 }
@@ -596,4 +693,40 @@ pub unsafe extern "C" fn rio_render_state_cursor(
         }
     }))
     .unwrap_or(rio_cursor_s { line: 0, column: 0 })
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::*;
+
+    #[test]
+    fn resolves_indexed_palette() {
+        assert_eq!(indexed_rgb(0), (0, 0, 0)); // ansi black
+        assert_eq!(indexed_rgb(15), (255, 255, 255)); // ansi bright white
+        assert_eq!(indexed_rgb(16), (0, 0, 0)); // cube origin
+        assert_eq!(indexed_rgb(231), (255, 255, 255)); // cube max
+        assert_eq!(indexed_rgb(232), (8, 8, 8)); // first gray
+        assert_eq!(indexed_rgb(255), (238, 238, 238)); // last gray
+    }
+
+    #[test]
+    fn named_fills_rgb_and_keeps_kind() {
+        let c = color_to_c(AnsiColor::Named(NamedColor::Red));
+        assert_eq!(c.kind, RIO_COLOR_NAMED);
+        assert_eq!((c.r, c.g, c.b), (205, 0, 0));
+
+        let bg = color_to_c(AnsiColor::Named(NamedColor::Background));
+        assert_eq!((bg.r, bg.g, bg.b), (0x0f, 0x0d, 0x0e));
+    }
+
+    #[test]
+    fn spec_passes_through() {
+        let c = color_to_c(AnsiColor::Spec(rio_vt::config::colors::ColorRgb {
+            r: 1,
+            g: 2,
+            b: 3,
+        }));
+        assert_eq!(c.kind, RIO_COLOR_RGB);
+        assert_eq!((c.r, c.g, c.b), (1, 2, 3));
+    }
 }
