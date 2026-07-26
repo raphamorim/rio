@@ -89,8 +89,9 @@ impl<U: EventListener> Crosswords<U> {
         let mut out = String::new();
         // Reset, clear, home so the snapshot renders on a fresh client.
         out.push_str("\x1b[0m\x1b[2J\x1b[H");
-        // Current emitted SGR params (starts as the default "0").
-        let mut current = String::from("0");
+        // The style currently in effect on the client. Starts as the default
+        // (matching the `\x1b[0m` above); we emit an SGR only when it changes.
+        let mut current = Style::default();
 
         // Find the last non-blank row so we can drop trailing blank rows.
         let last_row = if opts.trim {
@@ -119,10 +120,10 @@ impl<U: EventListener> Crosswords<U> {
                     col += 1;
                     continue;
                 }
-                let sgr = sgr_params(&self.grid.style_of(square));
-                if sgr != current {
-                    let _ = write!(out, "\x1b[{sgr}m");
-                    current = sgr;
+                let style = self.grid.style_of(square);
+                if style != current {
+                    write_sgr(&mut out, &style);
+                    current = style;
                 }
                 let c = square.c();
                 out.push(if c == '\0' { ' ' } else { c });
@@ -162,36 +163,37 @@ impl<U: EventListener> Crosswords<U> {
     }
 }
 
-/// Build the SGR parameter list for a style, starting with `0` (reset) then
-/// re-applying (simple and correct); adjacent equal styles are de-duped by
-/// the caller. Colors keep their original named / indexed / rgb form.
-fn sgr_params(style: &Style) -> String {
-    let mut params = String::from("0");
+/// Write the SGR sequence for `style` directly into `out`, starting with `0`
+/// (reset) then re-applying. Written inline (no intermediate allocation);
+/// the caller only calls this when the style actually changes. Colors keep
+/// their original named / indexed / rgb form.
+fn write_sgr(out: &mut String, style: &Style) {
+    out.push_str("\x1b[0");
     let flags = style.flags;
     if flags.contains(StyleFlags::BOLD) {
-        params.push_str(";1");
+        out.push_str(";1");
     }
     if flags.contains(StyleFlags::DIM) {
-        params.push_str(";2");
+        out.push_str(";2");
     }
     if flags.contains(StyleFlags::ITALIC) {
-        params.push_str(";3");
+        out.push_str(";3");
     }
     if flags.contains(StyleFlags::UNDERLINE) {
-        params.push_str(";4");
+        out.push_str(";4");
     }
     if flags.contains(StyleFlags::INVERSE) {
-        params.push_str(";7");
+        out.push_str(";7");
     }
     if flags.contains(StyleFlags::HIDDEN) {
-        params.push_str(";8");
+        out.push_str(";8");
     }
     if flags.contains(StyleFlags::STRIKEOUT) {
-        params.push_str(";9");
+        out.push_str(";9");
     }
-    push_color(&mut params, style.fg, true);
-    push_color(&mut params, style.bg, false);
-    params
+    push_color(out, style.fg, true);
+    push_color(out, style.bg, false);
+    out.push('m');
 }
 
 fn push_color(params: &mut String, color: AnsiColor, fg: bool) {
