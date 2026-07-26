@@ -20,6 +20,10 @@ final class TerminalItem: Identifiable {
     var focusedPanelID: UUID
     var panelWeights: [UUID: CGFloat] = [:]
     var panelTitles: [UUID: String] = [:]
+    // Session restore: seed per-pane working dir + scrollback (consumed by
+    // `PanelSession.startIfNeeded`).
+    var panelWorkingDirs: [UUID: String] = [:]
+    var panelScrollback: [UUID: String] = [:]
     var isExpanded = false
 
     init(name: String) {
@@ -27,6 +31,48 @@ final class TerminalItem: Identifiable {
         let panel = Panel()
         self.columns = [PanelColumn(panels: [panel])]
         self.focusedPanelID = panel.id
+    }
+
+    /// Rebuild a tab from a persisted layout. `grid[column][row]` is the
+    /// split structure; each entry carries the pane's saved cwd / title /
+    /// weight / scrollback, keyed onto freshly minted panel ids.
+    init(
+        name: String,
+        isExpanded: Bool,
+        focused: (column: Int, row: Int)?,
+        grid: [[(cwd: String?, title: String?, weight: CGFloat, scrollback: String?)]]
+    ) {
+        // Build everything into locals first — Swift forbids touching `self`
+        // (even the defaulted dicts) before all stored properties are set.
+        var builtColumns: [PanelColumn] = []
+        var weights: [UUID: CGFloat] = [:]
+        var titles: [UUID: String] = [:]
+        var workingDirs: [UUID: String] = [:]
+        var scrollback: [UUID: String] = [:]
+        var focusID: UUID?
+        for (c, column) in grid.enumerated() where !column.isEmpty {
+            var panels: [Panel] = []
+            for (r, pane) in column.enumerated() {
+                let panel = Panel()
+                panels.append(panel)
+                if let cwd = pane.cwd { workingDirs[panel.id] = cwd }
+                if let title = pane.title { titles[panel.id] = title }
+                if let sb = pane.scrollback { scrollback[panel.id] = sb }
+                weights[panel.id] = pane.weight
+                if let f = focused, f.column == c, f.row == r { focusID = panel.id }
+            }
+            builtColumns.append(PanelColumn(panels: panels))
+        }
+        if builtColumns.isEmpty { builtColumns = [PanelColumn(panels: [Panel()])] }
+
+        self.name = name
+        self.isExpanded = isExpanded
+        self.columns = builtColumns
+        self.focusedPanelID = focusID ?? builtColumns[0].panels[0].id
+        self.panelWeights = weights
+        self.panelTitles = titles
+        self.panelWorkingDirs = workingDirs
+        self.panelScrollback = scrollback
     }
 
     var panels: [Panel] {
@@ -136,15 +182,44 @@ final class AppModel {
     private var nextTerminalIndex = 1
     private var nextFolderIndex = 1
 
+    @ObservationIgnored
+    private var saveWorkItem: DispatchWorkItem?
+
     init() {
-        createTerminal()
+        // Restore the previous session if there is one; otherwise start fresh.
+        if let restored = SessionStore.load() {
+            items = restored
+            selectedTerminalID = flattenedTerminals.first?.id
+        } else {
+            createTerminal()
+        }
         RioEngine.shared.onTitle = { [weak self] session, title in
-            guard self != nil else { return }
+            guard let self else { return }
             session.terminal.panelTitles[session.panelID] = title
+            self.scheduleSave()
         }
         RioEngine.shared.onCloseSurface = { [weak self] session in
             self?.closePanel(session.panelID, in: session.terminal)
         }
+        // Authoritative save on quit (captures live cwd + scrollback).
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            SessionStore.save(self)
+        }
+    }
+
+    /// Debounced save so a crash still leaves a recent session on disk.
+    func scheduleSave() {
+        saveWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            SessionStore.save(self)
+        }
+        saveWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
     }
 
     var selectedTerminal: TerminalItem? {

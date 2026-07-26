@@ -140,17 +140,54 @@ final class PanelSession {
         config.pixel_width = UInt16(clamping: Int(pixelSize.width))
         config.pixel_height = UInt16(clamping: Int(pixelSize.height))
         config.scrollback = 10_000
-        guard
-            let surface = withUnsafePointer(
-                to: &config, { rio_surface_new(RioEngine.shared.handle(), $0) })
-        else { return }
+
+        // Session restore: start the shell in the saved working directory.
+        let savedCwd = terminal.panelWorkingDirs[panelID]
+        let created: OpaquePointer? = {
+            if let cwd = savedCwd {
+                return cwd.withCString { cwdPtr in
+                    config.working_dir = cwdPtr
+                    return withUnsafePointer(to: &config) {
+                        rio_surface_new(RioEngine.shared.handle(), $0)
+                    }
+                }
+            }
+            return withUnsafePointer(to: &config) {
+                rio_surface_new(RioEngine.shared.handle(), $0)
+            }
+        }()
+        guard let surface = created else { return }
         self.surface = surface
         self.lastCols = cols
         self.lastRows = rows
         self.surfaceID = rio_surface_id(surface)
         self.renderState = rio_render_state_new(surface)
         RioEngine.shared.register(self, id: surfaceID)
+
+        // Replay saved scrollback once, as inert text.
+        if let text = terminal.panelScrollback[panelID], !text.isEmpty {
+            sendText(text)
+            terminal.panelScrollback[panelID] = nil
+        }
         render()
+    }
+
+    /// Snapshot for session persistence: the live cwd (OSC 7) and the
+    /// whole buffer as text.
+    func snapshot() -> (cwd: String?, scrollback: String?) {
+        guard let surface else { return (nil, nil) }
+        var cwd: String?
+        if let ptr = rio_surface_working_dir(surface) {
+            cwd = String(cString: ptr)
+            rio_text_free(ptr)
+        }
+        var scrollback: String?
+        if let ptr = rio_surface_dump(surface) {
+            let text = String(cString: ptr)
+            rio_text_free(ptr)
+            scrollback = text.isEmpty ? nil : text
+        }
+        return (cwd, scrollback)
     }
 
     func syncSize() {
