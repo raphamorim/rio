@@ -357,6 +357,35 @@ impl Surface {
         self.terminal.lock().selection_to_string()
     }
 
+    /// The shell's current working directory, as reported via OSC 7.
+    /// `None` until the shell emits it (embed a shell integration or the
+    /// standard OSC 7 hook to populate it). Used by session persistence
+    /// to restore each surface in the directory it was left in.
+    pub fn working_dir(&self) -> Option<String> {
+        self.terminal
+            .lock()
+            .current_directory
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+    }
+
+    /// Dump the whole buffer (scrollback + screen) to plain text, so a
+    /// frontend can persist it and replay it as inert scrollback on
+    /// restore. Trailing blank rows are trimmed by `bounds_to_string`.
+    pub fn dump(&self) -> String {
+        let term = self.terminal.lock();
+        let rows = term.screen_lines() as i32;
+        let cols = term.columns();
+        if rows == 0 || cols == 0 {
+            return String::new();
+        }
+        let history = term.history_size() as i32;
+        // Scrollback lives in negative line coordinates above the screen.
+        let start = Pos::new(Line(-history), PosColumn(0));
+        let end = Pos::new(Line(rows - 1), PosColumn(cols - 1));
+        term.bounds_to_string(start, end)
+    }
+
     pub(crate) fn terminal(&self) -> Arc<FairMutex<Crosswords<Listener>>> {
         self.terminal.clone()
     }

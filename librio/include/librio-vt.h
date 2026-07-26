@@ -143,6 +143,14 @@ void rio_surface_selection_update(rio_surface_t *surface, int32_t viewport_line,
 void rio_surface_selection_clear(rio_surface_t *surface);
 /* Returns NULL when nothing is selected. Free with rio_text_free. */
 char *rio_surface_selection_text(const rio_surface_t *surface);
+
+/* Session persistence: current working directory (OSC 7), NULL if unknown.
+ * Free with rio_text_free. */
+char *rio_surface_working_dir(const rio_surface_t *surface);
+/* Whole buffer (scrollback + screen) as UTF-8 text, for persist/replay.
+ * Free with rio_text_free. */
+char *rio_surface_dump(const rio_surface_t *surface);
+
 void rio_text_free(char *text);
 
 /* Render-state calls must all come from one thread. */
