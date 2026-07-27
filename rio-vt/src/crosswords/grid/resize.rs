@@ -274,16 +274,17 @@ impl Grid<Square> {
             self.cursor.pos.row = max(self.cursor.pos.row - overflow, Line(0));
         }
 
-        // Reverse iterator and fill all rows that are still too short.
-        let mut new_raw = Vec::with_capacity(reversed.len());
-        for mut row in reversed.drain(..).rev() {
+        // Restore oldest-first order in place and fill all rows that are
+        // still too short. Reusing `reversed` avoids allocating a second
+        // full row buffer, which matters when reflowing a long scrollback.
+        reversed.reverse();
+        for row in reversed.iter_mut() {
             if row.len() < columns {
                 row.grow(columns);
             }
-            new_raw.push(row);
         }
 
-        self.raw.replace_inner(new_raw);
+        self.raw.replace_inner(reversed);
 
         // Clamp display offset in case lines above it got merged.
         self.display_offset = min(self.display_offset, self.history_size());
@@ -504,8 +505,10 @@ impl Grid<Square> {
             }
         }
 
-        // Reverse iterator and use it as the new grid storage.
-        let mut reversed: Vec<Row<Square>> = new_raw.drain(..).rev().collect();
+        // Restore oldest-first order in place and reuse the buffer as the new
+        // grid storage, avoiding a second full row-buffer allocation.
+        new_raw.reverse();
+        let mut reversed = new_raw;
         // Reflow can overflow the scrollback cap; the oldest lines
         // fall off the ring and must advance the absolute row base.
         let cap = self.max_scroll_limit + self.lines;
