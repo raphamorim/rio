@@ -11,8 +11,10 @@ use windows_sys::Win32::Foundation::{HANDLE, S_OK};
 use windows_sys::Win32::System::Console::{
     ClosePseudoConsole, CreatePseudoConsole, ResizePseudoConsole, COORD, HPCON,
 };
-use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-use windows_sys::{s, w};
+use windows_sys::Win32::System::LibraryLoader::{
+    GetModuleFileNameW, GetProcAddress, LoadLibraryExW, LOAD_WITH_ALTERED_SEARCH_PATH,
+};
+use windows_sys::s;
 
 use windows_sys::Win32::System::Threading::{
     CreateProcessW, InitializeProcThreadAttributeList, UpdateProcThreadAttribute,
@@ -43,10 +45,11 @@ use crate::windows::{cmdline, win32_string, Pty};
 /// Both are redistributable (MIT) via the `Microsoft.Windows.Console.ConPTY`
 /// NuGet package.
 ///
-/// Loaded by name via the default search order, which resolves the
-/// executable's own directory first (SafeDllSearchMode excludes the working
-/// directory), so a co-located `conpty.dll` is preferred over any in-box
-/// one.
+/// Loaded by absolute path from `rio.exe`'s own directory, never by the
+/// default search order: a bare-name load also walks the working directory
+/// and `PATH`, so a stray or hostile `conpty.dll` there could be preloaded.
+/// Resolving the path ourselves keeps the choice deterministic — the DLL we
+/// bundled next to `rio.exe`, or the in-box API, and nothing else.
 /// `PSEUDOCONSOLE_RESIZE_QUIRK`, an internal ConPTY flag (not in the public
 /// SDK header, so not exported by `windows-sys`; defined here). Without it,
 /// on resize ConPTY re-emits its reflowed buffer sized to the buffer's own
@@ -88,12 +91,34 @@ impl ConptyApi {
         }
     }
 
-    /// Try loading ConptyApi from a sideloaded `conpty.dll`: load by name
-    /// and let the loader prefer a co-located DLL over the in-box one.
+    /// Try loading ConptyApi from a `conpty.dll` sitting next to `rio.exe`,
+    /// resolved by absolute path so PATH / working-directory copies are never
+    /// picked up.
     fn load_conpty() -> Option<Self> {
         type LoadedFn = unsafe extern "system" fn() -> isize;
         unsafe {
-            let hmodule = LoadLibraryW(w!("conpty.dll"));
+            // Path to `rio.exe`, then swap its file name for `conpty.dll`.
+            let mut buf = [0u16; 4096];
+            let len =
+                GetModuleFileNameW(ptr::null_mut(), buf.as_mut_ptr(), buf.len() as u32);
+            // 0 on failure; == buf.len() means the path was truncated.
+            if len == 0 || len as usize >= buf.len() {
+                return None;
+            }
+            let dir_end = buf[..len as usize]
+                .iter()
+                .rposition(|&c| c == b'\\' as u16)?;
+            let mut dll_path: Vec<u16> = buf[..=dir_end].to_vec();
+            dll_path.extend("conpty.dll".encode_utf16());
+            dll_path.push(0);
+
+            // Absolute path + ALTERED_SEARCH_PATH also roots conpty.dll's own
+            // dependency lookup at its (the exe's) directory.
+            let hmodule = LoadLibraryExW(
+                dll_path.as_ptr(),
+                ptr::null_mut(),
+                LOAD_WITH_ALTERED_SEARCH_PATH,
+            );
             if hmodule.is_null() {
                 return None;
             }
