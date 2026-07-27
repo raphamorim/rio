@@ -118,6 +118,23 @@ impl<T: Clone + Default> Row<T> {
         self.semantic_prompt = src.semantic_prompt;
     }
 
+    /// Reset a recycled row back to a blank `columns`-wide row, reusing the
+    /// existing `inner` allocation. Used by the storage recycle pool so a row
+    /// freed on shrink can be handed back out on a later grow without
+    /// reallocating its cell buffer. Produces the same state as
+    /// [`Row::new`].
+    #[inline]
+    pub fn recycle(&mut self, columns: usize) {
+        debug_assert!(columns >= 1);
+        self.inner.clear();
+        self.inner.resize_with(columns, T::default);
+        self.occ = 0;
+        self.kitty_virtual_placeholder = false;
+        self.has_extras = false;
+        self.semantic_prompt = SemanticPrompt::None;
+        self.dirty = true;
+    }
+
     /// Increase the number of columns in the row.
     #[inline]
     pub fn grow(&mut self, columns: usize) {

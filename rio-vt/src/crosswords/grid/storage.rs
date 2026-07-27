@@ -50,6 +50,16 @@ pub struct Storage<T> {
     /// As long as `len` is bigger than `inner`, it is also possible to grow the scrollback buffer
     /// without any additional insertions.
     len: usize,
+
+    /// Recycle pool of freed row buffers.
+    ///
+    /// When `truncate` drops rows off the end of the ring it hands their
+    /// allocations here instead of freeing them, and `initialize` refills from
+    /// here before allocating. A column reflow does `take_all` then rebuilds,
+    /// and scrollback growth reuses the same pool, so after the first cycle
+    /// neither path allocates rows. Bounded by `MAX_CACHE_SIZE` so it cannot
+    /// grow without bound.
+    free: Vec<Row<T>>,
 }
 
 impl<T: PartialEq> PartialEq for Storage<T> {
@@ -77,6 +87,7 @@ impl<T> Storage<T> {
             zero: 0,
             visible_lines,
             len: visible_lines,
+            free: Vec::new(),
         }
     }
 
@@ -90,7 +101,18 @@ impl<T> Storage<T> {
         let growage = next - self.visible_lines;
 
         let columns = self[Line(0)].len();
-        self.initialize(growage, columns);
+
+        // Grow by exactly what's needed. Unlike the scroll path, a resize
+        // immediately follows this with a column reflow whose `take_all`
+        // discards any spare rows, so the scrollback over-allocation that
+        // `initialize` does would be pure waste here. Pooled rows are reused
+        // first, so a repeated resize (a window drag) allocates nothing.
+        let target = self.len + growage;
+        if target > self.inner.len() {
+            self.rezero();
+            self.refill_to(target, columns);
+        }
+        self.len += growage;
 
         // Update visible lines.
         self.visible_lines = next;
@@ -123,7 +145,22 @@ impl<T> Storage<T> {
     pub fn truncate(&mut self) {
         self.rezero();
 
-        self.inner.truncate(self.len);
+        if self.inner.len() <= self.len {
+            return;
+        }
+
+        // Recycle the removed rows instead of freeing them, so a later grow
+        // (resize reflow or scrollback growth) can hand their allocations back
+        // out. Cap retention so the pool cannot grow without bound; any excess
+        // is dropped by the `drain`.
+        let keep = MAX_CACHE_SIZE.saturating_sub(self.free.len());
+        let mut kept = 0;
+        for row in self.inner.drain(self.len..) {
+            if kept < keep {
+                self.free.push(row);
+                kept += 1;
+            }
+        }
     }
 
     /// Dynamically grow the storage buffer at runtime.
@@ -135,11 +172,42 @@ impl<T> Storage<T> {
         if self.len + additional_rows > self.inner.len() {
             self.rezero();
 
+            // Keep the scrollback over-allocation headroom (amortizes the
+            // per-line growth as content scrolls into history), sourcing rows
+            // from the recycle pool before allocating new ones.
             let realloc_size = self.inner.len() + max(additional_rows, MAX_CACHE_SIZE);
-            self.inner.resize_with(realloc_size, || Row::new(columns));
+            self.refill_to(realloc_size, columns);
         }
 
         self.len += additional_rows;
+    }
+
+    /// Grow `inner` up to `target` rows, reusing pooled row buffers first and
+    /// then bulk-allocating the remainder. Keeping the bulk `resize_with` for
+    /// the cold case preserves the fast path when the pool is empty.
+    #[inline]
+    fn refill_to(&mut self, target: usize, columns: usize)
+    where
+        T: Clone + Default,
+    {
+        if self.inner.len() >= target {
+            return;
+        }
+
+        self.inner.reserve(target - self.inner.len());
+        while self.inner.len() < target {
+            match self.free.pop() {
+                Some(mut row) => {
+                    row.recycle(columns);
+                    self.inner.push(row);
+                }
+                None => break,
+            }
+        }
+
+        if self.inner.len() < target {
+            self.inner.resize_with(target, || Row::new(columns));
+        }
     }
 
     #[inline]
@@ -349,6 +417,7 @@ mod tests {
             zero: 0,
             visible_lines: 3,
             len: 3,
+            free: Vec::new(),
         };
 
         // Grow buffer.
@@ -360,10 +429,10 @@ mod tests {
             zero: 0,
             visible_lines: 4,
             len: 4,
+            free: Vec::new(),
         };
-        expected
-            .inner
-            .append(&mut vec![filled_row('\0'); MAX_CACHE_SIZE]);
+        // Resize grows by exactly one line now (no scrollback over-alloc).
+        expected.inner.push(filled_row('\0'));
 
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -392,6 +461,7 @@ mod tests {
             zero: 1,
             visible_lines: 3,
             len: 3,
+            free: Vec::new(),
         };
 
         // Grow buffer.
@@ -403,10 +473,10 @@ mod tests {
             zero: 0,
             visible_lines: 4,
             len: 4,
+            free: Vec::new(),
         };
-        expected
-            .inner
-            .append(&mut vec![filled_row('\0'); MAX_CACHE_SIZE]);
+        // Resize grows by exactly one line now (no scrollback over-alloc).
+        expected.inner.push(filled_row('\0'));
 
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -432,6 +502,7 @@ mod tests {
             zero: 1,
             visible_lines: 3,
             len: 3,
+            free: Vec::new(),
         };
 
         // Shrink buffer.
@@ -443,6 +514,7 @@ mod tests {
             zero: 1,
             visible_lines: 2,
             len: 2,
+            free: Vec::new(),
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -468,6 +540,7 @@ mod tests {
             zero: 0,
             visible_lines: 3,
             len: 3,
+            free: Vec::new(),
         };
 
         // Shrink buffer.
@@ -479,6 +552,7 @@ mod tests {
             zero: 0,
             visible_lines: 2,
             len: 2,
+            free: Vec::new(),
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -517,6 +591,7 @@ mod tests {
             zero: 2,
             visible_lines: 6,
             len: 6,
+            free: Vec::new(),
         };
 
         // Shrink buffer.
@@ -535,6 +610,7 @@ mod tests {
             zero: 2,
             visible_lines: 2,
             len: 2,
+            free: Vec::new(),
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -569,6 +645,7 @@ mod tests {
             zero: 2,
             visible_lines: 1,
             len: 2,
+            free: Vec::new(),
         };
 
         // Truncate buffer.
@@ -580,6 +657,7 @@ mod tests {
             zero: 0,
             visible_lines: 1,
             len: 2,
+            free: Vec::new(),
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -604,6 +682,7 @@ mod tests {
             zero: 2,
             visible_lines: 1,
             len: 2,
+            free: Vec::new(),
         };
 
         // Truncate buffer.
@@ -615,6 +694,7 @@ mod tests {
             zero: 0,
             visible_lines: 1,
             len: 2,
+            free: Vec::new(),
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -661,6 +741,7 @@ mod tests {
             zero: 2,
             visible_lines: 0,
             len: 6,
+            free: Vec::new(),
         };
 
         // Shrink buffer.
@@ -679,6 +760,7 @@ mod tests {
             zero: 2,
             visible_lines: 0,
             len: 3,
+            free: Vec::new(),
         };
         assert_eq!(storage.inner, shrinking_expected.inner);
         assert_eq!(storage.zero, shrinking_expected.zero);
@@ -700,6 +782,7 @@ mod tests {
             zero: 2,
             visible_lines: 0,
             len: 4,
+            free: Vec::new(),
         };
 
         assert_eq!(storage.inner, growing_expected.inner);
@@ -722,6 +805,7 @@ mod tests {
             zero: 2,
             visible_lines: 0,
             len: 6,
+            free: Vec::new(),
         };
 
         // Initialize additional lines.
@@ -744,6 +828,7 @@ mod tests {
             zero: 0,
             visible_lines: 0,
             len: 9,
+            free: Vec::new(),
         };
 
         assert_eq!(storage.len, expected_storage.len);
@@ -768,6 +853,7 @@ mod tests {
             zero: 2,
             visible_lines: 25,
             len: 6,
+            free: Vec::new(),
         };
 
         // Initialize additional lines.
@@ -788,6 +874,7 @@ mod tests {
             zero: 0,
             visible_lines: 25,
             len: 11,
+            free: Vec::new(),
         };
 
         assert_eq!(storage.len, expected_storage.len);
@@ -802,6 +889,7 @@ mod tests {
             zero: 2,
             visible_lines: 0,
             len: 3,
+            free: Vec::new(),
         };
 
         storage.rotate(2);
