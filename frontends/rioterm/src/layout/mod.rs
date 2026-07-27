@@ -922,6 +922,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 crate::renderer::utils::terminal_dimensions(&item.val.dimension);
             let _ = item.val.messenger.send_resize(winsize);
 
+            // The reflow damages the Crosswords, but the present gate reads
+            // `pending_update.is_dirty()` and skips the panel before reading
+            // that. Mark it dirty so an idle terminal still presents.
+            item.val.renderable_content.pending_update.set_dirty();
+
             // Panel position / clipping bounds are tracked rio-side
             // now; the grid pass reads `panel_rect` from the renderer's
             // own per-panel iteration. Sugarloaf no longer carries
