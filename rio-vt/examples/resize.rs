@@ -3,7 +3,6 @@
 //! Run: `cargo run -p rio-vt --example resize`
 
 use rio_vt::ansi::CursorShape;
-use rio_vt::crosswords::grid::Dimensions;
 use rio_vt::crosswords::pos::Column;
 use rio_vt::crosswords::{Crosswords, CrosswordsSize};
 use rio_vt::event::{VoidListener, WindowId};

@@ -1456,13 +1456,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // sitting under the release point; hints fire on
                         // plain clicks only, when no selection exists.
                         if route.window.screen.selection_is_empty() {
-                            if button == MouseButton::Left
-                                && route
+                            if button == MouseButton::Left {
+                                route
                                     .window
                                     .screen
-                                    .trigger_hint(&mut self.router.clipboard)
-                            {
-                                return;
+                                    .trigger_hint(&mut self.router.clipboard);
                             }
                         } else if matches!(button, MouseButton::Left | MouseButton::Right)
                             && self.config.copy_on_select

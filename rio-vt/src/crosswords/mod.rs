@@ -7293,6 +7293,7 @@ mod tests {
     /// grid must come from the image's pixel size, not collapse to a
     /// 1×1 cell box (the 0.4.12 yazi-preview regression from #1314).
     #[test]
+    #[allow(clippy::needless_range_loop)]
     fn yazi_kgp_wire_sequence_implies_grid_from_image_size() {
         use crate::ansi::kitty_virtual::{DIACRITICS, PLACEHOLDER};
 

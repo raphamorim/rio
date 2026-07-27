@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 
 /// Records (image_id, width, height, byte-len) for every kitty image emitted.
 #[derive(Clone, Default)]
+#[allow(clippy::type_complexity)]
 struct ImageSink(Arc<Mutex<Vec<(u32, usize, usize, usize)>>>);
 
 impl EventListener for ImageSink {

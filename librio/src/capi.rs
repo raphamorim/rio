@@ -783,7 +783,6 @@ mod color_tests {
 
 #[cfg(test)]
 mod persistence_tests {
-    use super::*;
     use crate::{SurfaceDelegate, SurfaceId};
     use std::sync::Arc;
 

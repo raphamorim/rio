@@ -2052,12 +2052,14 @@ mod alias_tests {
             inner: Arc::new(parking_lot::RwLock::new(data)),
         };
 
-        let mut style = crate::SpanStyle::default();
-        style.font_attrs = swash::Attributes::new(
-            swash::Stretch::NORMAL,
-            swash::Weight::BOLD,
-            swash::Style::Normal,
-        );
+        let style = crate::SpanStyle {
+            font_attrs: swash::Attributes::new(
+                swash::Stretch::NORMAL,
+                swash::Weight::BOLD,
+                swash::Style::Normal,
+            ),
+            ..Default::default()
+        };
         let (font_id, _) = lib
             .inner
             .read()

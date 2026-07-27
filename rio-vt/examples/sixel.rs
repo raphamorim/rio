@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 
 /// Records (id, width, height, byte-len) for every graphic the terminal emits.
 #[derive(Clone, Default)]
+#[allow(clippy::type_complexity)]
 struct GraphicSink(Arc<Mutex<Vec<(u64, usize, usize, usize)>>>);
 
 impl EventListener for GraphicSink {
