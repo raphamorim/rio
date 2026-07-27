@@ -287,7 +287,7 @@ private struct TerminalRowView: View {
                     .foregroundStyle(
                         isSelected ? Theme.textSelected : Theme.textPrimary.opacity(0.6))
 
-                Text(terminal.name)
+                Text(terminal.displayTitle)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(
                         isSelected ? Theme.textSelected : Theme.textPrimary.opacity(0.75))

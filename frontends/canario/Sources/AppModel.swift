@@ -87,6 +87,16 @@ final class TerminalItem: Identifiable {
         columns.reduce(0) { $0 + $1.panels.count }
     }
 
+    var displayTitle: String {
+        if let title = panelTitles[focusedPanelID]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !title.isEmpty
+        {
+            return title
+        }
+        return name
+    }
+
     func weight(for id: UUID) -> CGFloat {
         panelWeights[id] ?? 1
     }
