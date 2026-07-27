@@ -15,7 +15,6 @@
 
 use super::Crosswords;
 use crate::config::colors::AnsiColor;
-use crate::crosswords::grid::Dimensions;
 use crate::crosswords::pos::{Column, Line};
 use crate::crosswords::style::{Style, StyleFlags};
 use crate::event::EventListener;

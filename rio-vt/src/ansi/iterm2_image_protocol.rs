@@ -7,9 +7,9 @@
 //
 // This implementation also supports `width` and `height` parameters to resize the image.
 
-use rio_graphics::{GraphicData, ResizeCommand, ResizeParameter};
+use rio_graphics::GraphicData;
 #[cfg(feature = "graphics")]
-use rio_graphics::GraphicId;
+use rio_graphics::{GraphicId, ResizeCommand, ResizeParameter};
 
 use rustc_hash::FxHashMap;
 use std::str;
@@ -134,6 +134,7 @@ fn param_values<'a>(
 /// - Npx: N pixels.
 /// - N%: N percent of the window's width or height.
 /// - auto: Computed from the original graphic size.
+#[cfg(feature = "graphics")]
 fn resize_param(params: &FxHashMap<&str, &str>) -> Option<ResizeCommand> {
     fn parse(value: Option<&str>) -> Option<ResizeParameter> {
         let value = match value {
@@ -200,6 +201,7 @@ fn parse_osc1337_single_parameter() {
     assert_eq!(contents, b"AAAA".as_ref())
 }
 
+#[cfg(feature = "graphics")]
 #[test]
 fn resize_params() {
     use ResizeParameter::{Auto, Cells, Pixels, WindowPercent};
