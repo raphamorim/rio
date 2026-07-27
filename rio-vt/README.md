@@ -8,11 +8,11 @@ dependency-light crate.
 It carries **no rendering, GPU, or font-shaping dependencies**. You pair
 it with a renderer of your choice (Rio uses `sugarloaf`) or drive it purely
 from the pulled grid state. It is the safe-Rust sibling of
-[`librio-vt`](../librio/vt), which wraps this same core in a C ABI for
+[`librio`](../librio), which wraps this same core in a C ABI for
 embedding from Swift, C, Go (cgo), and other languages.
 
 - **Rust embedders** depend on `rio-vt` directly (this crate).
-- **Non-Rust embedders** link `librio-vt` (C ABI) + its generated header.
+- **Non-Rust embedders** link `librio` (C ABI) + its generated header.
 
 ## Add it
 
@@ -130,7 +130,7 @@ impl EventListener for MyListener {
 
 `performer::Machine` wires a spawned PTY to the parser and the grid on a
 reader thread, so bytes from the child process flow into `Crosswords`
-automatically. See [`librio/vt/src/lib.rs`](../librio/vt/src/lib.rs) for a
+automatically. See [`librio/src/lib.rs`](../librio/src/lib.rs) for a
 complete, working setup (`Crosswords::new` + `Machine::new` +
 `teletypewriter`), which is also the reference consumer of this crate.
 
@@ -146,11 +146,11 @@ complete, working setup (`Crosswords::new` + `Machine::new` +
 
 For a complete pull implementation (dirty-row tracking, per-cell readout,
 cursor and selection state), see
-[`librio/vt/src/render_state.rs`](../librio/vt/src/render_state.rs).
+[`librio/src/render_state.rs`](../librio/src/render_state.rs).
 
 ## C ABI
 
-To embed from a non-Rust UI, use [`librio-vt`](../librio/vt). It builds this
+To embed from a non-Rust UI, use [`librio`](../librio). It builds this
 crate as a `staticlib` and exposes an engine/surface/render-state C API
 (`rio_engine_new`, `rio_surface_text`, `rio_render_state_cell`, ...). Rio's
 SwiftUI + Metal frontend drives it that way.
@@ -162,7 +162,7 @@ rio-graphics   image/graphic value types + glyph decoder (leaf, no GPU)
      |
    rio-vt      this crate: VT core (crosswords, ansi, performer, event, ...)
      |     \
-rio-backend   librio-vt (C ABI)
+rio-backend   librio (C ABI)
      |
   rioterm     Rio's terminal app (adds the sugarloaf renderer + config)
 ```
@@ -174,4 +174,4 @@ while this crate carries the reusable core.
 ## Safety
 
 The public API of `rio-vt` is safe Rust. All `unsafe` and raw-pointer
-handling lives in the separate `librio-vt` C-ABI shim.
+handling lives in the separate `librio` C-ABI shim.

@@ -2572,17 +2572,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "librio-sugarloaf"
-version = "0.5.0"
-dependencies = [
- "librio-vt",
- "raw-window-handle",
- "rio-window",
- "sugarloaf",
-]
-
-[[package]]
-name = "librio-vt"
+name = "librio"
 version = "0.5.0"
 dependencies = [
  "bitflags 2.13.1",

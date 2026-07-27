@@ -66,7 +66,7 @@ install-terminfo:
 
 CANARIO_DIR = frontends/canario
 CANARIO_APP_DIR = target/canario/Canario.app
-.PHONY: canario canario-run librio-vt-ctest librio-xcframework
+.PHONY: canario canario-run librio-ctest librio-xcframework
 canario: librio-xcframework
 	@mkdir -p $(CANARIO_APP_DIR)/Contents/MacOS
 	@mkdir -p $(CANARIO_APP_DIR)/Contents/Resources
@@ -87,25 +87,24 @@ canario: librio-xcframework
 canario-run: canario
 	open -n $(CANARIO_APP_DIR)
 
-librio-vt-ctest:
-	cargo build -p librio-vt --features capi
+librio-ctest:
+	cargo build -p librio
 	@mkdir -p target/librio
-	cc librio/vt/ctest/main.c target/debug/liblibrio_vt.a \
-		-o target/librio/vt-ctest \
+	cc librio/ctest/main.c target/debug/liblibrio.a \
+		-o target/librio/ctest \
 		-framework CoreFoundation -framework Foundation -framework AppKit \
 		-framework CoreGraphics -framework CoreText -framework Metal \
 		-framework QuartzCore -framework CoreVideo -liconv -lc++
-	target/librio/vt-ctest
+	target/librio/ctest
 
 LIBRIO_XCF = target/librio/RioKit.xcframework
 librio-xcframework:
-	cargo build -p librio-sugarloaf --features capi --profile librio --target aarch64-apple-darwin
+	cargo build -p librio --profile librio --target aarch64-apple-darwin
 	@rm -rf $(LIBRIO_XCF)
 	@mkdir -p $(LIBRIO_XCF)/macos-arm64/Headers
-	@cp target/aarch64-apple-darwin/librio/liblibrio_sugarloaf.a \
+	@cp target/aarch64-apple-darwin/librio/liblibrio.a \
 		$(LIBRIO_XCF)/macos-arm64/librio.a
-	@cp librio/include/librio.h librio/include/librio-vt.h \
-		librio/include/librio-sugarloaf.h librio/include/module.modulemap \
+	@cp librio/include/librio.h librio/include/module.modulemap \
 		$(LIBRIO_XCF)/macos-arm64/Headers/
 	@cp librio/xcframework-info.plist $(LIBRIO_XCF)/Info.plist
 	@echo "Created '$(LIBRIO_XCF)'"
@@ -204,8 +203,4 @@ test:
 
 publish-crates: build
 	# Note: cargo publish is only supported from >=1.90
-	cargo publish --workspace --exclude librio-vt --exclude librio-sugarloaf
-
-publish-librio:
-	cargo publish -p librio-vt
-	cargo publish -p librio-sugarloaf
+	cargo publish --workspace

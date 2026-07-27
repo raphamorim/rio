@@ -1,4 +1,4 @@
-#include "../../include/librio-vt.h"
+#include "../include/librio.h"
 
 #include <stdatomic.h>
 #include <stdio.h>
@@ -75,6 +75,6 @@ int main(void) {
     fprintf(stderr, "gate failed\n");
     return 1;
   }
-  printf("librio-vt c gate passed\n");
+  printf("librio c gate passed\n");
   return 0;
 }
