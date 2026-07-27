@@ -4,8 +4,8 @@
 // downstream (rioterm, tests) has to change. This crate keeps the
 // user-facing config and the sugarloaf renderer glue.
 pub use rio_vt::{
-    ansi, clipboard, codepoint_width, crosswords, error, event, performer,
-    selection, simd_base64, simd_utf8,
+    ansi, clipboard, codepoint_width, crosswords, error, event, performer, selection,
+    simd_base64, simd_utf8,
 };
 
 pub mod config;

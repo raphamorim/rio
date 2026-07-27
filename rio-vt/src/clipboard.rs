@@ -23,7 +23,10 @@ use copypasta::nop_clipboard::NopClipboardContext;
 use copypasta::wayland_clipboard;
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
 use copypasta::x11_clipboard::{Primary as X11SelectionClipboard, X11ClipboardContext};
-#[cfg(all(feature = "clipboard", any(feature = "x11", target_os = "macos", windows)))]
+#[cfg(all(
+    feature = "clipboard",
+    any(feature = "x11", target_os = "macos", windows)
+))]
 use copypasta::ClipboardContext;
 #[cfg(feature = "clipboard")]
 use copypasta::ClipboardProvider;

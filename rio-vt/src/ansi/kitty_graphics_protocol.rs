@@ -1,8 +1,8 @@
 use crate::simd_base64;
+use rio_graphics::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use rio_graphics::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 use tracing::debug;
 
 /// Maximum width or height (per axis) we accept for a kitty-graphics
@@ -1322,66 +1322,71 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                 // Decode PNG data
                 use image_rs::ImageFormat;
 
-            debug!("Decoding PNG, pixel_data length: {}", pixel_data.len());
-            let img = match image_rs::load_from_memory_with_format(
-                &pixel_data,
-                ImageFormat::Png,
-            ) {
-                Ok(img) => {
-                    debug!("PNG decoded successfully: {}x{}", img.width(), img.height());
-                    img
+                debug!("Decoding PNG, pixel_data length: {}", pixel_data.len());
+                let img = match image_rs::load_from_memory_with_format(
+                    &pixel_data,
+                    ImageFormat::Png,
+                ) {
+                    Ok(img) => {
+                        debug!(
+                            "PNG decoded successfully: {}x{}",
+                            img.width(),
+                            img.height()
+                        );
+                        img
+                    }
+                    Err(e) => {
+                        debug!("PNG decode failed: {:?}", e);
+                        return Err(GraphicError::InvalidData);
+                    }
+                };
+                // PNG dimensions come from the decoded header — now enforce
+                // the cap we couldn't check up front.
+                if img.width() > MAX_DIMENSION || img.height() > MAX_DIMENSION {
+                    return Err(GraphicError::DimensionsTooLarge);
                 }
-                Err(e) => {
-                    debug!("PNG decode failed: {:?}", e);
-                    return Err(GraphicError::InvalidData);
-                }
-            };
-            // PNG dimensions come from the decoded header — now enforce
-            // the cap we couldn't check up front.
-            if img.width() > MAX_DIMENSION || img.height() > MAX_DIMENSION {
-                return Err(GraphicError::DimensionsTooLarge);
-            }
-            let rgba_img = img.to_rgba8();
-            let (width, height) = (rgba_img.width() as usize, rgba_img.height() as usize);
-            let pixels = rgba_img.into_raw();
+                let rgba_img = img.to_rgba8();
+                let (width, height) =
+                    (rgba_img.width() as usize, rgba_img.height() as usize);
+                let pixels = rgba_img.into_raw();
 
-            // Check if image is opaque
-            let is_opaque = pixels.chunks(4).all(|chunk| chunk[3] == 255);
+                // Check if image is opaque
+                let is_opaque = pixels.chunks(4).all(|chunk| chunk[3] == 255);
 
-            // Create resize command if columns/rows specified
-            // When both c= and r= are given, stretch to fill (no aspect ratio).
-            // When only one is given, compute the other preserving aspect ratio.
-            let resize = if cmd.columns > 0 || cmd.rows > 0 {
-                let both_specified = cmd.columns > 0 && cmd.rows > 0;
-                Some(ResizeCommand {
-                    width: if cmd.columns > 0 {
-                        ResizeParameter::Cells(cmd.columns)
-                    } else {
-                        ResizeParameter::Auto
-                    },
-                    height: if cmd.rows > 0 {
-                        ResizeParameter::Cells(cmd.rows)
-                    } else {
-                        ResizeParameter::Auto
-                    },
-                    preserve_aspect_ratio: !both_specified,
+                // Create resize command if columns/rows specified
+                // When both c= and r= are given, stretch to fill (no aspect ratio).
+                // When only one is given, compute the other preserving aspect ratio.
+                let resize = if cmd.columns > 0 || cmd.rows > 0 {
+                    let both_specified = cmd.columns > 0 && cmd.rows > 0;
+                    Some(ResizeCommand {
+                        width: if cmd.columns > 0 {
+                            ResizeParameter::Cells(cmd.columns)
+                        } else {
+                            ResizeParameter::Auto
+                        },
+                        height: if cmd.rows > 0 {
+                            ResizeParameter::Cells(cmd.rows)
+                        } else {
+                            ResizeParameter::Auto
+                        },
+                        preserve_aspect_ratio: !both_specified,
+                    })
+                } else {
+                    None
+                };
+
+                Ok(GraphicData {
+                    id: GraphicId::new(cmd.image_id as u64),
+                    width,
+                    height,
+                    color_type: ColorType::Rgba,
+                    pixels,
+                    is_opaque,
+                    resize,
+                    display_width: None,
+                    display_height: None,
+                    transmit_time: std::time::Instant::now(),
                 })
-            } else {
-                None
-            };
-
-            Ok(GraphicData {
-                id: GraphicId::new(cmd.image_id as u64),
-                width,
-                height,
-                color_type: ColorType::Rgba,
-                pixels,
-                is_opaque,
-                resize,
-                display_width: None,
-                display_height: None,
-                transmit_time: std::time::Instant::now(),
-            })
             };
             result
         }

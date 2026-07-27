@@ -74,7 +74,8 @@ impl<U: EventListener> Crosswords<U> {
             return String::new();
         }
         let start = crate::crosswords::pos::Pos::new(Line(0), Column(0));
-        let end = crate::crosswords::pos::Pos::new(Line(rows as i32 - 1), Column(cols - 1));
+        let end =
+            crate::crosswords::pos::Pos::new(Line(rows as i32 - 1), Column(cols - 1));
         self.bounds_to_string(start, end)
     }
 
@@ -288,13 +289,19 @@ mod tests {
         let mut hidden = term(10, 3);
         feed(&mut hidden, b"\x1b[?25l");
         let text = String::from_utf8(hidden.contents_formatted()).unwrap();
-        assert!(text.contains("\x1b[?25l"), "snapshot should hide cursor: {text:?}");
+        assert!(
+            text.contains("\x1b[?25l"),
+            "snapshot should hide cursor: {text:?}"
+        );
         assert!(!text.contains("\x1b[?25h"));
 
         // Default (shown) cursor is restored shown.
         let shown = term(10, 3);
         let text = String::from_utf8(shown.contents_formatted()).unwrap();
-        assert!(text.contains("\x1b[?25h"), "snapshot should show cursor: {text:?}");
+        assert!(
+            text.contains("\x1b[?25h"),
+            "snapshot should show cursor: {text:?}"
+        );
     }
 
     #[test]

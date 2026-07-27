@@ -52,13 +52,13 @@ use grid::row::Row;
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
+use rio_graphics::{GraphicData, MAX_GRAPHIC_DIMENSIONS};
 use square::{Hyperlink, LineLength, Square};
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
-use rio_graphics::{GraphicData, MAX_GRAPHIC_DIMENSIONS};
 use tracing::{debug, info, trace, warn};
 use vi_mode::{ViModeCursor, ViMotion};
 

@@ -243,8 +243,8 @@ pub mod test {
     use crate::context::ContextDimension;
     use rio_backend::config::layout::Margin;
     use rio_backend::event::VoidListener;
-    use rio_backend::sugarloaf::layout::TextDimensions;
     use rio_backend::event::WindowId;
+    use rio_backend::sugarloaf::layout::TextDimensions;
 
     #[test]
     fn test_update_title() {

@@ -564,9 +564,7 @@ pub unsafe extern "C" fn rio_surface_inject_output(
 /// The shell's current working directory (OSC 7), or NULL if unknown.
 /// Caller owns the returned string; free it with `rio_text_free`.
 #[no_mangle]
-pub unsafe extern "C" fn rio_surface_working_dir(
-    surface: *const Surface,
-) -> *mut c_char {
+pub unsafe extern "C" fn rio_surface_working_dir(surface: *const Surface) -> *mut c_char {
     catch_unwind(AssertUnwindSafe(|| {
         if surface.is_null() {
             return std::ptr::null_mut();
