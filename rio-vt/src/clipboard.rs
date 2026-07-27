@@ -1,29 +1,40 @@
 // clipboard.rs was retired originally from https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty/src/clipboard.rs
 // which is licensed under Apache 2.0 license.
 
-use raw_window_handle::RawDisplayHandle;
-use tracing::warn;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipboardType {
     Clipboard,
     Selection,
 }
 
+// The `Clipboard` helper below backs onto the system clipboard via copypasta,
+// which pulls in windowing/AppKit dependencies. It is only used by frontends;
+// headless embedders (parse + snapshot, OSC 52 as events) need just the
+// `ClipboardType` enum above, so the rest is gated behind the `clipboard`
+// feature.
+#[cfg(feature = "clipboard")]
+use raw_window_handle::RawDisplayHandle;
+#[cfg(feature = "clipboard")]
+use tracing::warn;
+
+#[cfg(feature = "clipboard")]
 use copypasta::nop_clipboard::NopClipboardContext;
 #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
 use copypasta::wayland_clipboard;
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
 use copypasta::x11_clipboard::{Primary as X11SelectionClipboard, X11ClipboardContext};
-#[cfg(any(feature = "x11", target_os = "macos", windows))]
+#[cfg(all(feature = "clipboard", any(feature = "x11", target_os = "macos", windows)))]
 use copypasta::ClipboardContext;
+#[cfg(feature = "clipboard")]
 use copypasta::ClipboardProvider;
 
+#[cfg(feature = "clipboard")]
 pub struct Clipboard {
     clipboard: Box<dyn ClipboardProvider>,
     selection: Option<Box<dyn ClipboardProvider>>,
 }
 
+#[cfg(feature = "clipboard")]
 impl Clipboard {
     #[allow(clippy::missing_safety_doc)]
     pub unsafe fn new(display: RawDisplayHandle) -> Self {
@@ -53,6 +64,7 @@ impl Clipboard {
     }
 }
 
+#[cfg(feature = "clipboard")]
 impl Default for Clipboard {
     fn default() -> Self {
         #[cfg(any(target_os = "macos", windows))]
@@ -74,6 +86,7 @@ impl Default for Clipboard {
     }
 }
 
+#[cfg(feature = "clipboard")]
 impl Clipboard {
     pub fn set(&mut self, ty: ClipboardType, text: impl Into<String>) {
         let clipboard = match (ty, &mut self.selection) {
