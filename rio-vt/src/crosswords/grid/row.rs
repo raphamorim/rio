@@ -250,6 +250,25 @@ impl<T> Row<T> {
         self.inner.append(vec);
     }
 
+    /// Move the first `count` cells of `src` onto the end of `self`, in place:
+    /// a memcpy of the span followed by a memmove that drops it from `src`, with
+    /// no temporary allocation. Replaces `front_split_off` + `append` in the
+    /// grow reflow, where allocating a `Vec` per wrapped row dominated.
+    #[inline]
+    pub fn append_front_of(&mut self, src: &mut Row<T>, count: usize)
+    where
+        T: Copy,
+    {
+        self.inner.extend_from_slice(&src.inner[..count]);
+        self.occ += count;
+        self.dirty = true;
+        self.has_extras = true;
+
+        src.inner.drain(..count);
+        src.occ = src.occ.saturating_sub(count);
+        src.dirty = true;
+    }
+
     #[inline]
     pub fn append_front(&mut self, mut vec: Vec<T>) {
         self.occ += vec.len();

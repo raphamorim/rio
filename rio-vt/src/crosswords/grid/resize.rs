@@ -173,28 +173,25 @@ impl Grid<Square> {
             let mut num_wrapped = columns - last_len;
             let len = min(row.len(), num_wrapped);
 
-            // Insert leading spacer when there's not enough room for reflowing wide char.
+            // Move the wrapped cells from the front of `row` onto the end of
+            // `last_row`, in place (no per-row temporary allocation).
             let mut first_cell_moved = true;
-            let mut cells = if matches!(row[Column(len - 1)].wide(), Wide::Wide) {
+            if matches!(row[Column(len - 1)].wide(), Wide::Wide) {
                 num_wrapped -= 1;
 
                 // With a single free column, only the spacer is
                 // appended and the wide char stays on this row.
                 first_cell_moved = len > 1;
 
-                let mut cells = row.front_split_off(len - 1);
+                last_row.append_front_of(&mut row, len - 1);
 
                 let mut spacer = Square::default();
                 spacer.set_wide(Wide::LeadingSpacer);
-                cells.push(spacer);
-
-                cells
+                last_row.inner.push(spacer);
+                last_row.occ += 1;
             } else {
-                row.front_split_off(len)
-            };
-
-            // Add removed cells to previous row and reflow content.
-            last_row.append(&mut cells);
+                last_row.append_front_of(&mut row, len);
+            }
 
             // The old row's first cell just landed at the end of the
             // merge target, unless the wide-char spacer case kept it
