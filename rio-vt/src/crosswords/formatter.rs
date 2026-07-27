@@ -144,6 +144,14 @@ impl<U: EventListener> Crosswords<U> {
         let row = pos.row.0.max(0) + 1;
         let col = pos.col.0 + 1;
         let _ = write!(out, "\x1b[{row};{col}H");
+        // Restore cursor visibility (DECTCEM). A screen with a hidden cursor
+        // is common while a TUI redraws; without this a restored snapshot
+        // would leave a stray cursor on the client until the next output.
+        if self.mode.contains(super::Mode::SHOW_CURSOR) {
+            out.push_str("\x1b[?25h");
+        } else {
+            out.push_str("\x1b[?25l");
+        }
     }
 
     fn row_has_content(&self, line: usize, cols: usize) -> bool {
@@ -273,6 +281,21 @@ mod tests {
         assert_eq!(sb.c(), 'w');
         assert_eq!(a.grid.style_of(&sa).fg, b.grid.style_of(&sb).fg);
         assert!(b.grid.style_of(&sb).flags.contains(StyleFlags::BOLD));
+    }
+
+    #[test]
+    fn vt_restores_cursor_visibility() {
+        // Hidden cursor (as a TUI leaves it mid-draw) must be restored hidden.
+        let mut hidden = term(10, 3);
+        feed(&mut hidden, b"\x1b[?25l");
+        let text = String::from_utf8(hidden.contents_formatted()).unwrap();
+        assert!(text.contains("\x1b[?25l"), "snapshot should hide cursor: {text:?}");
+        assert!(!text.contains("\x1b[?25h"));
+
+        // Default (shown) cursor is restored shown.
+        let shown = term(10, 3);
+        let text = String::from_utf8(shown.contents_formatted()).unwrap();
+        assert!(text.contains("\x1b[?25h"), "snapshot should show cursor: {text:?}");
     }
 
     #[test]
