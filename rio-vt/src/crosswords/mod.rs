@@ -2848,7 +2848,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn set_title(&mut self, title: Option<String>) {
-        self.title = title.unwrap_or_default();
+        let title = title.unwrap_or_default();
+        if title != self.title {
+            self.title = title;
+            self.event_proxy
+                .send_event(RioEvent::Title(self.title.clone()), self.window_id);
+        }
     }
 
     fn set_progress_report(&mut self, report: crate::event::ProgressReport) {
@@ -6728,6 +6733,50 @@ mod tests {
             }
             other => panic!("Expected PtyWrite event, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn set_title_emits_title_event() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        #[derive(Clone)]
+        struct TestListener {
+            events: Rc<RefCell<Vec<RioEvent>>>,
+        }
+
+        impl EventListener for TestListener {
+            fn event(&self) -> (Option<RioEvent>, bool) {
+                (None, false)
+            }
+
+            fn send_event(&self, event: RioEvent, _id: WindowId) {
+                self.events.borrow_mut().push(event);
+            }
+        }
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            0,
+            10,
+        );
+
+        Handler::set_title(&mut term, Some("my title".to_string()));
+
+        assert_eq!(term.title, "my title");
+        assert!(
+            events
+                .borrow()
+                .iter()
+                .any(|e| matches!(e, RioEvent::Title(t) if t == "my title")),
+            "set_title should emit RioEvent::Title"
+        );
     }
 
     #[test]
