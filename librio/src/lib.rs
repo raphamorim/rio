@@ -22,11 +22,11 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use teletypewriter::WinsizeBuilder;
-#[cfg(not(target_os = "windows"))]
-use teletypewriter::create_pty_with_spawn;
 #[cfg(target_os = "windows")]
 use teletypewriter::create_pty;
+#[cfg(not(target_os = "windows"))]
+use teletypewriter::create_pty_with_spawn;
+use teletypewriter::WinsizeBuilder;
 
 pub type SurfaceId = usize;
 
