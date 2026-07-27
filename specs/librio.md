@@ -1,36 +1,36 @@
 # librio
 
 `librio` is an embeddable terminal library extracted from Rio: the PTY and VT
-state core, usable from Rust, Swift, and C without pulling in a windowing
-stack.
+state core, usable from Swift, C, and anything that speaks C, without pulling in
+a windowing stack.
 
-It began as a research exercise studying two prior art decompositions — the
+It began as a research exercise studying two prior art decompositions, the
 libghostty split (a terminal-state library shipped first, renderer as a later
-peer) and [libvterm](https://www.leonerd.org.uk/code/libvterm/) — then kept the
+peer) and [libvterm](https://www.leonerd.org.uk/code/libvterm/), then kept the
 parts that fit Rio's existing engine and dropped the rest.
 
-The current scope is a single library, **`librio-vt`** — PTY + VT state with a
-host-pulled render-state API. A renderer peer built on sugarloaf is a possible
-later addition but is out of scope here.
+`librio` is a single Rust crate that wraps [`rio-vt`](../rio-vt), Rio's terminal
+core, and compiles to a C ABI. It is deliberately VT-only: PTY, VT state, and a
+host-pulled render-state API, with no renderer.
 
-Distribution, two ways:
+## Distribution
 
-1. **Rust crate** (`librio-vt` on crates.io) with an idiomatic Rust API. The C
-   ABI is a `capi` feature on the same crate, not a separate wrapper crate.
-2. **C ABI / xcframework** for Swift and C consumers: hand-curated headers
-   (cbindgen seeds them, never auto-committed), `module.modulemap`
-   (`module RioKit`), universal static libs via `lipo`, packaged with
-   `xcodebuild -create-xcframework`.
+`librio` is **not published to crates.io**. It lives in the Rio source tree and
+exists only to produce static artifacts: a `RioKit.xcframework` (static lib +
+curated header + `module.modulemap`, `module RioKit`) shipped in Rio's GitHub
+releases, built with `cargo build` then `lipo` and
+`xcodebuild -create-xcframework`. The C header is curated (cbindgen seeds it,
+never auto-committed).
 
-Versioning: `librio-vt` versions independently of Rio releases; no API
-stability promise until tagged.
+If you write Rust, depend on `rio-vt` directly; that is the published, idiomatic
+crate. `librio` is the C boundary for everyone else, and versions with Rio.
 
-## librio-vt
+## Design
 
 Owns the PTY (`teletypewriter`), the VT machine (`Machine` / `performer`), and
 the grid (`Crosswords`). Knows nothing about pixels: the host pulls a
 render-state snapshot with per-row dirty flags (which the host resets) and
-draws it however it likes. This pull model is the permanent dogfood test — if
+draws it however it likes. This pull model is the permanent dogfood test: if
 our own renderer can be built on it, so can a third-party CPU renderer, a wasm
 canvas, a TUI proxy, or a test harness.
 
@@ -40,7 +40,7 @@ a new action never changes the ABI struct. Input is a per-surface set of entry
 points: key (returns a consumed bool), text, preedit (IME), mouse
 button/pos/scroll, set_size, set_content_scale, set_focus, set_occlusion.
 
-### Rust API (primary)
+### Rust API
 
 ```rust
 pub struct Engine { /* shared config, action fan-out */ }
@@ -89,7 +89,7 @@ impl RenderState {
 }
 ```
 
-### C ABI (feature `capi`)
+### C ABI
 
 ```c
 typedef struct rio_engine        rio_engine_t;
@@ -139,7 +139,7 @@ const rio_cell_s *rio_render_state_row(const rio_render_state_t*, uint16_t row,
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t*);
 ```
 
-Every `extern "C"` entry point wraps its body in `catch_unwind` — a Rust panic
+Every `extern "C"` entry point wraps its body in `catch_unwind`, a Rust panic
 must never unwind into Swift/C (UB).
 
 Threading contract (identical to today's rioterm split): the surface owns one
