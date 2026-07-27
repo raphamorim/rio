@@ -99,6 +99,24 @@ impl Grid<Square> {
             reflow && len.0 > 0 && len < columns && row[len - 1].wrapline()
         };
 
+        // Fast path: when no row is soft-wrapped into the next there is
+        // nothing to rejoin, so growing is a per-row blank extension with no
+        // content movement. The full reflow loop below would, in that case,
+        // re-push every row unchanged and grow it to `columns`, so this is
+        // equivalent while skipping `take_all` and the two temporary buffers.
+        // Skipped when tracking image placements, since the full path also
+        // builds their row remap.
+        if !self.track_reflow_remap && !self.raw.rows().any(should_reflow) {
+            self.columns = columns;
+            // Undo the linewrap special case exactly as the full path does.
+            if self.cursor.should_wrap && reflow {
+                self.cursor.should_wrap = false;
+                self.cursor.pos.col += 1;
+            }
+            self.raw.grow_all_rows(columns);
+            return;
+        }
+
         self.columns = columns;
 
         let mut reversed: Vec<Row<Square>> = Vec::with_capacity(self.raw.len());

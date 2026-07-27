@@ -220,6 +220,27 @@ impl<T> Storage<T> {
         self.len == 0
     }
 
+    /// Iterate every stored row. Order is the raw ring order, not logical line
+    /// order, which is fine for whole-buffer predicates and per-row edits that
+    /// don't depend on position (the resize in-place fast paths).
+    #[inline]
+    pub fn rows(&self) -> std::slice::Iter<'_, Row<T>> {
+        self.inner.iter()
+    }
+
+    /// Grow every stored row to `columns`, in place, reusing each row's
+    /// existing allocation where it already has the capacity. Used by the
+    /// no-reflow column grow fast path.
+    #[inline]
+    pub fn grow_all_rows(&mut self, columns: usize)
+    where
+        T: Clone + Default,
+    {
+        for row in &mut self.inner {
+            row.grow(columns);
+        }
+    }
+
     /// Swap implementation for Row<T>.
     ///
     /// Exploits the known size of Row<T> to produce a slightly more efficient
