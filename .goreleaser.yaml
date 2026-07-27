@@ -315,22 +315,7 @@ winget:
 after:
   hooks:
     # homebrew-cask is bumped automatically by BrewTestBot (cask has livecheck)
-    - cmd: cargo publish -p rio-window
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p sugarloaf
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p corcovado
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p teletypewriter
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p rio-backend
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p rioterm
+    - cmd: cargo publish --workspace
       if: "{{ and .IsRelease .IsMerging }}"
       output: true
 
