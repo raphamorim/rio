@@ -5,15 +5,13 @@ on:
     branches: [main]
     paths:
       - 'librio/**'
-      - 'rio-backend/**'
-      - 'sugarloaf/**'
+      - 'rio-vt/**'
       - 'teletypewriter/**'
       - '.github/workflows/librio.yml'
   pull_request:
     paths:
       - 'librio/**'
-      - 'rio-backend/**'
-      - 'sugarloaf/**'
+      - 'rio-vt/**'
       - 'teletypewriter/**'
       - '.github/workflows/librio.yml'
 
@@ -32,9 +30,8 @@ jobs:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
       - run: rustup toolchain install stable --profile minimal
-      - run: cargo test -p librio-vt --features capi
-      - run: cargo build -p librio-sugarloaf --features capi --examples
-      - run: make librio-vt-ctest
+      - run: cargo test -p librio
+      - run: make librio-ctest
       - run: make librio-xcframework
       - uses: actions/upload-artifact@v4
         with:
