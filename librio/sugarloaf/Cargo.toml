@@ -17,7 +17,7 @@ default = []
 capi = ["librio-vt/capi", "dep:raw-window-handle"]
 
 [dependencies]
-librio-vt = { path = "../vt", version = "0.5.0-alpha.1" }
+librio-vt = { path = "../vt", version = "0.5.0" }
 sugarloaf = { workspace = true }
 raw-window-handle = { workspace = true, optional = true }
 

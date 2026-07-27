@@ -17,7 +17,7 @@ default = []
 capi = []
 
 [dependencies]
-rio-vt = { path = "../../rio-vt", version = "0.5.0-alpha.1" }
+rio-vt = { path = "../../rio-vt", version = "0.5.0" }
 teletypewriter = { workspace = true }
 corcovado = { workspace = true }
 rustc-hash = { workspace = true }
