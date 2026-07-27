@@ -9,7 +9,7 @@ repository = "https://github.com/raphamorim/rio"
 description = "Terminal graphics value types (sixel/kitty/iTerm2 image data, glyph protocol) extracted from Rio"
 
 [dependencies]
-image_rs = { workspace = true }
+image_rs = { workspace = true, optional = true }
 tracing = { workspace = true }
 rustc-hash = { workspace = true }
 skrifa = { version = "0.37.0", optional = true }
@@ -18,6 +18,9 @@ wgpu = { workspace = true, optional = true }
 
 [features]
 default = []
+# Image decode/resize helpers (the `image` crate). Off by default so the
+# value types stay lean; enabled by embedders that handle image protocols.
+image = ["dep:image_rs"]
 # The glyph protocol decoder pulls a font-outline parser (skrifa). Off by
 # default so an embedder that only wants image graphics stays lean.
 glyph = ["dep:skrifa", "dep:parking_lot"]

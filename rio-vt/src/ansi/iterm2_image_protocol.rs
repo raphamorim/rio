@@ -7,7 +7,9 @@
 //
 // This implementation also supports `width` and `height` parameters to resize the image.
 
-use rio_graphics::{GraphicData, GraphicId, ResizeCommand, ResizeParameter};
+use rio_graphics::{GraphicData, ResizeCommand, ResizeParameter};
+#[cfg(feature = "graphics")]
+use rio_graphics::GraphicId;
 
 use rustc_hash::FxHashMap;
 use std::str;
@@ -39,23 +41,33 @@ pub fn parse(params: &[&[u8]]) -> Option<(GraphicData, u8)> {
         }
     };
 
-    let image = match image_rs::load_from_memory(&buffer) {
-        Ok(image) => image,
-        Err(err) => {
-            tracing::warn!("Can't load image: {}", err);
-            return None;
-        }
-    };
+    #[cfg(not(feature = "graphics"))]
+    {
+        // Image decoding needs the `graphics` feature; without it iTerm2
+        // image payloads are parsed but not displayed.
+        let _ = &buffer;
+        None
+    }
+    #[cfg(feature = "graphics")]
+    {
+        let image = match image_rs::load_from_memory(&buffer) {
+            Ok(image) => image,
+            Err(err) => {
+                tracing::warn!("Can't load image: {}", err);
+                return None;
+            }
+        };
 
-    let cursor_movement = if params.get("doNotMoveCursor") == Some(&"1") {
-        CURSOR_DO_NOT_MOVE
-    } else {
-        CURSOR_RIGHT_OF_IMAGE
-    };
+        let cursor_movement = if params.get("doNotMoveCursor") == Some(&"1") {
+            CURSOR_DO_NOT_MOVE
+        } else {
+            CURSOR_RIGHT_OF_IMAGE
+        };
 
-    let mut graphics = GraphicData::from_dynamic_image(GraphicId::new(1), image);
-    graphics.resize = resize_param(&params);
-    Some((graphics, cursor_movement))
+        let mut graphics = GraphicData::from_dynamic_image(GraphicId::new(1), image);
+        graphics.resize = resize_param(&params);
+        Some((graphics, cursor_movement))
+    }
 }
 
 /// Extract parameter values.

@@ -445,6 +445,7 @@ where
     /// Two tabs can register conflicting glyphs for the same
     /// codepoint; each `Crosswords` owns its own registry once
     /// initialised.
+    #[cfg(feature = "graphics")]
     pub glyph_registry: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
@@ -506,6 +507,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(rows),
             graphics: Graphics::new(&dimensions),
+            #[cfg(feature = "graphics")]
             glyph_registry: None,
             default_cursor_shape: cursor_shape,
             cursor_shape,
@@ -4553,6 +4555,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
             .send_event(RioEvent::PtyWrite(self.route_id, response), self.window_id);
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     fn glyph_register(
         &mut self,
         cp: u32,
@@ -4654,6 +4658,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         result
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     fn glyph_clear(&mut self, cp: Option<u32>) {
         // Nothing to clear if nothing was ever registered.
         let Some(registry) = self.glyph_registry.as_ref() else {
@@ -5071,6 +5077,7 @@ mod tests {
     }
 
     // Minimum-valid simple glyph: one contour, one on-curve point.
+    #[cfg(feature = "graphics")]
     fn minimal_glyf_bytes() -> Vec<u8> {
         let mut v = Vec::new();
         v.extend_from_slice(&1i16.to_be_bytes()); // numberOfContours
@@ -5083,6 +5090,8 @@ mod tests {
         v
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     fn glyf_payload(
         bytes: Vec<u8>,
         upm: u16,
@@ -5090,10 +5099,14 @@ mod tests {
         crate::ansi::glyph_protocol::GlyphPayload::Glyf { glyf: bytes, upm }
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     fn registry_contains(cw: &Crosswords<VoidListener>, cp: u32) -> bool {
         cw.glyph_registry.as_ref().is_some_and(|r| r.contains(cp))
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     fn registry_len(cw: &Crosswords<VoidListener>) -> usize {
         cw.glyph_registry.as_ref().map_or(0, |r| r.len())
     }
@@ -5208,12 +5221,16 @@ mod tests {
         assert_eq!(cw.user_vars.get("k").map(String::as_str), Some("v2"));
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     #[test]
     fn glyph_registry_is_none_until_first_register() {
         let cw = make_crosswords();
         assert!(cw.glyph_registry.is_none());
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     #[test]
     fn glyph_protocol_register_populates_registry() {
         let mut cw = make_crosswords();
@@ -5226,6 +5243,8 @@ mod tests {
         assert!(registry_contains(&cw, 0xE0A0));
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     #[test]
     fn glyph_protocol_register_rejects_non_pua() {
         use crate::ansi::glyph_protocol::RegisterError;
@@ -5242,6 +5261,8 @@ mod tests {
         assert!(cw.glyph_registry.is_none());
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     #[test]
     fn glyph_protocol_register_rejects_hinted_payload() {
         use crate::ansi::glyph_protocol::RegisterError;
@@ -5264,6 +5285,8 @@ mod tests {
         assert!(cw.glyph_registry.is_none());
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     #[test]
     fn glyph_protocol_clear_before_any_register_is_noop() {
         let mut cw = make_crosswords();
@@ -5272,6 +5295,8 @@ mod tests {
         assert!(cw.glyph_registry.is_none());
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     #[test]
     fn glyph_protocol_clear_all_wipes_registry() {
         let mut cw = make_crosswords();
@@ -5298,6 +5323,8 @@ mod tests {
         assert!(cw.glyph_registry.is_some());
     }
 
+    #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
     #[test]
     fn glyph_protocol_width_does_not_change_layout() {
         use crate::crosswords::square::Wide;
@@ -5327,6 +5354,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "graphics")]
     #[test]
     fn glyph_protocol_register_and_clear_mark_full_damage() {
         let mut cw = make_crosswords();
@@ -5347,6 +5375,7 @@ mod tests {
         assert!(cw.is_fully_damaged(), "clear must repaint (§7.3)");
     }
 
+    #[cfg(feature = "graphics")]
     #[test]
     fn glyph_protocol_clear_one_leaves_others_intact() {
         let mut cw = make_crosswords();

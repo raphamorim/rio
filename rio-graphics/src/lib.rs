@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "image")]
 use image_rs::DynamicImage;
 use std::cmp;
 
@@ -237,6 +238,7 @@ impl GraphicData {
         true
     }
 
+    #[cfg(feature = "image")]
     pub fn from_dynamic_image(id: GraphicId, image: DynamicImage) -> Self {
         let color_type;
         let width;
@@ -349,6 +351,7 @@ impl GraphicData {
     }
 
     /// Resize the graphic according to the dimensions in the `resize` field.
+    #[cfg(feature = "image")]
     pub fn resized(
         self,
         cell_width: usize,

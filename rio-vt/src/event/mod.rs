@@ -126,6 +126,7 @@ pub enum RioEvent {
     /// (route_id × registry-arc) pair; the registry is Arc-shared,
     /// so further `register`/`clear` mutations made through the
     /// existing handle are visible without re-firing.
+    #[cfg(feature = "graphics")]
     GlyphProtocolInstalled {
         route_id: usize,
         registry: rio_graphics::glyph::glyph_registry::GlyphRegistry,
@@ -303,6 +304,7 @@ impl Debug for RioEvent {
             RioEvent::TerminalDamaged(route_id) => {
                 write!(f, "TerminalDamaged route {route_id}")
             }
+            #[cfg(feature = "graphics")]
             RioEvent::GlyphProtocolInstalled { route_id, .. } => {
                 write!(f, "GlyphProtocolInstalled route {route_id}")
             }

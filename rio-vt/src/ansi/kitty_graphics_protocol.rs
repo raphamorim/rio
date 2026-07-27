@@ -1311,8 +1311,16 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
     // Parse based on format
     match cmd.format {
         Format::Png => {
-            // Decode PNG data
-            use image_rs::ImageFormat;
+            #[cfg(not(feature = "graphics"))]
+            let result = {
+                // Image decoding needs the `graphics` feature.
+                let _ = &pixel_data;
+                Err(GraphicError::InvalidData)
+            };
+            #[cfg(feature = "graphics")]
+            let result = {
+                // Decode PNG data
+                use image_rs::ImageFormat;
 
             debug!("Decoding PNG, pixel_data length: {}", pixel_data.len());
             let img = match image_rs::load_from_memory_with_format(
@@ -1374,6 +1382,8 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                 display_height: None,
                 transmit_time: std::time::Instant::now(),
             })
+            };
+            result
         }
         Format::Gray | Format::GrayAlpha | Format::Rgb24 | Format::Rgba32 => {
             let bytes_per_pixel = match cmd.format {
@@ -1668,6 +1678,7 @@ mod tests {
         assert_eq!(placement.unicode_placeholder, 0);
     }
 
+    #[cfg(feature = "graphics")]
     #[test]
     fn test_parse_png_format() {
         // Small 1x1 red PNG
@@ -2027,6 +2038,7 @@ mod tests {
         assert!(body.contains(";OK"));
     }
 
+    #[cfg(feature = "graphics")]
     #[test]
     fn test_response_combines_image_number_and_placement() {
         // When placement_id is set alongside image_id, the response

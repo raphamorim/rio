@@ -25,11 +25,11 @@ rustc-hash = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true, optional = true }
 copypasta = { version = "0.10.2", default-features = false, optional = true }
-image_rs = { workspace = true }
+image_rs = { workspace = true, optional = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
-rio-graphics = { workspace = true, features = ["glyph"] }
+rio-graphics = { workspace = true }
 rio-grapheme-width = { workspace = true }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
@@ -63,6 +63,10 @@ rio-window = ["dep:rio-window"]
 # System-clipboard backing for the `Clipboard` helper (copypasta). Headless
 # embedders that only parse and snapshot never need this; frontends enable it.
 clipboard = ["dep:copypasta", "dep:raw-window-handle"]
+# Image (sixel/kitty/iTerm2) and glyph protocol decoding. Pulls the `image`
+# crate and a font-outline parser. Headless embedders that only parse and
+# snapshot never decode images or glyphs, so this stays off by default.
+graphics = ["dep:image_rs", "rio-graphics/image", "rio-graphics/glyph"]
 x11 = ["clipboard", "copypasta/x11"]
 wayland = ["clipboard", "copypasta/wayland"]
 wgpu = ["renderer", "dep:sugarloaf", "sugarloaf/wgpu"]
