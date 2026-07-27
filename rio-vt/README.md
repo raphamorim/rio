@@ -18,7 +18,7 @@ embedding from Swift, C, Go (cgo), and other languages.
 
 ```toml
 [dependencies]
-rio-vt = "0.4"
+rio-vt = "0.5"
 ```
 
 `rio-vt` is lean by default. The `crosswords` VT logic, the parser, grid,
