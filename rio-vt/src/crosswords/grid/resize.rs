@@ -293,6 +293,42 @@ impl Grid<Square> {
 
     /// Shrink number of columns in each row, reflowing if necessary.
     fn shrink_columns(&mut self, reflow: bool, columns: usize) {
+        // Fast path: if no row has occupied content beyond `columns` there is
+        // nothing to wrap down, so shrinking is a per-row truncation of
+        // trailing blank cells. Wrapped rows are full width, so `occ <=
+        // columns` also rules them out. Requires the cursor to fit (otherwise
+        // the full path wraps it onto a new line, which is not a plain
+        // truncation) and no image-placement tracking (whose remap the full
+        // path builds).
+        let effective_cursor_col =
+            self.cursor.pos.col.0 + usize::from(self.cursor.should_wrap && reflow);
+        if !self.track_reflow_remap
+            && (!reflow || effective_cursor_col <= columns)
+            && self.raw.rows().all(|row| row.occ <= columns)
+        {
+            self.columns = columns;
+            if self.cursor.should_wrap && reflow {
+                self.cursor.should_wrap = false;
+                self.cursor.pos.col += 1;
+            }
+            self.raw.shrink_all_rows(columns);
+
+            // Clamp the cursor to the new width, mirroring the full path's tail.
+            if !reflow {
+                self.cursor.pos.col = min(self.cursor.pos.col, Column(columns - 1));
+            } else if self.cursor.pos.col == columns
+                && !self[self.cursor.pos.row][Column(columns - 1)].wrapline()
+            {
+                self.cursor.should_wrap = true;
+                self.cursor.pos.col -= 1;
+            } else {
+                self.cursor.pos = self.cursor.pos.grid_clamp(self, Boundary::Cursor);
+            }
+            self.saved_cursor.pos.col =
+                min(self.saved_cursor.pos.col, Column(columns - 1));
+            return;
+        }
+
         self.columns = columns;
 
         // Remove the linewrap special case, by moving the cursor outside of the grid.

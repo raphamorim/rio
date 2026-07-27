@@ -241,6 +241,19 @@ impl<T> Storage<T> {
         }
     }
 
+    /// Truncate every stored row to `columns`, in place. Used by the no-reflow
+    /// column shrink fast path, where the caller has verified no row has
+    /// content beyond `columns`.
+    #[inline]
+    pub fn shrink_all_rows(&mut self, columns: usize)
+    where
+        T: Clone + Default,
+    {
+        for row in &mut self.inner {
+            row.truncate_columns(columns);
+        }
+    }
+
     /// Swap implementation for Row<T>.
     ///
     /// Exploits the known size of Row<T> to produce a slightly more efficient

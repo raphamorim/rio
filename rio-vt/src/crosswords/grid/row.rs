@@ -135,6 +135,19 @@ impl<T: Clone + Default> Row<T> {
         self.dirty = true;
     }
 
+    /// Truncate the row to `columns` in place, dropping trailing cells without
+    /// the `split_off` allocation `shrink` does. The caller guarantees no
+    /// occupied content lies beyond `columns` (so only blank tail cells are
+    /// removed); used by the no-reflow column shrink fast path.
+    #[inline]
+    pub fn truncate_columns(&mut self, columns: usize) {
+        if self.inner.len() > columns {
+            self.inner.truncate(columns);
+            self.occ = min(self.occ, columns);
+            self.dirty = true;
+        }
+    }
+
     /// Increase the number of columns in the row.
     #[inline]
     pub fn grow(&mut self, columns: usize) {
