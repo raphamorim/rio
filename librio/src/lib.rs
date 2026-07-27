@@ -22,7 +22,11 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use teletypewriter::{create_pty_with_spawn, WinsizeBuilder};
+use teletypewriter::WinsizeBuilder;
+#[cfg(not(target_os = "windows"))]
+use teletypewriter::create_pty_with_spawn;
+#[cfg(target_os = "windows")]
+use teletypewriter::create_pty;
 
 pub type SurfaceId = usize;
 
@@ -211,6 +215,7 @@ pub struct Surface {
     id: SurfaceId,
     terminal: Arc<FairMutex<Crosswords<Listener>>>,
     channel: corcovado::channel::Sender<Msg>,
+    #[cfg(not(target_os = "windows"))]
     shell_pid: u32,
     _io_thread: std::thread::JoinHandle<(
         Machine<teletypewriter::Pty, Listener>,
@@ -244,12 +249,17 @@ impl Surface {
         );
         let terminal = Arc::new(FairMutex::new(terminal));
 
+        #[cfg(not(target_os = "windows"))]
+        let fallback_shell = "/bin/sh";
+        #[cfg(target_os = "windows")]
+        let fallback_shell = "cmd.exe";
         let shell = desc
             .shell
             .clone()
             .or_else(|| std::env::var("SHELL").ok())
-            .unwrap_or_else(|| String::from("/bin/sh"));
+            .unwrap_or_else(|| String::from(fallback_shell));
 
+        #[cfg(not(target_os = "windows"))]
         let pty = create_pty_with_spawn(
             &Cow::Borrowed(shell.as_str()),
             desc.args.clone(),
@@ -261,6 +271,17 @@ impl Surface {
         )
         .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
 
+        #[cfg(target_os = "windows")]
+        let pty = create_pty(
+            shell.as_str(),
+            desc.args.clone(),
+            &desc.working_dir,
+            desc.cols,
+            desc.rows,
+        )
+        .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
+
+        #[cfg(not(target_os = "windows"))]
         let shell_pid = *pty.child.pid.clone() as u32;
 
         let machine = Machine::new(
@@ -279,6 +300,7 @@ impl Surface {
             id,
             terminal,
             channel,
+            #[cfg(not(target_os = "windows"))]
             shell_pid,
             _io_thread: io_thread,
         })
@@ -405,11 +427,12 @@ impl Surface {
 impl Drop for Surface {
     fn drop(&mut self) {
         let _ = self.channel.send(Msg::Shutdown);
+        #[cfg(not(target_os = "windows"))]
         teletypewriter::kill_pid(self.shell_pid as i32);
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "windows")))]
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;

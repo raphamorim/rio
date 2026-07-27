@@ -781,7 +781,7 @@ mod color_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "windows")))]
 mod persistence_tests {
     use crate::{SurfaceDelegate, SurfaceId};
     use std::sync::Arc;
