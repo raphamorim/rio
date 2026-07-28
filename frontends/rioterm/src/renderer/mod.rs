@@ -603,6 +603,25 @@ impl Renderer {
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
 
+        // Tolerance for taffy's fractional layout coordinates.
+        const PANEL_EDGE_EPS: f32 = 1.0;
+        // Bounding box of *all* panes (absolute, border-box pixels). A
+        // pane/divider edge that coincides with the bbox edge faces the
+        // window frame (outer edge); anything inside faces a sibling pane
+        // across a split border (inner edge). Reused by both the
+        // unfocused-split dim overlay and the split-border extension
+        // below so the dim fill and the divider reach the window edge in
+        // lockstep.
+        let (mut bb_l, mut bb_t, mut bb_r, mut bb_b) =
+            (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for item in grid.contexts().values() {
+            let r = item.layout_rect;
+            bb_l = bb_l.min(r[0] + grid_scaled_margin.left);
+            bb_t = bb_t.min(r[1] + grid_scaled_margin.top);
+            bb_r = bb_r.max(r[0] + grid_scaled_margin.left + r[2]);
+            bb_b = bb_b.max(r[1] + grid_scaled_margin.top + r[3]);
+        }
+
         // Dim overlay for unfocused splits. Drawn after the split content is
         // built so it composites on top. The tint comes from
         // `unfocused_split_fill` (falling back to the terminal background)
@@ -618,32 +637,70 @@ impl Renderer {
                 tint[2],
                 1.0 - self.unfocused_split_opacity,
             ];
+            let m = &grid_scaled_margin;
             for (key, grid_context) in grid.contexts_mut().iter() {
                 if &active_key == key {
                     continue;
                 }
-                // Match the grid renderer's actual paint region —
-                // `.round()`ed integer-pixel origin +
-                // `cols * round(cell_w)` × `rows * round(cell_h)`
-                // content size (same math as `GridUniforms.grid_padding`
-                // / `cell_size` in `screen/mod.rs:~3717`). Using raw
-                // `layout_rect` leaves a sub-pixel un-dimmed fringe at
-                // the right/bottom edges of inactive splits because
-                // taffy allocates fractional sizes while the grid
-                // snaps to whole cells.
-                let dim = grid_context.val.dimension;
-                let cell_w = dim.cell.cell_width as f32;
-                let cell_h = dim.cell.cell_height as f32;
-                let cols = dim.columns.max(1) as f32;
-                let rows = dim.lines.max(1) as f32;
-                let panel_left =
-                    (grid_context.layout_rect[0] + grid_scaled_margin.left).round();
-                let panel_top =
-                    (grid_context.layout_rect[1] + grid_scaled_margin.top).round();
+                // Cover the panel's *full* allocated region (the taffy
+                // `layout_rect`), not just its grid content. `compute()`
+                // floors the pane size down to whole cells, so the grid
+                // only paints `cols*cell_w × rows*cell_h`, which is up to
+                // one cell short of `layout_rect` on the right/bottom.
+                // That leftover gutter is filled with the terminal
+                // background and runs right up to the split border, so
+                // dimming only the grid content left a bright strip there
+                // that shrank/grew by a full cell on every resize step
+                // (the dim "catching up" every cell-width pixels).
+                //
+                // Snap the near and far edges to whole drawable pixels
+                // *independently* — `round(origin)` matches the grid's
+                // own integer origin (`GridUniforms.grid_padding` in
+                // `screen/mod.rs:~4041`) and `round(origin + size)` fills
+                // the gutter without the sub-pixel fringe a raw
+                // fractional far edge would leave.
+                //
+                // Each pane also carries its own taffy margin and sits
+                // inside the window padding, so an outer edge leaves a
+                // few-pixel undimmed band between the pane and the window
+                // border. On any side flush with the pane bounding box
+                // (i.e. facing the window frame, not a sibling pane),
+                // extend the overlay out to the window edge so that band
+                // gets dimmed too. The top edge is safe to extend to 0
+                // even when the tab-bar island is shown: the island
+                // paints at a higher draw order and covers the overlay.
+                // Inner edges (facing a split border) keep the snapped
+                // `layout_rect` extent — the border itself covers the
+                // inter-pane gap.
+                let rect = grid_context.layout_rect;
+                let abs_l = rect[0] + m.left;
+                let abs_t = rect[1] + m.top;
+                let abs_r = abs_l + rect[2];
+                let abs_b = abs_t + rect[3];
+                let panel_left = if abs_l <= bb_l + PANEL_EDGE_EPS {
+                    0.0
+                } else {
+                    abs_l.round()
+                };
+                let panel_top = if abs_t <= bb_t + PANEL_EDGE_EPS {
+                    0.0
+                } else {
+                    abs_t.round()
+                };
+                let panel_right = if abs_r >= bb_r - PANEL_EDGE_EPS {
+                    window_size.width
+                } else {
+                    abs_r.round()
+                };
+                let panel_bottom = if abs_b >= bb_b - PANEL_EDGE_EPS {
+                    window_size.height
+                } else {
+                    abs_b.round()
+                };
                 let x = panel_left / scale_factor;
                 let y = panel_top / scale_factor;
-                let w = (cols * cell_w) / scale_factor;
-                let h = (rows * cell_h) / scale_factor;
+                let w = (panel_right - panel_left) / scale_factor;
+                let h = (panel_bottom - panel_top) / scale_factor;
                 sugarloaf.rect(None, x, y, w, h, dim_color, 0.0, 3);
             }
         }
@@ -705,10 +762,40 @@ impl Renderer {
         // Rect variant, so the dispatch is direct now.
         let grid_scaled_margin = context_manager.get_current_grid_scaled_margin();
         for rect in context_manager.get_panel_borders() {
-            let x = (rect.x + grid_scaled_margin.left) / scale_factor;
-            let y = (rect.y + grid_scaled_margin.top) / scale_factor;
-            let width = rect.width / scale_factor;
-            let height = rect.height / scale_factor;
+            // Each divider only spans the shared edge of its two panes,
+            // which stops short of the window frame by the pane margin +
+            // window padding — the same band the unfocused-split dim now
+            // fills. Extend whichever divider end is flush with the pane
+            // bounding box (i.e. faces the window frame, not another
+            // pane) out to the window edge so the line runs the full
+            // length of the split. Ends meeting another divider/pane stay
+            // put. Orientation is read off the rect: dividers are thin on
+            // one axis, so the longer axis is the one that runs.
+            let abs_x = rect.x + grid_scaled_margin.left;
+            let abs_y = rect.y + grid_scaled_margin.top;
+            let (mut left, mut top) = (abs_x, abs_y);
+            let (mut right, mut bottom) = (abs_x + rect.width, abs_y + rect.height);
+            if rect.width <= rect.height {
+                // Vertical divider — runs along Y.
+                if top <= bb_t + PANEL_EDGE_EPS {
+                    top = 0.0;
+                }
+                if bottom >= bb_b - PANEL_EDGE_EPS {
+                    bottom = window_size.height;
+                }
+            } else {
+                // Horizontal divider — runs along X.
+                if left <= bb_l + PANEL_EDGE_EPS {
+                    left = 0.0;
+                }
+                if right >= bb_r - PANEL_EDGE_EPS {
+                    right = window_size.width;
+                }
+            }
+            let x = left / scale_factor;
+            let y = top / scale_factor;
+            let width = (right - left) / scale_factor;
+            let height = (bottom - top) / scale_factor;
             sugarloaf.rect(None, x, y, width, height, rect.color, 0.0, 1);
         }
 
