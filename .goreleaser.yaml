@@ -128,7 +128,8 @@ archives:
     name_template: "{{ .ProjectName }}-portable-aarch64"
 
 universal_binaries:
-  - ids: [macos]
+  - id: rio
+    ids: [macos]
     replace: true
 
 dmg:
@@ -154,7 +155,7 @@ notarize:
 
 app_bundles:
   - id: rio
-    ids: [macos]
+    ids: [rio]
     icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
     bundle: com.raphaelamorim.rio
     extra_files:
@@ -168,6 +169,7 @@ app_bundles:
         dst: Contents/Info.plist
   - id: canario
     ids: [canario]
+    name: Canario
     icon: ./frontends/canario/Resources/icon.icns
     bundle: com.raphaelamorim.canario
     templated_extra_files:
