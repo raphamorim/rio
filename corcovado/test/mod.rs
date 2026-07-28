@@ -2,7 +2,6 @@ extern crate bytes;
 extern crate corcovado;
 extern crate env_logger;
 extern crate iovec;
-extern crate net2;
 extern crate slab;
 extern crate tempdir;
 extern crate tracing;

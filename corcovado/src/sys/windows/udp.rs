@@ -18,8 +18,7 @@ use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
 use miow::iocp::CompletionStatus;
 use miow::net::SocketAddrBuf;
 use miow::net::UdpSocketExt as MiowUdpSocketExt;
-#[allow(unused_imports)]
-use net2::{UdpBuilder, UdpSocketExt};
+use socket2::SockRef;
 
 use crate::event::Evented;
 use crate::sys::windows::from_raw_arc::FromRawArc;
@@ -292,11 +291,11 @@ impl UdpSocket {
     }
 
     pub fn set_only_v6(&self, only_v6: bool) -> io::Result<()> {
-        self.imp.inner.socket.set_only_v6(only_v6)
+        SockRef::from(&self.imp.inner.socket).set_only_v6(only_v6)
     }
 
     pub fn only_v6(&self) -> io::Result<bool> {
-        self.imp.inner.socket.only_v6()
+        SockRef::from(&self.imp.inner.socket).only_v6()
     }
 
     pub fn take_error(&self) -> io::Result<Option<io::Error>> {

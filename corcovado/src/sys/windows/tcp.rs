@@ -12,7 +12,7 @@ use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
 use iovec::IoVec;
 use miow::iocp::CompletionStatus;
 use miow::net::*;
-use net2::{TcpBuilder, TcpStreamExt as Net2TcpExt};
+use socket2::{Domain, Protocol, SockRef, Socket, TcpKeepalive, Type};
 
 use crate::event::Evented;
 use crate::sys::windows::from_raw_arc::FromRawArc;
@@ -162,32 +162,39 @@ impl TcpStream {
 
     #[allow(unused)]
     pub fn set_recv_buffer_size(&self, size: usize) -> io::Result<()> {
-        self.imp.inner.socket.set_recv_buffer_size(size)
+        SockRef::from(&self.imp.inner.socket).set_recv_buffer_size(size)
     }
 
     #[allow(unused)]
     pub fn recv_buffer_size(&self) -> io::Result<usize> {
-        self.imp.inner.socket.recv_buffer_size()
+        SockRef::from(&self.imp.inner.socket).recv_buffer_size()
     }
 
     #[allow(unused)]
     pub fn set_send_buffer_size(&self, size: usize) -> io::Result<()> {
-        self.imp.inner.socket.set_send_buffer_size(size)
+        SockRef::from(&self.imp.inner.socket).set_send_buffer_size(size)
     }
 
     #[allow(unused)]
     pub fn send_buffer_size(&self) -> io::Result<usize> {
-        self.imp.inner.socket.send_buffer_size()
+        SockRef::from(&self.imp.inner.socket).send_buffer_size()
     }
 
     #[allow(unused)]
     pub fn set_keepalive(&self, keepalive: Option<Duration>) -> io::Result<()> {
-        self.imp.inner.socket.set_keepalive(keepalive)
+        let socket = SockRef::from(&self.imp.inner.socket);
+        match keepalive {
+            Some(time) => socket.set_tcp_keepalive(&TcpKeepalive::new().with_time(time)),
+            None => socket.set_keepalive(false),
+        }
     }
 
     #[allow(unused)]
     pub fn keepalive(&self) -> io::Result<Option<Duration>> {
-        self.imp.inner.socket.keepalive()
+        // socket2 exposes whether SO_KEEPALIVE is on, not the interval, so
+        // report the interval as unknown (zero) when keepalive is enabled.
+        let on = SockRef::from(&self.imp.inner.socket).keepalive()?;
+        Ok(on.then(Duration::default))
     }
 
     #[allow(unused)]
@@ -202,24 +209,22 @@ impl TcpStream {
 
     #[allow(unused)]
     pub fn set_only_v6(&self, only_v6: bool) -> io::Result<()> {
-        self.imp.inner.socket.set_only_v6(only_v6)
+        SockRef::from(&self.imp.inner.socket).set_only_v6(only_v6)
     }
 
     #[allow(unused)]
     pub fn only_v6(&self) -> io::Result<bool> {
-        self.imp.inner.socket.only_v6()
+        SockRef::from(&self.imp.inner.socket).only_v6()
     }
 
     #[allow(unused)]
     pub fn set_linger(&self, dur: Option<Duration>) -> io::Result<()> {
-        #[allow(unstable_name_collisions)]
-        self.imp.inner.socket.set_linger(dur)
+        SockRef::from(&self.imp.inner.socket).set_linger(dur)
     }
 
     #[allow(unused)]
     pub fn linger(&self) -> io::Result<Option<Duration>> {
-        #[allow(unstable_name_collisions)]
-        self.imp.inner.socket.linger()
+        SockRef::from(&self.imp.inner.socket).linger()
     }
 
     #[allow(unused)]
@@ -776,16 +781,14 @@ impl TcpListener {
             .map(|s| TcpListener::new_family(s, self.imp.inner.family))
     }
 
-    #[allow(deprecated)]
     #[allow(unused)]
     pub fn set_only_v6(&self, only_v6: bool) -> io::Result<()> {
-        self.imp.inner.socket.set_only_v6(only_v6)
+        SockRef::from(&self.imp.inner.socket).set_only_v6(only_v6)
     }
 
-    #[allow(deprecated)]
     #[allow(unused)]
     pub fn only_v6(&self) -> io::Result<bool> {
-        self.imp.inner.socket.only_v6()
+        SockRef::from(&self.imp.inner.socket).only_v6()
     }
 
     #[allow(unused)]
@@ -823,11 +826,11 @@ impl ListenerImp {
             .set_readiness(me.iocp.readiness() - Ready::readable());
 
         let res = match self.inner.family {
-            Family::V4 => TcpBuilder::new_v4(),
-            Family::V6 => TcpBuilder::new_v6(),
+            Family::V4 => Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)),
+            Family::V6 => Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP)),
         }
         .and_then(|builder| unsafe {
-            let s: net::TcpStream = builder.to_tcp_stream().unwrap();
+            let s: net::TcpStream = builder.into();
             // let _ts = TcpStream::from_stream(s);
 
             trace!("scheduling an accept");

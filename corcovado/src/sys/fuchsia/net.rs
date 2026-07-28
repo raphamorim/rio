@@ -3,9 +3,7 @@ use crate::{io, Evented, Poll, PollOpt, Ready, Token};
 use iovec::unix as iovec;
 use iovec::IoVec;
 use libc;
-use net2::TcpStreamExt;
-#[allow(unused_imports)] // only here for Rust 1.8
-use net2::UdpSocketExt;
+use socket2::{SockRef, TcpKeepalive};
 use std::cmp;
 use std::io::{Read, Write};
 use std::net::{self, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -77,27 +75,34 @@ impl TcpStream {
     }
 
     pub fn set_recv_buffer_size(&self, size: usize) -> io::Result<()> {
-        self.io.set_recv_buffer_size(size)
+        SockRef::from(&*self.io).set_recv_buffer_size(size)
     }
 
     pub fn recv_buffer_size(&self) -> io::Result<usize> {
-        self.io.recv_buffer_size()
+        SockRef::from(&*self.io).recv_buffer_size()
     }
 
     pub fn set_send_buffer_size(&self, size: usize) -> io::Result<()> {
-        self.io.set_send_buffer_size(size)
+        SockRef::from(&*self.io).set_send_buffer_size(size)
     }
 
     pub fn send_buffer_size(&self) -> io::Result<usize> {
-        self.io.send_buffer_size()
+        SockRef::from(&*self.io).send_buffer_size()
     }
 
     pub fn set_keepalive(&self, keepalive: Option<Duration>) -> io::Result<()> {
-        self.io.set_keepalive(keepalive)
+        let socket = SockRef::from(&*self.io);
+        match keepalive {
+            Some(time) => socket.set_tcp_keepalive(&TcpKeepalive::new().with_time(time)),
+            None => socket.set_keepalive(false),
+        }
     }
 
     pub fn keepalive(&self) -> io::Result<Option<Duration>> {
-        self.io.keepalive()
+        // socket2 exposes whether SO_KEEPALIVE is on, not the interval, so
+        // report the interval as unknown (zero) when keepalive is enabled.
+        let on = SockRef::from(&*self.io).keepalive()?;
+        Ok(on.then(Duration::default))
     }
 
     pub fn set_ttl(&self, ttl: u32) -> io::Result<()> {
@@ -109,19 +114,19 @@ impl TcpStream {
     }
 
     pub fn set_only_v6(&self, only_v6: bool) -> io::Result<()> {
-        self.io.set_only_v6(only_v6)
+        SockRef::from(&*self.io).set_only_v6(only_v6)
     }
 
     pub fn only_v6(&self) -> io::Result<bool> {
-        self.io.only_v6()
+        SockRef::from(&*self.io).only_v6()
     }
 
     pub fn set_linger(&self, dur: Option<Duration>) -> io::Result<()> {
-        self.io.set_linger(dur)
+        SockRef::from(&*self.io).set_linger(dur)
     }
 
     pub fn linger(&self) -> io::Result<Option<Duration>> {
-        self.io.linger()
+        SockRef::from(&*self.io).linger()
     }
 
     pub fn take_error(&self) -> io::Result<Option<io::Error>> {
@@ -247,14 +252,12 @@ impl TcpListener {
         })
     }
 
-    #[allow(deprecated)]
     pub fn set_only_v6(&self, only_v6: bool) -> io::Result<()> {
-        self.io.set_only_v6(only_v6)
+        SockRef::from(&*self.io).set_only_v6(only_v6)
     }
 
-    #[allow(deprecated)]
     pub fn only_v6(&self) -> io::Result<bool> {
-        self.io.only_v6()
+        SockRef::from(&*self.io).only_v6()
     }
 
     pub fn set_ttl(&self, ttl: u32) -> io::Result<()> {
@@ -415,11 +418,11 @@ impl UdpSocket {
     }
 
     pub fn set_only_v6(&self, only_v6: bool) -> io::Result<()> {
-        self.io.set_only_v6(only_v6)
+        SockRef::from(&*self.io).set_only_v6(only_v6)
     }
 
     pub fn only_v6(&self) -> io::Result<bool> {
-        self.io.only_v6()
+        SockRef::from(&*self.io).only_v6()
     }
 
     pub fn take_error(&self) -> io::Result<Option<io::Error>> {

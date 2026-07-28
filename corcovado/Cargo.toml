@@ -20,12 +20,12 @@ include = [
 tracing = { workspace = true }
 iovec = { workspace = true }
 slab = "0.4.12"
-net2 = "0.2.39"
 cfg-if = "0.1.9"
 
 [target.'cfg(target_os = "fuchsia")'.dependencies]
 fuchsia-zircon = "0.3.2"
 fuchsia-zircon-sys = "0.3.2"
+socket2 = "0.6.5"
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
@@ -33,6 +33,7 @@ libc = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 windows-sys = "0.42.0"
 miow = "0.5.0"
+socket2 = "0.6.5"
 windows = { version = "0.42.0", features = [
   "Win32_Foundation",
   "Win32_Networking_WinSock",
