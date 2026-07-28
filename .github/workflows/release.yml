@@ -141,6 +141,10 @@ jobs:
           key: goreleaser-ubuntu-22.04-${{ github.sha }}
           path: dist/linux
           fail-on-cache-miss: true
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev pkg-config libfontconfig1-dev glslang-tools
       - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser-pro
