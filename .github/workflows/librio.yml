@@ -1,0 +1,40 @@
+name: librio
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'librio/**'
+      - 'rio-vt/**'
+      - 'teletypewriter/**'
+      - '.github/workflows/librio.yml'
+  pull_request:
+    paths:
+      - 'librio/**'
+      - 'rio-vt/**'
+      - 'teletypewriter/**'
+      - '.github/workflows/librio.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+
+jobs:
+  librio:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo test -p librio
+      - run: make librio-ctest
+      - run: make librio-xcframework
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RioKit.xcframework
+          path: target/librio/RioKit.xcframework
+          if-no-files-found: error

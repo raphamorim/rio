@@ -16,50 +16,38 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 tracing = { workspace = true }
 
+# Most of the former dependencies (corcovado, copypasta, onig-based search,
+# simd, image_rs, …) moved with the terminal core to `rio-vt`. What remains
+# here is config loading + the sugarloaf renderer glue.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 toml = "0.9.2"
 base64 = { workspace = true }
-memchr = { version = "2.7.4", default-features = false }
-bitflags = { workspace = true }
-bytemuck = { workspace = true }
-corcovado = { workspace = true }
-rustc-hash = { workspace = true }
 regex = { workspace = true }
 onig = { workspace = true }
-raw-window-handle = { workspace = true }
-copypasta = { version = "0.10.2", default-features = false }
 dirs = "6.0.0"
-image_rs = { workspace = true }
-libc = { workspace = true }
-parking_lot = { workspace = true }
 serde = { workspace = true }
-sugarloaf = { workspace = true }
-rio-grapheme-width = { workspace = true }
-teletypewriter = { workspace = true }
-unicode-width = { workspace = true }
+rio-graphics = { workspace = true, features = ["glyph"] }
+rio-vt = { workspace = true }
+sugarloaf = { workspace = true, optional = true }
+url = { workspace = true }
 # `wgpu` is only needed when the corresponding sugarloaf feature is on.
 wgpu = { workspace = true, optional = true }
-url = { workspace = true }
-regex-automata = "0.4.9"
-cursor-icon = { version = "1.1.0", default-features = false }
-smallvec = { version = "1.13.2", default-features = false }
-rio-window = { workspace = true }
-simdutf = { workspace = true }
-flate2 = { workspace = true }
-lazy_static = { workspace = true }
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
+rio-window = { workspace = true, optional = true }
 
 [features]
-default = ["wayland", "x11"]
-x11 = [
-    "copypasta/x11"
-]
-wayland = [
-    "copypasta/wayland",
-]
+default = ["renderer", "wayland", "x11", "rio-window", "graphics"]
+# The renderer (sugarloaf) backend. Off makes rio-backend a lean terminal
+# core with no GPU/font-shaping deps — this is what `librio` embeds.
+renderer = ["dep:sugarloaf", "rio-vt/renderer"]
+# Image (sixel/kitty/iTerm2) and glyph protocol decoding. On for the desktop
+# frontend; off for lean headless embeds (librio).
+graphics = ["rio-vt/graphics"]
+# Rio's window layer (rio-window, a winit fork). Pulls in the window types
+# and bridges the core's WindowId to rio-window at the frontend boundary.
+rio-window = ["dep:rio-window", "rio-vt/rio-window"]
+x11 = ["rio-vt/x11"]
+wayland = ["rio-vt/wayland"]
 # Enable the wgpu backend in sugarloaf (needed on Windows where the
 # native Vulkan/Metal backends aren't available, and as an opt-in for
-# librashader CRT/scanline filters on Linux/macOS).
-wgpu = ["dep:wgpu", "sugarloaf/wgpu"]
+# librashader CRT/scanline filters on Linux/macOS). Implies `renderer`.
+wgpu = ["renderer", "dep:wgpu", "sugarloaf/wgpu", "rio-vt/wgpu"]

@@ -1,5 +1,6 @@
 use crate::config::defaults::*;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "renderer")]
 use sugarloaf::ImageProperties;
 
 #[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
@@ -124,6 +125,7 @@ impl WindowBlur {
     }
 }
 
+#[cfg(feature = "rio-window")]
 impl From<WindowBlur> for rio_window::window::BlurStyle {
     fn from(b: WindowBlur) -> Self {
         match b {
@@ -199,6 +201,7 @@ pub struct Window {
     pub opacity_cells: bool,
     #[serde(default)]
     pub blur: WindowBlur,
+    #[cfg(feature = "renderer")]
     #[serde(rename = "background-image", skip_serializing)]
     pub background_image: Option<ImageProperties>,
     #[serde(default = "Decorations::default")]
@@ -250,6 +253,7 @@ impl Default for Window {
             mode: WindowMode::default(),
             opacity: default_opacity(),
             opacity_cells: false,
+            #[cfg(feature = "renderer")]
             background_image: None,
             decorations: Decorations::default(),
             blur: WindowBlur::default(),
@@ -279,6 +283,7 @@ fn default_quake_height_percentage() -> f32 {
 }
 
 impl Colorspace {
+    #[cfg(feature = "renderer")]
     pub fn to_sugarloaf_colorspace(&self) -> sugarloaf::Colorspace {
         match self {
             Colorspace::Srgb => sugarloaf::Colorspace::Srgb,
@@ -287,7 +292,7 @@ impl Colorspace {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "rio-window"))]
     pub fn to_rio_window_colorspace(&self) -> rio_window::platform::macos::Colorspace {
         match self {
             Colorspace::Srgb => rio_window::platform::macos::Colorspace::Srgb,
@@ -296,7 +301,7 @@ impl Colorspace {
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(all(not(target_os = "macos"), feature = "rio-window"))]
     pub fn to_rio_window_colorspace(&self) {
         // No-op for non-macOS platforms
     }

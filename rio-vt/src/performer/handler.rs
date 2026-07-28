@@ -1,0 +1,2788 @@
+use crate::ansi::glyph_protocol;
+use crate::ansi::iterm2_image_protocol;
+use crate::ansi::kitty_graphics_protocol;
+use crate::ansi::CursorShape;
+use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
+use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
+use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
+use crate::crosswords::square::Hyperlink;
+use cursor_icon::CursorIcon;
+use rio_graphics::GraphicData;
+use std::mem;
+use std::time::Duration;
+use std::time::Instant;
+use tracing::{debug, warn};
+
+use crate::crosswords::attr::Attr;
+
+use crate::ansi::control::C0;
+use crate::ansi::{
+    mode::{Mode, NamedPrivateMode, PrivateMode},
+    ClearMode, LineClearMode, TabulationClearMode,
+};
+use std::fmt::Write;
+
+// https://vt100.net/emu/dec_ansi_parser
+use super::osc;
+use super::parser::{Params, ParamsIter, Parser, Perform};
+
+/// Maximum time before a synchronized update is aborted.
+const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
+
+/// Maximum number of bytes read in one synchronized update (2MiB).
+const SYNC_BUFFER_SIZE: usize = 0x20_0000;
+
+/// Number of bytes in the BSU/ESU CSI sequences.
+const SYNC_ESCAPE_LEN: usize = 8;
+
+/// BSU CSI sequence for beginning or extending synchronized updates.
+const BSU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026h";
+
+/// ESU CSI sequence for terminating synchronized updates.
+const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
+
+fn parse_sgr_color(params: &mut dyn Iterator<Item = u16>) -> Option<AnsiColor> {
+    match params.next() {
+        Some(2) => Some(AnsiColor::Spec(ColorRgb {
+            r: u8::try_from(params.next()?).ok()?,
+            g: u8::try_from(params.next()?).ok()?,
+            b: u8::try_from(params.next()?).ok()?,
+        })),
+        Some(5) => Some(AnsiColor::Indexed(u8::try_from(params.next()?).ok()?)),
+        _ => None,
+    }
+}
+
+#[inline]
+fn handle_colon_rgb(params: &[u16]) -> Option<AnsiColor> {
+    let rgb_start = if params.len() > 4 { 2 } else { 1 };
+    let rgb_iter = params[rgb_start..].iter().copied();
+    let mut iter = std::iter::once(params[0]).chain(rgb_iter);
+
+    parse_sgr_color(&mut iter)
+}
+
+/// SCP control's first parameter which determines character path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScpCharPath {
+    /// SCP's first parameter value of 0. Behavior is implementation defined.
+    Default,
+    /// SCP's first parameter value of 1 which sets character path to LEFT-TO-RIGHT.
+    LTR,
+    /// SCP's first parameter value of 2 which sets character path to RIGHT-TO-LEFT.
+    RTL,
+}
+
+/// SCP control's second parameter which determines update mode/direction between components.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScpUpdateMode {
+    /// SCP's second parameter value of 0 (the default). Implementation dependant update.
+    ImplementationDependant,
+    /// SCP's second parameter value of 1.
+    ///
+    /// Reflect data component changes in the presentation component.
+    DataToPresentation,
+    /// SCP's second parameter value of 2.
+    ///
+    /// Reflect presentation component changes in the data component.
+    PresentationToData,
+}
+
+pub trait Handler {
+    /// OSC to set window title.
+    fn set_title(&mut self, _: Option<String>) {}
+
+    /// OSC to set current directory.
+    fn set_current_directory(&mut self, _: std::path::PathBuf) {}
+
+    /// OSC 133: mark the cursor row as a semantic prompt row.
+    fn set_semantic_prompt(&mut self, _: crate::crosswords::grid::row::SemanticPrompt) {}
+
+    /// OSC 1337 SetUserVar: record a shell-provided variable.
+    fn set_user_var(&mut self, _name: String, _value: String) {}
+
+    /// Set the cursor style.
+    fn set_cursor_style(&mut self, _style: Option<CursorShape>, _blinking: bool) {}
+
+    /// Set the cursor shape.
+    fn set_cursor_shape(&mut self, _shape: CursorShape) {}
+
+    /// A character to be displayed.
+    fn input(&mut self, _c: char) {}
+
+    /// A contiguous run of characters to be displayed. The default
+    /// implementation iterates and calls [`Handler::input`]; implementers
+    /// can specialize to batch the cell writes when the run satisfies a
+    /// fast-path predicate (e.g. ASCII printable, default charset, no
+    /// insert mode).
+    fn input_str(&mut self, s: &str) {
+        for c in s.chars() {
+            self.input(c);
+        }
+    }
+
+    /// A contiguous run of pre-decoded Unicode codepoints to be displayed.
+    /// Default implementation iterates and calls [`Handler::input`].
+    /// Implementers can specialize to bulk-process codepoints (SIMD width
+    /// lookup + bulk cell write), which is what makes the parser's
+    /// `simdutf` UTF-8 → u32 transcode worthwhile end-to-end.
+    fn input_codepoints(&mut self, codepoints: &[u32]) {
+        for &cp in codepoints {
+            let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+            self.input(c);
+        }
+    }
+
+    /// Set cursor to position.
+    fn goto(&mut self, _: Line, _: Column) {}
+
+    /// Set cursor to specific row.
+    fn goto_line(&mut self, _: Line) {}
+
+    /// Set cursor to specific column.
+    fn goto_col(&mut self, _: Column) {}
+
+    /// Insert blank characters in current line starting from cursor.
+    fn insert_blank(&mut self, _: usize) {}
+
+    /// Move cursor up `rows`.
+    fn move_up(&mut self, _: usize) {}
+
+    /// Move cursor down `rows`.
+    fn move_down(&mut self, _: usize) {}
+
+    /// Identify the terminal (should write back to the pty stream).
+    fn identify_terminal(&mut self, _intermediate: Option<char>) {}
+
+    /// Report device status.
+    fn device_status(&mut self, _: usize) {}
+
+    /// Move cursor forward `cols`.
+    fn move_forward(&mut self, _: Column) {}
+
+    /// Move cursor backward `cols`.
+    fn move_backward(&mut self, _: Column) {}
+
+    /// Move cursor down `rows` and set to column 1.
+    fn move_down_and_cr(&mut self, _: usize) {}
+
+    /// Move cursor up `rows` and set to column 1.
+    fn move_up_and_cr(&mut self, _: usize) {}
+
+    /// Put `count` tabs.
+    fn put_tab(&mut self, _count: u16) {}
+
+    /// Backspace `count` characters.
+    fn backspace(&mut self) {}
+
+    /// Carriage return.
+    fn carriage_return(&mut self) {}
+
+    /// Linefeed.
+    fn linefeed(&mut self) {}
+
+    /// Ring the bell.
+    ///
+    /// Hopefully this is never implemented.
+    fn bell(&mut self) {}
+
+    /// Desktop notification (OSC 9 / OSC 777).
+    fn desktop_notification(&mut self, _title: String, _body: String) {}
+
+    /// Substitute char under cursor.
+    fn substitute(&mut self) {}
+
+    /// Newline.
+    fn newline(&mut self) {}
+
+    /// Set current position as a tabstop.
+    fn set_horizontal_tabstop(&mut self) {}
+
+    /// Scroll up `rows` rows.
+    fn scroll_up(&mut self, _: usize) {}
+
+    /// Scroll down `rows` rows.
+    fn scroll_down(&mut self, _: usize) {}
+
+    /// Insert `count` blank lines.
+    fn insert_blank_lines(&mut self, _: usize) {}
+
+    /// Delete `count` lines.
+    fn delete_lines(&mut self, _: usize) {}
+
+    /// Erase `count` chars in current line following cursor.
+    ///
+    /// Erase means resetting to the default state (default colors, no content,
+    /// no mode flags).
+    fn erase_chars(&mut self, _: Column) {}
+
+    /// Delete `count` chars.
+    ///
+    /// Deleting a character is like the delete key on the keyboard - everything
+    /// to the right of the deleted things is shifted left.
+    fn delete_chars(&mut self, _: usize) {}
+
+    /// Move backward `count` tabs.
+    fn move_backward_tabs(&mut self, _count: u16) {}
+
+    /// Move forward `count` tabs.
+    fn move_forward_tabs(&mut self, _count: u16) {}
+
+    /// Save current cursor position.
+    fn save_cursor_position(&mut self) {}
+
+    /// Restore cursor position.
+    fn restore_cursor_position(&mut self) {}
+
+    /// Clear current line.
+    fn clear_line(&mut self, _mode: LineClearMode) {}
+
+    /// Clear screen.
+    fn clear_screen(&mut self, _mode: ClearMode) {}
+
+    /// Set tab stops at every `interval`.
+    fn set_tabs(&mut self, _interval: u16) {}
+
+    /// Clear tab stops.
+    fn clear_tabs(&mut self, _mode: TabulationClearMode) {}
+
+    /// Reset terminal state.
+    fn reset_state(&mut self) {}
+
+    /// Reverse Index.
+    ///
+    /// Move the active position to the same horizontal position on the
+    /// preceding line. If the active position is at the top margin, a scroll
+    /// down is performed.
+    fn reverse_index(&mut self) {}
+
+    /// Set a terminal attribute.
+    fn terminal_attribute(&mut self, _attr: Attr) {}
+
+    /// Set mode.
+    fn set_mode(&mut self, _mode: Mode) {}
+
+    /// Unset mode.
+    fn unset_mode(&mut self, _mode: Mode) {}
+
+    /// DECRPM - report mode.
+    fn report_mode(&mut self, _mode: Mode) {}
+
+    /// Set private mode.
+    fn set_private_mode(&mut self, _mode: PrivateMode) {}
+
+    /// Unset private mode.
+    fn unset_private_mode(&mut self, _mode: PrivateMode) {}
+
+    /// DECRPM - report private mode.
+    fn report_private_mode(&mut self, _mode: PrivateMode) {}
+
+    /// XTVERSION - Report terminal version.
+    fn report_version(&mut self) {}
+
+    /// DECSTBM - Set the terminal scrolling region.
+    fn set_scrolling_region(&mut self, _top: usize, _bottom: Option<usize>) {}
+
+    /// DECKPAM - Set keypad to applications mode (ESCape instead of digits).
+    fn set_keypad_application_mode(&mut self) {}
+
+    /// DECKPNM - Set keypad to numeric mode (digits instead of ESCape seq).
+    fn unset_keypad_application_mode(&mut self) {}
+
+    /// Set one of the graphic character sets, G0 to G3, as the active charset.
+    ///
+    /// 'Invoke' one of G0 to G3 in the GL area. Also referred to as shift in,
+    /// shift out and locking shift depending on the set being activated.
+    fn set_active_charset(&mut self, _: CharsetIndex) {}
+
+    /// Assign a graphic character set to G0, G1, G2 or G3.
+    ///
+    /// 'Designate' a graphic character set as one of G0 to G3, so that it can
+    /// later be 'invoked' by `set_active_charset`.
+    fn configure_charset(&mut self, _: CharsetIndex, _: StandardCharset) {}
+
+    /// Set an indexed color value.
+    fn set_color(&mut self, _: usize, _: ColorRgb) {}
+
+    /// Respond to a color query escape sequence.
+    fn dynamic_color_sequence(&mut self, _: String, _: usize, _: &str) {}
+
+    /// Reset an indexed color to original value.
+    fn reset_color(&mut self, _: usize) {}
+
+    /// Store data into clipboard.
+    fn clipboard_store(&mut self, _: u8, _: &[u8]) {}
+
+    /// Load data from clipboard.
+    fn clipboard_load(&mut self, _: u8, _: &str) {}
+
+    /// Run the decaln routine.
+    fn decaln(&mut self) {}
+
+    /// Push a title onto the stack.
+    fn push_title(&mut self) {}
+
+    /// Pop the last title from the stack.
+    fn pop_title(&mut self) {}
+
+    /// Report text area size in pixels.
+    fn text_area_size_pixels(&mut self) {}
+
+    /// Report cell size in pixels.
+    fn cells_size_pixels(&mut self) {}
+
+    /// Report text area size in characters.
+    fn text_area_size_chars(&mut self) {}
+
+    /// Report a graphics attribute.
+    fn graphics_attribute(&mut self, _: u16, _: u16) {}
+
+    /// Create a parser for Sixel data.
+    fn sixel_graphic_start(&mut self, _params: &Params) {}
+    fn is_sixel_graphic_active(&self) -> bool {
+        false
+    }
+    fn sixel_graphic_put(&mut self, _byte: u8) -> Result<(), sixel::Error> {
+        Ok(())
+    }
+    fn sixel_graphic_reset(&mut self) {}
+    fn sixel_graphic_finish(&mut self) {}
+
+    /// Insert a new graphic item into grid cells (for sixel/iTerm2).
+    /// cursor_movement: None = Sixel (move to next line), Some(0) = stay on last row
+    fn insert_graphic(
+        &mut self,
+        _data: GraphicData,
+        _palette: Option<Vec<ColorRgb>>,
+        _cursor_movement: Option<u8>,
+    ) {
+    }
+
+    /// Store a graphic without displaying (for a=t transmit-only).
+    fn store_graphic(&mut self, _data: GraphicData) {}
+
+    /// Transmit and display a kitty graphic as an overlay (for a=T).
+    fn kitty_transmit_and_display(
+        &mut self,
+        _data: GraphicData,
+        _placement: kitty_graphics_protocol::PlacementRequest,
+    ) {
+    }
+
+    /// Place an existing graphic at a specific location (for a=p).
+    fn place_graphic(&mut self, _placement: kitty_graphics_protocol::PlacementRequest) {}
+
+    /// Delete graphics based on the specified criteria.
+    fn delete_graphics(&mut self, _delete: kitty_graphics_protocol::DeleteRequest) {}
+
+    /// Set hyperlink.
+    fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
+
+    /// Set mouse cursor icon.
+    fn set_mouse_cursor_icon(&mut self, _: CursorIcon) {}
+
+    /// Set progress bar report (OSC 9;4).
+    fn set_progress_report(&mut self, _: crate::event::ProgressReport) {}
+
+    /// Report current keyboard mode.
+    fn report_keyboard_mode(&mut self) {}
+
+    /// Push keyboard mode into the keyboard mode stack.
+    fn push_keyboard_mode(&mut self, _mode: KeyboardModes) {}
+
+    /// Pop the given amount of keyboard modes from the
+    /// keyboard mode stack.
+    fn pop_keyboard_modes(&mut self, _to_pop: u16) {}
+
+    /// Set the [`keyboard mode`] using the given [`behavior`].
+    ///
+    /// [`keyboard mode`]: crate::ansi::KeyboardModes
+    /// [`behavior`]: crate::ansi::KeyboardModesApplyBehavior
+    fn set_keyboard_mode(
+        &mut self,
+        _mode: KeyboardModes,
+        _behavior: KeyboardModesApplyBehavior,
+    ) {
+    }
+
+    /// Handle XTGETTCAP response.
+    fn xtgettcap_response(&mut self, _response: String) {}
+
+    /// Send a kitty graphics protocol response
+    fn kitty_graphics_response(&mut self, _response: String) {}
+
+    /// Send a Glyph Protocol response (query reply, register ack, etc.).
+    fn glyph_protocol_response(&mut self, _response: String) {}
+
+    /// Register a custom glyph at a client-chosen PUA codepoint. The
+    /// parser has already verified `cp` is in PUA, the container
+    /// size is within bounds, and `width` is `1` or `2`. The `payload`
+    /// carries format-specific data: monochrome `glyf`, or a
+    /// `colrv0`/`colrv1` colour container. `width` is the declared
+    /// render span, honoured at render time only; the codepoint's
+    /// logical cell width stays at system wcwidth.
+    /// `Err(reason)` causes the dispatcher to emit an error response.
+    fn glyph_register(
+        &mut self,
+        _cp: u32,
+        _payload: glyph_protocol::GlyphPayload,
+        _width: u8,
+    ) -> Result<(), glyph_protocol::RegisterError> {
+        Ok(())
+    }
+
+    /// Clear one registration (`Some(cp)`) or every registration in
+    /// the session (`None`).
+    fn glyph_clear(&mut self, _cp: Option<u32>) {}
+
+    /// Forward a `q` (query) request to the frontend so it can
+    /// classify the codepoint as `Free` / `System` / `Glossary` /
+    /// `Both` (spec §5.2). Asynchronous because the System / Both
+    /// bits require FontLibrary access that lives outside the
+    /// terminal-backend layer; the frontend formats the reply and
+    /// writes it back to the originating pane's PTY directly.
+    fn glyph_query(&mut self, _cp: u32) {}
+
+    /// Get mutable access to the kitty graphics chunking state
+    /// Used by the APC handler to accumulate chunked image transmissions
+    ///
+    /// Returns `None` if the handler does not support Kitty graphics protocol.
+    /// Terminal implementations that support Kitty graphics should override this
+    /// to return `Some(&mut state)`.
+    fn kitty_chunking_state_mut(
+        &mut self,
+    ) -> Option<&mut kitty_graphics_protocol::KittyGraphicsState> {
+        None
+    }
+
+    // Set SCP control.
+    fn set_scp(&mut self, _char_path: ScpCharPath, _update_mode: ScpUpdateMode) {}
+}
+
+#[derive(Debug, Default)]
+struct ProcessorState {
+    /// Last processed character for repetition.
+    preceding_char: Option<char>,
+
+    /// State for synchronized terminal updates.
+    sync_state: SyncState,
+
+    /// State for XTGETTCAP requests.
+    xtgettcap_state: XtgettcapState,
+
+    /// State for APC (Application Program Command) sequences.
+    apc_state: ApcState,
+}
+
+#[derive(Debug)]
+struct SyncState {
+    /// Expiration time of the synchronized update.
+    timeout: StdSyncHandler,
+
+    /// Bytes read during the synchronized update.
+    buffer: Vec<u8>,
+}
+
+#[derive(Debug, Default)]
+struct XtgettcapState {
+    /// Whether we're currently processing an XTGETTCAP request.
+    active: bool,
+
+    /// Buffer for collecting hex-encoded capability names.
+    buffer: Vec<u8>,
+}
+
+/// State for accumulating APC (Application Program Command) sequences.
+///
+/// APC sequences can be very large (especially for Kitty graphics protocol which can send
+/// 4KB+ chunks of base64-encoded image data). We accumulate the raw bytes here instead of
+/// relying on Copa's default OSC-style parameter parsing.
+#[derive(Debug, Default)]
+struct ApcState {
+    /// Buffer for accumulating APC data.
+    /// Pre-allocated to a reasonable size for Kitty graphics chunks.
+    buffer: Vec<u8>,
+}
+
+impl Default for SyncState {
+    fn default() -> Self {
+        Self {
+            buffer: Vec::with_capacity(SYNC_BUFFER_SIZE),
+            timeout: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct StdSyncHandler {
+    timeout: Option<Instant>,
+}
+
+impl StdSyncHandler {
+    /// Synchronized update expiration time.
+    #[inline]
+    pub fn sync_timeout(&self) -> Option<Instant> {
+        self.timeout
+    }
+
+    #[inline]
+    fn set_timeout(&mut self, duration: Duration) {
+        self.timeout = Some(Instant::now() + duration);
+    }
+
+    #[inline]
+    fn clear_timeout(&mut self) {
+        self.timeout = None;
+    }
+
+    #[inline]
+    fn pending_timeout(&self) -> bool {
+        self.timeout.is_some()
+    }
+}
+
+#[derive(Default)]
+pub struct Processor {
+    state: ProcessorState,
+    parser: Parser,
+}
+
+impl Processor {
+    /// Synchronized update timeout.
+    pub fn sync_timeout(&self) -> &StdSyncHandler {
+        &self.state.sync_state.timeout
+    }
+
+    /// Process a new byte from the PTY.
+    #[inline]
+    pub fn advance<H>(&mut self, handler: &mut H, bytes: &[u8])
+    where
+        H: Handler,
+    {
+        if self.state.sync_state.timeout.pending_timeout() {
+            self.advance_sync(handler, bytes);
+        } else {
+            let mut performer = Performer::new(&mut self.state, handler);
+            self.parser.advance(&mut performer, bytes);
+        }
+    }
+
+    /// End a synchronized update.
+    pub fn stop_sync<H>(&mut self, handler: &mut H)
+    where
+        H: Handler,
+    {
+        self.stop_sync_internal(handler, None);
+    }
+
+    /// End a synchronized update.
+    ///
+    /// The `bsu_offset` parameter should be passed if the sync buffer contains
+    /// a new BSU escape that is not part of the current synchronized
+    /// update.
+    fn stop_sync_internal<H>(&mut self, handler: &mut H, bsu_offset: Option<usize>)
+    where
+        H: Handler,
+    {
+        // Process all synchronized bytes. BSU sequences are processed
+        // automatically during the synchronized update.
+        let buffer = mem::take(&mut self.state.sync_state.buffer);
+        let offset = bsu_offset.unwrap_or(buffer.len());
+        let mut performer = Performer::new(&mut self.state, handler);
+        self.parser.advance(&mut performer, &buffer[..offset]);
+        self.state.sync_state.buffer = buffer;
+
+        match bsu_offset {
+            // Just clear processed bytes if there is a new BSU.
+            //
+            // NOTE: We do not need to re-process for a new ESU since the `advance_sync`
+            // function checks for BSUs in reverse.
+            Some(bsu_offset) => {
+                let new_len = self.state.sync_state.buffer.len() - bsu_offset;
+                self.state.sync_state.buffer.copy_within(bsu_offset.., 0);
+                self.state.sync_state.buffer.truncate(new_len);
+            }
+            // Report mode and clear state if no new BSU is present.
+            None => {
+                handler.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
+                self.state.sync_state.timeout.clear_timeout();
+                self.state.sync_state.buffer.clear();
+            }
+        }
+    }
+
+    /// Number of bytes in the synchronization buffer.
+    #[inline]
+    pub fn sync_bytes_count(&self) -> usize {
+        self.state.sync_state.buffer.len()
+    }
+
+    /// Process a new byte during a synchronized update.
+    #[cold]
+    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8])
+    where
+        H: Handler,
+    {
+        // Advance sync parser or stop sync if we'd exceed the maximum buffer size.
+        if self.state.sync_state.buffer.len() + bytes.len() >= SYNC_BUFFER_SIZE - 1 {
+            // Terminate the synchronized update.
+            self.stop_sync_internal(handler, None);
+
+            // Just parse the bytes normally.
+            let mut performer = Performer::new(&mut self.state, handler);
+            self.parser.advance(&mut performer, bytes);
+        } else {
+            self.state.sync_state.buffer.extend(bytes);
+            self.advance_sync_csi(handler, bytes.len());
+        }
+    }
+
+    /// Handle BSU/ESU CSI sequences during synchronized update.
+    fn advance_sync_csi<H>(&mut self, handler: &mut H, new_bytes: usize)
+    where
+        H: Handler,
+    {
+        // Get constraints within which a new escape character might be relevant.
+        let buffer_len = self.state.sync_state.buffer.len();
+        let start_offset = (buffer_len - new_bytes).saturating_sub(SYNC_ESCAPE_LEN - 1);
+        let end_offset = buffer_len.saturating_sub(SYNC_ESCAPE_LEN - 1);
+        let search_buffer = &self.state.sync_state.buffer[start_offset..end_offset];
+
+        // Search for termination/extension escapes in the added bytes.
+        //
+        // NOTE: It is technically legal to specify multiple private modes in the same
+        // escape, but we only allow EXACTLY `\e[?2026h`/`\e[?2026l` to keep the parser
+        // more simple.
+        let mut bsu_offset = None;
+        for index in memchr::memchr_iter(0x1B, search_buffer).rev() {
+            let offset = start_offset + index;
+            let escape = &self.state.sync_state.buffer[offset..offset + SYNC_ESCAPE_LEN];
+
+            if escape == BSU_CSI {
+                self.state
+                    .sync_state
+                    .timeout
+                    .set_timeout(SYNC_UPDATE_TIMEOUT);
+                bsu_offset = Some(offset);
+            } else if escape == ESU_CSI {
+                self.stop_sync_internal(handler, bsu_offset);
+                break;
+            }
+        }
+    }
+}
+
+struct Performer<'a, H: Handler> {
+    state: &'a mut ProcessorState,
+    handler: &'a mut H,
+}
+
+impl<'a, H: Handler + 'a> Performer<'a, H> {
+    /// Create a performer.
+    #[inline]
+    pub fn new<'b>(
+        state: &'b mut ProcessorState,
+        handler: &'b mut H,
+    ) -> Performer<'b, H> {
+        Performer { state, handler }
+    }
+
+    /// Process the accumulated APC buffer.
+    ///
+    /// This is called from apc_end() after we've accumulated all bytes of the APC sequence.
+    /// Currently handles Kitty graphics protocol APC sequences.
+    fn process_apc_buffer(&mut self) {
+        let buffer = &self.state.apc_state.buffer;
+
+        if buffer.is_empty() {
+            return;
+        }
+
+        // Strip escape terminator if present (ESC or ESC+backslash)
+        // APC sequences are terminated by ESC+\ (0x1b 0x5c), but the parser may include the ESC
+        let data = if buffer.last() == Some(&0x1b) {
+            &buffer[..buffer.len() - 1]
+        } else if buffer.len() >= 2
+            && buffer[buffer.len() - 2] == 0x1b
+            && buffer[buffer.len() - 1] == 0x5c
+        {
+            &buffer[..buffer.len() - 2]
+        } else {
+            buffer.as_slice()
+        };
+
+        debug!(
+            "[process_apc_buffer] Processing {} bytes (stripped to {}), starts with: {}",
+            buffer.len(),
+            data.len(),
+            String::from_utf8_lossy(&data[..data.len().min(50)])
+        );
+
+        // Check if this is a Glyph Protocol APC (starts with "25a1").
+        // Glyph Protocol is checked before Kitty so its fixed-string
+        // prefix short-circuits quickly; the two prefixes are disjoint.
+        if data.starts_with(glyph_protocol::GLYPH_PROTOCOL_PREFIX) {
+            // Copy the body off the shared apc_state buffer so that
+            // dispatch_glyph_protocol can take `&mut self` (the handler
+            // trait methods need it). Glyph Protocol payloads are
+            // bounded by MAX_PAYLOAD_BYTES, so this is cheap.
+            let body = data.to_vec();
+            self.dispatch_glyph_protocol(&body);
+            return;
+        }
+
+        // Check if this is a Kitty graphics protocol APC (starts with 'G')
+        if data.first() == Some(&b'G') {
+            debug!("[process_apc_buffer] Kitty graphics APC detected");
+
+            // Parse like WezTerm: split on semicolon to get control and payload
+            let mut parts = data.splitn(2, |&b| b == b';');
+            let control_data = parts.next().unwrap_or(b"");
+            let payload_data = parts.next().unwrap_or(b"");
+
+            // Skip 'G' at the beginning of control data
+            let control = if control_data.first() == Some(&b'G') {
+                &control_data[1..]
+            } else {
+                control_data
+            };
+
+            // Strip escape terminator from control and payload if present
+            let control = if control.last() == Some(&0x1b) {
+                &control[..control.len() - 1]
+            } else {
+                control
+            };
+
+            let payload = if payload_data.last() == Some(&0x1b) {
+                &payload_data[..payload_data.len() - 1]
+            } else {
+                payload_data
+            };
+
+            let kitty_params: Vec<&[u8]> = vec![b"G", control, payload];
+
+            debug!(
+                "[process_apc_buffer] Parsed Kitty params: control={}, payload_len={}",
+                String::from_utf8_lossy(control),
+                payload.len()
+            );
+
+            // Check if handler supports Kitty graphics protocol
+            let Some(chunking_state) = self.handler.kitty_chunking_state_mut() else {
+                debug!("[process_apc_buffer] Handler does not support Kitty graphics, ignoring");
+                return;
+            };
+
+            if let Some(response) =
+                kitty_graphics_protocol::parse(&kitty_params, chunking_state)
+            {
+                if response.incomplete {
+                    // Chunk was accumulated, waiting for more chunks.
+                    // This is normal flow for multi-part transmissions
+                    // (yazi, image previewers) — must not be treated
+                    // as a parse failure.
+                    debug!("[process_apc_buffer] Kitty graphics chunk accumulated");
+                    return;
+                }
+
+                debug!("[process_apc_buffer] Kitty graphics parsed successfully");
+
+                if let Some(graphic_data) = response.graphic_data {
+                    debug!(
+                        "[process_apc_buffer] Graphic data present: id={}, {}x{}",
+                        graphic_data.id.get(),
+                        graphic_data.width,
+                        graphic_data.height
+                    );
+
+                    if let Some(placement) = response.placement_request {
+                        // a=T: Transmit and display as overlay
+                        self.handler
+                            .kitty_transmit_and_display(graphic_data, placement);
+                    } else {
+                        // a=t: Transmit only
+                        self.handler.store_graphic(graphic_data);
+                    }
+                } else if let Some(placement) = response.placement_request {
+                    debug!(
+                        "[process_apc_buffer] Placement request: image_id={}",
+                        placement.image_id
+                    );
+
+                    // a=p: Display previously stored image
+                    self.handler.place_graphic(placement);
+                }
+
+                if let Some(delete) = response.delete_request {
+                    debug!("[process_apc_buffer] Delete request");
+                    self.handler.delete_graphics(delete);
+                }
+
+                if let Some(response_str) = response.response {
+                    self.handler.kitty_graphics_response(response_str);
+                }
+            } else {
+                warn!("[process_apc_buffer] Failed to parse kitty graphics protocol");
+            }
+        } else {
+            // Unknown APC sequence
+            warn!(
+                "[process_apc_buffer] Unknown APC sequence: {}",
+                String::from_utf8_lossy(&buffer[..buffer.len().min(20)])
+            );
+        }
+    }
+
+    /// Parse and dispatch a Glyph Protocol APC. `data` starts with the
+    /// `25a1` identifier and excludes the APC introducer / terminator.
+    fn dispatch_glyph_protocol(&mut self, data: &[u8]) {
+        match glyph_protocol::parse(data) {
+            Ok(glyph_protocol::GlyphCommand::Support) => {
+                let resp = glyph_protocol::format_support_response(
+                    glyph_protocol::SUPPORTED_FORMATS,
+                );
+                self.handler.glyph_protocol_response(resp);
+            }
+            Ok(glyph_protocol::GlyphCommand::Query { cp }) => {
+                // Fire-and-forget: the handler emits a frontend-bound
+                // event with `route_id + cp`. The frontend computes
+                // System / Glossary coverage and writes the formatted
+                // reply back to the originating pane's PTY directly.
+                self.handler.glyph_query(cp);
+            }
+            Ok(glyph_protocol::GlyphCommand::Register {
+                cp,
+                payload,
+                reply,
+                width,
+            }) => match self.handler.glyph_register(cp, payload, width) {
+                Ok(()) => {
+                    if reply.emit_success() {
+                        let resp = glyph_protocol::format_register_ok(cp);
+                        self.handler.glyph_protocol_response(resp);
+                    }
+                }
+                Err(reason) => {
+                    if reply.emit_error() {
+                        let resp = glyph_protocol::format_register_error(cp, reason);
+                        self.handler.glyph_protocol_response(resp);
+                    }
+                }
+            },
+            Ok(glyph_protocol::GlyphCommand::Clear { cp }) => {
+                self.handler.glyph_clear(cp);
+                let resp = glyph_protocol::format_clear_ok(cp);
+                self.handler.glyph_protocol_response(resp);
+            }
+            Err(glyph_protocol::ParseError::NotGlyphProtocol) => {
+                // Shouldn't happen — the prefix check in process_apc_buffer
+                // already confirmed the identifier. Fall through silently
+                // rather than warn, since a future dispatcher reorder
+                // could make this reachable.
+            }
+            Err(glyph_protocol::ParseError::RegisterFailed { cp, reason, reply }) => {
+                if reply.emit_error() {
+                    let resp = glyph_protocol::format_register_error(cp, reason);
+                    self.handler.glyph_protocol_response(resp);
+                }
+            }
+            Err(glyph_protocol::ParseError::ClearOutOfNamespace) => {
+                let resp = glyph_protocol::format_clear_error_out_of_namespace();
+                self.handler.glyph_protocol_response(resp);
+            }
+            Err(glyph_protocol::ParseError::Malformed(why)) => {
+                warn!("[glyph_protocol] malformed APC: {why}");
+            }
+        }
+    }
+}
+
+impl<U: Handler> Perform for Performer<'_, U> {
+    fn print(&mut self, c: char) {
+        self.handler.input(c);
+        self.state.preceding_char = Some(c);
+    }
+
+    #[inline]
+    fn print_str(&mut self, s: &str) {
+        if s.is_empty() {
+            return;
+        }
+        self.handler.input_str(s);
+        // `preceding_char` is used by REP (CSI Ps b) — it just needs the
+        // last printed char, so keep it cheap by reading the last char of
+        // `s` rather than tracking per-byte.
+        self.state.preceding_char = s.chars().next_back();
+    }
+
+    #[inline]
+    fn print_codepoints(&mut self, codepoints: &[u32]) {
+        if codepoints.is_empty() {
+            return;
+        }
+        self.handler.input_codepoints(codepoints);
+        if let Some(&last) = codepoints.last() {
+            self.state.preceding_char = char::from_u32(last);
+        }
+    }
+
+    fn execute(&mut self, byte: u8) {
+        tracing::trace!("[execute] {byte:04x}");
+
+        match byte {
+            C0::HT => self.handler.put_tab(1),
+            C0::BS => self.handler.backspace(),
+            C0::CR => self.handler.carriage_return(),
+            C0::LF | C0::VT | C0::FF => self.handler.linefeed(),
+            C0::BEL => self.handler.bell(),
+            C0::SUB => self.handler.substitute(),
+            C0::SI => self.handler.set_active_charset(CharsetIndex::G0),
+            C0::SO => self.handler.set_active_charset(CharsetIndex::G1),
+            _ => warn!("[unhandled] execute byte={byte:02x}"),
+        }
+    }
+
+    fn hook(
+        &mut self,
+        params: &Params,
+        intermediates: &[u8],
+        ignore: bool,
+        action: char,
+    ) {
+        match (action, intermediates) {
+            ('q', []) => {
+                self.handler.sixel_graphic_start(params);
+            }
+            ('q', [b'+']) => {
+                // XTGETTCAP request: DCS + q <hex-encoded-names> ST
+                self.state.xtgettcap_state.active = true;
+                self.state.xtgettcap_state.buffer.clear();
+            }
+            _ => debug!(
+                "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
+                params, intermediates, ignore, action
+            ),
+        }
+    }
+
+    fn put(&mut self, byte: u8) {
+        if self.handler.is_sixel_graphic_active() {
+            if let Err(err) = self.handler.sixel_graphic_put(byte) {
+                tracing::warn!("Failed to parse Sixel data: {}", err);
+                self.handler.sixel_graphic_reset();
+            }
+        } else if self.state.xtgettcap_state.active {
+            // Collect hex-encoded capability names for XTGETTCAP
+            self.state.xtgettcap_state.buffer.push(byte);
+        } else {
+            debug!("[unhandled put] byte={:?}", byte);
+        }
+    }
+
+    #[inline]
+    fn unhook(&mut self) {
+        if self.handler.is_sixel_graphic_active() {
+            self.handler.sixel_graphic_finish();
+        } else if self.state.xtgettcap_state.active {
+            // Process XTGETTCAP request
+            let response = process_xtgettcap_request(&self.state.xtgettcap_state.buffer);
+            self.handler.xtgettcap_response(response);
+
+            // Reset state
+            self.state.xtgettcap_state.active = false;
+            self.state.xtgettcap_state.buffer.clear();
+        } else {
+            debug!("[unhandled dcs_unhook]");
+        }
+    }
+
+    fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
+        debug!("[osc_dispatch] params={params:?} bell_terminated={bell_terminated}");
+
+        let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
+
+        fn unhandled(params: &[&[u8]]) {
+            let mut buf = String::new();
+            for items in params {
+                buf.push('[');
+                for item in *items {
+                    let _ = write!(buf, "{:?}", *item as char);
+                }
+                buf.push_str("],");
+            }
+            warn!("[unhandled osc_dispatch]: [{}] at line {}", &buf, line!());
+        }
+
+        if params.is_empty() || params[0].is_empty() {
+            return;
+        }
+
+        match params[0] {
+            // Set window title.
+            b"0" | b"2" => match osc::parse_title(params) {
+                Some(title) => self.handler.set_title(Some(title)),
+                None => unhandled(params),
+            },
+
+            // Set color index.
+            b"4" => match osc::parse_palette_entries(params) {
+                Some(entries) => {
+                    for entry in entries {
+                        match entry.spec {
+                            osc::ColorSpec::Set(c) => {
+                                self.handler.set_color(entry.index as usize, c)
+                            }
+                            osc::ColorSpec::Query => self.handler.dynamic_color_sequence(
+                                format!("4;{}", entry.index),
+                                entry.index as usize,
+                                terminator,
+                            ),
+                        }
+                    }
+                }
+                None => unhandled(params),
+            },
+
+            // Inform current directory.
+            b"7" => {
+                if params.len() >= 2 {
+                    if let Some(path) = osc::parse_current_directory(params[1]) {
+                        self.handler.set_current_directory(path.into());
+                    }
+                }
+            }
+
+            // Hyperlink.
+            b"8" if params.len() > 2 => {
+                self.handler
+                    .set_hyperlink(osc::parse_hyperlink(params[1], params[2]));
+            }
+
+            // OSC 9;4 progress; OSC 9 desktop notification fallback.
+            b"9" => {
+                if let Some(report) = osc::parse_progress_report(params) {
+                    self.handler.set_progress_report(report);
+                } else if params.len() >= 2 {
+                    let body = std::str::from_utf8(params[1])
+                        .unwrap_or_default()
+                        .to_string();
+                    self.handler.desktop_notification(String::new(), body);
+                } else {
+                    unhandled(params);
+                }
+            }
+
+            // OSC 133 - semantic prompt zones (shell integration).
+            b"133" => {
+                if let Some(mark) = osc::parse_semantic_prompt(params) {
+                    self.handler.set_semantic_prompt(mark);
+                }
+            }
+
+            // OSC 777 - rxvt notification.
+            b"777" if params.len() >= 4 && params[1] == b"notify" => {
+                let title = std::str::from_utf8(params[2])
+                    .unwrap_or_default()
+                    .to_string();
+                let body = std::str::from_utf8(params[3])
+                    .unwrap_or_default()
+                    .to_string();
+                self.handler.desktop_notification(title, body);
+            }
+
+            // Set or query dynamic colors (foreground/background/cursor).
+            b"10" | b"11" | b"12" => match osc::parse_dynamic_colors(params) {
+                Some(entries) => {
+                    for entry in entries {
+                        match entry.spec {
+                            osc::ColorSpec::Set(c) => {
+                                self.handler.set_color(entry.index as usize, c)
+                            }
+                            osc::ColorSpec::Query => self.handler.dynamic_color_sequence(
+                                entry.dynamic_code.to_string(),
+                                entry.index as usize,
+                                terminator,
+                            ),
+                        }
+                    }
+                }
+                None => unhandled(params),
+            },
+
+            // Set mouse cursor shape.
+            b"22" if params.len() == 2 => match osc::parse_mouse_cursor_icon(params[1]) {
+                Some(icon) => self.handler.set_mouse_cursor_icon(icon),
+                None => debug!("[osc 22] unrecognized cursor icon shape"),
+            },
+
+            // Set text cursor style.
+            b"50" => match osc::parse_cursor_shape(params) {
+                Some(shape) => self.handler.set_cursor_shape(shape),
+                None => unhandled(params),
+            },
+
+            // Clipboard load/store.
+            b"52" => match osc::parse_clipboard(params) {
+                Some(osc::ClipboardOp::Load { kind }) => {
+                    self.handler.clipboard_load(kind, terminator)
+                }
+                Some(osc::ClipboardOp::Store { kind, payload }) => {
+                    self.handler.clipboard_store(kind, payload)
+                }
+                None => unhandled(params),
+            },
+
+            // Reset palette colors (all, or a specific list).
+            b"104" => match osc::parse_palette_reset(params) {
+                osc::PaletteReset::All => {
+                    for i in 0..256 {
+                        self.handler.reset_color(i);
+                    }
+                }
+                osc::PaletteReset::Indices(indices) => {
+                    for index in indices {
+                        self.handler.reset_color(index as usize);
+                    }
+                }
+            },
+
+            b"110" => self.handler.reset_color(NamedColor::Foreground as usize),
+            b"111" => self.handler.reset_color(NamedColor::Background as usize),
+            b"112" => self.handler.reset_color(NamedColor::Cursor as usize),
+
+            // OSC 1337 - iTerm2 user vars and inline image protocol.
+            b"1337" => {
+                if let Some((name, value)) = osc::parse_set_user_var(params) {
+                    self.handler.set_user_var(name, value);
+                } else if let Some((graphic, cursor_movement)) =
+                    iterm2_image_protocol::parse(params)
+                {
+                    self.handler
+                        .insert_graphic(graphic, None, Some(cursor_movement));
+                }
+            }
+
+            _ => unhandled(params),
+        }
+    }
+
+    // Control Sequence Introducer
+    // CSI is the two-character sequence ESCape left-bracket or the 8-bit
+    // C1 code of 233 octal, 9B hex. CSI introduces a Control Sequence, which
+    // continues until an alphabetic character is received.
+    fn csi_dispatch(
+        &mut self,
+        params: &Params,
+        intermediates: &[u8],
+        should_ignore: bool,
+        action: char,
+    ) {
+        debug!("[csi_dispatch] {params:?} {action:?}");
+        macro_rules! csi_unhandled {
+            () => {{
+                warn!(
+                    "[csi_dispatch] params={params:#?}, intermediates={intermediates:?}, should_ignore={should_ignore:?}, action={action:?}"
+                );
+            }};
+        }
+
+        if should_ignore || intermediates.len() > 2 {
+            // We only handle up to two intermediate bytes. I haven't seen any sequences that use
+            // more than that.
+            csi_unhandled!();
+            return;
+        }
+
+        let mut params_iter = params.iter();
+        let handler = &mut self.handler;
+
+        let mut next_param_or = |default: u16| match params_iter.next() {
+            Some(&[param, ..]) if param != 0 => param,
+            _ => default,
+        };
+
+        match (action, intermediates) {
+            ('@', []) => handler.insert_blank(next_param_or(1) as usize),
+            ('A', []) => handler.move_up(next_param_or(1) as usize),
+            ('B', []) | ('e', []) => handler.move_down(next_param_or(1) as usize),
+            ('b', []) => {
+                if let Some(c) = self.state.preceding_char {
+                    for _ in 0..next_param_or(1) {
+                        handler.input(c);
+                    }
+                } else {
+                    warn!("tried to repeat with no preceding char");
+                }
+            }
+            ('C', []) | ('a', []) => {
+                handler.move_forward(Column(next_param_or(1) as usize))
+            }
+            ('c', intermediates) if next_param_or(0) == 0 => {
+                handler.identify_terminal(intermediates.first().map(|&i| i as char))
+            }
+            ('D', []) => handler.move_backward(Column(next_param_or(1) as usize)),
+            ('d', []) => handler.goto_line(Line(next_param_or(1) as i32 - 1)),
+            ('E', []) => handler.move_down_and_cr(next_param_or(1) as usize),
+            ('F', []) => handler.move_up_and_cr(next_param_or(1) as usize),
+            ('G', []) | ('`', []) => {
+                handler.goto_col(Column(next_param_or(1) as usize - 1))
+            }
+            ('W', [b'?']) if next_param_or(0) == 5 => handler.set_tabs(8),
+            ('g', []) => {
+                let mode = match next_param_or(0) {
+                    0 => TabulationClearMode::Current,
+                    3 => TabulationClearMode::All,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                handler.clear_tabs(mode);
+            }
+            ('H', []) | ('f', []) => {
+                let y = next_param_or(1) as i32;
+                let x = next_param_or(1) as usize;
+                handler.goto(Line(y - 1), Column(x - 1));
+            }
+            ('h', []) => {
+                for param in params_iter.map(|param| param[0]) {
+                    handler.set_mode(Mode::new(param))
+                }
+            }
+            ('h', [b'?']) => {
+                for param in params_iter.map(|param| param[0]) {
+                    // Handle sync updates opaquely.
+                    if param == NamedPrivateMode::SyncUpdate as u16 {
+                        self.state
+                            .sync_state
+                            .timeout
+                            .set_timeout(SYNC_UPDATE_TIMEOUT);
+                    }
+
+                    handler.set_private_mode(PrivateMode::new(param))
+                }
+            }
+            ('I', []) => handler.move_forward_tabs(next_param_or(1)),
+            ('J', []) => {
+                let mode = match next_param_or(0) {
+                    0 => ClearMode::Below,
+                    1 => ClearMode::Above,
+                    2 => ClearMode::All,
+                    3 => ClearMode::Saved,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                handler.clear_screen(mode);
+            }
+            ('K', []) => {
+                let mode = match next_param_or(0) {
+                    0 => LineClearMode::Right,
+                    1 => LineClearMode::Left,
+                    2 => LineClearMode::All,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                handler.clear_line(mode);
+            }
+            ('k', [b' ']) => {
+                // SCP control.
+                let char_path = match next_param_or(0) {
+                    0 => ScpCharPath::Default,
+                    1 => ScpCharPath::LTR,
+                    2 => ScpCharPath::RTL,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                let update_mode = match next_param_or(0) {
+                    0 => ScpUpdateMode::ImplementationDependant,
+                    1 => ScpUpdateMode::DataToPresentation,
+                    2 => ScpUpdateMode::PresentationToData,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                handler.set_scp(char_path, update_mode);
+            }
+            ('L', []) => handler.insert_blank_lines(next_param_or(1) as usize),
+            ('l', []) => {
+                for param in params_iter.map(|param| param[0]) {
+                    handler.unset_mode(Mode::new(param))
+                }
+            }
+            ('l', [b'?']) => {
+                for param in params_iter.map(|param| param[0]) {
+                    handler.unset_private_mode(PrivateMode::new(param))
+                }
+            }
+            ('M', []) => handler.delete_lines(next_param_or(1) as usize),
+            ('m', []) => {
+                if params.is_empty() {
+                    handler.terminal_attribute(Attr::Reset);
+                } else {
+                    for attr in attrs_from_sgr_parameters(&mut params_iter) {
+                        match attr {
+                            Some(attr) => handler.terminal_attribute(attr),
+                            None => csi_unhandled!(),
+                        }
+                    }
+                }
+            }
+            ('n', []) => handler.device_status(next_param_or(0) as usize),
+            ('P', []) => handler.delete_chars(next_param_or(1) as usize),
+            ('p', [b'$']) => {
+                let mode = next_param_or(0);
+                handler.report_mode(Mode::new(mode));
+            }
+            ('p', [b'?', b'$']) => {
+                let mode = next_param_or(0);
+                handler.report_private_mode(PrivateMode::new(mode));
+            }
+            ('q', [b'>']) => {
+                // XTVERSION (CSI > q) -- Query Terminal Version.
+                if next_param_or(0) != 0 {
+                    csi_unhandled!();
+                    return;
+                }
+                handler.report_version();
+            }
+            ('q', [b' ']) => {
+                // DECSCUSR (CSI SP q) -- Set Cursor Style.
+                let cursor_style_id = next_param_or(0);
+                let shape = match cursor_style_id {
+                    0 => None,
+                    1 | 2 => Some(CursorShape::Block),
+                    3 | 4 => Some(CursorShape::Underline),
+                    5 | 6 => Some(CursorShape::Beam),
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                handler.set_cursor_style(shape, cursor_style_id % 2 == 1);
+            }
+            ('r', []) => {
+                let top = next_param_or(1) as usize;
+                let bottom = params_iter
+                    .next()
+                    .map(|param| param[0] as usize)
+                    .filter(|&param| param != 0);
+
+                handler.set_scrolling_region(top, bottom);
+            }
+            ('S', []) => handler.scroll_up(next_param_or(1) as usize),
+            ('S', [b'?']) => {
+                handler.graphics_attribute(next_param_or(0), next_param_or(0))
+            }
+            ('s', []) => handler.save_cursor_position(),
+            ('T', []) => handler.scroll_down(next_param_or(1) as usize),
+            ('t', []) => match next_param_or(1) as usize {
+                14 => handler.text_area_size_pixels(),
+                16 => handler.cells_size_pixels(),
+                18 => handler.text_area_size_chars(),
+                22 => handler.push_title(),
+                23 => handler.pop_title(),
+                _ => csi_unhandled!(),
+            },
+            ('u', [b'?']) => handler.report_keyboard_mode(),
+            ('u', [b'=']) => {
+                let mode = KeyboardModes::from_bits_truncate(next_param_or(0) as u8);
+                let behavior = match next_param_or(1) {
+                    3 => KeyboardModesApplyBehavior::Difference,
+                    2 => KeyboardModesApplyBehavior::Union,
+                    // Default is replace.
+                    _ => KeyboardModesApplyBehavior::Replace,
+                };
+                handler.set_keyboard_mode(mode, behavior);
+            }
+            ('u', [b'>']) => {
+                let mode = KeyboardModes::from_bits_truncate(next_param_or(0) as u8);
+                handler.push_keyboard_mode(mode);
+            }
+            ('u', [b'<']) => {
+                // The default is 1.
+                handler.pop_keyboard_modes(next_param_or(1));
+            }
+            ('u', []) => handler.restore_cursor_position(),
+            ('X', []) => handler.erase_chars(Column(next_param_or(1) as usize)),
+            ('Z', []) => handler.move_backward_tabs(next_param_or(1)),
+            _ => csi_unhandled!(),
+        };
+    }
+
+    fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
+        macro_rules! unhandled {
+            () => {{
+                warn!(
+                    "[unhandled] esc_dispatch ints={:?}, byte={:?} ({:02x})",
+                    intermediates, byte as char, byte
+                );
+            }};
+        }
+
+        macro_rules! configure_charset {
+            ($charset:path, $intermediates:expr) => {{
+                let index: CharsetIndex = match $intermediates {
+                    [b'('] => CharsetIndex::G0,
+                    [b')'] => CharsetIndex::G1,
+                    [b'*'] => CharsetIndex::G2,
+                    [b'+'] => CharsetIndex::G3,
+                    _ => {
+                        unhandled!();
+                        return;
+                    }
+                };
+                self.handler.configure_charset(index, $charset)
+            }};
+        }
+
+        match (byte, intermediates) {
+            (b'B', intermediates) => {
+                configure_charset!(StandardCharset::Ascii, intermediates)
+            }
+            (b'D', []) => self.handler.linefeed(),
+            (b'E', []) => {
+                self.handler.linefeed();
+                self.handler.carriage_return();
+            }
+            (b'H', []) => self.handler.set_horizontal_tabstop(),
+            (b'M', []) => self.handler.reverse_index(),
+            (b'Z', []) => self.handler.identify_terminal(None),
+            (b'c', []) => self.handler.reset_state(),
+            (b'0', intermediates) => {
+                configure_charset!(
+                    StandardCharset::SpecialCharacterAndLineDrawing,
+                    intermediates
+                )
+            }
+            (b'7', []) => self.handler.save_cursor_position(),
+            (b'8', [b'#']) => self.handler.decaln(),
+            (b'8', []) => self.handler.restore_cursor_position(),
+            (b'=', []) => self.handler.set_keypad_application_mode(),
+            (b'>', []) => self.handler.unset_keypad_application_mode(),
+            // String terminator, do nothing (parser handles as string terminator).
+            (b'\\', []) => (),
+            _ => unhandled!(),
+        }
+    }
+
+    /// Called at the start of an APC sequence.
+    ///
+    /// APC (Application Program Command) sequences can be very large, especially for
+    /// Kitty graphics protocol which sends 4KB+ chunks of base64-encoded image data.
+    /// We accumulate the raw bytes in our buffer instead of relying on Copa's default
+    /// OSC-style parameter parsing.
+    fn apc_start(&mut self) {
+        debug!("[apc_start] Beginning APC accumulation");
+        self.state.apc_state.buffer.clear();
+        // Pre-allocate reasonable size for Kitty graphics chunks (typically 4KB)
+        self.state.apc_state.buffer.reserve(4096);
+    }
+
+    /// Called for each byte in the APC sequence.
+    ///
+    /// We accumulate all bytes here to handle large sequences that exceed Copa's
+    /// default OSC buffer size (1024 bytes).
+    fn apc_put(&mut self, byte: u8) {
+        self.state.apc_state.buffer.push(byte);
+    }
+
+    /// Called when the APC sequence ends. Processes the accumulated APC data.
+    fn apc_end(&mut self) {
+        debug!(
+            "[apc_end] APC complete, accumulated {} bytes",
+            self.state.apc_state.buffer.len()
+        );
+
+        // Process the accumulated buffer
+        self.process_apc_buffer();
+    }
+}
+
+#[inline]
+fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
+    let mut attrs = Vec::with_capacity(params.size_hint().0);
+
+    while let Some(param) = params.next() {
+        let attr = match param {
+            [0] => Some(Attr::Reset),
+            [1] => Some(Attr::Bold),
+            [2] => Some(Attr::Dim),
+            [3] => Some(Attr::Italic),
+            [4, 0] => Some(Attr::CancelUnderline),
+            [4, 2] => Some(Attr::DoubleUnderline),
+            [4, 3] => Some(Attr::Undercurl),
+            [4, 4] => Some(Attr::DottedUnderline),
+            [4, 5] => Some(Attr::DashedUnderline),
+            [4, ..] => Some(Attr::Underline),
+            [5] => Some(Attr::BlinkSlow),
+            [6] => Some(Attr::BlinkFast),
+            [7] => Some(Attr::Reverse),
+            [8] => Some(Attr::Hidden),
+            [9] => Some(Attr::Strike),
+            [21] => Some(Attr::CancelBold),
+            [22] => Some(Attr::CancelBoldDim),
+            [23] => Some(Attr::CancelItalic),
+            [24] => Some(Attr::CancelUnderline),
+            [25] => Some(Attr::CancelBlink),
+            [27] => Some(Attr::CancelReverse),
+            [28] => Some(Attr::CancelHidden),
+            [29] => Some(Attr::CancelStrike),
+            [30] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Black))),
+            [31] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Red))),
+            [32] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Green))),
+            [33] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Yellow))),
+            [34] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Blue))),
+            [35] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Magenta))),
+            [36] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Cyan))),
+            [37] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::White))),
+            [38] => {
+                let mut iter = params.map(|param| param[0]);
+                parse_sgr_color(&mut iter).map(Attr::Foreground)
+            }
+            [38, params @ ..] => handle_colon_rgb(params).map(Attr::Foreground),
+            [39] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Foreground))),
+            [40] => Some(Attr::Background(AnsiColor::Named(NamedColor::Black))),
+            [41] => Some(Attr::Background(AnsiColor::Named(NamedColor::Red))),
+            [42] => Some(Attr::Background(AnsiColor::Named(NamedColor::Green))),
+            [43] => Some(Attr::Background(AnsiColor::Named(NamedColor::Yellow))),
+            [44] => Some(Attr::Background(AnsiColor::Named(NamedColor::Blue))),
+            [45] => Some(Attr::Background(AnsiColor::Named(NamedColor::Magenta))),
+            [46] => Some(Attr::Background(AnsiColor::Named(NamedColor::Cyan))),
+            [47] => Some(Attr::Background(AnsiColor::Named(NamedColor::White))),
+            [48] => {
+                let mut iter = params.map(|param| param[0]);
+                parse_sgr_color(&mut iter).map(Attr::Background)
+            }
+            [48, params @ ..] => handle_colon_rgb(params).map(Attr::Background),
+            [49] => Some(Attr::Background(AnsiColor::Named(NamedColor::Background))),
+            [58] => {
+                let mut iter = params.map(|param| param[0]);
+                parse_sgr_color(&mut iter).map(|color| Attr::UnderlineColor(Some(color)))
+            }
+            [58, params @ ..] => {
+                handle_colon_rgb(params).map(|color| Attr::UnderlineColor(Some(color)))
+            }
+            [59] => Some(Attr::UnderlineColor(None)),
+            [90] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightBlack))),
+            [91] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightRed))),
+            [92] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightGreen))),
+            [93] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightYellow))),
+            [94] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightBlue))),
+            [95] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightMagenta))),
+            [96] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightCyan))),
+            [97] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightWhite))),
+            [100] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightBlack))),
+            [101] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightRed))),
+            [102] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightGreen))),
+            [103] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightYellow))),
+            [104] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightBlue))),
+            [105] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightMagenta))),
+            [106] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightCyan))),
+            [107] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightWhite))),
+            _ => None,
+        };
+        attrs.push(attr);
+    }
+
+    attrs
+}
+
+/// Process XTGETTCAP request and return DCS response.
+/// Multiple capability queries can be separated by `;` in a single request.
+/// Each capability gets its own DCS response (like xterm).
+fn process_xtgettcap_request(buffer: &[u8]) -> String {
+    debug!("Processing XTGETTCAP request: {:?}", buffer);
+
+    let mut response = String::new();
+
+    for query in buffer.split(|&b| b == b';') {
+        if query.is_empty() {
+            continue;
+        }
+
+        let capability_name = match decode_hex_string(query) {
+            Ok(name) => name,
+            Err(_) => {
+                debug!("Invalid hex encoding in XTGETTCAP request");
+                continue;
+            }
+        };
+        debug!("XTGETTCAP query for: {}", capability_name);
+
+        let hex_name = encode_hex_string(&capability_name);
+        if let Some(value) = get_termcap_capability(&capability_name) {
+            if value.is_empty() {
+                // Boolean capability
+                response.push_str(&format!("\x1bP1+r{hex_name}\x1b\\"));
+            } else {
+                // String/numeric capability — decode terminfo source format
+                // to raw bytes before hex-encoding
+                let decoded = decode_terminfo_value(&value);
+                let hex_value = encode_hex_bytes(&decoded);
+                response.push_str(&format!("\x1bP1+r{hex_name}={hex_value}\x1b\\"));
+            }
+        } else {
+            response.push_str(&format!("\x1bP0+r{hex_name}\x1b\\"));
+        }
+    }
+
+    if response.is_empty() {
+        "\x1bP0+r\x1b\\".to_string()
+    } else {
+        response
+    }
+}
+
+/// Decode terminfo source format escape sequences to raw bytes.
+/// Converts `\\E` to ESC (0x1b), `\\n` to newline, `\\r` to CR, etc.
+/// Values containing `%` (parameterized) are returned as-is in source format.
+fn decode_terminfo_value(value: &str) -> Vec<u8> {
+    // Parameterized values are kept in source format (like Kitty)
+    if value.contains('%') {
+        return value.as_bytes().to_vec();
+    }
+
+    let mut result = Vec::with_capacity(value.len());
+    let bytes = value.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            match bytes[i + 1] {
+                b'E' => {
+                    result.push(0x1b);
+                    i += 2;
+                }
+                b'n' => {
+                    result.push(b'\n');
+                    i += 2;
+                }
+                b'r' => {
+                    result.push(b'\r');
+                    i += 2;
+                }
+                b't' => {
+                    result.push(b'\t');
+                    i += 2;
+                }
+                b'\\' => {
+                    result.push(b'\\');
+                    i += 2;
+                }
+                _ => {
+                    result.push(bytes[i]);
+                    i += 1;
+                }
+            }
+        } else if bytes[i] == b'^' && i + 1 < bytes.len() {
+            // Control character: ^? = DEL (0x7F), ^X = X - 64
+            let ctrl = if bytes[i + 1] == b'?' {
+                0x7F
+            } else {
+                bytes[i + 1].wrapping_sub(64)
+            };
+            result.push(ctrl);
+            i += 2;
+        } else {
+            result.push(bytes[i]);
+            i += 1;
+        }
+    }
+
+    result
+}
+
+/// Encode raw bytes as hex string (2 uppercase hex digits per byte).
+fn encode_hex_bytes(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02X}")).collect()
+}
+
+/// Decode hex-encoded string (2 hex digits per character).
+fn decode_hex_string(hex_bytes: &[u8]) -> Result<String, &'static str> {
+    if !hex_bytes.len().is_multiple_of(2) {
+        return Err("Invalid hex string length");
+    }
+
+    let mut result = Vec::new();
+    for chunk in hex_bytes.chunks(2) {
+        let hex_str = std::str::from_utf8(chunk).map_err(|_| "Invalid UTF-8")?;
+        let byte = u8::from_str_radix(hex_str, 16).map_err(|_| "Invalid hex digit")?;
+        result.push(byte);
+    }
+
+    String::from_utf8(result).map_err(|_| "Invalid UTF-8 in decoded string")
+}
+
+/// Encode string as hex (2 hex digits per character).
+fn encode_hex_string(s: &str) -> String {
+    s.bytes().map(|b| format!("{b:02X}")).collect()
+}
+
+/// Get termcap/terminfo capability value for Rio terminal.
+/// Based on misc/rio.termcap and misc/rio.terminfo files.
+fn get_termcap_capability(name: &str) -> Option<String> {
+    debug!("XTGETTCAP query for capability: {}", name);
+    match name {
+        // Terminal name
+        "TN" | "name" => Some("rio".to_string()),
+
+        // Colors capability - from terminfo: colors#0x100 (256), pairs#0x7FFF
+        "Co" | "colors" => Some("256".to_string()),
+        "pa" | "pairs" => Some("32767".to_string()),
+
+        // RGB/direct color support - from terminfo: ccc capability
+        "RGB" => Some("8/8/8".to_string()),
+        "ccc" => Some("".to_string()),
+
+        // Terminal dimensions - from termcap: co#80:li#24
+        "co" | "cols" => Some("80".to_string()),
+        "li" | "lines" => Some("24".to_string()),
+        "it" => Some("8".to_string()), // Tab stops
+
+        // Boolean capabilities from terminfo
+        "OTbs" | "bs" => Some("".to_string()),  // Backspace overstrike
+        "am" => Some("".to_string()),    // Automatic margins
+        "bce" => Some("".to_string()),   // Background color erase
+        "km" => Some("".to_string()),    // Has meta key
+        "mir" => Some("".to_string()),   // Safe to move in insert mode
+        "msgr" => Some("".to_string()),  // Safe to move in standout mode
+        "xenl" | "xn" => Some("".to_string()), // Newline ignored after 80 cols
+        "AX" => Some("".to_string()),    // Default color pair is white on black
+        "XT" => Some("".to_string()),    // Supports title setting
+        "XF" => Some("".to_string()),    // Xterm focus events
+        "hs" => Some("".to_string()),    // Has status line
+        "ms" => Some("".to_string()),    // Safe to move in standout mode
+        "mi" => Some("".to_string()),    // Safe to move in insert mode
+        "mc5i" => Some("".to_string()),  // Printer won't echo on screen
+        "npc" => Some("".to_string()),   // No pad character
+
+        // Image protocol support
+        "sixel" => Some("".to_string()), // Sixel graphics support
+        "iterm2" => Some("".to_string()), // iTerm2 image protocol support
+        "TK" | "kitty" => Some("yes".to_string()), // Kitty graphics protocol support
+
+        // Cursor movement - from terminfo
+        "cup" | "cm" => Some("\\E[%i%p1%d;%p2%dH".to_string()),
+        "cuu1" | "up" => Some("\\E[A".to_string()),
+        "cud1" | "do" => Some("\\n".to_string()),
+        "cuf1" | "nd" => Some("\\E[C".to_string()),
+        "cub1" | "le" => Some("^H".to_string()),
+        "home" | "ho" => Some("\\E[H".to_string()),
+        "cuu" | "UP" => Some("\\E[%p1%dA".to_string()),
+        "cud" | "DO" => Some("\\E[%p1%dB".to_string()),
+        "cuf" | "RI" => Some("\\E[%p1%dC".to_string()),
+        "cub" | "LE" => Some("\\E[%p1%dD".to_string()),
+        "hpa" => Some("\\E[%i%p1%dG".to_string()),
+        "vpa" => Some("\\E[%i%p1%dd".to_string()),
+
+        // Clear operations
+        "clear" | "cl" => Some("\\E[H\\E[2J".to_string()),
+        "el" | "ce" => Some("\\E[K".to_string()),
+        "ed" | "cd" => Some("\\E[J".to_string()),
+        "el1" => Some("\\E[1K".to_string()),
+        "E3" => Some("\\E[3J".to_string()),
+
+        // Colors and attributes
+        "setaf" => Some("\\E[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m".to_string()),
+        "setab" => Some("\\E[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m".to_string()),
+        "setf" => Some("\\E[3%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m".to_string()),
+        "setb" => Some("\\E[4%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m".to_string()),
+        "op" => Some("\\E[39;49m".to_string()),
+        "oc" => Some("\\E]104\\007".to_string()),
+        "initc" => Some("\\E]4;%p1%d;rgb\\:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\\E\\\\".to_string()),
+
+        // Text attributes
+        "bold" | "md" => Some("\\E[1m".to_string()),
+        "dim" | "mh" => Some("\\E[2m".to_string()),
+        "smul" | "us" => Some("\\E[4m".to_string()),
+        "rmul" | "ue" => Some("\\E[24m".to_string()),
+        "rev" | "mr" => Some("\\E[7m".to_string()),
+        "smso" | "so" => Some("\\E[7m".to_string()),
+        "rmso" | "se" => Some("\\E[27m".to_string()),
+        "invis" => Some("\\E[8m".to_string()),
+        "blink" | "mb" => Some("\\E[5m".to_string()),
+        "sitm" => Some("\\E[3m".to_string()),
+        "ritm" => Some("\\E[23m".to_string()),
+        "smxx" => Some("\\E[9m".to_string()),
+        "rmxx" => Some("\\E[29m".to_string()),
+        "sgr0" | "me" => Some("\\E(B\\E[m".to_string()),
+        "sgr" => Some("%?%p9%t\\E(0%e\\E(B%;\\E[0%?%p6%t;1%;%?%p5%t;2%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p7%t;8%;m".to_string()),
+
+        // Character sets
+        "smacs" | "as" => Some("\\E(0".to_string()),
+        "rmacs" | "ae" => Some("\\E(B".to_string()),
+        "acsc" => Some("``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~".to_string()),
+
+        // Insert/delete operations
+        "ich" | "IC" => Some("\\E[%p1%d@".to_string()),
+        "dch1" | "dc" => Some("\\E[P".to_string()),
+        "dch" | "DC" => Some("\\E[%p1%dP".to_string()),
+        "il1" | "al" => Some("\\E[L".to_string()),
+        "il" | "AL" => Some("\\E[%p1%dL".to_string()),
+        "dl1" => Some("\\E[M".to_string()),
+        "dl" | "DL" => Some("\\E[%p1%dM".to_string()),
+        "ech" | "ec" => Some("\\E[%p1%dX".to_string()),
+
+        // Scrolling
+        "csr" | "cs" => Some("\\E[%i%p1%d;%p2%dr".to_string()),
+        "ri" | "sr" => Some("\\EM".to_string()),
+        "ind" | "sf" => Some("\\n".to_string()),
+        "indn" | "SF" => Some("\\E[%p1%dS".to_string()),
+        "rin" | "SR" => Some("\\E[%p1%dT".to_string()),
+
+        // Cursor visibility
+        "civis" | "vi" => Some("\\E[?25l".to_string()),
+        "cnorm" | "ve" => Some("\\E[?12l\\E[?25h".to_string()),
+        "cvvis" | "vs" => Some("\\E[?12;25h".to_string()),
+
+        // Cursor styles
+        "Ss" => Some("\\E[%p1%d q".to_string()),
+        "Se" => Some("\\E[0 q".to_string()),
+        "Cs" => Some("\\E]12;%p1%s\\007".to_string()),
+        "Cr" => Some("\\E]112\\007".to_string()),
+
+        // Keypad and modes
+        "smkx" | "ks" => Some("\\E[?1h\\E=".to_string()),
+        "rmkx" | "ke" => Some("\\E[?1l\\E>".to_string()),
+        "smir" | "im" => Some("\\E[4h".to_string()),
+        "rmir" | "ei" => Some("\\E[4l".to_string()),
+        "smam" => Some("\\E[?7h".to_string()),
+        "rmam" => Some("\\E[?7l".to_string()),
+        "smm" => Some("\\E[?1034h".to_string()),
+        "rmm" => Some("\\E[?1034l".to_string()),
+
+        // Alternate screen
+        "smcup" | "ti" => Some("\\E[?1049h\\E[22;0;0t".to_string()),
+        "rmcup" | "te" => Some("\\E[?1049l\\E[23;0;0t".to_string()),
+
+        // Save/restore cursor
+        "sc" => Some("\\E7".to_string()),
+        "rc" => Some("\\E8".to_string()),
+
+        // Tabs
+        "ht" | "ta" => Some("^I".to_string()),
+        "hts" | "st" => Some("\\EH".to_string()),
+        "tbc" | "ct" => Some("\\E[3g".to_string()),
+        "cbt" | "bt" => Some("\\E[Z".to_string()),
+
+        // Bell and flash
+        "bel" | "bl" => Some("^G".to_string()),
+        "flash" | "vb" => Some("\\E[?5h$<100/>\\E[?5l".to_string()),
+
+        // Status line
+        "tsl" | "ts" => Some("\\E]2;".to_string()),
+        "fsl" | "fs" => Some("^G".to_string()),
+        "dsl" | "ds" => Some("\\E]2;\\007".to_string()),
+
+        // Function keys
+        "kf1" | "k1" => Some("\\EOP".to_string()),
+        "kf2" | "k2" => Some("\\EOQ".to_string()),
+        "kf3" | "k3" => Some("\\EOR".to_string()),
+        "kf4" | "k4" => Some("\\EOS".to_string()),
+        "kf5" | "k5" => Some("\\E[15~".to_string()),
+        "kf6" | "k6" => Some("\\E[17~".to_string()),
+        "kf7" | "k7" => Some("\\E[18~".to_string()),
+        "kf8" | "k8" => Some("\\E[19~".to_string()),
+        "kf9" | "k9" => Some("\\E[20~".to_string()),
+        "kf10" => Some("\\E[21~".to_string()),
+        "kf11" => Some("\\E[23~".to_string()),
+        "kf12" => Some("\\E[24~".to_string()),
+
+        // Extended function keys with modifiers
+        "kf13" => Some("\\E[1;2P".to_string()),
+        "kf14" => Some("\\E[1;2Q".to_string()),
+        "kf15" => Some("\\E[1;2R".to_string()),
+        "kf16" => Some("\\E[1;2S".to_string()),
+        "kf17" => Some("\\E[15;2~".to_string()),
+        "kf18" => Some("\\E[17;2~".to_string()),
+        "kf19" => Some("\\E[18;2~".to_string()),
+        "kf20" => Some("\\E[19;2~".to_string()),
+        "kf21" => Some("\\E[20;2~".to_string()),
+        "kf22" => Some("\\E[21;2~".to_string()),
+        "kf23" => Some("\\E[23;2~".to_string()),
+        "kf24" => Some("\\E[24;2~".to_string()),
+        "kf25" => Some("\\E[1;5P".to_string()),
+        "kf26" => Some("\\E[1;5Q".to_string()),
+        "kf27" => Some("\\E[1;5R".to_string()),
+        "kf28" => Some("\\E[1;5S".to_string()),
+        "kf29" => Some("\\E[15;5~".to_string()),
+        "kf30" => Some("\\E[17;5~".to_string()),
+        "kf31" => Some("\\E[18;5~".to_string()),
+        "kf32" => Some("\\E[19;5~".to_string()),
+        "kf33" => Some("\\E[20;5~".to_string()),
+        "kf34" => Some("\\E[21;5~".to_string()),
+        "kf35" => Some("\\E[23;5~".to_string()),
+        "kf36" => Some("\\E[24;5~".to_string()),
+        "kf37" => Some("\\E[1;6P".to_string()),
+        "kf38" => Some("\\E[1;6Q".to_string()),
+        "kf39" => Some("\\E[1;6R".to_string()),
+        "kf40" => Some("\\E[1;6S".to_string()),
+        "kf41" => Some("\\E[15;6~".to_string()),
+        "kf42" => Some("\\E[17;6~".to_string()),
+        "kf43" => Some("\\E[18;6~".to_string()),
+        "kf44" => Some("\\E[19;6~".to_string()),
+        "kf45" => Some("\\E[20;6~".to_string()),
+        "kf46" => Some("\\E[21;6~".to_string()),
+        "kf47" => Some("\\E[23;6~".to_string()),
+        "kf48" => Some("\\E[24;6~".to_string()),
+        "kf49" => Some("\\E[1;3P".to_string()),
+        "kf50" => Some("\\E[1;3Q".to_string()),
+        "kf51" => Some("\\E[1;3R".to_string()),
+        "kf52" => Some("\\E[1;3S".to_string()),
+        "kf53" => Some("\\E[15;3~".to_string()),
+        "kf54" => Some("\\E[17;3~".to_string()),
+        "kf55" => Some("\\E[18;3~".to_string()),
+        "kf56" => Some("\\E[19;3~".to_string()),
+        "kf57" => Some("\\E[20;3~".to_string()),
+        "kf58" => Some("\\E[21;3~".to_string()),
+        "kf59" => Some("\\E[23;3~".to_string()),
+        "kf60" => Some("\\E[24;3~".to_string()),
+        "kf61" => Some("\\E[1;4P".to_string()),
+        "kf62" => Some("\\E[1;4Q".to_string()),
+        "kf63" => Some("\\E[1;4R".to_string()),
+
+        // Arrow keys
+        "kcuu1" | "ku" => Some("\\EOA".to_string()),
+        "kcud1" | "kd" => Some("\\EOB".to_string()),
+        "kcuf1" | "kr" => Some("\\EOC".to_string()),
+        "kcub1" | "kl" => Some("\\EOD".to_string()),
+
+        // Navigation keys
+        "khome" | "kh" => Some("\\EOH".to_string()),
+        "kend" => Some("\\EOF".to_string()),
+        "kbs" | "kb" => Some("\x7f".to_string()),
+        "kdch1" | "kD" => Some("\\E[3~".to_string()),
+        "kich1" | "kI" => Some("\\E[2~".to_string()),
+        "knp" | "kN" => Some("\\E[6~".to_string()),
+        "kpp" | "kP" => Some("\\E[5~".to_string()),
+        "kb2" => Some("\\EOE".to_string()),
+        "kcbt" => Some("\\E[Z".to_string()),
+        "kent" => Some("\\EOM".to_string()),
+
+        // Modified arrow keys
+        "kLFT" => Some("\\E[1;2D".to_string()),
+        "kRIT" => Some("\\E[1;2C".to_string()),
+        "kind" => Some("\\E[1;2B".to_string()),
+        "kri" => Some("\\E[1;2A".to_string()),
+        "kDN" => Some("\\E[1;2B".to_string()),
+        "kUP" => Some("\\E[1;2A".to_string()),
+
+        // Arrow keys with Alt modifier
+        "kDN3" => Some("\\E[1;3B".to_string()),
+        "kLFT3" => Some("\\E[1;3D".to_string()),
+        "kRIT3" => Some("\\E[1;3C".to_string()),
+        "kUP3" => Some("\\E[1;3A".to_string()),
+
+        // Arrow keys with Shift+Alt modifier
+        "kDN4" => Some("\\E[1;4B".to_string()),
+        "kLFT4" => Some("\\E[1;4D".to_string()),
+        "kRIT4" => Some("\\E[1;4C".to_string()),
+        "kUP4" => Some("\\E[1;4A".to_string()),
+
+        // Arrow keys with Ctrl modifier
+        "kDN5" => Some("\\E[1;5B".to_string()),
+        "kLFT5" => Some("\\E[1;5D".to_string()),
+        "kRIT5" => Some("\\E[1;5C".to_string()),
+        "kUP5" => Some("\\E[1;5A".to_string()),
+
+        // Arrow keys with Ctrl+Shift modifier
+        "kDN6" => Some("\\E[1;6B".to_string()),
+        "kLFT6" => Some("\\E[1;6D".to_string()),
+        "kRIT6" => Some("\\E[1;6C".to_string()),
+        "kUP6" => Some("\\E[1;6A".to_string()),
+
+        // Arrow keys with Ctrl+Alt modifier
+        "kDN7" => Some("\\E[1;7B".to_string()),
+        "kLFT7" => Some("\\E[1;7D".to_string()),
+        "kRIT7" => Some("\\E[1;7C".to_string()),
+        "kUP7" => Some("\\E[1;7A".to_string()),
+
+        // Modified navigation keys
+        "kDC" => Some("\\E[3;2~".to_string()),
+        "kEND" => Some("\\E[1;2F".to_string()),
+        "kHOM" => Some("\\E[1;2H".to_string()),
+        "kIC" => Some("\\E[2;2~".to_string()),
+        "kNXT" => Some("\\E[6;2~".to_string()),
+        "kPRV" => Some("\\E[5;2~".to_string()),
+
+        // Navigation keys with Alt modifier
+        "kDC3" => Some("\\E[3;3~".to_string()),
+        "kEND3" => Some("\\E[1;3F".to_string()),
+        "kHOM3" => Some("\\E[1;3H".to_string()),
+        "kIC3" => Some("\\E[2;3~".to_string()),
+        "kNXT3" => Some("\\E[6;3~".to_string()),
+        "kPRV3" => Some("\\E[5;3~".to_string()),
+
+        // Navigation keys with Shift+Alt modifier
+        "kDC4" => Some("\\E[3;4~".to_string()),
+        "kEND4" => Some("\\E[1;4F".to_string()),
+        "kHOM4" => Some("\\E[1;4H".to_string()),
+        "kIC4" => Some("\\E[2;4~".to_string()),
+        "kNXT4" => Some("\\E[6;4~".to_string()),
+        "kPRV4" => Some("\\E[5;4~".to_string()),
+
+        // Navigation keys with Ctrl modifier
+        "kDC5" => Some("\\E[3;5~".to_string()),
+        "kEND5" => Some("\\E[1;5F".to_string()),
+        "kHOM5" => Some("\\E[1;5H".to_string()),
+        "kIC5" => Some("\\E[2;5~".to_string()),
+        "kNXT5" => Some("\\E[6;5~".to_string()),
+        "kPRV5" => Some("\\E[5;5~".to_string()),
+
+        // Navigation keys with Ctrl+Shift modifier
+        "kDC6" => Some("\\E[3;6~".to_string()),
+        "kEND6" => Some("\\E[1;6F".to_string()),
+        "kHOM6" => Some("\\E[1;6H".to_string()),
+        "kIC6" => Some("\\E[2;6~".to_string()),
+        "kNXT6" => Some("\\E[6;6~".to_string()),
+        "kPRV6" => Some("\\E[5;6~".to_string()),
+
+        // Navigation keys with Ctrl+Alt modifier
+        "kDC7" => Some("\\E[3;7~".to_string()),
+        "kEND7" => Some("\\E[1;7F".to_string()),
+        "kHOM7" => Some("\\E[1;7H".to_string()),
+        "kIC7" => Some("\\E[2;7~".to_string()),
+        "kNXT7" => Some("\\E[6;7~".to_string()),
+        "kPRV7" => Some("\\E[5;7~".to_string()),
+
+        // Mouse
+        "kmous" => Some("\\E[M".to_string()),
+
+        // Memory operations
+        "meml" => Some("\\El".to_string()),
+        "memu" => Some("\\Em".to_string()),
+
+        // Printing
+        "mc0" => Some("\\E[i".to_string()),
+        "mc4" => Some("\\E[4i".to_string()),
+        "mc5" => Some("\\E[5i".to_string()),
+
+        // Reset sequences
+        "rs1" => Some("\\Ec\\E]104\\007".to_string()),
+        "rs2" => Some("\\E[!p\\E[?3;4l\\E[4l\\E>".to_string()),
+        "is2" => Some("\\E[!p\\E[?3;4l\\E[4l\\E>".to_string()),
+
+        // Device control
+        "u6" => Some("\\E[%i%d;%dR".to_string()),
+        "u7" => Some("\\E[6n".to_string()),
+        "u8" => Some("\\E[?%[;0123456789]c".to_string()),
+        "u9" => Some("\\E[c".to_string()),
+
+        // Repeat character
+        "rep" => Some("%p1%c\\E[%p2%{1}%-%db".to_string()),
+
+        // Extended underline
+        "Smulx" => Some("\\E[4\\:%p1%dm".to_string()),
+
+        // Synchronized output
+        "Sync" => Some("\\EP=%p1%ds\\E\\\\".to_string()),
+
+        // Focus events
+        "kxIN" => Some("\\E[I".to_string()),
+        "kxOUT" => Some("\\E[O".to_string()),
+
+        // Bracketed paste
+        "BE" => Some("\\E[?2004h".to_string()),
+        "BD" => Some("\\E[?2004l".to_string()),
+        "PS" => Some("\\E[200~".to_string()),
+        "PE" => Some("\\E[201~".to_string()),
+
+        // Clipboard
+        "Ms" => Some("\\E]52;%p1%s;%p2%s\\007".to_string()),
+
+        // Carriage return
+        "cr" => Some("\\r".to_string()),
+
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn semantic_prompt_parsing() {
+        use crate::crosswords::grid::row::SemanticPrompt;
+        use crate::performer::osc::parse_semantic_prompt as parse;
+
+        assert_eq!(parse(&[b"133", b"A"]), Some(SemanticPrompt::Prompt));
+        assert_eq!(
+            parse(&[b"133", b"A", b"aid=1"]),
+            Some(SemanticPrompt::Prompt)
+        );
+        assert_eq!(parse(&[b"133", b"P"]), Some(SemanticPrompt::Prompt));
+        assert_eq!(parse(&[b"133", b"P", b"k=i"]), Some(SemanticPrompt::Prompt));
+        assert_eq!(
+            parse(&[b"133", b"P", b"k=s"]),
+            Some(SemanticPrompt::PromptContinuation)
+        );
+        assert_eq!(
+            parse(&[b"133", b"P", b"k=c"]),
+            Some(SemanticPrompt::PromptContinuation)
+        );
+        // Accepted subcommands that set no row mark.
+        assert_eq!(parse(&[b"133", b"B"]), None);
+        assert_eq!(parse(&[b"133", b"C"]), None);
+        assert_eq!(parse(&[b"133", b"D", b"0"]), None);
+        assert_eq!(parse(&[b"133"]), None);
+        assert_eq!(parse(&[b"133", b""]), None);
+    }
+
+    #[test]
+    fn set_user_var_parsing() {
+        use crate::performer::osc::parse_set_user_var as parse;
+
+        // "hello" in base64.
+        assert_eq!(
+            parse(&[b"1337", b"SetUserVar=foo=aGVsbG8="]),
+            Some(("foo".to_string(), "hello".to_string()))
+        );
+        assert_eq!(parse(&[b"1337", b"SetUserVar=foo"]), None);
+        assert_eq!(parse(&[b"1337", b"SetUserVar==aGVsbG8="]), None);
+        assert_eq!(parse(&[b"1337", b"SetUserVar=foo=!!!"]), None);
+        assert_eq!(parse(&[b"1337", b"File=inline=1"]), None);
+        assert_eq!(parse(&[b"1337"]), None);
+    }
+
+    #[test]
+    fn test_hex_encoding() {
+        assert_eq!(encode_hex_string("TN"), "544E");
+        assert_eq!(encode_hex_string("Co"), "436F");
+        assert_eq!(encode_hex_string("RGB"), "524742");
+    }
+
+    #[test]
+    fn test_hex_decoding() {
+        assert_eq!(decode_hex_string(b"544E").unwrap(), "TN");
+        assert_eq!(decode_hex_string(b"436F").unwrap(), "Co");
+        assert_eq!(decode_hex_string(b"524742").unwrap(), "RGB");
+    }
+
+    #[test]
+    fn test_xtgettcap_processing() {
+        // Test terminal name query
+        let response = process_xtgettcap_request(b"544E");
+        assert!(response.starts_with("\x1bP1+r"));
+        assert!(response.contains("544E="));
+        assert!(response.ends_with("\x1b\\"));
+
+        // Test colors query
+        let response = process_xtgettcap_request(b"436F");
+        assert!(response.starts_with("\x1bP1+r"));
+        assert!(response.contains("436F="));
+
+        // Test invalid capability — gets its own DCS 0+r response with hex name
+        let response = process_xtgettcap_request(b"5858"); // "XX"
+        assert_eq!(response, "\x1bP0+r5858\x1b\\");
+
+        // Test invalid hex — skipped, empty response
+        let response = process_xtgettcap_request(b"ZZ");
+        assert_eq!(response, "\x1bP0+r\x1b\\");
+    }
+
+    #[test]
+    fn test_single_capability_requests() {
+        // Test terminal name
+        let response = process_xtgettcap_request(b"544E"); // "TN"
+        assert_eq!(response, "\x1bP1+r544E=72696F\x1b\\");
+
+        // Test colors capability
+        let response = process_xtgettcap_request(b"436F"); // "Co"
+        assert_eq!(response, "\x1bP1+r436F=323536\x1b\\");
+
+        // Test RGB capability
+        let response = process_xtgettcap_request(b"524742"); // "RGB"
+        assert_eq!(response, "\x1bP1+r524742=382F382F38\x1b\\");
+
+        // Test invalid capability — returns 0+r with hex-encoded name
+        let response = process_xtgettcap_request(b"5858"); // "XX"
+        assert_eq!(response, "\x1bP0+r5858\x1b\\");
+    }
+
+    #[test]
+    fn test_xtgettcap_multiple_queries() {
+        // Vim sends multiple queries separated by ';'
+        // BE=4245, BD=4244, PS=5053, PE=5045
+        let response = process_xtgettcap_request(b"4245;4244;5053;5045");
+
+        // Each capability should get its own DCS response
+        assert!(response.contains("\x1bP1+r4245="));
+        assert!(response.contains("\x1bP1+r4244="));
+        assert!(response.contains("\x1bP1+r5053="));
+        assert!(response.contains("\x1bP1+r5045="));
+
+        // Should contain 4 separate DCS responses
+        let count = response.matches("\x1bP1+r").count();
+        assert_eq!(
+            count, 4,
+            "Should have 4 separate DCS responses, got {count}"
+        );
+    }
+
+    #[test]
+    fn test_xtgettcap_boolean_capability() {
+        // Boolean capabilities (empty value) should not have '='
+        // "am" (auto margins) = 616D
+        let response = process_xtgettcap_request(b"616D");
+        assert_eq!(response, "\x1bP1+r616D\x1b\\");
+    }
+
+    #[test]
+    fn test_xtgettcap_value_decoding() {
+        // Values with \E should be decoded to ESC (0x1b) before hex-encoding
+        // "PS" (paste start) = \E[200~ should become 1B5B3230307E
+        let response = process_xtgettcap_request(b"5053"); // "PS"
+        assert_eq!(response, "\x1bP1+r5053=1B5B3230307E\x1b\\");
+
+        // "PE" (paste end) = \E[201~ should become 1B5B3230317E
+        let response = process_xtgettcap_request(b"5045"); // "PE"
+        assert_eq!(response, "\x1bP1+r5045=1B5B3230317E\x1b\\");
+    }
+
+    #[test]
+    fn test_decode_terminfo_value() {
+        // \E should become ESC
+        assert_eq!(
+            decode_terminfo_value("\\E[200~"),
+            vec![0x1b, b'[', b'2', b'0', b'0', b'~']
+        );
+
+        // Parameterized values stay as-is
+        let param = "\\E[%p1%dA";
+        assert_eq!(decode_terminfo_value(param), param.as_bytes().to_vec());
+
+        // ^H should become backspace
+        assert_eq!(decode_terminfo_value("^H"), vec![8]);
+
+        // \\n should become newline
+        assert_eq!(decode_terminfo_value("\\n"), vec![b'\n']);
+
+        // \\r should become CR
+        assert_eq!(decode_terminfo_value("\\r"), vec![b'\r']);
+    }
+
+    #[test]
+    fn test_capability_lookup() {
+        assert_eq!(get_termcap_capability("TN"), Some("rio".to_string()));
+        assert_eq!(get_termcap_capability("Co"), Some("256".to_string()));
+        assert_eq!(get_termcap_capability("RGB"), Some("8/8/8".to_string()));
+        assert_eq!(get_termcap_capability("invalid"), None);
+    }
+
+    #[test]
+    fn test_extended_capabilities() {
+        // Test extended function keys
+        assert_eq!(get_termcap_capability("kf13"), Some("\\E[1;2P".to_string()));
+        assert_eq!(get_termcap_capability("kf25"), Some("\\E[1;5P".to_string()));
+
+        // Test modified arrow keys
+        assert_eq!(get_termcap_capability("kLFT"), Some("\\E[1;2D".to_string()));
+        assert_eq!(get_termcap_capability("kUP3"), Some("\\E[1;3A".to_string()));
+
+        // Test modified navigation keys
+        assert_eq!(get_termcap_capability("kDC5"), Some("\\E[3;5~".to_string()));
+        assert_eq!(
+            get_termcap_capability("kHOM7"),
+            Some("\\E[1;7H".to_string())
+        );
+
+        // Test updated reset sequence
+        assert_eq!(
+            get_termcap_capability("rs1"),
+            Some("\\Ec\\E]104\\007".to_string())
+        );
+
+        // Test image protocol capabilities
+        assert_eq!(get_termcap_capability("sixel"), Some("".to_string()));
+        assert_eq!(get_termcap_capability("iterm2"), Some("".to_string()));
+    }
+
+    // APC accumulation tests
+
+    #[test]
+    fn test_apc_state_default() {
+        let state = ApcState::default();
+        assert_eq!(state.buffer.len(), 0);
+        assert_eq!(state.buffer.capacity(), 0);
+    }
+
+    #[test]
+    fn test_apc_state_buffer_operations() {
+        let mut state = ApcState::default();
+
+        // Clear and reserve
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+        assert!(state.buffer.capacity() >= 4096);
+
+        // Add data
+        let data = b"Ga=T,f=32,s=1,v=1;AQIDBA==";
+        state.buffer.extend_from_slice(data);
+        assert_eq!(state.buffer.len(), data.len());
+        assert_eq!(&state.buffer[..], data);
+    }
+
+    #[test]
+    fn test_apc_state_small_sequence() {
+        let mut state = ApcState::default();
+
+        // Simulate apc_start
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+
+        // Simulate apc_put
+        let data = b"Ga=T,f=32,s=1,v=1;AQIDBA==";
+        for &byte in data {
+            state.buffer.push(byte);
+        }
+
+        assert_eq!(state.buffer.len(), data.len());
+        assert_eq!(&state.buffer[..], data);
+    }
+
+    #[test]
+    fn test_apc_state_large_sequence() {
+        let mut state = ApcState::default();
+
+        // Simulate apc_start
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+
+        // Create a large Kitty graphics command (4KB payload)
+        let header = b"Ga=T,f=32,s=100,v=100,m=1;";
+        let payload = vec![b'A'; 4096];
+
+        for &byte in header {
+            state.buffer.push(byte);
+        }
+        for &byte in &payload {
+            state.buffer.push(byte);
+        }
+
+        let expected_len = header.len() + payload.len();
+        assert_eq!(state.buffer.len(), expected_len);
+        assert!(
+            state.buffer.len() > 1024,
+            "Should handle data larger than Copa's default OSC buffer (1024 bytes)"
+        );
+    }
+
+    #[test]
+    fn test_apc_state_very_large_sequence() {
+        let mut state = ApcState::default();
+
+        // Simulate apc_start
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+
+        // Test with a very large sequence (16KB)
+        let header = b"Ga=T,f=32,s=200,v=200,m=1;";
+        for &byte in header {
+            state.buffer.push(byte);
+        }
+
+        let large_payload = vec![b'B'; 16384];
+        for &byte in &large_payload {
+            state.buffer.push(byte);
+        }
+
+        assert_eq!(state.buffer.len(), header.len() + large_payload.len());
+        assert!(
+            state.buffer.len() > 16000,
+            "Should handle very large payloads"
+        );
+    }
+
+    #[test]
+    fn test_apc_state_multiple_sequences() {
+        let mut state = ApcState::default();
+
+        // First sequence
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+        let data1 = b"Ga=T,f=32,s=10,v=10;AQIDBA==";
+        state.buffer.extend_from_slice(data1);
+        assert_eq!(state.buffer.len(), data1.len());
+
+        // Second sequence (buffer should be cleared)
+        state.buffer.clear();
+        assert_eq!(
+            state.buffer.len(),
+            0,
+            "Buffer should be cleared between sequences"
+        );
+
+        let data2 = b"Ga=T,f=32,s=20,v=20;BQYHCAk=";
+        state.buffer.extend_from_slice(data2);
+        assert_eq!(state.buffer.len(), data2.len());
+    }
+
+    #[test]
+    fn test_apc_state_chunked_transmission() {
+        let mut state = ApcState::default();
+
+        // Chunk 1 with m=1 (more chunks coming)
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+        let chunk1 = b"Ga=T,f=32,s=100,v=100,m=1;AQIDBAUG";
+        state.buffer.extend_from_slice(chunk1);
+        assert!(!state.buffer.is_empty());
+
+        // Chunk 2 with m=1 (in reality, each chunk is a separate APC)
+        state.buffer.clear();
+        let chunk2 = b"Gm=1;BwgJCgsM";
+        state.buffer.extend_from_slice(chunk2);
+        assert_eq!(&state.buffer[..], chunk2);
+
+        // Final chunk with m=0
+        state.buffer.clear();
+        let chunk3 = b"Gm=0;DQ4PEBES";
+        state.buffer.extend_from_slice(chunk3);
+        assert_eq!(&state.buffer[..], chunk3);
+    }
+
+    #[test]
+    fn test_apc_state_preallocation() {
+        let mut state = ApcState::default();
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+
+        assert!(
+            state.buffer.capacity() >= 4096,
+            "Buffer should pre-allocate at least 4KB for Kitty graphics"
+        );
+    }
+
+    #[test]
+    fn test_apc_buffer_parsing_small_kitty() {
+        // Test parsing logic for small Kitty graphics APC
+        let buffer = b"Ga=T,f=32,s=10,v=10;AQIDBA==";
+
+        // Check it starts with 'G'
+        assert_eq!(buffer.first(), Some(&b'G'));
+
+        // Split on semicolon
+        let mut parts = buffer.splitn(2, |&b| b == b';');
+        let control_data = parts.next().unwrap();
+        let payload_data = parts.next().unwrap();
+
+        // Skip 'G' at the beginning
+        let control = &control_data[1..];
+        assert_eq!(control, b"a=T,f=32,s=10,v=10");
+        assert_eq!(payload_data, b"AQIDBA==");
+    }
+
+    #[test]
+    fn test_apc_buffer_parsing_large_kitty() {
+        // Test parsing logic for large Kitty graphics APC (4KB)
+        let mut buffer = Vec::new();
+        buffer.extend_from_slice(b"Ga=T,f=32,s=100,v=100,m=1;");
+        buffer.extend_from_slice(&vec![b'A'; 4096]);
+
+        // Check it starts with 'G'
+        assert_eq!(buffer.first(), Some(&b'G'));
+
+        // Split on semicolon
+        let mut parts = buffer.splitn(2, |&b| b == b';');
+        let control_data = parts.next().unwrap();
+        let payload_data = parts.next().unwrap();
+
+        // Verify control part
+        let control = &control_data[1..];
+        assert_eq!(control, b"a=T,f=32,s=100,v=100,m=1");
+
+        // Verify payload size
+        assert_eq!(payload_data.len(), 4096);
+        assert!(
+            payload_data.len() > 1024,
+            "Payload should be larger than Copa's default OSC buffer"
+        );
+    }
+
+    #[test]
+    fn test_apc_buffer_parsing_no_semicolon() {
+        // Test malformed Kitty graphics (no semicolon)
+        let buffer = b"Ga=T,f=32,s=10,v=10";
+
+        let mut parts = buffer.splitn(2, |&b| b == b';');
+        let control_data = parts.next().unwrap();
+        let payload_data = parts.next().unwrap_or(b"");
+
+        assert_eq!(control_data, buffer);
+        assert_eq!(payload_data, b"");
+    }
+
+    #[test]
+    fn test_apc_buffer_parsing_empty_payload() {
+        // Test Kitty graphics with empty payload
+        let buffer = b"Ga=T,f=32,s=10,v=10;";
+
+        let mut parts = buffer.splitn(2, |&b| b == b';');
+        let _control_data = parts.next().unwrap();
+        let payload_data = parts.next().unwrap();
+
+        assert_eq!(payload_data, b"");
+    }
+
+    #[test]
+    fn test_apc_buffer_non_kitty() {
+        // Test APC that doesn't start with 'G'
+        let buffer = b"some_other_apc;data";
+        assert_ne!(buffer.first(), Some(&b'G'));
+    }
+
+    // Integration tests simulating real terminal-doom Kitty graphics scenarios
+
+    #[test]
+    fn test_kitty_chunked_transmission_terminal_doom() {
+        // Simulate terminal-doom sending a chunked image transmission
+        // First chunk: Full control data with i=1,m=1 + 4KB payload
+        let mut state = ApcState::default();
+
+        // First chunk - includes image ID and metadata
+        state.buffer.clear();
+        state.buffer.reserve(4096);
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=1,m=1;");
+        // Add 4KB of base64 data (terminal-doom sends ~4KB chunks)
+        state.buffer.extend(vec![b'A'; 4096]);
+
+        // Verify first chunk is stored correctly
+        assert!(state.buffer.len() > 4096);
+        assert!(state.buffer.starts_with(b"Ga=T,f=24,s=100,v=100,i=1,m=1;"));
+
+        // Second chunk - only m=1 and payload
+        state.buffer.clear();
+        state.buffer.extend_from_slice(b"Gm=1;");
+        state.buffer.extend(vec![b'B'; 4096]);
+        assert_eq!(&state.buffer[..5], b"Gm=1;");
+
+        // Final chunk - m=0 and last payload
+        state.buffer.clear();
+        state.buffer.extend_from_slice(b"Gm=0;");
+        state.buffer.extend(vec![b'C'; 2048]);
+        assert_eq!(&state.buffer[..5], b"Gm=0;");
+    }
+
+    #[test]
+    fn test_kitty_large_payload_accumulation() {
+        // Test accumulating a large image (similar to terminal-doom's 640x400 RGB24 image)
+        // 640 * 400 * 3 = 768,000 bytes raw
+        // base64 encoded: ~1,024,000 bytes
+        // Split into ~250 chunks of 4KB each
+
+        let mut total_accumulated = 0;
+        let chunk_size = 4096;
+        let total_payload_size = 1_024_000;
+
+        // Simulate accumulating chunks
+        for chunk_num in 0..(total_payload_size / chunk_size) {
+            let mut state = ApcState::default();
+            state.buffer.clear();
+            state.buffer.reserve(4096);
+
+            if chunk_num == 0 {
+                // First chunk with metadata
+                state
+                    .buffer
+                    .extend_from_slice(b"Ga=T,f=24,s=640,v=400,i=10,m=1;");
+            } else if chunk_num == (total_payload_size / chunk_size) - 1 {
+                // Last chunk
+                state.buffer.extend_from_slice(b"Gm=0;");
+            } else {
+                // Middle chunks
+                state.buffer.extend_from_slice(b"Gm=1;");
+            }
+
+            state.buffer.extend(vec![b'X'; chunk_size]);
+            total_accumulated += chunk_size;
+        }
+
+        assert_eq!(total_accumulated, total_payload_size);
+    }
+
+    #[test]
+    fn test_kitty_parsing_with_escape_terminator() {
+        // Test parsing Kitty graphics with ESC terminator properly stripped
+        let buffer = b"Ga=T,f=24,s=10,v=10;AQIDBA==\x1b";
+
+        // Strip terminator like process_apc_buffer does
+        let data = if buffer.last() == Some(&0x1b) {
+            &buffer[..buffer.len() - 1]
+        } else {
+            buffer.as_slice()
+        };
+
+        // Parse
+        let mut parts = data.splitn(2, |&b| b == b';');
+        let control_data = parts.next().unwrap();
+        let payload_data = parts.next().unwrap();
+
+        let control = &control_data[1..]; // Skip 'G'
+        assert_eq!(control, b"a=T,f=24,s=10,v=10");
+        assert_eq!(payload_data, b"AQIDBA==");
+        assert_ne!(
+            payload_data.last(),
+            Some(&0x1b),
+            "Terminator should be stripped"
+        );
+    }
+
+    #[test]
+    fn test_kitty_multiple_images_sequential() {
+        // Test sending multiple images sequentially (like terminal-doom renders multiple frames)
+        let images = vec![
+            (1, b"Ga=T,f=24,s=100,v=100,i=1;AQIDBA==".as_slice()),
+            (2, b"Ga=T,f=24,s=100,v=100,i=2;BQYHCAk=".as_slice()),
+            (3, b"Ga=T,f=24,s=100,v=100,i=3;CgsMDQ4=".as_slice()),
+        ];
+
+        for (image_id, data) in images {
+            let mut state = ApcState::default();
+            state.buffer.clear();
+            state.buffer.extend_from_slice(data);
+
+            assert!(state.buffer.starts_with(b"Ga=T,f=24,s=100,v=100"));
+
+            // Verify image ID is in the control data
+            let control_str = std::str::from_utf8(&state.buffer[..30]).unwrap();
+            assert!(control_str.contains(&format!("i={}", image_id)));
+        }
+    }
+
+    #[test]
+    fn test_kitty_chunked_with_different_image_ids() {
+        // Test chunking with explicit image IDs (tests CURRENT_TRANSMISSION_KEY logic)
+
+        // Image 1: First chunk with i=5
+        let mut state = ApcState::default();
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=5,m=1;AAAA");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(buffer_str.contains("i=5"));
+
+        // Continuation chunk should NOT have i= but will use key 5
+        state.buffer.clear();
+        state.buffer.extend_from_slice(b"Gm=1;BBBB");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(!buffer_str.contains("i="));
+
+        // Final chunk
+        state.buffer.clear();
+        state.buffer.extend_from_slice(b"Gm=0;CCCC");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(!buffer_str.contains("i="));
+
+        // Image 2: New transmission with i=6
+        state.buffer.clear();
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=6,m=1;DDDD");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(buffer_str.contains("i=6"));
+    }
+
+    #[test]
+    fn test_kitty_placement_after_transmission() {
+        // Test the pattern: transmit with a=t (store), then place with a=p
+
+        // First: Transmit and store (a=t)
+        let mut state = ApcState::default();
+        state
+            .buffer
+            .extend_from_slice(b"Ga=t,f=24,s=100,v=100,i=7;/9j/4AAQ");
+
+        let mut parts = state.buffer.splitn(2, |&b| b == b';');
+        let control = std::str::from_utf8(parts.next().unwrap()).unwrap();
+        assert!(control.contains("a=t"), "Should be transmit-only action");
+        assert!(control.contains("i=7"), "Should have image ID");
+
+        // Later: Place the stored image (a=p)
+        state.buffer.clear();
+        state.buffer.extend_from_slice(b"Ga=p,i=7,c=10,r=5;");
+
+        let mut parts = state.buffer.splitn(2, |&b| b == b';');
+        let control = std::str::from_utf8(parts.next().unwrap()).unwrap();
+        assert!(control.contains("a=p"), "Should be placement action");
+        assert!(control.contains("i=7"), "Should reference same image ID");
+    }
+
+    #[test]
+    fn test_kitty_delete_command() {
+        // Test delete command (a=d) like terminal-doom sends to clear old frames
+        let mut state = ApcState::default();
+        state.buffer.extend_from_slice(b"Ga=d;");
+
+        let mut parts = state.buffer.splitn(2, |&b| b == b';');
+        let control = std::str::from_utf8(parts.next().unwrap()).unwrap();
+        assert!(control.contains("a=d"), "Should be delete action");
+
+        let payload = parts.next().unwrap();
+        assert_eq!(payload, b"", "Delete commands have empty payload");
+    }
+
+    #[test]
+    fn test_kitty_very_large_single_chunk() {
+        // Test handling a very large chunk (16KB) without buffer limits
+        let mut state = ApcState::default();
+        state.buffer.clear();
+        state.buffer.reserve(16384);
+
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=200,v=200,i=8;");
+        state.buffer.extend(vec![b'Z'; 16384]);
+
+        assert!(state.buffer.len() > 16384);
+        assert!(
+            state.buffer.len() > 1024,
+            "Should exceed Copa's old 1024-byte limit"
+        );
+    }
+
+    #[test]
+    fn test_kitty_buffer_reuse_between_transmissions() {
+        // Test that buffer is properly cleared between transmissions
+        let mut state = ApcState::default();
+
+        // First transmission
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=9;FIRST");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(buffer_str.contains("FIRST"));
+        let first_len = state.buffer.len();
+
+        // Clear for second transmission
+        state.buffer.clear();
+        assert_eq!(state.buffer.len(), 0);
+
+        // Second transmission
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=10;SECOND");
+        let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
+        assert!(buffer_str.contains("SECOND"));
+        assert!(!buffer_str.contains("FIRST"), "Old data should be cleared");
+
+        // Buffer should maintain capacity
+        assert!(state.buffer.capacity() >= first_len);
+    }
+}

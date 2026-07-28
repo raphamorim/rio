@@ -1,0 +1,495 @@
+pub mod capi;
+pub mod key;
+mod render_state;
+
+pub use key::{encode as encode_key, Key, KeyEvent, Modifiers};
+pub use render_state::{RenderState, ViewportSelection};
+pub use rio_vt::clipboard::ClipboardType;
+pub use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
+pub use rio_vt::crosswords::pos::Column;
+pub use rio_vt::crosswords::square::Square;
+pub use rio_vt::crosswords::style::{Style, StyleFlags};
+pub use rio_vt::selection::SelectionRange;
+
+use rio_vt::ansi::CursorShape;
+use rio_vt::crosswords::pos::{Column as PosColumn, Line, Pos, Side};
+use rio_vt::crosswords::{Crosswords, Mode};
+use rio_vt::event::sync::FairMutex;
+use rio_vt::event::{EventListener, Msg, RioEvent, WindowId};
+use rio_vt::performer::Machine;
+use rio_vt::selection::{Selection, SelectionType};
+use std::borrow::Cow;
+use std::error::Error;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+#[cfg(target_os = "windows")]
+use teletypewriter::create_pty;
+#[cfg(not(target_os = "windows"))]
+use teletypewriter::create_pty_with_spawn;
+use teletypewriter::WinsizeBuilder;
+
+pub type SurfaceId = usize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionKind {
+    Simple,
+    Word,
+    Line,
+    Block,
+}
+
+impl SelectionKind {
+    fn to_type(self) -> SelectionType {
+        match self {
+            SelectionKind::Simple => SelectionType::Simple,
+            SelectionKind::Word => SelectionType::Semantic,
+            SelectionKind::Line => SelectionType::Lines,
+            SelectionKind::Block => SelectionType::Block,
+        }
+    }
+}
+
+struct GridSize {
+    rows: usize,
+    cols: usize,
+}
+
+impl rio_vt::crosswords::grid::Dimensions for GridSize {
+    fn total_lines(&self) -> usize {
+        self.rows
+    }
+
+    fn screen_lines(&self) -> usize {
+        self.rows
+    }
+
+    fn columns(&self) -> usize {
+        self.cols
+    }
+
+    fn square_width(&self) -> f32 {
+        0.
+    }
+
+    fn square_height(&self) -> f32 {
+        0.
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Action {
+    SetTitle {
+        title: String,
+        subtitle: Option<String>,
+    },
+    RingBell,
+    CursorBlinkingChange,
+}
+
+pub trait SurfaceDelegate: Send + Sync + 'static {
+    fn wakeup(&self, surface: SurfaceId);
+    fn action(&self, _surface: SurfaceId, _action: Action) {}
+    fn clipboard_write(&self, _surface: SurfaceId, _kind: ClipboardType, _text: String) {}
+    fn close_surface(&self, _surface: SurfaceId) {}
+}
+
+#[derive(Clone)]
+pub(crate) struct Listener {
+    surface_id: SurfaceId,
+    delegate: Arc<dyn SurfaceDelegate>,
+    pty_writer: Arc<Mutex<Option<corcovado::channel::Sender<Msg>>>>,
+}
+
+impl Listener {
+    fn dispatch(&self, event: RioEvent) {
+        match event {
+            RioEvent::TerminalDamaged(_)
+            | RioEvent::Render
+            | RioEvent::RenderRoute(_) => {
+                self.delegate.wakeup(self.surface_id);
+            }
+            RioEvent::Title(title) => {
+                self.delegate.action(
+                    self.surface_id,
+                    Action::SetTitle {
+                        title,
+                        subtitle: None,
+                    },
+                );
+            }
+            RioEvent::TitleWithSubtitle(title, subtitle) => {
+                self.delegate.action(
+                    self.surface_id,
+                    Action::SetTitle {
+                        title,
+                        subtitle: Some(subtitle),
+                    },
+                );
+            }
+            RioEvent::Bell => {
+                self.delegate.action(self.surface_id, Action::RingBell);
+            }
+            RioEvent::CursorBlinkingChange | RioEvent::CursorBlinkingChangeOnRoute(_) => {
+                self.delegate
+                    .action(self.surface_id, Action::CursorBlinkingChange);
+            }
+            RioEvent::ClipboardStore(kind, text) => {
+                self.delegate.clipboard_write(self.surface_id, kind, text);
+            }
+            RioEvent::PtyWrite(_, text) => {
+                if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
+                    let _ = channel.send(Msg::Input(Cow::Owned(text.into_bytes())));
+                }
+            }
+            RioEvent::CloseTerminal(_) | RioEvent::Exit => {
+                self.delegate.close_surface(self.surface_id);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl EventListener for Listener {
+    fn event(&self) -> (Option<RioEvent>, bool) {
+        (None, false)
+    }
+
+    fn send_event(&self, event: RioEvent, _id: WindowId) {
+        self.dispatch(event);
+    }
+
+    fn send_event_with_high_priority(&self, event: RioEvent, _id: WindowId) {
+        self.dispatch(event);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SurfaceDesc {
+    pub shell: Option<String>,
+    pub args: Vec<String>,
+    pub working_dir: Option<String>,
+    pub cols: u16,
+    pub rows: u16,
+    pub pixel_width: u16,
+    pub pixel_height: u16,
+    pub scrollback: usize,
+}
+
+impl Default for SurfaceDesc {
+    fn default() -> Self {
+        Self {
+            shell: None,
+            args: Vec::new(),
+            working_dir: None,
+            cols: 80,
+            rows: 24,
+            pixel_width: 720,
+            pixel_height: 432,
+            scrollback: 10_000,
+        }
+    }
+}
+
+pub struct Engine {
+    delegate: Arc<dyn SurfaceDelegate>,
+    next_surface_id: AtomicUsize,
+}
+
+impl Engine {
+    pub fn new(delegate: Arc<dyn SurfaceDelegate>) -> Self {
+        Self {
+            delegate,
+            next_surface_id: AtomicUsize::new(1),
+        }
+    }
+
+    pub fn create_surface(
+        &self,
+        desc: &SurfaceDesc,
+    ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
+        Surface::new(self, desc)
+    }
+}
+
+pub struct Surface {
+    id: SurfaceId,
+    terminal: Arc<FairMutex<Crosswords<Listener>>>,
+    channel: corcovado::channel::Sender<Msg>,
+    #[cfg(not(target_os = "windows"))]
+    shell_pid: u32,
+    _io_thread: std::thread::JoinHandle<(
+        Machine<teletypewriter::Pty, Listener>,
+        rio_vt::performer::State,
+    )>,
+}
+
+impl Surface {
+    fn new(
+        engine: &Engine,
+        desc: &SurfaceDesc,
+    ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
+        let id = engine.next_surface_id.fetch_add(1, Ordering::SeqCst);
+        let pty_writer = Arc::new(Mutex::new(None));
+        let listener = Listener {
+            surface_id: id,
+            delegate: engine.delegate.clone(),
+            pty_writer: pty_writer.clone(),
+        };
+
+        let terminal = Crosswords::new(
+            GridSize {
+                rows: desc.rows as usize,
+                cols: desc.cols as usize,
+            },
+            CursorShape::Block,
+            listener.clone(),
+            WindowId::from(id as u64),
+            id,
+            desc.scrollback,
+        );
+        let terminal = Arc::new(FairMutex::new(terminal));
+
+        #[cfg(not(target_os = "windows"))]
+        let fallback_shell = "/bin/sh";
+        #[cfg(target_os = "windows")]
+        let fallback_shell = "cmd.exe";
+        let shell = desc
+            .shell
+            .clone()
+            .or_else(|| std::env::var("SHELL").ok())
+            .unwrap_or_else(|| String::from(fallback_shell));
+
+        #[cfg(not(target_os = "windows"))]
+        let pty = create_pty_with_spawn(
+            &Cow::Borrowed(shell.as_str()),
+            desc.args.clone(),
+            &desc.working_dir,
+            desc.cols,
+            desc.rows,
+            desc.pixel_width,
+            desc.pixel_height,
+        )
+        .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
+
+        #[cfg(target_os = "windows")]
+        let pty = create_pty(
+            shell.as_str(),
+            desc.args.clone(),
+            &desc.working_dir,
+            desc.cols,
+            desc.rows,
+        )
+        .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
+
+        #[cfg(not(target_os = "windows"))]
+        let shell_pid = *pty.child.pid.clone() as u32;
+
+        let machine = Machine::new(
+            Arc::clone(&terminal),
+            pty,
+            listener,
+            WindowId::from(id as u64),
+            id,
+        )
+        .map_err(|err| std::io::Error::other(err.to_string()))?;
+        let channel = machine.channel();
+        *pty_writer.lock().unwrap() = Some(channel.clone());
+        let io_thread = machine.spawn();
+
+        Ok(Surface {
+            id,
+            terminal,
+            channel,
+            #[cfg(not(target_os = "windows"))]
+            shell_pid,
+            _io_thread: io_thread,
+        })
+    }
+
+    pub fn id(&self) -> SurfaceId {
+        self.id
+    }
+
+    pub fn write<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
+        let _ = self.channel.send(Msg::Input(bytes.into()));
+    }
+
+    pub fn text(&self, text: &str) {
+        self.write(text.as_bytes().to_vec());
+    }
+
+    pub fn key(&self, event: KeyEvent) -> bool {
+        let app_cursor = self.terminal.lock().mode().contains(Mode::APP_CURSOR);
+        match key::encode(event, app_cursor) {
+            Some(bytes) => {
+                self.write(bytes);
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn resize(&self, cols: u16, rows: u16, pixel_width: u16, pixel_height: u16) {
+        self.terminal.lock().resize(GridSize {
+            rows: rows as usize,
+            cols: cols as usize,
+        });
+        let _ = self.channel.send(Msg::Resize(WinsizeBuilder {
+            rows,
+            cols,
+            width: pixel_width,
+            height: pixel_height,
+        }));
+    }
+
+    pub fn scroll(&self, delta_lines: i32) {
+        use rio_vt::crosswords::grid::Scroll;
+        self.terminal
+            .lock()
+            .scroll_display(Scroll::Delta(delta_lines));
+    }
+
+    pub fn selection_begin(&self, viewport_line: i32, col: usize, kind: SelectionKind) {
+        let mut term = self.terminal.lock();
+        let offset = term.display_offset() as i32;
+        let pos = Pos::new(Line(viewport_line - offset), PosColumn(col));
+        term.selection = Some(Selection::new(kind.to_type(), pos, Side::Left));
+        term.mark_fully_damaged();
+    }
+
+    pub fn selection_update(&self, viewport_line: i32, col: usize) {
+        let mut term = self.terminal.lock();
+        let offset = term.display_offset() as i32;
+        let pos = Pos::new(Line(viewport_line - offset), PosColumn(col));
+        if let Some(selection) = &mut term.selection {
+            selection.update(pos, Side::Right);
+            term.mark_fully_damaged();
+        }
+    }
+
+    pub fn selection_clear(&self) {
+        let mut term = self.terminal.lock();
+        if term.selection.take().is_some() {
+            term.mark_fully_damaged();
+        }
+    }
+
+    pub fn selection_text(&self) -> Option<String> {
+        self.terminal.lock().selection_to_string()
+    }
+
+    /// The shell's current working directory, as reported via OSC 7.
+    /// `None` until the shell emits it (embed a shell integration or the
+    /// standard OSC 7 hook to populate it). Used by session persistence
+    /// to restore each surface in the directory it was left in.
+    pub fn working_dir(&self) -> Option<String> {
+        self.terminal
+            .lock()
+            .current_directory
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+    }
+
+    /// Dump the whole buffer (scrollback + screen) to plain text, so a
+    /// frontend can persist it and replay it as inert scrollback on
+    /// restore. Trailing blank rows are trimmed by `bounds_to_string`.
+    /// Inject bytes into the terminal's DISPLAY (the VT parser), as if they
+    /// came from the child process — NOT into the PTY input. Used to replay
+    /// saved scrollback on restore; the shell never sees these bytes, so it
+    /// can't execute them. Bytes are plain output (convert `\n` to `\r\n`
+    /// upstream if you want proper line starts).
+    pub fn inject_output(&self, bytes: &[u8]) {
+        use rio_vt::performer::handler::Processor;
+        let mut term = self.terminal.lock();
+        let mut processor = Processor::default();
+        processor.advance(&mut *term, bytes);
+    }
+
+    pub fn dump(&self) -> String {
+        let term = self.terminal.lock();
+        let rows = term.screen_lines() as i32;
+        let cols = term.columns();
+        if rows == 0 || cols == 0 {
+            return String::new();
+        }
+        let history = term.history_size() as i32;
+        // Scrollback lives in negative line coordinates above the screen.
+        let start = Pos::new(Line(-history), PosColumn(0));
+        let end = Pos::new(Line(rows - 1), PosColumn(cols - 1));
+        term.bounds_to_string(start, end)
+    }
+
+    pub(crate) fn terminal(&self) -> Arc<FairMutex<Crosswords<Listener>>> {
+        self.terminal.clone()
+    }
+}
+
+impl Drop for Surface {
+    fn drop(&mut self) {
+        let _ = self.channel.send(Msg::Shutdown);
+        #[cfg(not(target_os = "windows"))]
+        teletypewriter::kill_pid(self.shell_pid as i32);
+    }
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+    use std::time::{Duration, Instant};
+
+    struct CountingDelegate {
+        wakeups: AtomicUsize,
+    }
+
+    impl SurfaceDelegate for CountingDelegate {
+        fn wakeup(&self, _surface: SurfaceId) {
+            self.wakeups.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn drives_a_real_shell_and_reads_cells() {
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate.clone());
+        let desc = SurfaceDesc::default();
+        let surface = engine.create_surface(&desc).expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+
+        std::thread::sleep(Duration::from_millis(400));
+        surface.text("printf '%s%s\\n' li brio-gate\r");
+
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let mut found = false;
+        while Instant::now() < deadline {
+            state.update();
+            let lines = state.lines();
+            if (0..lines).any(|i| state.text_row(i).contains("librio-gate")) {
+                found = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+
+        if !found {
+            let rows: Vec<String> = (0..6).map(|i| state.text_row(i)).collect();
+            panic!(
+                "expected shell output in grid; wakeups={} rows={:?}",
+                delegate.wakeups.load(Ordering::SeqCst),
+                rows
+            );
+        }
+        assert!(delegate.wakeups.load(Ordering::SeqCst) > 0);
+
+        surface.selection_begin(0, 0, SelectionKind::Simple);
+        surface.selection_update(0, 9);
+        let text = surface.selection_text().expect("selection text");
+        assert!(!text.is_empty());
+        state.update();
+        assert!(state.selection().is_some());
+        surface.selection_clear();
+        assert!(surface.selection_text().is_none());
+    }
+}

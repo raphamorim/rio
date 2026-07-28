@@ -190,7 +190,7 @@ impl Application<'_> {
     /// centered, sized by the configured percentages, then show it.
     fn show_quake_window(
         &mut self,
-        id: rio_window::window::WindowId,
+        id: rio_backend::event::WindowId,
         event_loop: &ActiveEventLoop,
     ) {
         #[cfg(target_os = "macos")]
@@ -325,7 +325,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         if !self.scheduler.scheduled(timer_id) {
             self.scheduler.schedule(
                 EventPayload::new(RioEventType::Rio(RioEvent::UpdateTitles), unsafe {
-                    rio_window::window::WindowId::dummy()
+                    rio_window::window::WindowId::dummy().into()
                 }),
                 Duration::from_secs(2),
                 true,
@@ -1121,6 +1121,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             return;
         }
 
+        // The event loop keys on rio-window's id; the router keys on the
+        // core's `WindowId`. Convert once at this boundary.
+        let window_id: rio_backend::event::WindowId = window_id.into();
+
         let route = match self.router.routes.get_mut(&window_id) {
             Some(window) => window,
             None => return,
@@ -1452,13 +1456,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // sitting under the release point; hints fire on
                         // plain clicks only, when no selection exists.
                         if route.window.screen.selection_is_empty() {
-                            if button == MouseButton::Left
-                                && route
+                            if button == MouseButton::Left {
+                                route
                                     .window
                                     .screen
-                                    .trigger_hint(&mut self.router.clipboard)
-                            {
-                                return;
+                                    .trigger_hint(&mut self.router.clipboard);
                             }
                         } else if matches!(button, MouseButton::Left | MouseButton::Right)
                             && self.config.copy_on_select

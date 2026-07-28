@@ -1,0 +1,72 @@
+[package]
+name = "rio-vt"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+repository = "https://github.com/raphamorim/rio"
+description = "Embeddable terminal core extracted from Rio: VT state machine, grid, PTY driver, selection, search"
+readme = "README.md"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+tracing = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+base64 = { workspace = true }
+memchr = { version = "2.7.4", default-features = false }
+bitflags = { workspace = true }
+bytemuck = { workspace = true }
+corcovado = { workspace = true }
+rustc-hash = { workspace = true }
+regex = { workspace = true }
+raw-window-handle = { workspace = true, optional = true }
+copypasta = { version = "0.10.2", default-features = false, optional = true }
+image_rs = { workspace = true, optional = true }
+libc = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+rio-graphics = { workspace = true }
+rio-grapheme-width = { workspace = true }
+teletypewriter = { workspace = true }
+unicode-width = { workspace = true }
+url = { workspace = true }
+regex-automata = "0.4.9"
+cursor-icon = { version = "1.1.0", default-features = false }
+smallvec = { version = "1.13.2", default-features = false }
+simdutf = { workspace = true }
+flate2 = { workspace = true }
+lazy_static = { workspace = true }
+# Optional: only pulled in when the embedder wants the app-level renderer
+# error variant (font-not-found). Off keeps rio-vt free of sugarloaf.
+sugarloaf = { workspace = true, optional = true }
+# Optional windowing types (WindowId / event loop proxy). Off gives a
+# standalone `WindowId(u64)`, keeping the core free of the window layer.
+rio-window = { workspace = true, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
+
+[features]
+# Lean by default: no renderer, no windowing. This is the embeddable core.
+default = []
+# Expose the app-level `RioErrorType::FontsNotFound` variant (needs a
+# sugarloaf font type). Enabled by rio-backend's own `renderer` feature.
+renderer = ["dep:sugarloaf"]
+# Bridge to rio-window: `From` conversions between the core's `WindowId`
+# and `rio_window::window::WindowId`, plus the event-loop proxy listener.
+# (Rio's window layer is `rio-window`, a winit fork; hence not "winit".)
+rio-window = ["dep:rio-window"]
+# System-clipboard backing for the `Clipboard` helper (copypasta). Headless
+# embedders that only parse and snapshot never need this; frontends enable it.
+clipboard = ["dep:copypasta", "dep:raw-window-handle"]
+# Image (sixel/kitty/iTerm2) and glyph protocol decoding. Pulls the `image`
+# crate and a font-outline parser. Headless embedders that only parse and
+# snapshot never decode images or glyphs, so this stays off by default.
+graphics = ["dep:image_rs", "rio-graphics/image", "rio-graphics/glyph"]
+x11 = ["clipboard", "copypasta/x11"]
+wayland = ["clipboard", "copypasta/wayland"]
+wgpu = ["renderer", "dep:sugarloaf", "sugarloaf/wgpu"]

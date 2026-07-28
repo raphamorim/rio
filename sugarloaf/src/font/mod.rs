@@ -1,7 +1,10 @@
 pub mod constants;
 pub mod fonts;
-pub mod glyf_decode;
-pub mod glyph_registry;
+// The glyph-protocol decoder + registry moved to the `rio-graphics` leaf
+// crate so the terminal core can use them without depending on sugarloaf.
+// Re-exported here so `sugarloaf::font::glyf_decode` /
+// `sugarloaf::font::glyph_registry` keep resolving.
+pub use rio_graphics::glyph::{glyf_decode, glyph_registry};
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
 pub mod linux;
 #[cfg(not(target_arch = "wasm32"))]
@@ -2049,12 +2052,14 @@ mod alias_tests {
             inner: Arc::new(parking_lot::RwLock::new(data)),
         };
 
-        let mut style = crate::SpanStyle::default();
-        style.font_attrs = swash::Attributes::new(
-            swash::Stretch::NORMAL,
-            swash::Weight::BOLD,
-            swash::Style::Normal,
-        );
+        let style = crate::SpanStyle {
+            font_attrs: swash::Attributes::new(
+                swash::Stretch::NORMAL,
+                swash::Weight::BOLD,
+                swash::Style::Normal,
+            ),
+            ..Default::default()
+        };
         let (font_id, _) = lib
             .inner
             .read()

@@ -1,0 +1,514 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+
+//! Terminal graphics value types shared by Rio's VT core and renderer.
+//!
+//! This crate holds the plain data types produced by the terminal's image
+//! protocols (sixel, kitty, iTerm2) and the glyph protocol, with no
+//! rendering, GPU, or windowing dependencies. It is the leaf both
+//! `rio-vt` (the safe terminal core) and `sugarloaf` (the renderer)
+//! depend on, so the core no longer has to pull the render stack just to
+//! model an image.
+
+#![forbid(unsafe_code)]
+
+#[cfg(feature = "image")]
+use image_rs::DynamicImage;
+use std::cmp;
+
+#[cfg(feature = "glyph")]
+pub mod glyph;
+
+/// RGBA color in linear-light 0..1 space. Mirrors `wgpu::Color`'s
+/// shape so callers don't have to depend on `wgpu`. Sugarloaf's public
+/// API takes/returns this type; the wgpu render path converts at the
+/// boundary (see the `wgpu` feature's `From` impls).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Color {
+    pub r: f64,
+    pub g: f64,
+    pub b: f64,
+    pub a: f64,
+}
+
+impl Color {
+    pub const TRANSPARENT: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    };
+    pub const BLACK: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const WHITE: Self = Self {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+}
+
+#[cfg(feature = "wgpu")]
+impl From<Color> for wgpu::Color {
+    fn from(c: Color) -> Self {
+        wgpu::Color {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: c.a,
+        }
+    }
+}
+
+#[cfg(feature = "wgpu")]
+impl From<wgpu::Color> for Color {
+    fn from(c: wgpu::Color) -> Self {
+        Color {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: c.a,
+        }
+    }
+}
+
+pub const MAX_GRAPHIC_DIMENSIONS: [usize; 2] = [4096, 4096];
+
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
+pub struct Graphic {
+    pub id: GraphicId,
+    pub offset_x: u16,
+    pub offset_y: u16,
+}
+
+/// Key for `Sugarloaf::image_data` and the renderer's per-image
+/// texture cache: a kitty image, keyed by its protocol id verbatim.
+/// The full u32 space belongs to the client, so atlas graphics live
+/// in a disjoint range above it (see [`atlas_image_key`]).
+#[inline]
+pub fn kitty_image_key(image_id: u32) -> u64 {
+    image_id as u64
+}
+
+/// Key for an atlas graphic (sixel/iTerm2): the sequential
+/// `GraphicId` shifted above the kitty u32 id space so a kitty client
+/// picking a high image id (kitten icat uses random u32 ids) can
+/// never collide with an atlas texture.
+#[inline]
+pub fn atlas_image_key(graphic_id: u64) -> u64 {
+    (1u64 << 32) + graphic_id
+}
+
+/// An overlay image placement.
+/// Used by the renderer to draw images on top of (or behind) terminal content.
+#[derive(Debug, Clone)]
+pub struct GraphicOverlay {
+    /// Image texture key ([`kitty_image_key`] or [`atlas_image_key`]).
+    pub image_id: u64,
+    /// Screen position (physical pixels).
+    pub x: f32,
+    pub y: f32,
+    /// Display dimensions (physical pixels).
+    pub width: f32,
+    pub height: f32,
+    /// Z-index for layering.
+    pub z_index: i32,
+    /// Source rectangle in normalised texture coordinates `[u0, v0, u1, v1]`.
+    /// `[0.0, 0.0, 1.0, 1.0]` (the default) draws the whole image; other
+    /// values draw a slice — used by the kitty Unicode-placeholder path
+    /// where each placeholder cell shows one slice of the image.
+    pub source_rect: [f32; 4],
+}
+
+impl GraphicOverlay {
+    /// Default source rect — full image.
+    pub const FULL_SOURCE_RECT: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
+}
+
+/// Unique identifier for every graphic added to a grid.
+/// An id of 0 represents a temporary, non-referenceable image
+/// (matching kitty's behavior).
+#[derive(Eq, PartialEq, Clone, Debug, Copy, Hash, PartialOrd, Ord)]
+pub struct GraphicId(pub u64);
+
+impl GraphicId {
+    /// Create a new GraphicId from a u64 value.
+    #[inline]
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Get the inner u64 value.
+    #[inline]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// Specifies the format of the pixel data.
+#[derive(Eq, PartialEq, Clone, Debug, Copy)]
+pub enum ColorType {
+    /// 3 bytes per pixel (red, green, blue).
+    Rgb,
+
+    /// 4 bytes per pixel (red, green, blue, alpha).
+    Rgba,
+}
+
+/// Defines a single graphic read from the PTY.
+#[derive(Eq, PartialEq, Clone, Debug)]
+pub struct GraphicData {
+    /// Graphics identifier.
+    pub id: GraphicId,
+
+    /// Width, in pixels, of the graphic.
+    pub width: usize,
+
+    /// Height, in pixels, of the graphic.
+    pub height: usize,
+
+    /// Color type of the pixels.
+    pub color_type: ColorType,
+
+    /// Pixels data.
+    pub pixels: Vec<u8>,
+
+    /// Indicate if there are no transparent pixels.
+    pub is_opaque: bool,
+
+    /// Render graphic in a different size.
+    pub resize: Option<ResizeCommand>,
+
+    /// Display width in pixels (set when GPU scaling is used instead of CPU resize).
+    /// If None, display at the original pixel width.
+    pub display_width: Option<usize>,
+
+    /// Display height in pixels (set when GPU scaling is used instead of CPU resize).
+    /// If None, display at the original pixel height.
+    pub display_height: Option<usize>,
+
+    /// Generation counter for cache invalidation.
+    /// Incremented when image data changes (re-transmission with same ID).
+    pub transmit_time: std::time::Instant,
+}
+
+impl GraphicData {
+    /// Check if the image may contain transparent pixels. If it returns
+    /// `false`, it is guaranteed that there are no transparent pixels.
+    #[inline]
+    pub fn maybe_transparent(&self) -> bool {
+        !self.is_opaque && self.color_type == ColorType::Rgba
+    }
+
+    /// Check if all pixels under a region are opaque.
+    ///
+    /// If the region exceeds the boundaries of the image it is considered as
+    /// not filled.
+    pub fn is_filled(&self, x: usize, y: usize, width: usize, height: usize) -> bool {
+        // If there are pixels outside the picture we assume that the region is
+        // not filled.
+        if x + width >= self.width || y + height >= self.height {
+            return false;
+        }
+
+        // Don't check actual pixels if the image does not contain an alpha
+        // channel.
+        if !self.maybe_transparent() {
+            return true;
+        }
+
+        debug_assert!(self.color_type == ColorType::Rgba);
+
+        for offset_y in y..y + height {
+            let offset = offset_y * self.width * 4;
+            let row = &self.pixels[offset..offset + width * 4];
+
+            if row.chunks_exact(4).any(|pixel| pixel.last() != Some(&255)) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    #[cfg(feature = "image")]
+    pub fn from_dynamic_image(id: GraphicId, image: DynamicImage) -> Self {
+        let color_type;
+        let width;
+        let height;
+        let pixels;
+
+        match image {
+            // Sugarloaf only accepts rgba8 now
+            // DynamicImage::ImageRgb8(image) => {
+            //     color_type = ColorType::Rgb;
+            //     width = image.width() as usize;
+            //     height = image.height() as usize;
+            //     pixels = image.into_raw();
+            // }
+            DynamicImage::ImageRgba8(image) => {
+                color_type = ColorType::Rgba;
+                width = image.width() as usize;
+                height = image.height() as usize;
+                pixels = image.into_raw();
+            }
+
+            _ => {
+                // Non-RGB image. Convert it to RGBA.
+                let image = image.into_rgba8();
+                color_type = ColorType::Rgba;
+                width = image.width() as usize;
+                height = image.height() as usize;
+                pixels = image.into_raw();
+            }
+        }
+
+        GraphicData {
+            id,
+            width,
+            height,
+            color_type,
+            pixels,
+            is_opaque: false,
+            resize: None,
+            display_width: None,
+            display_height: None,
+            transmit_time: std::time::Instant::now(),
+        }
+    }
+
+    /// Compute the display dimensions for this graphic without modifying pixels.
+    /// Returns (display_width, display_height) in pixels. If no resize is needed,
+    /// returns the original dimensions.
+    pub fn compute_display_dimensions(
+        &self,
+        cell_width: usize,
+        cell_height: usize,
+        view_width: usize,
+        view_height: usize,
+    ) -> (usize, usize) {
+        let resize = match self.resize {
+            Some(resize) => resize,
+            None => return (self.width, self.height),
+        };
+
+        if (resize.width == ResizeParameter::Auto
+            && resize.height == ResizeParameter::Auto)
+            || self.height == 0
+            || self.width == 0
+        {
+            return (self.width, self.height);
+        }
+
+        let mut width = match resize.width {
+            ResizeParameter::Auto => 1,
+            ResizeParameter::Pixels(n) => n as usize,
+            ResizeParameter::Cells(n) => n as usize * cell_width,
+            ResizeParameter::WindowPercent(n) => n as usize * view_width / 100,
+        };
+
+        let mut height = match resize.height {
+            ResizeParameter::Auto => 1,
+            ResizeParameter::Pixels(n) => n as usize,
+            ResizeParameter::Cells(n) => n as usize * cell_height,
+            ResizeParameter::WindowPercent(n) => n as usize * view_height / 100,
+        };
+
+        if width == 0 || height == 0 {
+            return (self.width, self.height);
+        }
+
+        if resize.width == ResizeParameter::Auto {
+            width =
+                (self.width as f64 * height as f64 / self.height as f64).round() as usize;
+        }
+
+        if resize.height == ResizeParameter::Auto {
+            height =
+                (self.height as f64 * width as f64 / self.width as f64).round() as usize;
+        }
+
+        width = cmp::min(width, MAX_GRAPHIC_DIMENSIONS[0]);
+        height = cmp::min(height, MAX_GRAPHIC_DIMENSIONS[1]);
+
+        if resize.preserve_aspect_ratio {
+            // Preserve aspect ratio: fit within width x height
+            let scale_w = width as f64 / self.width as f64;
+            let scale_h = height as f64 / self.height as f64;
+            let scale = scale_w.min(scale_h);
+            width = (self.width as f64 * scale).round() as usize;
+            height = (self.height as f64 * scale).round() as usize;
+        }
+
+        (width, height)
+    }
+
+    /// Resize the graphic according to the dimensions in the `resize` field.
+    #[cfg(feature = "image")]
+    pub fn resized(
+        self,
+        cell_width: usize,
+        cell_height: usize,
+        view_width: usize,
+        view_height: usize,
+    ) -> Option<Self> {
+        let resize = match self.resize {
+            Some(resize) => resize,
+            None => return Some(self),
+        };
+
+        if (resize.width == ResizeParameter::Auto
+            && resize.height == ResizeParameter::Auto)
+            || self.height == 0
+            || self.width == 0
+        {
+            return Some(self);
+        }
+
+        let mut width = match resize.width {
+            ResizeParameter::Auto => 1,
+            ResizeParameter::Pixels(n) => n as usize,
+            ResizeParameter::Cells(n) => n as usize * cell_width,
+            ResizeParameter::WindowPercent(n) => n as usize * view_width / 100,
+        };
+
+        let mut height = match resize.height {
+            ResizeParameter::Auto => 1,
+            ResizeParameter::Pixels(n) => n as usize,
+            ResizeParameter::Cells(n) => n as usize * cell_height,
+            ResizeParameter::WindowPercent(n) => n as usize * view_height / 100,
+        };
+
+        if width == 0 || height == 0 {
+            return None;
+        }
+
+        // Compute "auto" dimensions.
+        if resize.width == ResizeParameter::Auto {
+            width = self.width * height / self.height;
+        }
+
+        if resize.height == ResizeParameter::Auto {
+            height = self.height * width / self.width;
+        }
+
+        // Limit size to MAX_GRAPHIC_DIMENSIONS.
+        width = cmp::min(width, MAX_GRAPHIC_DIMENSIONS[0]);
+        height = cmp::min(height, MAX_GRAPHIC_DIMENSIONS[1]);
+
+        tracing::trace!("Resize new graphic to width={}, height={}", width, height,);
+
+        // Create a new DynamicImage to resize the graphic.
+        let dynimage = match self.color_type {
+            ColorType::Rgb => {
+                let buffer = image_rs::RgbImage::from_raw(
+                    self.width as u32,
+                    self.height as u32,
+                    self.pixels,
+                )?;
+                DynamicImage::ImageRgb8(buffer)
+            }
+
+            ColorType::Rgba => {
+                let buffer = image_rs::RgbaImage::from_raw(
+                    self.width as u32,
+                    self.height as u32,
+                    self.pixels,
+                )?;
+                DynamicImage::ImageRgba8(buffer)
+            }
+        };
+
+        // Finally, use `resize` or `resize_exact` to make the new image.
+        let width = width as u32;
+        let height = height as u32;
+        // https://doc.servo.org/image/imageops/enum.FilterType.html
+        let filter = image_rs::imageops::FilterType::Triangle;
+
+        let new_image = if resize.preserve_aspect_ratio {
+            dynimage.resize(width, height, filter)
+        } else {
+            dynimage.resize_exact(width, height, filter)
+        };
+
+        Some(Self::from_dynamic_image(self.id, new_image))
+    }
+}
+
+/// Unit to specify a dimension to resize the graphic.
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+pub enum ResizeParameter {
+    /// Dimension is computed from the original graphic dimensions.
+    Auto,
+
+    /// Size is specified in number of grid cells.
+    Cells(u32),
+
+    /// Size is specified in number pixels.
+    Pixels(u32),
+
+    /// Size is specified in a percent of the window.
+    WindowPercent(u32),
+}
+
+/// Dimensions to resize a graphic.
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+pub struct ResizeCommand {
+    pub width: ResizeParameter,
+
+    pub height: ResizeParameter,
+
+    pub preserve_aspect_ratio: bool,
+}
+
+#[test]
+fn check_opaque_region() {
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        width: 10,
+        height: 10,
+        color_type: ColorType::Rgb,
+        pixels: vec![255; 10 * 10 * 3],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+
+    assert!(graphic.is_filled(1, 1, 3, 3));
+    assert!(!graphic.is_filled(8, 8, 10, 10));
+
+    let pixels = {
+        // Put a transparent 3x3 box inside the picture.
+        let mut data = vec![255; 10 * 10 * 4];
+        for y in 3..6 {
+            let offset = y * 10 * 4;
+            data[offset..offset + 3 * 4].fill(0);
+        }
+        data
+    };
+
+    let graphic = GraphicData {
+        id: GraphicId::new(1),
+        pixels,
+        width: 10,
+        height: 10,
+        color_type: ColorType::Rgba,
+        is_opaque: false,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+
+    assert!(graphic.is_filled(0, 0, 3, 3));
+    assert!(!graphic.is_filled(1, 1, 4, 4));
+}

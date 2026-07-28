@@ -9,7 +9,7 @@ use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::Crosswords;
 use crate::event::{EventListener, RioEvent, WindowId};
 use crate::performer::handler::Handler;
-use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
+use rio_graphics::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 
 // Common test utilities
 
@@ -125,7 +125,7 @@ fn test_parse_png_format() {
 #[test]
 fn test_png_transmit_and_display() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -363,7 +363,7 @@ fn test_multiple_graphics_in_sequence() {
 #[test]
 fn test_cursor_movement_default() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -444,7 +444,7 @@ fn test_cursor_movement_default() {
 #[test]
 fn test_cursor_movement_no_move() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -551,7 +551,7 @@ fn test_protocol_parses_cursor_movement() {
 #[test]
 fn test_image_row_occupation_exact_fit() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -624,7 +624,7 @@ fn test_image_row_occupation_exact_fit() {
 #[test]
 fn test_subcell_offset_forwarded_and_clamped() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -716,7 +716,7 @@ fn test_subcell_offset_forwarded_and_clamped() {
 #[test]
 fn test_subcell_offset_extends_row_occupation() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -785,7 +785,7 @@ fn test_subcell_offset_extends_row_occupation() {
 #[test]
 fn test_image_row_occupation_single_row() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -855,7 +855,7 @@ fn test_image_row_occupation_single_row() {
 #[test]
 fn test_image_row_occupation_three_rows() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -926,7 +926,7 @@ fn test_image_row_occupation_three_rows() {
 #[test]
 fn test_image_row_occupation_from_middle() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -1000,7 +1000,7 @@ fn test_image_row_occupation_from_middle() {
 #[test]
 fn test_delete_all() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -1032,7 +1032,7 @@ fn test_delete_all() {
 #[test]
 fn test_store_graphic() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -1069,7 +1069,7 @@ fn test_store_graphic() {
 #[test]
 fn test_place_nonexistent_graphic() {
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
 
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(80, 24),
@@ -1109,7 +1109,7 @@ fn test_place_nonexistent_graphic() {
 #[test]
 fn test_recount_releases_key_exactly_once() {
     let mut graphics = crate::ansi::graphics::Graphics::default();
-    let key = crate::sugarloaf::atlas_image_key(99);
+    let key = rio_graphics::atlas_image_key(99);
     graphics
         .atlas_placements
         .push(crate::ansi::graphics::AtlasPlacement {
@@ -2384,7 +2384,7 @@ fn test_chunked_quiet_flag_inheritance() {
 fn test_aspect_ratio_with_only_columns() {
     // Test: aspect ratio with only columns
     // A 16:9 image with c=10 should compute height preserving aspect ratio
-    use sugarloaf::GraphicData;
+    use rio_graphics::GraphicData;
 
     let data = GraphicData {
         id: GraphicId::new(1),
@@ -2393,9 +2393,9 @@ fn test_aspect_ratio_with_only_columns() {
         color_type: ColorType::Rgba,
         pixels: vec![],
         is_opaque: true,
-        resize: Some(sugarloaf::ResizeCommand {
-            width: sugarloaf::ResizeParameter::Cells(10),
-            height: sugarloaf::ResizeParameter::Auto,
+        resize: Some(rio_graphics::ResizeCommand {
+            width: rio_graphics::ResizeParameter::Cells(10),
+            height: rio_graphics::ResizeParameter::Auto,
             preserve_aspect_ratio: true,
         }),
         display_width: None,
@@ -2416,7 +2416,7 @@ fn test_aspect_ratio_with_only_columns() {
 #[test]
 fn test_aspect_ratio_with_only_rows() {
     // Test: aspect ratio with only rows
-    use sugarloaf::GraphicData;
+    use rio_graphics::GraphicData;
 
     let data = GraphicData {
         id: GraphicId::new(1),
@@ -2425,9 +2425,9 @@ fn test_aspect_ratio_with_only_rows() {
         color_type: ColorType::Rgba,
         pixels: vec![],
         is_opaque: true,
-        resize: Some(sugarloaf::ResizeCommand {
-            width: sugarloaf::ResizeParameter::Auto,
-            height: sugarloaf::ResizeParameter::Cells(5),
+        resize: Some(rio_graphics::ResizeCommand {
+            width: rio_graphics::ResizeParameter::Auto,
+            height: rio_graphics::ResizeParameter::Cells(5),
             preserve_aspect_ratio: true,
         }),
         display_width: None,
@@ -2498,7 +2498,7 @@ fn make_test_term() -> Crosswords<TestEventListener> {
         crate::crosswords::CrosswordsSize::new(80, 24),
         crate::ansi::CursorShape::Block,
         TestEventListener,
-        unsafe { WindowId::dummy() },
+        WindowId::from(0),
         0,
         10_000,
     )
@@ -3175,7 +3175,7 @@ fn test_resize_widen_unwraps_command_image_follows() {
     // pinned to the spot just below the (now shorter) command.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(20, 10),
         crate::ansi::CursorShape::Block,
@@ -3257,7 +3257,7 @@ fn test_resize_narrow_wraps_command_image_follows() {
     // the image below it must shift *down* by 1.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 10),
         crate::ansi::CursorShape::Block,
@@ -3374,7 +3374,7 @@ fn test_debug_widen_visible_layout() {
     // command wrapped onto 2 rows, then widens.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(20, 24),
         crate::ansi::CursorShape::Block,
@@ -3434,7 +3434,7 @@ fn test_debug_narrow_visible_layout() {
     // shrink_columns actually does to cursor and content positioning.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 24),
         crate::ansi::CursorShape::Block,
@@ -3496,7 +3496,7 @@ fn test_resize_narrow_combined_col_and_row_change() {
     // Cursor delta accumulates from both.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 24),
         crate::ansi::CursorShape::Block,
@@ -3592,7 +3592,7 @@ fn test_resize_narrow_with_multi_row_image() {
     // *above* the cursor. Then the next prompt sits below the image.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 24),
         crate::ansi::CursorShape::Block,
@@ -3702,7 +3702,7 @@ fn test_resize_narrow_with_cursor_at_bottom_of_screen() {
     // than 1.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 24),
         crate::ansi::CursorShape::Block,
@@ -3813,7 +3813,7 @@ fn test_resize_narrow_with_prompt_after_image() {
     // delta math.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 10),
         crate::ansi::CursorShape::Block,
@@ -3903,7 +3903,7 @@ fn test_resize_widen_unwraps_sixel_follows() {
     // overlay dirty so the renderer refreshes its placement snapshot.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(20, 10),
         crate::ansi::CursorShape::Block,
@@ -3948,7 +3948,7 @@ fn test_resize_narrow_wraps_sixel_follows() {
     // narrows, so the placement must move down by one row.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(50, 10),
         crate::ansi::CursorShape::Block,
@@ -3991,7 +3991,7 @@ fn test_resize_widen_sixel_above_wrap_change_stays_put() {
     // reflow row remap keeps it in place.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(20, 10),
         crate::ansi::CursorShape::Block,
@@ -4041,7 +4041,7 @@ fn test_resize_widen_kitty_above_wrap_change_stays_put() {
     // same exact reflow remap.
     use crate::performer::handler::Handler;
     let event_listener = TestEventListener;
-    let window_id = unsafe { WindowId::dummy() };
+    let window_id = WindowId::from(0);
     let mut term: Crosswords<TestEventListener> = Crosswords::new(
         crate::crosswords::CrosswordsSize::new(20, 10),
         crate::ansi::CursorShape::Block,
@@ -4137,7 +4137,7 @@ fn geometry_test_term() -> Crosswords<TestEventListener> {
         crate::crosswords::CrosswordsSize::new(80, 24),
         crate::ansi::CursorShape::Block,
         TestEventListener,
-        unsafe { WindowId::dummy() },
+        WindowId::from(0),
         0,
         10_000,
     );
@@ -4777,7 +4777,7 @@ fn test_transmit_and_display_refreshes_sibling_placements() {
 
 #[test]
 fn test_image_key_namespaces_are_disjoint() {
-    use crate::sugarloaf::{atlas_image_key, kitty_image_key};
+    use rio_graphics::{atlas_image_key, kitty_image_key};
 
     // kitty clients may pick any u32 image id (kitten icat uses random
     // ones); the atlas namespace must live entirely above that range.
@@ -4903,7 +4903,7 @@ fn test_kitty_placement_glued_across_ring_saturation_and_expiry() {
         crate::crosswords::CrosswordsSize::new(80, 4),
         crate::ansi::CursorShape::Block,
         TestEventListener,
-        unsafe { WindowId::dummy() },
+        WindowId::from(0),
         0,
         3,
     );
@@ -4989,7 +4989,7 @@ fn test_atlas_placement_created_on_insert() {
 
     assert_eq!(term.graphics.atlas_placements.len(), 1);
     let p = &term.graphics.atlas_placements[0];
-    assert_eq!(p.image_key, crate::sugarloaf::atlas_image_key(1));
+    assert_eq!(p.image_key, rio_graphics::atlas_image_key(1));
     assert_eq!(p.abs_row, 0);
     assert_eq!(p.col, 5, "anchored at the cursor column");
     assert_eq!((p.columns, p.rows), (3, 2), "30x40 at 10x20 cells");
@@ -5060,7 +5060,7 @@ fn test_atlas_placement_expires_off_the_ring() {
         crate::crosswords::CrosswordsSize::new(80, 4),
         crate::ansi::CursorShape::Block,
         TestEventListener,
-        unsafe { WindowId::dummy() },
+        WindowId::from(0),
         0,
         2,
     );
@@ -5210,7 +5210,7 @@ fn test_region_scroll_shifts_and_clips_atlas_placements() {
 #[test]
 fn test_overlay_clips_to_panel_rect() {
     use crate::ansi::graphics::clip_overlay_to_rect;
-    use crate::sugarloaf::GraphicOverlay;
+    use rio_graphics::GraphicOverlay;
 
     // The split-pane bug: a 600px-wide image in a panel whose grid
     // ends at x=400 must clip at the divider, showing only the left
@@ -5274,7 +5274,7 @@ fn test_narrowing_terminal_keeps_image_span_and_clips_at_edge() {
     use crate::ansi::graphics::{
         clip_overlay_to_rect, kitty_overlay_geometry, OverlayViewport,
     };
-    use crate::sugarloaf::GraphicOverlay;
+    use rio_graphics::GraphicOverlay;
 
     let mut term = geometry_test_term();
 
@@ -5351,7 +5351,7 @@ fn test_height_grow_keeps_absolute_base_stable() {
         crate::crosswords::CrosswordsSize::new(80, 4),
         crate::ansi::CursorShape::Block,
         TestEventListener,
-        unsafe { WindowId::dummy() },
+        WindowId::from(0),
         0,
         10,
     );

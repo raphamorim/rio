@@ -64,6 +64,51 @@ $(APP_NAME)-%: $(TARGET)-%
 install-terminfo:
 	@tic -xe xterm-rio,rio -o $(APP_EXTRAS_DIR) $(TERMINFO)
 
+CANARIO_DIR = frontends/canario
+CANARIO_APP_DIR = target/canario/Canario.app
+.PHONY: canario canario-run librio-ctest librio-xcframework
+canario: librio-xcframework
+	@mkdir -p $(CANARIO_APP_DIR)/Contents/MacOS
+	@mkdir -p $(CANARIO_APP_DIR)/Contents/Resources
+	swiftc -O -parse-as-library \
+		-target arm64-apple-macosx14.0 \
+		-I $(LIBRIO_XCF)/macos-arm64/Headers \
+		$(CANARIO_DIR)/Sources/*.swift \
+		$(LIBRIO_XCF)/macos-arm64/librio.a \
+		-framework CoreFoundation -framework Foundation -framework AppKit \
+		-framework CoreGraphics -framework CoreText -framework Metal \
+		-framework QuartzCore -framework CoreVideo -lc++ -liconv \
+		-o $(CANARIO_APP_DIR)/Contents/MacOS/canario
+	@cp -fp $(CANARIO_DIR)/Info.plist $(CANARIO_APP_DIR)/Contents/Info.plist
+	@cp -fp $(CANARIO_DIR)/Resources/icon.icns $(CANARIO_APP_DIR)/Contents/Resources/icon.icns
+	@codesign --force --sign - "$(CANARIO_APP_DIR)"
+	@echo "Created '$(CANARIO_APP_DIR)'"
+
+canario-run: canario
+	open -n $(CANARIO_APP_DIR)
+
+librio-ctest:
+	cargo build -p librio
+	@mkdir -p target/librio
+	cc librio/ctest/main.c target/debug/liblibrio.a \
+		-o target/librio/ctest \
+		-framework CoreFoundation -framework Foundation -framework AppKit \
+		-framework CoreGraphics -framework CoreText -framework Metal \
+		-framework QuartzCore -framework CoreVideo -liconv -lc++
+	target/librio/ctest
+
+LIBRIO_XCF = target/librio/RioKit.xcframework
+librio-xcframework:
+	cargo build -p librio --profile librio --target aarch64-apple-darwin
+	@rm -rf $(LIBRIO_XCF)
+	@mkdir -p $(LIBRIO_XCF)/macos-arm64/Headers
+	@cp target/aarch64-apple-darwin/librio/liblibrio.a \
+		$(LIBRIO_XCF)/macos-arm64/librio.a
+	@cp librio/include/librio.h librio/include/module.modulemap \
+		$(LIBRIO_XCF)/macos-arm64/Headers/
+	@cp librio/xcframework-info.plist $(LIBRIO_XCF)/Info.plist
+	@echo "Created '$(LIBRIO_XCF)'"
+
 release-macos: app-universal
 	@codesign --remove-signature "$(TARGET_DIR_OSX)/$(APP_NAME)"
 	@codesign --force --deep --sign - "$(TARGET_DIR_OSX)/$(APP_NAME)"

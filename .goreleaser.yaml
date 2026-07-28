@@ -10,6 +10,9 @@ partial:
 
 report_sizes: true
 
+variables:
+  canario_version: "0.0.1"
+
 env:
   - CARGO_TERM_COLOR=always
   - RUST_BACKTRACE=full
@@ -24,6 +27,9 @@ before:
       output: true
     - if: '{{ eq .Runtime.Goos "windows" }}'
       cmd: wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
+      output: true
+    - if: '{{ eq .Runtime.Goos "darwin" }}'
+      cmd: make canario
       output: true
 
 builds:
@@ -77,6 +83,14 @@ builds:
       - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
     targets: [x86_64-unknown-linux-gnu]
 
+  - id: canario
+    builder: prebuilt
+    goos: [darwin]
+    goarch: [arm64]
+    binary: canario
+    prebuilt:
+      path: target/canario/Canario.app/Contents/MacOS/canario
+
 release:
   make_latest: "{{ if .IsNightly }}false{{ else }}true{{ end }}"
   mode: append
@@ -118,7 +132,13 @@ universal_binaries:
     replace: true
 
 dmg:
-  - name: "{{ .ProjectName }}"
+  - id: rio
+    ids: [rio]
+    name: "{{ .ProjectName }}"
+    use: appbundle
+  - id: canario
+    ids: [canario]
+    name: "Canario-{{ .Var.canario_version }}"
     use: appbundle
 
 notarize:
@@ -133,7 +153,9 @@ notarize:
         profile_name: "{{ .Env.MACOS_NOTARY_KEYCHAIN_PROFILE }}"
 
 app_bundles:
-  - icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
+  - id: rio
+    ids: [macos]
+    icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
     bundle: com.raphaelamorim.rio
     extra_files:
       - src: ./misc/72/rio
@@ -143,6 +165,13 @@ app_bundles:
         dst: Contents/Resources/icon-classic.icns
     templated_extra_files:
       - src: ./misc/osx/Rio.app/Contents/Info.plist
+        dst: Contents/Info.plist
+  - id: canario
+    ids: [canario]
+    icon: ./frontends/canario/Resources/icon.icns
+    bundle: com.raphaelamorim.canario
+    templated_extra_files:
+      - src: ./frontends/canario/Info.plist
         dst: Contents/Info.plist
 
 nfpms:
@@ -286,22 +315,7 @@ winget:
 after:
   hooks:
     # homebrew-cask is bumped automatically by BrewTestBot (cask has livecheck)
-    - cmd: cargo publish -p rio-window
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p sugarloaf
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p corcovado
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p teletypewriter
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p rio-backend
-      if: "{{ and .IsRelease .IsMerging }}"
-      output: true
-    - cmd: cargo publish -p rioterm
+    - cmd: cargo publish --workspace
       if: "{{ and .IsRelease .IsMerging }}"
       output: true
 

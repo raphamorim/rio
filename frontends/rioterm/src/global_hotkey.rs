@@ -69,7 +69,7 @@ pub fn setup(
                 if event.state == HotKeyState::Pressed {
                     event_proxy
                         .send_event(RioEventType::Rio(RioEvent::ToggleQuake), unsafe {
-                            rio_window::window::WindowId::dummy()
+                            rio_window::window::WindowId::dummy().into()
                         });
                 }
             }
