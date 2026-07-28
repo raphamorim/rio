@@ -856,6 +856,15 @@ impl EventProcessor {
         };
 
         callback(&self.target, event);
+        // Compositors can restore a mapped window without sending Expose, so
+        // event-driven renderers must explicitly present its retained contents.
+        callback(
+            &self.target,
+            Event::WindowEvent {
+                window_id,
+                event: WindowEvent::RedrawRequested,
+            },
+        );
 
         // Window is mapped → flip the mapped bit and (re)evaluate
         // the per-window vsync timer. We DON'T touch the obscured
