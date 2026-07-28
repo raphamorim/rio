@@ -8,9 +8,12 @@ kitty graphics) work, and it fixes the alt-screen-restore and resize
 regressions that the early builds had (see rio#1759, microsoft/terminal
 #17817 / #17853 / #16879).
 
-Both files must sit next to `rio.exe`: `conpty.dll` locates its
-`OpenConsole.exe` host in its own directory, and without a matching
-`OpenConsole.exe` it silently reverts to the in-box console host.
+Both files must sit next to `rio.exe`. Rio loads `conpty.dll` by absolute
+path from its own executable directory only — never from `PATH` or the
+working directory — so a copy placed anywhere else is ignored (Rio falls
+back to the in-box API). And `conpty.dll` locates its `OpenConsole.exe`
+host in its own directory, so without a matching `OpenConsole.exe` beside
+it, it silently reverts to the in-box console host.
 `conpty.dll` matches the application architecture; `OpenConsole.exe`
 matches the system architecture. The `amd64/` and `arm64/` folders hold
 the matched pair for each Rio build.
