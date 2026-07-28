@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 #
 # Run test-i3-workspace-redraw.sh in an isolated Xvfb and i3 session.
+#
+# Reproducible invocation using the dependencies pinned in flake.lock:
+#   nix run .#i3-workspace-redraw-e2e -- --candidate target/debug/rio
+# Optionally pass --baseline after "--" to compare another Rio executable.
 
 set -euo pipefail
 
@@ -18,13 +22,12 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 test_script="${script_dir}/test-i3-workspace-redraw.sh"
 
 if [[ "${RIO_I3_E2E_IN_XVFB:-0}" != 1 ]]; then
-    require_command dbus-run-session
     require_command xvfb-run
 
     export RIO_I3_E2E_IN_XVFB=1
     exec xvfb-run -a \
         -s "-screen 0 1280x800x24 +extension GLX +render -noreset" \
-        dbus-run-session -- "$0" "$@"
+        "$0" "$@"
 fi
 
 require_command i3

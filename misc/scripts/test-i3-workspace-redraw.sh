@@ -8,7 +8,7 @@
 #
 # Requirements: an active i3/X11 session, bash, i3-msg, jq, ImageMagick, and
 # awk. Use test-i3-workspace-redraw-headless.sh to create an isolated X server
-# and i3 session, including from a container.
+# and i3 session.
 
 set -euo pipefail
 
