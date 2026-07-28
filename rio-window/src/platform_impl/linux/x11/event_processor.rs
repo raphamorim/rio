@@ -941,6 +941,26 @@ impl EventProcessor {
         {
             self.process_dpi_change(&mut callback);
         }
+
+        if xev.window as xproto::Window == wt.root && atom == atoms[_NET_CURRENT_DESKTOP]
+        {
+            // Reparenting window managers like i3 hide an ancestor frame when
+            // switching workspaces. The client window therefore receives
+            // neither MapNotify nor Expose when its workspace becomes visible.
+            // EWMH desktop changes give event-driven renderers a reliable
+            // opportunity to present their retained contents again.
+            let window_ids: Vec<_> = wt.windows.borrow().keys().copied().collect();
+
+            for window_id in window_ids {
+                callback(
+                    &self.target,
+                    Event::WindowEvent {
+                        window_id: crate::window::WindowId(window_id),
+                        event: WindowEvent::RedrawRequested,
+                    },
+                );
+            }
+        }
     }
 
     fn visibility_notify<T: 'static, F>(&self, xev: &XVisibilityEvent, mut callback: F)
