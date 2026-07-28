@@ -49,7 +49,6 @@
             ${./misc/scripts/test-i3-workspace-redraw-headless.sh} \
             $out/test-i3-workspace-redraw-headless.sh
         '';
-        lavapipeIcd = "${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.${pkgs.stdenv.hostPlatform.linuxArch}.json";
         i3WorkspaceRedrawE2E = pkgs.writeShellApplication {
           name = "rio-i3-workspace-redraw-e2e";
           runtimeInputs = with pkgs; [
@@ -64,7 +63,14 @@
             xauth
           ];
           text = ''
-            export VK_DRIVER_FILES="${lavapipeIcd}"
+            shopt -s nullglob
+            lavapipe_icds=(${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.*.json)
+            if (( ''${#lavapipe_icds[@]} != 1 )); then
+              printf 'expected exactly one Lavapipe ICD, found %d\n' \
+                "''${#lavapipe_icds[@]}" >&2
+              exit 2
+            fi
+            export VK_DRIVER_FILES="''${lavapipe_icds[0]}"
             exec ${i3WorkspaceRedrawE2EScripts}/test-i3-workspace-redraw-headless.sh "$@"
           '';
         };
@@ -95,6 +101,7 @@
           i3-workspace-redraw-e2e = {
             type = "app";
             program = lib.getExe i3WorkspaceRedrawE2E;
+            meta.description = "Run the headless i3 workspace redraw E2E test";
           };
         };
         # Different devshells for different rust versions

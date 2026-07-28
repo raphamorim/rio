@@ -208,6 +208,29 @@ find_con() {
     return 1
 }
 
+wait_for_workspace() {
+    local expected=$1
+    local actual=
+
+    for _ in $(seq 1 100); do
+        actual=$(i3-msg -t get_workspaces |
+            jq -r '.[] | select(.focused).name')
+        if [[ "$actual" == "$expected" ]]; then
+            return 0
+        fi
+        sleep 0.02
+    done
+
+    fail "workspace did not become active: expected=$expected actual=$actual"
+}
+
+switch_workspace() {
+    local workspace=$1
+
+    i3-msg "workspace $(i3_quote "$workspace")" >/dev/null
+    wait_for_workspace "$workspace"
+}
+
 launch_static_rio() {
     local executable=$1
     local marker=$2
@@ -241,6 +264,32 @@ capture_con() {
         -crop "${width}x${height}+${x}+${y}" +repage "${output}.png"
 }
 
+assert_dominant_color() {
+    local image=$1
+    local expected=$2
+    local means red green blue
+
+    means=$("${image_convert[@]}" "$image" \
+        -gravity center -crop '50%x50%+0+0' +repage \
+        -format '%[fx:mean.r] %[fx:mean.g] %[fx:mean.b]' info:)
+    read -r red green blue <<<"$means"
+
+    case "$expected" in
+        red)
+            awk -v r="$red" -v g="$green" -v b="$blue" \
+                'BEGIN { exit !(r > 0.20 && r > g + 0.10 && r > b + 0.10) }'
+            ;;
+        blue)
+            awk -v r="$red" -v g="$green" -v b="$blue" \
+                'BEGIN { exit !(b > 0.20 && b > r + 0.08 && b > g + 0.03) }'
+            ;;
+        *)
+            fail "unsupported expected color: $expected"
+            ;;
+    esac ||
+        fail "$image does not contain expected $expected content in its center (mean RGB: $means)"
+}
+
 normalized_rmse() {
     local metric value
 
@@ -266,9 +315,10 @@ run_variant() {
     local helper_marker="RIO_I3_E2E_${run_id}_${label}_HELPER"
     local blue_marker="RIO_I3_E2E_${run_id}_${label}_BLUE"
     local target_con helper_con blue_con iteration
-    local return_rmse focused_rmse failures=0
+    local return_rmse focused_rmse reference_blue_rmse
+    local return_failures=0 focused_failures=0
 
-    i3-msg "workspace $(i3_quote "$workspace_a")" >/dev/null
+    switch_workspace "$workspace_a"
 
     launch_static_rio "$target_binary" "$target_marker" 41
     target_con=$launched_con
@@ -278,17 +328,27 @@ run_variant() {
     i3-msg "[con_id=${helper_con}] focus" >/dev/null
     sleep "$settle"
     capture_con "$target_con" "${artifact_dir}/${label}-reference"
+    assert_dominant_color "${artifact_dir}/${label}-reference.png" red
 
-    i3-msg "workspace $(i3_quote "$workspace_b")" >/dev/null
+    switch_workspace "$workspace_b"
     launch_static_rio "$support_binary" "$blue_marker" 44
     blue_con=$launched_con
     sleep "$settle"
+    capture_con "$blue_con" "${artifact_dir}/${label}-workspace-b"
+    assert_dominant_color "${artifact_dir}/${label}-workspace-b.png" blue
+    reference_blue_rmse=$(normalized_rmse \
+        "${artifact_dir}/${label}-reference.png" \
+        "${artifact_dir}/${label}-workspace-b.png")
+    if rmse_is_acceptable "$reference_blue_rmse"; then
+        fail "workspace images are not sufficiently different (RMSE: $reference_blue_rmse)"
+    fi
 
     printf '\n%s (%s)\n' "$label" "$target_binary"
+    printf '  reference_blue_rmse=%s\n' "$reference_blue_rmse"
     for iteration in $(seq 1 "$iterations"); do
-        i3-msg "workspace $(i3_quote "$workspace_b")" >/dev/null
+        switch_workspace "$workspace_b"
         sleep "$settle"
-        i3-msg "workspace $(i3_quote "$workspace_a")" >/dev/null
+        switch_workspace "$workspace_a"
         sleep "$settle"
 
         capture_con "$target_con" \
@@ -298,7 +358,7 @@ run_variant() {
             "${artifact_dir}/${label}-return-${iteration}.png")
 
         if ! rmse_is_acceptable "$return_rmse"; then
-            ((failures += 1))
+            ((return_failures += 1))
         fi
 
         i3-msg "[con_id=${target_con}] focus" >/dev/null
@@ -310,6 +370,9 @@ run_variant() {
         focused_rmse=$(normalized_rmse \
             "${artifact_dir}/${label}-reference.png" \
             "${artifact_dir}/${label}-focused-${iteration}.png")
+        if ! rmse_is_acceptable "$focused_rmse"; then
+            ((focused_failures += 1))
+        fi
 
         printf '  iteration=%d return_rmse=%s focused_rmse=%s\n' \
             "$iteration" "$return_rmse" "$focused_rmse"
@@ -317,15 +380,16 @@ run_variant() {
 
     stop_active_test_processes
 
-    if ((failures == 0)); then
-        printf '  result=PASS (%d/%d within threshold %s)\n' \
-            "$iterations" "$iterations" "$threshold"
+    if ((return_failures == 0 && focused_failures == 0)); then
+        printf '  result=PASS (returns=%d/%d focused=%d/%d within threshold %s)\n' \
+            "$iterations" "$iterations" "$iterations" "$iterations" "$threshold"
     else
-        printf '  result=FAIL (%d/%d exceeded threshold %s)\n' \
-            "$failures" "$iterations" "$threshold"
+        printf '  result=FAIL (return_failures=%d/%d focused_failures=%d/%d threshold=%s)\n' \
+            "$return_failures" "$iterations" \
+            "$focused_failures" "$iterations" "$threshold"
     fi
 
-    variant_failures=$failures
+    variant_failures=$((return_failures + focused_failures))
 }
 
 printf 'i3=%s\n' "$i3_version"

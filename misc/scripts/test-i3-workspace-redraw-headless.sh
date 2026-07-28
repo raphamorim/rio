@@ -86,8 +86,11 @@ for _ in $(seq 1 100); do
     sleep 0.1
 done
 
-i3-msg -t get_version >/dev/null 2>&1 ||
-    fail "timed out waiting for i3; see $i3_log"
+if ! i3-msg -t get_version >/dev/null 2>&1; then
+    printf 'i3 timed out before becoming ready:\n' >&2
+    sed -n '1,200p' "$i3_log" >&2
+    exit 1
+fi
 
 export XDG_SESSION_TYPE=x11
 export LIBGL_ALWAYS_SOFTWARE=${LIBGL_ALWAYS_SOFTWARE:-1}
