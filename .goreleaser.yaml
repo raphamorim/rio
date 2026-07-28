@@ -317,7 +317,9 @@ winget:
 after:
   hooks:
     # homebrew-cask is bumped automatically by BrewTestBot (cask has livecheck)
-    - cmd: cargo publish --workspace
+    # --no-verify: the build matrix already compiled every crate; publish's
+    # default-feature rebuild trips rio-window's platform compile_error.
+    - cmd: cargo publish --workspace --no-verify
       if: "{{ and .IsRelease .IsMerging }}"
       output: true
 
