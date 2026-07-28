@@ -213,9 +213,25 @@ impl Application<'_> {
                 * self.config.window.quake_height_percentage.clamp(0.1, 1.0))
                 as u32;
             let x = mpos.x + (msize.width.saturating_sub(width) / 2) as i32;
-            let _ = window
-                .request_inner_size(rio_window::dpi::PhysicalSize::new(width, height));
-            window.set_outer_position(rio_window::dpi::PhysicalPosition::new(x, mpos.y));
+            #[cfg(target_os = "macos")]
+            {
+                let scale = monitor.scale_factor();
+                let size: rio_window::dpi::LogicalSize<f64> =
+                    rio_window::dpi::PhysicalSize::new(width, height).to_logical(scale);
+                let pos: rio_window::dpi::LogicalPosition<f64> =
+                    rio_window::dpi::PhysicalPosition::new(x, mpos.y).to_logical(scale);
+                let _ = window.request_inner_size(size);
+                window.set_outer_position(pos);
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = window.request_inner_size(
+                    rio_window::dpi::PhysicalSize::new(width, height),
+                );
+                window.set_outer_position(rio_window::dpi::PhysicalPosition::new(
+                    x, mpos.y,
+                ));
+            }
         }
         window.set_visible(true);
         window.focus_window();
