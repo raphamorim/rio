@@ -335,7 +335,7 @@ checksum = "ae36dc4177970ef04fde5178d3e2429882def40e57a451f919c098f72baa6cec"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.2",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -653,9 +653,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.3.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c89588d05638b5b4594a3348a2d6c20277e43a7f5c5202b05cc56888475a47b8"
+checksum = "5add81bb678e6cb321aff7fa0dc7689ad82b112dbc032cea19f91d6b8e3582b9"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -747,9 +747,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.6.3"
+version = "4.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fb99565819980999fb7b4a1796046a5c949e6d4ff132cf5fadf5a641e20d776"
+checksum = "d91e0c145792ef73a6ad36d27c75ac09f1832222a3c209689d90f534685ee5b7"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -769,14 +769,14 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.6.3"
+version = "4.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32f2392eae7f16557a3d727ef3a12e57b2b2ca6f98566a5f4fb41ffe305df077"
+checksum = "d012d2b9d65aca7f18f4d9878a045bc17899bba951561ba5ec3c2ba1eed9a061"
 dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -878,7 +878,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -1394,9 +1394,9 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
+checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
 
 [[package]]
 name = "encoding_rs"
@@ -1476,11 +1476,10 @@ dependencies = [
 
 [[package]]
 name = "event-listener"
-version = "5.4.1"
+version = "5.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e13b66accf52311f30a0db42147dadea9850cb48cd070028831ae5f5d4b856ab"
+checksum = "5a23add41df1562121a9393cb065eab5146a1242410f23a644851e90cfd669d2"
 dependencies = [
- "concurrent-queue",
  "parking",
  "pin-project-lite",
 ]
@@ -1592,9 +1591,9 @@ dependencies = [
 
 [[package]]
 name = "font-types"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad67eced03f5504d9cbd3a879b5958b5c54d4e5fd794361c6eb21b05fb703411"
+checksum = "0a7299a780854a6d391be2ae1c8521c9368471b559dbfd6a8dbd9f407eaff100"
 dependencies = [
  "bytemuck",
 ]
@@ -1620,13 +1619,13 @@ dependencies = [
 
 [[package]]
 name = "foreign-types-macros"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a5c6c585bc94aaf2c7b51dd4c2ba22680844aba4c687be581871a6f518c5742"
+checksum = "ea5190182e6915eb873ddbc16e23b711b6eb1f9c00a0d0a3a91b5f6228475225"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -2383,9 +2382,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.188"
+version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22053b6a34f84abc97f9129e61334f40174659a1b9bd18c970b83db6a9a6348b"
+checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
 name = "libloading"
@@ -2573,7 +2572,7 @@ dependencies = [
 
 [[package]]
 name = "librio"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bitflags 2.13.1",
  "corcovado",
@@ -3014,9 +3013,9 @@ dependencies = [
 
 [[package]]
 name = "objc-rs"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a9b38a5df34f19b4f55bdbdf42c32f4b147359e7a845fb60b4b74e44399379a"
+checksum = "fed59851ec694c6cc10898f8e07087fd04542c637424ce55bf1dfda2ade673f1"
 dependencies = [
  "malloc_buf 1.0.0",
 ]
@@ -3685,9 +3684,9 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quick-xml"
-version = "0.39.4"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
 ]
@@ -3867,7 +3866,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "046a7d674daf459825b32f5062056d6882db0d2f5a479fbd76ccfc870ac18709"
 dependencies = [
  "bytemuck",
- "font-types 0.12.1",
+ "font-types 0.12.2",
  "once_cell",
 ]
 
@@ -3966,7 +3965,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "dirs",
@@ -3985,7 +3984,7 @@ dependencies = [
 
 [[package]]
 name = "rio-grapheme-width"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "phf",
  "ucd-trie",
@@ -3993,7 +3992,7 @@ dependencies = [
 
 [[package]]
 name = "rio-graphics"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "image",
  "parking_lot",
@@ -4005,10 +4004,10 @@ dependencies = [
 
 [[package]]
 name = "rio-notifier"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "block2 0.5.1",
- "objc-rs 0.3.1",
+ "objc-rs 0.3.2",
  "objc2 0.5.2",
  "objc2-foundation 0.2.2",
  "objc2-user-notifications",
@@ -4018,7 +4017,7 @@ dependencies = [
 
 [[package]]
 name = "rio-vt"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "bitflags 2.13.1",
@@ -4052,7 +4051,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -4071,7 +4070,7 @@ dependencies = [
  "js-sys",
  "libc",
  "memmap2",
- "objc-rs 0.3.1",
+ "objc-rs 0.3.2",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
@@ -4107,7 +4106,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "ahash",
  "bitflags 2.13.1",
@@ -4123,7 +4122,7 @@ dependencies = [
  "libc",
  "lru",
  "notify",
- "objc-rs 0.3.1",
+ "objc-rs 0.3.2",
  "onig",
  "parking_lot",
  "pretty_assertions",
@@ -4293,7 +4292,7 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.2",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -4317,7 +4316,7 @@ checksum = "8d3b1629de253c70a0508c3899572da79ca359fdab27c7920ff00406df418906"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.2",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -4652,7 +4651,7 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "approx",
  "ash",
@@ -4750,9 +4749,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.2"
+version = "3.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a207d6d6a2b7fc470b80443726053f18a2481b7e1eee970597051596567987a3"
+checksum = "53e9bae58849f64dfa4f5d5ae372c8341f7305f82a3868709269343628b659a3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4784,7 +4783,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "corcovado",
  "dirs",
@@ -4866,7 +4865,7 @@ checksum = "43cbfe0cf76104d42a574802844187e84a305e531ed54455f11fbde0f10541cd"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.2",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -5047,9 +5046,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.1.2+spec-1.1.0"
+version = "1.1.3+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
+checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow 1.0.4",
 ]
@@ -5375,9 +5374,9 @@ checksum = "c31d56021e873866c968588ed85ccdf56db5c426e44afdb4618c39895104b920"
 
 [[package]]
 name = "wayland-backend"
-version = "0.3.15"
+version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2857dd20b54e916ec7253b3d6b4d5c4d7d4ca2c33c2e11c6c76a99bd8744755d"
+checksum = "016ccf01d1c58b6f8999612813e17c9b2390f7d70671428869913310f83f54b8"
 dependencies = [
  "cc",
  "downcast-rs",
@@ -5389,9 +5388,9 @@ dependencies = [
 
 [[package]]
 name = "wayland-client"
-version = "0.31.14"
+version = "0.31.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "645c7c96bb74690c3189b5c9cb4ca1627062bb23693a4fad9d8c3de958260144"
+checksum = "e3c36a0f861ad76d0901f2800b46321410d9f73f2ea88aac0650d86c32688073"
 dependencies = [
  "bitflags 2.13.1",
  "rustix 1.1.4",
@@ -5487,9 +5486,9 @@ dependencies = [
 
 [[package]]
 name = "wayland-scanner"
-version = "0.31.10"
+version = "0.31.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c324a910fd86ebdc364a3e61ec1f11737d3b1d6c273c0239ee8ff4bc0d24b4a"
+checksum = "338e30461b3a2b67d70eb30a6d89f8e0c93a833e07d2ae89085cd070c4a00ac0"
 dependencies = [
  "proc-macro2",
  "quick-xml",
