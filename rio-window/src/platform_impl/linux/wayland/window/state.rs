@@ -190,7 +190,9 @@ impl WindowState {
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
             ext_background_effect: None,
-            ext_background_effect_manager: winit_state.ext_background_effect_manager.clone(),
+            ext_background_effect_manager: winit_state
+                .ext_background_effect_manager
+                .clone(),
             compositor,
             connection,
             csd_fails: false,
@@ -1083,18 +1085,11 @@ impl WindowState {
     /// falling back to `org_kde_kwin_blur_manager` for KDE Plasma.
     #[inline]
     pub fn set_blur(&mut self, blurred: bool) {
-        if blurred
-            && self.blur.is_none()
-            && self.ext_background_effect.is_none()
-        {
+        if blurred && self.blur.is_none() && self.ext_background_effect.is_none() {
             // Try ext-background-effect-v1 first (COSMIC, GNOME).
-            if let Some(bg_effect_manager) =
-                self.ext_background_effect_manager.as_ref()
-            {
-                let bg_effect = bg_effect_manager.get_background_effect(
-                    self.window.wl_surface(),
-                    &self.queue_handle,
-                );
+            if let Some(bg_effect_manager) = self.ext_background_effect_manager.as_ref() {
+                let bg_effect = bg_effect_manager
+                    .get_background_effect(self.window.wl_surface(), &self.queue_handle);
                 // Set a full-surface blur region.
                 if let Ok(region) = Region::new(&*self.compositor) {
                     region.add(0, 0, i32::MAX, i32::MAX);

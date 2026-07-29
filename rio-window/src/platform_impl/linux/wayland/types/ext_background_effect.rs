@@ -32,11 +32,14 @@ impl ExtBackgroundEffectManager {
         surface: &WlSurface,
         queue_handle: &QueueHandle<WinitState>,
     ) -> ExtBackgroundEffectSurfaceV1 {
-        self.manager.get_background_effect(surface, queue_handle, ())
+        self.manager
+            .get_background_effect(surface, queue_handle, ())
     }
 }
 
-impl Dispatch<ExtBackgroundEffectManagerV1, GlobalData, WinitState> for ExtBackgroundEffectManager {
+impl Dispatch<ExtBackgroundEffectManagerV1, GlobalData, WinitState>
+    for ExtBackgroundEffectManager
+{
     fn event(
         _state: &mut WinitState,
         _proxy: &ExtBackgroundEffectManagerV1,
@@ -48,7 +51,9 @@ impl Dispatch<ExtBackgroundEffectManagerV1, GlobalData, WinitState> for ExtBackg
     }
 }
 
-impl Dispatch<ExtBackgroundEffectSurfaceV1, (), WinitState> for ExtBackgroundEffectManager {
+impl Dispatch<ExtBackgroundEffectSurfaceV1, (), WinitState>
+    for ExtBackgroundEffectManager
+{
     fn event(
         _state: &mut WinitState,
         _proxy: &ExtBackgroundEffectSurfaceV1,
