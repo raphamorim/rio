@@ -647,3 +647,132 @@ fn test_split_inside_resized_panel_preserves_proportions() {
         "Bottom (bottom half) should be ~400px tall, got {bottom_h}"
     );
 }
+
+// --- ToggleSplitZoom -----------------------------------------------------
+
+fn zoom_test_dimension() -> ContextDimension {
+    let dims = TextDimensions {
+        width: 8.0,
+        height: 16.0,
+        scale: 1.0,
+    };
+    ContextDimension::build(
+        800.0,
+        600.0,
+        dims,
+        cell_for(dims),
+        1.0,
+        14.0,
+        Margin::all(0.0),
+    )
+}
+
+/// Build a grid with `n` panels (each a right-split of the previous
+/// focus). Mirrors `split_right` but stays off sugarloaf by recomputing
+/// with `calculate_positions` instead of `apply_taffy_layout`.
+fn zoom_test_grid(n: usize) -> ContextGrid<rio_backend::event::VoidListener> {
+    use crate::context::create_mock_context;
+    use rio_backend::event::VoidListener;
+    use rio_window::window::WindowId;
+
+    let first =
+        create_mock_context(VoidListener {}, WindowId::from(0), 0, zoom_test_dimension());
+    let mut grid = ContextGrid::new(
+        first,
+        Margin::all(0.0),
+        [0.0; 4],
+        [0.0; 4],
+        rio_backend::config::layout::Panel::default(),
+    );
+
+    for i in 1..n {
+        let ctx = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            i,
+            zoom_test_dimension(),
+        );
+        let new_node = grid.try_split_right().expect("split should succeed");
+        grid.inner.insert(new_node, ContextGridItem::new(ctx));
+        grid.current = new_node;
+        grid.calculate_positions();
+    }
+    grid
+}
+
+fn visible_count(grid: &ContextGrid<rio_backend::event::VoidListener>) -> usize {
+    grid.inner.values().filter(|i| !i.is_hidden()).count()
+}
+
+#[test]
+fn test_zoom_hides_siblings_then_restores() {
+    let mut grid = zoom_test_grid(3);
+    assert_eq!(grid.panel_count(), 3);
+    assert!(!grid.is_zoomed());
+    assert_eq!(visible_count(&grid), 3);
+
+    let focused = grid.current;
+    grid.apply_zoom_styles(focused);
+    grid.calculate_positions();
+
+    assert!(grid.is_zoomed());
+    // Every sibling along the path to the root is hidden.
+    assert_eq!(grid.zoom_hidden.len(), 2);
+    for &node in &grid.zoom_hidden {
+        assert_eq!(grid.tree.style(node).unwrap().display, Display::None);
+    }
+    // Only the focused panel still has area.
+    assert_eq!(visible_count(&grid), 1);
+    assert!(!grid.inner[&focused].is_hidden());
+
+    grid.restore_zoom_styles();
+    grid.calculate_positions();
+
+    assert!(!grid.is_zoomed());
+    assert!(grid.zoom_hidden.is_empty());
+    assert_eq!(visible_count(&grid), 3);
+}
+
+#[test]
+fn test_zoomed_panel_fills_like_a_lone_panel() {
+    let solo = zoom_test_grid(1);
+    let solo_rect = solo.inner.values().next().unwrap().layout_rect;
+
+    let mut grid = zoom_test_grid(3);
+    let focused = grid.current;
+
+    // Before zoom the focused panel is only a fraction of the area.
+    assert!(grid.inner[&focused].layout_rect[2] < solo_rect[2]);
+
+    grid.apply_zoom_styles(focused);
+    grid.calculate_positions();
+
+    let zoomed_rect = grid.inner[&focused].layout_rect;
+    assert!(
+        (zoomed_rect[2] - solo_rect[2]).abs() < 1.0
+            && (zoomed_rect[3] - solo_rect[3]).abs() < 1.0,
+        "zoomed panel {zoomed_rect:?} should fill like a lone panel {solo_rect:?}"
+    );
+}
+
+#[test]
+fn test_zoom_excludes_hidden_panels_from_unfocused_dim() {
+    // Regression: the unfocused-split dim overlay used to tint hidden
+    // (zoomed-away) panels, sizing the rect from their stale dimension.
+    // That painted old-sized shadows over the maximized panel. A zoomed
+    // grid must report no panels to dim at all.
+    let mut grid = zoom_test_grid(3);
+    let focused = grid.current;
+
+    // Without zoom, the other two panels are dimmed.
+    assert_eq!(grid.unfocused_panels(focused).count(), 2);
+
+    grid.apply_zoom_styles(focused);
+    grid.calculate_positions();
+    // Zoomed: the focused panel fills the area and nothing is dimmed.
+    assert_eq!(grid.unfocused_panels(focused).count(), 0);
+
+    grid.restore_zoom_styles();
+    grid.calculate_positions();
+    assert_eq!(grid.unfocused_panels(focused).count(), 2);
+}

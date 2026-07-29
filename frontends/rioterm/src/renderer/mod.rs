@@ -287,6 +287,9 @@ impl Renderer {
         }
 
         for (_key, grid_context) in grid.contexts_mut().iter_mut() {
+            if grid_context.is_hidden() {
+                continue;
+            }
             let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
 
@@ -586,6 +589,12 @@ impl Renderer {
         if self.scrollbar.is_enabled() {
             self.scrollbar.clear_panel_states();
             for grid_context in grid.contexts_mut().values() {
+                // A zoomed split collapses its siblings to zero size;
+                // pushing scroll state for them would draw scrollbars
+                // for panels that aren't on screen.
+                if grid_context.is_hidden() {
+                    continue;
+                }
                 let panel_rect = grid_context.layout_rect;
                 let ctx = grid_context.context();
                 let rc = &ctx.renderable_content;
@@ -618,10 +627,7 @@ impl Renderer {
                 tint[2],
                 1.0 - self.unfocused_split_opacity,
             ];
-            for (key, grid_context) in grid.contexts_mut().iter() {
-                if &active_key == key {
-                    continue;
-                }
+            for grid_context in grid.unfocused_panels(active_key) {
                 // Match the grid renderer's actual paint region —
                 // `.round()`ed integer-pixel origin +
                 // `cols * round(cell_w)` × `rows * round(cell_h)`
