@@ -225,9 +225,9 @@ impl Application<'_> {
             }
             #[cfg(not(target_os = "macos"))]
             {
-                let _ = window.request_inner_size(
-                    rio_window::dpi::PhysicalSize::new(width, height),
-                );
+                let _ = window.request_inner_size(rio_window::dpi::PhysicalSize::new(
+                    width, height,
+                ));
                 window.set_outer_position(rio_window::dpi::PhysicalPosition::new(
                     x, mpos.y,
                 ));
@@ -235,6 +235,14 @@ impl Application<'_> {
         }
         window.set_visible(true);
         window.focus_window();
+        if let Some(route) = self.router.routes.get_mut(&id) {
+            route.window.is_occluded = false;
+            route
+                .window
+                .screen
+                .context_manager
+                .set_window_visibility(true);
+        }
     }
 
     /// Show, focus or hide the quake window; create it on first use.
@@ -264,6 +272,12 @@ impl Application<'_> {
                 self.show_quake_window(id, event_loop);
             } else if window.has_focus() {
                 window.set_visible(false);
+                let visible = route.window.is_potentially_visible();
+                route
+                    .window
+                    .screen
+                    .context_manager
+                    .set_window_visibility(visible);
                 #[cfg(target_os = "macos")]
                 if let Some(pid) = self.quake_previous_app.take() {
                     rio_window::platform::macos::activate_application(pid);
@@ -276,7 +290,26 @@ impl Application<'_> {
 }
 
 impl ApplicationHandler<EventPayload> for Application<'_> {
-    fn resumed(&mut self, _active_event_loop: &ActiveEventLoop) {}
+    fn resumed(&mut self, _active_event_loop: &ActiveEventLoop) {
+        for route in self.router.routes.values_mut() {
+            let visible = route.window.is_potentially_visible();
+            route
+                .window
+                .screen
+                .context_manager
+                .set_window_visibility(visible);
+        }
+    }
+
+    fn suspended(&mut self, _active_event_loop: &ActiveEventLoop) {
+        for route in self.router.routes.values_mut() {
+            route
+                .window
+                .screen
+                .context_manager
+                .set_window_visibility(false);
+        }
+    }
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
         if cause != StartCause::Init
@@ -865,7 +898,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .window
                         .screen
                         .context_manager
-                        .get_by_route_id(route_id)
+                        .get_by_route_id_any(route_id)
                     {
                         item.val.messenger.send_bytes(text.into_bytes());
                     }
@@ -1005,6 +1038,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             #[cfg(target_os = "macos")]
             RioEventType::Rio(RioEvent::Hide) => {
+                for route in self.router.routes.values_mut() {
+                    route
+                        .window
+                        .screen
+                        .context_manager
+                        .set_window_visibility(false);
+                }
                 event_loop.hide_application();
             }
             #[cfg(target_os = "macos")]
@@ -1014,6 +1054,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::Minimize(set_minimize)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route.window.winit_window.set_minimized(set_minimize);
+                    let visible = !set_minimize && route.window.is_potentially_visible();
+                    route
+                        .window
+                        .screen
+                        .context_manager
+                        .set_window_visibility(visible);
                 }
             }
             RioEventType::Rio(RioEvent::ToggleFullScreen) => {
@@ -1981,17 +2027,33 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 let focus_changed = route.window.is_focused != focused;
                 route.window.is_focused = focused;
+                if focused {
+                    // A focused window cannot be minimized, hidden, or fully occluded.
+                    route.window.is_occluded = false;
+                }
 
                 if focus_changed {
                     route.request_redraw();
                 }
 
                 route.window.screen.on_focus_change(focused);
+                let visible = route.window.is_potentially_visible();
+                route
+                    .window
+                    .screen
+                    .context_manager
+                    .set_window_visibility(visible);
             }
 
             WindowEvent::Occluded(occluded) => {
                 let was_occluded = route.window.is_occluded;
                 route.window.is_occluded = occluded;
+                let visible = route.window.is_potentially_visible();
+                route
+                    .window
+                    .screen
+                    .context_manager
+                    .set_window_visibility(visible);
 
                 // If window was occluded and is now visible, mark for one-time render
                 if was_occluded && !occluded {
@@ -2023,6 +2085,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Resized(new_size) => {
+                let visible = route.window.is_potentially_visible();
+                route
+                    .window
+                    .screen
+                    .context_manager
+                    .set_window_visibility(visible);
+
                 if new_size.width == 0 || new_size.height == 0 {
                     return;
                 }

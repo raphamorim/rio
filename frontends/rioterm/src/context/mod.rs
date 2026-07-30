@@ -148,6 +148,7 @@ pub struct ContextManager<T: EventListener> {
     contexts: SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]>,
     current_index: usize,
     current_route: usize,
+    window_visible: bool,
     #[allow(unused)]
     capacity: usize,
     event_proxy: T,
@@ -412,6 +413,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         Ok(ContextManager {
             current_index: 0,
             current_route: 0,
+            window_visible: true,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 scaled_margin,
@@ -450,6 +452,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         Ok(ContextManager {
             current_index: 0,
             current_route: 0,
+            window_visible: true,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 Margin::default(),
@@ -800,6 +803,17 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.contexts[self.current_index].get_by_route_id(route_id)
     }
 
+    /// Find a terminal by route across active and inactive tabs.
+    #[inline]
+    pub fn get_by_route_id_any(
+        &mut self,
+        route_id: usize,
+    ) -> Option<&mut ContextGridItem<T>> {
+        self.contexts
+            .iter_mut()
+            .find_map(|context| context.get_by_route_id(route_id))
+    }
+
     #[inline]
     pub fn contexts_mut(
         &mut self,
@@ -846,8 +860,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn set_current(&mut self, context_id: usize) {
         if context_id < self.contexts.len() {
+            let old_index = self.current_index;
             self.current_index = context_id;
             self.current_route = self.current().route_id;
+
+            if old_index != context_id {
+                if let Some(context) = self.contexts.get(old_index) {
+                    context.set_terminal_visibility(false);
+                }
+                self.contexts[context_id].set_terminal_visibility(self.window_visible);
+            }
         }
     }
 
@@ -911,13 +933,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        if self.contexts.len() - 1 == self.current_index {
-            self.current_index = 0;
+        let next_index = if self.contexts.len() - 1 == self.current_index {
+            0
         } else {
-            self.current_index += 1;
-        }
-
-        self.current_route = self.current().route_id;
+            self.current_index + 1
+        };
+        self.set_current(next_index);
     }
 
     #[inline]
@@ -928,13 +949,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        if self.current_index == 0 {
-            self.current_index = self.contexts.len() - 1;
+        let previous_index = if self.current_index == 0 {
+            self.contexts.len() - 1
         } else {
-            self.current_index -= 1;
-        }
-
-        self.current_route = self.current().route_id;
+            self.current_index - 1
+        };
+        self.set_current(previous_index);
     }
 
     #[inline]
@@ -1025,6 +1045,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &cloned_config,
         ) {
             Ok(new_context) => {
+                new_context
+                    .terminal
+                    .lock()
+                    .set_visibility(self.window_visible);
                 let new_route_id = new_context.route_id;
                 if split_down {
                     self.contexts[self.current_index].split_down(new_context, sugarloaf);
@@ -1087,6 +1111,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &context_manager_config,
         ) {
             Ok(new_context) => {
+                new_context
+                    .terminal
+                    .lock()
+                    .set_visibility(self.window_visible);
                 let new_route_id = new_context.route_id;
                 if split_down {
                     self.contexts[self.current_index].split_down(new_context, sugarloaf);
@@ -1162,6 +1190,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 Ok(new_context) => {
                     let previous_scaled_margin =
                         self.contexts[self.current_index].scaled_margin;
+                    new_context
+                        .terminal
+                        .lock()
+                        .set_visibility(redirect && self.window_visible);
                     self.contexts.push(ContextGrid::new(
                         new_context,
                         previous_scaled_margin,
@@ -1170,6 +1202,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         self.config.panel,
                     ));
                     if redirect {
+                        self.contexts[self.current_index].set_terminal_visibility(false);
                         self.current_index = last_index;
                         self.current_route = self.current().route_id;
                     }
@@ -1188,10 +1221,25 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // Skip the current tab
             if idx == self.current_index {
                 context.set_all_rich_text_visibility(sugarloaf, true);
+                context.set_terminal_visibility(self.window_visible);
                 continue;
             }
 
             context.set_all_rich_text_visibility(sugarloaf, false);
+            context.set_terminal_visibility(false);
+        }
+    }
+
+    /// Update host-window visibility and propagate the effective state to
+    /// every terminal view. Inactive tabs are never considered visible.
+    pub fn set_window_visibility(&mut self, visible: bool) {
+        if self.window_visible == visible {
+            return;
+        }
+
+        self.window_visible = visible;
+        for (index, context) in self.contexts.iter().enumerate() {
+            context.set_terminal_visibility(visible && index == self.current_index);
         }
     }
 
@@ -1203,11 +1251,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         old_index: usize,
         new_index: usize,
     ) {
+        if old_index == new_index {
+            if let Some(context) = self.contexts.get(new_index) {
+                context.set_all_rich_text_visibility(sugarloaf, true);
+                context.set_terminal_visibility(self.window_visible);
+            }
+            return;
+        }
+
         if let Some(old_context) = self.contexts.get(old_index) {
             old_context.set_all_rich_text_visibility(sugarloaf, false);
+            old_context.set_terminal_visibility(false);
         }
         if let Some(new_context) = self.contexts.get(new_index) {
             new_context.set_all_rich_text_visibility(sugarloaf, true);
+            new_context.set_terminal_visibility(self.window_visible);
         }
     }
 }
@@ -1246,6 +1304,24 @@ pub fn process_open_url(
 pub mod test {
     use super::*;
     use crate::event::VoidListener;
+    use rio_backend::ansi::mode::PrivateMode;
+    use rio_backend::performer::handler::Handler;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct TestListener {
+        events: Arc<Mutex<Vec<RioEvent>>>,
+    }
+
+    impl EventListener for TestListener {
+        fn event(&self) -> (Option<RioEvent>, bool) {
+            (None, false)
+        }
+
+        fn send_event(&self, event: RioEvent, _id: WindowId) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
 
     #[test]
     fn test_capacity() {
@@ -1326,6 +1402,70 @@ pub mod test {
 
         context_manager.set_current(8);
         assert_eq!(context_manager.current_index, 3);
+    }
+
+    #[test]
+    fn visibility_follows_active_tab_and_window() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let listener = TestListener {
+            events: events.clone(),
+        };
+        let mut context_manager =
+            ContextManager::start_with_capacity(2, listener, WindowId::from(0)).unwrap();
+        context_manager.add_context(false, 0);
+
+        let first_route = context_manager.contexts[0].current().route_id;
+        let second_route = context_manager.contexts[1].current().route_id;
+        for context in &context_manager.contexts {
+            Handler::set_private_mode(
+                &mut *context.current().terminal.lock(),
+                PrivateMode::new(2033),
+            );
+        }
+
+        let take_reports = || {
+            std::mem::take(&mut *events.lock().unwrap())
+                .into_iter()
+                .filter_map(|event| match event {
+                    RioEvent::PtyWrite(route, text) => Some((route, text)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            take_reports(),
+            [
+                (first_route, "\x1b[?999;1n".to_string()),
+                (second_route, "\x1b[?999;2n".to_string()),
+            ]
+        );
+
+        context_manager.set_current(1);
+        assert_eq!(
+            take_reports(),
+            [
+                (first_route, "\x1b[?999;2n".to_string()),
+                (second_route, "\x1b[?999;1n".to_string()),
+            ]
+        );
+        assert_eq!(
+            context_manager
+                .get_by_route_id_any(first_route)
+                .map(|item| item.val.route_id),
+            Some(first_route),
+            "reply routing must find terminals in inactive tabs"
+        );
+
+        context_manager.set_window_visibility(false);
+        assert_eq!(take_reports(), [(second_route, "\x1b[?999;2n".to_string())]);
+
+        // Switching tabs while hidden must not make the new tab visible.
+        context_manager.set_current(0);
+        assert!(take_reports().is_empty());
+
+        context_manager.set_window_visibility(true);
+        assert_eq!(take_reports(), [(first_route, "\x1b[?999;1n".to_string())]);
     }
 
     fn set_tab_title(cm: &mut ContextManager<VoidListener>, index: usize, content: &str) {

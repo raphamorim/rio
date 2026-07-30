@@ -628,6 +628,13 @@ impl<'a> RouteWindow<'a> {
         configure_window(&self.winit_window, config);
     }
 
+    /// Whether the host has no positive knowledge that this window is hidden.
+    pub fn is_potentially_visible(&self) -> bool {
+        !self.is_occluded
+            && self.winit_window.is_visible() != Some(false)
+            && self.winit_window.is_minimized() != Some(true)
+    }
+
     pub fn wait_until(&self) -> Option<Duration> {
         // If we need to render after occlusion, render immediately
         if self.needs_render_after_occlusion {

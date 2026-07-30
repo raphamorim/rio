@@ -157,6 +157,9 @@ pub trait Handler {
     /// Report device status.
     fn device_status(&mut self, _: usize) {}
 
+    /// Report whether the terminal view is potentially visible.
+    fn report_visibility(&mut self) {}
+
     /// Move cursor forward `cols`.
     fn move_forward(&mut self, _: Column) {}
 
@@ -1341,6 +1344,13 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 }
             }
             ('n', []) => handler.device_status(next_param_or(0) as usize),
+            ('n', [b'?']) => {
+                if next_param_or(0) == 998 {
+                    handler.report_visibility();
+                } else {
+                    csi_unhandled!();
+                }
+            }
             ('P', []) => handler.delete_chars(next_param_or(1) as usize),
             ('p', [b'$']) => {
                 let mode = next_param_or(0);

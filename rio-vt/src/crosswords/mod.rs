@@ -97,6 +97,7 @@ bitflags! {
         const REPORT_ALTERNATE_KEYS   = 1 << 20;
         const REPORT_ALL_KEYS_AS_ESC  = 1 << 21;
         const REPORT_ASSOCIATED_TEXT  = 1 << 22;
+        const VISIBILITY_REPORTS      = 1 << 23;
         const MOUSE_MODE = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits();
         const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
                                       | Self::REPORT_EVENT_TYPES.bits()
@@ -450,6 +451,7 @@ where
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
+    is_potentially_visible: bool,
     pub window_id: WindowId,
     pub route_id: usize,
     title_stack: Vec<String>,
@@ -512,6 +514,7 @@ impl<U: EventListener> Crosswords<U> {
             default_cursor_shape: cursor_shape,
             cursor_shape,
             blinking_cursor: false,
+            is_potentially_visible: true,
             window_id,
             route_id,
             title_stack: Default::default(),
@@ -1823,6 +1826,30 @@ impl<U: EventListener> Crosswords<U> {
         self.mode
     }
 
+    /// Update whether this terminal view might be observable.
+    ///
+    /// Visibility is conservative: callers must pass `true` whenever the
+    /// state is unknown. A report is emitted when the state changes while
+    /// visibility reporting mode is enabled.
+    pub fn set_visibility(&mut self, is_potentially_visible: bool) {
+        if self.is_potentially_visible == is_potentially_visible {
+            return;
+        }
+
+        self.is_potentially_visible = is_potentially_visible;
+        if self.mode.contains(Mode::VISIBILITY_REPORTS) {
+            self.send_visibility_report();
+        }
+    }
+
+    fn send_visibility_report(&self) {
+        let state = if self.is_potentially_visible { 1 } else { 2 };
+        self.event_proxy.send_event(
+            RioEvent::PtyWrite(self.route_id, format!("\x1b[?999;{state}n")),
+            self.window_id,
+        );
+    }
+
     #[inline]
     pub fn cursor(&self) -> CursorState {
         let mut content = self.cursor_shape;
@@ -2309,6 +2336,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::SyncUpdate => (),
+            NamedPrivateMode::VisibilityReports => {
+                self.mode.insert(Mode::VISIBILITY_REPORTS);
+                self.send_visibility_report();
+            }
         }
     }
 
@@ -2381,6 +2412,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::SyncUpdate => (),
+            NamedPrivateMode::VisibilityReports => {
+                self.mode.remove(Mode::VISIBILITY_REPORTS)
+            }
         }
     }
 
@@ -2427,6 +2461,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     self.mode.contains(Mode::BRACKETED_PASTE).into()
                 }
                 NamedPrivateMode::SyncUpdate => ModeState::Reset,
+                NamedPrivateMode::VisibilityReports => {
+                    self.mode.contains(Mode::VISIBILITY_REPORTS).into()
+                }
                 NamedPrivateMode::ColumnMode => ModeState::NotSupported,
             },
             PrivateMode::Unknown(_) => ModeState::NotSupported,
@@ -3347,6 +3384,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             _ => debug!("unknown device status query: {}", arg),
         };
+    }
+
+    #[inline]
+    fn report_visibility(&mut self) {
+        self.send_visibility_report();
     }
 
     #[inline]
@@ -6733,6 +6775,79 @@ mod tests {
             }
             other => panic!("Expected PtyWrite event, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn visibility_reporting_protocol() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        #[derive(Clone)]
+        struct TestListener {
+            events: Rc<RefCell<Vec<RioEvent>>>,
+        }
+
+        impl EventListener for TestListener {
+            fn event(&self) -> (Option<RioEvent>, bool) {
+                (None, false)
+            }
+
+            fn send_event(&self, event: RioEvent, _id: WindowId) {
+                self.events.borrow_mut().push(event);
+            }
+        }
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            7,
+            10,
+        );
+        let mut processor = crate::performer::handler::Processor::default();
+
+        // Detect support, then enable twice. Every enable must immediately
+        // report the current state, even when the mode was already enabled.
+        processor.advance(&mut term, b"\x1b[?2033$p");
+        processor.advance(&mut term, b"\x1b[?2033h\x1b[?2033h");
+        processor.advance(&mut term, b"\x1b[?2033$p");
+
+        term.set_visibility(false);
+        term.set_visibility(false);
+        processor.advance(&mut term, b"\x1b[?998n");
+
+        // Disabling suppresses change notifications, but not one-shot queries.
+        processor.advance(&mut term, b"\x1b[?2033l");
+        term.set_visibility(true);
+        processor.advance(&mut term, b"\x1b[?998n");
+
+        let reports: Vec<String> = events
+            .borrow()
+            .iter()
+            .filter_map(|event| match event {
+                RioEvent::PtyWrite(route_id, text) => {
+                    assert_eq!(*route_id, 7);
+                    Some(text.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            reports,
+            [
+                "\x1b[?2033;2$y",
+                "\x1b[?999;1n",
+                "\x1b[?999;1n",
+                "\x1b[?2033;1$y",
+                "\x1b[?999;2n",
+                "\x1b[?999;2n",
+                "\x1b[?999;1n",
+            ]
+        );
     }
 
     #[test]

@@ -871,15 +871,13 @@ impl EventProcessor {
         wt.update_refresh_loop(WindowId(window as _));
     }
 
-    fn unmap_notify<T: 'static, F>(&self, xev: &XUnmapEvent, _callback: F)
+    fn unmap_notify<T: 'static, F>(&self, xev: &XUnmapEvent, mut callback: F)
     where
         F: FnMut(&RootAEL, Event<T>),
     {
         let window = xev.window as xproto::Window;
         // Window is unmapped → tear down the per-window vsync timer
-        // by flipping the mapped bit. We don't fire
-        // `WindowEvent::Occluded` here — that's reserved for
-        // `VisibilityNotify` per X11 semantics. We also leave
+        // and report that it is completely hidden. Leave
         // `is_fully_obscured` untouched: when the window is mapped
         // again, the next `VisibilityNotify` will report the real
         // state (and `update_refresh_loop` keeps the timer torn down
@@ -891,6 +889,14 @@ impl EventProcessor {
         });
         let wt = Self::window_target(&self.target);
         wt.update_refresh_loop(WindowId(window as _));
+
+        callback(
+            &self.target,
+            Event::WindowEvent {
+                window_id: mkwid(window),
+                event: WindowEvent::Occluded(true),
+            },
+        );
     }
 
     fn destroy_notify<T: 'static, F>(&self, xev: &XDestroyWindowEvent, mut callback: F)
@@ -950,18 +956,20 @@ impl EventProcessor {
         let xwindow = xev.window as xproto::Window;
         let fully_obscured = xev.state == xlib::VisibilityFullyObscured;
 
-        let event = Event::WindowEvent {
-            window_id: mkwid(xwindow),
-            event: WindowEvent::Occluded(fully_obscured),
-        };
-        callback(&self.target, event);
-
+        // Publish the new state before invoking the application callback so
+        // synchronous queries like `Window::is_visible` observe it.
         self.with_window(xwindow, |window| {
             window
                 .is_fully_obscured
                 .store(fully_obscured, std::sync::atomic::Ordering::Release);
             window.visibility_notify();
         });
+
+        let event = Event::WindowEvent {
+            window_id: mkwid(xwindow),
+            event: WindowEvent::Occluded(fully_obscured),
+        };
+        callback(&self.target, event);
 
         // Re-evaluate the per-window vsync timer — start it if newly
         // visible, tear it down if newly fully-obscured.
