@@ -121,6 +121,15 @@ pub trait Handler {
         }
     }
 
+    /// Like [`Handler::input_str`], but the caller guarantees `s` is
+    /// printable ASCII (`0x20..=0x7E`). The parser's ground state emits
+    /// runs through this entry, so implementations can skip revalidating
+    /// the bytes. Default delegates to [`Handler::input_str`].
+    fn input_ascii_str(&mut self, s: &str) {
+        debug_assert!(s.is_ascii());
+        self.input_str(s);
+    }
+
     /// A contiguous run of pre-decoded Unicode codepoints to be displayed.
     /// Default implementation iterates and calls [`Handler::input`].
     /// Implementers can specialize to bulk-process codepoints (SIMD width
@@ -909,7 +918,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
         if s.is_empty() {
             return;
         }
-        self.handler.input_str(s);
+        self.handler.input_ascii_str(s);
         // `preceding_char` is used by REP (CSI Ps b) — it just needs the
         // last printed char, so keep it cheap by reading the last char of
         // `s` rather than tracking per-byte.
@@ -928,8 +937,6 @@ impl<U: Handler> Perform for Performer<'_, U> {
     }
 
     fn execute(&mut self, byte: u8) {
-        tracing::trace!("[execute] {byte:04x}");
-
         match byte {
             C0::HT => self.handler.put_tab(1),
             C0::BS => self.handler.backspace(),
@@ -1332,12 +1339,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 if params.is_empty() {
                     handler.terminal_attribute(Attr::Reset);
                 } else {
-                    for attr in attrs_from_sgr_parameters(&mut params_iter) {
-                        match attr {
-                            Some(attr) => handler.terminal_attribute(attr),
-                            None => csi_unhandled!(),
-                        }
-                    }
+                    attrs_from_sgr_parameters(&mut params_iter, |attr| match attr {
+                        Some(attr) => handler.terminal_attribute(attr),
+                        None => csi_unhandled!(),
+                    });
                 }
             }
             ('n', []) => handler.device_status(next_param_or(0) as usize),
@@ -1513,9 +1518,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
 }
 
 #[inline]
-fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
-    let mut attrs = Vec::with_capacity(params.size_hint().0);
-
+fn attrs_from_sgr_parameters(
+    params: &mut ParamsIter<'_>,
+    mut emit: impl FnMut(Option<Attr>),
+) {
     while let Some(param) = params.next() {
         let attr = match param {
             [0] => Some(Attr::Reset),
@@ -1595,10 +1601,8 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
             [107] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightWhite))),
             _ => None,
         };
-        attrs.push(attr);
+        emit(attr);
     }
-
-    attrs
 }
 
 /// Process XTGETTCAP request and return DCS response.

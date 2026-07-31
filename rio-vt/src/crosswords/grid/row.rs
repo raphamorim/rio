@@ -188,17 +188,30 @@ impl<T: Clone + Default> Row<T> {
     #[inline]
     pub fn reset(&mut self, template: &T)
     where
-        T: GridSquare,
+        T: GridSquare + PartialEq,
     {
         debug_assert!(!self.inner.is_empty());
 
-        // Always reset every cell in the row. The previous implementation
-        // skipped untouched cells when the template's discriminant matched
-        // the rightmost cell — that optimization was based on the inline
-        // bg-color field on the cell, which no longer exists.
+        // The tail beyond `occ` holds at most two fill values: the last
+        // reset's fill, then defaults appended by `grow`. If both tail
+        // ends match what this reset writes, only the prefix needs work.
         let len = self.inner.len();
-        for item in &mut self.inner[0..len] {
-            item.reset(template);
+        let mut occ = self.occ;
+        if occ < len {
+            let mut probe = self.inner[occ].clone();
+            probe.reset(template);
+            if probe != self.inner[occ] || probe != self.inner[len - 1] {
+                occ = len;
+            }
+        }
+        if occ == len {
+            let mut proto = T::default();
+            proto.reset(template);
+            self.inner.fill(proto);
+        } else {
+            for item in &mut self.inner[0..occ] {
+                item.reset(template);
+            }
         }
         self.occ = 0;
         self.kitty_virtual_placeholder = false;

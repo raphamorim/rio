@@ -1,16 +1,16 @@
 //! Fast codepoint width lookup.
 //!
-//! Flat BMP table indexed by `u32` codepoint, computed once at first use,
-//! used for the bulk per-codepoint width queries the parser emits via
-//! [`Handler::input_codepoints`]. The table is 64 KiB of `u8` and
-//! amortises to zero on subsequent calls.
+//! Flat table indexed by `u32` codepoint over the BMP plus plane 1
+//! (`U+0000..U+20000`, so CJK and emoji both hit it), computed once at
+//! first use, used for the bulk per-codepoint width queries the parser
+//! emits via [`Handler::input_codepoints`]. The table is 128 KiB of `u8`
+//! and amortises to zero on subsequent calls.
 //!
-//! For supplementary-plane codepoints (`U+10000..=U+10FFFF`) we fall
-//! back to a scalar [`UnicodeWidthChar::width`] call — those are rare
-//! in real terminal traffic (modern emoji, CJK extensions) and the
-//! 1 MiB flat table that would cover them is not worth the working set.
+//! For codepoints above plane 1 we fall back to a scalar
+//! [`UnicodeWidthChar::width`] call; those are rare in real terminal
+//! traffic.
 //!
-//! Encoding in the BMP table:
+//! Encoding in the table:
 //! - `0xFF` → width undefined (control / surrogate / unassigned).
 //! - `0` / `1` / `2` → cell width.
 //!
@@ -19,19 +19,22 @@
 use std::sync::OnceLock;
 use unicode_width::UnicodeWidthChar;
 
-const BMP_LEN: usize = 0x1_0000;
+const TABLE_LEN: usize = 0x2_0000;
 const SENTINEL_NONE: u8 = 0xFF;
 
-static BMP_TABLE: OnceLock<Box<[u8]>> = OnceLock::new();
+static WIDTH_TABLE: OnceLock<Box<[u8]>> = OnceLock::new();
 
+/// The width lookup table. Callers doing bulk lookups should grab this
+/// once and use [`width_in`], hoisting the `OnceLock` access out of
+/// their loop.
 #[inline]
-fn bmp_table() -> &'static [u8] {
-    BMP_TABLE.get_or_init(build_bmp_table)
+pub fn width_table() -> &'static [u8] {
+    WIDTH_TABLE.get_or_init(build_table)
 }
 
-fn build_bmp_table() -> Box<[u8]> {
-    let mut table = vec![SENTINEL_NONE; BMP_LEN].into_boxed_slice();
-    for cp in 0..BMP_LEN as u32 {
+fn build_table() -> Box<[u8]> {
+    let mut table = vec![SENTINEL_NONE; TABLE_LEN].into_boxed_slice();
+    for cp in 0..TABLE_LEN as u32 {
         if let Some(c) = char::from_u32(cp) {
             if let Some(w) = UnicodeWidthChar::width(c) {
                 table[cp as usize] = w as u8;
@@ -41,26 +44,30 @@ fn build_bmp_table() -> Box<[u8]> {
     table
 }
 
-/// Lookup the cell width for a Unicode codepoint.
-///
-/// Returns `None` for codepoints with no defined width (controls,
-/// unassigned, surrogates). For supplementary-plane codepoints this
-/// falls back to a scalar `unicode-width` lookup; for BMP codepoints
-/// it's a single indexed load from a 64 KiB table populated on first
-/// call.
+/// Lookup the cell width for a codepoint through an already-resolved
+/// table reference (see [`width_table`]).
 #[inline]
-pub fn codepoint_width(cp: u32) -> Option<u8> {
-    if cp < BMP_LEN as u32 {
-        let w = bmp_table()[cp as usize];
-        if w == SENTINEL_NONE {
-            None
-        } else {
-            Some(w)
+pub fn width_in(table: &[u8], cp: u32) -> Option<u8> {
+    if (cp as usize) < TABLE_LEN {
+        match table[cp as usize] {
+            SENTINEL_NONE => None,
+            w => Some(w),
         }
     } else {
         let c = char::from_u32(cp)?;
         UnicodeWidthChar::width(c).map(|w| w as u8)
     }
+}
+
+/// Lookup the cell width for a Unicode codepoint.
+///
+/// Returns `None` for codepoints with no defined width (controls,
+/// unassigned, surrogates). Codepoints above plane 1 fall back to a
+/// scalar `unicode-width` lookup; everything else is a single indexed
+/// load from a 128 KiB table populated on first call.
+#[inline]
+pub fn codepoint_width(cp: u32) -> Option<u8> {
+    width_in(width_table(), cp)
 }
 
 #[cfg(test)]

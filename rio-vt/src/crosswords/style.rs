@@ -74,6 +74,35 @@ impl Default for Style {
 pub struct StyleSet {
     styles: Vec<Style>,
     lookup: FxHashMap<Style, StyleId>,
+    /// Direct-mapped cache of candidate ids fronting `lookup`; slots are
+    /// verified against `styles`, so a stale slot misses, never lies.
+    memo: [StyleId; MEMO_SLOTS],
+}
+
+const MEMO_BITS: u32 = 10;
+const MEMO_SLOTS: usize = 1 << MEMO_BITS;
+
+/// Direct-mapped slot for a style: a cheap multiply-fold, not `Hash`.
+#[inline]
+fn memo_index(style: &Style) -> usize {
+    #[inline]
+    fn color_key(c: AnsiColor) -> u32 {
+        match c {
+            AnsiColor::Named(n) => 0x0100_0000 ^ (n as u32),
+            AnsiColor::Indexed(i) => 0x0200_0000 ^ (i as u32),
+            AnsiColor::Spec(rgb) => {
+                0x0400_0000
+                    ^ ((rgb.r as u32) << 16 | (rgb.g as u32) << 8 | rgb.b as u32)
+            }
+        }
+    }
+    let mut h = color_key(style.fg);
+    h = h.wrapping_mul(0x9E37_79B9) ^ color_key(style.bg);
+    h = h.wrapping_mul(0x9E37_79B9) ^ style.flags.bits() as u32;
+    if let Some(u) = style.underline_color {
+        h = h.wrapping_mul(0x9E37_79B9) ^ color_key(u);
+    }
+    (h.wrapping_mul(0x9E37_79B9) >> (32 - MEMO_BITS)) as usize
 }
 
 impl PartialEq for StyleSet {
@@ -93,6 +122,7 @@ impl StyleSet {
         Self {
             styles: vec![default_style],
             lookup,
+            memo: [DEFAULT_STYLE_ID; MEMO_SLOTS],
         }
     }
 
@@ -144,6 +174,19 @@ impl StyleSet {
     /// that returns `DEFAULT_STYLE_ID`. In practice rio sessions use < 100
     /// distinct styles so this is purely defensive.
     pub fn intern(&mut self, style: Style) -> StyleId {
+        let slot = memo_index(&style);
+        let cand = self.memo[slot];
+        if let Some(&s) = self.styles.get(cand as usize) {
+            if s == style {
+                return cand;
+            }
+        }
+        let id = self.intern_slow(style);
+        self.memo[slot] = id;
+        id
+    }
+
+    fn intern_slow(&mut self, style: Style) -> StyleId {
         if let Some(&id) = self.lookup.get(&style) {
             return id;
         }

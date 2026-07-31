@@ -220,6 +220,22 @@ impl<T> Storage<T> {
         self.len == 0
     }
 
+    /// Set the dirty bit on `count` consecutive visible lines starting at
+    /// `start`, resolving the ring index once and walking incrementally
+    /// instead of paying `compute_index` per line.
+    #[inline]
+    pub fn mark_lines_dirty(&mut self, start: Line, count: usize) {
+        if count == 0 {
+            return;
+        }
+        let mut idx = self.compute_index(start);
+        let len = self.inner.len();
+        for _ in 0..count {
+            self.inner[idx].dirty = true;
+            idx = if idx == 0 { len - 1 } else { idx - 1 };
+        }
+    }
+
     /// Iterate every stored row. Order is the raw ring order, not logical line
     /// order, which is fine for whole-buffer predicates and per-row edits that
     /// don't depend on position (the resize in-place fast paths).
