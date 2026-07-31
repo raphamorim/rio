@@ -429,10 +429,8 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         // Full-screen scrolls skip this; the caller marks full damage,
         // and the snapshot's full path copies rows regardless of the bit.
         if region.start.0 != 0 || region.end.0 as usize != self.screen_lines() {
-            self.raw.mark_lines_dirty(
-                region.start,
-                (region.end.0 - region.start.0) as usize,
-            );
+            self.raw
+                .mark_lines_dirty(region.start, (region.end.0 - region.start.0) as usize);
         }
     }
 

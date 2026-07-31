@@ -91,8 +91,7 @@ fn memo_index(style: &Style) -> usize {
             AnsiColor::Named(n) => 0x0100_0000 ^ (n as u32),
             AnsiColor::Indexed(i) => 0x0200_0000 ^ (i as u32),
             AnsiColor::Spec(rgb) => {
-                0x0400_0000
-                    ^ ((rgb.r as u32) << 16 | (rgb.g as u32) << 8 | rgb.b as u32)
+                0x0400_0000 ^ ((rgb.r as u32) << 16 | (rgb.g as u32) << 8 | rgb.b as u32)
             }
         }
     }

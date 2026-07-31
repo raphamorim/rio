@@ -225,9 +225,9 @@ impl Application<'_> {
             }
             #[cfg(not(target_os = "macos"))]
             {
-                let _ = window.request_inner_size(
-                    rio_window::dpi::PhysicalSize::new(width, height),
-                );
+                let _ = window.request_inner_size(rio_window::dpi::PhysicalSize::new(
+                    width, height,
+                ));
                 window.set_outer_position(rio_window::dpi::PhysicalPosition::new(
                     x, mpos.y,
                 ));

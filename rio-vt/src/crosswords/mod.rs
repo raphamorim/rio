@@ -1225,9 +1225,7 @@ impl<U: EventListener> Crosswords<U> {
         }
         // Mark the scroll region as damaged; a full-screen region
         // coalesces into full damage, like scroll_down_relative.
-        if region.start.0 == 0
-            && region.end.0 as usize == self.grid.screen_lines()
-        {
+        if region.start.0 == 0 && region.end.0 as usize == self.grid.screen_lines() {
             self.mark_fully_damaged();
         } else {
             for line in region.start.0..region.end.0 {
@@ -1578,18 +1576,15 @@ impl<U: EventListener> Crosswords<U> {
             {
                 let line = self.grid.cursor.pos.row;
                 let row = &mut self.grid[line];
-                let cells =
-                    &mut row[Column(cursor_col)..Column(cursor_col + take)];
+                let cells = &mut row[Column(cursor_col)..Column(cursor_col + take)];
                 let needs_cleanup = cells
                     .iter()
                     .fold(false, |acc, c| acc | c.needs_wide_cleanup());
                 if !needs_cleanup {
-                    for (cell, &cp) in cells.iter_mut().zip(&cps[idx..idx + take])
-                    {
+                    for (cell, &cp) in cells.iter_mut().zip(&cps[idx..idx + take]) {
                         let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
-                        *cell = crate::crosswords::square::Square::from_template(
-                            template, c,
-                        );
+                        *cell =
+                            crate::crosswords::square::Square::from_template(template, c);
                     }
                     if template_has_extras {
                         row.has_extras = true;
@@ -1654,8 +1649,7 @@ impl<U: EventListener> Crosswords<U> {
             {
                 let line = self.grid.cursor.pos.row;
                 let row = &mut self.grid[line];
-                let cells = &mut row
-                    [Column(cursor_col)..Column(cursor_col + take * 2)];
+                let cells = &mut row[Column(cursor_col)..Column(cursor_col + take * 2)];
                 let needs_cleanup = cells
                     .iter()
                     .fold(false, |acc, c| acc | c.needs_wide_cleanup());
@@ -3340,8 +3334,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             while j < n {
                 let next = codepoints[j];
                 if next == crate::ansi::kitty_virtual::PLACEHOLDER as u32
-                    || crate::codepoint_width::width_in(table, next)
-                        != Some(width)
+                    || crate::codepoint_width::width_in(table, next) != Some(width)
                 {
                     break;
                 }
@@ -3349,17 +3342,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
 
             if width == 1 {
-                self.write_narrow_run(
-                    template,
-                    template_has_extras,
-                    &codepoints[i..j],
-                );
+                self.write_narrow_run(template, template_has_extras, &codepoints[i..j]);
             } else {
-                self.write_wide_run(
-                    template,
-                    template_has_extras,
-                    &codepoints[i..j],
-                );
+                self.write_wide_run(template, template_has_extras, &codepoints[i..j]);
             }
             i = j;
         }
