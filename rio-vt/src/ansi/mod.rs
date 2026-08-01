@@ -9,6 +9,7 @@ pub mod iterm2_image_protocol;
 pub mod kitty_graphics_protocol;
 pub mod kitty_virtual;
 pub mod mode;
+pub mod rmx;
 pub mod sixel;
 
 #[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, Eq, PartialEq)]
