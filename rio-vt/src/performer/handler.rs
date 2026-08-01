@@ -548,6 +548,13 @@ impl StdSyncHandler {
     fn pending_timeout(&self) -> bool {
         self.timeout.is_some()
     }
+
+    /// Whether an armed synchronized update has outlived its deadline.
+    #[inline]
+    fn expired(&self) -> bool {
+        self.timeout
+            .is_some_and(|deadline| deadline <= Instant::now())
+    }
 }
 
 #[derive(Default)]
@@ -569,7 +576,18 @@ impl Processor {
         H: Handler,
     {
         if self.state.sync_state.timeout.pending_timeout() {
-            self.advance_sync(handler, bytes);
+            // Cap synchronized-update latency for embedders that do not
+            // drive the timeout externally: once the deadline has passed,
+            // flush the buffered update before processing new bytes. Event
+            // loops that poll `sync_timeout()` (like Rio's machine) flush at
+            // the deadline itself and never reach this branch.
+            if self.state.sync_state.timeout.expired() {
+                self.stop_sync(handler);
+                let mut performer = Performer::new(&mut self.state, handler);
+                self.parser.advance(&mut performer, bytes);
+            } else {
+                self.advance_sync(handler, bytes);
+            }
         } else {
             let mut performer = Performer::new(&mut self.state, handler);
             self.parser.advance(&mut performer, bytes);
@@ -2182,6 +2200,31 @@ mod tests {
 
         processor.stop_sync(&mut handler);
         assert_eq!(handler.printed, "pending");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// Embedders without an event loop never poll `sync_timeout()`; an
+    /// expired deadline must flush on the next `advance` call instead of
+    /// buffering until `SYNC_BUFFER_SIZE`.
+    #[test]
+    fn sync_update_expired_deadline_flushes_on_next_advance() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        processor.advance(&mut handler, b"hidden");
+        assert_eq!(handler.printed, "");
+
+        // Simulate the deadline passing without an ESU arriving.
+        processor.state.sync_state.timeout.timeout = Some(
+            Instant::now()
+                .checked_sub(Duration::from_millis(1))
+                .unwrap_or_else(Instant::now),
+        );
+
+        processor.advance(&mut handler, b" visible");
+        assert_eq!(handler.printed, "hidden visible");
         assert!(processor.sync_timeout().sync_timeout().is_none());
         assert_eq!(processor.sync_bytes_count(), 0);
     }
