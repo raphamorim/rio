@@ -452,6 +452,9 @@ where
     /// initialised.
     #[cfg(feature = "graphics")]
     pub glyph_registry: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
+    /// Keys of rmx buffers opened on this stream, so `t` bursts can
+    /// only be armed for buffers that exist (spec §7).
+    rmx_keys: std::collections::HashSet<String>,
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
@@ -524,6 +527,7 @@ impl<U: EventListener> Crosswords<U> {
             graphics: Graphics::new(&dimensions),
             #[cfg(feature = "graphics")]
             glyph_registry: None,
+            rmx_keys: Default::default(),
             default_cursor_shape: cursor_shape,
             cursor_shape,
             blinking_cursor: false,
@@ -5421,7 +5425,33 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.mark_fully_damaged();
     }
 
+    fn rmx_burst_allowed(&mut self, key: &crate::ansi::rmx::BufferKey) -> bool {
+        self.rmx_keys.contains(key.as_str())
+    }
+
+    fn rmx_burst(&mut self, key: &crate::ansi::rmx::BufferKey, bytes: &[u8]) {
+        // Bursts are writes that skipped base64; reuse the write path.
+        self.rmx_command(crate::ansi::rmx::RmxCommand::Write {
+            key: key.clone(),
+            payload: bytes.to_vec(),
+            more: false,
+            reply: crate::ansi::rmx::ReplyMode::Silent,
+        });
+    }
+
     fn rmx_command(&mut self, cmd: crate::ansi::rmx::RmxCommand) {
+        // Track live keys so a stray `t` frame cannot arm a burst and
+        // swallow stream bytes (spec §7, §12).
+        match &cmd {
+            crate::ansi::rmx::RmxCommand::Open { key, .. } => {
+                self.rmx_keys.insert(key.as_str().to_owned());
+            }
+            crate::ansi::rmx::RmxCommand::Close { key, .. } => {
+                self.rmx_keys.remove(key.as_str());
+            }
+            _ => {}
+        }
+
         // Buffers live in the frontend; only it can create panes,
         // route input, and answer the support ping honestly.
         self.event_proxy.send_event(

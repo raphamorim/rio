@@ -716,11 +716,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         wire::RmxCommand::Enumerate => {
                             Some(screen.rmx_enumerate(route_id))
                         }
-                        // `t` needs stream-level redirection; not in
-                        // `cap=raw` yet.
-                        wire::RmxCommand::RawBurst { key, .. } => Some(
-                            wire::format_error('t', Some(&key), wire::Reason::Unsupported),
-                        ),
+                        // Bursts arrive pre-split as writes; the frame
+                        // itself is consumed by the parser (spec §7).
+                        wire::RmxCommand::RawBurst { .. } => None,
                     };
                     if let Some(resp) = resp {
                         if let Some(item) = screen

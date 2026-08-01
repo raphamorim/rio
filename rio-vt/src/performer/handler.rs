@@ -470,6 +470,15 @@ pub trait Handler {
     /// the session (`None`).
     fn glyph_clear(&mut self, _cp: Option<u32>) {}
 
+    /// Deliver raw burst bytes to an rmx buffer (spec §7).
+    fn rmx_burst(&mut self, _key: &crate::ansi::rmx::BufferKey, _bytes: &[u8]) {}
+
+    /// Whether a `t` burst may be armed for this buffer. Refusing an
+    /// unknown key keeps stray frames from swallowing stream bytes.
+    fn rmx_burst_allowed(&mut self, _key: &crate::ansi::rmx::BufferKey) -> bool {
+        false
+    }
+
     /// An rmx (Rio Multiplex Protocol) command parsed from an APC
     /// frame. Buffer semantics live with the embedder; the default
     /// ignores the command, so on unaware embedders the `s` ping
@@ -513,6 +522,10 @@ struct ProcessorState {
 
     /// State for APC (Application Program Command) sequences.
     apc_state: ApcState,
+
+    /// Pending rmx raw burst: the target buffer and how many stream
+    /// bytes still belong to it (spec §7).
+    rmx_burst: Option<(crate::ansi::rmx::BufferKey, usize)>,
 }
 
 #[derive(Debug)]
@@ -607,6 +620,23 @@ impl Processor {
     where
         H: Handler,
     {
+        // An rmx `t` frame redirects the next N raw stream bytes to a
+        // buffer (spec §7). Content is never scanned for terminators,
+        // so no payload can escape the burst.
+        if let Some((key, remaining)) = self.state.rmx_burst.take() {
+            let take = remaining.min(bytes.len());
+            handler.rmx_burst(&key, &bytes[..take]);
+            let left = remaining - take;
+            if left > 0 {
+                self.state.rmx_burst = Some((key, left));
+                return;
+            }
+            if take == bytes.len() {
+                return;
+            }
+            return self.advance(handler, &bytes[take..]);
+        }
+
         if self.state.sync_state.timeout.pending_timeout() {
             // Cap synchronized-update latency for embedders that do not
             // drive the timeout externally: once the deadline has passed,
@@ -812,6 +842,13 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
         if data.starts_with(crate::ansi::rmx::RMX_PREFIX) {
             let body = data.to_vec();
             match crate::ansi::rmx::parse(&body) {
+                Ok(crate::ansi::rmx::RmxCommand::RawBurst { key, len }) => {
+                    if self.handler.rmx_burst_allowed(&key) {
+                        self.state.rmx_burst = Some((key, len));
+                    } else {
+                        warn!("[rmx] burst refused for unknown buffer");
+                    }
+                }
                 Ok(cmd) => self.handler.rmx_command(cmd),
                 Err(err) => warn!("[rmx] rejected frame: {err:?}"),
             }
