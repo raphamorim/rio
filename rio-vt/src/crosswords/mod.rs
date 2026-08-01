@@ -4194,6 +4194,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
 
+        // Headless embedders never report cell dimensions; without this
+        // guard the row-fill loop below would `step_by(0)` and panic.
+        if cell_width == 0 || cell_height == 0 {
+            return;
+        }
+
         // Store last palette if we receive a new one, and it is shared.
         if let Some(palette) = palette {
             if !self.mode.contains(Mode::SIXEL_PRIV_PALETTE) {
@@ -7170,6 +7176,38 @@ mod tests {
         cw.insert_graphic(graphic, None, Some(1));
         assert_eq!(cw.graphics.atlas_placements.len(), 1);
         assert_eq!(cw.graphics.atlas_key_refs.len(), 1);
+    }
+
+    /// Headless embedders never set `graphics.cell_width`/`cell_height`;
+    /// inserting a graphic then must be a no-op instead of panicking in the
+    /// row-fill loop (`step_by(0)`).
+    #[test]
+    fn insert_graphic_without_cell_dimensions_is_noop() {
+        let size = CrosswordsSize::new(20, 10);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+
+        let graphic = GraphicData {
+            id: rio_graphics::GraphicId::new(0),
+            width: 10,
+            height: 10,
+            pixels: vec![0u8; 10 * 10 * 4],
+            color_type: rio_graphics::ColorType::Rgba,
+            is_opaque: true,
+            display_width: None,
+            display_height: None,
+            resize: None,
+            transmit_time: std::time::Instant::now(),
+        };
+        cw.insert_graphic(graphic, None, Some(1));
+        assert!(cw.graphics.atlas_placements.is_empty());
     }
 
     // ------------------------------------------------------------------
