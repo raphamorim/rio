@@ -678,32 +678,52 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::RmxCommand { route_id, cmd }) => {
-                use rio_backend::ansi::rmx;
-                // Negotiation skeleton: recognize rmx and answer the
-                // support ping honestly with an empty capability set
-                // until buffers are implemented (spec §4); keyed verbs
-                // are rejected per their reply mode.
-                let resp = match cmd {
-                    rmx::RmxCommand::Support => {
-                        Some(rmx::format_support_reply(&rmx::RmxCaps::default()))
-                    }
-                    rmx::RmxCommand::Open { key, reply, .. } => reply
-                        .emit_error()
-                        .then(|| rmx::format_error('o', Some(&key), rmx::Reason::Unsupported)),
-                    rmx::RmxCommand::Write { key, reply, .. } => reply
-                        .emit_error()
-                        .then(|| rmx::format_error('w', Some(&key), rmx::Reason::NoSuchBuffer)),
-                    rmx::RmxCommand::Close { key, reply, .. } => reply
-                        .emit_error()
-                        .then(|| rmx::format_error('c', Some(&key), rmx::Reason::NoSuchBuffer)),
-                    rmx::RmxCommand::RawBurst { .. } => None,
-                    rmx::RmxCommand::Enumerate => Some(rmx::format_enumerate_end()),
-                };
-                if let Some(resp) = resp {
-                    if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        if let Some(item) = route
-                            .window
-                            .screen
+                use rio_backend::ansi::rmx as wire;
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    let screen = &mut route.window.screen;
+                    let resp = match cmd {
+                        wire::RmxCommand::Support => {
+                            Some(wire::format_support_reply(&crate::rmx::caps()))
+                        }
+                        wire::RmxCommand::Open {
+                            key, dir, reply, ..
+                        } => {
+                            let split_down =
+                                matches!(dir, Some(wire::Dir::Down));
+                            let out = screen.rmx_open(route_id, &key, split_down);
+                            let ok = out.contains("status=0");
+                            if (ok && reply.emit_success())
+                                || (!ok && reply.emit_error())
+                            {
+                                Some(out)
+                            } else {
+                                None
+                            }
+                        }
+                        wire::RmxCommand::Write {
+                            key,
+                            payload,
+                            reply,
+                            ..
+                        } => screen.rmx_write(route_id, &key, &payload).filter(|out| {
+                            let ok = out.contains(";a;");
+                            (ok && reply.emit_success())
+                                || (!ok && reply.emit_error())
+                        }),
+                        wire::RmxCommand::Close { key, reply, .. } => {
+                            screen.rmx_close(route_id, &key).filter(|_| reply.emit_error())
+                        }
+                        wire::RmxCommand::Enumerate => {
+                            Some(screen.rmx_enumerate(route_id))
+                        }
+                        // `t` needs stream-level redirection; not in
+                        // `cap=raw` yet.
+                        wire::RmxCommand::RawBurst { key, .. } => Some(
+                            wire::format_error('t', Some(&key), wire::Reason::Unsupported),
+                        ),
+                    };
+                    if let Some(resp) = resp {
+                        if let Some(item) = screen
                             .context_manager
                             .current_grid_mut()
                             .get_by_route_id(route_id)
@@ -711,6 +731,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             item.context_mut().messenger.send_bytes(resp.into_bytes());
                         }
                     }
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::CloseTerminal(route_id)) => {

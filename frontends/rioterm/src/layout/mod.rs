@@ -250,6 +250,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     /// Get item by route_id (used for event routing)
     #[inline]
+    /// Focus the panel holding `route_id`; false when absent.
+    pub fn select_route_id(&mut self, route_id: usize) -> bool {
+        if let Some((node, _)) = self
+            .inner
+            .iter()
+            .find(|(_, item)| item.val.route_id == route_id)
+        {
+            self.current = *node;
+            return true;
+        }
+        false
+    }
+
     pub fn get_by_route_id(
         &mut self,
         route_id: usize,

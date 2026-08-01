@@ -95,6 +95,8 @@ pub struct Screen<'screen> {
     last_close_press: Option<(std::time::Instant, f32)>,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
     pub grid_rasterizer: rio_grid::GridGlyphRasterizer,
+    /// rmx virtual buffers, keyed by the owning pane's route.
+    pub rmx_state: crate::rmx::RmxState,
 }
 
 pub struct ChromePress {
@@ -347,6 +349,7 @@ impl Screen<'_> {
             last_close_press: None,
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: rio_grid::GridGlyphRasterizer::new(),
+            rmx_state: crate::rmx::RmxState::default(),
         })
     }
 
@@ -376,6 +379,18 @@ impl Screen<'_> {
     }
 
     #[inline]
+    /// Mark one pane dirty by route. rmx writes land in unfocused
+    /// virtual buffers, which `mark_dirty` (focused pane only) misses.
+    pub fn mark_route_dirty(&mut self, route_id: usize) {
+        if let Some(item) = self
+            .context_manager
+            .current_grid_mut()
+            .get_by_route_id(route_id)
+        {
+            item.val.renderable_content.pending_update.set_dirty();
+        }
+    }
+
     pub fn mark_dirty(&mut self) {
         self.context_manager
             .current_mut()
@@ -766,7 +781,7 @@ impl Screen<'_> {
                 _ => build_key_sequence(key, mods, mode),
             };
 
-            self.ctx_mut().current_mut().messenger.send_write(bytes);
+            self.send_input(bytes.to_vec());
 
             return;
         }
@@ -889,7 +904,7 @@ impl Screen<'_> {
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
-            self.ctx_mut().current_mut().messenger.send_write(bytes);
+            self.send_input(bytes);
         }
     }
 
@@ -1549,6 +1564,213 @@ impl Screen<'_> {
         );
 
         self.mark_dirty();
+    }
+
+    /// Send user input for the focused pane. A plain pane writes to
+    /// its own PTY; an rmx virtual buffer has none, so its input is
+    /// framed as `i;ev=in` on the owning pane's stream (spec §8).
+    pub fn send_input(&mut self, bytes: Vec<u8>) {
+        let link = self.ctx().current().rmx.clone();
+        let Some(link) = link else {
+            self.ctx_mut().current_mut().messenger.send_write(bytes);
+            return;
+        };
+        let frame = rio_backend::ansi::rmx::format_event_in(&link.key, &bytes);
+        if let Some(item) = self
+            .context_manager
+            .current_grid_mut()
+            .get_by_route_id(link.owner_route)
+        {
+            item.context_mut()
+                .messenger
+                .send_bytes(frame.into_bytes());
+        }
+    }
+
+    /// rmx `o`: open or adopt a virtual buffer owned by `owner_route`
+    /// (spec §5). Returns the reply frame to write back.
+    pub fn rmx_open(
+        &mut self,
+        owner_route: usize,
+        key: &rio_backend::ansi::rmx::BufferKey,
+        split_down: bool,
+    ) -> String {
+        use rio_backend::ansi::rmx as wire;
+
+        // Idempotent by key: adopt the existing buffer, never
+        // duplicate it (spec §5.1).
+        if let Some(existing) = self.rmx_state.session_mut(owner_route).get_mut(key) {
+            let route_id = existing.route_id;
+            let credit = existing.credit;
+            let (cols, rows) = self.rmx_buffer_size(route_id);
+            return wire::format_open_ok(key, cols, rows, credit);
+        }
+
+        if self.rmx_state.session_mut(owner_route).len() >= crate::rmx::MAX_BUFFERS as usize {
+            return wire::format_error('o', Some(key), wire::Reason::Quota);
+        }
+
+        // The owning pane must be focused for its split to land in the
+        // right place; rmx buffers are created beside it.
+        if !self.context_manager.select_route_id(owner_route) {
+            return wire::format_error('o', Some(key), wire::Reason::NoSuchBuffer);
+        }
+
+        let rich_text_id = context::next_rich_text_id();
+        let route_id = context::next_route_id();
+        let dimension = self.context_manager.current().dimension;
+        let link = crate::rmx::RmxLink {
+            owner_route,
+            key: key.clone(),
+        };
+        let ctx = context::create_virtual_context(
+            self.context_manager.event_proxy_clone(),
+            self.context_manager.window_id(),
+            route_id,
+            rich_text_id,
+            dimension,
+            self.context_manager.config.scrollback_history_limit,
+            link,
+        );
+
+        if split_down {
+            self.context_manager
+                .current_grid_mut()
+                .split_down(ctx, &mut self.sugarloaf);
+        } else {
+            self.context_manager
+                .current_grid_mut()
+                .split_right(ctx, &mut self.sugarloaf);
+        }
+
+        self.rmx_state.session_mut(owner_route).insert(
+            key,
+            crate::rmx::RmxBuffer {
+                route_id,
+                parser: Default::default(),
+                credit: crate::rmx::INITIAL_CREDIT,
+            },
+        );
+
+        // Focus stays with the owning pane: focus moves only by user
+        // gesture (spec §12).
+        self.context_manager.select_route_id(owner_route);
+        self.mark_dirty();
+
+        let (cols, rows) = self.rmx_buffer_size(route_id);
+        wire::format_open_ok(key, cols, rows, crate::rmx::INITIAL_CREDIT)
+    }
+
+    /// rmx `w`: feed bytes to a buffer's grid (spec §6).
+    pub fn rmx_write(
+        &mut self,
+        owner_route: usize,
+        key: &rio_backend::ansi::rmx::BufferKey,
+        payload: &[u8],
+    ) -> Option<String> {
+        use rio_backend::ansi::rmx as wire;
+
+        let session = self.rmx_state.session_mut(owner_route);
+        let Some(buffer) = session.get_mut(key) else {
+            return Some(wire::format_error('w', Some(key), wire::Reason::NoSuchBuffer));
+        };
+
+        let spent = payload.len().min(buffer.credit as usize);
+        let over = spent < payload.len();
+        buffer.credit -= spent as u32;
+        let route_id = buffer.route_id;
+
+        // Parser and grid are borrowed together; the grid lives in the
+        // Context, so the parser is taken out for the call.
+        let mut parser = std::mem::take(&mut buffer.parser);
+        if let Some(item) = self
+            .context_manager
+            .current_grid_mut()
+            .get_by_route_id(route_id)
+        {
+            let terminal = item.context().terminal.clone();
+            let mut terminal = terminal.lock();
+            parser.advance(&mut *terminal, &payload[..spent]);
+        }
+        if let Some(buffer) = self.rmx_state.session_mut(owner_route).get_mut(key) {
+            buffer.parser = parser;
+            // Replenish as the bytes are now rendered (spec §9).
+            let grant = spent as u32;
+            buffer.credit = buffer.credit.saturating_add(grant);
+            self.mark_route_dirty(route_id);
+            if over {
+                return Some(wire::format_error(
+                    'w',
+                    Some(key),
+                    wire::Reason::NoCredit,
+                ));
+            }
+            return Some(wire::format_credit(key, grant));
+        }
+        None
+    }
+
+    /// rmx `c`: close a buffer and its pane (spec §10.1).
+    pub fn rmx_close(
+        &mut self,
+        owner_route: usize,
+        key: &rio_backend::ansi::rmx::BufferKey,
+    ) -> Option<String> {
+        use rio_backend::ansi::rmx as wire;
+
+        let Some(buffer) = self.rmx_state.session_mut(owner_route).remove(key) else {
+            return Some(wire::format_error('c', Some(key), wire::Reason::NoSuchBuffer));
+        };
+        self.rmx_remove_pane(buffer.route_id);
+        self.context_manager.select_route_id(owner_route);
+        self.mark_dirty();
+        None
+    }
+
+    /// rmx `q`: enumerate this owner's buffers (spec §10.2).
+    pub fn rmx_enumerate(&mut self, owner_route: usize) -> String {
+        use rio_backend::ansi::rmx as wire;
+
+        let rows: Vec<(String, usize)> = self
+            .rmx_state
+            .session(owner_route)
+            .map(|s| s.keys_and_routes())
+            .unwrap_or_default();
+        let mut out = String::new();
+        for (key, route_id) in rows {
+            if let Ok(key) = wire::BufferKey::parse(key.as_bytes()) {
+                let (cols, rows) = self.rmx_buffer_size(route_id);
+                out.push_str(&wire::format_enumerate_row(&key, cols, rows, 3));
+            }
+        }
+        out.push_str(&wire::format_enumerate_end());
+        out
+    }
+
+    /// Tear down every buffer owned by a pane that went away
+    /// (spec §11 teardown).
+    pub fn rmx_teardown(&mut self, owner_route: usize) {
+        for route_id in self.rmx_state.take_session(owner_route) {
+            self.rmx_remove_pane(route_id);
+        }
+    }
+
+    fn rmx_remove_pane(&mut self, route_id: usize) {
+        let grid = self.context_manager.current_grid_mut();
+        if grid.select_route_id(route_id) {
+            grid.remove_current(&mut self.sugarloaf);
+        }
+    }
+
+    fn rmx_buffer_size(&mut self, route_id: usize) -> (u16, u16) {
+        self.context_manager
+            .current_grid_mut()
+            .get_by_route_id(route_id)
+            .map(|item| {
+                let d = item.context().dimension;
+                (d.columns as u16, d.lines as u16)
+            })
+            .unwrap_or((80, 24))
     }
 
     pub fn split_right(&mut self) {

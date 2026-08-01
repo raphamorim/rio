@@ -19,6 +19,7 @@ mod mouse;
 mod panic;
 mod platform;
 mod renderer;
+mod rmx;
 mod router;
 mod scheduler;
 mod screen;
