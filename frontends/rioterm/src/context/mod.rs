@@ -64,11 +64,19 @@ pub struct Context<T: EventListener> {
     /// `{{ program }}` and the empty-title strip fallback without ever
     /// inspecting the foreground process.
     pub spawned_program: String,
+    /// Set when this pane is an rmx virtual buffer: it has no PTY of
+    /// its own, and its input is framed back to the owning pane.
+    pub rmx: Option<crate::rmx::RmxLink>,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
     fn drop(&mut self) {
+        // rmx virtual buffers own no PTY and no child process.
+        if self.rmx.is_some() {
+            return;
+        }
+
         // Shutdown the terminal's PTY.
         let _ = self.messenger.channel.send(Msg::Shutdown);
         // Also hang up synchronously: quit paths call process::exit
@@ -166,6 +174,12 @@ fn spawned_program_name(config: &ContextManagerConfig) -> String {
         .unwrap_or(program)
 }
 
+/// Allocate a route id for a context built outside `create_context`
+/// (rmx virtual buffers).
+pub fn next_route_id() -> usize {
+    ROUTE_ID_COUNTER.fetch_add(1, Ordering::SeqCst)
+}
+
 pub fn create_dead_context<T: rio_backend::event::EventListener>(
     event_proxy: T,
     window_id: WindowId,
@@ -201,6 +215,51 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         title: ContextTitle::default(),
         title_dirty: false,
         spawned_program: String::new(),
+        rmx: None,
+        _io_thread: None,
+    }
+}
+
+/// Create a pane backed by a grid but no PTY: an rmx virtual buffer
+/// (spec §5). Content arrives through `w`/`t` frames on the owning
+/// pane's stream; input leaves as `i` frames on the same stream.
+pub fn create_virtual_context<T: rio_backend::event::EventListener>(
+    event_proxy: T,
+    window_id: WindowId,
+    route_id: usize,
+    rich_text_id: usize,
+    dimension: ContextDimension,
+    scrollback: usize,
+    link: crate::rmx::RmxLink,
+) -> Context<T> {
+    let terminal = Crosswords::new(
+        dimension,
+        CursorShape::Block,
+        event_proxy,
+        window_id,
+        route_id,
+        scrollback,
+    );
+    let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
+    let (sender, _receiver) = corcovado::channel::channel();
+
+    Context {
+        route_id,
+        #[cfg(not(target_os = "windows"))]
+        main_fd: Arc::new(-1),
+        #[cfg(not(target_os = "windows"))]
+        shell_pid: 0,
+        #[cfg(not(target_os = "windows"))]
+        child_terminator: teletypewriter::ChildTerminator::retired(),
+        messenger: Messenger::new(sender),
+        renderable_content: RenderableContent::new(Cursor::default()),
+        terminal,
+        rich_text_id,
+        dimension,
+        title: ContextTitle::default(),
+        title_dirty: false,
+        spawned_program: String::new(),
+        rmx: Some(link),
         _io_thread: None,
     }
 }
@@ -397,6 +456,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title: ContextTitle::default(),
             title_dirty: false,
             spawned_program: spawned_program_name(config),
+            rmx: None,
             _io_thread: io_thread,
         };
         context.title = ContextTitle {
@@ -772,6 +832,26 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    /// Focus the pane with `route_id` in the current grid. Returns
+    /// false when it is not in this grid.
+    pub fn select_route_id(&mut self, route_id: usize) -> bool {
+        if self.contexts[self.current_index].select_route_id(route_id) {
+            self.current_route = route_id;
+            return true;
+        }
+        false
+    }
+
+    #[inline]
+    pub fn event_proxy_clone(&self) -> T {
+        self.event_proxy.clone()
+    }
+
+    #[inline]
+    pub fn window_id(&self) -> WindowId {
+        self.window_id
+    }
+
     pub fn select_route_from_current_grid(&mut self) {
         self.sync_current_route();
     }
