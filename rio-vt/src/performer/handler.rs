@@ -610,6 +610,13 @@ impl Processor {
                 let new_len = self.state.sync_state.buffer.len() - bsu_offset;
                 self.state.sync_state.buffer.copy_within(bsu_offset.., 0);
                 self.state.sync_state.buffer.truncate(new_len);
+
+                // Replaying the processed bytes may have parsed an inline ESU
+                // that cleared the timeout, but this BSU is still pending.
+                self.state
+                    .sync_state
+                    .timeout
+                    .set_timeout(SYNC_UPDATE_TIMEOUT);
             }
             // Report mode and clear state if no new BSU is present.
             None => {
@@ -1331,6 +1338,11 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
             ('l', [b'?']) => {
                 for param in params_iter.map(|param| param[0]) {
+                    // Handle sync updates opaquely.
+                    if param == NamedPrivateMode::SyncUpdate as u16 {
+                        self.state.sync_state.timeout.clear_timeout();
+                    }
+
                     handler.unset_private_mode(PrivateMode::new(param))
                 }
             }
@@ -2118,6 +2130,77 @@ fn get_termcap_capability(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Default)]
+    struct SyncHandler {
+        printed: String,
+    }
+
+    impl Handler for SyncHandler {
+        fn input(&mut self, c: char) {
+            self.printed.push(c);
+        }
+    }
+
+    #[test]
+    fn sync_update_inline_bsu_esu_disarms_timeout() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"a\x1b[?2026hb\x1b[?2026lc");
+
+        assert_eq!(handler.printed, "abc");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    #[test]
+    fn sync_update_buffers_across_chunks_until_esu() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+
+        processor.advance(&mut handler, b"hidden");
+        assert_eq!(handler.printed, "");
+
+        processor.advance(&mut handler, b"\x1b[?2026l");
+        assert_eq!(handler.printed, "hidden");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    #[test]
+    fn sync_update_stop_sync_flushes_pending_bytes() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        processor.advance(&mut handler, b"pending");
+        assert_eq!(handler.printed, "");
+
+        processor.stop_sync(&mut handler);
+        assert_eq!(handler.printed, "pending");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    #[test]
+    fn sync_update_new_bsu_in_replayed_buffer_stays_armed() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        processor.advance(&mut handler, b"\x1b[?2026l\x1b[?2026htwo");
+        assert_eq!(handler.printed, "");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+
+        processor.advance(&mut handler, b"\x1b[?2026l");
+        assert_eq!(handler.printed, "two");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
 
     #[test]
     fn semantic_prompt_parsing() {
