@@ -62,6 +62,24 @@
   </screenshots>
 
   <releases>
+    <release version="0.5.5" date="2026-08-01">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.5</url>
+    </release>
+    <release version="0.5.4" date="2026-08-01">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.4</url>
+    </release>
+    <release version="0.5.3" date="2026-07-31">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.3</url>
+    </release>
+    <release version="0.5.2" date="2026-07-28">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.2</url>
+    </release>
+    <release version="0.5.1" date="2026-07-28">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.1</url>
+    </release>
+    <release version="0.5.0" date="2026-07-27">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.0</url>
+    </release>
     <release version="0.4.12" date="2026-07-22">
       <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.4.12</url>
     </release>
