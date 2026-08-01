@@ -697,16 +697,62 @@ impl Screen<'_> {
         // the next layout, so once the messenger.send_resize triggers
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
+        // rmx virtual buffers have no PTY to receive SIGWINCH; their
+        // owners get an `ev=resize` frame instead (spec §8).
+        let mut rmx_resizes: Vec<(usize, String)> = Vec::new();
         for context_grid in self.context_manager.contexts_mut() {
             for context in context_grid.contexts_mut().values_mut() {
                 let ctx = context.context_mut();
                 let mut terminal = ctx.terminal.lock();
                 terminal.resize::<ContextDimension>(ctx.dimension);
                 drop(terminal);
+                if let Some(link) = ctx.rmx.clone() {
+                    rmx_resizes.push((
+                        link.owner_route,
+                        rio_backend::ansi::rmx::format_event_resize(
+                            &link.key,
+                            ctx.dimension.columns as u16,
+                            ctx.dimension.lines as u16,
+                        ),
+                    ));
+                    continue;
+                }
                 let winsize = crate::renderer::utils::terminal_dimensions(&ctx.dimension);
                 let _ = ctx.messenger.send_resize(winsize);
             }
         }
+        for (owner_route, frame) in rmx_resizes {
+            self.rmx_notify_owner(owner_route, frame);
+        }
+    }
+
+    /// Write an rmx frame to an owning pane's PTY.
+    pub fn rmx_notify_owner(&mut self, owner_route: usize, frame: String) {
+        if let Some(item) = self
+            .context_manager
+            .current_grid_mut()
+            .get_by_route_id(owner_route)
+        {
+            item.context_mut().messenger.send_bytes(frame.into_bytes());
+        }
+    }
+
+    /// Route a virtual buffer's own VT query replies back to its owner
+    /// as `ev=reply` (spec §8) instead of into its dead channel.
+    /// Returns false when `route_id` is not a virtual buffer.
+    pub fn rmx_route_reply(&mut self, route_id: usize, text: &str) -> bool {
+        let link = self
+            .context_manager
+            .current_grid_mut()
+            .get_by_route_id(route_id)
+            .and_then(|item| item.context().rmx.clone());
+        let Some(link) = link else {
+            return false;
+        };
+        let frame =
+            rio_backend::ansi::rmx::format_event_reply(&link.key, text.as_bytes());
+        self.rmx_notify_owner(link.owner_route, frame);
+        true
     }
 
     #[inline]
@@ -1658,6 +1704,8 @@ impl Screen<'_> {
         self.mark_dirty();
 
         let (cols, rows) = self.rmx_buffer_size(route_id);
+        let resize = wire::format_event_resize(key, cols, rows);
+        self.rmx_notify_owner(owner_route, resize);
         wire::format_open_ok(key, cols, rows, crate::rmx::INITIAL_CREDIT)
     }
 
@@ -1724,6 +1772,8 @@ impl Screen<'_> {
         self.rmx_remove_pane(buffer.route_id);
         self.context_manager.select_route_id(owner_route);
         self.mark_dirty();
+        let closed = wire::format_event_closed(key, "app");
+        self.rmx_notify_owner(owner_route, closed);
         None
     }
 
@@ -1750,9 +1800,12 @@ impl Screen<'_> {
     /// Tear down every buffer owned by a pane that went away
     /// (spec §11 teardown).
     pub fn rmx_teardown(&mut self, owner_route: usize) {
+        // The owner's PTY is gone, so no `closed` frames are sent: the
+        // hangup itself is the teardown signal (spec §11).
         for route_id in self.rmx_state.take_session(owner_route) {
             self.rmx_remove_pane(route_id);
         }
+        self.mark_dirty();
     }
 
     fn rmx_remove_pane(&mut self, route_id: usize) {

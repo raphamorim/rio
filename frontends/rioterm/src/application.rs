@@ -736,6 +736,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::CloseTerminal(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Reap every rmx buffer this pane owned (spec §11).
+                    route.window.screen.rmx_teardown(route_id);
                     route
                         .window
                         .screen
@@ -937,6 +939,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::PtyWrite(route_id, text)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // An rmx virtual buffer has no PTY: its replies are
+                    // framed onto the owning pane's stream instead.
+                    if route.window.screen.rmx_route_reply(route_id, &text) {
+                        return;
+                    }
                     // Route reply bytes (CSI / OSC responses) back to the
                     // PTY of the panel that emitted them, not whichever
                     // panel happens to be focused.
