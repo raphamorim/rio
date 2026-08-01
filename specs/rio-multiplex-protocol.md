@@ -3,7 +3,12 @@
 **Author:** Raphael Amorim
 **Year:** 2026
 **Last updated:** 2026-08-01
-**Status:** DRAFT v0.1 — nothing here is stable yet
+**Status:** DRAFT v0.1 — nothing here is stable yet.
+**Implementation:** Rio branch `rmx` implements `cap=core,raw`: the six
+app→terminal verbs, `i` events (`in`, `reply`, `resize`, `closed`),
+credit accounting, and owner teardown. Not yet implemented: `focus`
+events, `disp=scrollback`, layout hints (`at`/`dir`/`weight` beyond
+split direction), nesting, and the `rio-open` companion (§14).
 
 **See also:**
 - Research and prior-art survey: `rio-multibuffer-protocol-research.md`
