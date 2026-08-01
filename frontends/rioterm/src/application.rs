@@ -677,6 +677,42 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::RmxCommand { route_id, cmd }) => {
+                use rio_backend::ansi::rmx;
+                // Negotiation skeleton: recognize rmx and answer the
+                // support ping honestly with an empty capability set
+                // until buffers are implemented (spec §4); keyed verbs
+                // are rejected per their reply mode.
+                let resp = match cmd {
+                    rmx::RmxCommand::Support => {
+                        Some(rmx::format_support_reply(&rmx::RmxCaps::default()))
+                    }
+                    rmx::RmxCommand::Open { key, reply, .. } => reply
+                        .emit_error()
+                        .then(|| rmx::format_error('o', Some(&key), rmx::Reason::Unsupported)),
+                    rmx::RmxCommand::Write { key, reply, .. } => reply
+                        .emit_error()
+                        .then(|| rmx::format_error('w', Some(&key), rmx::Reason::NoSuchBuffer)),
+                    rmx::RmxCommand::Close { key, reply, .. } => reply
+                        .emit_error()
+                        .then(|| rmx::format_error('c', Some(&key), rmx::Reason::NoSuchBuffer)),
+                    rmx::RmxCommand::RawBurst { .. } => None,
+                    rmx::RmxCommand::Enumerate => Some(rmx::format_enumerate_end()),
+                };
+                if let Some(resp) = resp {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        if let Some(item) = route
+                            .window
+                            .screen
+                            .context_manager
+                            .current_grid_mut()
+                            .get_by_route_id(route_id)
+                        {
+                            item.context_mut().messenger.send_bytes(resp.into_bytes());
+                        }
+                    }
+                }
+            }
             RioEventType::Rio(RioEvent::CloseTerminal(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route

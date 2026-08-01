@@ -470,6 +470,12 @@ pub trait Handler {
     /// the session (`None`).
     fn glyph_clear(&mut self, _cp: Option<u32>) {}
 
+    /// An rmx (Rio Multiplex Protocol) command parsed from an APC
+    /// frame. Buffer semantics live with the embedder; the default
+    /// ignores the command, so on unaware embedders the `s` ping
+    /// times out and applications fall back (spec §4).
+    fn rmx_command(&mut self, _cmd: crate::ansi::rmx::RmxCommand) {}
+
     /// Forward a `q` (query) request to the frontend so it can
     /// classify the codepoint as `Free` / `System` / `Glossary` /
     /// `Both` (spec §5.2). Asynchronous because the System / Both
@@ -799,6 +805,16 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
             // bounded by MAX_PAYLOAD_BYTES, so this is cheap.
             let body = data.to_vec();
             self.dispatch_glyph_protocol(&body);
+            return;
+        }
+
+        // Check if this is an rmx (Rio Multiplex Protocol) APC.
+        if data.starts_with(crate::ansi::rmx::RMX_PREFIX) {
+            let body = data.to_vec();
+            match crate::ansi::rmx::parse(&body) {
+                Ok(cmd) => self.handler.rmx_command(cmd),
+                Err(err) => warn!("[rmx] rejected frame: {err:?}"),
+            }
             return;
         }
 

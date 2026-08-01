@@ -172,6 +172,10 @@ ESC _ rmx ; s ; v=1 ; cap=core[,raw][,layout][,nest][,scrollback] ;
   `t` verb. `layout` = placement hints honored (§5.2). `nest` = rmx
   frames inside buffer content are interpreted by that buffer's
   terminal instance (§11). `scrollback` = `disp=scrollback` on close.
+  An empty `cap=` value means the terminal recognizes rmx but
+  currently offers no capabilities — every `o` will be rejected
+  (mirroring the Glyph Protocol's empty `fmt=`); applications MUST
+  treat it as "fall back" rather than an error.
 - `max` — maximum simultaneous buffers (excluding `main`).
 - `credit` — initial per-buffer data credit in bytes (§9).
 

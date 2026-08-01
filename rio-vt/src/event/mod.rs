@@ -165,6 +165,10 @@ pub enum RioEvent {
         route_id: usize,
         cp: u32,
     },
+    RmxCommand {
+        route_id: usize,
+        cmd: crate::ansi::rmx::RmxCommand,
+    },
     Paste,
     Copy(String),
     UpdateFontSize(u8),
@@ -338,6 +342,9 @@ impl Debug for RioEvent {
             }
             RioEvent::GlyphProtocolQuery { route_id, cp } => {
                 write!(f, "GlyphProtocolQuery route {route_id} cp {cp:#x}")
+            }
+            RioEvent::RmxCommand { route_id, .. } => {
+                write!(f, "RmxCommand route {route_id}")
             }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),

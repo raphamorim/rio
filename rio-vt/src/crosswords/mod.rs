@@ -5421,6 +5421,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.mark_fully_damaged();
     }
 
+    fn rmx_command(&mut self, cmd: crate::ansi::rmx::RmxCommand) {
+        // Buffers live in the frontend; only it can create panes,
+        // route input, and answer the support ping honestly.
+        self.event_proxy.send_event(
+            RioEvent::RmxCommand {
+                route_id: self.route_id,
+                cmd,
+            },
+            self.window_id,
+        );
+    }
+
     fn glyph_query(&mut self, cp: u32) {
         // Defer to the frontend: only it has access to both the per-
         // route registry and the FontLibrary, so only it can compute
