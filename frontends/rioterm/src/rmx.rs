@@ -15,7 +15,7 @@ use rustc_hash::FxHashMap;
 pub fn caps() -> RmxCaps {
     RmxCaps {
         core: true,
-        raw: false,
+        raw: true,
         layout: false,
         nest: false,
         scrollback: false,
