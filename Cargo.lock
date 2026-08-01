@@ -736,9 +736,9 @@ dependencies = [
 
 [[package]]
 name = "clang-sys"
-version = "1.8.1"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4"
+checksum = "157a8ba7b480713b56f4c09fd13fc3e0a22a5dfab8097ba61cbc5feef950788a"
 dependencies = [
  "glob",
  "libc",
@@ -747,9 +747,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.6.4"
+version = "4.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d91e0c145792ef73a6ad36d27c75ac09f1832222a3c209689d90f534685ee5b7"
+checksum = "301b56658598e48f3648647ac6fc887be7e7108eddfa4e9b63fcf3ec58c0cadf"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -757,9 +757,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.6.2"
+version = "4.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f09628afdcc538b57f3c6341e9c8e9970f18e4a481690a64974d7023bd33548b"
+checksum = "94a65403d1a1bd28f7dc68eb8506e8874808ee5eecb59298de588e2e1407a078"
 dependencies = [
  "anstream",
  "anstyle",
@@ -878,7 +878,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -1289,13 +1289,13 @@ dependencies = [
 
 [[package]]
 name = "displaydoc"
-version = "0.2.6"
+version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ac70aa55017e108007fbaf5aa0f54b021c98f92ff8af59d42eda9da96e3dd4f"
+checksum = "c6232dd377dcc64799954cbd3a9bb882e9cdc1308ccd87b1c098f1fb2eaf82a8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -2567,12 +2567,12 @@ dependencies = [
  "bitflags 2.13.1",
  "libc",
  "plain",
- "redox_syscall 0.9.0",
+ "redox_syscall 0.9.1",
 ]
 
 [[package]]
 name = "librio"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "bitflags 2.13.1",
  "corcovado",
@@ -3890,9 +3890,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5102a6aaa05aa011a238e178e6bca86d2cb56fc9f586d37cb80f5bca6e07759"
+checksum = "07507be7b4a5f9f26eeb41eeaebb1f5a7ff29dfb29739facc21d35bf8b11c21e"
 dependencies = [
  "bitflags 2.13.1",
 ]
@@ -3965,7 +3965,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "base64",
  "dirs",
@@ -3984,7 +3984,7 @@ dependencies = [
 
 [[package]]
 name = "rio-grapheme-width"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "phf",
  "ucd-trie",
@@ -3992,7 +3992,7 @@ dependencies = [
 
 [[package]]
 name = "rio-graphics"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "image",
  "parking_lot",
@@ -4004,7 +4004,7 @@ dependencies = [
 
 [[package]]
 name = "rio-notifier"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "block2 0.5.1",
  "objc-rs 0.3.2",
@@ -4017,7 +4017,7 @@ dependencies = [
 
 [[package]]
 name = "rio-vt"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "base64",
  "bitflags 2.13.1",
@@ -4051,7 +4051,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -4106,7 +4106,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "ahash",
  "bitflags 2.13.1",
@@ -4651,7 +4651,7 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "approx",
  "ash",
@@ -4783,7 +4783,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "corcovado",
  "dirs",
@@ -5708,9 +5708,9 @@ dependencies = [
 
 [[package]]
 name = "wide"
-version = "1.5.0"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfdfe6a32973f2d1b268b8895845a8a96cac2f0191e72c27cc929036060dbf89"
+checksum = "be99e8317aa9f08e7d16e13033ca43faab59ab582b1d0feab7b385424c42f8b1"
 dependencies = [
  "bytemuck",
  "safe_arch",
@@ -6246,9 +6246,9 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "xcursor"
-version = "0.3.10"
+version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bec9e4a500ca8864c5b47b8b482a73d62e4237670e5b5f1d6b9e3cae50f28f2b"
+checksum = "163b33ed8786455e2fa5d72f554057ce3f3182425434f756cd39c99839d88e23"
 
 [[package]]
 name = "xdg-home"
