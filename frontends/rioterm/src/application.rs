@@ -706,9 +706,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             reply,
                             ..
                         } => screen.rmx_write(route_id, &key, &payload).filter(|out| {
-                            let ok = out.contains(";a;");
-                            (ok && reply.emit_success())
-                                || (!ok && reply.emit_error())
+                            // `a` grants are unconditional (spec §9); only
+                            // error replies honour the reply mode.
+                            out.contains(";a;") || reply.emit_error()
                         }),
                         wire::RmxCommand::Close { key, reply, .. } => {
                             screen.rmx_close(route_id, &key).filter(|_| reply.emit_error())

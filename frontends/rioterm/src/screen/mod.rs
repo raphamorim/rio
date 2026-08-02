@@ -1742,9 +1742,13 @@ impl Screen<'_> {
         }
         if let Some(buffer) = self.rmx_state.session_mut(owner_route).get_mut(key) {
             buffer.parser = parser;
-            // Replenish as the bytes are now rendered (spec §9).
+            // The bytes are rendered, so their credit is returned; the
+            // account only stays down while a write is in flight.
             let grant = spent as u32;
-            buffer.credit = buffer.credit.saturating_add(grant);
+            buffer.credit = buffer
+                .credit
+                .saturating_add(grant)
+                .min(crate::rmx::INITIAL_CREDIT);
             self.mark_route_dirty(route_id);
             if over {
                 return Some(wire::format_error(
