@@ -131,6 +131,15 @@ Unknown keys MUST be ignored (forward compatibility). The total
 length of one rmx frame MUST NOT exceed 4096 bytes; larger payloads
 use continuation (§6.2) or raw bursts (§7).
 
+**Payload position.** When a verb or event carries a payload, the
+payload is the **final `;`-separated field** of the frame, it is
+unlabelled, and **no parameters may follow it**. Parsers MUST take it
+positionally rather than by looking for a field without `=`: base64
+padding makes `aGk=` indistinguishable from a `key=value` pair, so a
+name-based rule and a position-based rule disagree on frames like
+`rmx;i;k=p1;ev=in;aGk=;serial=7`. Emitters MUST place every parameter
+before the payload.
+
 **Buffer keys** (`k=`) are client-chosen strings matching
 `[a-z0-9-]{1,16}`. The restricted alphabet is a security property:
 keys are the only application-originated value the terminal ever
@@ -236,7 +245,8 @@ and integers.
 ESC _ rmx ; w ; k=<key> [; m=1] ; <base64 payload> ESC \
 ```
 
-The payload is bytes for the buffer's terminal instance, exactly as
+The payload is the final field (§3.2). The payload is bytes for the
+buffer's terminal instance, exactly as
 if they had arrived on a PTY of its own — escape sequences included.
 `m=1` marks continuation (more chunks follow for one logical write);
 chunking follows the house wire economics (≤4 KB frames).
@@ -282,6 +292,8 @@ input remains raw bytes — ordinary PTY semantics untouched.
 ```
 ESC _ rmx ; i ; k=<key> ; ev=<name> [; key=value]* [; <base64>] ESC \
 ```
+
+Per §3.2 the base64 payload is last; parameters never follow it.
 
 Events (v1):
 

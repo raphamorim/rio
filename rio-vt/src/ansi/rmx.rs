@@ -588,6 +588,28 @@ mod tests {
     }
 
     #[test]
+    fn payload_is_positional_not_name_based() {
+        // Base64 padding makes the payload look like `key=value`; it is
+        // taken positionally, and nothing may follow it (spec §3.2).
+        let cmd = parse(b"rmx;w;k=a;aGk=").unwrap();
+        assert_eq!(
+            cmd,
+            RmxCommand::Write {
+                key: key("a"),
+                payload: b"hi".to_vec(),
+                more: false,
+                reply: ReplyMode::ErrorsOnly,
+            }
+        );
+        // A field after the payload would be swallowed as payload, which
+        // is why emitters must never place one there.
+        assert!(matches!(
+            parse(b"rmx;w;k=a;aGk=;serial=7"),
+            Err(ParseError::BadPayload)
+        ));
+    }
+
+    #[test]
     fn burst_bounds() {
         assert_eq!(
             parse(b"rmx;t;k=a;n=4096"),
