@@ -574,10 +574,7 @@ impl Screen<'_> {
     /// producer de-dupes on the numeric value and wake notifications
     /// coalesce), so cheap checkpoints call this instead of trusting
     /// event delivery. Returns whether a rescale ran.
-    pub fn reconcile_scale(
-        &mut self,
-        winit_window: &rio_window::window::Window,
-    ) -> bool {
+    pub fn reconcile_scale(&mut self, winit_window: &rio_window::window::Window) -> bool {
         let live_scale = winit_window.scale_factor() as f32;
         if live_scale > 0.0
             && (live_scale - self.sugarloaf.scale_factor()).abs() > f32::EPSILON
@@ -613,6 +610,7 @@ impl Screen<'_> {
                 unscaled_margin.bottom * new_scale,
                 unscaled_margin.left * new_scale,
             ));
+            context_grid.update_scale(new_scale);
 
             for context in context_grid.contexts_mut().values_mut() {
                 let ctx = context.context_mut();

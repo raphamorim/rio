@@ -1186,6 +1186,52 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let _ = self.try_update_size(self.width, self.height);
     }
 
+    /// Refresh the grid's DPI scale and every scale-derived value baked
+    /// into the taffy tree at creation time: container gaps, panel
+    /// padding/margins, and the live reads (border hit-boxes, divider
+    /// math) that go through `self.scale`. Without this a grid created on
+    /// one display keeps its creation-time DPI for paddings and gaps
+    /// forever, even though the cell metrics update.
+    pub fn update_scale(&mut self, new_scale: f32) {
+        if (self.scale - new_scale).abs() < f32::EPSILON {
+            return;
+        }
+        self.scale = new_scale;
+
+        let gap = geometry::Size {
+            width: length(self.panel_config.column_gap * new_scale),
+            height: length(self.panel_config.row_gap * new_scale),
+        };
+        let padding = geometry::Rect {
+            left: length(self.panel_config.padding.left * new_scale),
+            right: length(self.panel_config.padding.right * new_scale),
+            top: length(self.panel_config.padding.top * new_scale),
+            bottom: length(self.panel_config.padding.bottom * new_scale),
+        };
+        let margin = geometry::Rect {
+            left: length(self.panel_config.margin.left * new_scale),
+            right: length(self.panel_config.margin.right * new_scale),
+            top: length(self.panel_config.margin.top * new_scale),
+            bottom: length(self.panel_config.margin.bottom * new_scale),
+        };
+
+        let mut stack = vec![self.root_node];
+        while let Some(node) = stack.pop() {
+            if let Ok(mut style) = self.tree.style(node).cloned() {
+                if self.inner.contains_key(&node) {
+                    style.padding = padding;
+                    style.margin = margin;
+                } else {
+                    style.gap = gap;
+                }
+                let _ = self.tree.set_style(node, style);
+            }
+            if let Ok(children) = self.tree.children(node) {
+                stack.extend(children);
+            }
+        }
+    }
+
     pub fn update_line_height(&mut self, line_height: f32) {
         for context in self.inner.values_mut() {
             context.val.dimension.update_line_height(line_height);

@@ -913,7 +913,7 @@ impl WindowDelegate {
             .queue_window_event(self.window().id(), event);
     }
 
-    fn queue_static_scale_factor_changed_event(&self) {
+    pub(crate) fn queue_static_scale_factor_changed_event(&self) {
         let scale_factor = self.scale_factor();
         if scale_factor == self.ivars().previous_scale_factor.get() {
             return;
