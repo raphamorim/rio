@@ -840,6 +840,10 @@ pub struct BackgroundImagePixels {
 }
 
 pub struct Renderer {
+    /// Set when a frame could not be presented (drawable acquisition
+    /// failed, e.g. right after sleep/wake). Consumed by the embedder via
+    /// `Sugarloaf::take_frame_dropped` to schedule a retry.
+    pub(crate) frame_dropped: bool,
     brush_type: RendererType,
     comp: Compositor,
     instances: Vec<batch::QuadInstance>,
@@ -1024,6 +1028,7 @@ impl Renderer {
         };
 
         Self {
+            frame_dropped: false,
             brush_type,
             comp: Compositor::new(),
             instances: vec![],
@@ -2172,7 +2177,12 @@ impl Renderer {
         let surface_texture = match context.get_current_texture() {
             Ok(t) => t,
             Err(e) => {
+                // Common right after sleep/wake: the layer has no drawable
+                // yet. The frame's damage was already consumed upstream, so
+                // record the drop for the embedder to schedule a retry —
+                // otherwise the content is lost until unrelated damage.
                 tracing::error!("Metal surface error: {}", e);
+                self.frame_dropped = true;
                 return;
             }
         };
