@@ -797,7 +797,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &mut self,
         route_id: usize,
     ) -> Option<&mut ContextGridItem<T>> {
-        self.contexts[self.current_index].get_by_route_id(route_id)
+        // Search every tab, current first: per-route events (damage marks,
+        // titles, color/size requests) must reach panes in background tabs,
+        // otherwise their state is silently dropped until the pane's own
+        // PTY speaks again.
+        let current = self.current_index;
+        if self.contexts[current].get_by_route_id(route_id).is_some() {
+            return self.contexts[current].get_by_route_id(route_id);
+        }
+        self.contexts
+            .iter_mut()
+            .enumerate()
+            .filter(|(i, _)| *i != current)
+            .find_map(|(_, grid)| grid.get_by_route_id(route_id))
     }
 
     #[inline]

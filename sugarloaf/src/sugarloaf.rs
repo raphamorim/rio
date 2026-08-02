@@ -877,6 +877,14 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
+    /// Whether the last frame failed to present (drawable acquisition
+    /// failure, common right after sleep/wake). Reading clears the flag.
+    /// Embedders should mark content dirty and schedule another frame,
+    /// since the dropped frame's damage was already consumed.
+    pub fn take_frame_dropped(&mut self) -> bool {
+        std::mem::take(&mut self.renderer.frame_dropped)
+    }
+
     pub fn render(&mut self) {
         self.render_with_grids(&mut []);
     }

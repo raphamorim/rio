@@ -567,6 +567,24 @@ impl Screen<'_> {
         self
     }
 
+    /// Re-read the window's live scale factor and re-run the rescale path
+    /// when it diverged from the one being rendered with. Display
+    /// reconfiguration during sleep/wake can change the backing scale
+    /// without a `ScaleFactorChanged` ever being delivered (the macOS
+    /// producer de-dupes on the numeric value and wake notifications
+    /// coalesce), so cheap checkpoints call this instead of trusting
+    /// event delivery. Returns whether a rescale ran.
+    pub fn reconcile_scale(&mut self, winit_window: &rio_window::window::Window) -> bool {
+        let live_scale = winit_window.scale_factor() as f32;
+        if live_scale > 0.0
+            && (live_scale - self.sugarloaf.scale_factor()).abs() > f32::EPSILON
+        {
+            self.set_scale(live_scale, winit_window.inner_size());
+            return true;
+        }
+        false
+    }
+
     #[inline]
     pub fn set_scale(
         &mut self,
@@ -592,9 +610,18 @@ impl Screen<'_> {
                 unscaled_margin.bottom * new_scale,
                 unscaled_margin.left * new_scale,
             ));
+            context_grid.update_scale(new_scale);
 
             for context in context_grid.contexts_mut().values_mut() {
-                context.context_mut().dimension.update_scale(new_scale);
+                let ctx = context.context_mut();
+                ctx.dimension.update_scale(new_scale);
+                // Resident GPU cell buffers hold glyphs shaped at the old
+                // scale; a scale change that preserves cols/rows produces
+                // no terminal damage on its own, so without this the grid
+                // geometry updates while the sprites stay stale.
+                ctx.renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             }
 
             context_grid.update_dimensions(&mut self.sugarloaf);
@@ -4376,6 +4403,13 @@ impl Screen<'_> {
                     self.sugarloaf.render();
                 } else {
                     self.sugarloaf.render_with_grids(&mut frame_grids);
+                }
+                // A dropped frame (no drawable, e.g. right after wake)
+                // already consumed this frame's damage; without a retry
+                // the content is lost until unrelated PTY traffic.
+                if self.sugarloaf.take_frame_dropped() {
+                    self.mark_dirty();
+                    self.context_manager.request_render();
                 }
             } else {
                 // Nothing to draw this frame, but `Renderer::run`

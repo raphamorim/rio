@@ -1982,7 +1982,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let focus_changed = route.window.is_focused != focused;
                 route.window.is_focused = focused;
 
-                if focus_changed {
+                // Focus is a cheap checkpoint to catch backing-scale changes
+                // whose ScaleFactorChanged never arrived (sleep/wake display
+                // reconfiguration).
+                if focused
+                    && route
+                        .window
+                        .screen
+                        .reconcile_scale(&route.window.winit_window)
+                {
+                    route.window.update_vblank_interval();
+                    route.request_redraw();
+                } else if focus_changed {
                     route.request_redraw();
                 }
 
@@ -1996,6 +2007,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // If window was occluded and is now visible, mark for one-time render
                 if was_occluded && !occluded {
                     route.window.needs_render_after_occlusion = true;
+                    // Same checkpoint as focus: the un-occlusion after wake
+                    // is often the first event the window receives.
+                    if route
+                        .window
+                        .screen
+                        .reconcile_scale(&route.window.winit_window)
+                    {
+                        route.window.update_vblank_interval();
+                    }
+                    // An idle terminal produces no PTY traffic to trigger the
+                    // deferred post-occlusion render; request it directly.
+                    route.request_redraw();
                 }
             }
 
