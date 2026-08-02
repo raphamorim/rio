@@ -620,23 +620,6 @@ impl Processor {
     where
         H: Handler,
     {
-        // An rmx `t` frame redirects the next N raw stream bytes to a
-        // buffer (spec §7). Content is never scanned for terminators,
-        // so no payload can escape the burst.
-        if let Some((key, remaining)) = self.state.rmx_burst.take() {
-            let take = remaining.min(bytes.len());
-            handler.rmx_burst(&key, &bytes[..take]);
-            let left = remaining - take;
-            if left > 0 {
-                self.state.rmx_burst = Some((key, left));
-                return;
-            }
-            if take == bytes.len() {
-                return;
-            }
-            return self.advance(handler, &bytes[take..]);
-        }
-
         if self.state.sync_state.timeout.pending_timeout() {
             // Cap synchronized-update latency for embedders that do not
             // drive the timeout externally: once the deadline has passed,
@@ -645,14 +628,52 @@ impl Processor {
             // the deadline itself and never reach this branch.
             if self.state.sync_state.timeout.expired() {
                 self.stop_sync(handler);
-                let mut performer = Performer::new(&mut self.state, handler);
-                self.parser.advance(&mut performer, bytes);
+                self.advance_stream(handler, bytes);
             } else {
                 self.advance_sync(handler, bytes);
             }
         } else {
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, bytes);
+            self.advance_stream(handler, bytes);
+        }
+    }
+
+    /// Feed the parser, splitting out the rmx raw bursts the stream arms
+    /// along the way (spec §7).
+    ///
+    /// A `t` frame gives the next `n` bytes to a buffer verbatim, and they
+    /// usually arrive in the same read as the frame that declared them, so
+    /// the parser has to stop at the frame terminator rather than run to
+    /// the end of the chunk. Bytes it never looks at cannot forge a frame,
+    /// which is the whole point of the length prefix.
+    fn advance_stream<H>(&mut self, handler: &mut H, bytes: &[u8])
+    where
+        H: Handler,
+    {
+        let mut rest = bytes;
+        loop {
+            // A burst goes live only once the parser has finished the frame,
+            // terminator included: a read ending between ESC and `\` arms it
+            // with one byte of ST still owed to the parser.
+            if self.parser.at_ground() {
+                if let Some((key, remaining)) = self.state.rmx_burst.take() {
+                    let take = remaining.min(rest.len());
+                    handler.rmx_burst(&key, &rest[..take]);
+                    if remaining > take {
+                        self.state.rmx_burst = Some((key, remaining - take));
+                        return;
+                    }
+                    rest = &rest[take..];
+                }
+            }
+            let consumed = {
+                let mut performer = Performer::new(&mut self.state, handler);
+                self.parser.advance_to_handoff(&mut performer, rest)
+            };
+            // Only a live burst stops the parser short of the slice end.
+            if self.state.rmx_burst.is_none() || !self.parser.at_ground() {
+                return;
+            }
+            rest = &rest[consumed..];
         }
     }
 
@@ -677,8 +698,7 @@ impl Processor {
         // automatically during the synchronized update.
         let buffer = mem::take(&mut self.state.sync_state.buffer);
         let offset = bsu_offset.unwrap_or(buffer.len());
-        let mut performer = Performer::new(&mut self.state, handler);
-        self.parser.advance(&mut performer, &buffer[..offset]);
+        self.advance_stream(handler, &buffer[..offset]);
         self.state.sync_state.buffer = buffer;
 
         match bsu_offset {
@@ -1027,6 +1047,13 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
 }
 
 impl<U: Handler> Perform for Performer<'_, U> {
+    /// An armed rmx `t` burst owns the bytes after the frame, so parsing
+    /// must stop there (spec §7).
+    #[inline]
+    fn handoff_pending(&self) -> bool {
+        self.state.rmx_burst.is_some()
+    }
+
     fn print(&mut self, c: char) {
         self.handler.input(c);
         self.state.preceding_char = Some(c);
@@ -2360,6 +2387,114 @@ mod tests {
         processor.advance(&mut handler, b"\x1b_Ga=p,i=7,q=1\x1b\\");
         assert_eq!(handler.replies.len(), 1, "q=1 must still report errors");
         assert!(handler.replies[0].contains("ENOENT"));
+    }
+
+    /// A `t` frame and its payload almost always arrive in one read, so the
+    /// parser has to stop at the frame terminator. Running to the end of the
+    /// chunk instead put the payload on the primary stream and then ate the
+    /// head of the next read to pay off the burst, corrupting both.
+    #[derive(Default)]
+    struct BurstHandler {
+        printed: String,
+        bursts: Vec<(String, Vec<u8>)>,
+    }
+
+    impl Handler for BurstHandler {
+        fn input(&mut self, c: char) {
+            self.printed.push(c);
+        }
+
+        fn rmx_burst_allowed(&mut self, _key: &crate::ansi::rmx::BufferKey) -> bool {
+            true
+        }
+
+        fn rmx_burst(&mut self, key: &crate::ansi::rmx::BufferKey, bytes: &[u8]) {
+            self.bursts
+                .push((key.as_str().to_owned(), bytes.to_vec()));
+        }
+    }
+
+    #[test]
+    fn rmx_burst_payload_in_the_same_chunk_is_redirected() {
+        let mut handler = BurstHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"A\x1b_rmx;t;k=p0;n=5\x1b\\helloB");
+
+        assert_eq!(handler.printed, "AB");
+        assert_eq!(handler.bursts, vec![("p0".to_owned(), b"hello".to_vec())]);
+    }
+
+    #[test]
+    fn rmx_bursts_chain_within_one_chunk() {
+        let mut handler = BurstHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(
+            &mut handler,
+            b"\x1b_rmx;t;k=p0;n=2\x1b\\ab\x1b_rmx;t;k=p1;n=3\x1b\\cdeZ",
+        );
+
+        assert_eq!(handler.printed, "Z");
+        assert_eq!(
+            handler.bursts,
+            vec![
+                ("p0".to_owned(), b"ab".to_vec()),
+                ("p1".to_owned(), b"cde".to_vec()),
+            ]
+        );
+    }
+
+    #[test]
+    fn rmx_burst_split_across_reads_still_lands_in_the_buffer() {
+        let mut handler = BurstHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_rmx;t;k=p0;n=6\x1b\\abc");
+        processor.advance(&mut handler, b"defX");
+
+        assert_eq!(handler.printed, "X");
+        assert_eq!(
+            handler.bursts,
+            vec![
+                ("p0".to_owned(), b"abc".to_vec()),
+                ("p0".to_owned(), b"def".to_vec()),
+            ]
+        );
+    }
+
+    /// The frame is dispatched on the ESC of its ST, so a read ending there
+    /// leaves one terminator byte owed to the parser rather than to the
+    /// buffer.
+    #[test]
+    fn rmx_burst_terminator_split_across_reads_keeps_its_st() {
+        let mut handler = BurstHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_rmx;t;k=p0;n=3\x1b");
+        processor.advance(&mut handler, b"\\xyzQ");
+
+        assert_eq!(handler.printed, "Q");
+        assert_eq!(handler.bursts, vec![("p0".to_owned(), b"xyz".to_vec())]);
+    }
+
+    /// Burst payload is never scanned, so a frame terminator inside it is
+    /// just data (spec §7).
+    #[test]
+    fn rmx_burst_payload_cannot_forge_a_frame() {
+        let mut handler = BurstHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(
+            &mut handler,
+            b"\x1b_rmx;t;k=p0;n=16\x1b\\\x1b_rmx;t;k=p1;n=9\x1b\\Y",
+        );
+
+        assert_eq!(handler.printed, "Y");
+        assert_eq!(
+            handler.bursts,
+            vec![("p0".to_owned(), b"\x1b_rmx;t;k=p1;n=9".to_vec())]
+        );
     }
 
     #[test]
