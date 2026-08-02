@@ -179,6 +179,12 @@ impl MetalContext {
     #[inline]
     pub fn set_scale(&mut self, scale: f32) {
         self.scale = scale;
+        // Re-assert the layer's contentsScale: it was set at creation and
+        // AppKit can reset layer state across sleep/wake or display
+        // reconfiguration. Without this the compositor rescales the
+        // texture and every glyph looks off even though the grid math
+        // is self-consistent. Cheap property write; safe to repeat.
+        self.layer.set_contents_scale(scale as f64);
     }
 
     /// Toggle the CAMetalLayer's opaque flag. `true` (default) lets the
