@@ -1698,6 +1698,7 @@ impl Screen<'_> {
                 route_id,
                 parser: Default::default(),
                 credit: crate::rmx::INITIAL_CREDIT,
+                pending_grant: 0,
             },
         );
 
@@ -1752,6 +1753,12 @@ impl Screen<'_> {
                 .credit
                 .saturating_add(grant)
                 .min(crate::rmx::INITIAL_CREDIT);
+            buffer.pending_grant = buffer.pending_grant.saturating_add(grant);
+            let flush = buffer.pending_grant >= crate::rmx::GRANT_THRESHOLD;
+            let owed = buffer.pending_grant;
+            if flush {
+                buffer.pending_grant = 0;
+            }
             self.mark_route_dirty(route_id);
             if over {
                 return Some(wire::format_error(
@@ -1760,7 +1767,10 @@ impl Screen<'_> {
                     wire::Reason::NoCredit,
                 ));
             }
-            return Some(wire::format_credit(key, grant));
+            if flush {
+                return Some(wire::format_credit(key, owed));
+            }
+            return None;
         }
         None
     }
