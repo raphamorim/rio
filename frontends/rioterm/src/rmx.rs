@@ -106,6 +106,11 @@ impl RmxState {
             .unwrap_or_default()
     }
 
+    /// Owning routes with live sessions, for the user veto.
+    pub fn owner_routes(&self) -> Vec<usize> {
+        self.sessions.keys().copied().collect()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.sessions.is_empty()
     }

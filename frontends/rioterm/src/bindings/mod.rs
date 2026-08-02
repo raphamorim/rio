@@ -244,6 +244,7 @@ impl From<String> for Action {
             "movecurrenttabtonext" => Some(Action::MoveCurrentTabToNext),
             "closetab" => Some(Action::TabCloseCurrent),
             "closesplitortab" => Some(Action::CloseCurrentSplitOrTab),
+            "rmxclosebuffers" => Some(Action::RmxCloseBuffers),
             "closeunfocusedtabs" => Some(Action::TabCloseUnfocused),
             "openconfigeditor" => Some(Action::ConfigEditor),
             "selectprevtab" => Some(Action::SelectPrevTab),
@@ -439,6 +440,8 @@ pub enum Action {
     TabCloseCurrent,
 
     CloseCurrentSplitOrTab,
+    /// Close every rmx buffer in this window (spec 11 user veto).
+    RmxCloseBuffers,
 
     /// Close all other tabs (leave only the current tab).
     TabCloseUnfocused,

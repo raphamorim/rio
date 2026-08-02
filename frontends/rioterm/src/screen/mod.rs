@@ -1285,6 +1285,9 @@ impl Screen<'_> {
                     Act::CloseCurrentSplitOrTab => {
                         self.close_split_or_tab(clipboard);
                     }
+                    Act::RmxCloseBuffers => {
+                        self.rmx_close_all();
+                    }
                     Act::TabCreateNew => {
                         self.create_tab(clipboard);
                     }
@@ -1799,6 +1802,31 @@ impl Screen<'_> {
         }
         out.push_str(&wire::format_enumerate_end());
         out
+    }
+
+    /// Close every rmx buffer in this window, whatever the owning
+    /// applications think. This is the user veto the spec requires
+    /// (11): a misbehaving app can always be shut out by a gesture.
+    pub fn rmx_close_all(&mut self) {
+        for owner_route in self.rmx_state.owner_routes() {
+            // Each buffer reports under its own key (spec 8).
+            let buffers = self
+                .rmx_state
+                .session(owner_route)
+                .map(|s| s.keys_and_routes())
+                .unwrap_or_default();
+            self.rmx_state.take_session(owner_route);
+            for (key, route_id) in buffers {
+                self.rmx_remove_pane(route_id);
+                if let Ok(key) = rio_backend::ansi::rmx::BufferKey::parse(key.as_bytes())
+                {
+                    let frame =
+                        rio_backend::ansi::rmx::format_event_closed(&key, "user");
+                    self.rmx_notify_owner(owner_route, frame);
+                }
+            }
+        }
+        self.mark_dirty();
     }
 
     /// Tear down every buffer owned by a pane that went away
