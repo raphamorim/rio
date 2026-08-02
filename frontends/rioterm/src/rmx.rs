@@ -30,6 +30,10 @@ pub const MAX_BUFFERS: u16 = 16;
 /// Per-buffer starting credit in bytes (spec §9).
 pub const INITIAL_CREDIT: u32 = 262_144;
 
+/// Grants are batched until this many bytes are owed, a quarter of the
+/// window, so an app always has room in flight while it waits.
+pub const GRANT_THRESHOLD: u32 = INITIAL_CREDIT / 4;
+
 /// A virtual buffer: a real pane with a grid, no PTY of its own.
 pub struct RmxBuffer {
     /// Route of the Context rendering this buffer.
@@ -39,6 +43,10 @@ pub struct RmxBuffer {
     pub parser: Processor,
     /// Remaining write credit in bytes.
     pub credit: u32,
+    /// Rendered bytes not yet acknowledged with an `a` frame. macOS pty
+    /// reads cap near 200 bytes, so granting per read costs one reverse
+    /// frame per read; batching keeps that overhead off the wire.
+    pub pending_grant: u32,
 }
 
 /// Every buffer owned by one pane (the pane whose PTY carries the
