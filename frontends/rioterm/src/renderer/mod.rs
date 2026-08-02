@@ -10,7 +10,6 @@ pub mod trail_cursor;
 pub mod utils;
 
 use rio_backend::event::TerminalDamage;
-use taffy::NodeId;
 
 use crate::context::renderable::{PendingUpdate, RenderableContent};
 use crate::context::ContextManager;
@@ -59,7 +58,12 @@ pub struct Renderer {
     pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
     unfocused_split_fill: Option<ColorArray>,
-    last_active: Option<NodeId>,
+    /// Route id of the pane rendered as active last frame. Keyed on
+    /// `route_id` (globally unique) rather than the grid's taffy `NodeId`:
+    /// each tab owns its own taffy tree and identically-shaped trees hand
+    /// out identical NodeIds, so a tab switch would compare equal and skip
+    /// the full-damage refresh the incoming tab needs.
+    last_active: Option<usize>,
     /// Last `rio_backend::sugarloaf::Color` we applied to sugarloaf's window clear via
     /// `set_background_color`. Lets the per-frame "derive bg from
     /// active panel's OSC state" loop avoid redundant resyncs.
@@ -278,12 +282,12 @@ impl Renderer {
     ) -> (Option<crate::context::renderable::WindowUpdate>, bool) {
         let mut any_panel_dirty = false;
         let grid = context_manager.current_grid_mut();
-        let active_key = grid.current;
+        let active_route = grid.current().route_id;
         let grid_scaled_margin = grid.get_scaled_margin();
         let mut has_active_changed = false;
-        if self.last_active != Some(active_key) {
+        if self.last_active != Some(active_route) {
             has_active_changed = true;
-            self.last_active = Some(active_key);
+            self.last_active = Some(active_route);
         }
 
         for (_key, grid_context) in grid.contexts_mut().iter_mut() {
@@ -618,6 +622,9 @@ impl Renderer {
                 tint[2],
                 1.0 - self.unfocused_split_opacity,
             ];
+            // Within-grid comparison: taffy keys are only meaningful
+            // inside a single tab's tree.
+            let active_key = grid.current;
             for (key, grid_context) in grid.contexts_mut().iter() {
                 if &active_key == key {
                     continue;
