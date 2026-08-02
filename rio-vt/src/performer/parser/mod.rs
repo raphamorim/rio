@@ -158,6 +158,22 @@ impl Parser {
     /// Requires a [`Perform`] implementation to handle the triggered actions.
     #[inline]
     pub fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
+        let _ = self.advance_to_handoff(performer, bytes);
+    }
+
+    /// Like [`Parser::advance`], but stops as soon as the performer reports
+    /// a handoff ([`Perform::handoff_pending`]) and returns how many bytes
+    /// were consumed. The caller owns the rest of the slice.
+    ///
+    /// Performers that never hand off see a constant `false` after
+    /// monomorphization, so this costs them nothing and `advance` stays the
+    /// whole-slice call it always was.
+    #[inline]
+    pub fn advance_to_handoff<P: Perform>(
+        &mut self,
+        performer: &mut P,
+        bytes: &[u8],
+    ) -> usize {
         let mut i = 0;
 
         // Handle partial codepoints from previous calls to `advance`.
@@ -193,7 +209,25 @@ impl Parser {
                     i += 1;
                 }
             }
+            // Ground only: the sequence that arms a handoff is dispatched on
+            // the ESC of its ST, one byte before the terminator is complete,
+            // and that last byte is parser input rather than handed-off data.
+            if performer.handoff_pending() && self.at_ground() {
+                break;
+            }
         }
+
+        i
+    }
+
+    /// True when the state machine sits between sequences.
+    ///
+    /// Callers of [`Parser::advance_to_handoff`] need this: a read that ends
+    /// mid-terminator leaves the handoff armed with the sequence unfinished,
+    /// and the bytes that follow still belong to the parser.
+    #[inline]
+    pub fn at_ground(&self) -> bool {
+        matches!(self.state, State::Ground)
     }
 
     /// Consume a run of bytes while in `CsiParam`, accumulating digit
@@ -1409,6 +1443,19 @@ enum State {
 /// The methods correspond to actions described in
 /// <http://vt100.net/emu/dec_ansi_parser>.
 pub trait Perform {
+    /// True when the sequence just dispatched handed the bytes that follow
+    /// it to the performer itself, so the parser must stop and let the
+    /// caller deliver them unparsed.
+    ///
+    /// The rmx `t` verb needs this: the `n` bytes after the frame belong to
+    /// a buffer verbatim and are never scanned, which is what makes them
+    /// un-forgeable (rmx spec §7). Default `false`, so parsing runs to the
+    /// end of the slice as it always did.
+    #[inline]
+    fn handoff_pending(&self) -> bool {
+        false
+    }
+
     /// Draw a character to the screen and update states.
     fn print(&mut self, _c: char) {}
 
