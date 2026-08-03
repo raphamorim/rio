@@ -200,10 +200,14 @@ const FILE_SCHEME: &str = "file://";
 
 /// OSC 7: working directory as a `file://` URL.
 ///
-/// The payload is `file://<host>/<path>`, where the host is informational and
-/// the path is percent-encoded. Parsed by hand rather than with a URL crate:
-/// this is the only URL the terminal core looks at, and a general parser costs
-/// an IDNA/Unicode stack just to reach `.path()`.
+/// The payload is `file://<host>/<path>`, with a percent-encoded path. Parsed
+/// by hand rather than with a URL crate: this is the only URL the terminal core
+/// looks at, and a general parser costs an IDNA/Unicode stack just to reach
+/// `.path()`.
+///
+/// Anything on the other end of the PTY can send this, including a shell on the
+/// far side of an ssh session, so a directory that belongs to another machine is
+/// refused rather than reported as ours.
 pub(super) fn parse_current_directory(param: &[u8]) -> Option<String> {
     let s = simd_utf8::from_utf8_fast(param).ok()?;
 
@@ -213,9 +217,16 @@ pub(super) fn parse_current_directory(param: &[u8]) -> Option<String> {
         .filter(|scheme| scheme.eq_ignore_ascii_case(FILE_SCHEME))
         .map(|_| &s[FILE_SCHEME.len()..])?;
 
-    // Skip the host: the path begins at its trailing slash. A payload with no
-    // path at all leaves nothing to report.
-    let path = &after_scheme[after_scheme.find('/')?..];
+    // The path begins at the host's trailing slash. A payload with no path at
+    // all leaves nothing to report.
+    let path_start = after_scheme.find('/')?;
+    let host = &after_scheme[..path_start];
+    let path = &after_scheme[path_start..];
+
+    if !host_is_local(host) {
+        tracing::warn!("ignoring OSC 7 for non-local host {host:?}");
+        return None;
+    }
 
     // A query or fragment is not part of the path.
     let path = &path[..path.find(['?', '#']).unwrap_or(path.len())];
@@ -225,6 +236,59 @@ pub(super) fn parse_current_directory(param: &[u8]) -> Option<String> {
     let path = path.strip_prefix('/').unwrap_or(path);
 
     percent_decode(path)
+}
+
+/// Whether an OSC 7 host names this machine.
+///
+/// An empty host is this machine by definition (RFC 8089), which is also the
+/// form shells produce from a bare `file://$PWD`.
+fn host_is_local(host: &str) -> bool {
+    // Tolerate the FQDN root dot.
+    let host = host.strip_suffix('.').unwrap_or(host);
+
+    if host.is_empty() || host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+
+    match local_hostname() {
+        Some(local) => host.eq_ignore_ascii_case(local),
+        // With no hostname to compare against, take the shell at its word
+        // rather than dropping the directory outright.
+        None => true,
+    }
+}
+
+/// This machine's hostname, looked up once.
+fn local_hostname() -> Option<&'static str> {
+    static HOSTNAME: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    HOSTNAME.get_or_init(read_hostname).as_deref()
+}
+
+#[cfg(unix)]
+fn read_hostname() -> Option<String> {
+    // `_POSIX_HOST_NAME_MAX` is 255; the extra byte is for the terminator,
+    // which a truncating implementation is not required to write.
+    let mut buffer = [0_u8; 256];
+    // SAFETY: writing at most `buffer.len()` bytes into a buffer of that size.
+    let result = unsafe {
+        libc::gethostname(buffer.as_mut_ptr() as *mut libc::c_char, buffer.len())
+    };
+    if result != 0 {
+        return None;
+    }
+
+    let end = buffer.iter().position(|byte| *byte == 0)?;
+    std::str::from_utf8(&buffer[..end])
+        .ok()
+        .filter(|hostname| !hostname.is_empty())
+        .map(str::to_owned)
+}
+
+#[cfg(not(unix))]
+fn read_hostname() -> Option<String> {
+    // No lookup here, so `host_is_local` falls back to accepting the payload,
+    // which is what rio did on every platform before.
+    None
 }
 
 /// Percent-decode a URL path. Invalid escapes are passed through as written,
@@ -411,6 +475,32 @@ mod tests {
         assert_eq!(cwd("file:///C:/Users/user"), Some("C:/Users/user".into()));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn current_directory_accepts_local_hosts() {
+        // Empty host means this machine (RFC 8089), as does localhost.
+        assert_eq!(cwd("file:///tmp"), Some("/tmp".into()));
+        assert_eq!(cwd("file://localhost/tmp"), Some("/tmp".into()));
+        assert_eq!(cwd("file://LOCALHOST/tmp"), Some("/tmp".into()));
+
+        // Our own hostname, as sent by a local shell, in either case and with
+        // the FQDN root dot.
+        let local = local_hostname().expect("hostname");
+        assert_eq!(cwd(&format!("file://{local}/tmp")), Some("/tmp".into()));
+        assert_eq!(
+            cwd(&format!("file://{}/tmp", local.to_uppercase())),
+            Some("/tmp".into())
+        );
+        assert_eq!(cwd(&format!("file://{local}./tmp")), Some("/tmp".into()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn current_directory_rejects_remote_hosts() {
+        // A shell on the far side of an ssh session must not move our cwd.
+        assert_eq!(cwd("file://not-this-machine.invalid/tmp"), None);
+    }
+
     #[test]
     fn current_directory_rejects_non_file_payloads() {
         // Another scheme is not a working directory, and a bare path has no
@@ -488,6 +578,16 @@ mod tests {
         let mut processor = Processor::default();
 
         processor.advance(&mut term, b"\x1b]7;file:///home/My%20Files\x1b\\");
+        assert_eq!(
+            term.current_directory.as_deref(),
+            Some(std::path::Path::new("/home/My Files"))
+        );
+
+        // A directory on someone else's machine leaves ours in place.
+        processor.advance(
+            &mut term,
+            b"\x1b]7;file://not-this-machine.invalid/tmp\x1b\\",
+        );
         assert_eq!(
             term.current_directory.as_deref(),
             Some(std::path::Path::new("/home/My Files"))
