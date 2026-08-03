@@ -39,7 +39,6 @@ cursor-icon = { version = "1.1.0", default-features = false }
 smallvec = { version = "1.13.2", default-features = false }
 simdutf = { workspace = true }
 flate2 = { workspace = true }
-lazy_static = { workspace = true }
 # Optional: only pulled in when the embedder wants the app-level renderer
 # error variant (font-not-found). Off keeps rio-vt free of sugarloaf.
 sugarloaf = { workspace = true, optional = true }
