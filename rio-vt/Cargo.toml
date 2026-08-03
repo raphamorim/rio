@@ -17,7 +17,7 @@ tracing = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 base64 = { workspace = true }
-memchr = { version = "2.7.4", default-features = false }
+memchr = { version = "2.8.3", default-features = false }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
 corcovado = { workspace = true }
@@ -34,9 +34,9 @@ rio-grapheme-width = { workspace = true }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 url = { workspace = true }
-regex-automata = "0.4.9"
+regex-automata = "0.4.16"
 cursor-icon = { version = "1.1.0", default-features = false }
-smallvec = { version = "1.13.2", default-features = false }
+smallvec = { workspace = true }
 simdutf = { workspace = true }
 flate2 = { workspace = true }
 # Optional: only pulled in when the embedder wants the app-level renderer
@@ -47,7 +47,7 @@ sugarloaf = { workspace = true, optional = true }
 rio-window = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
 
 [features]
 # Lean by default: no renderer, no windowing. This is the embeddable core.
