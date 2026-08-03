@@ -4021,7 +4021,6 @@ version = "0.5.6"
 dependencies = [
  "base64",
  "bitflags 2.13.1",
- "bytemuck",
  "copypasta",
  "corcovado",
  "cursor-icon",

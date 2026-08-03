@@ -19,7 +19,6 @@ tracing = { workspace = true }
 base64 = { workspace = true }
 memchr = { version = "2.8.3", default-features = false }
 bitflags = { workspace = true }
-bytemuck = { workspace = true }
 corcovado = { workspace = true }
 rustc-hash = { workspace = true }
 regex = { workspace = true }
