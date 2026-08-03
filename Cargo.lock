@@ -4027,7 +4027,6 @@ dependencies = [
  "cursor-icon",
  "flate2",
  "image",
- "lazy_static",
  "libc",
  "memchr",
  "parking_lot",
