@@ -242,6 +242,11 @@ pub enum RioEvent {
     /// Leave current terminal.
     CloseTerminal(usize),
 
+    /// The PTY's child process exited, with the raw wait status when the
+    /// platform makes it available (interpret with
+    /// `std::process::ExitStatus::from_raw` / `ExitStatusExt`).
+    ChildExited(usize, Option<i32>),
+
     BlinkCursor(u64, usize),
 
     /// Selection scroll tick — auto-scroll while dragging outside viewport.
@@ -319,6 +324,9 @@ impl Debug for RioEvent {
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::Quit => write!(f, "Quit"),
             RioEvent::CloseTerminal(route) => write!(f, "CloseTerminal {route}"),
+            RioEvent::ChildExited(route, status) => {
+                write!(f, "ChildExited(route={route}, status={status:?})")
+            }
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
             RioEvent::ToggleQuake => write!(f, "ToggleQuake"),
             RioEvent::CloseWindow => write!(f, "CloseWindow"),

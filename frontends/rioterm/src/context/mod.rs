@@ -23,7 +23,6 @@ use rio_backend::event::EventListener;
 use rio_backend::event::WindowId;
 use rio_backend::selection::SelectionRange;
 use rio_backend::sugarloaf::{font::SugarloafFont, Rect, Sugarloaf, SugarloafErrors};
-use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -261,7 +260,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             if config.use_fork {
                 tracing::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
-                    &Cow::Borrowed(&config.shell.program),
+                    config.shell.program.as_deref(),
                     &config.shell.args,
                     cols,
                     rows,
@@ -277,9 +276,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             } else {
                 tracing::info!("rio -> teletypewriter: create_pty_with_spawn");
                 pty = match create_pty_with_spawn(
-                    &Cow::Borrowed(&config.shell.program),
+                    config.shell.program.as_deref(),
                     config.shell.args.clone(),
                     &config.working_dir,
+                    None,
                     cols,
                     rows,
                     initial_winsize.width,
@@ -302,9 +302,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         #[cfg(target_os = "windows")]
         {
             pty = match create_pty(
-                &Cow::Borrowed(&config.shell.program),
+                config.shell.program.as_deref(),
                 config.shell.args.clone(),
                 &config.working_dir,
+                None,
                 cols,
                 rows,
             ) {

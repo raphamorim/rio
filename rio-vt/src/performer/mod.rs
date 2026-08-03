@@ -385,7 +385,7 @@ where
                             }
                         }
                         token if token == self.pty.child_event_token() => {
-                            if let Some(teletypewriter::ChildEvent::Exited) =
+                            if let Some(teletypewriter::ChildEvent::Exited(status)) =
                                 self.pty.next_child_event()
                             {
                                 // In the future allow configure exit
@@ -396,6 +396,20 @@ where
                                 //     // Without hold, shutdown the terminal.
                                 //     self.terminal.lock().exit();
                                 // }
+
+                                // Drain whatever the child wrote before it
+                                // exited so short-lived commands don't lose
+                                // their final output.
+                                if let Err(err) = self.pty_read(&mut state, &mut buf) {
+                                    tracing::debug!(
+                                        "PTY drain after child exit failed: {err}"
+                                    );
+                                }
+
+                                self.event_proxy.send_event(
+                                    RioEvent::ChildExited(self.route_id, status),
+                                    self.window_id,
+                                );
 
                                 self.terminal.lock().exit();
 

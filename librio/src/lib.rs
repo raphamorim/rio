@@ -249,21 +249,16 @@ impl Surface {
         );
         let terminal = Arc::new(FairMutex::new(terminal));
 
-        #[cfg(not(target_os = "windows"))]
-        let fallback_shell = "/bin/sh";
-        #[cfg(target_os = "windows")]
-        let fallback_shell = "cmd.exe";
-        let shell = desc
-            .shell
-            .clone()
-            .or_else(|| std::env::var("SHELL").ok())
-            .unwrap_or_else(|| String::from(fallback_shell));
+        // No shell in the descriptor means "whatever the user's default is",
+        // which teletypewriter resolves (and starts as a login shell).
+        let shell = desc.shell.as_deref();
 
         #[cfg(not(target_os = "windows"))]
         let pty = create_pty_with_spawn(
-            &Cow::Borrowed(shell.as_str()),
+            shell,
             desc.args.clone(),
             &desc.working_dir,
+            None,
             desc.cols,
             desc.rows,
             desc.pixel_width,
@@ -273,9 +268,10 @@ impl Surface {
 
         #[cfg(target_os = "windows")]
         let pty = create_pty(
-            shell.as_str(),
+            shell,
             desc.args.clone(),
             &desc.working_dir,
+            None,
             desc.cols,
             desc.rows,
         )
