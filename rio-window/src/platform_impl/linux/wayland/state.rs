@@ -10,6 +10,7 @@ use sctk::reexports::client::globals::GlobalList;
 use sctk::reexports::client::protocol::wl_output::WlOutput;
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{Connection, Proxy, QueueHandle};
+use sctk::reexports::csd_frame::WindowState as XdgWindowState;
 
 use sctk::compositor::{CompositorHandler, CompositorState};
 use sctk::output::{OutputHandler, OutputState};
@@ -23,6 +24,7 @@ use sctk::shm::slot::SlotPool;
 use sctk::shm::{Shm, ShmHandler};
 use sctk::subcompositor::SubcompositorState;
 
+use crate::event::WindowEvent;
 use crate::platform_impl::wayland::event_loop::sink::EventSink;
 use crate::platform_impl::wayland::output::MonitorHandle;
 use crate::platform_impl::wayland::seat::{
@@ -338,14 +340,33 @@ impl WindowHandler for WinitState {
         };
 
         // Populate the configure to the window.
-        self.window_compositor_updates[pos].resized |= self
+        let mut window_state = self
             .windows
             .get_mut()
             .get_mut(&window_id)
             .expect("got configure for dead window.")
             .lock()
-            .unwrap()
-            .configure(configure, &self.shm, &self.subcompositor_state);
+            .unwrap();
+        let was_suspended = window_state
+            .last_configure
+            .as_ref()
+            .map(|configure| configure.state.contains(XdgWindowState::SUSPENDED));
+
+        self.window_compositor_updates[pos].resized |=
+            window_state.configure(configure, &self.shm, &self.subcompositor_state);
+
+        let is_suspended = window_state
+            .last_configure
+            .as_ref()
+            .is_some_and(|configure| configure.state.contains(XdgWindowState::SUSPENDED));
+        drop(window_state);
+
+        if was_suspended
+            .map_or(is_suspended, |was_suspended| was_suspended != is_suspended)
+        {
+            self.events_sink
+                .push_window_event(WindowEvent::Occluded(is_suspended), window_id);
+        }
 
         // NOTE: configure demands wl_surface::commit, however winit doesn't commit on behalf of the
         // users, since it can break a lot of things, thus it'll ask users to redraw instead.

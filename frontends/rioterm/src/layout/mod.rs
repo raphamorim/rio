@@ -1622,6 +1622,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
+    /// Set the effective visibility of every terminal pane in this tab.
+    pub fn set_terminal_visibility(&self, visible: bool) {
+        for item in self.inner.values() {
+            item.val.terminal.lock().set_visibility(visible);
+        }
+    }
+
     /// Drop image overlays for every panel in the grid. Used on tab
     /// teardown — the panels themselves go away with the
     /// `ContextManager`; only the kitty graphics state needs an
