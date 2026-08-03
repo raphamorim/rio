@@ -1754,21 +1754,26 @@ impl Screen<'_> {
                 .saturating_add(grant)
                 .min(crate::rmx::INITIAL_CREDIT);
             buffer.pending_grant = buffer.pending_grant.saturating_add(grant);
-            let flush = buffer.pending_grant >= crate::rmx::GRANT_THRESHOLD;
+            // One frame goes back per write, so an overrun error and a
+            // due grant compete. The grant wins: dropping it would strand
+            // the batched bytes forever, while the error is advisory and
+            // the client already knows it overran. `pending_grant` is
+            // only cleared on the path that actually emits the credit.
             let owed = buffer.pending_grant;
+            let flush = owed >= crate::rmx::GRANT_THRESHOLD;
             if flush {
                 buffer.pending_grant = 0;
             }
             self.mark_route_dirty(route_id);
+            if flush {
+                return Some(wire::format_credit(key, owed));
+            }
             if over {
                 return Some(wire::format_error(
                     'w',
                     Some(key),
                     wire::Reason::NoCredit,
                 ));
-            }
-            if flush {
-                return Some(wire::format_credit(key, owed));
             }
             return None;
         }
