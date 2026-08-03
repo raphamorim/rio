@@ -43,10 +43,10 @@ pub fn padding_top_from_config(
 }
 
 #[inline]
-pub fn terminal_dimensions(layout: &ContextDimension) -> teletypewriter::WinsizeBuilder {
+pub fn terminal_dimensions(layout: &ContextDimension) -> rio_backend::event::WindowSize {
     let width = layout.width - layout.margin.left - layout.margin.right;
     let height = layout.height - layout.margin.top - layout.margin.bottom;
-    teletypewriter::WinsizeBuilder {
+    rio_backend::event::WindowSize {
         width: width as u16,
         height: height as u16,
         cols: layout.columns as u16,
