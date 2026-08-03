@@ -14,7 +14,6 @@ use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
-use teletypewriter::WinsizeBuilder;
 
 #[cfg(feature = "rio-window")]
 use rio_window::event_loop::EventLoopProxy;
@@ -53,6 +52,29 @@ impl From<rio_window::window::WindowId> for WindowId {
     }
 }
 
+/// Terminal viewport size, in cells and in pixels.
+///
+/// Owned by the core so the event model does not name the PTY layer's type
+/// for four integers; the PTY driver converts at its own boundary.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WindowSize {
+    pub rows: u16,
+    pub cols: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+impl From<WindowSize> for teletypewriter::WinsizeBuilder {
+    fn from(size: WindowSize) -> Self {
+        Self {
+            rows: size.rows,
+            cols: size.cols,
+            width: size.width,
+            height: size.height,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum RioEventType {
     Rio(RioEvent),
@@ -68,7 +90,7 @@ pub enum Msg {
     #[allow(dead_code)]
     Shutdown,
 
-    Resize(WinsizeBuilder),
+    Resize(WindowSize),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -213,7 +235,7 @@ pub enum RioEvent {
     /// Request to write the text area size to the PTY of `route_id`.
     TextAreaSizeRequest(
         usize,
-        Arc<dyn Fn(WinsizeBuilder) -> String + Sync + Send + 'static>,
+        Arc<dyn Fn(WindowSize) -> String + Sync + Send + 'static>,
     ),
 
     /// Cursor blinking state has changed.
@@ -384,7 +406,7 @@ impl From<EventPayload> for RioWindowEvent<EventPayload> {
 }
 
 pub trait OnResize {
-    fn on_resize(&mut self, window_size: WinsizeBuilder);
+    fn on_resize(&mut self, window_size: WindowSize);
 }
 
 /// Event Loop for notifying the renderer about terminal events.

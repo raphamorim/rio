@@ -243,7 +243,7 @@ where
             match msg {
                 Msg::Input(input) => state.write_list.push_back(input),
                 Msg::Resize(window_size) => {
-                    let _ = self.pty.set_winsize(window_size);
+                    let _ = self.pty.set_winsize(window_size.into());
                 }
                 Msg::Shutdown => return false,
             }

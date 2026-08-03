@@ -1,6 +1,6 @@
 use crate::event::Msg;
+use rio_backend::event::WindowSize;
 use std::borrow::Cow;
-use teletypewriter::WinsizeBuilder;
 
 pub struct Messenger {
     pub channel: corcovado::channel::Sender<Msg>,
@@ -28,7 +28,7 @@ impl Messenger {
     }
 
     #[inline]
-    pub fn send_resize(&self, new_size: WinsizeBuilder) -> Result<&str, String> {
+    pub fn send_resize(&self, new_size: WindowSize) -> Result<&str, String> {
         match self.channel.send(Msg::Resize(new_size)) {
             Ok(..) => Ok("Resized"),
             Err(..) => Err("Error sending message".to_string()),

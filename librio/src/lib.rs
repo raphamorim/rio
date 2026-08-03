@@ -15,6 +15,7 @@ use rio_vt::ansi::CursorShape;
 use rio_vt::crosswords::pos::{Column as PosColumn, Line, Pos, Side};
 use rio_vt::crosswords::{Crosswords, Mode};
 use rio_vt::event::sync::FairMutex;
+use rio_vt::event::WindowSize;
 use rio_vt::event::{EventListener, Msg, RioEvent, WindowId};
 use rio_vt::performer::Machine;
 use rio_vt::selection::{Selection, SelectionType};
@@ -26,7 +27,6 @@ use std::sync::{Arc, Mutex};
 use teletypewriter::create_pty;
 #[cfg(not(target_os = "windows"))]
 use teletypewriter::create_pty_with_spawn;
-use teletypewriter::WinsizeBuilder;
 
 pub type SurfaceId = usize;
 
@@ -330,7 +330,7 @@ impl Surface {
             rows: rows as usize,
             cols: cols as usize,
         });
-        let _ = self.channel.send(Msg::Resize(WinsizeBuilder {
+        let _ = self.channel.send(Msg::Resize(WindowSize {
             rows,
             cols,
             width: pixel_width,
