@@ -4043,7 +4043,6 @@ dependencies = [
  "teletypewriter",
  "tracing",
  "unicode-width-16",
- "url",
  "windows-sys 0.61.2",
 ]
 
