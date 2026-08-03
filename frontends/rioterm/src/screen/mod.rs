@@ -3823,7 +3823,7 @@ impl Screen<'_> {
             msg.push(32 + 1 + row.0 as u8);
         }
 
-        self.ctx_mut().current_mut().messenger.send_write(msg);
+        self.send_input(msg);
     }
 
     #[inline]
@@ -3934,7 +3934,7 @@ impl Screen<'_> {
             }
 
             if !content.is_empty() {
-                self.ctx_mut().current_mut().messenger.send_write(content);
+                self.send_input(content);
             }
         } else {
             self.mouse.accumulated_scroll.y +=
@@ -4002,7 +4002,7 @@ impl Screen<'_> {
                 text.to_owned().into_bytes()
             };
 
-            self.ctx_mut().current_mut().messenger.send_write(payload);
+            self.send_input(payload);
         }
     }
 
