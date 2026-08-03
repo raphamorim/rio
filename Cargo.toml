@@ -89,7 +89,7 @@ flate2 = "1.1.9"
 
 [profile.release]
 debug = "limited"
-lto = "thin"
+lto = true
 codegen-units = 1
 
 [profile.librio]
