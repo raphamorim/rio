@@ -25,6 +25,10 @@ pub mod selection;
 pub mod simd_base64;
 pub mod simd_utf8;
 
+// avoid double dep requirement
+pub use corcovado;
+pub use teletypewriter;
+
 // The app-level `RioErrorType::FontsNotFound` variant references a
 // sugarloaf font type; expose the crate under this path (as rio-backend
 // did) so that renderer-gated code resolves `crate::sugarloaf`.
