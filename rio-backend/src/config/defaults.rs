@@ -44,7 +44,7 @@ pub fn default_shell() -> crate::config::Shell {
     #[cfg(not(target_os = "windows"))]
     {
         crate::config::Shell {
-            program: String::from(""),
+            program: None,
             args: vec![String::from("--login")],
         }
     }
@@ -52,7 +52,7 @@ pub fn default_shell() -> crate::config::Shell {
     #[cfg(target_os = "windows")]
     {
         crate::config::Shell {
-            program: String::from("powershell"),
+            program: Some(String::from("powershell")),
             args: vec![],
         }
     }
@@ -106,7 +106,7 @@ pub fn default_editor() -> Shell {
     #[cfg(not(target_os = "windows"))]
     {
         Shell {
-            program: String::from("vi"),
+            program: Some(String::from("vi")),
             args: vec![],
         }
     }
@@ -114,7 +114,7 @@ pub fn default_editor() -> Shell {
     #[cfg(target_os = "windows")]
     {
         Shell {
-            program: String::from("notepad"),
+            program: Some(String::from("notepad")),
             args: vec![],
         }
     }

@@ -47,8 +47,10 @@ pub trait ProcessReadWrite {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChildEvent {
-    /// Indicates the child has exited.
-    Exited,
+    /// Indicates the child has exited, with the raw wait status when the
+    /// platform makes it available (interpret with
+    /// `std::process::ExitStatus::from_raw` / `ExitStatusExt`).
+    Exited(Option<i32>),
 }
 
 pub trait EventedPty: ProcessReadWrite {

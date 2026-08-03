@@ -37,11 +37,28 @@ use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, AppearanceTheme, Theme};
 use tracing::warn;
 
+/// `program` of `None` means no program was configured, so the user's default
+/// shell is used (and, on macOS, started as a login shell).
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Shell {
-    pub program: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_program",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub program: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
+}
+
+/// `program = ""` used to be how you asked for the default shell, so keep
+/// reading it as "nothing configured" rather than trying to spawn it.
+fn deserialize_program<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let program = Option::<String>::deserialize(deserializer)?;
+    Ok(program.filter(|program| !program.is_empty()))
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -1154,8 +1171,21 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.shell.program, "/bin/fish");
+        assert_eq!(result.shell.program.as_deref(), Some("/bin/fish"));
         assert_eq!(result.shell.args, ["--hello"]);
+    }
+
+    #[test]
+    fn test_shell_empty_program_means_default() {
+        let result = create_temporary_config(
+            "change-shell-empty-program",
+            r#"
+            shell = { program = "", args = ["--login"] }
+        "#,
+        );
+
+        assert_eq!(result.shell.program, None);
+        assert_eq!(result.shell.args, ["--login"]);
     }
 
     #[test]
@@ -1167,7 +1197,7 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.shell.program, "/bin/fish");
+        assert_eq!(result.shell.program.as_deref(), Some("/bin/fish"));
         assert_eq!(result.shell.args, Vec::<&str>::new());
     }
 
@@ -1428,7 +1458,7 @@ mod tests {
         result.overwrite_based_on_platform();
 
         // Shell should be completely replaced
-        assert_eq!(result.shell.program, "/bin/zsh");
+        assert_eq!(result.shell.program.as_deref(), Some("/bin/zsh"));
         assert_eq!(result.shell.args, vec!["-l"]);
     }
 
@@ -1559,7 +1589,7 @@ mod tests {
         assert_eq!(result.navigation.mode, navigation::NavigationMode::Tab);
 
         // Shell: completely replaced
-        assert_eq!(result.shell.program, "/bin/zsh");
+        assert_eq!(result.shell.program.as_deref(), Some("/bin/zsh"));
         assert_eq!(result.shell.args, vec!["--login"]);
     }
 

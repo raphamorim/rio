@@ -57,7 +57,7 @@ impl TerminalOptions {
         }
 
         Some(Shell {
-            program: program.clone(),
+            program: Some(program.clone()),
             args: args.to_vec(),
         })
     }
