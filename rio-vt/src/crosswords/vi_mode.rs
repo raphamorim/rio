@@ -52,6 +52,10 @@ pub enum ViMotion {
     WordRightEnd,
     /// Move to opposing bracket.
     Bracket,
+    /// Move to the start of the current or previous paragraph.
+    ParagraphUp,
+    /// Move past the end of the current or next paragraph.
+    ParagraphDown,
 }
 
 /// Cursor tracking vi mode position.
@@ -160,6 +164,27 @@ impl ViModeCursor {
             ViMotion::Bracket => {
                 self.pos = term.bracket_search(self.pos).unwrap_or(self.pos)
             }
+            ViMotion::ParagraphUp => {
+                // Skip empty lines until we find the next paragraph,
+                // then skip over the paragraph until we reach the next empty line.
+                let topmost_line = term.grid.topmost_line();
+                self.pos.row = (topmost_line.0..self.pos.row.0)
+                    .rev()
+                    .skip_while(|line| is_blank_line(term, Line(*line)))
+                    .find(|line| is_blank_line(term, Line(*line)))
+                    .map_or(topmost_line, Line);
+                self.pos.col = Column(0);
+            }
+            ViMotion::ParagraphDown => {
+                // Skip empty lines until we find the next paragraph,
+                // then skip over the paragraph until we reach the next empty line.
+                let bottommost_line = term.grid.bottommost_line();
+                self.pos.row = (self.pos.row.0..bottommost_line.0)
+                    .skip_while(|line| is_blank_line(term, Line(*line)))
+                    .find(|line| is_blank_line(term, Line(*line)))
+                    .map_or(bottommost_line, Line);
+                self.pos.col = Column(0);
+            }
         }
 
         term.scroll_to_pos(self.pos);
@@ -182,6 +207,11 @@ impl ViModeCursor {
 
         self
     }
+}
+
+/// Check if a line is empty, which delimits paragraphs.
+fn is_blank_line<T: EventListener>(term: &Crosswords<T>, line: Line) -> bool {
+    (0..term.grid.columns()).all(|col| is_space(term, Pos::new(line, Column(col))))
 }
 
 /// Find next end of line to move to.
@@ -850,5 +880,66 @@ mod tests {
 
         cursor = cursor.scroll(&term, -20);
         assert_eq!(cursor.pos, Pos::new(Line(19), Column(0)));
+    }
+
+    #[test]
+    fn motion_paragraph() {
+        let mut term = term();
+        // Two paragraphs on lines 1-2 and 5-6, blank lines elsewhere.
+        for line in [1, 2, 5, 6] {
+            term.grid[Line(line)][Column(0)].set_c('x');
+        }
+
+        // Downwards, stopping on the blank line after each paragraph.
+        let mut cursor = ViModeCursor::new(Pos::new(Line(0), Column(0)));
+        cursor = cursor.motion(&mut term, ViMotion::ParagraphDown);
+        assert_eq!(cursor.pos, Pos::new(Line(3), Column(0)));
+
+        cursor = cursor.motion(&mut term, ViMotion::ParagraphDown);
+        assert_eq!(cursor.pos, Pos::new(Line(7), Column(0)));
+
+        // Nothing below, so clamp to the last line.
+        cursor = cursor.motion(&mut term, ViMotion::ParagraphDown);
+        assert_eq!(cursor.pos, Pos::new(Line(19), Column(0)));
+
+        // Upwards, stopping on the blank line before each paragraph.
+        cursor = ViModeCursor::new(Pos::new(Line(7), Column(0)));
+        cursor = cursor.motion(&mut term, ViMotion::ParagraphUp);
+        assert_eq!(cursor.pos, Pos::new(Line(4), Column(0)));
+
+        cursor = cursor.motion(&mut term, ViMotion::ParagraphUp);
+        assert_eq!(cursor.pos, Pos::new(Line(0), Column(0)));
+
+        // Nothing above, so clamp to the first line.
+        cursor = cursor.motion(&mut term, ViMotion::ParagraphUp);
+        assert_eq!(cursor.pos, Pos::new(Line(0), Column(0)));
+    }
+
+    #[test]
+    fn motion_paragraph_resets_column() {
+        let mut term = term();
+        term.grid[Line(1)][Column(5)].set_c('x');
+
+        let mut cursor = ViModeCursor::new(Pos::new(Line(1), Column(5)));
+        cursor = cursor.motion(&mut term, ViMotion::ParagraphDown);
+        assert_eq!(cursor.pos.col, Column(0));
+    }
+
+    #[test]
+    fn blank_line_ignores_whitespace() {
+        let mut term = term();
+        // A line of spaces still delimits a paragraph; '\0' and ' ' both count
+        // as blank, matching the rest of the motions in this file.
+        term.grid[Line(1)][Column(0)].set_c('x');
+        term.grid[Line(2)][Column(0)].set_c(' ');
+        term.grid[Line(2)][Column(1)].set_c('\t');
+        term.grid[Line(3)][Column(0)].set_c('x');
+
+        assert!(!is_blank_line(&term, Line(1)));
+        assert!(is_blank_line(&term, Line(2)));
+
+        let mut cursor = ViModeCursor::new(Pos::new(Line(1), Column(0)));
+        cursor = cursor.motion(&mut term, ViMotion::ParagraphDown);
+        assert_eq!(cursor.pos, Pos::new(Line(2), Column(0)));
     }
 }
