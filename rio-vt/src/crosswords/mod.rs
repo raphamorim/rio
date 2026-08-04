@@ -97,7 +97,8 @@ bitflags! {
         const REPORT_ALTERNATE_KEYS   = 1 << 20;
         const REPORT_ALL_KEYS_AS_ESC  = 1 << 21;
         const REPORT_ASSOCIATED_TEXT  = 1 << 22;
-        const MOUSE_MODE = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits();
+        const MOUSE_REPORT_X10        = 1 << 23;
+        const MOUSE_MODE = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits() | Self::MOUSE_REPORT_X10.bits();
         const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
                                       | Self::REPORT_EVENT_TYPES.bits()
                                       | Self::REPORT_ALTERNATE_KEYS.bits()
@@ -2520,6 +2521,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::ShowCursor => self.mode.insert(Mode::SHOW_CURSOR),
             NamedPrivateMode::CursorKeys => self.mode.insert(Mode::APP_CURSOR),
             // Mouse protocols are mutually exclusive.
+            NamedPrivateMode::ReportX10MouseClicks => {
+                self.mode.remove(Mode::MOUSE_MODE);
+                self.mode.insert(Mode::MOUSE_REPORT_X10);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
+            }
             NamedPrivateMode::ReportMouseClicks => {
                 self.mode.remove(Mode::MOUSE_MODE);
                 self.mode.insert(Mode::MOUSE_REPORT_CLICK);
@@ -2602,18 +2609,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             NamedPrivateMode::ShowCursor => self.mode.remove(Mode::SHOW_CURSOR),
             NamedPrivateMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
-            NamedPrivateMode::ReportMouseClicks => {
-                self.mode.remove(Mode::MOUSE_REPORT_CLICK);
-                self.event_proxy
-                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
-            }
-            NamedPrivateMode::ReportCellMouseMotion => {
-                self.mode.remove(Mode::MOUSE_DRAG);
-                self.event_proxy
-                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
-            }
-            NamedPrivateMode::ReportAllMouseMotion => {
-                self.mode.remove(Mode::MOUSE_MOTION);
+            // The mouse protocols are one setting, so resetting any of them
+            // turns reporting off. There is no protocol underneath to fall
+            // back to: setting one already cleared the others.
+            NamedPrivateMode::ReportX10MouseClicks
+            | NamedPrivateMode::ReportMouseClicks
+            | NamedPrivateMode::ReportCellMouseMotion
+            | NamedPrivateMode::ReportAllMouseMotion => {
+                self.mode.remove(Mode::MOUSE_MODE);
                 self.event_proxy
                     .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
@@ -2647,6 +2650,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 NamedPrivateMode::BlinkingCursor => self.blinking_cursor.into(),
                 NamedPrivateMode::ShowCursor => {
                     self.mode.contains(Mode::SHOW_CURSOR).into()
+                }
+                NamedPrivateMode::ReportX10MouseClicks => {
+                    self.mode.contains(Mode::MOUSE_REPORT_X10).into()
                 }
                 NamedPrivateMode::ReportMouseClicks => {
                     self.mode.contains(Mode::MOUSE_REPORT_CLICK).into()
@@ -8007,5 +8013,128 @@ mod tests {
         }
         Processor::default().advance(&mut term, "世".as_bytes());
         term.resize(CrosswordsSize::new(4, 3));
+    }
+
+    /// The mouse protocols are one setting with four states, not four
+    /// independent flags, so the last mode set wins and clears the rest.
+    #[test]
+    fn x10_mouse_mode_displaces_the_other_protocols() {
+        use crate::performer::handler::Processor;
+
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            VoidListener,
+            WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = Processor::default();
+
+        parser.advance(&mut term, b"\x1b[?9h");
+        assert!(term.mode().contains(Mode::MOUSE_REPORT_X10));
+        assert!(term.mode().intersects(Mode::MOUSE_MODE));
+
+        // 1000 supersedes X10.
+        parser.advance(&mut term, b"\x1b[?1000h");
+        assert!(!term.mode().contains(Mode::MOUSE_REPORT_X10));
+        assert!(term.mode().contains(Mode::MOUSE_REPORT_CLICK));
+
+        // And X10 displaces 1000 in turn.
+        parser.advance(&mut term, b"\x1b[?9h");
+        assert!(term.mode().contains(Mode::MOUSE_REPORT_X10));
+        assert!(!term.mode().contains(Mode::MOUSE_REPORT_CLICK));
+
+        parser.advance(&mut term, b"\x1b[?9l");
+        assert!(!term.mode().intersects(Mode::MOUSE_MODE));
+    }
+
+    /// Resetting one protocol while another is active turns reporting off
+    /// rather than leaving the active one running, because the four are one
+    /// setting and a reset cannot name a protocol to fall back to.
+    #[test]
+    fn resetting_any_mouse_protocol_clears_reporting() {
+        use crate::performer::handler::Processor;
+
+        let sequences: [&[u8]; 4] =
+            [b"\x1b[?9l", b"\x1b[?1000l", b"\x1b[?1002l", b"\x1b[?1003l"];
+        for reset in sequences {
+            let sets: [&[u8]; 4] =
+                [b"\x1b[?9h", b"\x1b[?1000h", b"\x1b[?1002h", b"\x1b[?1003h"];
+            for set in sets {
+                let mut term = Crosswords::new(
+                    CrosswordsSize::new(10, 10),
+                    CursorShape::Block,
+                    VoidListener,
+                    WindowId::from(0),
+                    0,
+                    10,
+                );
+                let mut parser = Processor::default();
+
+                parser.advance(&mut term, set);
+                assert!(term.mode().intersects(Mode::MOUSE_MODE));
+
+                parser.advance(&mut term, reset);
+                assert!(
+                    !term.mode().intersects(Mode::MOUSE_MODE),
+                    "{:?} left reporting on after {:?}",
+                    String::from_utf8_lossy(reset),
+                    String::from_utf8_lossy(set),
+                );
+            }
+        }
+    }
+
+    /// DECRQM has to answer for mode 9 now that it is tracked, otherwise
+    /// programs cannot tell that their request took effect.
+    #[test]
+    fn x10_mouse_mode_answers_decrqm() {
+        use crate::performer::handler::Processor;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        #[derive(Clone)]
+        struct TestListener {
+            events: Rc<RefCell<Vec<RioEvent>>>,
+        }
+
+        impl EventListener for TestListener {
+            fn send_event(&self, event: RioEvent, _id: WindowId) {
+                self.events.borrow_mut().push(event);
+            }
+        }
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = Processor::default();
+
+        let replies = |events: &Rc<RefCell<Vec<RioEvent>>>| -> Vec<String> {
+            events
+                .borrow()
+                .iter()
+                .filter_map(|event| match event {
+                    RioEvent::PtyWrite(_, text) => Some(text.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        // Reset (2) before it is set, set (1) after.
+        parser.advance(&mut term, b"\x1b[?9$p");
+        assert_eq!(replies(&events), vec!["\x1b[?9;2$y".to_string()]);
+
+        events.borrow_mut().clear();
+        parser.advance(&mut term, b"\x1b[?9h\x1b[?9$p");
+        assert_eq!(replies(&events), vec!["\x1b[?9;1$y".to_string()]);
     }
 }

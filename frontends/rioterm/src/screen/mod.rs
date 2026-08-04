@@ -3382,6 +3382,24 @@ impl Screen<'_> {
             return;
         }
 
+        // X10 reports presses of the left, middle and right buttons only, and
+        // never carries modifiers. Motion never reaches here under X10 because
+        // it is gated on MOUSE_MOTION and MOUSE_DRAG, but releases and the
+        // wheel codes (64 and up) do, and neither is reportable. Both are
+        // dropped rather than falling back to local scrolling, since the
+        // protocol still owns the wheel while it is active.
+        if mode.contains(Mode::MOUSE_REPORT_X10) {
+            if state == ElementState::Pressed && button <= 2 {
+                if mode.contains(Mode::SGR_MOUSE) {
+                    self.sgr_mouse_report(pos, button, state);
+                } else {
+                    self.normal_mouse_report(pos, button);
+                }
+            }
+
+            return;
+        }
+
         // Calculate modifiers value.
         let mut mods = 0;
         let mod_state = self.modifiers.state();
