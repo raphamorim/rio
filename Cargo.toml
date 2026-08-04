@@ -88,9 +88,13 @@ dashmap = "6.2.1"
 flate2 = "1.1.9"
 
 [profile.release]
-debug = "limited"
+strip = "symbols"           # See split-debuginfo - allows us to drop the size by ~65%
+debug = "full"              # No one needs an undebuggable release binary
+split-debuginfo = "packed"  # generates a separate *.dwp/*.dSYM so the binary can get stripped
 lto = true
+panic = "abort"             # reduces binary size by ~50% in combination with -Zbuild-std-features=panic_immediate_abort
 codegen-units = 1
+incremental = false
 
 [profile.librio]
 inherits = "release"
@@ -100,5 +104,6 @@ lto = false
 
 [profile.dev]
 split-debuginfo = "unpacked"
+lto = false
+opt-level = 0
 incremental = true
-codegen-units = 16
