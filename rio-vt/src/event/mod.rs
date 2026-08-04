@@ -411,8 +411,6 @@ pub trait OnResize {
 
 /// Event Loop for notifying the renderer about terminal events.
 pub trait EventListener {
-    fn event(&self) -> (Option<RioEvent>, bool);
-
     fn send_event(&self, _event: RioEvent, _id: WindowId) {}
 
     fn send_event_with_high_priority(&self, _event: RioEvent, _id: WindowId) {}
@@ -431,11 +429,7 @@ impl From<RioEvent> for RioEventType {
     }
 }
 
-impl EventListener for VoidListener {
-    fn event(&self) -> (std::option::Option<RioEvent>, bool) {
-        (None, false)
-    }
-}
+impl EventListener for VoidListener {}
 
 #[derive(Debug, Clone)]
 #[cfg(feature = "rio-window")]
@@ -456,10 +450,6 @@ impl EventProxy {
 
 #[cfg(feature = "rio-window")]
 impl EventListener for EventProxy {
-    fn event(&self) -> (std::option::Option<RioEvent>, bool) {
-        (None, false)
-    }
-
     fn send_event(&self, event: RioEvent, id: WindowId) {
         let _ = self.proxy.send_event(EventPayload::new(event.into(), id));
     }
