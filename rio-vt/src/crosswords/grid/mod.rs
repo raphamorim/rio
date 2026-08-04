@@ -582,6 +582,25 @@ use crate::crosswords::square::Square;
 use crate::crosswords::style::{Style, StyleId};
 
 impl Grid<Square> {
+    /// The full text of the cell at `pos`: its base character followed by any
+    /// zero-width marks (combining accents, ZWJ joiners, variation selectors).
+    ///
+    /// Prefer this over [`Square::c`], which returns the base character alone
+    /// and so drops the marks. Reading the marks by hand also needs a guard
+    /// that is easy to miss: a background-only cell reuses the extras-id bits
+    /// for its color, so `extras_id()` on one yields a colour channel rather
+    /// than an id.
+    pub fn cell_text(&self, pos: Pos) -> impl Iterator<Item = char> + '_ {
+        let square = self[pos];
+        let marks = square
+            .extras_id()
+            .filter(|_| !square.is_bg_only())
+            .and_then(|id| self.extras_table.get(id))
+            .map(|extras| extras.zerowidth.as_slice())
+            .unwrap_or(&[]);
+        std::iter::once(square.c()).chain(marks.iter().copied())
+    }
+
     /// Free extras slots no longer referenced by any cell.
     ///
     /// Cells are overwritten and rows drop off the scrollback ring without
