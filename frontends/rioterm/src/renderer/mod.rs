@@ -127,6 +127,8 @@ impl Renderer {
                 named_colors.tabs_active,
                 config.navigation.hide_if_single,
                 config.navigation.max_tab_width,
+                config.navigation.display_tab_number,
+                config.navigation.tab_number_separator.clone(),
             ))
         } else {
             None
