@@ -2609,23 +2609,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             NamedPrivateMode::ShowCursor => self.mode.remove(Mode::SHOW_CURSOR),
             NamedPrivateMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
-            NamedPrivateMode::ReportX10MouseClicks => {
-                self.mode.remove(Mode::MOUSE_REPORT_X10);
-                self.event_proxy
-                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
-            }
-            NamedPrivateMode::ReportMouseClicks => {
-                self.mode.remove(Mode::MOUSE_REPORT_CLICK);
-                self.event_proxy
-                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
-            }
-            NamedPrivateMode::ReportCellMouseMotion => {
-                self.mode.remove(Mode::MOUSE_DRAG);
-                self.event_proxy
-                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
-            }
-            NamedPrivateMode::ReportAllMouseMotion => {
-                self.mode.remove(Mode::MOUSE_MOTION);
+            // The mouse protocols are one setting, so resetting any of them
+            // turns reporting off. There is no protocol underneath to fall
+            // back to: setting one already cleared the others.
+            NamedPrivateMode::ReportX10MouseClicks
+            | NamedPrivateMode::ReportMouseClicks
+            | NamedPrivateMode::ReportCellMouseMotion
+            | NamedPrivateMode::ReportAllMouseMotion => {
+                self.mode.remove(Mode::MOUSE_MODE);
                 self.event_proxy
                     .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
@@ -8056,6 +8047,43 @@ mod tests {
 
         parser.advance(&mut term, b"\x1b[?9l");
         assert!(!term.mode().intersects(Mode::MOUSE_MODE));
+    }
+
+    /// Resetting one protocol while another is active turns reporting off
+    /// rather than leaving the active one running, because the four are one
+    /// setting and a reset cannot name a protocol to fall back to.
+    #[test]
+    fn resetting_any_mouse_protocol_clears_reporting() {
+        use crate::performer::handler::Processor;
+
+        let sequences: [&[u8]; 4] =
+            [b"\x1b[?9l", b"\x1b[?1000l", b"\x1b[?1002l", b"\x1b[?1003l"];
+        for reset in sequences {
+            let sets: [&[u8]; 4] =
+                [b"\x1b[?9h", b"\x1b[?1000h", b"\x1b[?1002h", b"\x1b[?1003h"];
+            for set in sets {
+                let mut term = Crosswords::new(
+                    CrosswordsSize::new(10, 10),
+                    CursorShape::Block,
+                    VoidListener,
+                    WindowId::from(0),
+                    0,
+                    10,
+                );
+                let mut parser = Processor::default();
+
+                parser.advance(&mut term, set);
+                assert!(term.mode().intersects(Mode::MOUSE_MODE));
+
+                parser.advance(&mut term, reset);
+                assert!(
+                    !term.mode().intersects(Mode::MOUSE_MODE),
+                    "{:?} left reporting on after {:?}",
+                    String::from_utf8_lossy(reset),
+                    String::from_utf8_lossy(set),
+                );
+            }
+        }
     }
 
     /// DECRQM has to answer for mode 9 now that it is tracked, otherwise
