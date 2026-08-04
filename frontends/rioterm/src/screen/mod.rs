@@ -2139,10 +2139,8 @@ impl Screen<'_> {
             hyperlinks: true,
             post_processing: true,
             persist: false,
-            action: rio_backend::config::hints::HintAction::Command {
-                command: rio_backend::config::hints::HintCommand::Simple(
-                    "xdg-open".to_string(),
-                ),
+            action: rio_backend::config::hints::HintAction::Action {
+                action: rio_backend::config::hints::HintInternalAction::Open,
             },
             mouse: rio_backend::config::hints::HintMouse::default(),
             binding: None,
@@ -2290,34 +2288,24 @@ impl Screen<'_> {
         // Apply post-processing to remove trailing delimiters and handle uneven brackets
         let processed_uri = post_process_hyperlink_uri(hyperlink.uri());
 
+        self.open_with_default_handler(&processed_uri);
+    }
+
+    /// Hand `target` to the platform's default handler.
+    ///
+    /// `target` comes from terminal output, so it is attacker-controlled and
+    /// must never reach a shell: `cmd /c start` would treat `&` in a URL as a
+    /// command separator, and on Unix a launcher gets it as a single argv
+    /// entry rather than a command line.
+    fn open_with_default_handler(&self, target: &str) {
         #[cfg(not(any(target_os = "macos", windows)))]
-        self.exec("xdg-open", [&processed_uri]);
+        self.exec("xdg-open", [target]);
 
         #[cfg(target_os = "macos")]
-        self.exec("open", [&processed_uri]);
+        self.exec("open", [target]);
 
-        // Going through `cmd /c start` re-quotes the argument and
-        // mangles URLs (metacharacters plus cmd.exe batch escaping);
-        // hand the URL to the default handler directly instead.
         #[cfg(windows)]
-        {
-            use std::os::windows::ffi::OsStrExt;
-            let uri: Vec<u16> = std::ffi::OsStr::new(&processed_uri)
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect();
-            let operation: Vec<u16> = "open\0".encode_utf16().collect();
-            unsafe {
-                windows_sys::Win32::UI::Shell::ShellExecuteW(
-                    std::ptr::null_mut(),
-                    operation.as_ptr(),
-                    uri.as_ptr(),
-                    std::ptr::null(),
-                    std::ptr::null(),
-                    windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
-                );
-            }
-        }
+        shell_execute_open(target);
     }
 
     pub fn exec<I, S>(&self, program: &str, args: I)
@@ -2583,11 +2571,7 @@ impl Screen<'_> {
             let _ = std::process::Command::new("xdg-open").arg(url).spawn();
         }
         #[cfg(windows)]
-        {
-            let _ = std::process::Command::new("cmd")
-                .args(["/c", "start", "", url])
-                .spawn();
-        }
+        shell_execute_open(url);
     }
 
     pub fn handle_scrollbar_click(&mut self) -> bool {
@@ -4611,6 +4595,25 @@ impl Screen<'_> {
         self.mark_dirty();
     }
 
+    /// What a hint should hand to a launcher: the match text, or the path it
+    /// resolves to against the terminal's OSC 7 CWD when it names one that
+    /// exists. URLs and non-existent paths come back unchanged.
+    fn hint_open_target(&self, hint_match: &crate::hints::HintMatch) -> String {
+        // Cloned so the terminal lock is released before resolving, which
+        // goes to the filesystem.
+        let cwd = self
+            .context_manager
+            .current()
+            .terminal
+            .lock()
+            .current_directory
+            .clone();
+        match crate::hints::resolve_path_for_opening(&hint_match.text, cwd.as_deref()) {
+            Some(resolved) => resolved.to_string_lossy().into_owned(),
+            None => hint_match.text.clone(),
+        }
+    }
+
     /// Execute the action for a selected hint
     fn execute_hint_action(
         &mut self,
@@ -4646,26 +4649,13 @@ impl Screen<'_> {
                     drop(terminal);
                     self.mark_dirty();
                 }
+                HintInternalAction::Open => {
+                    let target = self.hint_open_target(hint_match);
+                    self.open_with_default_handler(&target);
+                }
             },
             HintAction::Command { command } => {
-                // If the match looks like a local path, resolve it against
-                // the terminal's OSC 7 CWD and fall back to the raw text if
-                // the path doesn't exist (or the text is a URL).
-                let arg_text = {
-                    let cwd = &self
-                        .context_manager
-                        .current()
-                        .terminal
-                        .lock()
-                        .current_directory;
-                    match crate::hints::resolve_path_for_opening(
-                        &hint_match.text,
-                        cwd.as_deref(),
-                    ) {
-                        Some(resolved) => resolved.to_string_lossy().into_owned(),
-                        None => hint_match.text.clone(),
-                    }
-                };
+                let arg_text = self.hint_open_target(hint_match);
 
                 match command {
                     HintCommand::Simple(program) => {
@@ -4900,6 +4890,37 @@ impl Screen<'_> {
         }
 
         Some((start_col, final_end.col))
+    }
+}
+
+/// Open `target` with whatever Windows has registered for it, without a
+/// shell in the middle. `ShellExecuteW` takes the target as one string
+/// rather than a command line, so metacharacters in it stay data.
+#[cfg(windows)]
+fn shell_execute_open(target: &str) {
+    use std::os::windows::ffi::OsStrExt;
+    let wide_target: Vec<u16> = std::ffi::OsStr::new(target)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let operation: Vec<u16> = "open\0".encode_utf16().collect();
+    let result = unsafe {
+        windows_sys::Win32::UI::Shell::ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            wide_target.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+        )
+    };
+
+    // A return at or below 32 is an error code rather than an instance
+    // handle. Worth logging, because the symptom of failing here is a click
+    // that appears to do nothing at all.
+    let code = result as isize;
+    if code <= 32 {
+        tracing::warn!("ShellExecuteW could not open {target}: code {code}");
     }
 }
 
