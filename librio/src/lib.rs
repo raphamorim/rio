@@ -150,10 +150,6 @@ impl Listener {
 }
 
 impl EventListener for Listener {
-    fn event(&self) -> (Option<RioEvent>, bool) {
-        (None, false)
-    }
-
     fn send_event(&self, event: RioEvent, _id: WindowId) {
         self.dispatch(event);
     }

@@ -6972,10 +6972,6 @@ mod tests {
         }
 
         impl EventListener for TestListener {
-            fn event(&self) -> (Option<RioEvent>, bool) {
-                (None, false)
-            }
-
             fn send_event(&self, event: RioEvent, _id: WindowId) {
                 self.events.borrow_mut().push(event);
             }
@@ -7031,10 +7027,6 @@ mod tests {
         }
 
         impl EventListener for TestListener {
-            fn event(&self) -> (Option<RioEvent>, bool) {
-                (None, false)
-            }
-
             fn send_event(&self, event: RioEvent, _id: WindowId) {
                 self.events.borrow_mut().push(event);
             }
