@@ -166,7 +166,8 @@ impl Default for SugarloafRenderer {
             not(target_os = "linux"),
             feature = "wgpu",
         ))]
-        let default_backend = SugarloafBackend::Wgpu(wgpu::Backends::all());
+        let default_backend =
+            SugarloafBackend::Wgpu(crate::context::webgpu::default_backends());
 
         #[cfg(all(
             not(target_arch = "wasm32"),

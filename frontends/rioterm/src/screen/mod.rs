@@ -170,7 +170,9 @@ impl Screen<'_> {
                     wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
                 ),
                 #[cfg(all(feature = "wgpu", not(target_arch = "wasm32")))]
-                Backend::Webgpu => SugarloafBackend::Wgpu(wgpu::Backends::all()),
+                Backend::Webgpu => SugarloafBackend::Wgpu(
+                    rio_backend::sugarloaf::context::webgpu::default_backends(),
+                ),
                 #[cfg(not(feature = "wgpu"))]
                 Backend::Webgpu => SugarloafBackend::Cpu,
             }

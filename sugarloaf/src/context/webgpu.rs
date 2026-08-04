@@ -16,6 +16,25 @@ pub struct WgpuContext<'a> {
     pub max_texture_dimension_2d: u32,
 }
 
+/// The backends to offer wgpu when the config asks it to pick for itself.
+///
+/// Everywhere except Windows this is every backend wgpu was built with. On
+/// Windows Vulkan is left out: wgpu ranks the Vulkan adapter above the DX12
+/// one for the same GPU, and Intel's Vulkan driver faults inside
+/// `vkCreateDevice` on some integrated parts, which takes the process with it
+/// before anything is drawn (https://github.com/raphamorim/rio/issues/1804).
+/// DX12 is the natively supported path there, with GL behind it.
+///
+/// This only moves the automatic choice. `WGPU_BACKEND=vulkan` still wins,
+/// and `renderer.backend = "Vulkan"` still asks for Vulkan by name.
+pub fn default_backends() -> wgpu::Backends {
+    if cfg!(target_os = "windows") {
+        wgpu::Backends::DX12 | wgpu::Backends::GL
+    } else {
+        wgpu::Backends::all()
+    }
+}
+
 impl<'a> WgpuContext<'a> {
     pub fn new(
         sugarloaf_window: SugarloafWindow,
