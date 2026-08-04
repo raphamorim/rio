@@ -99,11 +99,9 @@ release:
   replace_existing_draft: false
   replace_existing_artifacts: true
   include_meta: false
-  header: |
-    **Full Changelog**: https://rioterm.com/changelog
-  footer: >-
-    ---
-    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+  # No header or footer here: changelog.disable below skips the pipe that
+  # renders them, so they would never reach the release. The release workflow
+  # sets the body with `gh release edit` instead.
 
 nightly:
   version_template: "{{ incminor .Version }}-nightly"
