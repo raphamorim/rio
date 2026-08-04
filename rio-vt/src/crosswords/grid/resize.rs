@@ -405,12 +405,32 @@ impl Grid<Square> {
                 if row.len() >= columns
                     && matches!(row[Column(columns - 1)].wide(), Wide::Wide)
                 {
-                    let mut spacer = Square::default();
-                    spacer.set_wide(Wide::LeadingSpacer);
+                    if columns < 2 {
+                        // Displacing the char into the next row would never
+                        // terminate here: column 0 is also the last column,
+                        // so it would be displaced again every iteration
+                        // while `new_raw` grew without bound. Destroy the
+                        // wide char and leave a blank narrow cell, which is
+                        // what ghostty does reflowing to one column
+                        // (`PageList.zig`, ReflowCursor), and drop the
+                        // Spacer that followed it so it cannot claim a row
+                        // of its own.
+                        row[Column(columns - 1)] = Square::default();
+                        while matches!(
+                            wrapped.first().map(|cell| cell.wide()),
+                            Some(Wide::Spacer)
+                        ) {
+                            wrapped.remove(0);
+                        }
+                    } else {
+                        let mut spacer = Square::default();
+                        spacer.set_wide(Wide::LeadingSpacer);
 
-                    let wide_char = mem::replace(&mut row[Column(columns - 1)], spacer);
-                    wrapped.insert(0, wide_char);
-                    displaced = 1;
+                        let wide_char =
+                            mem::replace(&mut row[Column(columns - 1)], spacer);
+                        wrapped.insert(0, wide_char);
+                        displaced = 1;
+                    }
                 }
 
                 // Remove wide char spacer before shrinking.

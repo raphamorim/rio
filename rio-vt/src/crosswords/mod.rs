@@ -1510,6 +1510,20 @@ impl<U: EventListener> Crosswords<U> {
             self.grid[row].kitty_virtual_placeholder = true;
         }
 
+        // A one-column grid can never hold a wide pair, and the wrap-for-room
+        // branch below cannot create room on it: wrapping lands back on
+        // column 0, which is still the last column. Drop the glyph and leave
+        // a blank narrow cell, as ghostty does for the same degenerate size
+        // (`Terminal.zig`, the else branch of the `width == 2` arm), rather
+        // than running the Spacer off the end of the row. Embedders are
+        // entitled to such a grid: drag-resize and tiling layouts produce
+        // them transiently.
+        let (c, width) = if width == 2 && columns < 2 {
+            (' ', 1)
+        } else {
+            (c, width)
+        };
+
         if width == 2 {
             if self.grid.cursor.pos.col + 1 >= columns {
                 if self.mode.contains(Mode::LINE_WRAP) {
@@ -1715,6 +1729,12 @@ impl<U: EventListener> Crosswords<U> {
     #[inline(never)]
     fn apply_emoji_vs16(&mut self) {
         let columns = self.grid.columns();
+        // No wide pair fits on one column, so leave the base narrow: the
+        // wrap branch below would place the trailing Spacer at column 1 of
+        // the new row, off the end of it.
+        if columns < 2 {
+            return;
+        }
         let row = self.grid.cursor.pos.row;
         let cursor_col = self.grid.cursor.pos.col.0;
         let should_wrap = self.grid.cursor.should_wrap;
@@ -7941,5 +7961,59 @@ mod tests {
         assert_eq!(term.modify_other_keys(), Some(2));
         parser.advance(&mut term, b"\x1bc");
         assert_eq!(term.modify_other_keys(), None);
+    }
+    /// A grid one column wide cannot hold a wide pair. Every path that can
+    /// place or preserve one has to cope: the per-cell write, the bulk wide
+    /// run, the VS16 promotion that widens an already-written cell, and the
+    /// reflow that shrinks a grid under existing wide content. Before this
+    /// was handled the first two panicked out of bounds and the last looped
+    /// forever, growing the new row buffer without bound.
+    #[test]
+    fn one_column_grid_handles_wide_glyphs() {
+        use crate::performer::handler::Processor;
+
+        let feed = |cols: usize, bytes: &[u8]| {
+            let mut term = Crosswords::new(
+                CrosswordsSize::new(cols, 3),
+                CursorShape::Block,
+                VoidListener,
+                crate::event::WindowId::from(0),
+                0,
+                100,
+            );
+            Processor::default().advance(&mut term, bytes);
+            term
+        };
+
+        // The reported repro: one wide char, one column. The glyph cannot be
+        // represented, so it is dropped for a blank narrow cell, matching
+        // ghostty on the same degenerate size.
+        let term = feed(1, "你".as_bytes());
+        let cell = term.grid[Pos::new(Line(0), Column(0))];
+        assert!(!cell.is_wide(), "nothing to pair a wide cell with");
+        assert!(!cell.is_spacer(), "and no orphaned Spacer either");
+        assert_eq!(cell.c(), ' ');
+
+        for cols in [1, 2] {
+            feed(cols, "你好世界".as_bytes());
+            feed(cols, "🦀".as_bytes());
+            feed(cols, "\u{2764}\u{FE0F}".as_bytes());
+            feed(cols, "你\u{0301}".as_bytes());
+            feed(cols, "你\r\n好\r\n世".as_bytes());
+            feed(cols, "\x1b[?1049h你好".as_bytes());
+            feed(cols, "\x1b[1;2r你好".as_bytes());
+        }
+
+        // Shrinking under existing wide content, then writing, then growing.
+        // Reflowing to one column destroys the wide chars, so no row should
+        // come out of it still claiming to be wide or a Spacer.
+        let mut term = feed(4, "你好".as_bytes());
+        term.resize(CrosswordsSize::new(1, 3));
+        for row in term.visible_rows() {
+            let cell = row[Column(0)];
+            assert!(!cell.is_wide() && !cell.is_spacer());
+        }
+        Processor::default().advance(&mut term, "世".as_bytes());
+        term.resize(CrosswordsSize::new(4, 3));
     }
 }
