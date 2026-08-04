@@ -56,6 +56,7 @@ impl PrivateMode {
             3 => Self::Named(NamedPrivateMode::ColumnMode),
             6 => Self::Named(NamedPrivateMode::Origin),
             7 => Self::Named(NamedPrivateMode::LineWrap),
+            9 => Self::Named(NamedPrivateMode::ReportX10MouseClicks),
             12 => Self::Named(NamedPrivateMode::BlinkingCursor),
             25 => Self::Named(NamedPrivateMode::ShowCursor),
             1000 => Self::Named(NamedPrivateMode::ReportMouseClicks),
@@ -106,6 +107,12 @@ pub enum NamedPrivateMode {
     ColumnMode = 3,
     Origin = 6,
     LineWrap = 7,
+    /// X10 mouse reporting.
+    ///
+    /// Reports button presses only: no releases, no motion, and no modifier
+    /// bits. Superseded by [`Self::ReportMouseClicks`], and mutually exclusive
+    /// with it.
+    ReportX10MouseClicks = 9,
     BlinkingCursor = 12,
     ShowCursor = 25,
     ReportMouseClicks = 1000,
