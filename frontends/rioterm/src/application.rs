@@ -2120,6 +2120,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
 
+                #[cfg(target_os = "windows")]
+                if !route.window.initial_frame_rendered {
+                    // Keep the native window cloaked until the first complete
+                    // render has been submitted. Uncloaking earlier can expose
+                    // the blank native surface during GPU/PTY startup.
+                    use rio_window::platform::windows::WindowExtWindows;
+                    route.window.winit_window.set_cloaked(false);
+                    route.window.initial_frame_rendered = true;
+                }
+
                 // let duration = start.elapsed();
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }

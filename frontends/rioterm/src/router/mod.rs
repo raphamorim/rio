@@ -616,6 +616,8 @@ pub struct RouteWindow<'a> {
     pub is_focused: bool,
     pub is_occluded: bool,
     pub needs_render_after_occlusion: bool,
+    #[cfg(target_os = "windows")]
+    pub initial_frame_rendered: bool,
     pub render_timestamp: Instant,
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub vblank_interval: Duration,
@@ -771,14 +773,6 @@ impl<'a> RouteWindow<'a> {
             }
         }
 
-        #[cfg(target_os = "windows")]
-        {
-            // On windows cloak (hide) the window initially, we later reveal it after the first draw.
-            // This is a workaround to hide the "white flash" that occurs during application startup.
-            use rio_window::platform::windows::WindowExtWindows;
-            winit_window.set_cloaked(false);
-        }
-
         // Get the display refresh rate and convert to frame interval
         // On macOS, CVDisplayLink handles VSync synchronization automatically,
         // so we don't need to calculate vblank intervals
@@ -804,6 +798,8 @@ impl<'a> RouteWindow<'a> {
             is_focused: true,
             is_occluded: false,
             needs_render_after_occlusion: false,
+            #[cfg(target_os = "windows")]
+            initial_frame_rendered: false,
             winit_window,
             screen,
         }
