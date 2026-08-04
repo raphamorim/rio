@@ -2864,7 +2864,12 @@ impl Screen<'_> {
             return true;
         }
 
-        if x_in_tabs < 0.0 || x_in_tabs >= layout.tabs_width {
+        // A lone tab is drawn as a title centred across the strip rather than
+        // an island in the first slot, so the whole strip belongs to it and a
+        // right-click anywhere on it should reach that tab. The left margin
+        // (traffic lights on macOS) stays outside either way.
+        let past_last_tab = num_tabs > 1 && x_in_tabs >= layout.tabs_width;
+        if x_in_tabs < 0.0 || past_last_tab {
             if !is_right_click {
                 self.on_chrome_press(window, chrome_press);
             }
