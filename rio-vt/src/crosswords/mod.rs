@@ -462,6 +462,7 @@ where
     pub damage_event_in_flight: bool,
 
     // The stack for the keyboard modes.
+    modify_other_keys: u8,
     keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
     keyboard_mode_idx: usize,
     inactive_keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
@@ -518,6 +519,7 @@ impl<U: EventListener> Crosswords<U> {
             current_directory: None,
             user_vars: rustc_hash::FxHashMap::default(),
             damage_event_in_flight: false,
+            modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
             keyboard_mode_idx: 0,
             inactive_keyboard_mode_stack: Default::default(),
@@ -1880,13 +1882,7 @@ impl<U: EventListener> Crosswords<U> {
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
     ) {
         use crate::event::TerminalDamage;
-        let mut start = self.scroll_region.start.0;
-        let mut end = self.scroll_region.end.0;
-        let scroll = self.display_offset() as i32;
-        if scroll != 0 {
-            start -= scroll;
-            end -= scroll;
-        }
+        let (start, end) = self.visible_line_bounds();
         let count = (end - start) as usize;
 
         let _ = cols;
@@ -1968,19 +1964,26 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Half-open grid line range currently on screen, as `(start, end)`.
+    ///
+    /// This is the full screen height offset by the scrollback position, and
+    /// deliberately has nothing to do with `scroll_region`: DECSTBM bounds
+    /// where scrolling happens, not what is displayed. Both were once read
+    /// from `scroll_region`, so an app that narrowed it (vim, less, htop,
+    /// tmux, man) lost rows off the snapshot.
+    #[inline]
+    fn visible_line_bounds(&self) -> (i32, i32) {
+        let scroll = self.display_offset() as i32;
+        (-scroll, self.grid.screen_lines() as i32 - scroll)
+    }
+
     /// Copy the visible viewport into `dst` in place. Reuses both the
     /// outer `Vec`'s capacity and each inner `Row`'s `Vec<Square>`
     /// allocation (via [`Row::copy_from`]) so the renderer's frame
     /// buffer doesn't reallocate every frame at steady state.
     #[inline]
     pub fn fill_visible_rows(&self, dst: &mut Vec<Row<Square>>) {
-        let mut start = self.scroll_region.start.0;
-        let mut end = self.scroll_region.end.0;
-        let scroll = self.display_offset() as i32;
-        if scroll != 0 {
-            start -= scroll;
-            end -= scroll;
-        }
+        let (start, end) = self.visible_line_bounds();
         let count = (end - start) as usize;
 
         // Copy each visible row into the matching slot. Excess slots
@@ -2022,6 +2025,28 @@ impl<U: EventListener> Crosswords<U> {
         // Clear grid.
         self.grid.reset_region(..);
         self.mark_fully_damaged();
+    }
+
+    /// The active xterm `modifyOtherKeys` level, or `None` when disabled.
+    ///
+    /// Set by `CSI > 4 ; n m`. An embedder that encodes key events needs this
+    /// to know whether the application wants keys like ctrl+enter reported as
+    /// `CSI 27 ; …` rather than as their legacy control bytes.
+    #[inline]
+    pub fn modify_other_keys(&self) -> Option<u8> {
+        (self.modify_other_keys > 0).then_some(self.modify_other_keys)
+    }
+
+    /// The kitty keyboard protocol flags currently in effect, i.e. the top of
+    /// the mode stack. This is the same value the terminal reports back to the
+    /// application, so an embedder encoding key events itself does not have to
+    /// rebuild the flag byte out of [`Mode`] bits and keep that bit order in
+    /// sync by hand.
+    #[inline]
+    pub fn keyboard_mode(&self) -> KeyboardModes {
+        KeyboardModes::from_bits_truncate(
+            self.keyboard_mode_stack[self.keyboard_mode_idx],
+        )
     }
 
     pub fn mode(&self) -> Mode {
@@ -2947,6 +2972,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
         self.tabs = TabStops::new(self.grid.columns());
         self.title_stack = Vec::new();
+        self.modify_other_keys = 0;
         self.keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
         self.inactive_keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
         self.keyboard_mode_idx = 0;
@@ -3503,6 +3529,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let text = format!("\x1bP>|Rio {version}\x1b\\");
         self.event_proxy
             .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+    }
+
+    #[inline]
+    fn set_modify_other_keys(&mut self, level: u8) {
+        self.modify_other_keys = level;
     }
 
     #[inline]
@@ -7730,5 +7761,185 @@ mod tests {
 
         // Cursor must be untouched.
         assert_eq!(cw.grid.cursor.pos, cursor_before);
+    }
+
+    /// DECSTBM bounds where scrolling happens, not what is on screen. Both
+    /// shapes matter: `1;N` only shrinks `end`, so a fix that just zeroed
+    /// `start` would pass that case while still dropping the bottom rows.
+    #[test]
+    fn visible_rows_ignore_the_scroll_region() {
+        use crate::performer::handler::Processor;
+        fn term_with_lines(rows: usize) -> (Crosswords<VoidListener>, Processor) {
+            let mut term = Crosswords::new(
+                CrosswordsSize::new(20, rows),
+                CursorShape::Block,
+                VoidListener,
+                crate::event::WindowId::from(0),
+                0,
+                100,
+            );
+            let mut parser = Processor::default();
+            for i in 0..rows {
+                parser
+                    .advance(&mut term, format!("\x1b[{};1Hline{}", i + 1, i).as_bytes());
+            }
+            (term, parser)
+        }
+
+        let first_row_text = |term: &Crosswords<VoidListener>| -> String {
+            let rows = term.visible_rows();
+            (0..5).map(|c| rows[0][Column(c)].c()).collect()
+        };
+
+        // Region narrowed at both ends: full height, no vertical shift.
+        let (mut term, mut parser) = term_with_lines(10);
+        parser.advance(&mut term, b"\x1b[2;8r");
+        assert_eq!(term.screen_lines(), 10);
+        assert_eq!(term.visible_rows().len(), 10);
+        assert_eq!(first_row_text(&term), "line0");
+
+        // Region narrowed at the bottom only, as vim does around its status
+        // line: the last row must still be reported.
+        let (mut term, mut parser) = term_with_lines(10);
+        parser.advance(&mut term, b"\x1b[1;9r");
+        assert_eq!(term.visible_rows().len(), 10);
+        assert_eq!(first_row_text(&term), "line0");
+
+        // Same on the alternate screen.
+        let (mut term, mut parser) = term_with_lines(6);
+        parser.advance(&mut term, b"\x1b[?1049h\x1b[1;3r");
+        assert_eq!(term.visible_rows().len(), 6);
+
+        // Scrolled into history, the viewport still spans the screen height
+        // and starts one line up per scrolled line.
+        let (mut term, mut parser) = term_with_lines(4);
+        for i in 0..4 {
+            parser.advance(&mut term, format!("\r\nscroll{i}").as_bytes());
+        }
+        parser.advance(&mut term, b"\x1b[2;3r");
+        term.scroll_display(crate::crosswords::grid::Scroll::Delta(2));
+        assert_eq!(term.display_offset(), 2);
+        assert_eq!(term.visible_rows().len(), 4);
+    }
+
+    /// The flag byte an embedder needs to encode keys is the one the terminal
+    /// would report; it must survive set, push and pop.
+    #[test]
+    fn keyboard_mode_reports_the_active_flags() {
+        use crate::performer::handler::Processor;
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 3),
+            CursorShape::Block,
+            VoidListener,
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = Processor::default();
+        assert_eq!(term.keyboard_mode(), KeyboardModes::NO_MODE);
+
+        // CSI = 5 ; 1 u -> disambiguate + report alternate keys.
+        parser.advance(&mut term, b"\x1b[=5;1u");
+        assert_eq!(
+            term.keyboard_mode(),
+            KeyboardModes::DISAMBIGUATE_ESC_CODES | KeyboardModes::REPORT_ALTERNATE_KEYS
+        );
+
+        // Pushing a new mode shadows it, popping restores it.
+        parser.advance(&mut term, b"\x1b[>1u");
+        assert_eq!(term.keyboard_mode(), KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        parser.advance(&mut term, b"\x1b[<1u");
+        assert_eq!(
+            term.keyboard_mode(),
+            KeyboardModes::DISAMBIGUATE_ESC_CODES | KeyboardModes::REPORT_ALTERNATE_KEYS
+        );
+    }
+
+    /// `c()` alone drops combining marks, which is the trap `cell_text`
+    /// exists to close. Also covers the bg-only guard: those cells reuse the
+    /// extras-id bits for colour, so an unguarded lookup reads a channel as
+    /// an id.
+    #[test]
+    fn cell_text_includes_zero_width_marks() {
+        use crate::performer::handler::Processor;
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 2),
+            CursorShape::Block,
+            VoidListener,
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = Processor::default();
+        // "e" + U+0301 COMBINING ACUTE, then "X".
+        parser.advance(&mut term, "e\u{0301}X".as_bytes());
+
+        let cell = Pos::new(Line(0), Column(0));
+        assert_eq!(term.grid[cell].c(), 'e', "base char only");
+        assert_eq!(
+            term.grid.cell_text(cell).collect::<String>(),
+            "e\u{0301}",
+            "cell_text keeps the mark"
+        );
+        assert_eq!(
+            term.grid
+                .cell_text(Pos::new(Line(0), Column(1)))
+                .collect::<String>(),
+            "X"
+        );
+
+        // A background-only cell has no text and must not read its colour
+        // bits as an extras id.
+        let bg = Pos::new(Line(1), Column(0));
+        term.grid[bg].set_bg_rgb(0xAA, 0xBB, 0xCC);
+        assert!(term.grid[bg].is_bg_only());
+        assert_eq!(
+            term.grid.cell_text(bg).collect::<String>(),
+            "\0",
+            "bg-only cell is blank, with no marks"
+        );
+    }
+
+    /// modifyOtherKeys has no Mode bit, so without this an embedder has to
+    /// sniff raw PTY bytes outside the parser to find it.
+    #[test]
+    fn modify_other_keys_tracks_the_level() {
+        use crate::performer::handler::Processor;
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 2),
+            CursorShape::Block,
+            VoidListener,
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = Processor::default();
+        assert_eq!(term.modify_other_keys(), None);
+
+        parser.advance(&mut term, b"\x1b[>4;2m");
+        assert_eq!(term.modify_other_keys(), Some(2));
+
+        parser.advance(&mut term, b"\x1b[>4;1m");
+        assert_eq!(term.modify_other_keys(), Some(1));
+
+        // No level, and an explicit 0, both disable it.
+        parser.advance(&mut term, b"\x1b[>4m");
+        assert_eq!(term.modify_other_keys(), None);
+        parser.advance(&mut term, b"\x1b[>4;2m\x1b[>4;0m");
+        assert_eq!(term.modify_other_keys(), None);
+
+        // Another resource must not be mistaken for modifyOtherKeys, and an
+        // out-of-range level must not reach an embedder as a level it cannot
+        // interpret.
+        parser.advance(&mut term, b"\x1b[>2;2m");
+        assert_eq!(term.modify_other_keys(), None);
+        parser.advance(&mut term, b"\x1b[>4;7m");
+        assert_eq!(term.modify_other_keys(), None);
+
+        // RIS clears it, like the other keyboard state.
+        parser.advance(&mut term, b"\x1b[>4;2m");
+        assert_eq!(term.modify_other_keys(), Some(2));
+        parser.advance(&mut term, b"\x1bc");
+        assert_eq!(term.modify_other_keys(), None);
     }
 }

@@ -417,6 +417,10 @@ pub trait Handler {
     /// Handle XTGETTCAP response.
     fn xtgettcap_response(&mut self, _response: String) {}
 
+    /// xterm `modifyOtherKeys` level, from `CSI > 4 ; n m`. Level 0 disables
+    /// it, 1 and 2 widen how many modified keys are reported as `CSI 27 ; …`.
+    fn set_modify_other_keys(&mut self, _level: u8) {}
+
     /// Send a kitty graphics protocol response
     fn kitty_graphics_response(&mut self, _response: String) {}
 
@@ -1442,6 +1446,18 @@ impl<U: Handler> Perform for Performer<'_, U> {
                     _ => KeyboardModesApplyBehavior::Replace,
                 };
                 handler.set_keyboard_mode(mode, behavior);
+            }
+            // xterm modifyOtherKeys. Resource 4 is the only one we model;
+            // `CSI > 4 m` with no level resets to 0, i.e. disabled.
+            ('m', [b'>']) => {
+                let resource = next_param_or(0);
+                let level = next_param_or(0);
+                // xterm defines levels 0, 1 and 2 only; anything else would
+                // reach embedders as a level they cannot interpret.
+                match (resource, level) {
+                    (4, 0..=2) => handler.set_modify_other_keys(level as u8),
+                    _ => csi_unhandled!(),
+                }
             }
             ('u', [b'>']) => {
                 let mode = KeyboardModes::from_bits_truncate(next_param_or(0) as u8);
