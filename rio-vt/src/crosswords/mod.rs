@@ -1880,13 +1880,7 @@ impl<U: EventListener> Crosswords<U> {
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
     ) {
         use crate::event::TerminalDamage;
-        let mut start = self.scroll_region.start.0;
-        let mut end = self.scroll_region.end.0;
-        let scroll = self.display_offset() as i32;
-        if scroll != 0 {
-            start -= scroll;
-            end -= scroll;
-        }
+        let (start, end) = self.visible_line_bounds();
         let count = (end - start) as usize;
 
         let _ = cols;
@@ -1968,19 +1962,26 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Half-open grid line range currently on screen, as `(start, end)`.
+    ///
+    /// This is the full screen height offset by the scrollback position, and
+    /// deliberately has nothing to do with `scroll_region`: DECSTBM bounds
+    /// where scrolling happens, not what is displayed. Both were once read
+    /// from `scroll_region`, so an app that narrowed it (vim, less, htop,
+    /// tmux, man) lost rows off the snapshot.
+    #[inline]
+    fn visible_line_bounds(&self) -> (i32, i32) {
+        let scroll = self.display_offset() as i32;
+        (-scroll, self.grid.screen_lines() as i32 - scroll)
+    }
+
     /// Copy the visible viewport into `dst` in place. Reuses both the
     /// outer `Vec`'s capacity and each inner `Row`'s `Vec<Square>`
     /// allocation (via [`Row::copy_from`]) so the renderer's frame
     /// buffer doesn't reallocate every frame at steady state.
     #[inline]
     pub fn fill_visible_rows(&self, dst: &mut Vec<Row<Square>>) {
-        let mut start = self.scroll_region.start.0;
-        let mut end = self.scroll_region.end.0;
-        let scroll = self.display_offset() as i32;
-        if scroll != 0 {
-            start -= scroll;
-            end -= scroll;
-        }
+        let (start, end) = self.visible_line_bounds();
         let count = (end - start) as usize;
 
         // Copy each visible row into the matching slot. Excess slots
@@ -7730,5 +7731,64 @@ mod tests {
 
         // Cursor must be untouched.
         assert_eq!(cw.grid.cursor.pos, cursor_before);
+    }
+
+    /// DECSTBM bounds where scrolling happens, not what is on screen. Both
+    /// shapes matter: `1;N` only shrinks `end`, so a fix that just zeroed
+    /// `start` would pass that case while still dropping the bottom rows.
+    #[test]
+    fn visible_rows_ignore_the_scroll_region() {
+        use crate::performer::handler::Processor;
+        fn term_with_lines(rows: usize) -> (Crosswords<VoidListener>, Processor) {
+            let mut term = Crosswords::new(
+                CrosswordsSize::new(20, rows),
+                CursorShape::Block,
+                VoidListener,
+                crate::event::WindowId::from(0),
+                0,
+                100,
+            );
+            let mut parser = Processor::default();
+            for i in 0..rows {
+                parser
+                    .advance(&mut term, format!("\x1b[{};1Hline{}", i + 1, i).as_bytes());
+            }
+            (term, parser)
+        }
+
+        let first_row_text = |term: &Crosswords<VoidListener>| -> String {
+            let rows = term.visible_rows();
+            (0..5).map(|c| rows[0][Column(c)].c()).collect()
+        };
+
+        // Region narrowed at both ends: full height, no vertical shift.
+        let (mut term, mut parser) = term_with_lines(10);
+        parser.advance(&mut term, b"\x1b[2;8r");
+        assert_eq!(term.screen_lines(), 10);
+        assert_eq!(term.visible_rows().len(), 10);
+        assert_eq!(first_row_text(&term), "line0");
+
+        // Region narrowed at the bottom only, as vim does around its status
+        // line: the last row must still be reported.
+        let (mut term, mut parser) = term_with_lines(10);
+        parser.advance(&mut term, b"\x1b[1;9r");
+        assert_eq!(term.visible_rows().len(), 10);
+        assert_eq!(first_row_text(&term), "line0");
+
+        // Same on the alternate screen.
+        let (mut term, mut parser) = term_with_lines(6);
+        parser.advance(&mut term, b"\x1b[?1049h\x1b[1;3r");
+        assert_eq!(term.visible_rows().len(), 6);
+
+        // Scrolled into history, the viewport still spans the screen height
+        // and starts one line up per scrolled line.
+        let (mut term, mut parser) = term_with_lines(4);
+        for i in 0..4 {
+            parser.advance(&mut term, format!("\r\nscroll{i}").as_bytes());
+        }
+        parser.advance(&mut term, b"\x1b[2;3r");
+        term.scroll_display(crate::crosswords::grid::Scroll::Delta(2));
+        assert_eq!(term.display_offset(), 2);
+        assert_eq!(term.visible_rows().len(), 4);
     }
 }
