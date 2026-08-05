@@ -50,13 +50,6 @@ struct CanarioApp: App {
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
                 .disabled(model.selectedTerminalID == nil)
-                Button("Close Panel") {
-                    withAnimation(.spring(duration: 0.25)) {
-                        model.closeFocusedPanel()
-                    }
-                }
-                .keyboardShortcut("w", modifiers: [.command, .shift])
-                .disabled(model.selectedTerminalID == nil)
                 Divider()
                 Button("Copy") { model.copySelection() }
                     .keyboardShortcut("c", modifiers: .command)
@@ -72,14 +65,24 @@ struct CanarioApp: App {
                 Button("Reset Font Size") { model.resetFontSize() }
                     .keyboardShortcut("0", modifiers: .command)
                 Divider()
-                Button(model.selectedTerminalID == nil ? "Close Window" : "Close Terminal") {
+                // ⌘W closes the smallest thing in focus: the panel, which
+                // itself falls back to closing the terminal when it's the
+                // last one. ⇧⌘W takes the whole terminal.
+                Button(model.selectedTerminalID == nil ? "Close Window" : "Close Panel") {
                     if model.selectedTerminalID != nil {
-                        model.closeSelectedTerminal()
+                        withAnimation(.spring(duration: 0.25)) {
+                            model.closeFocusedPanel()
+                        }
                     } else {
                         NSApp.keyWindow?.performClose(nil)
                     }
                 }
                 .keyboardShortcut("w", modifiers: .command)
+                Button("Close Terminal") {
+                    model.closeSelectedTerminal()
+                }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
+                .disabled(model.selectedTerminalID == nil)
             }
             CommandGroup(after: .sidebar) {
                 Button(model.isSidebarCollapsed ? "Show Sidebar" : "Hide Sidebar") {
