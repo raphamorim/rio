@@ -47,6 +47,10 @@ final class PanelHostView: NSView {
     private var selectionAnchor: NSPoint?
     private var selectionActive = false
     private var markedText = ""
+    /// Drag-selection autoscroll (ghostty's selection scroll tick): dragging
+    /// past the top or bottom edge keeps scrolling and extending.
+    private var autoscrollTimer: Timer?
+    private var lastDragPoint: NSPoint?
 
     /// Non-nil while a `keyDown` is in flight. `insertText` appends here
     /// instead of sending, so the key handler can tell text the input method
@@ -152,12 +156,58 @@ final class PanelHostView: NSView {
             selectionActive = true
             session.selectionBegin(at: anchor, kind: UInt8(RIO_SELECTION_SIMPLE))
         }
+        lastDragPoint = point
+        // Outside the vertical bounds: hand off to the autoscroll tick,
+        // which keeps scrolling and extending until the pointer returns.
+        if point.y < 0 || point.y > surfaceView.bounds.height {
+            startAutoscroll()
+        } else {
+            stopAutoscroll()
+        }
         session.selectionUpdate(at: point)
     }
 
     override func mouseUp(with event: NSEvent) {
         selectionAnchor = nil
+        stopAutoscroll()
         super.mouseUp(with: event)
+    }
+
+    private func startAutoscroll() {
+        guard autoscrollTimer == nil else { return }
+        autoscrollTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.05, repeats: true
+        ) { [weak self] _ in
+            self?.autoscrollTick()
+        }
+    }
+
+    private func stopAutoscroll() {
+        autoscrollTimer?.invalidate()
+        autoscrollTimer = nil
+    }
+
+    private func autoscrollTick() {
+        guard let session, selectionActive, let point = lastDragPoint else {
+            stopAutoscroll()
+            return
+        }
+        let height = surfaceView.bounds.height
+        let cell = session.cpuRenderer?.metrics.cellHeight ?? 16
+        // Scroll speed grows with how far past the edge the pointer sits,
+        // capped so a wild fling stays followable.
+        let lines: Int32
+        if point.y < 0 {
+            lines = Int32(min(5, max(1, Int(-point.y / cell) + 1)))
+        } else if point.y > height {
+            lines = -Int32(min(5, max(1, Int((point.y - height) / cell) + 1)))
+        } else {
+            stopAutoscroll()
+            return
+        }
+        session.scroll(deltaLines: lines)
+        // Re-extend to the edge cell of the freshly revealed row.
+        session.selectionUpdate(at: point)
     }
 
     override func scrollWheel(with event: NSEvent) {
