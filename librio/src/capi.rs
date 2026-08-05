@@ -312,14 +312,11 @@ fn named_rgb(n: NamedColor) -> (u8, u8, u8) {
         LightCyan => ansi16(14),
         LightWhite => ansi16(15),
         Foreground => arr_rgb(t.foreground),
-        LightForeground => {
-            arr_rgb(t.light_foreground.unwrap_or(t.foreground))
-        }
-        DimForeground => {
-            t.dim_foreground
-                .map(arr_rgb)
-                .unwrap_or_else(|| dim(arr_rgb(t.foreground)))
-        }
+        LightForeground => arr_rgb(t.light_foreground.unwrap_or(t.foreground)),
+        DimForeground => t
+            .dim_foreground
+            .map(arr_rgb)
+            .unwrap_or_else(|| dim(arr_rgb(t.foreground))),
         Background => arr_rgb(t.background.0),
         Cursor => arr_rgb(t.cursor),
         DimBlack => dim_or(t.dim_black, 0),
