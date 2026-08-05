@@ -10,9 +10,6 @@ partial:
 
 report_sizes: true
 
-variables:
-  canario_version: "0.0.1"
-
 env:
   - CARGO_TERM_COLOR=always
   - RUST_BACKTRACE=full
@@ -137,7 +134,7 @@ dmg:
     use: appbundle
   - id: canario
     ids: [canario]
-    name: "Canario-{{ .Var.canario_version }}"
+    name: "Canario"
     use: appbundle
 
 notarize:
