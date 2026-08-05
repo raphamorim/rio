@@ -2,7 +2,8 @@ use crate::{Listener, Surface};
 use rio_vt::crosswords::grid::row::Row;
 use rio_vt::crosswords::grid::Dimensions;
 use rio_vt::crosswords::pos::Column;
-use rio_vt::crosswords::square::{Extras, Square};
+use rio_vt::config::colors::{AnsiColor, ColorRgb};
+use rio_vt::crosswords::square::{ContentTag, Extras, Square};
 use rio_vt::crosswords::style::Style;
 use rio_vt::crosswords::Crosswords;
 use rio_vt::event::sync::FairMutex;
@@ -134,10 +135,27 @@ impl RenderState {
     }
 
     pub fn style_of(&self, square: &Square) -> Style {
-        self.styles
-            .get(square.style_id() as usize)
-            .copied()
-            .unwrap_or_default()
+        // Bg-only cells (erase fills, blank lines after `clear`) encode
+        // their background inline instead of carrying a style id; reading
+        // `style_id()` on one would misinterpret the color bits as an index.
+        match square.content_tag() {
+            ContentTag::Codepoint => self
+                .styles
+                .get(square.style_id() as usize)
+                .copied()
+                .unwrap_or_default(),
+            ContentTag::BgPalette => Style {
+                bg: AnsiColor::Indexed(square.bg_palette_index()),
+                ..Style::default()
+            },
+            ContentTag::BgRgb => {
+                let (r, g, b) = square.bg_rgb();
+                Style {
+                    bg: AnsiColor::Spec(ColorRgb { r, g, b }),
+                    ..Style::default()
+                }
+            }
+        }
     }
 
     pub fn styles(&self) -> &[Style] {
@@ -162,7 +180,11 @@ impl RenderState {
         };
         let mut text = String::with_capacity(self.columns);
         for column in 0..self.columns {
-            text.push(row[Column(column)].c());
+            let square = row[Column(column)];
+            // Bg-only and never-written cells have no codepoint; save them
+            // as spaces so scrollback text doesn't accumulate NULs.
+            let c = if square.is_bg_only() { ' ' } else { square.c() };
+            text.push(if c == '\0' { ' ' } else { c });
         }
         text.trim_end().to_string()
     }

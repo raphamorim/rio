@@ -527,4 +527,40 @@ mod tests {
         surface.selection_clear();
         assert!(surface.selection_text().is_none());
     }
+
+    // Erase fills (EL/ED with a colored bg, htop's header bar, `clear`)
+    // produce bg-only cells that encode the color inline instead of a
+    // style id; the snapshot accessors must decode them, not read the
+    // color bits as a style-table index.
+    #[test]
+    fn erase_fills_resolve_inline_bg() {
+        use rio_vt::config::colors::{AnsiColor, ColorRgb};
+
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate);
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+
+        // Rows 5-6 (below any shell prompt): green bg + erase-to-EOL,
+        // then a truecolor bg + erase-whole-line.
+        surface.inject_output(
+            b"\x1b[6;1H\x1b[42mA\x1b[K\r\n\x1b[48;2;9;8;7m\x1b[2KB\x1b[0m",
+        );
+        state.update();
+
+        let last = state.columns() - 1;
+        let el_fill = state.style_of(state.square(5, last).unwrap());
+        assert_eq!(el_fill.bg, AnsiColor::Indexed(2));
+
+        let el2_fill = state.style_of(state.square(6, last).unwrap());
+        assert_eq!(el2_fill.bg, AnsiColor::Spec(ColorRgb { r: 9, g: 8, b: 7 }));
+
+        // Snapshot text renders the fills as trimmable spaces, not NULs.
+        assert_eq!(state.text_row(5), "A");
+        assert_eq!(state.text_row(6), "B");
+    }
 }
