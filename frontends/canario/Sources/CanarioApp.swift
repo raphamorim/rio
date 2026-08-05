@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct CanarioApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
 
     init() {

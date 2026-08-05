@@ -46,6 +46,9 @@ final class QuickTerminalController: NSObject {
         position(panel)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
+        // Transparent windows keep the shadow of their square frame unless
+        // it's recomputed after the rounded content has drawn.
+        DispatchQueue.main.async { panel.invalidateShadow() }
     }
 
     private func ensurePanel() -> NSPanel? {
@@ -166,7 +169,5 @@ private struct QuickTerminalView: View {
             RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(Theme.accentBorder.opacity(0.9), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.4), radius: 24, y: 8)
-        .padding(14)
     }
 }
