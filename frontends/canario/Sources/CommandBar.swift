@@ -1,7 +1,9 @@
 import SwiftUI
 
 // Arc-style command bar (⌘K): one input that finds terminals and panes by
-// title, or runs an app action, without touching the sidebar.
+// title, or runs an app action, without touching the sidebar. Visual
+// language follows Arc's palette: dark floating panel, large input row,
+// icon chips, and a selected row tinted with the current space's color.
 
 private struct CommandEntry: Identifiable {
     let id: String
@@ -20,19 +22,24 @@ struct CommandBarView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.opacity(0.28)
+            Color.black.opacity(0.30)
                 .ignoresSafeArea()
                 .onTapGesture { close() }
 
             VStack(spacing: 0) {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary.opacity(0.55))
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(accentGradient)
+                        .frame(width: 26, height: 26)
+                        .overlay {
+                            Image(systemName: "terminal")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
                     TextField("Search terminals, run commands…", text: $query)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Theme.textPrimary)
+                        .font(.system(size: 19, weight: .medium))
+                        .foregroundStyle(.white)
                         .focused($fieldFocused)
                         .onSubmit { runSelected() }
                         .onKeyPress(.downArrow) {
@@ -44,22 +51,23 @@ struct CommandBarView: View {
                             return .handled
                         }
                 }
-                .padding(.horizontal, 16)
-                .frame(height: 52)
+                .padding(.horizontal, 18)
+                .frame(height: 62)
 
                 if !results.isEmpty {
                     Rectangle()
-                        .fill(Color.black.opacity(0.10))
+                        .fill(.white.opacity(0.08))
                         .frame(height: 1)
 
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
-                            VStack(spacing: 2) {
+                            VStack(spacing: 4) {
                                 ForEach(Array(results.enumerated()), id: \.element.id) {
                                     index, entry in
                                     CommandRowView(
                                         entry: entry,
-                                        isSelected: index == selectedIndex
+                                        isSelected: index == selectedIndex,
+                                        accent: accentColor
                                     ) {
                                         selectedIndex = index
                                         runSelected()
@@ -67,9 +75,9 @@ struct CommandBarView: View {
                                     .id(entry.id)
                                 }
                             }
-                            .padding(8)
+                            .padding(10)
                         }
-                        .frame(maxHeight: 320)
+                        .frame(maxHeight: 380)
                         .onChange(of: selectedIndex) { _, index in
                             if results.indices.contains(index) {
                                 proxy.scrollTo(results[index].id)
@@ -78,24 +86,47 @@ struct CommandBarView: View {
                     }
                 }
             }
-            .frame(width: 560)
+            .frame(width: 640)
             .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Theme.chrome)
-                    .overlay(
-                        GrainOverlay()
-                            .clipShape(RoundedRectangle(cornerRadius: 14)))
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color(red: 0.14, green: 0.13, blue: 0.15).opacity(0.98))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(Theme.accentBorder.opacity(0.8), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 18)
+                    .strokeBorder(.white.opacity(0.09), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.35), radius: 28, y: 10)
-            .padding(.top, 110)
+            .shadow(color: .black.opacity(0.45), radius: 38, y: 16)
+            .padding(.top, 96)
+            .environment(\.colorScheme, .dark)
+            .transition(.scale(scale: 0.97).combined(with: .opacity))
         }
         .onAppear { fieldFocused = true }
         .onExitCommand { close() }
         .onChange(of: query) { _, _ in selectedIndex = 0 }
+    }
+
+    /// Selected-row tint follows the current space, like Arc; a deep salmon
+    /// mauve when the selected terminal lives outside any space.
+    private var accentColor: Color {
+        if let id = model.selectedTerminalID,
+            let folder = model.rootFolder(containing: id)
+        {
+            return Theme.spaceGradients[
+                folder.colorIndex % Theme.spaceGradients.count
+            ].bottom
+        }
+        return Color(red: 0.71, green: 0.36, blue: 0.46)
+    }
+
+    private var accentGradient: LinearGradient {
+        if let id = model.selectedTerminalID,
+            let folder = model.rootFolder(containing: id)
+        {
+            return Theme.spaceGradient(folder.colorIndex)
+        }
+        return LinearGradient(
+            colors: [Theme.chrome, Color(red: 0.71, green: 0.36, blue: 0.46)],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     private var results: [CommandEntry] {
@@ -174,39 +205,55 @@ struct CommandBarView: View {
 private struct CommandRowView: View {
     let entry: CommandEntry
     let isSelected: Bool
+    let accent: Color
     let action: () -> Void
 
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: entry.icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary.opacity(0.6))
-                    .frame(width: 18)
-                Text(entry.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if let subtitle = entry.subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.textPrimary.opacity(0.45))
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(.white.opacity(isSelected ? 0.22 : 0.10))
+                    .frame(width: 28, height: 28)
+                    .overlay {
+                        Image(systemName: entry.icon)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(isSelected ? 1.0 : 0.75))
+                    }
+
+                // Arc-style single line: bold title — dimmed subtitle.
+                HStack(spacing: 6) {
+                    Text(entry.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.95))
                         .lineLimit(1)
+                    if let subtitle = entry.subtitle {
+                        Text("— \(subtitle)")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(.white.opacity(isSelected ? 0.75 : 0.40))
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                if isSelected {
+                    Image(systemName: "return")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.55))
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(height: 34)
+            .padding(.horizontal, 12)
+            .frame(height: 46)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 11)
                     .fill(
                         isSelected
-                            ? Theme.selectedFill
-                            : Color.black.opacity(isHovered ? 0.07 : 0.0001))
+                            ? AnyShapeStyle(accent.opacity(0.55))
+                            : AnyShapeStyle(Color.white.opacity(isHovered ? 0.06 : 0.0001)))
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 11))
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
