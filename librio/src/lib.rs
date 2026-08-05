@@ -580,7 +580,10 @@ mod tests {
         surface.inject_output(text.as_bytes());
         surface.scroll(10);
         state.update();
-        assert!(state.display_offset() > 0, "scroll(10) should enter history");
+        assert!(
+            state.display_offset() > 0,
+            "scroll(10) should enter history"
+        );
 
         surface.write(b"x".to_vec());
         state.update();
