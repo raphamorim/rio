@@ -5,6 +5,13 @@ import SwiftUI
 struct CanarioApp: App {
     @State private var model = AppModel()
 
+    init() {
+        // Apps launched from Finder start with cwd `/`; shells spawned without
+        // an explicit working_dir inherit it, so move to home before any spawn.
+        FileManager.default.changeCurrentDirectoryPath(
+            FileManager.default.homeDirectoryForCurrentUser.path)
+    }
+
     var body: some Scene {
         Window("Canario", id: "main") {
             ContentView()
