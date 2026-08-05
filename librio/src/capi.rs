@@ -822,6 +822,21 @@ pub unsafe extern "C" fn rio_render_state_cell(
     })
 }
 
+/// Lines the view is scrolled up into history; 0 means the live screen.
+/// Renderers use this to hide the cursor while scrolled.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_display_offset(
+    state: *const RenderState,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return 0;
+        }
+        unsafe { &*state }.display_offset()
+    }))
+    .unwrap_or(0)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_cursor(
     state: *const RenderState,

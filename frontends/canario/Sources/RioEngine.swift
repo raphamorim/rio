@@ -273,6 +273,9 @@ final class PanelSession {
         text.withCString { pointer in
             rio_surface_text(surface, pointer, strlen(pointer))
         }
+        // Input snaps a scrolled view back to the live screen; redraw now
+        // rather than waiting for the shell's echo to wake us.
+        render()
     }
 
     /// Report a key to librio, which decides what the terminal receives. The
@@ -300,22 +303,26 @@ final class PanelSession {
         event.consumed_mods = consumedMods
         event.composing = composing
 
-        guard let text, !text.isEmpty else {
+        let handled: Bool
+        if let text, !text.isEmpty {
+            // The pointer only has to outlive the call, and the byte count
+            // comes from the UTF-8 view rather than strlen so text containing
+            // a NUL is passed whole instead of being cut short.
+            var utf8 = Array(text.utf8)
+            handled = utf8.withUnsafeMutableBufferPointer { buffer in
+                event.text = UnsafeRawPointer(buffer.baseAddress!)
+                    .assumingMemoryBound(to: CChar.self)
+                event.text_len = buffer.count
+                return rio_surface_key(surface, &event)
+            }
+        } else {
             event.text = nil
             event.text_len = 0
-            return rio_surface_key(surface, &event)
+            handled = rio_surface_key(surface, &event)
         }
-
-        // The pointer only has to outlive the call, and the byte count comes
-        // from the UTF-8 view rather than strlen so text containing a NUL is
-        // passed whole instead of being cut short.
-        var utf8 = Array(text.utf8)
-        return utf8.withUnsafeMutableBufferPointer { buffer in
-            event.text = UnsafeRawPointer(buffer.baseAddress!)
-                .assumingMemoryBound(to: CChar.self)
-            event.text_len = buffer.count
-            return rio_surface_key(surface, &event)
-        }
+        // See sendText: reflect the scroll-to-bottom without waiting on echo.
+        if handled { render() }
+        return handled
     }
 
     func setAltIsMeta(_ enabled: Bool) {

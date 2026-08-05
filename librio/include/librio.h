@@ -201,6 +201,7 @@ void rio_render_state_reset_dirty(rio_render_state_t *state);
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
+size_t rio_render_state_display_offset(const rio_render_state_t *state);
 rio_selection_s rio_render_state_selection(const rio_render_state_t *state);
 
 #ifdef __cplusplus

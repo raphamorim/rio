@@ -171,13 +171,18 @@ final class CPURenderer {
     private func drawCursor(
         state: OpaquePointer, cols: Int, lines: Int, focused: Bool
     ) {
+        // The cursor belongs to the live screen. Scrolling up shifts it down
+        // in viewport coordinates; once it leaves the viewport, don't draw
+        // it (same behavior as ghostty's viewport-relative cursor).
         let cursor = rio_render_state_cursor(state)
-        guard Int(cursor.line) < lines, Int(cursor.column) < cols else { return }
+        let offset = rio_render_state_display_offset(state)
+        let line = Int(cursor.line) + offset
+        guard line < lines, Int(cursor.column) < cols else { return }
         let cw = metrics.cellWidth
         let ch = metrics.cellHeight
         let pad = metrics.padding
         let x = pad + CGFloat(cursor.column) * cw
-        let y = pad + CGFloat(cursor.line) * ch
+        let y = pad + CGFloat(line) * ch
         let rect = NSRect(x: x, y: y, width: cw, height: ch)
 
         guard focused else {
@@ -194,7 +199,7 @@ final class CPURenderer {
         cursorColor.setFill()
         rect.fill()
 
-        let cell = rio_render_state_cell(state, cursor.line, cursor.column)
+        let cell = rio_render_state_cell(state, UInt16(line), cursor.column)
         guard let scalar = Unicode.Scalar(cell.codepoint),
             cell.codepoint != 0x20, cell.codepoint != 0
         else { return }

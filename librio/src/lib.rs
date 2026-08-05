@@ -332,6 +332,19 @@ impl Surface {
     }
 
     pub fn write<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
+        // Input snaps the view back to the live screen and drops any
+        // selection, matching ghostty's scroll-to-bottom / clear-on-typing
+        // behavior (only reached when a key actually produced PTY bytes).
+        {
+            use rio_vt::crosswords::grid::Scroll;
+            let mut term = self.terminal.lock();
+            if term.display_offset() != 0 {
+                term.scroll_display(Scroll::Bottom);
+            }
+            if term.selection.is_some() {
+                term.selection = None;
+            }
+        }
         let _ = self.channel.send(Msg::Input(bytes.into()));
     }
 
@@ -544,6 +557,34 @@ mod tests {
         assert!(state.selection().is_some());
         surface.selection_clear();
         assert!(surface.selection_text().is_none());
+    }
+
+    // Typing while scrolled into history must snap the view back to the
+    // live screen (and hide-cursor logic keys off the same offset).
+    #[test]
+    fn input_scrolls_back_to_live_screen() {
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate);
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+
+        // Three screens of output builds scrollback to scroll into.
+        let mut text = String::new();
+        for i in 0..72 {
+            text.push_str(&format!("line {i}\r\n"));
+        }
+        surface.inject_output(text.as_bytes());
+        surface.scroll(10);
+        state.update();
+        assert!(state.display_offset() > 0, "scroll(10) should enter history");
+
+        surface.write(b"x".to_vec());
+        state.update();
+        assert_eq!(state.display_offset(), 0, "input should snap to bottom");
     }
 
     // Erase fills (EL/ED with a colored bg, htop's header bar, `clear`)
