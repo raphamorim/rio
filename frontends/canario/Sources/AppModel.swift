@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import SwiftUI
 
 struct Panel: Identifiable {
     let id = UUID()
@@ -159,9 +160,12 @@ final class Folder: Identifiable {
     var name: String
     var isExpanded = true
     var children: [SidebarItem] = []
+    /// Index into `Theme.spaceGradients` — the folder's space identity.
+    var colorIndex: Int
 
-    init(name: String) {
+    init(name: String, colorIndex: Int = 0) {
         self.name = name
+        self.colorIndex = colorIndex
     }
 }
 
@@ -185,9 +189,27 @@ final class AppModel {
     var draggingTerminalID: UUID?
     var pendingRenameFolderID: UUID?
     var fontSize: Float = 13.0
+    var isCommandBarVisible = false
+    /// Pane being previewed from the sidebar (hover peek), if any.
+    var peekedPanelID: UUID?
+    /// Sidebar row anchoring the peek: a pane row's panel id, or a terminal
+    /// row's terminal id (terminal rows preview their focused pane).
+    var peekedRowID: UUID?
 
     @ObservationIgnored
     let surfaces = SurfaceRegistry()
+
+    @ObservationIgnored
+    private(set) lazy var quickTerminal = QuickTerminalController(model: self)
+
+    @ObservationIgnored
+    private let routingRules = RoutingRules.load()
+
+    /// Terminals awaiting cwd routing, by creation time. A terminal routes on
+    /// its first matching cwd report, then leaves the set; it also leaves on
+    /// timeout or when the user files it somewhere manually.
+    @ObservationIgnored
+    private var pendingRoutingIDs: [UUID: Date] = [:]
 
     private var nextTerminalIndex = 1
     private var nextFolderIndex = 1
@@ -206,10 +228,14 @@ final class AppModel {
         RioEngine.shared.onTitle = { [weak self] session, title in
             guard let self else { return }
             session.terminal.panelTitles[session.panelID] = title
+            self.attemptPendingRouting(for: session.terminal)
             self.scheduleSave()
         }
         RioEngine.shared.onCloseSurface = { [weak self] session in
-            self?.closePanel(session.panelID, in: session.terminal)
+            guard let self else { return }
+            // The quick terminal lives outside the sidebar tree.
+            if self.quickTerminal.handleClosedSession(session) { return }
+            self.closePanel(session.panelID, in: session.terminal)
         }
         // Authoritative save on quit (captures live cwd + scrollback).
         NotificationCenter.default.addObserver(
@@ -219,6 +245,8 @@ final class AppModel {
             guard let self else { return }
             SessionStore.save(self)
         }
+        // Instantiate eagerly so the global hotkey registers at launch.
+        _ = quickTerminal
     }
 
     /// Debounced save so a crash still leaves a recent session on disk.
@@ -261,14 +289,115 @@ final class AppModel {
             folder.isExpanded = true
         } else {
             items.append(.terminal(terminal))
+            scheduleRouting(for: terminal)
         }
         selectedTerminalID = terminal.id
     }
 
     func createFolder() {
-        let folder = Folder(name: "")
+        let folder = Folder(name: "", colorIndex: nextFolderColorIndex())
         items.append(.folder(folder))
         pendingRenameFolderID = folder.id
+    }
+
+    private func nextFolderColorIndex() -> Int {
+        let used = items.compactMap { item -> Int? in
+            if case .folder(let folder) = item { return folder.colorIndex }
+            return nil
+        }
+        return used.count % Theme.spaceGradients.count
+    }
+
+    /// Root folder a terminal lives under (however deep), for space tinting.
+    func rootFolder(containing terminalID: UUID) -> Folder? {
+        for item in items {
+            if case .folder(let folder) = item,
+                Self.terminals(in: [.folder(folder)]).contains(where: { $0.id == terminalID })
+            {
+                return folder
+            }
+        }
+        return nil
+    }
+
+    /// ⌘1–9: jump to the Nth root item. Folders select their first terminal.
+    func selectRootItem(at index: Int) {
+        guard items.indices.contains(index) else { return }
+        switch items[index] {
+        case .terminal(let terminal):
+            selectedTerminalID = terminal.id
+        case .folder(let folder):
+            folder.isExpanded = true
+            if let first = Self.terminals(in: folder.children).first {
+                selectedTerminalID = first.id
+            }
+        }
+    }
+
+    /// Hand keyboard focus back to the focused pane (after transient UI like
+    /// the command bar goes away).
+    func refocusTerminal() {
+        guard let session = focusedSession else { return }
+        session.hostView.window?.makeFirstResponder(session.hostView)
+    }
+
+    // MARK: cwd routing (Air Traffic Control)
+
+    /// The cwd (OSC 7) arrives whenever the shell gets around to reporting
+    /// it — often not until the first prompt or `cd`. Mark the terminal as
+    /// pending and retry on title events until it routes or times out.
+    private func scheduleRouting(for terminal: TerminalItem) {
+        guard !routingRules.isEmpty else { return }
+        pendingRoutingIDs[terminal.id] = Date()
+        // Title events retrigger the attempt, but not every shell emits
+        // titles — a retry ladder covers those setups within the window.
+        for delay: TimeInterval in [2.5, 6, 12, 20, 30] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                [weak self, weak terminal] in
+                guard let self, let terminal else { return }
+                self.attemptPendingRouting(for: terminal)
+            }
+        }
+    }
+
+    private func attemptPendingRouting(for terminal: TerminalItem) {
+        guard let created = pendingRoutingIDs[terminal.id] else { return }
+        if Date().timeIntervalSince(created) > 30 {
+            pendingRoutingIDs.removeValue(forKey: terminal.id)
+            return
+        }
+        // Only route terminals still sitting at root — manual placement wins.
+        guard items.contains(where: { $0.id == terminal.id }) else {
+            pendingRoutingIDs.removeValue(forKey: terminal.id)
+            return
+        }
+        guard
+            let session = surfaces.existingSession(for: terminal.focusedPanelID),
+            let cwd = session.snapshot().cwd,
+            let rule = routingRules.first(where: { $0.matches(cwd) })
+        else { return }
+        pendingRoutingIDs.removeValue(forKey: terminal.id)
+
+        let folder = findOrCreateRootFolder(named: rule.folder)
+        guard let extracted = Self.extractTerminal(terminal.id, from: &items) else { return }
+        withAnimation(.spring(duration: 0.25)) {
+            folder.children.append(.terminal(extracted))
+            folder.isExpanded = true
+        }
+        scheduleSave()
+    }
+
+    private func findOrCreateRootFolder(named name: String) -> Folder {
+        for item in items {
+            if case .folder(let folder) = item,
+                folder.name.caseInsensitiveCompare(name) == .orderedSame
+            {
+                return folder
+            }
+        }
+        let folder = Folder(name: name, colorIndex: nextFolderColorIndex())
+        items.append(.folder(folder))
+        return folder
     }
 
     func commitFolderName(_ folder: Folder) {

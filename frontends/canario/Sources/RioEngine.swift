@@ -181,6 +181,23 @@ final class PanelSession {
         }
     }
 
+    /// Bitmap of the pane's current contents for sidebar peek previews.
+    /// Works for offscreen views too: `cacheDisplay` runs `draw(_:)`, which
+    /// paints from the render state whether or not the view is in a window.
+    func peekSnapshot() -> NSImage? {
+        guard let renderState else { return nil }
+        rio_render_state_update(renderState)
+        let view = hostView.surfaceView
+        let bounds = view.bounds
+        guard bounds.width > 1, bounds.height > 1,
+            let rep = view.bitmapImageRepForCachingDisplay(in: bounds)
+        else { return nil }
+        view.cacheDisplay(in: bounds, to: rep)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
     /// Snapshot for session persistence: the live cwd (OSC 7) and the
     /// whole buffer as text.
     func snapshot() -> (cwd: String?, scrollback: String?) {

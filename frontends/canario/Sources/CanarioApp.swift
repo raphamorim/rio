@@ -25,6 +25,15 @@ struct CanarioApp: App {
                     .keyboardShortcut("t", modifiers: .command)
                 Button("New Folder") { model.createFolder() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("Quick Terminal") { model.quickTerminal.toggle() }
+                    .keyboardShortcut("t", modifiers: [.command, .option])
+                Divider()
+                Button("Command Bar…") {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        model.isCommandBarVisible.toggle()
+                    }
+                }
+                .keyboardShortcut("k", modifiers: .command)
                 Divider()
                 Button("Split Right") {
                     withAnimation(.spring(duration: 0.25)) {
@@ -79,6 +88,27 @@ struct CanarioApp: App {
                 }
                 .keyboardShortcut("s", modifiers: .command)
             }
+            CommandMenu("Go") {
+                ForEach(1..<10, id: \.self) { number in
+                    Button("Space \(number)") {
+                        withAnimation(.spring(duration: 0.25)) {
+                            model.selectRootItem(at: number - 1)
+                        }
+                    }
+                    .keyboardShortcut(
+                        KeyEquivalent(Character("\(number)")), modifiers: .command)
+                }
+            }
+        }
+
+        MenuBarExtra("Canario", systemImage: "terminal.fill") {
+            Button("Quick Terminal  ⌥⌘T") { model.quickTerminal.toggle() }
+            Button("New Terminal") {
+                model.createTerminal()
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            Divider()
+            Button("Show Canario") { NSApp.activate(ignoringOtherApps: true) }
         }
     }
 }

@@ -234,6 +234,8 @@ pub struct Surface {
     channel: corcovado::channel::Sender<Msg>,
     #[cfg(not(target_os = "windows"))]
     shell_pid: u32,
+    #[cfg(not(target_os = "windows"))]
+    main_fd: std::os::fd::RawFd,
     _io_thread: std::thread::JoinHandle<(
         Machine<teletypewriter::Pty, Listener>,
         rio_vt::performer::State,
@@ -296,6 +298,8 @@ impl Surface {
 
         #[cfg(not(target_os = "windows"))]
         let shell_pid = *pty.child.pid.clone() as u32;
+        #[cfg(not(target_os = "windows"))]
+        let main_fd = *pty.child.id;
 
         let machine = Machine::new(
             Arc::clone(&terminal),
@@ -317,6 +321,8 @@ impl Surface {
             channel,
             #[cfg(not(target_os = "windows"))]
             shell_pid,
+            #[cfg(not(target_os = "windows"))]
+            main_fd,
             _io_thread: io_thread,
         })
     }
@@ -413,16 +419,28 @@ impl Surface {
         self.terminal.lock().selection_to_string()
     }
 
-    /// The shell's current working directory, as reported via OSC 7.
-    /// `None` until the shell emits it (embed a shell integration or the
-    /// standard OSC 7 hook to populate it). Used by session persistence
-    /// to restore each surface in the directory it was left in.
+    /// The shell's current working directory: OSC 7 when the shell reports
+    /// it, otherwise the OS's view of the foreground process's cwd (so it
+    /// works without any shell integration). Used by session persistence to
+    /// restore each surface in the directory it was left in.
     pub fn working_dir(&self) -> Option<String> {
-        self.terminal
+        let reported = self
+            .terminal
             .lock()
             .current_directory
             .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
+            .map(|path| path.to_string_lossy().into_owned());
+        if reported.is_some() {
+            return reported;
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            teletypewriter::foreground_process_path(self.main_fd, self.shell_pid)
+                .ok()
+                .map(|path| path.to_string_lossy().into_owned())
+        }
+        #[cfg(target_os = "windows")]
+        None
     }
 
     /// Dump the whole buffer (scrollback + screen) to plain text, so a

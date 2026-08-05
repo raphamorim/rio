@@ -21,6 +21,8 @@ private enum ItemDTO: Codable {
 private struct FolderDTO: Codable {
     var name: String
     var isExpanded: Bool
+    // Optional so sessions saved before space colors existed still decode.
+    var colorIndex: Int?
     var children: [ItemDTO]
 }
 
@@ -79,6 +81,7 @@ enum SessionStore {
                 FolderDTO(
                     name: folder.name,
                     isExpanded: folder.isExpanded,
+                    colorIndex: folder.colorIndex,
                     children: folder.children.map { encode($0, model) }))
         case .terminal(let terminal):
             var columns: [[PaneDTO]] = []
@@ -121,16 +124,20 @@ enum SessionStore {
         guard let data = try? Data(contentsOf: sessionFile),
             let dto = try? JSONDecoder().decode(SessionDTO.self, from: data)
         else { return nil }
-        let items = dto.items.map { decode($0) }
+        // Sessions saved before space colors existed get distinct ones now.
+        var nextColor = 0
+        let items = dto.items.map { decode($0, nextColor: &nextColor) }
         return items.isEmpty ? nil : items
     }
 
-    private static func decode(_ dto: ItemDTO) -> SidebarItem {
+    private static func decode(_ dto: ItemDTO, nextColor: inout Int) -> SidebarItem {
         switch dto {
         case .folder(let folder):
-            let model = Folder(name: folder.name)
+            let colorIndex = folder.colorIndex ?? nextColor
+            if folder.colorIndex == nil { nextColor += 1 }
+            let model = Folder(name: folder.name, colorIndex: colorIndex)
             model.isExpanded = folder.isExpanded
-            model.children = folder.children.map { decode($0) }
+            model.children = folder.children.map { decode($0, nextColor: &nextColor) }
             return .folder(model)
         case .terminal(let terminal):
             let grid = terminal.columns.map { column in

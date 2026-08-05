@@ -78,13 +78,21 @@ private struct PanelRowView: View {
 
     @State private var isHovered = false
     @State private var isCloseHovered = false
+    @State private var peekWork: DispatchWorkItem?
 
     private var isActive: Bool {
         model.selectedTerminalID == terminal.id && terminal.focusedPanelID == panel.id
     }
 
     var body: some View {
+        // Read in body, not in the anchorPreference transform: preference
+        // closures aren't reliably re-run by @Observable changes, so capture
+        // the decision as a value while observation tracking is active.
+        let isPeeked = model.peekedRowID == panel.id
         Button {
+            peekWork?.cancel()
+            model.peekedPanelID = nil
+            model.peekedRowID = nil
             model.selectedTerminalID = terminal.id
             terminal.focusedPanelID = panel.id
         } label: {
@@ -138,7 +146,111 @@ private struct PanelRowView: View {
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .anchorPreference(key: PeekAnchorKey.self, value: .bounds) { anchor in
+            isPeeked ? anchor : nil
+        }
+        .onHover { hovering in
+            isHovered = hovering
+            peekWork?.cancel()
+            if hovering {
+                let work = DispatchWorkItem {
+                    model.peekedPanelID = panel.id
+                    model.peekedRowID = panel.id
+                }
+                peekWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+            } else if model.peekedRowID == panel.id {
+                model.peekedPanelID = nil
+                model.peekedRowID = nil
+            }
+        }
+    }
+}
+
+/// Bounds of the hovered pane row, so ContentView can pin the peek preview
+/// next to it.
+struct PeekAnchorKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? { nil }
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
+    }
+}
+
+/// Collapsed sidebar: Arc-style 44pt strip of space dots and terminal glyphs.
+/// Clicking jumps (same as ⌘1–9); hovering peeks the full sidebar.
+struct CollapsedSidebarStrip: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Spacer()
+                .frame(height: 52)
+            ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
+                StripItemView(item: item, index: index)
+            }
+            Spacer()
+            BottomBarButton(systemName: "plus", label: "New Terminal") {
+                model.createTerminal()
+            }
+        }
+        .padding(.bottom, 10)
+        .frame(width: 44)
+    }
+}
+
+private struct StripItemView: View {
+    @Environment(AppModel.self) private var model
+    let item: SidebarItem
+    let index: Int
+
+    @State private var isHovered = false
+
+    private var isSelected: Bool {
+        switch item {
+        case .terminal(let terminal):
+            return model.selectedTerminalID == terminal.id
+        case .folder(let folder):
+            guard let id = model.selectedTerminalID else { return false }
+            return model.rootFolder(containing: id)?.id == folder.id
+        }
+    }
+
+    var body: some View {
+        Button {
+            model.selectRootItem(at: index)
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(
+                        isSelected
+                            ? Theme.selectedFill
+                            : Color.black.opacity(isHovered ? 0.10 : 0.0001))
+                switch item {
+                case .terminal:
+                    Image(systemName: "terminal")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(
+                            isSelected ? Theme.textSelected : Theme.textPrimary.opacity(0.6))
+                case .folder(let folder):
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.spaceGradient(folder.colorIndex))
+                        .shadow(color: .black.opacity(0.15), radius: 0.5)
+                }
+            }
+            .frame(width: 30, height: 30)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .help(stripLabel)
         .onHover { isHovered = $0 }
+    }
+
+    private var stripLabel: String {
+        switch item {
+        case .terminal(let terminal): terminal.displayTitle
+        case .folder(let folder): folder.name
+        }
     }
 }
 
@@ -175,9 +287,10 @@ private struct FolderRowView: View {
             }
         } label: {
             HStack(spacing: 9) {
-                Image(systemName: folder.isExpanded ? "folder" : "folder.fill")
+                Image(systemName: "folder.fill")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary.opacity(0.6))
+                    .foregroundStyle(Theme.spaceGradient(folder.colorIndex))
+                    .shadow(color: .black.opacity(0.15), radius: 0.5)
 
                 if isRenaming {
                     TextField("New Folder", text: $folder.name)
@@ -252,10 +365,30 @@ private struct FolderRowView: View {
                 nameFieldFocused = true
             }
             Divider()
+            // Arc-style space color row: inline swatches, one per gradient.
+            Picker("Color", selection: colorSelection) {
+                ForEach(0..<Theme.spaceGradients.count, id: \.self) { index in
+                    Image(systemName: "circle.fill")
+                        .tint(Theme.spaceGradients[index].top)
+                        .tag(index)
+                }
+            }
+            .pickerStyle(.palette)
+            Divider()
             Button("Delete Folder", role: .destructive) {
                 model.deleteFolder(folder)
             }
         }
+    }
+
+    /// Folder color binding that also persists the choice.
+    private var colorSelection: Binding<Int> {
+        Binding(
+            get: { folder.colorIndex },
+            set: { newValue in
+                folder.colorIndex = newValue
+                model.scheduleSave()
+            })
     }
 
     private func endRenaming() {
@@ -272,13 +405,20 @@ private struct TerminalRowView: View {
 
     @State private var isHovered = false
     @State private var isCloseHovered = false
+    @State private var peekWork: DispatchWorkItem?
 
     private var isSelected: Bool {
         model.selectedTerminalID == terminal.id
     }
 
     var body: some View {
+        // See PanelRowView: read in body so @Observable tracks the change;
+        // the preference transform only captures the value.
+        let isPeeked = model.peekedRowID == terminal.id
         Button {
+            peekWork?.cancel()
+            model.peekedPanelID = nil
+            model.peekedRowID = nil
             model.selectedTerminalID = terminal.id
         } label: {
             HStack(spacing: 9) {
@@ -370,7 +510,31 @@ private struct TerminalRowView: View {
                     }
                 },
                 onPerform: { model.draggingTerminalID = nil }))
-        .onHover { isHovered = $0 }
+        .anchorPreference(key: PeekAnchorKey.self, value: .bounds) { anchor in
+            isPeeked ? anchor : nil
+        }
+        .onHover { hovering in
+            isHovered = hovering
+            peekWork?.cancel()
+            if hovering {
+                // The selected terminal is already on screen — nothing to peek.
+                guard !isSelected else { return }
+                let work = DispatchWorkItem {
+                    // Terminals not shown yet this session have no live
+                    // session; create one so the peek has something to query
+                    // (it stays inert — the shell only spawns on display).
+                    _ = model.surfaces.session(
+                        for: terminal.focusedPanelID, terminal: terminal)
+                    model.peekedPanelID = terminal.focusedPanelID
+                    model.peekedRowID = terminal.id
+                }
+                peekWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+            } else if model.peekedRowID == terminal.id {
+                model.peekedPanelID = nil
+                model.peekedRowID = nil
+            }
+        }
     }
 }
 

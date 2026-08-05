@@ -3,12 +3,24 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppModel.self) private var model
 
+    @State private var isSidebarPeeking = false
+    @State private var window: NSWindow?
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             HStack(spacing: 0) {
                 if !model.isSidebarCollapsed {
                     SidebarView()
                         .transition(.move(edge: .leading).combined(with: .opacity))
+                } else {
+                    CollapsedSidebarStrip()
+                        .onHover { hovering in
+                            if hovering {
+                                withAnimation(.spring(duration: 0.25)) {
+                                    isSidebarPeeking = true
+                                }
+                            }
+                        }
                 }
 
                 ZStack {
@@ -22,21 +34,144 @@ struct ContentView: View {
                 .padding(
                     EdgeInsets(
                         top: 10,
-                        leading: model.isSidebarCollapsed ? 10 : 2,
+                        leading: model.isSidebarCollapsed ? 8 : 2,
                         bottom: 10,
                         trailing: 10))
             }
 
-            SidebarToggleButton()
-                .padding(.leading, 88)
-                .padding(.top, 4)
+            // Arc-style: while collapsed the toggle lives inside the floating
+            // peek panel instead of hovering over the terminal content.
+            if !model.isSidebarCollapsed {
+                SidebarToggleButton()
+                    .padding(.leading, 88)
+                    .padding(.top, 4)
+            }
         }
         .ignoresSafeArea(.container, edges: .top)
         .background(
-            ChromeBackground()
+            ChromeBackground(spaceIndex: selectedSpaceIndex)
                 .overlay(GrainOverlay())
                 .ignoresSafeArea()
         )
+        // Arc-style: collapsing hides the window's traffic lights; they come
+        // back inside the floating peek panel.
+        .background(
+            WindowChrome(hidesTrafficLights: model.isSidebarCollapsed) {
+                window = $0
+            })
+        .overlay(alignment: .topLeading) { sidebarPeekOverlay }
+        .overlayPreferenceValue(PeekAnchorKey.self) { anchor in
+            panePeekOverlay(anchor)
+        }
+        .overlay {
+            if model.isCommandBarVisible {
+                CommandBarView()
+                    .transition(.opacity)
+            }
+        }
+        .onChange(of: model.isSidebarCollapsed) { _, _ in
+            isSidebarPeeking = false
+        }
+    }
+
+    /// Space tint for the chrome: the gradient of the selected terminal's
+    /// root folder, if it lives in one.
+    private var selectedSpaceIndex: Int? {
+        guard let id = model.selectedTerminalID else { return nil }
+        return model.rootFolder(containing: id)?.colorIndex
+    }
+
+    /// Arc-style hover peek: the full sidebar floats over the content while
+    /// the pointer stays on it.
+    @ViewBuilder
+    private var sidebarPeekOverlay: some View {
+        if model.isSidebarCollapsed && isSidebarPeeking {
+            SidebarView()
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Theme.chrome)
+                        .overlay(
+                            GrainOverlay()
+                                .clipShape(RoundedRectangle(cornerRadius: 14)))
+                        .shadow(color: .black.opacity(0.35), radius: 22, x: 6)
+                )
+                .overlay(alignment: .topLeading) {
+                    // The panel's own header, Arc-style: the window's traffic
+                    // lights live here while collapsed, next to the expand
+                    // toggle (SidebarView's top spacer leaves this room free).
+                    HStack(spacing: 10) {
+                        PanelTrafficLights(window: window)
+                        SidebarToggleButton()
+                    }
+                    .padding(.leading, 14)
+                    .padding(.top, 12)
+                }
+                .padding(.top, 8)
+                .padding(.leading, 6)
+                .padding(.bottom, 10)
+                .onHover { hovering in
+                    if !hovering {
+                        withAnimation(.spring(duration: 0.25)) {
+                            isSidebarPeeking = false
+                        }
+                    }
+                }
+                .transition(.move(edge: .leading).combined(with: .opacity))
+                .zIndex(5)
+        }
+    }
+
+    @ViewBuilder
+    private func panePeekOverlay(_ anchor: Anchor<CGRect>?) -> some View {
+        if let anchor,
+            let panelID = model.peekedPanelID,
+            let session = model.surfaces.existingSession(for: panelID)
+        {
+            GeometryReader { geo in
+                let rect = geo[anchor]
+                let y = min(max(rect.midY, 120), max(geo.size.height - 120, 120))
+                PanePeekView(session: session)
+                    .position(x: rect.maxX + 12 + 150, y: y)
+            }
+            .allowsHitTesting(false)
+        }
+    }
+}
+
+/// Live thumbnail of a pane, refreshed while the peek is up.
+private struct PanePeekView: View {
+    let session: PanelSession
+
+    @State private var image: NSImage?
+    private let refresh = Timer.publish(every: 0.5, on: .main, in: .common)
+        .autoconnect()
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                VStack(spacing: 6) {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 22, weight: .light))
+                    Text("No output yet")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .foregroundStyle(.white.opacity(0.4))
+            }
+        }
+        .frame(width: 300, height: 200)
+        .background(Color(red: 0.06, green: 0.06, blue: 0.07))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Theme.accentBorder.opacity(0.9), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.4), radius: 20, y: 6)
+        .onAppear { image = session.peekSnapshot() }
+        .onReceive(refresh) { _ in image = session.peekSnapshot() }
     }
 }
 
@@ -165,6 +300,63 @@ private struct PanelTileView: View {
                     weightAtDragStart = nil
                 }
         )
+    }
+}
+
+/// Grabs the hosting NSWindow and keeps the standard traffic lights hidden
+/// while the sidebar is collapsed (they reappear in the peek panel).
+private struct WindowChrome: NSViewRepresentable {
+    let hidesTrafficLights: Bool
+    let onWindow: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        NSView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        let hidden = hidesTrafficLights
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            onWindow(window)
+            for button: NSWindow.ButtonType in [
+                .closeButton, .miniaturizeButton, .zoomButton,
+            ] {
+                window.standardWindowButton(button)?.isHidden = hidden
+            }
+        }
+    }
+}
+
+/// Working close/minimize/zoom controls for the peek panel, styled like the
+/// system traffic lights.
+struct PanelTrafficLights: View {
+    let window: NSWindow?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            light(color: Color(red: 1.00, green: 0.37, blue: 0.34), label: "Close") {
+                window?.performClose(nil)
+            }
+            light(color: Color(red: 1.00, green: 0.74, blue: 0.18), label: "Minimize") {
+                window?.performMiniaturize(nil)
+            }
+            light(color: Color(red: 0.16, green: 0.78, blue: 0.25), label: "Zoom") {
+                window?.performZoom(nil)
+            }
+        }
+    }
+
+    private func light(
+        color: Color, label: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Circle()
+                .fill(color)
+                .overlay(Circle().strokeBorder(.black.opacity(0.15), lineWidth: 0.5))
+                .frame(width: 12, height: 12)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
