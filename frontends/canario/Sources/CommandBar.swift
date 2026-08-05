@@ -62,17 +62,18 @@ struct CommandBarView: View {
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
                             VStack(spacing: 4) {
-                                ForEach(Array(results.enumerated()), id: \.element.id) {
-                                    index, entry in
+                                ForEach(Array(results.enumerated()), id: \.element.entry.id) {
+                                    index, result in
                                     CommandRowView(
-                                        entry: entry,
+                                        entry: result.entry,
+                                        highlights: result.match.titleHighlights,
                                         isSelected: index == selectedIndex,
                                         accent: accentColor
                                     ) {
                                         selectedIndex = index
                                         runSelected()
                                     }
-                                    .id(entry.id)
+                                    .id(result.entry.id)
                                 }
                             }
                             .padding(10)
@@ -80,7 +81,7 @@ struct CommandBarView: View {
                         .frame(maxHeight: 380)
                         .onChange(of: selectedIndex) { _, index in
                             if results.indices.contains(index) {
-                                proxy.scrollTo(results[index].id)
+                                proxy.scrollTo(results[index].entry.id)
                             }
                         }
                     }
@@ -129,12 +130,16 @@ struct CommandBarView: View {
             startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    private var results: [CommandEntry] {
-        let scored = allEntries.compactMap { entry -> (Int, CommandEntry)? in
-            guard let score = fuzzyScore(query, entry.title) else { return nil }
-            return (score, entry)
+    private var results: [(entry: CommandEntry, match: FuzzyMatch)] {
+        let scored = allEntries.compactMap {
+            entry -> (entry: CommandEntry, match: FuzzyMatch)? in
+            guard
+                let match = FuzzyMatch.match(
+                    query: query, title: entry.title, subtitle: entry.subtitle)
+            else { return nil }
+            return (entry, match)
         }
-        return scored.sorted { $0.0 > $1.0 }.map(\.1)
+        return scored.sorted { $0.match.score > $1.match.score }
     }
 
     private var allEntries: [CommandEntry] {
@@ -189,7 +194,7 @@ struct CommandBarView: View {
 
     private func runSelected() {
         guard results.indices.contains(selectedIndex) else { return }
-        let entry = results[selectedIndex]
+        let entry = results[selectedIndex].entry
         close()
         withAnimation(.spring(duration: 0.25)) {
             entry.run()
@@ -204,6 +209,7 @@ struct CommandBarView: View {
 
 private struct CommandRowView: View {
     let entry: CommandEntry
+    let highlights: Set<Int>
     let isSelected: Bool
     let accent: Color
     let action: () -> Void
@@ -223,10 +229,11 @@ private struct CommandRowView: View {
                     }
 
                 // Arc-style single line: bold title — dimmed subtitle.
+                // Matched characters carry the accent so the fuzzy hit
+                // is visible, fzf-style.
                 HStack(spacing: 6) {
-                    Text(entry.title)
+                    highlightedTitle
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.95))
                         .lineLimit(1)
                     if let subtitle = entry.subtitle {
                         Text("— \(subtitle)")
@@ -258,26 +265,83 @@ private struct CommandRowView: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
     }
+
+    private var highlightedTitle: Text {
+        var text = Text("")
+        for (index, character) in entry.title.enumerated() {
+            var piece = Text(String(character))
+            if highlights.contains(index) {
+                piece = piece
+                    .foregroundColor(Color(red: 1.0, green: 0.62, blue: 0.66))
+                    .bold()
+            } else {
+                piece = piece.foregroundColor(.white.opacity(0.95))
+            }
+            text = text + piece
+        }
+        return text
+    }
 }
 
-/// Subsequence fuzzy match. Nil when `candidate` doesn't contain `query`'s
-/// characters in order; higher scores for prefix and consecutive hits.
-func fuzzyScore(_ query: String, _ candidate: String) -> Int? {
-    if query.isEmpty { return 0 }
-    let q = Array(query.lowercased())
-    let c = Array(candidate.lowercased())
-    var qi = 0
-    var streak = 0
-    var score = 0
-    for (i, ch) in c.enumerated() {
-        if qi < q.count, ch == q[qi] {
-            qi += 1
-            streak += 1
-            score += 10 + streak * 5 + (i == qi - 1 ? 15 : 0)
-        } else {
-            streak = 0
-            score -= 1
+/// fzf-style fuzzy matcher: every whitespace-separated query token must
+/// subsequence-match the "title subtitle" haystack. Scoring rewards word
+/// starts, consecutive runs and prefix hits; title matches report their
+/// character positions so rows can light them up.
+struct FuzzyMatch {
+    let score: Int
+    let titleHighlights: Set<Int>
+
+    static func match(
+        query: String, title: String, subtitle: String?
+    ) -> FuzzyMatch? {
+        let tokens = query.lowercased().split(whereSeparator: \.isWhitespace)
+        if tokens.isEmpty { return FuzzyMatch(score: 0, titleHighlights: []) }
+
+        // "\u{1}" separates title from subtitle so a match can never
+        // straddle the boundary as one consecutive run.
+        let haystack = Array(
+            (title + "\u{1}" + (subtitle ?? "")).lowercased())
+        let titleCount = title.count
+
+        var total = 0
+        var highlights: Set<Int> = []
+        for token in tokens {
+            guard
+                let result = matchToken(Array(token), in: haystack)
+            else { return nil }
+            total += result.score
+            for index in result.positions where index < titleCount {
+                highlights.insert(index)
+            }
         }
+        return FuzzyMatch(score: total, titleHighlights: highlights)
     }
-    return qi == q.count ? score : nil
+
+    private static func matchToken(
+        _ token: [Character], in haystack: [Character]
+    ) -> (score: Int, positions: [Int])? {
+        var positions: [Int] = []
+        var score = 0
+        var streak = 0
+        var ti = 0
+        for (i, ch) in haystack.enumerated() {
+            guard ti < token.count else { break }
+            if ch == token[ti] {
+                let boundary =
+                    i == 0 || haystack[i - 1] == " " || haystack[i - 1] == "\u{1}"
+                    || haystack[i - 1] == "-" || haystack[i - 1] == "_"
+                    || haystack[i - 1] == "/" || haystack[i - 1] == "."
+                streak += 1
+                score += 10 + streak * 5
+                if boundary { score += 30 }
+                if i == 0 { score += 20 }
+                positions.append(i)
+                ti += 1
+            } else {
+                streak = 0
+                score -= 1
+            }
+        }
+        return ti == token.count ? (score, positions) : nil
+    }
 }
