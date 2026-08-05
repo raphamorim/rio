@@ -63,7 +63,9 @@ final class PanelHostView: NSView {
         layerContentsRedrawPolicy = .duringViewResize
         layer?.cornerRadius = Theme.cardRadius
         layer?.masksToBounds = true
-        layer?.backgroundColor = CGColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1)
+        // Rio's default background, matching CPURenderer.defaultBackground.
+        layer?.backgroundColor = CGColor(
+            red: 0x0f / 255, green: 0x0d / 255, blue: 0x0e / 255, alpha: 1)
         addSubview(surfaceView)
     }
 

@@ -163,7 +163,7 @@ private struct PanePeekView: View {
             }
         }
         .frame(width: 300, height: 200)
-        .background(Color(red: 0.06, green: 0.06, blue: 0.07))
+        .background(Color(red: 0x0f / 255, green: 0x0d / 255, blue: 0x0e / 255))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)

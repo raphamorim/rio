@@ -68,10 +68,17 @@ final class CPURenderer {
     private(set) var metrics: TerminalMetrics
     var preedit: String?
 
+    // Rio's default theme (rio-vt config/colors/defaults.rs); librio resolves
+    // cell colors from the same source, these cover what the renderer draws
+    // itself. Replace with theme-file values once config loading lands.
     private let defaultBackground = NSColor(
         srgbRed: 0x0f / 255, green: 0x0d / 255, blue: 0x0e / 255, alpha: 1)
-    private let selectionFill = NSColor(
-        srgbRed: 0.30, green: 0.45, blue: 0.85, alpha: 0.35)
+    private let selectionBackground = NSColor(
+        srgbRed: 0x1c / 255, green: 0x19 / 255, blue: 0x1a / 255, alpha: 1)
+    private let selectionForeground = NSColor(
+        srgbRed: 0x44 / 255, green: 0xc9 / 255, blue: 0xf0 / 255, alpha: 1)
+    private let cursorColor = NSColor(
+        srgbRed: 0xf7 / 255, green: 0x12 / 255, blue: 0xff / 255, alpha: 1)
 
     init(fontSize: CGFloat) {
         metrics = TerminalMetrics(fontSize: fontSize)
@@ -115,18 +122,20 @@ final class CPURenderer {
 
                 let inverse = cell.style_flags & StyleFlag.inverse != 0
                 var fg = color(inverse ? cell.bg : cell.fg)
-                let bg = color(inverse ? cell.fg : cell.bg)
+                var bg = color(inverse ? cell.fg : cell.bg)
+
+                // Selection recolors the cell (rio-style), rather than
+                // painting a translucent overlay on top of it.
+                if selection.active
+                    && cellSelected(selection, line: line, col: col, cols: cols)
+                {
+                    bg = selectionBackground
+                    fg = selectionForeground
+                }
 
                 // Background (skip the default to avoid overdraw).
                 if bg != defaultBackground {
                     bg.setFill()
-                    rect.fill()
-                }
-
-                if selection.active
-                    && cellSelected(selection, line: line, col: col, cols: cols)
-                {
-                    selectionFill.setFill()
                     rect.fill()
                 }
 
@@ -170,8 +179,6 @@ final class CPURenderer {
         let x = pad + CGFloat(cursor.column) * cw
         let y = pad + CGFloat(cursor.line) * ch
         let rect = NSRect(x: x, y: y, width: cw, height: ch)
-        let cursorColor = NSColor(
-            srgbRed: 0xf8 / 255, green: 0xf8 / 255, blue: 0xf2 / 255, alpha: 1)
 
         guard focused else {
             // Unfocused: hollow outline so the glyph stays readable.

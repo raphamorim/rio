@@ -217,28 +217,48 @@ impl SurfaceDelegate for CDelegate {
     }
 }
 
-/// Standard xterm 16-color palette (the conventional defaults). Used to
-/// resolve named / low-indexed colors to concrete RGB.
+/// Rio's default theme, shared with the rio frontend via rio-vt so the two
+/// can never drift apart. Resolved once; the per-cell paths below read it as
+/// plain arrays. (Theme-file loading can later replace this with a
+/// deserialized `Colors` — everything downstream already goes through it.)
+fn theme() -> &'static rio_vt::config::Colors {
+    static THEME: std::sync::OnceLock<rio_vt::config::Colors> =
+        std::sync::OnceLock::new();
+    THEME.get_or_init(rio_vt::config::Colors::default)
+}
+
+/// sRGB 0..1 component array (rio's `ColorArray`) to 8-bit RGB.
+fn arr_rgb(c: [f32; 4]) -> (u8, u8, u8) {
+    (
+        (c[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+}
+
+/// Rio's default 16-color palette. Used to resolve named / low-indexed
+/// colors to concrete RGB.
 fn ansi16(i: u8) -> (u8, u8, u8) {
-    const P: [(u8, u8, u8); 16] = [
-        (0, 0, 0),
-        (205, 0, 0),
-        (0, 205, 0),
-        (205, 205, 0),
-        (0, 0, 238),
-        (205, 0, 205),
-        (0, 205, 205),
-        (229, 229, 229),
-        (127, 127, 127),
-        (255, 0, 0),
-        (0, 255, 0),
-        (255, 255, 0),
-        (92, 92, 255),
-        (255, 0, 255),
-        (0, 255, 255),
-        (255, 255, 255),
-    ];
-    P[(i & 0x0f) as usize]
+    let t = theme();
+    let arr = match i & 0x0f {
+        0 => t.black,
+        1 => t.red,
+        2 => t.green,
+        3 => t.yellow,
+        4 => t.blue,
+        5 => t.magenta,
+        6 => t.cyan,
+        7 => t.white,
+        8 => t.light_black,
+        9 => t.light_red,
+        10 => t.light_green,
+        11 => t.light_yellow,
+        12 => t.light_blue,
+        13 => t.light_magenta,
+        14 => t.light_cyan,
+        _ => t.light_white,
+    };
+    arr_rgb(arr)
 }
 
 /// Resolve a 256-color index to RGB (16 ANSI, 6x6x6 cube, 24 grays).
@@ -265,10 +285,15 @@ fn dim((r, g, b): (u8, u8, u8)) -> (u8, u8, u8) {
     (r * 2 / 3, g * 2 / 3, b * 2 / 3)
 }
 
-/// Resolve a named color to RGB. Default foreground/background match Rio's
-/// built-in theme; the ANSI slots use the standard xterm palette.
+/// Resolve a named color to RGB using rio's default theme. Dim colors use
+/// the theme's explicit dim entry when present, else 2/3 of the base color
+/// (same fallback rio applies).
 fn named_rgb(n: NamedColor) -> (u8, u8, u8) {
     use NamedColor::*;
+    let t = theme();
+    let dim_or = |explicit: Option<[f32; 4]>, base: u8| {
+        explicit.map(arr_rgb).unwrap_or_else(|| dim(ansi16(base)))
+    };
     match n {
         Black => ansi16(0),
         Red => ansi16(1),
@@ -286,18 +311,25 @@ fn named_rgb(n: NamedColor) -> (u8, u8, u8) {
         LightMagenta => ansi16(13),
         LightCyan => ansi16(14),
         LightWhite => ansi16(15),
-        Foreground | LightForeground => (0xf8, 0xf8, 0xf2),
-        DimForeground => (0x9a, 0x9a, 0x9a),
-        Background => (0x0f, 0x0d, 0x0e),
-        Cursor => (0xf8, 0xf8, 0xf2),
-        DimBlack => dim(ansi16(0)),
-        DimRed => dim(ansi16(1)),
-        DimGreen => dim(ansi16(2)),
-        DimYellow => dim(ansi16(3)),
-        DimBlue => dim(ansi16(4)),
-        DimMagenta => dim(ansi16(5)),
-        DimCyan => dim(ansi16(6)),
-        DimWhite => dim(ansi16(7)),
+        Foreground => arr_rgb(t.foreground),
+        LightForeground => {
+            arr_rgb(t.light_foreground.unwrap_or(t.foreground))
+        }
+        DimForeground => {
+            t.dim_foreground
+                .map(arr_rgb)
+                .unwrap_or_else(|| dim(arr_rgb(t.foreground)))
+        }
+        Background => arr_rgb(t.background.0),
+        Cursor => arr_rgb(t.cursor),
+        DimBlack => dim_or(t.dim_black, 0),
+        DimRed => dim_or(t.dim_red, 1),
+        DimGreen => dim_or(t.dim_green, 2),
+        DimYellow => dim_or(t.dim_yellow, 3),
+        DimBlue => dim_or(t.dim_blue, 4),
+        DimMagenta => dim_or(t.dim_magenta, 5),
+        DimCyan => dim_or(t.dim_cyan, 6),
+        DimWhite => dim_or(t.dim_white, 7),
     }
 }
 
@@ -816,8 +848,10 @@ mod color_tests {
 
     #[test]
     fn resolves_indexed_palette() {
-        assert_eq!(indexed_rgb(0), (0, 0, 0)); // ansi black
-        assert_eq!(indexed_rgb(15), (255, 255, 255)); // ansi bright white
+        // ANSI 0-15 come from rio's default theme...
+        assert_eq!(indexed_rgb(0), arr_rgb(theme().black));
+        assert_eq!(indexed_rgb(15), arr_rgb(theme().light_white));
+        // ...while the cube and grays stay the standard xterm ramp.
         assert_eq!(indexed_rgb(16), (0, 0, 0)); // cube origin
         assert_eq!(indexed_rgb(231), (255, 255, 255)); // cube max
         assert_eq!(indexed_rgb(232), (8, 8, 8)); // first gray
@@ -826,12 +860,17 @@ mod color_tests {
 
     #[test]
     fn named_fills_rgb_and_keeps_kind() {
+        // Rio's default red (#FF1261), not xterm's (205, 0, 0).
         let c = color_to_c(AnsiColor::Named(NamedColor::Red));
         assert_eq!(c.kind, RIO_COLOR_NAMED);
-        assert_eq!((c.r, c.g, c.b), (205, 0, 0));
+        assert_eq!((c.r, c.g, c.b), (0xff, 0x12, 0x61));
 
         let bg = color_to_c(AnsiColor::Named(NamedColor::Background));
         assert_eq!((bg.r, bg.g, bg.b), (0x0f, 0x0d, 0x0e));
+
+        // Rio's signature pink cursor.
+        let cur = color_to_c(AnsiColor::Named(NamedColor::Cursor));
+        assert_eq!((cur.r, cur.g, cur.b), (0xf7, 0x12, 0xff));
     }
 
     #[test]
