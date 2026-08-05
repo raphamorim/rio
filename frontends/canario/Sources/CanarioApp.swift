@@ -11,6 +11,14 @@ struct CanarioApp: App {
         // an explicit working_dir inherit it, so move to home before any spawn.
         FileManager.default.changeCurrentDirectoryPath(
             FileManager.default.homeDirectoryForCurrentUser.path)
+        // Identify ourselves to shells (TERM itself is resolved by librio
+        // against the installed terminfo at spawn time).
+        setenv("TERM_PROGRAM", "canario", 1)
+        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"]
+            as? String, !version.hasPrefix("{{")
+        {
+            setenv("TERM_PROGRAM_VERSION", version, 1)
+        }
     }
 
     var body: some Scene {
