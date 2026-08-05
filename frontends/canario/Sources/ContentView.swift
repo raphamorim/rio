@@ -42,9 +42,12 @@ struct ContentView: View {
             // Arc-style: while collapsed the toggle lives inside the floating
             // peek panel instead of hovering over the terminal content.
             if !model.isSidebarCollapsed {
-                SidebarToggleButton()
-                    .padding(.leading, 88)
-                    .padding(.top, 4)
+                HStack(spacing: 8) {
+                    SidebarToggleButton()
+                    UpdatePillView()
+                }
+                .padding(.leading, 88)
+                .padding(.top, 4)
             }
         }
         .ignoresSafeArea(.container, edges: .top)
@@ -172,6 +175,76 @@ private struct PanePeekView: View {
         .shadow(color: .black.opacity(0.4), radius: 20, y: 6)
         .onAppear { image = session.peekSnapshot() }
         .onReceive(refresh) { _ in image = session.peekSnapshot() }
+    }
+}
+
+/// Quiet update affordance: a small pill that only exists when the updater
+/// has something to say; clicking it drops the options down.
+struct UpdatePillView: View {
+    @Environment(Updater.self) private var updater
+
+    var body: some View {
+        if updater.state != .idle, updater.state != .checking {
+            Menu {
+                menuItems
+            } label: {
+                pillLabel
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private var menuItems: some View {
+        switch updater.state {
+        case .available(let version, _):
+            Button("Install \(version) and relaunch") { updater.install() }
+            Button("Skip this version") { updater.skip() }
+        case .failed(let message):
+            Text(message)
+            Button("Try again") { updater.checkNow() }
+            Button("Dismiss") { updater.dismiss() }
+        case .upToDate:
+            Button("You're up to date") { updater.dismiss() }
+        default:
+            Button("Cancel") { updater.dismiss() }
+        }
+    }
+
+    private var pillLabel: some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(text)
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 9)
+        .frame(height: 22)
+        .background(Capsule().fill(.black.opacity(0.72)))
+        .contentShape(Capsule())
+        .help("Canario update")
+    }
+
+    private var icon: String {
+        switch updater.state {
+        case .available: "arrow.down.circle.fill"
+        case .downloading, .installing: "arrow.down.circle"
+        case .upToDate: "checkmark.circle.fill"
+        default: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var text: String {
+        switch updater.state {
+        case .available(let version, _): version
+        case .downloading(let progress): "\(Int(progress * 100))%"
+        case .installing: "installing…"
+        case .upToDate: "up to date"
+        default: "update failed"
+        }
     }
 }
 

@@ -11,6 +11,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
+        // The updater relaunching itself is not a user quit; don't ask.
+        if UserDefaults.standard.bool(forKey: "updaterRelaunch") {
+            UserDefaults.standard.removeObject(forKey: "updaterRelaunch")
+            return .terminateNow
+        }
         if UserDefaults.standard.bool(forKey: "quitWithoutConfirming") {
             return .terminateNow
         }
@@ -118,7 +123,7 @@ private struct ConfirmQuitView: View {
     }
 }
 
-private struct DialogButton<Label: View>: View {
+struct DialogButton<Label: View>: View {
     let fill: Color
     let action: () -> Void
     @ViewBuilder let label: () -> Label
@@ -148,7 +153,7 @@ private struct DialogButton<Label: View>: View {
     }
 }
 
-private struct KeycapLabel: View {
+struct KeycapLabel: View {
     var text: String?
     var systemName: String?
 

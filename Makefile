@@ -82,6 +82,9 @@ canario: librio-xcframework
 		-o $(CANARIO_APP_DIR)/Contents/MacOS/canario
 	@cp -fp $(CANARIO_DIR)/Info.plist $(CANARIO_APP_DIR)/Contents/Info.plist
 	@cp -fp $(CANARIO_DIR)/Resources/icon.icns $(CANARIO_APP_DIR)/Contents/Resources/icon.icns
+	@rm -rf target/canario-terminfo
+	@tic -xe xterm-rio,rio -o target/canario-terminfo $(TERMINFO)
+	@cp -R target/canario-terminfo $(CANARIO_APP_DIR)/Contents/Resources/terminfo
 	@codesign --force --sign - "$(CANARIO_APP_DIR)"
 	@echo "Created '$(CANARIO_APP_DIR)'"
 

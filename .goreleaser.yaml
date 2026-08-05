@@ -167,6 +167,13 @@ app_bundles:
     name: Canario
     icon: ./frontends/canario/Resources/icon.icns
     bundle: com.raphaelamorim.canario
+    extra_files:
+      # Compiled by `make canario` (tic -xe xterm-rio,rio); the app points
+      # TERMINFO here so shells resolve xterm-rio without a system install.
+      - src: ./target/canario-terminfo/78/xterm-rio
+        dst: Contents/Resources/terminfo/78/xterm-rio
+      - src: ./target/canario-terminfo/72/rio
+        dst: Contents/Resources/terminfo/72/rio
     templated_extra_files:
       - src: ./frontends/canario/Info.plist
         dst: Contents/Info.plist

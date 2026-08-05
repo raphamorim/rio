@@ -5,12 +5,23 @@ import SwiftUI
 struct CanarioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
+    @State private var updater = Updater()
 
     init() {
         // Apps launched from Finder start with cwd `/`; shells spawned without
         // an explicit working_dir inherit it, so move to home before any spawn.
         FileManager.default.changeCurrentDirectoryPath(
             FileManager.default.homeDirectoryForCurrentUser.path)
+        // Point terminfo lookups at the bundled database (ghostty does the
+        // same); librio then resolves TERM=xterm-rio against it at spawn,
+        // with no system-wide install needed. Lookups for other TERMs fall
+        // through to the system paths as usual.
+        if let terminfo = Bundle.main.resourceURL?
+            .appendingPathComponent("terminfo").path,
+            FileManager.default.fileExists(atPath: terminfo)
+        {
+            setenv("TERMINFO", terminfo, 1)
+        }
         // Identify ourselves to shells (TERM itself is resolved by librio
         // against the installed terminfo at spawn time).
         setenv("TERM_PROGRAM", "canario", 1)
@@ -25,10 +36,20 @@ struct CanarioApp: App {
         Window("Canario", id: "main") {
             ContentView()
                 .environment(model)
+                .environment(updater)
                 .frame(minWidth: 640, minHeight: 400)
+                .task {
+                    // Give launch (and session restore) a beat before
+                    // touching the network.
+                    try? await Task.sleep(for: .seconds(5))
+                    updater.checkAutomatically()
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updater.checkNow() }
+            }
             CommandGroup(after: .newItem) {
                 Button("New Terminal") { model.createTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
