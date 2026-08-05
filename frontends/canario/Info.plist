@@ -19,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>{{.Var.canario_version}}</string>
+	<string>{{.Version}}</string>
 	<key>CFBundleVersion</key>
-	<string>{{.Var.canario_version}}.{{.Now.Format "20060102150405"}}</string>
+	<string>{{.Version}}.{{.Now.Format "20060102150405"}}</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
