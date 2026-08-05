@@ -2,7 +2,9 @@ pub mod capi;
 pub mod key;
 mod render_state;
 
-pub use key::{encode as encode_key, Key, KeyEvent, Modifiers};
+pub use key::{
+    encode as encode_key, EncodeContext, Key, KeyAction, KeyEvent, KittyFlags, Modifiers,
+};
 pub use render_state::{RenderState, ViewportSelection};
 pub use rio_vt::clipboard::ClipboardType;
 pub use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
@@ -207,8 +209,27 @@ impl Engine {
     }
 }
 
+/// Translate the terminal's kitty keyboard flags into the encoder's own set.
+/// Only the flags that change what a key produces are carried across; see the
+/// note in [`key`] about the two that are not implemented.
+fn kitty_flags(modes: rio_vt::ansi::KeyboardModes) -> key::KittyFlags {
+    use rio_vt::ansi::KeyboardModes;
+    let mut flags = key::KittyFlags::empty();
+    if modes.contains(KeyboardModes::DISAMBIGUATE_ESC_CODES) {
+        flags |= key::KittyFlags::DISAMBIGUATE;
+    }
+    if modes.contains(KeyboardModes::REPORT_EVENT_TYPES) {
+        flags |= key::KittyFlags::REPORT_EVENT_TYPES;
+    }
+    if modes.contains(KeyboardModes::REPORT_ALL_KEYS_AS_ESC) {
+        flags |= key::KittyFlags::REPORT_ALL_AS_ESC;
+    }
+    flags
+}
+
 pub struct Surface {
     id: SurfaceId,
+    alt_is_meta: std::sync::atomic::AtomicBool,
     terminal: Arc<FairMutex<Crosswords<Listener>>>,
     channel: corcovado::channel::Sender<Msg>,
     #[cfg(not(target_os = "windows"))]
@@ -290,6 +311,8 @@ impl Surface {
 
         Ok(Surface {
             id,
+            // Terminals default alt to meta; the host may override it.
+            alt_is_meta: std::sync::atomic::AtomicBool::new(true),
             terminal,
             channel,
             #[cfg(not(target_os = "windows"))]
@@ -310,9 +333,29 @@ impl Surface {
         self.write(text.as_bytes().to_vec());
     }
 
-    pub fn key(&self, event: KeyEvent) -> bool {
-        let app_cursor = self.terminal.lock().mode().contains(Mode::APP_CURSOR);
-        match key::encode(event, app_cursor) {
+    /// Whether alt acts as meta, prefixing with ESC, instead of letting the
+    /// platform's text through. See [`key::EncodeContext::alt_is_meta`].
+    pub fn set_alt_is_meta(&self, enabled: bool) {
+        self.alt_is_meta.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn alt_is_meta(&self) -> bool {
+        self.alt_is_meta.load(Ordering::Relaxed)
+    }
+
+    pub fn key(&self, event: &KeyEvent) -> bool {
+        // The encoding depends on terminal state the embedder does not track,
+        // which is the reason this lives here and not in the host.
+        let ctx = {
+            let terminal = self.terminal.lock();
+            key::EncodeContext {
+                app_cursor: terminal.mode().contains(Mode::APP_CURSOR),
+                kitty: kitty_flags(terminal.keyboard_mode()),
+                modify_other_keys: terminal.modify_other_keys(),
+                alt_is_meta: self.alt_is_meta.load(Ordering::Relaxed),
+            }
+        };
+        match key::encode(event, &ctx) {
             Some(bytes) => {
                 self.write(bytes);
                 true

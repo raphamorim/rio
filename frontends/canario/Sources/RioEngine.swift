@@ -258,13 +258,52 @@ final class PanelSession {
         }
     }
 
-    func sendKey(_ tag: UInt32, mods: UInt8 = 0, codepoint: UInt32 = 0) {
-        guard let surface else { return }
+    /// Report a key to librio, which decides what the terminal receives. The
+    /// text is what the platform produced for this key, already composed;
+    /// `consumedMods` are the modifiers it spent doing so.
+    @discardableResult
+    func sendKey(
+        _ tag: UInt32,
+        mods: UInt8 = 0,
+        codepoint: UInt32 = 0,
+        functionKey: UInt8 = 0,
+        action: UInt32 = UInt32(RIO_KEY_ACTION_PRESS),
+        consumedMods: UInt8 = 0,
+        composing: Bool = false,
+        text: String? = nil
+    ) -> Bool {
+        guard let surface else { return false }
+
         var event = rio_key_event_s()
+        event.action = action
         event.tag = tag
         event.codepoint = codepoint
+        event.function_key = functionKey
         event.mods = mods
-        _ = rio_surface_key(surface, event)
+        event.consumed_mods = consumedMods
+        event.composing = composing
+
+        guard let text, !text.isEmpty else {
+            event.text = nil
+            event.text_len = 0
+            return rio_surface_key(surface, &event)
+        }
+
+        // The pointer only has to outlive the call, and the byte count comes
+        // from the UTF-8 view rather than strlen so text containing a NUL is
+        // passed whole instead of being cut short.
+        var utf8 = Array(text.utf8)
+        return utf8.withUnsafeMutableBufferPointer { buffer in
+            event.text = UnsafeRawPointer(buffer.baseAddress!)
+                .assumingMemoryBound(to: CChar.self)
+            event.text_len = buffer.count
+            return rio_surface_key(surface, &event)
+        }
+    }
+
+    func setAltIsMeta(_ enabled: Bool) {
+        guard let surface else { return }
+        rio_surface_set_alt_is_meta(surface, enabled)
     }
 
     func scroll(deltaLines: Int32) {

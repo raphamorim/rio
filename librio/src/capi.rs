@@ -1,8 +1,8 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::{
-    Action, Engine, Key, KeyEvent, Modifiers, RenderState, SelectionKind, Surface,
-    SurfaceDelegate, SurfaceDesc, SurfaceId,
+    Action, Engine, Key, KeyAction, KeyEvent, Modifiers, RenderState, SelectionKind,
+    Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
 use rio_vt::config::colors::{AnsiColor, NamedColor};
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -33,6 +33,12 @@ pub const RIO_KEY_PAGE_DOWN: u32 = 12;
 pub const RIO_KEY_INSERT: u32 = 13;
 pub const RIO_KEY_DELETE: u32 = 14;
 pub const RIO_KEY_F: u32 = 15;
+/// No key, for an event that carries only text (an input method commit).
+pub const RIO_KEY_NONE: u32 = 16;
+
+pub const RIO_KEY_ACTION_PRESS: u32 = 0;
+pub const RIO_KEY_ACTION_REPEAT: u32 = 1;
+pub const RIO_KEY_ACTION_RELEASE: u32 = 2;
 
 pub const RIO_SELECTION_SIMPLE: u8 = 0;
 pub const RIO_SELECTION_WORD: u8 = 1;
@@ -102,12 +108,34 @@ pub struct rio_cursor_s {
     pub column: u16,
 }
 
+/// A key event as the platform delivered it.
+///
+/// The host reports what happened; librio decides what the terminal receives,
+/// because that depends on state the host does not track (application cursor
+/// mode, the kitty keyboard flags, `modifyOtherKeys`).
 #[repr(C)]
 pub struct rio_key_event_s {
+    /// `RIO_KEY_ACTION_*`. Releases are dropped unless the program asked for
+    /// event types.
+    pub action: u32,
+    /// `RIO_KEY_*`, naming the key without shift applied: shift+a is
+    /// `RIO_KEY_CHAR` with codepoint `a`, and the `A` belongs in `text`.
     pub tag: u32,
     pub codepoint: u32,
+    /// 1 to 12 when `tag` is `RIO_KEY_F`.
     pub function_key: u8,
+    /// Every modifier held, as `RIO_MOD_*`.
     pub mods: u8,
+    /// The modifiers the platform already spent producing `text`, so they are
+    /// not encoded a second time. Zero if the platform cannot say.
+    pub consumed_mods: u8,
+    /// Whether an input method currently owns the key, in which case nothing
+    /// is encoded and the text arrives when composition commits.
+    pub composing: bool,
+    /// What the platform produced for this key, UTF-8, after any dead key or
+    /// input method composition. May be NULL.
+    pub text: *const c_char,
+    pub text_len: usize,
 }
 
 struct CDelegate {
@@ -410,41 +438,78 @@ pub unsafe extern "C" fn rio_surface_text(
 #[no_mangle]
 pub unsafe extern "C" fn rio_surface_key(
     surface: *mut Surface,
-    event: rio_key_event_s,
+    event: *const rio_key_event_s,
 ) -> bool {
     catch_unwind(AssertUnwindSafe(|| {
-        if surface.is_null() {
+        if surface.is_null() || event.is_null() {
             return false;
         }
+        let event = unsafe { &*event };
         let key = match event.tag {
             RIO_KEY_CHAR => match char::from_u32(event.codepoint) {
-                Some(c) => Key::Char(c),
+                Some(c) => Some(Key::Char(c)),
                 None => return false,
             },
-            RIO_KEY_ENTER => Key::Enter,
-            RIO_KEY_TAB => Key::Tab,
-            RIO_KEY_BACKSPACE => Key::Backspace,
-            RIO_KEY_ESCAPE => Key::Escape,
-            RIO_KEY_UP => Key::Up,
-            RIO_KEY_DOWN => Key::Down,
-            RIO_KEY_LEFT => Key::Left,
-            RIO_KEY_RIGHT => Key::Right,
-            RIO_KEY_HOME => Key::Home,
-            RIO_KEY_END => Key::End,
-            RIO_KEY_PAGE_UP => Key::PageUp,
-            RIO_KEY_PAGE_DOWN => Key::PageDown,
-            RIO_KEY_INSERT => Key::Insert,
-            RIO_KEY_DELETE => Key::Delete,
-            RIO_KEY_F => Key::F(event.function_key),
+            RIO_KEY_ENTER => Some(Key::Enter),
+            RIO_KEY_TAB => Some(Key::Tab),
+            RIO_KEY_BACKSPACE => Some(Key::Backspace),
+            RIO_KEY_ESCAPE => Some(Key::Escape),
+            RIO_KEY_UP => Some(Key::Up),
+            RIO_KEY_DOWN => Some(Key::Down),
+            RIO_KEY_LEFT => Some(Key::Left),
+            RIO_KEY_RIGHT => Some(Key::Right),
+            RIO_KEY_HOME => Some(Key::Home),
+            RIO_KEY_END => Some(Key::End),
+            RIO_KEY_PAGE_UP => Some(Key::PageUp),
+            RIO_KEY_PAGE_DOWN => Some(Key::PageDown),
+            RIO_KEY_INSERT => Some(Key::Insert),
+            RIO_KEY_DELETE => Some(Key::Delete),
+            RIO_KEY_F => Some(Key::F(event.function_key)),
+            RIO_KEY_NONE => None,
             _ => return false,
         };
+
+        let action = match event.action {
+            RIO_KEY_ACTION_REPEAT => KeyAction::Repeat,
+            RIO_KEY_ACTION_RELEASE => KeyAction::Release,
+            _ => KeyAction::Press,
+        };
+
+        // Lossy: a platform that hands over ill-formed UTF-8 gets replacement
+        // characters rather than a dropped keystroke.
+        let text = if event.text.is_null() || event.text_len == 0 {
+            None
+        } else {
+            let bytes = unsafe {
+                std::slice::from_raw_parts(event.text as *const u8, event.text_len)
+            };
+            Some(String::from_utf8_lossy(bytes).into_owned())
+        };
+
         let event = KeyEvent {
+            action,
             key,
             mods: Modifiers::from_bits_truncate(event.mods),
+            consumed_mods: Modifiers::from_bits_truncate(event.consumed_mods),
+            text,
+            composing: event.composing,
         };
-        unsafe { &*surface }.key(event)
+        unsafe { &*surface }.key(&event)
     }))
     .unwrap_or(false)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_set_alt_is_meta(
+    surface: *mut Surface,
+    enabled: bool,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return;
+        }
+        unsafe { &*surface }.set_alt_is_meta(enabled);
+    }));
 }
 
 #[no_mangle]

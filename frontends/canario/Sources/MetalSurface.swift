@@ -48,6 +48,15 @@ final class PanelHostView: NSView {
     private var selectionActive = false
     private var markedText = ""
 
+    /// Non-nil while a `keyDown` is in flight. `insertText` appends here
+    /// instead of sending, so the key handler can tell text the input method
+    /// committed from a key that still needs encoding.
+    fileprivate var keyTextAccumulator: [String]?
+
+    /// Whether alt acts as meta. Kept alongside librio's own copy so the host
+    /// knows whether to let alt take part in text translation.
+    fileprivate var altIsMeta = true
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -158,30 +167,138 @@ final class PanelHostView: NSView {
         }
     }
 
+    /// Named keys, by macOS virtual keycode. Identity has to come from the
+    /// keycode rather than from `doCommand(by:)`, which reports a selector
+    /// chosen by AppKit's key-binding dictionaries and carries no modifiers
+    /// with it, so shift+arrow and alt+arrow are indistinguishable there.
+    private static let namedKeys: [UInt16: UInt32] = [
+        0x24: UInt32(RIO_KEY_ENTER),  // Return
+        0x4C: UInt32(RIO_KEY_ENTER),  // Keypad Enter
+        0x30: UInt32(RIO_KEY_TAB),
+        0x33: UInt32(RIO_KEY_BACKSPACE),  // Delete, which is backspace here
+        0x35: UInt32(RIO_KEY_ESCAPE),
+        0x75: UInt32(RIO_KEY_DELETE),  // Forward delete
+        0x73: UInt32(RIO_KEY_HOME),
+        0x77: UInt32(RIO_KEY_END),
+        0x74: UInt32(RIO_KEY_PAGE_UP),
+        0x79: UInt32(RIO_KEY_PAGE_DOWN),
+        0x7B: UInt32(RIO_KEY_LEFT),
+        0x7C: UInt32(RIO_KEY_RIGHT),
+        0x7D: UInt32(RIO_KEY_DOWN),
+        0x7E: UInt32(RIO_KEY_UP),
+    ]
+
+    /// Function keys, by keycode. Their numbering is not contiguous.
+    private static let functionKeys: [UInt16: UInt8] = [
+        0x7A: 1, 0x78: 2, 0x63: 3, 0x76: 4, 0x60: 5, 0x61: 6,
+        0x62: 7, 0x64: 8, 0x65: 9, 0x6D: 10, 0x67: 11, 0x6F: 12,
+    ]
+
+    private func rioMods(_ flags: NSEvent.ModifierFlags) -> UInt8 {
+        var mods: UInt8 = 0
+        if flags.contains(.shift) { mods |= UInt8(RIO_MOD_SHIFT) }
+        if flags.contains(.control) { mods |= UInt8(RIO_MOD_CTRL) }
+        if flags.contains(.option) { mods |= UInt8(RIO_MOD_ALT) }
+        if flags.contains(.command) { mods |= UInt8(RIO_MOD_SUPER) }
+        return mods
+    }
+
     override func keyDown(with event: NSEvent) {
         guard let session else { return }
         let flags = event.modifierFlags
 
+        // Command belongs to the app: menu equivalents and window commands.
         if flags.contains(.command) {
             super.keyDown(with: event)
             return
         }
 
-        if flags.contains(.control), let chars = event.charactersIgnoringModifiers,
-            let ch = chars.unicodeScalars.first
-        {
-            var mods = UInt8(RIO_MOD_CTRL)
-            if flags.contains(.option) {
-                mods |= UInt8(RIO_MOD_ALT)
-            }
-            if flags.contains(.shift) {
-                mods |= UInt8(RIO_MOD_SHIFT)
-            }
-            session.sendKey(UInt32(RIO_KEY_CHAR), mods: mods, codepoint: ch.value)
+        let mods = rioMods(flags)
+        let wasComposing = !markedText.isEmpty
+
+        // Run the input method for its text, but collect it rather than
+        // sending: only after this returns is it clear whether the text is a
+        // commit to forward, a preedit update to draw, or a key to encode.
+        keyTextAccumulator = []
+        // Control never contributes to text, and alt only does when alt is not
+        // acting as meta. Translating without them keeps the input method from
+        // turning ctrl+a into an unrelated character.
+        let translationEvent = event.strippingForTranslation(
+            control: true,
+            option: altIsMeta
+        )
+        interpretKeyEvents([translationEvent])
+        let produced = keyTextAccumulator ?? []
+        keyTextAccumulator = nil
+
+        let composing = !markedText.isEmpty
+        if composing {
+            // Mid-composition: the preedit is already drawn, and nothing is
+            // encoded until it commits.
             return
         }
 
-        interpretKeyEvents([event])
+        // Text an input method committed after composing is not a keystroke to
+        // encode, it is the result of several. Forward it and stop.
+        if wasComposing && !produced.isEmpty {
+            for text in produced where !text.isEmpty {
+                session.sendText(text)
+            }
+            return
+        }
+
+        if let tag = Self.namedKeys[event.keyCode] {
+            session.sendKey(tag, mods: mods)
+            return
+        }
+
+        if let number = Self.functionKeys[event.keyCode] {
+            session.sendKey(UInt32(RIO_KEY_F), mods: mods, functionKey: number)
+            return
+        }
+
+        // A text key. The unshifted codepoint identifies it, and the text the
+        // platform produced rides along so shift, dead keys and non-Latin
+        // layouts need no special casing here.
+        guard let unshifted = event.charactersIgnoringModifiers?.unicodeScalars.first
+        else { return }
+
+        // `charactersIgnoringModifiers` still applies shift, so lowercase it to
+        // report the key rather than the character.
+        let codepoint =
+            String(unshifted).lowercased().unicodeScalars.first?.value ?? unshifted.value
+
+        session.sendKey(
+            UInt32(RIO_KEY_CHAR),
+            mods: mods,
+            codepoint: codepoint,
+            text: produced.first ?? event.characters
+        )
+    }
+}
+
+extension NSEvent {
+    /// A copy of this event with modifiers removed that must not take part in
+    /// text translation, so the input method produces the character the key
+    /// would produce on its own.
+    func strippingForTranslation(control: Bool, option: Bool) -> NSEvent {
+        var flags = modifierFlags
+        if control { flags.remove(.control) }
+        if option { flags.remove(.option) }
+        if flags == modifierFlags { return self }
+
+        return NSEvent.keyEvent(
+            with: type,
+            location: locationInWindow,
+            modifierFlags: flags,
+            timestamp: timestamp,
+            windowNumber: windowNumber,
+            context: nil,
+            characters: charactersIgnoringModifiers ?? "",
+            charactersIgnoringModifiers: charactersIgnoringModifiers ?? "",
+            isARepeat: isARepeat,
+            keyCode: keyCode
+        ) ?? self
     }
 }
 
@@ -199,44 +316,22 @@ extension PanelHostView: NSTextInputClient {
             markedText = ""
             session?.setPreedit(nil)
         }
+
+        // Inside a keyDown: collect and let the key handler decide. Outside
+        // one, this is text arriving on its own and goes straight through.
+        if keyTextAccumulator != nil {
+            keyTextAccumulator?.append(text)
+            return
+        }
+
         session?.sendText(text)
     }
 
-    override func doCommand(by selector: Selector) {
-        guard let session else { return }
-        switch selector {
-        case #selector(insertNewline(_:)):
-            session.sendKey(UInt32(RIO_KEY_ENTER))
-        case #selector(deleteBackward(_:)):
-            session.sendKey(UInt32(RIO_KEY_BACKSPACE))
-        case #selector(insertTab(_:)):
-            session.sendKey(UInt32(RIO_KEY_TAB))
-        case #selector(insertBacktab(_:)):
-            session.sendKey(UInt32(RIO_KEY_TAB), mods: UInt8(RIO_MOD_SHIFT))
-        case #selector(cancelOperation(_:)):
-            session.sendKey(UInt32(RIO_KEY_ESCAPE))
-        case #selector(moveUp(_:)):
-            session.sendKey(UInt32(RIO_KEY_UP))
-        case #selector(moveDown(_:)):
-            session.sendKey(UInt32(RIO_KEY_DOWN))
-        case #selector(moveLeft(_:)):
-            session.sendKey(UInt32(RIO_KEY_LEFT))
-        case #selector(moveRight(_:)):
-            session.sendKey(UInt32(RIO_KEY_RIGHT))
-        case #selector(scrollToBeginningOfDocument(_:)):
-            session.sendKey(UInt32(RIO_KEY_HOME))
-        case #selector(scrollToEndOfDocument(_:)):
-            session.sendKey(UInt32(RIO_KEY_END))
-        case #selector(pageUp(_:)):
-            session.sendKey(UInt32(RIO_KEY_PAGE_UP))
-        case #selector(pageDown(_:)):
-            session.sendKey(UInt32(RIO_KEY_PAGE_DOWN))
-        case #selector(deleteForward(_:)):
-            session.sendKey(UInt32(RIO_KEY_DELETE))
-        default:
-            break
-        }
-    }
+    /// Only here to keep AppKit from beeping at unhandled selectors. Key
+    /// identity comes from the keycode in `keyDown`: a selector cannot carry
+    /// the modifiers, and which selector arrives depends on the user's key
+    /// bindings, neither of which a terminal can work with.
+    override func doCommand(by selector: Selector) {}
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         if let value = string as? String {

@@ -39,6 +39,12 @@ typedef size_t rio_surface_id_t;
 #define RIO_KEY_INSERT 13u
 #define RIO_KEY_DELETE 14u
 #define RIO_KEY_F 15u
+/* No key: an event that carries only text, such as an input method commit. */
+#define RIO_KEY_NONE 16u
+
+#define RIO_KEY_ACTION_PRESS 0u
+#define RIO_KEY_ACTION_REPEAT 1u
+#define RIO_KEY_ACTION_RELEASE 2u
 
 #define RIO_SELECTION_SIMPLE 0u
 #define RIO_SELECTION_WORD 1u
@@ -113,11 +119,34 @@ typedef struct {
   bool is_block;
 } rio_selection_s;
 
+/* A key event as the platform delivered it.
+ *
+ * The host reports what happened and librio decides what the terminal
+ * receives, because that depends on state the host does not track:
+ * application cursor mode, the kitty keyboard flags, and modifyOtherKeys.
+ */
 typedef struct {
+  /* RIO_KEY_ACTION_*. Releases are dropped unless the program running in the
+   * terminal asked for key event types. */
+  uint32_t action;
+  /* RIO_KEY_*, naming the key with no shift applied: shift+a is
+   * RIO_KEY_CHAR with codepoint 'a', and the "A" belongs in text. */
   uint32_t tag;
   uint32_t codepoint;
+  /* 1 to 12 when tag is RIO_KEY_F. */
   uint8_t function_key;
+  /* Every modifier held, as RIO_MOD_*. */
   uint8_t mods;
+  /* Modifiers the platform already spent producing text, so they are not
+   * encoded twice. Zero when the platform cannot say. */
+  uint8_t consumed_mods;
+  /* Whether an input method owns the key right now. Nothing is encoded; the
+   * text arrives when composition commits. */
+  bool composing;
+  /* What the platform produced for this key, UTF-8, after any dead key or
+   * input method composition. May be NULL. */
+  const char *text;
+  size_t text_len;
 } rio_key_event_s;
 
 rio_engine_t *rio_engine_new(const rio_runtime_config_s *config);
@@ -131,7 +160,11 @@ rio_surface_id_t rio_surface_id(const rio_surface_t *surface);
 /* Input entry points are callable from any thread. */
 void rio_surface_text(rio_surface_t *surface, const char *bytes, size_t len);
 /* Returns true when the event was consumed and encoded to the PTY. */
-bool rio_surface_key(rio_surface_t *surface, rio_key_event_s event);
+bool rio_surface_key(rio_surface_t *surface, const rio_key_event_s *event);
+/* Whether alt acts as meta, prefixing with ESC, instead of letting the text
+ * the platform produced through. Defaults to true, as terminals do: it is the
+ * difference between alt+d deleting a word and inserting a character. */
+void rio_surface_set_alt_is_meta(rio_surface_t *surface, bool enabled);
 void rio_surface_resize(rio_surface_t *surface, uint16_t cols, uint16_t rows,
                         uint16_t pixel_width, uint16_t pixel_height);
 void rio_surface_scroll(rio_surface_t *surface, int32_t delta_lines);
