@@ -390,7 +390,19 @@ pub fn encode(event: &KeyEvent, ctx: &EncodeContext) -> Option<Vec<u8>> {
         return None;
     }
 
-    let key = event.key?;
+    // No key: a text-only event, such as an input method committing a
+    // composition. The composed text goes to the program as-is; there is
+    // no keystroke to encode.
+    let Some(key) = event.key else {
+        if event.action != KeyAction::Press {
+            return None;
+        }
+        return event
+            .text
+            .clone()
+            .filter(|text| !text.is_empty())
+            .map(String::into_bytes);
+    };
 
     // Releases exist only for programs that asked for event types.
     if event.action == KeyAction::Release
@@ -565,6 +577,20 @@ mod tests {
                 "{mods:?}"
             );
         }
+    }
+
+    // RIO_KEY_NONE: an input method commit carries text and no key.
+    #[test]
+    fn text_only_events_pass_text_through() {
+        let event = KeyEvent {
+            key: None,
+            text: Some("\u{3053}\u{3093}".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            encode(&event, &EncodeContext::default()),
+            Some("\u{3053}\u{3093}".as_bytes().to_vec())
+        );
     }
 
     #[test]

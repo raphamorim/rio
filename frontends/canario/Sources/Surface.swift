@@ -67,8 +67,11 @@ final class PanelHostView: NSView {
     fileprivate var keyTextAccumulator: [String]?
 
     /// Whether alt acts as meta. Kept alongside librio's own copy so the host
-    /// knows whether to let alt take part in text translation.
-    fileprivate var altIsMeta = true
+    /// knows whether to let alt take part in text translation. Defaults to
+    /// false, the macOS convention (Terminal.app, iTerm2, ghostty): option
+    /// composes characters and dead keys, which international layouts and
+    /// input methods depend on.
+    fileprivate var altIsMeta = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -128,6 +131,7 @@ final class PanelHostView: NSView {
                 object: window)
         }
         session.startIfNeeded()
+        session.setAltIsMeta(altIsMeta)
         if session.terminal.focusedPanelID == session.panelID {
             window.makeFirstResponder(self)
         }
@@ -432,15 +436,18 @@ final class PanelHostView: NSView {
         }
 
         let mods = rioMods(flags)
+        let action =
+            event.isARepeat
+            ? UInt32(RIO_KEY_ACTION_REPEAT) : UInt32(RIO_KEY_ACTION_PRESS)
         let wasComposing = !markedText.isEmpty
 
         // Run the input method for its text, but collect it rather than
         // sending: only after this returns is it clear whether the text is a
         // commit to forward, a preedit update to draw, or a key to encode.
         keyTextAccumulator = []
-        // Control never contributes to text, and alt only does when alt is not
-        // acting as meta. Translating without them keeps the input method from
-        // turning ctrl+a into an unrelated character.
+        // Control never contributes to text, and alt only does when alt is
+        // acting as meta. Translating without them keeps the input method
+        // from turning ctrl+a into an unrelated character.
         let translationEvent = event.strippingForTranslation(
             control: true,
             option: altIsMeta
@@ -449,29 +456,42 @@ final class PanelHostView: NSView {
         let produced = keyTextAccumulator ?? []
         keyTextAccumulator = nil
 
-        let composing = !markedText.isEmpty
-        if composing {
+        if !markedText.isEmpty {
             // Mid-composition: the preedit is already drawn, and nothing is
             // encoded until it commits.
             return
         }
 
-        // Text an input method committed after composing is not a keystroke to
-        // encode, it is the result of several. Forward it and stop.
-        if wasComposing && !produced.isEmpty {
-            for text in produced where !text.isEmpty {
-                session.sendText(text)
+        // Composition just ended, by commit or by cancel. Committed text is
+        // not a keystroke to encode, it is the result of several; and the
+        // key that ended the composition belongs to the input method, so a
+        // backspace canceling romaji must not also delete from the
+        // terminal. (Ghostty's keyDown draws the same line.)
+        if wasComposing {
+            for text in produced
+            where !text.isEmpty && !Self.isBareControlCharacter(text) {
+                session.sendKey(UInt32(RIO_KEY_NONE), text: text)
+            }
+            // Korean input methods commit on arrow keys that should then
+            // still move the cursor; other enders (return, escape) are
+            // consumed by the commit itself.
+            if Self.replaysAfterCommit(event),
+                let tag = Self.namedKeys[event.keyCode]
+            {
+                session.sendKey(tag, mods: mods, action: action)
             }
             return
         }
 
         if let tag = Self.namedKeys[event.keyCode] {
-            session.sendKey(tag, mods: mods)
+            session.sendKey(tag, mods: mods, action: action)
             return
         }
 
         if let number = Self.functionKeys[event.keyCode] {
-            session.sendKey(UInt32(RIO_KEY_F), mods: mods, functionKey: number)
+            session.sendKey(
+                UInt32(RIO_KEY_F), mods: mods, functionKey: number,
+                action: action)
             return
         }
 
@@ -486,12 +506,82 @@ final class PanelHostView: NSView {
         let codepoint =
             String(unshifted).lowercased().unicodeScalars.first?.value ?? unshifted.value
 
+        // A bare control character as text (ctrl+a arriving as 0x01) is not
+        // text to pass through: librio encodes control from the key + mods,
+        // and passing both would encode it twice or wrongly.
+        var text = produced.first ?? event.characters
+        if let text_ = text, Self.isBareControlCharacter(text_) {
+            text = nil
+        }
+
         session.sendKey(
             UInt32(RIO_KEY_CHAR),
             mods: mods,
             codepoint: codepoint,
-            text: produced.first ?? event.characters
+            action: action,
+            text: text
         )
+    }
+
+    override func keyUp(with event: NSEvent) {
+        guard let session else {
+            super.keyUp(with: event)
+            return
+        }
+        if event.modifierFlags.contains(.command) {
+            super.keyUp(with: event)
+            return
+        }
+        // Releases matter only to programs that asked for key event types
+        // (the kitty keyboard protocol); librio filters accordingly.
+        let mods = rioMods(event.modifierFlags)
+        let release = UInt32(RIO_KEY_ACTION_RELEASE)
+        if let tag = Self.namedKeys[event.keyCode] {
+            session.sendKey(tag, mods: mods, action: release)
+            return
+        }
+        if let number = Self.functionKeys[event.keyCode] {
+            session.sendKey(
+                UInt32(RIO_KEY_F), mods: mods, functionKey: number,
+                action: release)
+            return
+        }
+        guard
+            let unshifted = event.charactersIgnoringModifiers?.unicodeScalars
+                .first
+        else { return }
+        let codepoint =
+            String(unshifted).lowercased().unicodeScalars.first?.value
+            ?? unshifted.value
+        session.sendKey(
+            UInt32(RIO_KEY_CHAR), mods: mods, codepoint: codepoint,
+            action: release)
+    }
+
+    /// A single scalar below 0x20: what ctrl+key or an input method's
+    /// internal editing produces. Never forwarded as text.
+    private static func isBareControlCharacter(_ text: String) -> Bool {
+        let scalars = text.unicodeScalars
+        guard let first = scalars.first,
+            scalars.index(after: scalars.startIndex) == scalars.endIndex
+        else { return false }
+        return first.value < 0x20
+    }
+
+    /// Keys that ended a composition by committing but should still reach
+    /// the terminal afterwards (mirrors ghostty): Korean input methods
+    /// commit on arrows that the user also means as cursor movement. Plain
+    /// left is excluded because AppKit already leaves the caret in place.
+    private static func replaysAfterCommit(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 0x7C, 0x7D, 0x7E:  // Right, Down, Up
+            return true
+        case 0x7B:  // Left, only with modifiers
+            return !event.modifierFlags.isDisjoint(
+                with: [.shift, .control, .option, .command])
+        default:
+            return false
+        }
     }
 }
 
@@ -512,7 +602,8 @@ extension NSEvent {
             timestamp: timestamp,
             windowNumber: windowNumber,
             context: nil,
-            characters: charactersIgnoringModifiers ?? "",
+            characters: characters(byApplyingModifiers: flags)
+                ?? charactersIgnoringModifiers ?? "",
             charactersIgnoringModifiers: charactersIgnoringModifiers ?? "",
             isARepeat: isARepeat,
             keyCode: keyCode
@@ -530,7 +621,8 @@ extension PanelHostView: NSTextInputClient {
         } else {
             return
         }
-        if !markedText.isEmpty {
+        let hadMarkedText = !markedText.isEmpty
+        if hadMarkedText {
             markedText = ""
             session?.setPreedit(nil)
         }
@@ -542,7 +634,13 @@ extension PanelHostView: NSTextInputClient {
             return
         }
 
-        session?.sendText(text)
+        if hadMarkedText {
+            // An input method committing outside a keyDown (mouse-picked
+            // candidate): a text-only key event, not raw bytes.
+            session?.sendKey(UInt32(RIO_KEY_NONE), text: text)
+        } else {
+            session?.sendText(text)
+        }
     }
 
     /// Only here to keep AppKit from beeping at unhandled selectors. Key

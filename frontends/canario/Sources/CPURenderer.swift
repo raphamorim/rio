@@ -255,6 +255,47 @@ final class CPURenderer {
 
         drawKittyLayer(kitty.aboveText)
         drawCursor(state: state, cols: cols, lines: lines, focused: focused)
+        drawPreedit(state: state, cols: cols, lines: lines)
+    }
+
+    /// The input method's in-progress composition, drawn at the cursor the
+    /// way IME-aware apps draw it: inverted box, thick underline. Without
+    /// this, dead keys and CJK composition are invisible until commit.
+    private func drawPreedit(state: OpaquePointer, cols: Int, lines: Int) {
+        guard let preedit, !preedit.isEmpty else { return }
+        // The cursor is hidden while scrolled into history; so is preedit.
+        guard rio_render_state_display_offset(state) == 0 else { return }
+        let cursor = rio_render_state_cursor(state)
+        guard Int(cursor.line) < lines else { return }
+
+        let cw = metrics.cellWidth
+        let ch = metrics.cellHeight
+        let pad = metrics.padding
+        let font = metrics.regular
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: defaultBackground,
+            .underlineStyle: NSUnderlineStyle.thick.rawValue,
+            .underlineColor: cursorColor,
+        ]
+        let size = (preedit as NSString).size(withAttributes: [.font: font])
+        let width = max(size.width, cw)
+
+        // Keep the box on screen: grow rightwards from the cursor, sliding
+        // left when the composition outgrows the remaining columns.
+        let gridRight = pad + CGFloat(cols) * cw
+        var x = pad + CGFloat(cursor.column) * cw
+        if x + width > gridRight {
+            x = max(pad, gridRight - width)
+        }
+        let y = pad + CGFloat(cursor.line) * ch
+        let rect = NSRect(x: x, y: y, width: width, height: ch)
+
+        NSColor.white.setFill()
+        rect.fill()
+        (preedit as NSString).draw(
+            at: NSPoint(x: x, y: y), withAttributes: attributes)
     }
 
     /// One kitty placement resolved for the host: decoded (cached) bitmap,
