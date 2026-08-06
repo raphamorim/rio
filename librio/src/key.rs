@@ -656,19 +656,13 @@ mod tests {
                 | KittyFlags::REPORT_ALL_AS_ESC,
             ..Default::default()
         };
-        assert_eq!(
-            encode(&press, &ctx),
-            Some(b"\x1b[57441;2u".to_vec())
-        );
+        assert_eq!(encode(&press, &ctx), Some(b"\x1b[57441;2u".to_vec()));
         let release = KeyEvent {
             key: Some(Key::ShiftLeft),
             action: KeyAction::Release,
             ..Default::default()
         };
-        assert_eq!(
-            encode(&release, &ctx),
-            Some(b"\x1b[57441;1:3u".to_vec())
-        );
+        assert_eq!(encode(&release, &ctx), Some(b"\x1b[57441;1:3u".to_vec()));
     }
 
     // RIO_KEY_NONE: an input method commit carries text and no key.

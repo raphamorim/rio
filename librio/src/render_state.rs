@@ -130,9 +130,7 @@ impl RenderState {
         // the ring still count (rio-vt anchors placements the same way),
         // so a full scrollback must not shift placements off-screen.
         self.history_size = term.lines_evicted() as i64 + term.history_size() as i64;
-        self.alt_screen = term
-            .mode()
-            .contains(rio_vt::crosswords::Mode::ALT_SCREEN);
+        self.alt_screen = term.mode().contains(rio_vt::crosswords::Mode::ALT_SCREEN);
         self.kitty.clear();
         for placement in term.graphics.kitty_placements.values() {
             if let Some(image) = term.graphics.get_kitty_image(placement.image_id) {
@@ -275,9 +273,9 @@ impl RenderState {
         }
 
         let flush = |entries: &mut Vec<KittyEntry>,
-                         run: PlaceholderRun,
-                         line: usize,
-                         start_col: usize| {
+                     run: PlaceholderRun,
+                     line: usize,
+                     start_col: usize| {
             let placement = graphics
                 .kitty_virtual_placements
                 .get(&(run.image_id, run.placement_id))

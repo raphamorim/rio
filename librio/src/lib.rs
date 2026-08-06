@@ -620,7 +620,10 @@ mod tests {
         assert_eq!(
             progress,
             vec![
-                &Action::Progress { state: 1, value: 42 },
+                &Action::Progress {
+                    state: 1,
+                    value: 42
+                },
                 &Action::Progress { state: 0, value: 0 },
             ]
         );

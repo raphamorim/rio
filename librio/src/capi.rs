@@ -969,9 +969,7 @@ pub unsafe extern "C" fn rio_nerd_constrain(
 /// Whether the alternate screen (full-screen TUIs) was active at the
 /// last update.
 #[no_mangle]
-pub unsafe extern "C" fn rio_render_state_alt_screen(
-    state: *const RenderState,
-) -> bool {
+pub unsafe extern "C" fn rio_render_state_alt_screen(state: *const RenderState) -> bool {
     catch_unwind(AssertUnwindSafe(|| {
         if state.is_null() {
             return false;
