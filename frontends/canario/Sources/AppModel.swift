@@ -204,6 +204,9 @@ final class AppModel {
     var borderColor: Color = Theme.accentBorder
     /// Which app icon variant the Dock shows.
     var appIcon: AppIcon = .original
+    /// Terminal color scheme, applied engine-wide. Distinct from the window
+    /// chrome colors above: this recolors cells, cursor, and selection.
+    var colorScheme: ColorScheme = .rio
 
     // Text tiers, derived so one picked color drives the whole hierarchy.
     var textPrimary: Color { textColor.opacity(0.92) }
@@ -211,6 +214,7 @@ final class AppModel {
     var textSelected: Color { textColor.opacity(0.92) }
     var selectedFill: Color { selectionColor.opacity(0.94) }
     var isCommandBarVisible = false
+    var isThemePickerVisible = false
     /// OSC 9;4 progress per terminal; entries leave the map on remove.
     var terminalProgress: [UUID: TerminalProgress] = [:]
     /// The terminal whose progress the menu bar and Dock badge mirror.
@@ -337,6 +341,13 @@ final class AppModel {
         {
             appIcon = icon
         }
+        if let name = defaults.string(forKey: "colorScheme"),
+            let scheme = ColorScheme.named(name)
+        {
+            colorScheme = scheme
+        }
+        RioEngine.colorScheme = colorScheme
+        colorScheme.applyToEngine()
 
         // Restore the previous session if there is one; otherwise start fresh.
         if let restored = SessionStore.load() {
@@ -659,6 +670,28 @@ final class AppModel {
             "chromeColor", "textColor", "selectionColor", "borderColor",
         ] {
             UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    /// Commit a scheme: apply everywhere and persist.
+    func setColorScheme(_ scheme: ColorScheme) {
+        applyColorScheme(scheme)
+        UserDefaults.standard.set(scheme.name, forKey: "colorScheme")
+    }
+
+    /// Recolor the live app without persisting; the theme picker's
+    /// arrow-through preview. Commit with setColorScheme or revert by
+    /// committing the scheme that was active when the picker opened.
+    func previewColorScheme(_ scheme: ColorScheme) {
+        applyColorScheme(scheme)
+    }
+
+    private func applyColorScheme(_ scheme: ColorScheme) {
+        colorScheme = scheme
+        RioEngine.colorScheme = scheme
+        scheme.applyToEngine()
+        for session in surfaces.allSessions {
+            session.setScheme(scheme)
         }
     }
 
