@@ -150,7 +150,14 @@ rejected with `reason=bad_key`.
 The **primary stream** — every byte outside rmx frames — is itself a
 buffer, addressed by the reserved key `main`. It is exempt from
 credit (§9) and cannot be closed; this preserves ordinary PTY
-semantics, degradation, and nesting.
+semantics, degradation, and nesting. `main` is also not writable:
+only the application's own stdout puts bytes there, so `w`, `t` and
+`c` MUST reject `k=main` with `reason=bad_key` (the key matches the
+alphabet, so this is a reservation, not a syntax rule). Creating or
+destroying buffers MAY change `main`'s size, and a terminal that
+resizes it MUST report that through the ordinary PTY winsize
+mechanism: applications draw their own chrome there and need to
+reflow.
 
 ### 3.3 Verbs
 
@@ -212,20 +219,33 @@ ESC _ rmx ; o ; k=<key> [; cols=<n>] [; rows=<n>] [; title=<base64>]
   adopts the existing buffer (parameters other than `k` update it);
   it MUST NOT create a duplicate. This is what makes re-emission
   after reconnect, and a future resident engine, possible.
-- `cols`/`rows` — size *proposal*. The terminal decides the real size
-  and reports it via an `i;ev=resize` event (§8). One-directional
+- `cols`/`rows` — size *proposal*, never binding. The terminal decides
+  the real size and reports it via an `i;ev=resize` event (§8), which
+  is the single authoritative source; the `o` reply's `cols`/`rows`
+  are a convenience copy of that same value and MUST agree with it.
+  One-directional
   layout: the application proposes, the terminal disposes.
 - `title` — base64 UTF-8, subject to the same sanitization as OSC 0.
   Never reflected in any reply or event.
 - `at`+`dir`+`weight` — placement hint relative to an existing buffer
   (or `main`), honored only when `cap=layout`. Advisory: the terminal
-  (and the user, afterward) own real geometry.
+  (and the user, afterward) own real geometry. `weight` is the new
+  buffer's percentage of the anchor's extent along the split axis
+  (`dir=right` splits width, `dir=down` splits height); the anchor
+  keeps the remainder. A terminal MUST refuse a hint it cannot solve
+  (an axis too small for two panes) and place the buffer anyway
+  rather than failing the open: a hint can never make layout
+  unsolvable. An unknown `at` key falls back to the owner.
 - `u` — urgency 0 (highest) to 7, RFC 9218 style. A single integer by
   design; priority trees are a documented failure (HTTP/2). Default 3.
 - `focus=1` — request initial focus **at creation only**. Runtime
   focus stealing does not exist in this protocol (§12).
 
-### 5.2 Response (`reply=1`, or `reply=2` on failure)
+### 5.2 Response
+
+An `o` reply is **always sent**, whatever `reply=` says, because it
+carries `credit` and §6.2 makes writing without knowing the balance
+unsafe. `reply=` still governs every other verb.
 
 ```
 ESC _ rmx ; o ; k=<key> ; status=<u8> [; reason=<name>]
@@ -255,11 +275,15 @@ chunking follows the house wire economics (≤4 KB frames).
 
 - Writes to an unknown key are dropped and reported (`reply=2`
   default) with `reason=no_such_buffer` — they MUST NOT auto-open.
-- Writes consume credit (§9); a write exceeding available credit is
-  truncated at the credit boundary and reported with
-  `reason=no_credit` (the application should have paced itself; the
-  report is diagnostic, and precise loss accounting is the
-  application's job via credit arithmetic).
+- Writes consume credit (§9). Credit is accounted **per frame**, not
+  per logical `m=1` write: a frame exceeding the balance is truncated
+  at the credit boundary and reported with `reason=no_credit`.
+  Truncation can cut an escape sequence in half, so a terminal MUST
+  reset that buffer's parser to ground state when it truncates,
+  rather than leaving a half-parsed sequence to swallow whatever
+  arrives next. The application should have paced itself; the report
+  is diagnostic, and loss accounting is its job via credit
+  arithmetic.
 - Ordering is preserved per buffer and across buffers relative to the
   frames' positions in the stream.
 
@@ -271,16 +295,21 @@ ESC _ rmx ; t ; k=<key> ; n=<bytes> ESC \
 ```
 
 The next `n` bytes after the frame terminator belong verbatim to
-buffer `k`; the stream then reverts to `main`. This is the bulk path
+buffer `k`; the stream then reverts to `main`. This is the only frame
+that leaves the stream in a state: every other frame is
+self-contained, and a terminal MUST NOT carry any other target across
+frames. This is the bulk path
 (no base64 overhead) and the bridge path for running unmodified
 programs in a buffer (a helper allocates a pty, runs the program, and
 pumps its output as bursts — see §14). The length prefix is the
 anti-forgery mechanism: content is never scanned for terminators, so
 no content can escape the burst — DEC's byte-stuffing goal achieved
 with modern framing. `n` MUST NOT exceed 65536; bursts consume credit
-like writes, and a burst exceeding available credit is a protocol
-error that closes the buffer (`i;ev=closed;reason=no_credit`) — raw
-mode is for applications that do credit accounting correctly.
+like writes, and a burst exceeding available credit is **clamped and
+reported** exactly as `w` is (§6.2), including the parser reset:
+grants arrive asynchronously, so an application cannot know the
+terminal's balance at the instant its burst lands, and killing a
+buffer for losing that race would make the bulk path unusable.
 
 ## 8. Input and events (`i`) — terminal → application
 
@@ -306,7 +335,16 @@ Events (v1):
 | `closed` | `reason=<name>` | Buffer ended: `user` (veto/close gesture), `app` (your `c`), `quota`, `no_credit`, `teardown`. |
 
 Delivery of `in` follows the pre-decided gating rule: a buffer
-receives input only when it is subscribed (opened), focused, and
+**Subscribed** means the buffer is open: an `o` succeeded and no
+`c` or `ev=closed` has ended it. There is no separate subscribe verb,
+and a terminal MUST NOT invent one. Ordering: `i` frames are ordered
+with respect to each other per buffer, but **not** with respect to
+`main`'s raw bytes. An implementation may carry frames and `main` on
+different transports (a mux splitting them onto a control socket is
+the motivating case), so an application MUST NOT infer sequencing
+between a buffer event and primary-stream input.
+
+A buffer receives input only when it is subscribed, focused, and
 visible. Input frames are generated exclusively by the terminal;
 there is no verb by which stream content can synthesize input to any
 buffer (the echoback/TIOCSTI class is structurally absent).
@@ -354,9 +392,15 @@ Reply: one frame per buffer plus a terminator frame, fixed alphabet
 only:
 
 ```
-ESC _ rmx ; q ; k=<key> ; cols=<n> ; rows=<n> ; u=<n> ; more=1 ESC \
+ESC _ rmx ; q ; k=<key> ; cols=<n> ; rows=<n> ; u=<n> ; credit=<n> ;
+  more=1 ESC \
 ESC _ rmx ; q ; more=0 ESC \
 ```
+
+A reply of the terminator frame alone means no buffers exist, which
+is how a reconnecting application tells a fresh terminal from one
+that still holds its session. `credit` is included because it is the
+one value an application cannot recompute from its own records.
 
 `q` exists for state re-emission: an application that reconnects (or
 a future resident engine that adopts a session) re-opens its keys
@@ -369,7 +413,7 @@ application's job (it is the source of truth for its own output), and
 
 | Event | Effect |
 |-------|--------|
-| PTY EOF / child exit | All buffers reap with `ev=closed;reason=teardown`; disposition per buffer's last `disp` hint. The terminal MUST never be left wedged. |
+| PTY EOF / child exit | All buffers reap with `ev=closed;reason=teardown` and are **discarded**: `disp` exists only on `c`, so a buffer the application never closed has registered no preference. The terminal MUST never be left wedged. |
 | RIS (`ESC c`) on `main` | Full rmx reset: all buffers discarded. RIS *inside* a buffer resets only that buffer. |
 | ED/ clears on `main` | No effect on buffers (they are not grid content of `main`). |
 | User veto | Terminals MUST provide a user gesture that unconditionally closes any or all rmx buffers, regardless of application state. |
@@ -479,17 +523,33 @@ An application is rmx v1 conformant if it:
 
 ## 16. Open questions (tracked for v0.2)
 
-1. `t` burst interaction with the credit floor: a `t` declared larger
-   than remaining credit is currently a buffer-closing error — too
-   harsh? Alternative: clamp-and-report like `w`.
-2. Should `q` include a monotonic session epoch so a layer-C engine
+Resolved in this revision, from two independent implementations
+disagreeing or being unable to proceed: burst-over-credit now clamps
+like `w` (§7) instead of closing the buffer; `o` always replies so an
+application learns its credit (§5.2); credit is accounted per frame
+with a mandated parser reset on truncation (§6.2); `weight` has a
+defined referent (§5.1); "subscribed" is defined and term→app
+ordering is stated (§8); teardown discards, because `disp` cannot be
+registered in advance (§11); `main` is unwritable and may be resized
+when buffers appear (§3.2); `q` carries `credit` and its bare
+terminator means "no buffers" (§10.2).
+
+Still open:
+
+1. Should `q` include a monotonic session epoch so a layer-C engine
    can detect terminal restarts vs. reconnects?
-3. Key-encoding inside `ev=in`: current design delegates entirely to
+2. Key-encoding inside `ev=in`: current design delegates entirely to
    the buffer's negotiated keyboard modes (terminal encodes as if to
    a private PTY). Verify this round-trips the kitty keyboard
    protocol without loss.
-4. `disp=scrollback` rendering format (annotation of corpse lines).
-5. Whether `main` should be addressable by `w` (currently NO — the
-   primary stream is the only writer to `main`).
+3. `disp=scrollback` corpse annotation is implementation-defined; the
+   reference wraps the dump in `--- rmx buffer <key> ---` /
+   `--- end of <key> ---` with control characters stripped. Worth
+   fixing in the spec only if a second implementation disagrees.
+4. Predictive echo: `serial=` is reserved on `i` frames and unused.
+   Over a slow link this is what separates native-feeling input from
+   laggy, and it is mosh's most-copied idea.
+5. Windowed scrollback pull, so a reattaching application can ask for
+   history rather than only re-seeding the visible screen.
 6. Prefix registration etiquette with other terminals; co-design
    partner for the second implementation beyond librio/canario.
