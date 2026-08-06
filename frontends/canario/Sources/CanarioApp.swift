@@ -134,6 +134,12 @@ struct CanarioApp: App {
             }
         }
 
+        Settings {
+            SettingsView()
+                .environment(model)
+        }
+        .windowResizability(.contentSize)
+
         MenuBarExtra("Canario", systemImage: "terminal.fill") {
             Button("Quick Terminal  ⌥⌘T") { model.quickTerminal.toggle() }
             Button("New Terminal") {

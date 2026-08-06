@@ -41,9 +41,10 @@ struct TerminalMetrics {
     /// `icon_height_single`).
     let iconHeightSingle: CGFloat
 
-    init(fontSize: CGFloat) {
+    init(fontSize: CGFloat, family: String) {
         var base =
-            NSFont(name: "Menlo", size: fontSize)
+            NSFont(name: family, size: fontSize)
+            ?? NSFont(name: "Menlo", size: fontSize)
             ?? .monospacedSystemFont(ofSize: fontSize, weight: .regular)
 
         // Cascade to the symbols-only Nerd Font embedded in librio (the
@@ -115,12 +116,12 @@ final class CPURenderer {
     private let cursorColor = NSColor(
         srgbRed: 0xf7 / 255, green: 0x12 / 255, blue: 0xff / 255, alpha: 1)
 
-    init(fontSize: CGFloat) {
-        metrics = TerminalMetrics(fontSize: fontSize)
+    init(fontSize: CGFloat, family: String) {
+        metrics = TerminalMetrics(fontSize: fontSize, family: family)
     }
 
-    func setFontSize(_ size: CGFloat) {
-        metrics = TerminalMetrics(fontSize: size)
+    func setFont(size: CGFloat, family: String) {
+        metrics = TerminalMetrics(fontSize: size, family: family)
         iconCache.removeAll()
     }
 

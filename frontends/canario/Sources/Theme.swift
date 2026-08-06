@@ -31,13 +31,39 @@ enum Theme {
     }
 }
 
+extension Color {
+    /// "#RRGGBB" parsing/serialization for persisting user-picked colors.
+    init?(hex: String) {
+        var value = hex.trimmingCharacters(in: .whitespaces)
+        if value.hasPrefix("#") { value.removeFirst() }
+        guard value.count == 6, let rgb = UInt32(value, radix: 16) else {
+            return nil
+        }
+        self.init(
+            red: Double((rgb >> 16) & 0xFF) / 255,
+            green: Double((rgb >> 8) & 0xFF) / 255,
+            blue: Double(rgb & 0xFF) / 255)
+    }
+
+    var hexString: String? {
+        guard let rgb = NSColor(self).usingColorSpace(.sRGB) else { return nil }
+        return String(
+            format: "#%02X%02X%02X",
+            Int(rgb.redComponent * 255),
+            Int(rgb.greenComponent * 255),
+            Int(rgb.blueComponent * 255))
+    }
+}
+
 struct ChromeBackground: View {
+    /// The window color (user-configurable; Theme.chrome by default).
+    var base: Color = Theme.chrome
     /// Gradient index of the selected terminal's space, if it lives in one.
     var spaceIndex: Int?
 
     var body: some View {
         ZStack {
-            Theme.chrome
+            base
             if let spaceIndex {
                 Theme.spaceGradient(spaceIndex)
                     .opacity(0.30)

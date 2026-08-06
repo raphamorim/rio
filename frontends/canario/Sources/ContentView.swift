@@ -52,7 +52,7 @@ struct ContentView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .background(
-            ChromeBackground(spaceIndex: selectedSpaceIndex)
+            ChromeBackground(base: model.chromeColor, spaceIndex: selectedSpaceIndex)
                 .overlay(GrainOverlay())
                 .ignoresSafeArea()
         )
@@ -92,7 +92,7 @@ struct ContentView: View {
             SidebarView()
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(Theme.chrome)
+                        .fill(model.chromeColor)
                         .overlay(
                             GrainOverlay()
                                 .clipShape(RoundedRectangle(cornerRadius: 14)))
@@ -143,6 +143,7 @@ struct ContentView: View {
 
 /// Live thumbnail of a pane, refreshed while the peek is up.
 private struct PanePeekView: View {
+    @Environment(AppModel.self) private var model
     let session: PanelSession
 
     @State private var image: NSImage?
@@ -170,7 +171,7 @@ private struct PanePeekView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Theme.accentBorder.opacity(0.9), lineWidth: 1)
+                .strokeBorder(model.borderColor.opacity(0.9), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.4), radius: 20, y: 6)
         .onAppear { image = session.peekSnapshot() }
@@ -264,7 +265,7 @@ struct SidebarToggleButton: View {
                 .foregroundStyle(
                     model.isSidebarCollapsed
                         ? Color.white.opacity(isHovered ? 1.0 : 0.65)
-                        : Theme.textPrimary.opacity(isHovered ? 1.0 : 0.6)
+                        : model.textPrimary.opacity(isHovered ? 1.0 : 0.6)
                 )
                 .frame(width: 26, height: 26)
                 .background(
@@ -317,7 +318,7 @@ private struct PanelTileView: View {
                 if terminal.panelCount > 1 {
                     if terminal.focusedPanelID == panel.id {
                         RoundedRectangle(cornerRadius: Theme.cardRadius)
-                            .strokeBorder(Theme.accentBorder, lineWidth: 2.5)
+                            .strokeBorder(model.borderColor, lineWidth: 2.5)
                     } else {
                         RoundedRectangle(cornerRadius: Theme.cardRadius)
                             .strokeBorder(.white.opacity(0.10), lineWidth: 1)

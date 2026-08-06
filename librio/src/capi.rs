@@ -980,16 +980,14 @@ mod color_tests {
             height: 30.0,
         };
         let mut out = rio_glyph_box_s::default();
-        let hit = unsafe {
-            rio_nerd_constrain(0xE0B0, glyph, 10.0, 22.0, 18.0, 1, &mut out)
-        };
+        let hit =
+            unsafe { rio_nerd_constrain(0xE0B0, glyph, 10.0, 22.0, 18.0, 1, &mut out) };
         assert!(hit, "powerline glyphs must be constrained");
         assert!(out.width <= 10.0 + f64::EPSILON, "fits the cell width");
 
         // 'a' has no entry: untouched, reported as such.
-        let miss = unsafe {
-            rio_nerd_constrain(0x61, glyph, 10.0, 22.0, 18.0, 1, &mut out)
-        };
+        let miss =
+            unsafe { rio_nerd_constrain(0x61, glyph, 10.0, 22.0, 18.0, 1, &mut out) };
         assert!(!miss);
     }
 

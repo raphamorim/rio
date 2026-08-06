@@ -126,7 +126,7 @@ struct CommandBarView: View {
             return Theme.spaceGradient(folder.colorIndex)
         }
         return LinearGradient(
-            colors: [Theme.chrome, Color(red: 0.71, green: 0.36, blue: 0.46)],
+            colors: [model.chromeColor, Color(red: 0.71, green: 0.36, blue: 0.46)],
             startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 

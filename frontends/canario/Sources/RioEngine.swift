@@ -12,6 +12,7 @@ final class RioEngine {
     var onCloseSurface: ((PanelSession) -> Void)?
 
     static var fontSize: Float = 13.0
+    static var fontFamily: String = "Menlo"
 
     private init() {
         var config = rio_runtime_config_s()
@@ -122,7 +123,9 @@ final class PanelSession {
 
         // All drawing happens on the Swift side now (CPU). The renderer
         // owns the font + cell geometry that the grid size is derived from.
-        let renderer = CPURenderer(fontSize: CGFloat(RioEngine.fontSize))
+        let renderer = CPURenderer(
+            fontSize: CGFloat(RioEngine.fontSize),
+            family: RioEngine.fontFamily)
         self.cpuRenderer = renderer
         surfaceView.session = self
 
@@ -382,9 +385,10 @@ final class PanelSession {
         render()
     }
 
-    func setFontSize(_ size: Float) {
+    func setFont(size: Float, family: String) {
         RioEngine.fontSize = size
-        cpuRenderer?.setFontSize(CGFloat(size))
+        RioEngine.fontFamily = family
+        cpuRenderer?.setFont(size: CGFloat(size), family: family)
         syncSize()
     }
 

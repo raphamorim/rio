@@ -60,7 +60,12 @@ final class QuickTerminalController: NSObject {
         let session = model.surfaces.session(
             for: terminal.focusedPanelID, terminal: terminal)
 
-        let content = QuickTerminalView(hostView: session.hostView) { [weak self] in
+        let content = QuickTerminalView(
+            hostView: session.hostView,
+            chrome: model.chromeColor,
+            text: model.textPrimary,
+            border: model.borderColor
+        ) { [weak self] in
             self?.panel?.orderOut(nil)
         }
         let panel = KeyablePanel(
@@ -130,6 +135,9 @@ final class QuickTerminalController: NSObject {
 
 private struct QuickTerminalView: View {
     let hostView: PanelHostView
+    let chrome: Color
+    let text: Color
+    let border: Color
     let onClose: () -> Void
 
     @State private var isCloseHovered = false
@@ -139,15 +147,15 @@ private struct QuickTerminalView: View {
             HStack(spacing: 8) {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary.opacity(0.55))
+                    .foregroundStyle(text.opacity(0.55))
                 Text("Quick Terminal")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary.opacity(0.75))
+                    .foregroundStyle(text.opacity(0.75))
                 Spacer(minLength: 0)
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Theme.textPrimary.opacity(isCloseHovered ? 0.95 : 0.5))
+                        .foregroundStyle(text.opacity(isCloseHovered ? 0.95 : 0.5))
                         .frame(width: 18, height: 18)
                         .background(
                             RoundedRectangle(cornerRadius: 5)
@@ -160,14 +168,14 @@ private struct QuickTerminalView: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 32)
-            .background(Theme.chrome.overlay(GrainOverlay()))
+            .background(chrome.overlay(GrainOverlay()))
 
             TerminalSurface(hostView: hostView)
         }
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(Theme.accentBorder.opacity(0.9), lineWidth: 1)
+                .strokeBorder(border.opacity(0.9), lineWidth: 1)
         )
     }
 }

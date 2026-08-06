@@ -189,6 +189,22 @@ final class AppModel {
     var draggingTerminalID: UUID?
     var pendingRenameFolderID: UUID?
     var fontSize: Float = 13.0
+    var fontFamily: String = "Menlo"
+    /// Window chrome color; Theme.chrome (salmon) unless the user picked
+    /// another in Settings > Appearance.
+    var chromeColor: Color = Theme.chrome
+    /// Base color for chrome text; opacity tiers derive from it.
+    var textColor: Color = .black
+    /// Fill of the selected sidebar row / panel selection.
+    var selectionColor: Color = .white
+    /// Focused-panel border and floating-panel outlines.
+    var borderColor: Color = Theme.accentBorder
+
+    // Text tiers, derived so one picked color drives the whole hierarchy.
+    var textPrimary: Color { textColor.opacity(0.92) }
+    var textMuted: Color { textColor.opacity(0.58) }
+    var textSelected: Color { textColor.opacity(0.92) }
+    var selectedFill: Color { selectionColor.opacity(0.94) }
     var isCommandBarVisible = false
     /// Pane being previewed from the sidebar (hover peek), if any.
     var peekedPanelID: UUID?
@@ -218,6 +234,39 @@ final class AppModel {
     private var saveWorkItem: DispatchWorkItem?
 
     init() {
+        // Font settings persist in UserDefaults (session.json is for the
+        // tree; these are app-level preferences).
+        let defaults = UserDefaults.standard
+        if let family = defaults.string(forKey: "fontFamily"), !family.isEmpty {
+            fontFamily = family
+        }
+        let savedSize = defaults.float(forKey: "fontSize")
+        if savedSize >= 6.0, savedSize <= 72.0 {
+            fontSize = savedSize
+        }
+        RioEngine.fontSize = fontSize
+        RioEngine.fontFamily = fontFamily
+        if let hex = defaults.string(forKey: "chromeColor"),
+            let color = Color(hex: hex)
+        {
+            chromeColor = color
+        }
+        if let hex = defaults.string(forKey: "textColor"),
+            let color = Color(hex: hex)
+        {
+            textColor = color
+        }
+        if let hex = defaults.string(forKey: "selectionColor"),
+            let color = Color(hex: hex)
+        {
+            selectionColor = color
+        }
+        if let hex = defaults.string(forKey: "borderColor"),
+            let color = Color(hex: hex)
+        {
+            borderColor = color
+        }
+
         // Restore the previous session if there is one; otherwise start fresh.
         if let restored = SessionStore.load() {
             items = restored
@@ -457,12 +506,65 @@ final class AppModel {
         setFontSize(13.0)
     }
 
-    private func setFontSize(_ size: Float) {
+    func setFontSize(_ size: Float) {
         fontSize = min(max(size, 6.0), 72.0)
-        RioEngine.fontSize = fontSize
-        for session in surfaces.allSessions {
-            session.setFontSize(fontSize)
+        applyFont()
+    }
+
+    func setFontFamily(_ family: String) {
+        fontFamily = family
+        applyFont()
+    }
+
+    func setChromeColor(_ color: Color) {
+        chromeColor = color
+        if let hex = color.hexString {
+            UserDefaults.standard.set(hex, forKey: "chromeColor")
         }
+    }
+
+    func setTextColor(_ color: Color) {
+        textColor = color
+        if let hex = color.hexString {
+            UserDefaults.standard.set(hex, forKey: "textColor")
+        }
+    }
+
+    func setSelectionColor(_ color: Color) {
+        selectionColor = color
+        if let hex = color.hexString {
+            UserDefaults.standard.set(hex, forKey: "selectionColor")
+        }
+    }
+
+    func setBorderColor(_ color: Color) {
+        borderColor = color
+        if let hex = color.hexString {
+            UserDefaults.standard.set(hex, forKey: "borderColor")
+        }
+    }
+
+    func resetAppearance() {
+        chromeColor = Theme.chrome
+        textColor = .black
+        selectionColor = .white
+        borderColor = Theme.accentBorder
+        for key in [
+            "chromeColor", "textColor", "selectionColor", "borderColor",
+        ] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private func applyFont() {
+        RioEngine.fontSize = fontSize
+        RioEngine.fontFamily = fontFamily
+        for session in surfaces.allSessions {
+            session.setFont(size: fontSize, family: fontFamily)
+        }
+        let defaults = UserDefaults.standard
+        defaults.set(fontSize, forKey: "fontSize")
+        defaults.set(fontFamily, forKey: "fontFamily")
     }
 
     func copySelection() {

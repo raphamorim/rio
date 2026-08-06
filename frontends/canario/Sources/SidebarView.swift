@@ -100,12 +100,12 @@ private struct PanelRowView: View {
                 Image(systemName: "rectangle.on.rectangle")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(
-                        isActive ? Theme.textSelected : Theme.textPrimary.opacity(0.5))
+                        isActive ? model.textSelected : model.textPrimary.opacity(0.5))
 
                 Text(terminal.panelTitles[panel.id] ?? "Panel \(index + 1)")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(
-                        isActive ? Theme.textSelected : Theme.textPrimary.opacity(0.65))
+                        isActive ? model.textSelected : model.textPrimary.opacity(0.65))
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
@@ -117,7 +117,7 @@ private struct PanelRowView: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(
-                                (isActive ? Theme.textSelected : Theme.textPrimary)
+                                (isActive ? model.textSelected : model.textPrimary)
                                     .opacity(isCloseHovered ? 0.95 : 0.5)
                             )
                             .frame(width: 17, height: 17)
@@ -137,7 +137,7 @@ private struct PanelRowView: View {
             .background {
                 if isActive {
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Theme.selectedFill.opacity(0.75))
+                        .fill(model.selectedFill.opacity(0.75))
                 } else {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.black.opacity(isHovered ? 0.07 : 0.0001))
@@ -223,14 +223,14 @@ private struct StripItemView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(
                         isSelected
-                            ? Theme.selectedFill
+                            ? model.selectedFill
                             : Color.black.opacity(isHovered ? 0.10 : 0.0001))
                 switch item {
                 case .terminal:
                     Image(systemName: "terminal")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(
-                            isSelected ? Theme.textSelected : Theme.textPrimary.opacity(0.6))
+                            isSelected ? model.textSelected : model.textPrimary.opacity(0.6))
                 case .folder(let folder):
                     Image(systemName: "folder.fill")
                         .font(.system(size: 13, weight: .medium))
@@ -296,14 +296,14 @@ private struct FolderRowView: View {
                     TextField("New Folder", text: $folder.name)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
+                        .foregroundStyle(model.textPrimary)
                         .focused($nameFieldFocused)
                         .onSubmit { endRenaming() }
                         .onExitCommand { endRenaming() }
                 } else {
                     Text(folder.name)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary.opacity(0.8))
+                        .foregroundStyle(model.textPrimary.opacity(0.8))
                         .lineLimit(1)
                 }
 
@@ -311,7 +311,7 @@ private struct FolderRowView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Theme.textPrimary.opacity(0.4))
+                    .foregroundStyle(model.textPrimary.opacity(0.4))
                     .rotationEffect(.degrees(folder.isExpanded ? 90 : 0))
                     .opacity(isHovered ? 1.0 : 0.0)
             }
@@ -425,12 +425,12 @@ private struct TerminalRowView: View {
                 Image(systemName: "terminal")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(
-                        isSelected ? Theme.textSelected : Theme.textPrimary.opacity(0.6))
+                        isSelected ? model.textSelected : model.textPrimary.opacity(0.6))
 
                 Text(terminal.displayTitle)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(
-                        isSelected ? Theme.textSelected : Theme.textPrimary.opacity(0.75))
+                        isSelected ? model.textSelected : model.textPrimary.opacity(0.75))
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
@@ -448,8 +448,8 @@ private struct TerminalRowView: View {
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(
                                     isSelected
-                                        ? Theme.textSelected
-                                        : Theme.textPrimary.opacity(0.7))
+                                        ? model.textSelected
+                                        : model.textPrimary.opacity(0.7))
                         }
                         .frame(width: 18, height: 18)
                     }
@@ -464,7 +464,7 @@ private struct TerminalRowView: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(
-                                (isSelected ? Theme.textSelected : Theme.textPrimary)
+                                (isSelected ? model.textSelected : model.textPrimary)
                                     .opacity(isCloseHovered ? 0.95 : 0.55)
                             )
                             .frame(width: 19, height: 19)
@@ -484,7 +484,7 @@ private struct TerminalRowView: View {
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(Theme.selectedFill)
+                        .fill(model.selectedFill)
                         .shadow(color: .black.opacity(0.10), radius: 3, y: 1)
                 } else {
                     RoundedRectangle(cornerRadius: 10)
@@ -580,7 +580,7 @@ private struct NewTerminalRowView: View {
                     .font(.system(size: 11, weight: .medium))
                     .opacity(isHovered ? 0.7 : 0.0)
             }
-            .foregroundStyle(Theme.textPrimary.opacity(isHovered ? 0.85 : 0.5))
+            .foregroundStyle(model.textPrimary.opacity(isHovered ? 0.85 : 0.5))
             .padding(.horizontal, 11)
             .frame(height: 40)
             .background(
@@ -614,6 +614,7 @@ private struct BottomBarView: View {
 }
 
 private struct BottomBarButton: View {
+    @Environment(AppModel.self) private var model
     let systemName: String
     let label: String
     let action: () -> Void
@@ -624,7 +625,7 @@ private struct BottomBarButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary.opacity(isHovered ? 0.95 : 0.55))
+                .foregroundStyle(model.textPrimary.opacity(isHovered ? 0.95 : 0.55))
                 .frame(width: 26, height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 7)
