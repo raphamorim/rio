@@ -26,6 +26,9 @@ final class TerminalItem: Identifiable {
     var panelWorkingDirs: [UUID: String] = [:]
     var panelScrollback: [UUID: String] = [:]
     var isExpanded = false
+    /// Deep-link seed: a command typed into the shell once it spawns
+    /// (consumed by `PanelSession.startIfNeeded`). Not persisted.
+    @ObservationIgnored var pendingCommand: String?
 
     init(name: String) {
         self.name = name
@@ -217,6 +220,9 @@ final class AppModel {
     /// Panels currently popped out into picture-in-picture panels; their
     /// tiles show a placeholder until they come back.
     var pipPanelIDs: Set<UUID> = []
+    /// Output watchers, session-only. Scanned by `WatcherScanner` on
+    /// every render of the terminals they belong to.
+    var watchers: [Watcher] = []
     /// Pane being previewed from the sidebar (hover peek), if any.
     var peekedPanelID: UUID?
     /// Sidebar row anchoring the peek: a pane row's panel id, or a terminal
@@ -235,6 +241,42 @@ final class AppModel {
 
     @ObservationIgnored
     private(set) lazy var pip = PiPController(model: self)
+
+    func addWatcher(pattern: String, terminalID: UUID) {
+        let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        watchers.append(
+            Watcher(terminalID: terminalID, pattern: String(trimmed.prefix(80))))
+    }
+
+    func removeWatcher(_ id: UUID) {
+        watchers.removeAll { $0.id == id }
+    }
+
+    func clearWatcherHits(for terminalID: UUID) {
+        for index in watchers.indices
+        where watchers[index].terminalID == terminalID {
+            watchers[index].hits = 0
+        }
+    }
+
+    /// A watcher's pattern appeared in fresh output: count it, and ask
+    /// for attention when Canario is in the background. A short cooldown
+    /// keeps a chatty log from turning the count into a blur.
+    func watcherFired(_ id: UUID) {
+        guard let index = watchers.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        let now = Date()
+        if let last = watchers[index].lastFired, now.timeIntervalSince(last) < 2 {
+            return
+        }
+        watchers[index].hits += 1
+        watchers[index].lastFired = now
+        if !NSApp.isActive {
+            NSApp.requestUserAttention(.informationalRequest)
+        }
+    }
 
     /// Select the terminal (and reveal its space) from a menu-bar click.
     func selectRootItemContaining(terminalID: UUID) {

@@ -257,12 +257,39 @@ final class PanelHostView: NSView {
     /// Menu for right-clicks that don't hit an image.
     private func textMenu(for point: NSPoint, session: PanelSession) -> NSMenu? {
         let menu = NSMenu()
+
+        // Watchers: the selected text becomes the pattern.
+        if let selection = session.selectionText()?
+            .components(separatedBy: .newlines).first?
+            .trimmingCharacters(in: .whitespaces),
+            !selection.isEmpty
+        {
+            pendingWatchPattern = selection
+            let display =
+                selection.count > 24
+                ? String(selection.prefix(24)) + "\u{2026}" : selection
+            let watch = menu.addItem(
+                withTitle: "Watch for \u{201C}\(display)\u{201D}",
+                action: #selector(addWatcherFromMenu), keyEquivalent: "")
+            watch.target = self
+            menu.addItem(.separator())
+        }
+
         let pip = menu.addItem(
             withTitle: "Pop Out Panel",
             action: #selector(popOutFromMenu), keyEquivalent: "")
         pip.target = self
 
         return menu
+    }
+
+    /// Selection captured while building the context menu.
+    private var pendingWatchPattern: String?
+
+    @objc private func addWatcherFromMenu() {
+        guard let session, let pattern = pendingWatchPattern else { return }
+        AppModel.shared?.addWatcher(
+            pattern: pattern, terminalID: session.terminal.id)
     }
 
     @objc private func popOutFromMenu() {

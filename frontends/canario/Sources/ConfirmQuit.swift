@@ -8,6 +8,14 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quitPanel: NSPanel?
 
+    /// canario:// deep links (registered in Info.plist).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let model = AppModel.shared else { return }
+        for url in urls {
+            DeepLink.handle(url, model: model)
+        }
+    }
+
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {

@@ -185,6 +185,14 @@ final class PanelSession {
             injectOutput(text.replacingOccurrences(of: "\n", with: "\r\n"))
             terminal.panelScrollback[panelID] = nil
         }
+        // Deep-link seed: type the command once the shell has settled.
+        if let command = terminal.pendingCommand {
+            terminal.pendingCommand = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                [weak self] in
+                self?.sendText(command + "\r")
+            }
+        }
         render()
     }
 
@@ -195,6 +203,35 @@ final class PanelSession {
         text.withCString { pointer in
             rio_surface_inject_output(surface, pointer, strlen(pointer))
         }
+    }
+
+    /// The visible screen as text, one string per row, trailing blanks
+    /// trimmed. Drives watcher scanning; placeholder and unset cells read
+    /// as spaces.
+    func visibleTextRows() -> [String] {
+        guard let renderState else { return [] }
+        let lines = Int(rio_render_state_lines(renderState))
+        let cols = Int(rio_render_state_columns(renderState))
+        var rows: [String] = []
+        rows.reserveCapacity(lines)
+        for line in 0..<lines {
+            var text = ""
+            text.reserveCapacity(cols)
+            for col in 0..<cols {
+                let cell = rio_render_state_cell(
+                    renderState, UInt16(line), UInt16(col))
+                if cell.codepoint == 0 || cell.codepoint == 0x10EEEE {
+                    text.append(" ")
+                } else if let scalar = Unicode.Scalar(cell.codepoint) {
+                    text.append(Character(scalar))
+                } else {
+                    text.append(" ")
+                }
+            }
+            while text.hasSuffix(" ") { text.removeLast() }
+            rows.append(text)
+        }
+        return rows
     }
 
     /// Kitty images currently on screen, resolved to view-space rects for
@@ -296,6 +333,7 @@ final class PanelSession {
     func render() {
         guard let renderState else { return }
         rio_render_state_update(renderState)
+        WatcherScanner.shared.scan(session: self)
         hostView.surfaceView.setNeedsDisplay(hostView.surfaceView.bounds)
     }
 

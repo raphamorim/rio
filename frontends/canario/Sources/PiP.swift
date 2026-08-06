@@ -41,6 +41,8 @@ final class PiPController {
 
     private func finishBringBack(_ panelID: UUID) {
         if let panel = panels[panelID] {
+            (panel.contentView as? PanelHostView)?.layer?.cornerRadius =
+                Theme.cardRadius
             panel.contentView = NSView()
         }
         panels.removeValue(forKey: panelID)
@@ -64,6 +66,10 @@ final class PiPController {
         panel.minSize = NSSize(width: 280, height: 180)
 
         session.hostView.removeFromSuperview()
+        // The pane keeps its card rounding inside the main window; in a
+        // titled panel that notches the top corners where the content
+        // meets the title bar. The window does its own corner clipping.
+        session.hostView.layer?.cornerRadius = 0
         panel.contentView = session.hostView
 
         // Bottom-right corner of the screen the main window sits on.

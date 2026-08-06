@@ -435,6 +435,10 @@ private struct TerminalRowView: View {
 
                 Spacer(minLength: 0)
 
+                WatcherBadgeView(
+                    terminal: terminal,
+                    tint: isSelected ? model.textSelected : model.textPrimary)
+
                 if let progress = model.terminalProgress[terminal.id] {
                     ProgressRingView(
                         progress: progress,
