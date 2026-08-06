@@ -317,7 +317,12 @@ fn indexed_rgb(i: u8) -> (u8, u8, u8) {
 }
 
 fn dim((r, g, b): (u8, u8, u8)) -> (u8, u8, u8) {
-    (r * 2 / 3, g * 2 / 3, b * 2 / 3)
+    // Widen first: `r * 2` overflows u8 for components >= 128.
+    (
+        (u16::from(r) * 2 / 3) as u8,
+        (u16::from(g) * 2 / 3) as u8,
+        (u16::from(b) * 2 / 3) as u8,
+    )
 }
 
 /// Resolve a named color to RGB using rio's default theme. Dim colors use
