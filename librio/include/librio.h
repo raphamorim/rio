@@ -100,6 +100,12 @@ typedef struct {
   uint16_t pixel_width;
   uint16_t pixel_height;
   size_t scrollback;
+  /* Arguments for the program, after argv[0]. NULL/0 means none. These reach
+   * the child through execvp as separate argv entries, so a host with a
+   * command to run can spawn it instead of typing it into the terminal:
+   * nothing here is ever read by a shell's line editor. */
+  const char *const *args;
+  size_t args_len;
 } rio_surface_config_s;
 
 typedef struct {

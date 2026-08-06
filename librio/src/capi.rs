@@ -87,6 +87,12 @@ pub struct rio_surface_config_s {
     pub pixel_width: u16,
     pub pixel_height: u16,
     pub scrollback: usize,
+    /// Arguments for the program, after argv[0]. NULL/0 means none. These
+    /// reach the child through `execvp` as separate argv entries, so a host
+    /// that has a command to run can spawn it instead of typing it: nothing
+    /// here is ever read by a shell's line editor.
+    pub args: *const *const c_char,
+    pub args_len: usize,
 }
 
 #[repr(C)]
@@ -509,9 +515,16 @@ pub unsafe extern "C" fn rio_surface_new(
         }
         let engine = unsafe { &*engine };
         let config = unsafe { &*config };
+        let args = if config.args.is_null() {
+            Vec::new()
+        } else {
+            (0..config.args_len)
+                .filter_map(|i| unsafe { cstr_opt(*config.args.add(i)) })
+                .collect()
+        };
         let desc = SurfaceDesc {
             shell: unsafe { cstr_opt(config.shell) },
-            args: Vec::new(),
+            args,
             working_dir: unsafe { cstr_opt(config.working_dir) },
             cols: config.cols.max(2),
             rows: config.rows.max(2),
@@ -1313,6 +1326,42 @@ mod persistence_tests {
         fn action(&self, _: SurfaceId, _: crate::Action) {}
         fn clipboard_write(&self, _: SurfaceId, _: crate::ClipboardType, _: String) {}
         fn close_surface(&self, _: SurfaceId) {}
+    }
+
+    /// Spawning with argv is what lets a host run a command without typing
+    /// it, so the bytes never reach a shell's line editor. A control
+    /// character in the argument must survive as data: were it interpreted,
+    /// `printf` would not print it back.
+    #[test]
+    fn args_reach_the_child_as_argv() {
+        let engine = crate::Engine::new(Arc::new(NopDelegate));
+        let surface = engine
+            .create_surface(&crate::SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec![
+                    "-c".into(),
+                    // A literal ^U (0x15) between two markers.
+                    "printf '%s' 'AR\u{15}GV_OK'".into(),
+                ],
+                working_dir: None,
+                cols: 80,
+                rows: 24,
+                pixel_width: 640,
+                pixel_height: 384,
+                scrollback: 1000,
+            })
+            .expect("surface");
+        // The child writes and exits; poll rather than sleep a fixed span.
+        let mut dump = String::new();
+        for _ in 0..100 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            dump = surface.dump();
+            if dump.contains("GV_OK") {
+                break;
+            }
+        }
+        assert!(dump.contains("AR"), "dump was: {dump:?}");
+        assert!(dump.contains("GV_OK"), "dump was: {dump:?}");
     }
 
     #[test]

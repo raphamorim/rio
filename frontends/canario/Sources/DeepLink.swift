@@ -93,8 +93,8 @@ enum DeepLink {
     }
 
     /// New terminal, optionally filed into the named space and seeded
-    /// with a working directory and a command to type once the shell is
-    /// up.
+    /// with a working directory and a command the shell is spawned
+    /// running.
     @MainActor
     private static func openTerminal(
         model: AppModel, space: String?, cwd: String?, command: String?

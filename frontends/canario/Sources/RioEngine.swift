@@ -105,6 +105,22 @@ final class RioEngine {
     }
 }
 
+/// Borrow `args` as a NULL-terminated-free C argv for the duration of
+/// `body`, which is all `rio_surface_new` needs: it copies what it reads.
+private func withArgv<R>(
+    _ args: [String],
+    _ body: (UnsafePointer<UnsafePointer<CChar>?>?, Int) -> R
+) -> R {
+    guard !args.isEmpty else { return body(nil, 0) }
+    let cstrings: [UnsafePointer<CChar>?] = args.map { UnsafePointer(strdup($0)) }
+    defer {
+        for pointer in cstrings {
+            free(UnsafeMutableRawPointer(mutating: pointer))
+        }
+    }
+    return cstrings.withUnsafeBufferPointer { body($0.baseAddress, $0.count) }
+}
+
 final class PanelSession {
     let panelID: UUID
     let terminal: TerminalItem
@@ -163,9 +179,23 @@ final class PanelSession {
         config.pixel_height = UInt16(clamping: Int(pixelSize.height))
         config.scrollback = 10_000
 
+        // A deep-link command is spawned, never typed: it goes to the shell
+        // as one `-c` argument, so the line editor never sees it and its
+        // bytes cannot act as editing keys. `-i` keeps the interactive rc
+        // files sourced, so the command runs with the aliases and PATH the
+        // user expects, and the trailing exec leaves a usable shell behind.
+        // The separator is a newline rather than `;` so a command ending in
+        // a comment cannot swallow it.
+        let runCommand = terminal.pendingCommand
+        terminal.pendingCommand = nil
+        let args =
+            runCommand.map { ["-i", "-c", "\($0)\nexec \"$SHELL\" -i"] } ?? []
+
         // Session restore: start the shell in the saved working directory.
         let savedCwd = terminal.panelWorkingDirs[panelID]
-        let created: OpaquePointer? = {
+        let created: OpaquePointer? = withArgv(args) { argv, argc in
+            config.args = argv
+            config.args_len = argc
             if let cwd = savedCwd {
                 return cwd.withCString { cwdPtr in
                     config.working_dir = cwdPtr
@@ -177,7 +207,7 @@ final class PanelSession {
             return withUnsafePointer(to: &config) {
                 rio_surface_new(RioEngine.shared.handle(), $0)
             }
-        }()
+        }
         guard let surface = created else { return }
         self.surface = surface
         self.lastCols = cols
@@ -191,13 +221,10 @@ final class PanelSession {
             injectOutput(text.replacingOccurrences(of: "\n", with: "\r\n"))
             terminal.panelScrollback[panelID] = nil
         }
-        // Deep-link seed: type the command once the shell has settled.
-        if let command = terminal.pendingCommand {
-            terminal.pendingCommand = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                [weak self] in
-                self?.sendText(command + "\r")
-            }
+        // The spawned command produces no prompt line of its own, so echo it
+        // into the DISPLAY (not the shell) for parity with a typed command.
+        if let command = runCommand {
+            injectOutput("\u{1b}[90m$\u{1b}[0m \(command)\r\n")
         }
         render()
     }

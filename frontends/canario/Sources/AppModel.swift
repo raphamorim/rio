@@ -26,8 +26,9 @@ final class TerminalItem: Identifiable {
     var panelWorkingDirs: [UUID: String] = [:]
     var panelScrollback: [UUID: String] = [:]
     var isExpanded = false
-    /// Deep-link seed: a command typed into the shell once it spawns
-    /// (consumed by `PanelSession.startIfNeeded`). Not persisted.
+    /// Deep-link seed: a command the shell is spawned running, as a `-c`
+    /// argument rather than typed input (consumed by
+    /// `PanelSession.startIfNeeded`). Not persisted.
     @ObservationIgnored var pendingCommand: String?
 
     init(name: String) {
