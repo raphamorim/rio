@@ -33,10 +33,33 @@ struct TerminalMetrics {
     let cellHeight: CGFloat
     let padding: CGFloat
 
+    /// Distance from the cell top to the baseline; glyph drawing and the
+    /// Nerd Font constraint transform both hang off it.
+    let ascent: CGFloat
+    /// `(2 * cap_height + face_height) / 3`, the Nerd Fonts patcher's
+    /// single-cell icon height heuristic (same as ghostty's
+    /// `icon_height_single`).
+    let iconHeightSingle: CGFloat
+
     init(fontSize: CGFloat) {
-        let base =
+        var base =
             NSFont(name: "Menlo", size: fontSize)
             ?? .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+
+        // Cascade to the symbols-only Nerd Font embedded in librio (the
+        // libghostty approach), so icon codepoints resolve with no font
+        // file in the bundle and nothing installed on the machine.
+        var fontLength = 0
+        if let bytes = rio_symbols_nerd_font(&fontLength), fontLength > 0,
+            let data = CFDataCreate(nil, bytes, fontLength),
+            let descriptor = CTFontManagerCreateFontDescriptorFromData(data)
+        {
+            let cascaded = base.fontDescriptor.addingAttributes([
+                .cascadeList: [descriptor as NSFontDescriptor]
+            ])
+            base = NSFont(descriptor: cascaded, size: fontSize) ?? base
+        }
+
         let manager = NSFontManager.shared
         regular = base
         bold = manager.convert(base, toHaveTrait: .boldFontMask)
@@ -51,6 +74,8 @@ struct TerminalMetrics {
         let lineHeight =
             CTFontGetAscent(ct) + CTFontGetDescent(ct) + CTFontGetLeading(ct)
         cellHeight = ceil(lineHeight)
+        ascent = CTFontGetAscent(ct)
+        iconHeightSingle = (2 * CTFontGetCapHeight(ct) + cellHeight) / 3
         padding = 6
     }
 
@@ -67,6 +92,16 @@ struct TerminalMetrics {
 final class CPURenderer {
     private(set) var metrics: TerminalMetrics
     var preedit: String?
+
+    /// Resolved font + glyph + bounding box for icon codepoints, so the
+    /// cascade walk and measurement run once per codepoint per font size.
+    /// `nil` means "measured, nothing usable: draw the normal way".
+    private struct IconGlyph {
+        let font: CTFont
+        let glyph: CGGlyph
+        let bounds: CGRect
+    }
+    private var iconCache: [UInt32: IconGlyph?] = [:]
 
     // Rio's default theme (rio-vt config/colors/defaults.rs); librio resolves
     // cell colors from the same source, these cover what the renderer draws
@@ -86,6 +121,7 @@ final class CPURenderer {
 
     func setFontSize(_ size: CGFloat) {
         metrics = TerminalMetrics(fontSize: size)
+        iconCache.removeAll()
     }
 
     private func color(_ c: rio_color_s) -> NSColor {
@@ -148,6 +184,27 @@ final class CPURenderer {
                     cell.codepoint != 0x20, cell.codepoint != 0
                 else { continue }
 
+                // Icon codepoints go through the Nerd Fonts constraint
+                // pipeline (scaled + aligned per the patcher's rules, like
+                // ghostty/rio). Everything else is plain string drawing.
+                if cell.codepoint >= 0x2300 {
+                    // A free neighbour cell lets wide icons span two cells,
+                    // the same test ghostty applies.
+                    let nextFree =
+                        col + 1 < cols
+                        && {
+                            let next = rio_render_state_cell(
+                                state, UInt16(line), UInt16(col + 1))
+                            return next.codepoint == 0x20 || next.codepoint == 0
+                        }()
+                    if drawConstrainedGlyph(
+                        scalar, at: NSPoint(x: x, y: y), color: fg,
+                        constraintWidth: nextFree ? 2 : 1)
+                    {
+                        continue
+                    }
+                }
+
                 let font = metrics.font(
                     bold: cell.style_flags & StyleFlag.bold != 0,
                     italic: cell.style_flags & StyleFlag.italic != 0)
@@ -166,6 +223,116 @@ final class CPURenderer {
         }
 
         drawCursor(state: state, cols: cols, lines: lines, focused: focused)
+    }
+
+    /// Draw an icon glyph through librio's Nerd Fonts constraint math
+    /// (the ghostty-derived table): resolve the glyph through the font
+    /// cascade, measure it, let the table scale/align it, then paint the
+    /// transformed outline. Returns false when the codepoint has no rule
+    /// and generic PUA fitting doesn't apply, so the caller falls back to
+    /// plain text drawing.
+    private func drawConstrainedGlyph(
+        _ scalar: Unicode.Scalar, at cellOrigin: NSPoint, color: NSColor,
+        constraintWidth: Int32
+    ) -> Bool {
+        guard let icon = resolveIconGlyph(scalar) else { return false }
+        let bounds = icon.bounds
+        // The constraint math uses ghostty's space: y-up from the CELL
+        // BOTTOM. CoreText boxes are y-up from the BASELINE; the descent
+        // is the shift between the two.
+        let descent = metrics.cellHeight - metrics.ascent
+
+        var constrained = rio_glyph_box_s(
+            x: bounds.minX, y: bounds.minY + descent,
+            width: bounds.width, height: bounds.height)
+        let hasRule = rio_nerd_constrain(
+            scalar.value,
+            constrained,
+            Double(metrics.cellWidth), Double(metrics.cellHeight),
+            Double(metrics.iconHeightSingle),
+            UInt8(clamping: constraintWidth),
+            &constrained)
+
+        if !hasRule {
+            // Untabled codepoint: only intervene for private-use icons
+            // that overflow their cells; scale to fit, centered (in the
+            // same cell-bottom space as the table output).
+            let isPUA =
+                (0xE000...0xF8FF).contains(scalar.value)
+                || scalar.value >= 0xF0000
+            let maxWidth = metrics.cellWidth * CGFloat(constraintWidth)
+            guard
+                isPUA,
+                bounds.width > 0, bounds.height > 0,
+                bounds.width > maxWidth || bounds.height > metrics.cellHeight
+            else { return false }
+            let scale = min(
+                maxWidth / bounds.width, metrics.cellHeight / bounds.height)
+            let width = bounds.width * scale
+            let height = bounds.height * scale
+            constrained = rio_glyph_box_s(
+                x: (maxWidth - width) / 2,
+                y: (metrics.cellHeight - height) / 2,
+                width: width, height: height)
+        }
+
+        guard bounds.width > 0, bounds.height > 0,
+            let context = NSGraphicsContext.current?.cgContext
+        else { return false }
+
+        // Map the measured box onto the constrained one. The output box is
+        // cell-bottom based; shift by descent to get back to baseline
+        // space, in which the glyph outlines are drawn. The view is
+        // flipped, so the vertical axis negates.
+        let sx = constrained.width / bounds.width
+        let sy = constrained.height / bounds.height
+        let tx = constrained.x - sx * bounds.minX
+        let ty = (constrained.y - descent) - sy * bounds.minY
+        let baselineY = cellOrigin.y + metrics.ascent
+
+        context.saveGState()
+        // CTFontDrawGlyphs multiplies in the text matrix, which AppKit's
+        // flipped string drawing leaves flipped (and saveGState does NOT
+        // cover it). Our CTM handles the flip; the text matrix must not.
+        context.textMatrix = .identity
+        context.translateBy(
+            x: cellOrigin.x + CGFloat(tx), y: baselineY - CGFloat(ty))
+        context.scaleBy(x: CGFloat(sx), y: -CGFloat(sy))
+        context.setFillColor(color.cgColor)
+        var glyph = icon.glyph
+        var position = CGPoint.zero
+        CTFontDrawGlyphs(icon.font, &glyph, &position, 1, context)
+        context.restoreGState()
+        return true
+    }
+
+    private func resolveIconGlyph(_ scalar: Unicode.Scalar) -> IconGlyph? {
+        if let cached = iconCache[scalar.value] { return cached }
+
+        let string = String(scalar)
+        let base = metrics.regular as CTFont
+        // Walks the cascade list (including the bundled symbols font) to
+        // the face that actually covers the codepoint.
+        let resolved = CTFontCreateForString(
+            base, string as CFString,
+            CFRange(location: 0, length: string.utf16.count))
+
+        var units = Array(string.utf16)
+        var glyphs = [CGGlyph](repeating: 0, count: units.count)
+        var result: IconGlyph?
+        if CTFontGetGlyphsForCharacters(resolved, &units, &glyphs, units.count),
+            let glyph = glyphs.first, glyph != 0
+        {
+            var g = glyph
+            var bounds = CGRect.zero
+            bounds = CTFontGetBoundingRectsForGlyphs(
+                resolved, .default, &g, nil, 1)
+            if !bounds.isEmpty {
+                result = IconGlyph(font: resolved, glyph: glyph, bounds: bounds)
+            }
+        }
+        iconCache[scalar.value] = result
+        return result
     }
 
     private func drawCursor(

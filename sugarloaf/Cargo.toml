@@ -48,6 +48,7 @@ tracing = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 image_rs = { workspace = true }
 rio-graphics = { workspace = true, features = ["glyph"] }
+rio-fonts = { workspace = true }
 unicode-width = { workspace = true }
 guillotiere = "0.6.2"
 rustc-hash = { workspace = true }

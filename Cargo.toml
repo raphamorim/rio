@@ -4,6 +4,7 @@ members = [
     "teletypewriter",
     "corcovado",
     "rio-graphics",
+    "rio-fonts",
     "rio-vt",
     "rio-backend",
     "rio-grapheme-width",
@@ -38,6 +39,7 @@ rio-grapheme-width = { path = "rio-grapheme-width", version = "0.5.14" }
 sugarloaf = { path = "sugarloaf", version = "0.5.14" }
 corcovado = { path = "corcovado", version = "0.5.14" }
 rio-graphics = { path = "rio-graphics", version = "0.5.14" }
+rio-fonts = { path = "rio-fonts", version = "0.5.14" }
 rio-vt = { path = "rio-vt", version = "0.5.14" }
 
 raw-window-handle = { version = "0.6.2", features = ["std"] }

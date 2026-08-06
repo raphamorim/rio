@@ -837,6 +837,91 @@ pub unsafe extern "C" fn rio_render_state_display_offset(
     .unwrap_or(0)
 }
 
+/// Symbols-only Nerd Font, embedded the way libghostty embeds it, so every
+/// embedder can offer icon glyphs (Powerline, Font Awesome, Material, ...)
+/// without shipping a font file or requiring one installed. Pair with
+/// [`rio_nerd_constrain`] for patched-font-quality scaling.
+static SYMBOLS_NERD_FONT: &[u8] = rio_fonts::SYMBOLS_NERD_FONT;
+
+/// The embedded symbols-only Nerd Font as raw TTF bytes. The pointer is
+/// static; never freed, valid for the process lifetime.
+#[no_mangle]
+pub unsafe extern "C" fn rio_symbols_nerd_font(len: *mut usize) -> *const u8 {
+    if !len.is_null() {
+        unsafe { *len = SYMBOLS_NERD_FONT.len() };
+    }
+    SYMBOLS_NERD_FONT.as_ptr()
+}
+
+/// A glyph's bounding box in pixels, y-up, origin at the pen/baseline.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct rio_glyph_box_s {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Apply the Nerd Fonts patcher's scaling/alignment rules to a glyph
+/// (the same generated table ghostty and sugarloaf use). `glyph` is the
+/// glyph's bounding box; `constraint_width` is how many cells are
+/// horizontally free (1 or 2). Writes the adjusted box to `out` and
+/// returns true when the codepoint has a rule; returns false (out
+/// untouched) for codepoints the table doesn't cover.
+///
+/// `icon_height_single` follows the patcher heuristic
+/// `(2 * cap_height + face_height) / 3`; pass the face's values so
+/// single-cell icons sit on the visual x-height like patched fonts do.
+#[no_mangle]
+pub unsafe extern "C" fn rio_nerd_constrain(
+    codepoint: u32,
+    glyph: rio_glyph_box_s,
+    cell_width: f64,
+    cell_height: f64,
+    icon_height_single: f64,
+    constraint_width: u8,
+    out: *mut rio_glyph_box_s,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        use rio_fonts::nerd_font::{self, GlyphSize, Metrics};
+        if out.is_null() {
+            return false;
+        }
+        let Some(constraint) = nerd_font::get_constraint(codepoint) else {
+            return false;
+        };
+        let constrained = constraint.constrain(
+            GlyphSize {
+                width: glyph.width,
+                height: glyph.height,
+                x: glyph.x,
+                y: glyph.y,
+            },
+            Metrics {
+                face_width: cell_width,
+                face_height: cell_height,
+                face_y: 0.0,
+                cell_width: cell_width.round() as u32,
+                cell_height: cell_height.round() as u32,
+                icon_height_single,
+                icon_height: cell_height,
+            },
+            constraint_width.clamp(1, 2),
+        );
+        unsafe {
+            *out = rio_glyph_box_s {
+                x: constrained.x,
+                y: constrained.y,
+                width: constrained.width,
+                height: constrained.height,
+            };
+        }
+        true
+    }))
+    .unwrap_or(false)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_cursor(
     state: *const RenderState,
@@ -883,6 +968,29 @@ mod color_tests {
         // Rio's signature pink cursor.
         let cur = color_to_c(AnsiColor::Named(NamedColor::Cursor));
         assert_eq!((cur.r, cur.g, cur.b), (0xf7, 0x12, 0xff));
+    }
+
+    #[test]
+    fn nerd_constrain_scales_icons_and_skips_plain_text() {
+        // U+E0B0 (Powerline right triangle) is in the table: stretch rules.
+        let glyph = rio_glyph_box_s {
+            x: 0.0,
+            y: -2.0,
+            width: 20.0,
+            height: 30.0,
+        };
+        let mut out = rio_glyph_box_s::default();
+        let hit = unsafe {
+            rio_nerd_constrain(0xE0B0, glyph, 10.0, 22.0, 18.0, 1, &mut out)
+        };
+        assert!(hit, "powerline glyphs must be constrained");
+        assert!(out.width <= 10.0 + f64::EPSILON, "fits the cell width");
+
+        // 'a' has no entry: untouched, reported as such.
+        let miss = unsafe {
+            rio_nerd_constrain(0x61, glyph, 10.0, 22.0, 18.0, 1, &mut out)
+        };
+        assert!(!miss);
     }
 
     #[test]
