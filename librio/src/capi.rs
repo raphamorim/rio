@@ -4,7 +4,7 @@ use crate::{
     Action, Engine, Key, KeyAction, KeyEvent, Modifiers, RenderState, SelectionKind,
     Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
-use rio_vt::config::colors::{AnsiColor, NamedColor};
+use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
@@ -252,14 +252,75 @@ impl SurfaceDelegate for CDelegate {
     }
 }
 
-/// Rio's default theme, shared with the rio frontend via rio-vt so the two
-/// can never drift apart. Resolved once; the per-cell paths below read it as
-/// plain arrays. (Theme-file loading can later replace this with a
-/// deserialized `Colors` — everything downstream already goes through it.)
-fn theme() -> &'static rio_vt::config::Colors {
-    static THEME: std::sync::OnceLock<rio_vt::config::Colors> =
+/// The active color scheme. Starts as Rio's default theme (shared with the
+/// rio frontend via rio-vt so the two can never drift apart) and is replaced
+/// wholesale by `rio_set_colors`. Everything downstream resolves through it,
+/// so a swap re-themes every cell on the host's next draw: the snapshot
+/// keeps original named/indexed colors and resolves at query time.
+fn theme_lock() -> &'static std::sync::RwLock<rio_vt::config::Colors> {
+    static THEME: std::sync::OnceLock<std::sync::RwLock<rio_vt::config::Colors>> =
         std::sync::OnceLock::new();
-    THEME.get_or_init(rio_vt::config::Colors::default)
+    THEME.get_or_init(|| std::sync::RwLock::new(rio_vt::config::Colors::default()))
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct rio_rgb_s {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+/// A color scheme, limited to what the engine itself resolves: the 16 ANSI
+/// slots plus the named defaults. Selection/cursor *rendering* colors stay
+/// host-side; `cursor` here covers cells that reference the cursor color.
+#[repr(C)]
+pub struct rio_colors_s {
+    /// ANSI 0-7 normal, 8-15 bright.
+    pub ansi: [rio_rgb_s; 16],
+    pub foreground: rio_rgb_s,
+    pub background: rio_rgb_s,
+    pub cursor: rio_rgb_s,
+}
+
+/// Replace the palette used to resolve named/indexed cell colors. NULL
+/// restores Rio's default theme. Dim variants derive from the new palette
+/// (2/3 luminance, rio's fallback). The host owns redraw: call
+/// `rio_render_state_update` + repaint after this.
+///
+/// # Safety
+/// `colors`, when non-NULL, must point to a valid `rio_colors_s`.
+#[no_mangle]
+pub unsafe extern "C" fn rio_set_colors(colors: *const rio_colors_s) {
+    let mut theme = rio_vt::config::Colors::default();
+    if let Some(colors) = colors.as_ref() {
+        let rgb = |c: rio_rgb_s| ColorRgb {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+        };
+        let arr = |c: rio_rgb_s| rgb(c).to_arr();
+        theme.black = arr(colors.ansi[0]);
+        theme.red = arr(colors.ansi[1]);
+        theme.green = arr(colors.ansi[2]);
+        theme.yellow = arr(colors.ansi[3]);
+        theme.blue = arr(colors.ansi[4]);
+        theme.magenta = arr(colors.ansi[5]);
+        theme.cyan = arr(colors.ansi[6]);
+        theme.white = arr(colors.ansi[7]);
+        theme.light_black = arr(colors.ansi[8]);
+        theme.light_red = arr(colors.ansi[9]);
+        theme.light_green = arr(colors.ansi[10]);
+        theme.light_yellow = arr(colors.ansi[11]);
+        theme.light_blue = arr(colors.ansi[12]);
+        theme.light_magenta = arr(colors.ansi[13]);
+        theme.light_cyan = arr(colors.ansi[14]);
+        theme.light_white = arr(colors.ansi[15]);
+        theme.foreground = arr(colors.foreground);
+        theme.background = rgb(colors.background).to_composition();
+        theme.cursor = arr(colors.cursor);
+    }
+    *theme_lock().write().unwrap() = theme;
 }
 
 /// sRGB 0..1 component array (rio's `ColorArray`) to 8-bit RGB.
@@ -271,10 +332,9 @@ fn arr_rgb(c: [f32; 4]) -> (u8, u8, u8) {
     )
 }
 
-/// Rio's default 16-color palette. Used to resolve named / low-indexed
+/// The active 16-color palette. Used to resolve named / low-indexed
 /// colors to concrete RGB.
-fn ansi16(i: u8) -> (u8, u8, u8) {
-    let t = theme();
+fn ansi16(t: &rio_vt::config::Colors, i: u8) -> (u8, u8, u8) {
     let arr = match i & 0x0f {
         0 => t.black,
         1 => t.red,
@@ -297,9 +357,9 @@ fn ansi16(i: u8) -> (u8, u8, u8) {
 }
 
 /// Resolve a 256-color index to RGB (16 ANSI, 6x6x6 cube, 24 grays).
-fn indexed_rgb(i: u8) -> (u8, u8, u8) {
+fn indexed_rgb(t: &rio_vt::config::Colors, i: u8) -> (u8, u8, u8) {
     match i {
-        0..=15 => ansi16(i),
+        0..=15 => ansi16(t, i),
         16..=231 => {
             const STEPS: [u8; 6] = [0, 95, 135, 175, 215, 255];
             let i = i - 16;
@@ -325,32 +385,33 @@ fn dim((r, g, b): (u8, u8, u8)) -> (u8, u8, u8) {
     )
 }
 
-/// Resolve a named color to RGB using rio's default theme. Dim colors use
+/// Resolve a named color to RGB using the active theme. Dim colors use
 /// the theme's explicit dim entry when present, else 2/3 of the base color
 /// (same fallback rio applies).
-fn named_rgb(n: NamedColor) -> (u8, u8, u8) {
+fn named_rgb(t: &rio_vt::config::Colors, n: NamedColor) -> (u8, u8, u8) {
     use NamedColor::*;
-    let t = theme();
     let dim_or = |explicit: Option<[f32; 4]>, base: u8| {
-        explicit.map(arr_rgb).unwrap_or_else(|| dim(ansi16(base)))
+        explicit
+            .map(arr_rgb)
+            .unwrap_or_else(|| dim(ansi16(t, base)))
     };
     match n {
-        Black => ansi16(0),
-        Red => ansi16(1),
-        Green => ansi16(2),
-        Yellow => ansi16(3),
-        Blue => ansi16(4),
-        Magenta => ansi16(5),
-        Cyan => ansi16(6),
-        White => ansi16(7),
-        LightBlack => ansi16(8),
-        LightRed => ansi16(9),
-        LightGreen => ansi16(10),
-        LightYellow => ansi16(11),
-        LightBlue => ansi16(12),
-        LightMagenta => ansi16(13),
-        LightCyan => ansi16(14),
-        LightWhite => ansi16(15),
+        Black => ansi16(t, 0),
+        Red => ansi16(t, 1),
+        Green => ansi16(t, 2),
+        Yellow => ansi16(t, 3),
+        Blue => ansi16(t, 4),
+        Magenta => ansi16(t, 5),
+        Cyan => ansi16(t, 6),
+        White => ansi16(t, 7),
+        LightBlack => ansi16(t, 8),
+        LightRed => ansi16(t, 9),
+        LightGreen => ansi16(t, 10),
+        LightYellow => ansi16(t, 11),
+        LightBlue => ansi16(t, 12),
+        LightMagenta => ansi16(t, 13),
+        LightCyan => ansi16(t, 14),
+        LightWhite => ansi16(t, 15),
         Foreground => arr_rgb(t.foreground),
         LightForeground => arr_rgb(t.light_foreground.unwrap_or(t.foreground)),
         DimForeground => t
@@ -376,8 +437,8 @@ fn named_rgb(n: NamedColor) -> (u8, u8, u8) {
 /// directly without owning a palette.
 fn color_to_c(color: AnsiColor) -> rio_color_s {
     let (r, g, b) = match color {
-        AnsiColor::Named(named) => named_rgb(named),
-        AnsiColor::Indexed(index) => indexed_rgb(index),
+        AnsiColor::Named(named) => named_rgb(&theme_lock().read().unwrap(), named),
+        AnsiColor::Indexed(index) => indexed_rgb(&theme_lock().read().unwrap(), index),
         AnsiColor::Spec(rgb) => (rgb.r, rgb.g, rgb.b),
     };
     match color {
@@ -1136,18 +1197,24 @@ mod color_tests {
 
     #[test]
     fn resolves_indexed_palette() {
-        // ANSI 0-15 come from rio's default theme...
-        assert_eq!(indexed_rgb(0), arr_rgb(theme().black));
-        assert_eq!(indexed_rgb(15), arr_rgb(theme().light_white));
+        // One guard for the whole test: the active theme is process-global
+        // and another test may swap it between two separate reads.
+        let t = theme_lock().read().unwrap();
+        // ANSI 0-15 come from the active theme...
+        assert_eq!(indexed_rgb(&t, 0), arr_rgb(t.black));
+        assert_eq!(indexed_rgb(&t, 15), arr_rgb(t.light_white));
         // ...while the cube and grays stay the standard xterm ramp.
-        assert_eq!(indexed_rgb(16), (0, 0, 0)); // cube origin
-        assert_eq!(indexed_rgb(231), (255, 255, 255)); // cube max
-        assert_eq!(indexed_rgb(232), (8, 8, 8)); // first gray
-        assert_eq!(indexed_rgb(255), (238, 238, 238)); // last gray
+        assert_eq!(indexed_rgb(&t, 16), (0, 0, 0)); // cube origin
+        assert_eq!(indexed_rgb(&t, 231), (255, 255, 255)); // cube max
+        assert_eq!(indexed_rgb(&t, 232), (8, 8, 8)); // first gray
+        assert_eq!(indexed_rgb(&t, 255), (238, 238, 238)); // last gray
     }
 
+    // Default assertions, the rio_set_colors swap, and the NULL reset live
+    // in ONE test: the theme is process-global, so a separate swap test
+    // would race the default assertions under the parallel test runner.
     #[test]
-    fn named_fills_rgb_and_keeps_kind() {
+    fn named_fills_rgb_and_follows_set_colors() {
         // Rio's default red (#FF1261), not xterm's (205, 0, 0).
         let c = color_to_c(AnsiColor::Named(NamedColor::Red));
         assert_eq!(c.kind, RIO_COLOR_NAMED);
@@ -1159,6 +1226,47 @@ mod color_tests {
         // Rio's signature pink cursor.
         let cur = color_to_c(AnsiColor::Named(NamedColor::Cursor));
         assert_eq!((cur.r, cur.g, cur.b), (0xf7, 0x12, 0xff));
+
+        // Swap in a scheme and every resolution path follows it.
+        let mut scheme = rio_colors_s {
+            ansi: [rio_rgb_s::default(); 16],
+            foreground: rio_rgb_s {
+                r: 0xf8,
+                g: 0xf8,
+                b: 0xf2,
+            },
+            background: rio_rgb_s {
+                r: 0x28,
+                g: 0x2a,
+                b: 0x36,
+            },
+            cursor: rio_rgb_s {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+            },
+        };
+        scheme.ansi[1] = rio_rgb_s {
+            r: 0xff,
+            g: 0x55,
+            b: 0x55,
+        };
+        unsafe { rio_set_colors(&scheme) };
+
+        let c = color_to_c(AnsiColor::Named(NamedColor::Red));
+        assert_eq!((c.r, c.g, c.b), (0xff, 0x55, 0x55));
+        let c = color_to_c(AnsiColor::Indexed(1));
+        assert_eq!((c.r, c.g, c.b), (0xff, 0x55, 0x55));
+        // Dim falls back to 2/3 of the new base, not the old theme's.
+        let c = color_to_c(AnsiColor::Named(NamedColor::DimRed));
+        assert_eq!((c.r, c.g, c.b), (dim((0xff, 0x55, 0x55))));
+        let bg = color_to_c(AnsiColor::Named(NamedColor::Background));
+        assert_eq!((bg.r, bg.g, bg.b), (0x28, 0x2a, 0x36));
+
+        // NULL restores the default theme.
+        unsafe { rio_set_colors(std::ptr::null()) };
+        let c = color_to_c(AnsiColor::Named(NamedColor::Red));
+        assert_eq!((c.r, c.g, c.b), (0xff, 0x12, 0x61));
     }
 
     #[test]

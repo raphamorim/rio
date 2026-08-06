@@ -122,6 +122,23 @@ typedef struct {
 } rio_cell_s;
 
 typedef struct {
+  uint8_t r;
+  uint8_t g;
+  uint8_t b;
+} rio_rgb_s;
+
+/* A color scheme, limited to what the engine itself resolves: the 16 ANSI
+ * slots plus the named defaults. Selection/cursor rendering colors stay
+ * host-side; `cursor` here covers cells that reference the cursor color. */
+typedef struct {
+  /* ANSI 0-7 normal, 8-15 bright. */
+  rio_rgb_s ansi[16];
+  rio_rgb_s foreground;
+  rio_rgb_s background;
+  rio_rgb_s cursor;
+} rio_colors_s;
+
+typedef struct {
   uint16_t line;
   uint16_t column;
 } rio_cursor_s;
@@ -167,6 +184,12 @@ typedef struct {
 
 rio_engine_t *rio_engine_new(const rio_runtime_config_s *config);
 void rio_engine_free(rio_engine_t *engine);
+
+/* Replace the palette used to resolve named/indexed cell colors, process-wide.
+ * NULL restores Rio's default theme. Dim variants derive from the new palette.
+ * The host owns redraw: repaint every surface after this (cells re-resolve on
+ * the next rio_render_state_cell read; no re-snapshot needed). */
+void rio_set_colors(const rio_colors_s *colors);
 
 rio_surface_t *rio_surface_new(rio_engine_t *engine,
                                const rio_surface_config_s *config);
