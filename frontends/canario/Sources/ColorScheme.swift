@@ -88,6 +88,17 @@ extension ColorScheme {
 
     static let prebuilt: [ColorScheme] = [
         .rio,
+        // raphamorim/lucario (rio/lucario.toml + the README's selection color).
+        ColorScheme(
+            name: "Lucario", isDark: true,
+            ansi: [
+                "#19242f", "#e94b35", "#199c4b", "#f0cc04", "#5c98cd", "#ca94ff", "#8be0fd", "#f8f8f2",
+                "#2f3943", "#ff6541", "#72cc5a", "#ffffa5", "#d6acff", "#d4a9ff", "#b9ecfd", "#ffffff",
+            ],
+            foreground: "#f8f8f2", background: "#2b3e50",
+            cursor: "#f0cc04",
+            selectionBackground: "#19242f",
+            selectionForeground: "#f8f8f2"),
         ColorScheme(
             name: "Dracula", isDark: true,
             ansi: [
