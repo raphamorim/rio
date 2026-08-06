@@ -106,6 +106,9 @@ final class PanelSession {
     let panelID: UUID
     let terminal: TerminalItem
     let hostView: PanelHostView
+    /// Frame-paced rendering: see `render()`.
+    private var displayLink: CADisplayLink?
+    private var needsRender = false
 
     private(set) var surface: OpaquePointer?
     private(set) var renderState: OpaquePointer?
@@ -330,7 +333,30 @@ final class PanelSession {
             state: renderState, bounds: view.bounds, focused: focused)
     }
 
+    /// Render requests coalesce onto the display's refresh (ghostty's
+    /// renderer pacing): a flood of PTY wakeups marks the session dirty
+    /// and the display link performs one snapshot + draw per frame, so
+    /// high-volume output can't outpace the screen or tear mid-burst.
+    /// (Applications that wrap updates in synchronized-output [?2026
+    /// are already buffered whole by rio-vt's parser.)
     func render() {
+        needsRender = true
+        if displayLink == nil {
+            let link = hostView.displayLink(
+                target: self, selector: #selector(displayTick))
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+        }
+        displayLink?.isPaused = false
+    }
+
+    @objc private func displayTick() {
+        guard needsRender else {
+            // Nothing new since the last frame: sleep until woken.
+            displayLink?.isPaused = true
+            return
+        }
+        needsRender = false
         guard let renderState else { return }
         rio_render_state_update(renderState)
         WatcherScanner.shared.scan(session: self)
@@ -472,6 +498,8 @@ final class PanelSession {
     }
 
     func shutdown() {
+        displayLink?.invalidate()
+        displayLink = nil
         if surfaceID != 0 {
             RioEngine.shared.unregister(id: surfaceID)
         }

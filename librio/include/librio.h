@@ -44,6 +44,16 @@ typedef size_t rio_surface_id_t;
 #define RIO_KEY_F 15u
 /* No key: an event that carries only text, such as an input method commit. */
 #define RIO_KEY_NONE 16u
+/* Modifier keys as keys; reported only in kitty report-all mode. */
+#define RIO_KEY_CAPS_LOCK 17u
+#define RIO_KEY_SHIFT_LEFT 18u
+#define RIO_KEY_SHIFT_RIGHT 19u
+#define RIO_KEY_CONTROL_LEFT 20u
+#define RIO_KEY_CONTROL_RIGHT 21u
+#define RIO_KEY_ALT_LEFT 22u
+#define RIO_KEY_ALT_RIGHT 23u
+#define RIO_KEY_SUPER_LEFT 24u
+#define RIO_KEY_SUPER_RIGHT 25u
 
 #define RIO_KEY_ACTION_PRESS 0u
 #define RIO_KEY_ACTION_REPEAT 1u

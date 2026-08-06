@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import RioKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -425,6 +426,61 @@ final class PanelHostView: NSView {
         return mods
     }
 
+    /// The active keyboard input source, for detecting that a keystroke
+    /// switched layouts (some input methods bind keys to do exactly that)
+    /// rather than typed.
+    private static var keyboardLayoutID: String {
+        guard
+            let source = TISCopyCurrentKeyboardInputSource()?
+                .takeRetainedValue(),
+            let pointer = TISGetInputSourceProperty(
+                source, kTISPropertyInputSourceID)
+        else { return "" }
+        return Unmanaged<CFString>.fromOpaque(pointer).takeUnretainedValue()
+            as String
+    }
+
+    /// Modifier keys as keys, for the kitty keyboard protocol's report-all
+    /// mode (mirrors ghostty's flagsChanged). Keycode → (librio tag,
+    /// generic flag, right-side device bit; 0 means the keycode is the
+    /// left/only key).
+    private static let modifierKeys:
+        [UInt16: (tag: UInt32, flag: NSEvent.ModifierFlags, rightBit: UInt)] = [
+            0x39: (UInt32(RIO_KEY_CAPS_LOCK), .capsLock, 0),
+            0x38: (UInt32(RIO_KEY_SHIFT_LEFT), .shift, 0),
+            0x3C: (UInt32(RIO_KEY_SHIFT_RIGHT), .shift, 0x04),  // NX_DEVICERSHIFTKEYMASK
+            0x3B: (UInt32(RIO_KEY_CONTROL_LEFT), .control, 0),
+            0x3E: (UInt32(RIO_KEY_CONTROL_RIGHT), .control, 0x2000),  // NX_DEVICERCTLKEYMASK
+            0x3A: (UInt32(RIO_KEY_ALT_LEFT), .option, 0),
+            0x3D: (UInt32(RIO_KEY_ALT_RIGHT), .option, 0x40),  // NX_DEVICERALTKEYMASK
+            0x37: (UInt32(RIO_KEY_SUPER_LEFT), .command, 0),
+            0x36: (UInt32(RIO_KEY_SUPER_RIGHT), .command, 0x10),  // NX_DEVICERCMDKEYMASK
+        ]
+
+    override func flagsChanged(with event: NSEvent) {
+        defer { super.flagsChanged(with: event) }
+        guard let session,
+            let key = Self.modifierKeys[event.keyCode],
+            markedText.isEmpty
+        else { return }
+
+        // The generic flag set means some key of that modifier is down; a
+        // right-side keycode is a press only when its own device bit is
+        // set, otherwise this event is its release with the left twin
+        // still held.
+        var action = UInt32(RIO_KEY_ACTION_RELEASE)
+        if event.modifierFlags.contains(key.flag) {
+            let sidePressed =
+                key.rightBit == 0
+                || event.modifierFlags.rawValue & key.rightBit != 0
+            if sidePressed {
+                action = UInt32(RIO_KEY_ACTION_PRESS)
+            }
+        }
+        session.sendKey(
+            key.tag, mods: rioMods(event.modifierFlags), action: action)
+    }
+
     override func keyDown(with event: NSEvent) {
         guard let session else { return }
         let flags = event.modifierFlags
@@ -452,9 +508,16 @@ final class PanelHostView: NSView {
             control: true,
             option: altIsMeta
         )
+        // Some input-method keys switch keyboard layouts rather than type;
+        // when the layout changed under this key, the key was that switch
+        // and encodes nothing.
+        let layoutBefore = wasComposing ? nil : Self.keyboardLayoutID
         interpretKeyEvents([translationEvent])
         let produced = keyTextAccumulator ?? []
         keyTextAccumulator = nil
+        if let layoutBefore, layoutBefore != Self.keyboardLayoutID {
+            return
+        }
 
         if !markedText.isEmpty {
             // Mid-composition: the preedit is already drawn, and nothing is

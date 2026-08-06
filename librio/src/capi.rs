@@ -38,6 +38,16 @@ pub const RIO_KEY_DELETE: u32 = 14;
 pub const RIO_KEY_F: u32 = 15;
 /// No key, for an event that carries only text (an input method commit).
 pub const RIO_KEY_NONE: u32 = 16;
+// Modifier keys as keys; reported only in kitty report-all mode.
+pub const RIO_KEY_CAPS_LOCK: u32 = 17;
+pub const RIO_KEY_SHIFT_LEFT: u32 = 18;
+pub const RIO_KEY_SHIFT_RIGHT: u32 = 19;
+pub const RIO_KEY_CONTROL_LEFT: u32 = 20;
+pub const RIO_KEY_CONTROL_RIGHT: u32 = 21;
+pub const RIO_KEY_ALT_LEFT: u32 = 22;
+pub const RIO_KEY_ALT_RIGHT: u32 = 23;
+pub const RIO_KEY_SUPER_LEFT: u32 = 24;
+pub const RIO_KEY_SUPER_RIGHT: u32 = 25;
 
 pub const RIO_KEY_ACTION_PRESS: u32 = 0;
 pub const RIO_KEY_ACTION_REPEAT: u32 = 1;
@@ -520,6 +530,15 @@ pub unsafe extern "C" fn rio_surface_key(
             RIO_KEY_DELETE => Some(Key::Delete),
             RIO_KEY_F => Some(Key::F(event.function_key)),
             RIO_KEY_NONE => None,
+            RIO_KEY_CAPS_LOCK => Some(Key::CapsLock),
+            RIO_KEY_SHIFT_LEFT => Some(Key::ShiftLeft),
+            RIO_KEY_SHIFT_RIGHT => Some(Key::ShiftRight),
+            RIO_KEY_CONTROL_LEFT => Some(Key::ControlLeft),
+            RIO_KEY_CONTROL_RIGHT => Some(Key::ControlRight),
+            RIO_KEY_ALT_LEFT => Some(Key::AltLeft),
+            RIO_KEY_ALT_RIGHT => Some(Key::AltRight),
+            RIO_KEY_SUPER_LEFT => Some(Key::SuperLeft),
+            RIO_KEY_SUPER_RIGHT => Some(Key::SuperRight),
             _ => return false,
         };
 

@@ -62,6 +62,35 @@ pub enum Key {
     Insert,
     Delete,
     F(u8),
+    // Modifier keys as keys, for the kitty protocol's report-all mode
+    // (its only consumer: legacy encodings have nothing to send for a
+    // bare modifier).
+    CapsLock,
+    ShiftLeft,
+    ShiftRight,
+    ControlLeft,
+    ControlRight,
+    AltLeft,
+    AltRight,
+    SuperLeft,
+    SuperRight,
+}
+
+impl Key {
+    pub fn is_modifier(self) -> bool {
+        matches!(
+            self,
+            Key::CapsLock
+                | Key::ShiftLeft
+                | Key::ShiftRight
+                | Key::ControlLeft
+                | Key::ControlRight
+                | Key::AltLeft
+                | Key::AltRight
+                | Key::SuperLeft
+                | Key::SuperRight
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -228,6 +257,15 @@ fn kitty_codepoint(key: Key) -> u32 {
         Key::Home => 57423,
         Key::End => 57424,
         Key::F(n) => 57363 + n as u32 - 1,
+        Key::CapsLock => 57358,
+        Key::ShiftLeft => 57441,
+        Key::ControlLeft => 57442,
+        Key::AltLeft => 57443,
+        Key::SuperLeft => 57444,
+        Key::ShiftRight => 57447,
+        Key::ControlRight => 57448,
+        Key::AltRight => 57449,
+        Key::SuperRight => 57450,
     }
 }
 
@@ -349,6 +387,17 @@ fn encode_legacy(
                 c.to_string().into_bytes()
             }
         }
+        // Only kitty report-all mode encodes bare modifiers; encode()
+        // returns before reaching the legacy form.
+        Key::CapsLock
+        | Key::ShiftLeft
+        | Key::ShiftRight
+        | Key::ControlLeft
+        | Key::ControlRight
+        | Key::AltLeft
+        | Key::AltRight
+        | Key::SuperLeft
+        | Key::SuperRight => return None,
         // Handled above.
         Key::Up
         | Key::Down
@@ -409,6 +458,16 @@ pub fn encode(event: &KeyEvent, ctx: &EncodeContext) -> Option<Vec<u8>> {
         && !ctx.kitty.contains(KittyFlags::REPORT_EVENT_TYPES)
     {
         return None;
+    }
+
+    // Bare modifiers exist only in kitty's report-all mode; every other
+    // encoding has nothing to send for one.
+    if key.is_modifier() {
+        if !ctx.kitty.contains(KittyFlags::REPORT_ALL_AS_ESC) {
+            return None;
+        }
+        let mods = event.mods.difference(event.consumed_mods);
+        return Some(encode_kitty(key, mods, event.action, ctx));
     }
 
     // A modifier the platform spent on producing the text is not also a
@@ -577,6 +636,39 @@ mod tests {
                 "{mods:?}"
             );
         }
+    }
+
+    // Modifier keys are keys only to kitty's report-all mode: a press
+    // encodes with the protocol's assigned number, and nothing at all is
+    // sent in legacy mode or with lesser kitty flags.
+    #[test]
+    fn modifier_keys_report_only_in_kitty_report_all() {
+        let press = KeyEvent {
+            key: Some(Key::ShiftLeft),
+            mods: Modifiers::SHIFT,
+            ..Default::default()
+        };
+        assert_eq!(encode(&press, &EncodeContext::default()), None);
+
+        let ctx = EncodeContext {
+            kitty: KittyFlags::DISAMBIGUATE
+                | KittyFlags::REPORT_EVENT_TYPES
+                | KittyFlags::REPORT_ALL_AS_ESC,
+            ..Default::default()
+        };
+        assert_eq!(
+            encode(&press, &ctx),
+            Some(b"\x1b[57441;2u".to_vec())
+        );
+        let release = KeyEvent {
+            key: Some(Key::ShiftLeft),
+            action: KeyAction::Release,
+            ..Default::default()
+        };
+        assert_eq!(
+            encode(&release, &ctx),
+            Some(b"\x1b[57441;1:3u".to_vec())
+        );
     }
 
     // RIO_KEY_NONE: an input method commit carries text and no key.
