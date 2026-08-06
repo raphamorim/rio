@@ -208,6 +208,22 @@ impl RmxState {
             .unwrap_or_default()
     }
 
+    /// Drop an owner's buffers and everything nested inside them,
+    /// returning every route so the caller can close the panes. A
+    /// buffer's sub-buffers cannot outlive the stream that carried
+    /// them (spec §11).
+    pub fn take_tree(&mut self, owner_route: usize) -> Vec<usize> {
+        let mut routes = Vec::new();
+        let mut pending = vec![owner_route];
+        while let Some(owner) = pending.pop() {
+            for route in self.take_session(owner) {
+                pending.push(route);
+                routes.push(route);
+            }
+        }
+        routes
+    }
+
     /// Owning routes with live sessions, for the user veto.
     pub fn owner_routes(&self) -> Vec<usize> {
         self.sessions.keys().copied().collect()
@@ -298,6 +314,26 @@ mod tests {
         assert_eq!(state.count_for_root(1), 3);
         assert_eq!(state.count_for_root(2), 1);
         assert_eq!(state.count_for_root(99), 0);
+    }
+
+    #[test]
+    fn teardown_takes_nested_buffers_with_it() {
+        let mut state = RmxState::default();
+        // Pane 1 owns `a`; `a` owns `c`; `c` owns `d` (depth 2 is the
+        // cap, so this is the deepest tree that can exist).
+        state.session_mut(1).insert(&key("a"), buffer(10, 1));
+        state.session_mut(10).insert(&key("c"), buffer(12, 1));
+        state.session_mut(12).insert(&key("d"), buffer(13, 1));
+        state.session_mut(2).insert(&key("other"), buffer(20, 2));
+
+        let mut routes = state.take_tree(1);
+        routes.sort();
+        assert_eq!(routes, vec![10, 12, 13]);
+        assert_eq!(state.count_for_root(1), 0);
+        // A different pane's session is untouched.
+        assert_eq!(state.count_for_root(2), 1);
+        // Taking twice is harmless.
+        assert!(state.take_tree(1).is_empty());
     }
 
     #[test]
