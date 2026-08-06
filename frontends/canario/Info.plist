@@ -26,6 +26,8 @@
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>A program running inside Canario would like to access the local network.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
