@@ -19,7 +19,7 @@ tracing = { workspace = true }
 base64 = { workspace = true }
 memchr = { version = "2.8.3", default-features = false }
 bitflags = { workspace = true }
-corcovado = { workspace = true }
+corcovado = { workspace = true, optional = true }
 rustc-hash = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true, optional = true }
@@ -30,7 +30,7 @@ parking_lot = { workspace = true }
 serde = { workspace = true }
 rio-graphics = { workspace = true }
 rio-grapheme-width = { workspace = true }
-teletypewriter = { workspace = true }
+teletypewriter = { workspace = true, optional = true }
 unicode-width = { workspace = true }
 regex-automata = "0.4.16"
 cursor-icon = { version = "1.1.0", default-features = false }
@@ -48,8 +48,10 @@ rio-window = { workspace = true, optional = true }
 windows-sys = { version = "0.61.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
 
 [features]
-# Lean by default: no renderer, no windowing. This is the embeddable core.
-default = []
+# PTY driver on by default; no renderer, no windowing.
+default = ["pty"]
+# The PTY event loop (`performer::Machine`). VT-only embedders turn this off.
+pty = ["dep:corcovado", "dep:teletypewriter"]
 # Expose the app-level `RioErrorType::FontsNotFound` variant (needs a
 # sugarloaf font type). Enabled by rio-backend's own `renderer` feature.
 renderer = ["dep:sugarloaf"]

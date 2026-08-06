@@ -2,23 +2,37 @@ pub mod handler;
 mod osc;
 pub mod parser;
 
+#[cfg(feature = "pty")]
 use crate::crosswords::Crosswords;
+#[cfg(feature = "pty")]
 use crate::event::sync::FairMutex;
+#[cfg(feature = "pty")]
 use crate::event::RioEvent;
+#[cfg(feature = "pty")]
 use crate::event::{EventListener, Msg, WindowId};
+#[cfg(feature = "pty")]
 use corcovado::channel;
-#[cfg(unix)]
+#[cfg(all(unix, feature = "pty"))]
 use corcovado::unix::UnixReady;
+#[cfg(feature = "pty")]
 use corcovado::{self, Events, PollOpt, Ready};
+#[cfg(feature = "pty")]
 use std::borrow::Cow;
+#[cfg(feature = "pty")]
 use std::collections::VecDeque;
+#[cfg(feature = "pty")]
 use std::io::{self, ErrorKind, Read, Write};
+#[cfg(feature = "pty")]
 use std::sync::Arc;
+#[cfg(feature = "pty")]
 use std::thread::{Builder, JoinHandle};
+#[cfg(feature = "pty")]
 use std::time::Instant;
+#[cfg(feature = "pty")]
 use tracing::error;
 
 /// Like `thread::spawn`, but with a `name` argument.
+#[cfg(feature = "pty")]
 pub fn spawn_named<F, T, S>(name: S, f: F) -> JoinHandle<T>
 where
     F: FnOnce() -> T + Send + 'static,
@@ -31,15 +45,19 @@ where
         .expect("thread spawn works")
 }
 
+#[cfg(feature = "pty")]
 const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
+#[cfg(feature = "pty")]
 const MAX_LOCKED_READ: usize = u16::MAX as usize;
 
+#[cfg(feature = "pty")]
 struct PeekableReceiver<T> {
     rx: channel::Receiver<T>,
     peeked: Option<T>,
 }
 
+#[cfg(feature = "pty")]
 impl<T> PeekableReceiver<T> {
     fn new(rx: channel::Receiver<T>) -> Self {
         Self { rx, peeked: None }
@@ -62,6 +80,7 @@ impl<T> PeekableReceiver<T> {
     }
 }
 
+#[cfg(feature = "pty")]
 pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     sender: channel::Sender<Msg>,
     receiver: PeekableReceiver<Msg>,
@@ -73,6 +92,7 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     route_id: usize,
 }
 
+#[cfg(feature = "pty")]
 #[derive(Default)]
 pub struct State {
     write_list: VecDeque<Cow<'static, [u8]>>,
@@ -80,6 +100,7 @@ pub struct State {
     parser: handler::Processor,
 }
 
+#[cfg(feature = "pty")]
 impl State {
     #[inline]
     fn ensure_next(&mut self) {
@@ -109,11 +130,13 @@ impl State {
     }
 }
 
+#[cfg(feature = "pty")]
 struct Writing {
     source: Cow<'static, [u8]>,
     written: usize,
 }
 
+#[cfg(feature = "pty")]
 impl Writing {
     #[inline]
     fn new(c: Cow<'static, [u8]>) -> Writing {
@@ -139,6 +162,7 @@ impl Writing {
     }
 }
 
+#[cfg(feature = "pty")]
 impl<T, U> Machine<T, U>
 where
     T: teletypewriter::EventedPty + Send + 'static,

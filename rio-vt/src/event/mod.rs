@@ -64,6 +64,7 @@ pub struct WindowSize {
     pub height: u16,
 }
 
+#[cfg(feature = "pty")]
 impl From<WindowSize> for teletypewriter::WinsizeBuilder {
     fn from(size: WindowSize) -> Self {
         Self {

@@ -26,7 +26,9 @@ pub mod simd_base64;
 pub mod simd_utf8;
 
 // avoid double dep requirement
+#[cfg(feature = "pty")]
 pub use corcovado;
+#[cfg(feature = "pty")]
 pub use teletypewriter;
 
 // The app-level `RioErrorType::FontsNotFound` variant references a
