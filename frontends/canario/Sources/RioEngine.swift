@@ -500,6 +500,7 @@ final class PanelSession {
     func shutdown() {
         displayLink?.invalidate()
         displayLink = nil
+        WatcherScanner.shared.forget(panelID: panelID)
         if surfaceID != 0 {
             RioEngine.shared.unregister(id: surfaceID)
         }
