@@ -247,12 +247,9 @@ pub fn parse(body: &[u8]) -> Result<RmxCommand, ParseError> {
                     b"cols" => cols = Some(parse_u32(v)?.min(u16::MAX as u32) as u16),
                     b"rows" => rows = Some(parse_u32(v)?.min(u16::MAX as u32) as u16),
                     b"title" => {
-                        let raw = BASE64
-                            .decode(v)
-                            .map_err(|_| ParseError::BadPayload)?;
+                        let raw = BASE64.decode(v).map_err(|_| ParseError::BadPayload)?;
                         title = Some(
-                            String::from_utf8(raw)
-                                .map_err(|_| ParseError::BadPayload)?,
+                            String::from_utf8(raw).map_err(|_| ParseError::BadPayload)?,
                         );
                     }
                     b"at" => at = Some(BufferKey::parse(v)?),
@@ -445,7 +442,12 @@ pub fn format_credit(key: &BufferKey, bytes: u32) -> String {
 }
 
 /// `q` enumeration row and terminator (spec §10.2).
-pub fn format_enumerate_row(key: &BufferKey, cols: u16, rows: u16, urgency: u8) -> String {
+pub fn format_enumerate_row(
+    key: &BufferKey,
+    cols: u16,
+    rows: u16,
+    urgency: u8,
+) -> String {
     frame(&format!(
         "rmx;q;k={};cols={cols};rows={rows};u={urgency};more=1",
         key.as_str()
@@ -563,10 +565,7 @@ mod tests {
     fn key_alphabet_enforced() {
         assert_eq!(parse(b"rmx;o;k=Bad"), Err(ParseError::BadKey));
         assert_eq!(parse(b"rmx;o;k=a_b"), Err(ParseError::BadKey));
-        assert_eq!(
-            parse(b"rmx;o;k=aaaaaaaaaaaaaaaaa"),
-            Err(ParseError::BadKey)
-        );
+        assert_eq!(parse(b"rmx;o;k=aaaaaaaaaaaaaaaaa"), Err(ParseError::BadKey));
         assert_eq!(parse(b"rmx;o"), Err(ParseError::MissingKey));
         assert_eq!(parse(b"rmx;o;k=main"), Err(ParseError::BadKey));
     }
@@ -670,5 +669,78 @@ mod tests {
             format_event_resize(&key("a"), 100, 40),
             "\x1b_rmx;i;k=a;ev=resize;cols=100;rows=40\x1b\\"
         );
+    }
+
+    #[test]
+    fn every_capability_is_named_in_order() {
+        let caps = RmxCaps {
+            core: true,
+            raw: true,
+            layout: true,
+            nest: true,
+            scrollback: true,
+            max_buffers: 16,
+            initial_credit: 262_144,
+        };
+        assert_eq!(
+            format_support_reply(&caps),
+            "\x1b_rmx;s;v=1;cap=core,raw,layout,nest,scrollback;max=16;credit=262144\x1b\\"
+        );
+    }
+
+    #[test]
+    fn focus_events_name_the_crossed_edge() {
+        assert_eq!(
+            format_event_focus(&key("build-log"), true),
+            "\x1b_rmx;i;k=build-log;ev=focus;state=in\x1b\\"
+        );
+        assert_eq!(
+            format_event_focus(&key("build-log"), false),
+            "\x1b_rmx;i;k=build-log;ev=focus;state=out\x1b\\"
+        );
+    }
+
+    #[test]
+    fn placement_hints_are_bounded() {
+        // `weight` is a percentage; anything outside 1..=100 is a
+        // malformed frame, not a clamp (spec §5.1).
+        assert_eq!(parse(b"rmx;o;k=a;weight=0"), Err(ParseError::BadParam));
+        assert_eq!(parse(b"rmx;o;k=a;weight=101"), Err(ParseError::BadParam));
+        assert!(matches!(
+            parse(b"rmx;o;k=a;weight=100"),
+            Ok(RmxCommand::Open {
+                weight: Some(100),
+                ..
+            })
+        ));
+        // `at` obeys the key alphabet, and `main` is a legal anchor even
+        // though it is never a legal target.
+        assert_eq!(parse(b"rmx;o;k=a;at=BAD"), Err(ParseError::BadKey));
+        assert!(matches!(
+            parse(b"rmx;o;k=a;at=main;dir=right"),
+            Ok(RmxCommand::Open {
+                at: Some(_),
+                dir: Some(Dir::Right),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_nested_frame_survives_the_reply_envelope() {
+        // With `cap=nest` a sub-buffer's events reach the application
+        // wrapped in the owning buffer's `ev=reply` payload, once per
+        // level. The envelope must be transparent.
+        let inner = format_event_focus(&key("sub"), true);
+        let outer = format_event_reply(&key("outer"), inner.as_bytes());
+        assert_eq!(
+            outer,
+            "\x1b_rmx;i;k=outer;ev=reply;G19ybXg7aTtrPXN1Yjtldj1mb2N1cztzdGF0ZT1pbhtc\x1b\\"
+        );
+        let payload = outer
+            .strip_prefix("\x1b_rmx;i;k=outer;ev=reply;")
+            .and_then(|rest| rest.strip_suffix("\x1b\\"))
+            .unwrap();
+        assert_eq!(BASE64.decode(payload).unwrap(), inner.as_bytes());
     }
 }

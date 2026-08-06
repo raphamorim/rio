@@ -2409,8 +2409,7 @@ mod tests {
         }
 
         fn rmx_burst(&mut self, key: &crate::ansi::rmx::BufferKey, bytes: &[u8]) {
-            self.bursts
-                .push((key.as_str().to_owned(), bytes.to_vec()));
+            self.bursts.push((key.as_str().to_owned(), bytes.to_vec()));
         }
     }
 

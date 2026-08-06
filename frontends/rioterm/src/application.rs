@@ -683,17 +683,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     let screen = &mut route.window.screen;
                     let resp = match cmd {
                         wire::RmxCommand::Support => {
-                            Some(wire::format_support_reply(&crate::rmx::caps()))
+                            // A stream inside a buffer is offered less:
+                            // the depth cap is part of the answer
+                            // (spec §11).
+                            let depth = screen.rmx_depth_of(route_id);
+                            Some(wire::format_support_reply(&crate::rmx::caps_at_depth(
+                                depth,
+                            )))
                         }
                         wire::RmxCommand::Open {
-                            key, dir, reply, ..
+                            key,
+                            at,
+                            dir,
+                            weight,
+                            reply,
+                            ..
                         } => {
-                            let split_down =
-                                matches!(dir, Some(wire::Dir::Down));
-                            let out = screen.rmx_open(route_id, &key, split_down);
+                            let out =
+                                screen.rmx_open(route_id, &key, at.as_ref(), dir, weight);
                             let ok = out.contains("status=0");
-                            if (ok && reply.emit_success())
-                                || (!ok && reply.emit_error())
+                            if (ok && reply.emit_success()) || (!ok && reply.emit_error())
                             {
                                 Some(out)
                             } else {
@@ -710,9 +719,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             // error replies honour the reply mode.
                             out.contains(";a;") || reply.emit_error()
                         }),
-                        wire::RmxCommand::Close { key, reply, .. } => {
-                            screen.rmx_close(route_id, &key).filter(|_| reply.emit_error())
-                        }
+                        wire::RmxCommand::Close {
+                            key, disp, reply, ..
+                        } => screen
+                            .rmx_close(route_id, &key, disp)
+                            .filter(|_| reply.emit_error()),
                         wire::RmxCommand::Enumerate => {
                             Some(screen.rmx_enumerate(route_id))
                         }
@@ -721,13 +732,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         wire::RmxCommand::RawBurst { .. } => None,
                     };
                     if let Some(resp) = resp {
-                        if let Some(item) = screen
-                            .context_manager
-                            .current_grid_mut()
-                            .get_by_route_id(route_id)
-                        {
-                            item.context_mut().messenger.send_bytes(resp.into_bytes());
-                        }
+                        // Not a plain write: when the frames came from
+                        // inside a buffer, the reply has to travel back
+                        // out through that buffer's owner (spec §11).
+                        screen.rmx_notify_owner(route_id, resp);
                     }
                     route.request_redraw();
                 }

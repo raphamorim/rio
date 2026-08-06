@@ -647,3 +647,84 @@ fn test_split_inside_resized_panel_preserves_proportions() {
         "Bottom (bottom half) should be ~400px tall, got {bottom_h}"
     );
 }
+
+/// An rmx `weight` hint is a percentage for the new panel and the rest
+/// goes to the panel it was split from (spec §5.1).
+#[test]
+fn test_rmx_weight_splits_the_axis() {
+    assert_eq!(rmx_weight_sizes(30, 1000.0, 50.0), Some((700.0, 300.0)));
+    assert_eq!(rmx_weight_sizes(50, 800.0, 50.0), Some((400.0, 400.0)));
+}
+
+/// A hint must never make the layout unsolvable: both sides keep the
+/// same floor the divider drag enforces.
+#[test]
+fn test_rmx_weight_clamps_to_the_minimum_panel() {
+    assert_eq!(rmx_weight_sizes(1, 1000.0, 50.0), Some((950.0, 50.0)));
+    assert_eq!(rmx_weight_sizes(100, 1000.0, 50.0), Some((50.0, 950.0)));
+    // Too small to hold two panels: the hint is refused outright and the
+    // even split taffy already solved stands.
+    assert_eq!(rmx_weight_sizes(50, 99.0, 50.0), None);
+    assert_eq!(rmx_weight_sizes(50, 0.0, 50.0), None);
+    assert_eq!(rmx_weight_sizes(50, f32::NAN, 50.0), None);
+}
+
+/// The weighted split survives a window resize, like a divider drag:
+/// both siblings are sized by `flex_grow` with a zero basis.
+#[test]
+fn test_rmx_weight_proportions_survive_resize() {
+    use taffy::{FlexDirection, TaffyTree};
+
+    let mut tree: TaffyTree<()> = TaffyTree::new();
+    let root = tree
+        .new_leaf(Style {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Row,
+            size: geometry::Size {
+                width: length(1000.0),
+                height: length(800.0),
+            },
+            ..Default::default()
+        })
+        .unwrap();
+
+    let (owner_px, new_px) = rmx_weight_sizes(25, 1000.0, 50.0).unwrap();
+    let mut panel = |grow: f32| {
+        tree.new_leaf(Style {
+            display: Display::Flex,
+            flex_basis: length(0.0),
+            flex_grow: grow,
+            flex_shrink: 1.0,
+            ..Default::default()
+        })
+        .unwrap()
+    };
+    let owner = panel(owner_px);
+    let buffer = panel(new_px);
+    tree.add_child(root, owner).unwrap();
+    tree.add_child(root, buffer).unwrap();
+
+    let available = geometry::Size {
+        width: AvailableSpace::MaxContent,
+        height: AvailableSpace::MaxContent,
+    };
+    tree.compute_layout(root, available).unwrap();
+    assert!((tree.layout(owner).unwrap().size.width - 750.0).abs() < 1.0);
+    assert!((tree.layout(buffer).unwrap().size.width - 250.0).abs() < 1.0);
+
+    let mut root_style = tree.style(root).unwrap().clone();
+    root_style.size.width = length(1600.0);
+    tree.set_style(root, root_style).unwrap();
+    tree.compute_layout(root, available).unwrap();
+
+    let owner_w = tree.layout(owner).unwrap().size.width;
+    let buffer_w = tree.layout(buffer).unwrap().size.width;
+    assert!(
+        (owner_w - 1200.0).abs() < 1.0,
+        "owner kept 75%, got {owner_w}"
+    );
+    assert!(
+        (buffer_w - 400.0).abs() < 1.0,
+        "buffer kept 25%, got {buffer_w}"
+    );
+}

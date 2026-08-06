@@ -17,6 +17,25 @@ use taffy::{
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
 
+/// Smallest extent (logical pixels) a panel may be squeezed to, the
+/// same floor the divider drag enforces.
+const MIN_PANEL_EXTENT: f32 = 50.0;
+
+/// Sizes for a split carrying an rmx `weight` hint: `(existing, new)`
+/// along the split axis, where `weight` is the percentage the new panel
+/// asked for. The hint is advisory (spec §5.1), so it is clamped to
+/// leave both sides at least `min_px`, and refused outright when the
+/// axis cannot hold two panels: a hint must never make the layout
+/// unsolvable.
+pub fn rmx_weight_sizes(weight: u8, axis_px: f32, min_px: f32) -> Option<(f32, f32)> {
+    if !axis_px.is_finite() || axis_px < min_px * 2.0 {
+        return None;
+    }
+    let share = f32::from(weight.clamp(1, 100)) / 100.0;
+    let new_px = (axis_px * share).clamp(min_px, axis_px - min_px);
+    Some((axis_px - new_px, new_px))
+}
+
 /// Direction of a draggable panel border
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BorderDirection {
@@ -431,6 +450,52 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         self.apply_taffy_layout(sugarloaf);
+    }
+
+    /// Give the current panel `weight` percent of the split it was just
+    /// created in, its sibling the rest (rmx `weight` hint, spec §5.1).
+    /// Returns false when the hint cannot be honored, in which case the
+    /// even split taffy already solved stands.
+    pub fn apply_split_weight(
+        &mut self,
+        weight: u8,
+        direction: BorderDirection,
+        sugarloaf: &mut Sugarloaf,
+    ) -> bool {
+        let node = self.current;
+        let Some(parent) = self.tree.parent(node) else {
+            return false;
+        };
+        let Ok(children) = self.tree.children(parent) else {
+            return false;
+        };
+        if children.len() != 2 {
+            return false;
+        }
+        let Some(sibling) = children.iter().copied().find(|&c| c != node) else {
+            return false;
+        };
+        let axis = self.get_panel_size(parent, direction);
+        let Some((sibling_px, node_px)) =
+            rmx_weight_sizes(weight, axis, MIN_PANEL_EXTENT * self.scale)
+        else {
+            return false;
+        };
+        let (sibling_ok, node_ok) = match direction {
+            BorderDirection::Vertical => (
+                self.set_panel_size(sibling, Some(sibling_px), None),
+                self.set_panel_size(node, Some(node_px), None),
+            ),
+            BorderDirection::Horizontal => (
+                self.set_panel_size(sibling, None, Some(sibling_px)),
+                self.set_panel_size(node, None, Some(node_px)),
+            ),
+        };
+        if sibling_ok.is_err() || node_ok.is_err() {
+            return false;
+        }
+        self.apply_taffy_layout(sugarloaf);
+        true
     }
 
     /// Get separator lines between adjacent panels for rendering.

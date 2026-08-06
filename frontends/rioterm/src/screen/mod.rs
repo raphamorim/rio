@@ -97,6 +97,9 @@ pub struct Screen<'screen> {
     pub grid_rasterizer: rio_grid::GridGlyphRasterizer,
     /// rmx virtual buffers, keyed by the owning pane's route.
     pub rmx_state: crate::rmx::RmxState,
+    /// Virtual buffer the user last focused, so a focus crossing can be
+    /// reported as one `out`/`in` pair (spec §8).
+    rmx_focus: Option<crate::rmx::RmxLink>,
 }
 
 pub struct ChromePress {
@@ -350,6 +353,7 @@ impl Screen<'_> {
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: rio_grid::GridGlyphRasterizer::new(),
             rmx_state: crate::rmx::RmxState::default(),
+            rmx_focus: None,
         })
     }
 
@@ -426,6 +430,9 @@ impl Screen<'_> {
             // selection left behind in the target panel would
             // drag-extend from its stale anchor; drop it on switch.
             self.clear_selection();
+            // A click is a user gesture, the only thing allowed to move
+            // focus into or out of a virtual buffer (spec §8/§12).
+            self.rmx_sync_focus();
             return true;
         }
         false
@@ -726,14 +733,117 @@ impl Screen<'_> {
         }
     }
 
-    /// Write an rmx frame to an owning pane's PTY.
+    /// Write an rmx frame to an owning pane's stream.
+    ///
+    /// A nested owner is itself a virtual buffer with no PTY, so the
+    /// frame is wrapped in that buffer's `ev=reply` envelope and handed
+    /// one level further out, repeatedly, until it reaches a real pane
+    /// (`cap=nest`, spec §8/§11). The app that owns the outer buffer
+    /// unwraps the payload and feeds it to its own rmx client, exactly
+    /// as it already does for a buffer's VT query replies.
     pub fn rmx_notify_owner(&mut self, owner_route: usize, frame: String) {
-        if let Some(item) = self
+        let mut route = owner_route;
+        let mut frame = frame;
+        for _ in 0..=crate::rmx::MAX_NEST_DEPTH {
+            let link = self
+                .context_manager
+                .current_grid_mut()
+                .get_by_route_id(route)
+                .and_then(|item| item.context().rmx.clone());
+            let Some(link) = link else {
+                if let Some(item) = self
+                    .context_manager
+                    .current_grid_mut()
+                    .get_by_route_id(route)
+                {
+                    item.context_mut().messenger.send_bytes(frame.into_bytes());
+                }
+                return;
+            };
+            frame =
+                rio_backend::ansi::rmx::format_event_reply(&link.key, frame.as_bytes());
+            route = link.owner_route;
+        }
+    }
+
+    /// The rmx link of a pane, if it is a virtual buffer.
+    fn rmx_link_of(&mut self, route_id: usize) -> Option<crate::rmx::RmxLink> {
+        self.context_manager
+            .current_grid_mut()
+            .get_by_route_id(route_id)
+            .and_then(|item| item.context().rmx.clone())
+    }
+
+    /// Nesting depth of the stream a pane's own content writes on: `0`
+    /// for a real pane, `n` for a buffer opened `n` levels in.
+    pub fn rmx_depth_of(&mut self, route_id: usize) -> u8 {
+        self.rmx_link_of(route_id).map_or(0, |link| link.depth)
+    }
+
+    /// Report every buffer's authoritative size (spec §8). Called after
+    /// layout changes rio decided on: the app proposes, rio disposes,
+    /// and `ev=resize` is how the app learns the outcome.
+    pub fn rmx_broadcast_resize(&mut self) {
+        if self.rmx_state.is_empty() {
+            return;
+        }
+        let mut frames: Vec<(usize, String)> = Vec::new();
+        for context in self
             .context_manager
             .current_grid_mut()
-            .get_by_route_id(owner_route)
+            .contexts_mut()
+            .values()
         {
-            item.context_mut().messenger.send_bytes(frame.into_bytes());
+            let ctx = context.context();
+            if let Some(link) = ctx.rmx.as_ref() {
+                frames.push((
+                    link.owner_route,
+                    rio_backend::ansi::rmx::format_event_resize(
+                        &link.key,
+                        ctx.dimension.columns as u16,
+                        ctx.dimension.lines as u16,
+                    ),
+                ));
+            }
+        }
+        for (owner_route, frame) in frames {
+            self.rmx_notify_owner(owner_route, frame);
+        }
+    }
+
+    /// Report a focus crossing into or out of a virtual buffer
+    /// (spec §8). Called after user gestures only: no verb moves focus,
+    /// so no application can make this fire (spec §12).
+    pub fn rmx_sync_focus(&mut self) {
+        let now = self.context_manager.current().rmx.clone();
+        let frames = crate::rmx::focus_transition(self.rmx_focus.as_ref(), now.as_ref());
+        if frames.is_empty() {
+            return;
+        }
+        self.rmx_focus = now;
+        for (owner_route, frame) in frames {
+            self.rmx_notify_owner(owner_route, frame);
+        }
+    }
+
+    /// Drop the focus record once the buffer it names has left the grid,
+    /// so a closed buffer never reports a focus edge after `closed`.
+    fn rmx_prune_focus(&mut self) {
+        let Some(link) = self.rmx_focus.clone() else {
+            return;
+        };
+        let alive = self
+            .context_manager
+            .current_grid_mut()
+            .contexts()
+            .values()
+            .any(|item| {
+                item.context().rmx.as_ref().is_some_and(|l| {
+                    l.owner_route == link.owner_route && l.key == link.key
+                })
+            });
+        if !alive {
+            self.rmx_focus = None;
         }
     }
 
@@ -1595,6 +1705,10 @@ impl Screen<'_> {
             }
         }
 
+        // Split and tab gestures above may have crossed into or out of a
+        // virtual buffer; one check covers every binding (spec §8).
+        self.rmx_sync_focus();
+
         ignore_chars.unwrap_or(false)
     }
 
@@ -1625,24 +1739,24 @@ impl Screen<'_> {
             return;
         };
         let frame = rio_backend::ansi::rmx::format_event_in(&link.key, &bytes);
-        if let Some(item) = self
-            .context_manager
-            .current_grid_mut()
-            .get_by_route_id(link.owner_route)
-        {
-            item.context_mut()
-                .messenger
-                .send_bytes(frame.into_bytes());
-        }
+        self.rmx_notify_owner(link.owner_route, frame);
     }
 
     /// rmx `o`: open or adopt a virtual buffer owned by `owner_route`
     /// (spec §5). Returns the reply frame to write back.
+    ///
+    /// `at`/`dir`/`weight` are the placement hints of `cap=layout`: the
+    /// split is taken from the pane named by `at` rather than from the
+    /// owner, in the direction `dir`, giving the new buffer `weight`
+    /// percent of it. All three are advisory. Anything that cannot be
+    /// honored falls back to an even split beside the owner.
     pub fn rmx_open(
         &mut self,
         owner_route: usize,
         key: &rio_backend::ansi::rmx::BufferKey,
-        split_down: bool,
+        at: Option<&rio_backend::ansi::rmx::BufferKey>,
+        dir: Option<rio_backend::ansi::rmx::Dir>,
+        weight: Option<u8>,
     ) -> String {
         use rio_backend::ansi::rmx as wire;
 
@@ -1655,13 +1769,32 @@ impl Screen<'_> {
             return wire::format_open_ok(key, cols, rows, credit);
         }
 
-        if self.rmx_state.session_mut(owner_route).len() >= crate::rmx::MAX_BUFFERS as usize {
+        // A buffer opened from inside another buffer's content belongs
+        // to that buffer (`cap=nest`, spec §11); depth and quota are
+        // charged to the real pane at the bottom of the chain.
+        let owner_link = self.rmx_link_of(owner_route);
+        let depth = owner_link.as_ref().map_or(0, |link| link.depth) + 1;
+        let root_owner = owner_link
+            .as_ref()
+            .map_or(owner_route, |link| link.root_owner);
+        if depth > crate::rmx::MAX_NEST_DEPTH {
+            return wire::format_error('o', Some(key), wire::Reason::Unsupported);
+        }
+        if self.rmx_state.count_for_root(root_owner) >= crate::rmx::MAX_BUFFERS as usize {
             return wire::format_error('o', Some(key), wire::Reason::Quota);
         }
 
-        // The owning pane must be focused for its split to land in the
-        // right place; rmx buffers are created beside it.
-        if !self.context_manager.select_route_id(owner_route) {
+        // The pane the split is taken from must be focused for it to
+        // land in the right place. `at=main` and an unknown key both
+        // mean "beside the owner".
+        let previous_focus = self.context_manager.current().route_id;
+        let anchor = at
+            .filter(|a| !a.is_main())
+            .and_then(|a| self.rmx_state.route_in_tree(root_owner, a))
+            .unwrap_or(owner_route);
+        if !self.context_manager.select_route_id(anchor)
+            && !self.context_manager.select_route_id(owner_route)
+        {
             return wire::format_error('o', Some(key), wire::Reason::NoSuchBuffer);
         }
 
@@ -1671,6 +1804,8 @@ impl Screen<'_> {
         let link = crate::rmx::RmxLink {
             owner_route,
             key: key.clone(),
+            depth,
+            root_owner,
         };
         let ctx = context::create_virtual_context(
             self.context_manager.event_proxy_clone(),
@@ -1682,6 +1817,7 @@ impl Screen<'_> {
             link,
         );
 
+        let split_down = matches!(dir, Some(wire::Dir::Down));
         if split_down {
             self.context_manager
                 .current_grid_mut()
@@ -1692,24 +1828,41 @@ impl Screen<'_> {
                 .split_right(ctx, &mut self.sugarloaf);
         }
 
+        if let Some(weight) = weight {
+            let direction = if split_down {
+                crate::layout::BorderDirection::Horizontal
+            } else {
+                crate::layout::BorderDirection::Vertical
+            };
+            self.context_manager.current_grid_mut().apply_split_weight(
+                weight,
+                direction,
+                &mut self.sugarloaf,
+            );
+        }
+
         self.rmx_state.session_mut(owner_route).insert(
             key,
             crate::rmx::RmxBuffer {
                 route_id,
+                root_owner,
                 parser: Default::default(),
                 credit: crate::rmx::INITIAL_CREDIT,
                 pending_grant: 0,
             },
         );
 
-        // Focus stays with the owning pane: focus moves only by user
-        // gesture (spec §12).
-        self.context_manager.select_route_id(owner_route);
+        // Focus stays where the user left it: focus moves only by user
+        // gesture (spec §12), and the split above moved it.
+        if !self.context_manager.select_route_id(previous_focus) {
+            self.context_manager.select_route_id(owner_route);
+        }
         self.mark_dirty();
 
+        // Every pane on the split axis changed size, not just the new
+        // one, so the whole session hears the outcome (spec §5.1).
+        self.rmx_broadcast_resize();
         let (cols, rows) = self.rmx_buffer_size(route_id);
-        let resize = wire::format_event_resize(key, cols, rows);
-        self.rmx_notify_owner(owner_route, resize);
         wire::format_open_ok(key, cols, rows, crate::rmx::INITIAL_CREDIT)
     }
 
@@ -1724,7 +1877,11 @@ impl Screen<'_> {
 
         let session = self.rmx_state.session_mut(owner_route);
         let Some(buffer) = session.get_mut(key) else {
-            return Some(wire::format_error('w', Some(key), wire::Reason::NoSuchBuffer));
+            return Some(wire::format_error(
+                'w',
+                Some(key),
+                wire::Reason::NoSuchBuffer,
+            ));
         };
 
         let spent = payload.len().min(buffer.credit as usize);
@@ -1769,11 +1926,7 @@ impl Screen<'_> {
                 return Some(wire::format_credit(key, owed));
             }
             if over {
-                return Some(wire::format_error(
-                    'w',
-                    Some(key),
-                    wire::Reason::NoCredit,
-                ));
+                return Some(wire::format_error('w', Some(key), wire::Reason::NoCredit));
             }
             return None;
         }
@@ -1781,22 +1934,89 @@ impl Screen<'_> {
     }
 
     /// rmx `c`: close a buffer and its pane (spec §10.1).
+    ///
+    /// `disp=scrollback` leaves a corpse behind: the buffer's final
+    /// visible screen is appended to the owning pane's scrollback as
+    /// plain annotated lines before the pane goes away.
     pub fn rmx_close(
         &mut self,
         owner_route: usize,
         key: &rio_backend::ansi::rmx::BufferKey,
+        disp: rio_backend::ansi::rmx::Disposition,
     ) -> Option<String> {
         use rio_backend::ansi::rmx as wire;
 
         let Some(buffer) = self.rmx_state.session_mut(owner_route).remove(key) else {
-            return Some(wire::format_error('c', Some(key), wire::Reason::NoSuchBuffer));
+            return Some(wire::format_error(
+                'c',
+                Some(key),
+                wire::Reason::NoSuchBuffer,
+            ));
         };
+        if matches!(disp, wire::Disposition::Scrollback) {
+            self.rmx_dump_screen(owner_route, key, buffer.route_id);
+        }
+        // Buffers nested in this one die with it: their owner's stream
+        // is gone (spec §11).
+        for nested in self.rmx_state.take_session(buffer.route_id) {
+            self.rmx_remove_pane(nested);
+        }
+        let previous_focus = self.context_manager.current().route_id;
         self.rmx_remove_pane(buffer.route_id);
-        self.context_manager.select_route_id(owner_route);
+        if !self.context_manager.select_route_id(previous_focus) {
+            self.context_manager.select_route_id(owner_route);
+        }
+        self.rmx_prune_focus();
         self.mark_dirty();
         let closed = wire::format_event_closed(key, "app");
         self.rmx_notify_owner(owner_route, closed);
+        self.rmx_broadcast_resize();
         None
+    }
+
+    /// Render a dying buffer's visible screen into its owner's
+    /// scrollback (`disp=scrollback`, spec §10.1). Visible screen only:
+    /// a buffer's own scrollback stays the terminal's business (§13).
+    fn rmx_dump_screen(
+        &mut self,
+        owner_route: usize,
+        key: &rio_backend::ansi::rmx::BufferKey,
+        route_id: usize,
+    ) {
+        let screen = self
+            .context_manager
+            .current_grid_mut()
+            .get_by_route_id(route_id)
+            .map(|item| {
+                let terminal = item.context().terminal.clone();
+                let terminal = terminal.lock();
+                terminal
+                    .format(rio_backend::crosswords::formatter::FormatOptions::plain())
+            });
+        let Some(screen) = screen else {
+            return;
+        };
+        let mut text = String::new();
+        for line in crate::rmx::corpse_lines(key, &screen) {
+            text.push_str(&line);
+            text.push_str("\r\n");
+        }
+        let owner = self
+            .context_manager
+            .current_grid_mut()
+            .get_by_route_id(owner_route)
+            .map(|item| item.context().terminal.clone());
+        let Some(owner) = owner else {
+            return;
+        };
+        // The corpse is plain text with every control character already
+        // stripped, so a throwaway parser is enough to lay it out in the
+        // owner's grid, wrapping and scrolling like any other output.
+        let mut parser = rio_backend::performer::handler::Processor::default();
+        let mut terminal = owner.lock();
+        parser.advance(&mut *terminal, text.as_bytes());
+        drop(terminal);
+        self.mark_route_dirty(owner_route);
     }
 
     /// rmx `q`: enumerate this owner's buffers (spec §10.2).
@@ -1835,12 +2055,12 @@ impl Screen<'_> {
                 self.rmx_remove_pane(route_id);
                 if let Ok(key) = rio_backend::ansi::rmx::BufferKey::parse(key.as_bytes())
                 {
-                    let frame =
-                        rio_backend::ansi::rmx::format_event_closed(&key, "user");
+                    let frame = rio_backend::ansi::rmx::format_event_closed(&key, "user");
                     self.rmx_notify_owner(owner_route, frame);
                 }
             }
         }
+        self.rmx_focus = None;
         self.mark_dirty();
     }
 
@@ -1849,9 +2069,13 @@ impl Screen<'_> {
     pub fn rmx_teardown(&mut self, owner_route: usize) {
         // The owner's PTY is gone, so no `closed` frames are sent: the
         // hangup itself is the teardown signal (spec §11).
-        for route_id in self.rmx_state.take_session(owner_route) {
+        let mut pending = self.rmx_state.take_session(owner_route);
+        while let Some(route_id) = pending.pop() {
+            // Buffers nested inside this one lose their stream too.
+            pending.extend(self.rmx_state.take_session(route_id));
             self.rmx_remove_pane(route_id);
         }
+        self.rmx_prune_focus();
         self.mark_dirty();
     }
 
@@ -3854,10 +4078,9 @@ impl Screen<'_> {
             let chr = if is_focused { "I" } else { "O" };
 
             let msg = format!("\x1b[{chr}");
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_write(msg.into_bytes());
+            // A virtual buffer has no PTY to write this to; `send_input`
+            // frames it as `ev=in` for the owning app instead (spec §8).
+            self.send_input(msg.into_bytes());
         }
     }
 
