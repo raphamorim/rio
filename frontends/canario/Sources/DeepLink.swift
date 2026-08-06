@@ -12,6 +12,16 @@ import SwiftUI
 // `run` always shows a confirmation with the exact command: URLs arrive
 // from browsers and other apps, and a shell one-liner should never
 // execute on a click alone.
+//
+// That confirmation is only worth something if the command cannot read
+// differently than it runs, so any parameter carrying a Unicode control
+// or format character (category Cc or Cf) is dropped, and a link whose
+// `cmd` carries one never opens. Two ways they lie: the shell's line
+// editor acts on C0 bytes rather than printing them, so `echo Foo^Uls`
+// shows as `echo Fools` in an alert and runs `ls` (^U kills the line,
+// ^P recalls history); and the bidi overrides reorder the rendered line,
+// so what is read is not the order that reaches the shell. Both are
+// invisible in an NSAlert. Reported as #1824.
 
 enum DeepLink {
     case quick
@@ -28,8 +38,13 @@ enum DeepLink {
             // Form-encoding convention: `+` is a space. URLComponents
             // only undoes percent-escapes, so launchers writing
             // cmd=npm+test get what they meant.
-            components?.queryItems?.first { $0.name == name }?.value?
-                .replacingOccurrences(of: "+", with: " ")
+            guard
+                let value = components?.queryItems?.first(where: {
+                    $0.name == name
+                })?.value?.replacingOccurrences(of: "+", with: " ")
+            else { return nil }
+            return value.rangeOfCharacter(from: .controlCharacters) == nil
+                ? value : nil
         }
 
         switch action {
@@ -114,12 +129,44 @@ enum DeepLink {
     ) {
         let alert = NSAlert()
         alert.messageText = "Run command from link?"
-        alert.informativeText = command
+        alert.informativeText =
+            "A link asked to run this command. It goes to a new terminal "
+            + "exactly as shown."
         alert.alertStyle = .warning
+        alert.accessoryView = commandView(command)
         alert.addButton(withTitle: "Run")
         alert.addButton(withTitle: "Cancel")
+        // Return activates nothing: a security prompt must not execute on
+        // a keystroke aimed at the window behind it. Cancel keeps the
+        // Escape equivalent NSAlert gives it, so assigning Return here
+        // instead would cost the dismissal every dialog is expected to have.
+        alert.buttons[0].keyEquivalent = ""
         if alert.runModal() == .alertFirstButtonReturn {
             proceed()
         }
+    }
+
+    /// The command in a bounded monospaced box, so a long one scrolls
+    /// instead of pushing its tail out of a dialog the user thinks they
+    /// have read to the end.
+    @MainActor
+    private static func commandView(_ command: String) -> NSView {
+        let frame = NSRect(x: 0, y: 0, width: 380, height: 68)
+        let text = NSTextView(frame: frame)
+        text.string = command
+        text.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        text.isEditable = false
+        text.textContainerInset = NSSize(width: 5, height: 5)
+        text.isVerticallyResizable = true
+        text.isHorizontallyResizable = false
+        text.autoresizingMask = [.width]
+        text.textContainer?.widthTracksTextView = true
+
+        let scroll = NSScrollView(frame: frame)
+        scroll.documentView = text
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.borderType = .bezelBorder
+        return scroll
     }
 }

@@ -369,7 +369,9 @@ final class PanelSession {
     func sendText(_ text: String) {
         guard let surface else { return }
         text.withCString { pointer in
-            rio_surface_text(surface, pointer, strlen(pointer))
+            // Length from the string, not strlen: an embedded NUL would
+            // otherwise silently truncate, sending less than was shown.
+            rio_surface_text(surface, pointer, text.utf8.count)
         }
         // Input snaps a scrolled view back to the live screen; redraw now
         // rather than waiting for the shell's echo to wake us.
