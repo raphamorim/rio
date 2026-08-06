@@ -1958,7 +1958,7 @@ impl Screen<'_> {
         }
         // Buffers nested in this one die with it: their owner's stream
         // is gone (spec §11).
-        for nested in self.rmx_state.take_session(buffer.route_id) {
+        for nested in self.rmx_state.take_tree(buffer.route_id) {
             self.rmx_remove_pane(nested);
         }
         let previous_focus = self.context_manager.current().route_id;
@@ -2069,10 +2069,7 @@ impl Screen<'_> {
     pub fn rmx_teardown(&mut self, owner_route: usize) {
         // The owner's PTY is gone, so no `closed` frames are sent: the
         // hangup itself is the teardown signal (spec §11).
-        let mut pending = self.rmx_state.take_session(owner_route);
-        while let Some(route_id) = pending.pop() {
-            // Buffers nested inside this one lose their stream too.
-            pending.extend(self.rmx_state.take_session(route_id));
+        for route_id in self.rmx_state.take_tree(owner_route) {
             self.rmx_remove_pane(route_id);
         }
         self.rmx_prune_focus();
