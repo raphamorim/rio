@@ -179,6 +179,7 @@ struct CommandBarView: View {
             ("xmark.rectangle", "Close Panel", { model.closeFocusedPanel() }),
             ("sidebar.left", "Toggle Sidebar", { model.isSidebarCollapsed.toggle() }),
             ("bolt", "Quick Terminal", { model.quickTerminal.toggle() }),
+            ("paintpalette", "Change Theme", { model.isThemePickerVisible = true }),
             ("textformat.size.larger", "Increase Font Size", { model.adjustFontSize(by: 1) }),
             ("textformat.size.smaller", "Decrease Font Size", { model.adjustFontSize(by: -1) }),
             ("textformat.size", "Reset Font Size", { model.resetFontSize() }),

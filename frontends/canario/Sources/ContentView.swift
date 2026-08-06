@@ -73,6 +73,12 @@ struct ContentView: View {
             }
         }
         .overlay {
+            if model.isThemePickerVisible {
+                ThemePickerView()
+                    .transition(.opacity)
+            }
+        }
+        .overlay {
             if model.imagePeek != nil {
                 ImagePeekOverlay()
             }

@@ -65,6 +65,12 @@ struct CanarioApp: App {
                     }
                 }
                 .keyboardShortcut("k", modifiers: .command)
+                Button("Theme…") {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        model.isThemePickerVisible.toggle()
+                    }
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
                 Divider()
                 Button("Split Right") {
                     withAnimation(.spring(duration: 0.25)) {
