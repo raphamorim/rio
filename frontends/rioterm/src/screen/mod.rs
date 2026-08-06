@@ -1902,7 +1902,14 @@ impl Screen<'_> {
             parser.advance(&mut *terminal, &payload[..spent]);
         }
         if let Some(buffer) = self.rmx_state.session_mut(owner_route).get_mut(key) {
-            buffer.parser = parser;
+            if over {
+                // Truncation can cut an escape sequence in half, so the
+                // parser starts fresh rather than letting a half-parsed
+                // sequence swallow whatever arrives next (spec §6.2).
+                buffer.parser = Default::default();
+            } else {
+                buffer.parser = parser;
+            }
             // The bytes are rendered, so their credit is returned; the
             // account only stays down while a write is in flight.
             let grant = spent as u32;
