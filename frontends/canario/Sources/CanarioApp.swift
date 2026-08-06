@@ -39,6 +39,7 @@ struct CanarioApp: App {
                 .environment(updater)
                 .frame(minWidth: 640, minHeight: 400)
                 .task {
+                    model.applyAppIcon()
                     // Give launch (and session restore) a beat before
                     // touching the network.
                     try? await Task.sleep(for: .seconds(5))

@@ -27,6 +27,29 @@ enum FontCatalog {
     }()
 }
 
+/// Dock icon variants, shipped as PNGs in the bundle's Resources.
+enum AppIcon: String, CaseIterable {
+    case original
+    case ultramarine
+    case rio
+
+    var displayName: String {
+        switch self {
+        case .original: "Canary"
+        case .ultramarine: "Ultramarine"
+        case .rio: "Original Rio"
+        }
+    }
+
+    var image: NSImage? {
+        guard
+            let url = Bundle.main.resourceURL?
+                .appendingPathComponent("icon-\(rawValue).png")
+        else { return nil }
+        return NSImage(contentsOf: url)
+    }
+}
+
 struct SettingsView: View {
     var body: some View {
         TabView {
@@ -38,9 +61,69 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Appearance", systemImage: "paintpalette")
                 }
+            IconSettingsView()
+                .tabItem {
+                    Label("Icon", systemImage: "app")
+                }
         }
         .frame(width: 620)
         .preferredColorScheme(.dark)
+    }
+}
+
+private struct IconSettingsView: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(AppIcon.allCases, id: \.self) { icon in
+                    IconRowView(icon: icon, isSelected: model.appIcon == icon) {
+                        model.setAppIcon(icon)
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(height: 520)
+    }
+}
+
+private struct IconRowView: View {
+    let icon: AppIcon
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: isSelected ? "inset.filled.circle" : "circle")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(
+                        isSelected ? Color(red: 0.97, green: 0.56, blue: 0.57) : .secondary)
+
+                if let image = icon.image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .frame(width: 56, height: 56)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(icon.displayName)
+                        .font(.system(size: 14, weight: .semibold))
+                    if isSelected {
+                        Text("CURRENT ICON")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color(red: 0.97, green: 0.56, blue: 0.57))
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -203,7 +286,7 @@ private struct AppearanceSettingsView: View {
                     supportsOpacity: false)
 
                 LabeledContent("Reset") {
-                    Button("Back to salmon") { model.resetAppearance() }
+                    Button("Reset to default") { model.resetAppearance() }
                 }
             }
         }

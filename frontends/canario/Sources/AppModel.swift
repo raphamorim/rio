@@ -199,6 +199,8 @@ final class AppModel {
     var selectionColor: Color = .white
     /// Focused-panel border and floating-panel outlines.
     var borderColor: Color = Theme.accentBorder
+    /// Which app icon variant the Dock shows.
+    var appIcon: AppIcon = .original
 
     // Text tiers, derived so one picked color drives the whole hierarchy.
     var textPrimary: Color { textColor.opacity(0.92) }
@@ -265,6 +267,11 @@ final class AppModel {
             let color = Color(hex: hex)
         {
             borderColor = color
+        }
+        if let raw = defaults.string(forKey: "appIcon"),
+            let icon = AppIcon(rawValue: raw)
+        {
+            appIcon = icon
         }
 
         // Restore the previous session if there is one; otherwise start fresh.
@@ -534,6 +541,23 @@ final class AppModel {
         selectionColor = color
         if let hex = color.hexString {
             UserDefaults.standard.set(hex, forKey: "selectionColor")
+        }
+    }
+
+    func setAppIcon(_ icon: AppIcon) {
+        appIcon = icon
+        UserDefaults.standard.set(icon.rawValue, forKey: "appIcon")
+        applyAppIcon()
+    }
+
+    /// Sets the Dock icon for this run; the original comes from the bundle
+    /// icns, variants from bundled PNGs. Called at launch and on change.
+    func applyAppIcon() {
+        switch appIcon {
+        case .original:
+            NSApp.applicationIconImage = nil
+        default:
+            NSApp.applicationIconImage = appIcon.image
         }
     }
 
