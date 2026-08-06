@@ -878,7 +878,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -2572,7 +2572,7 @@ dependencies = [
 
 [[package]]
 name = "librio"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "bitflags 2.13.1",
  "corcovado",
@@ -3966,7 +3966,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "base64",
  "dirs",
@@ -3985,11 +3985,11 @@ dependencies = [
 
 [[package]]
 name = "rio-fonts"
-version = "0.5.14"
+version = "0.5.15"
 
 [[package]]
 name = "rio-grapheme-width"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "phf",
  "ucd-trie",
@@ -3997,7 +3997,7 @@ dependencies = [
 
 [[package]]
 name = "rio-graphics"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "image",
  "parking_lot",
@@ -4009,7 +4009,7 @@ dependencies = [
 
 [[package]]
 name = "rio-notifier"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "block2 0.5.1",
  "objc-rs 0.3.2",
@@ -4022,7 +4022,7 @@ dependencies = [
 
 [[package]]
 name = "rio-vt"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "base64",
  "bitflags 2.13.1",
@@ -4053,7 +4053,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -4108,7 +4108,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "ahash",
  "bitflags 2.13.1",
@@ -4653,7 +4653,7 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "approx",
  "ash",
@@ -4786,7 +4786,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "corcovado",
  "dirs",
