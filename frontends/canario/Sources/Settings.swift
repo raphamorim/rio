@@ -157,7 +157,7 @@ private struct AppearanceSettingsView: View {
             selection: "#8A3B44", border: "#FFC7CC"),
         Preset(
             name: "Cocoa", chrome: "#211A1B", text: "#F5EDEB",
-            selection: "#3A3236", border: "#FFC7CC"),
+            selection: "#3A3236", border: "#9AD4F0"),
         Preset(
             name: "Ultramarine", chrome: "#4B4DEE", text: "#FFFFFF",
             selection: "#2E30B8", border: "#C7C8FF"),
