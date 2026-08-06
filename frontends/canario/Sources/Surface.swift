@@ -80,10 +80,14 @@ final class PanelHostView: NSView {
         layerContentsRedrawPolicy = .duringViewResize
         layer?.cornerRadius = Theme.cardRadius
         layer?.masksToBounds = true
-        // Rio's default background, matching CPURenderer.defaultBackground.
-        layer?.backgroundColor = CGColor(
-            red: 0x0f / 255, green: 0x0d / 255, blue: 0x0e / 255, alpha: 1)
+        // The scheme background, matching CPURenderer.defaultBackground, so
+        // resize gaps and pre-first-draw frames don't flash a wrong color.
+        layer?.backgroundColor = RioEngine.colorScheme.backgroundColor.cgColor
         addSubview(surfaceView)
+    }
+
+    func setSchemeBackground(_ color: NSColor) {
+        layer?.backgroundColor = color.cgColor
     }
 
     required init?(coder: NSCoder) {

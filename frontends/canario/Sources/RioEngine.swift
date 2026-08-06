@@ -16,6 +16,9 @@ final class RioEngine {
 
     static var fontSize: Float = 13.0
     static var fontFamily: String = "Menlo"
+    /// The active color scheme; new sessions/renderers read it at creation,
+    /// AppModel.applyColorScheme moves live ones.
+    static var colorScheme: ColorScheme = .rio
 
     private init() {
         var config = rio_runtime_config_s()
@@ -482,6 +485,15 @@ final class PanelSession {
         RioEngine.fontFamily = family
         cpuRenderer?.setFont(size: CGFloat(size), family: family)
         syncSize()
+    }
+
+    /// Recolor this session: renderer overlays, the host view's backing
+    /// layer, and a repaint. The engine-side palette swap happens once in
+    /// AppModel.applyColorScheme, not per session.
+    func setScheme(_ scheme: ColorScheme) {
+        cpuRenderer?.setScheme(scheme)
+        hostView.setSchemeBackground(scheme.backgroundColor)
+        render()
     }
 
     func cursorRect() -> NSRect? {

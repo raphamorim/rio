@@ -112,17 +112,13 @@ final class CPURenderer {
     }
     private var kittyCache: [UInt32: KittyBitmap] = [:]
 
-    // Rio's default theme (rio-vt config/colors/defaults.rs); librio resolves
-    // cell colors from the same source, these cover what the renderer draws
-    // itself. Replace with theme-file values once config loading lands.
-    private let defaultBackground = NSColor(
-        srgbRed: 0x0f / 255, green: 0x0d / 255, blue: 0x0e / 255, alpha: 1)
-    private let selectionBackground = NSColor(
-        srgbRed: 0x1c / 255, green: 0x19 / 255, blue: 0x1a / 255, alpha: 1)
-    private let selectionForeground = NSColor(
-        srgbRed: 0x44 / 255, green: 0xc9 / 255, blue: 0xf0 / 255, alpha: 1)
-    private let cursorColor = NSColor(
-        srgbRed: 0xf7 / 255, green: 0x12 / 255, blue: 0xff / 255, alpha: 1)
+    // The colors the renderer draws itself (librio resolves per-cell colors
+    // against the same scheme, engine-side). New renderers start on the
+    // active scheme; changes arrive through setScheme.
+    private var defaultBackground = RioEngine.colorScheme.backgroundColor
+    private var selectionBackground = RioEngine.colorScheme.selectionBackgroundColor
+    private var selectionForeground = RioEngine.colorScheme.selectionForegroundColor
+    private var cursorColor = RioEngine.colorScheme.cursorColor
 
     init(fontSize: CGFloat, family: String) {
         metrics = TerminalMetrics(fontSize: fontSize, family: family)
@@ -131,6 +127,13 @@ final class CPURenderer {
     func setFont(size: CGFloat, family: String) {
         metrics = TerminalMetrics(fontSize: size, family: family)
         iconCache.removeAll()
+    }
+
+    func setScheme(_ scheme: ColorScheme) {
+        defaultBackground = scheme.backgroundColor
+        selectionBackground = scheme.selectionBackgroundColor
+        selectionForeground = scheme.selectionForegroundColor
+        cursorColor = scheme.cursorColor
     }
 
     private func color(_ c: rio_color_s) -> NSColor {
