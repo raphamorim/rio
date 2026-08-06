@@ -71,6 +71,7 @@ pub struct RenderState {
     display_offset: usize,
     selection: Option<ViewportSelection>,
     history_size: i64,
+    alt_screen: bool,
     /// Kitty graphics placements (direct overlays and virtual
     /// placeholder runs), captured under the same lock as the grid
     /// snapshot and sorted by z-index, lowest first.
@@ -98,6 +99,7 @@ impl RenderState {
             display_offset: 0,
             selection: None,
             history_size: 0,
+            alt_screen: false,
             kitty: Vec::new(),
             epoch: std::time::Instant::now(),
         }
@@ -128,6 +130,9 @@ impl RenderState {
         // the ring still count (rio-vt anchors placements the same way),
         // so a full scrollback must not shift placements off-screen.
         self.history_size = term.lines_evicted() as i64 + term.history_size() as i64;
+        self.alt_screen = term
+            .mode()
+            .contains(rio_vt::crosswords::Mode::ALT_SCREEN);
         self.kitty.clear();
         for placement in term.graphics.kitty_placements.values() {
             if let Some(image) = term.graphics.get_kitty_image(placement.image_id) {
@@ -239,6 +244,12 @@ impl RenderState {
 
     pub fn display_offset(&self) -> usize {
         self.display_offset
+    }
+
+    /// Whether the alternate screen (full-screen TUIs) is active. Hosts
+    /// use it to gate prompt-output affordances like table skins.
+    pub fn alt_screen(&self) -> bool {
+        self.alt_screen
     }
 
     pub fn selection(&self) -> Option<ViewportSelection> {

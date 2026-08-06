@@ -208,8 +208,15 @@ final class AppModel {
     var textSelected: Color { textColor.opacity(0.92) }
     var selectedFill: Color { selectionColor.opacity(0.94) }
     var isCommandBarVisible = false
+    /// OSC 9;4 progress per terminal; entries leave the map on remove.
+    var terminalProgress: [UUID: TerminalProgress] = [:]
+    /// The terminal whose progress the menu bar and Dock badge mirror.
+    var lastProgressTerminalID: UUID?
     /// Kitty image lightbox (Image Peek): set opens the overlay, nil closes.
     var imagePeek: ImagePeekState?
+    /// Panels currently popped out into picture-in-picture panels; their
+    /// tiles show a placeholder until they come back.
+    var pipPanelIDs: Set<UUID> = []
     /// Pane being previewed from the sidebar (hover peek), if any.
     var peekedPanelID: UUID?
     /// Sidebar row anchoring the peek: a pane row's panel id, or a terminal
@@ -225,6 +232,14 @@ final class AppModel {
 
     @ObservationIgnored
     private(set) lazy var quickTerminal = QuickTerminalController(model: self)
+
+    @ObservationIgnored
+    private(set) lazy var pip = PiPController(model: self)
+
+    /// Select the terminal (and reveal its space) from a menu-bar click.
+    func selectRootItemContaining(terminalID: UUID) {
+        selectedTerminalID = terminalID
+    }
 
     @ObservationIgnored
     private let routingRules = RoutingRules.load()
@@ -293,6 +308,24 @@ final class AppModel {
             session.terminal.panelTitles[session.panelID] = title
             self.attemptPendingRouting(for: session.terminal)
             self.scheduleSave()
+        }
+        RioEngine.shared.onProgress = { [weak self] session, state, value in
+            guard let self else { return }
+            let terminalID = session.terminal.id
+            if state == 0 {
+                self.terminalProgress.removeValue(forKey: terminalID)
+                if self.lastProgressTerminalID == terminalID {
+                    self.lastProgressTerminalID = self.terminalProgress.keys.first
+                }
+            } else {
+                self.terminalProgress[terminalID] = TerminalProgress(
+                    state: state, value: value)
+                self.lastProgressTerminalID = terminalID
+            }
+            // The engine dispatches callbacks on the main queue.
+            MainActor.assumeIsolated {
+                ProgressCenter.shared.update(model: self)
+            }
         }
         RioEngine.shared.onCloseSurface = { [weak self] session in
             guard let self else { return }

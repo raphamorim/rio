@@ -10,6 +10,9 @@ final class RioEngine {
 
     var onTitle: ((PanelSession, String) -> Void)?
     var onCloseSurface: ((PanelSession) -> Void)?
+    /// OSC 9;4 progress per session: state (0 remove, 1 set, 2 error,
+    /// 3 indeterminate, 4 paused) and 0-100 value.
+    var onProgress: ((PanelSession, Int, Int) -> Void)?
 
     static var fontSize: Float = 13.0
     static var fontFamily: String = "Menlo"
@@ -27,6 +30,9 @@ final class RioEngine {
             let engine = Unmanaged<RioEngine>.fromOpaque(userdata).takeUnretainedValue()
             if action.tag == RIO_ACTION_SET_TITLE, let titlePtr = action.title {
                 engine.title(surfaceID, String(cString: titlePtr))
+            } else if action.tag == RIO_ACTION_PROGRESS {
+                engine.progress(
+                    surfaceID, Int(action.data_a), Int(action.data_b))
             }
         }
         config.clipboard_write_cb = { _, _, _, textPtr in
@@ -78,6 +84,13 @@ final class RioEngine {
         guard let session = session(for: id) else { return }
         DispatchQueue.main.async {
             self.onTitle?(session, title)
+        }
+    }
+
+    private func progress(_ id: Int, _ state: Int, _ value: Int) {
+        guard let session = session(for: id) else { return }
+        DispatchQueue.main.async {
+            self.onProgress?(session, state, value)
         }
     }
 

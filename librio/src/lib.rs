@@ -109,6 +109,13 @@ pub enum Action {
     },
     RingBell,
     CursorBlinkingChange,
+    /// OSC 9;4 progress (ConEmu numbering): 0 remove, 1 set, 2 error,
+    /// 3 indeterminate, 4 paused. `value` is 0-100 where the state
+    /// carries one.
+    Progress {
+        state: u8,
+        value: u8,
+    },
 }
 
 pub trait SurfaceDelegate: Send + Sync + 'static {
@@ -168,6 +175,23 @@ impl Listener {
             }
             RioEvent::CloseTerminal(_) | RioEvent::Exit => {
                 self.delegate.close_surface(self.surface_id);
+            }
+            RioEvent::ProgressReport(report) => {
+                use rio_vt::event::ProgressState;
+                let state = match report.state {
+                    ProgressState::Remove => 0,
+                    ProgressState::Set => 1,
+                    ProgressState::Error => 2,
+                    ProgressState::Indeterminate => 3,
+                    ProgressState::Pause => 4,
+                };
+                self.delegate.action(
+                    self.surface_id,
+                    Action::Progress {
+                        state,
+                        value: report.progress.unwrap_or(0),
+                    },
+                );
             }
             _ => {}
         }
@@ -560,6 +584,46 @@ mod tests {
         fn wakeup(&self, _surface: SurfaceId) {
             self.wakeups.fetch_add(1, Ordering::SeqCst);
         }
+    }
+
+    struct ActionRecorder {
+        actions: Mutex<Vec<Action>>,
+    }
+
+    impl SurfaceDelegate for ActionRecorder {
+        fn wakeup(&self, _surface: SurfaceId) {}
+        fn action(&self, _surface: SurfaceId, action: Action) {
+            self.actions.lock().unwrap().push(action);
+        }
+    }
+
+    // OSC 9;4 (ConEmu progress) must reach the embedder as an action:
+    // set with a value, then remove.
+    #[test]
+    fn progress_reports_reach_the_delegate() {
+        let delegate = Arc::new(ActionRecorder {
+            actions: Mutex::new(Vec::new()),
+        });
+        let engine = Engine::new(delegate.clone());
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+
+        surface.inject_output(b"\x1b]9;4;1;42\x07");
+        surface.inject_output(b"\x1b]9;4;0\x07");
+
+        let actions = delegate.actions.lock().unwrap();
+        let progress: Vec<&Action> = actions
+            .iter()
+            .filter(|a| matches!(a, Action::Progress { .. }))
+            .collect();
+        assert_eq!(
+            progress,
+            vec![
+                &Action::Progress { state: 1, value: 42 },
+                &Action::Progress { state: 0, value: 0 },
+            ]
+        );
     }
 
     #[test]

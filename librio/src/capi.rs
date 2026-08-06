@@ -12,6 +12,9 @@ use std::sync::Arc;
 pub const RIO_ACTION_SET_TITLE: u32 = 0;
 pub const RIO_ACTION_RING_BELL: u32 = 1;
 pub const RIO_ACTION_CURSOR_BLINKING_CHANGE: u32 = 2;
+/// OSC 9;4 progress: `data_a` is the ConEmu state (0 remove, 1 set,
+/// 2 error, 3 indeterminate, 4 paused), `data_b` the 0-100 value.
+pub const RIO_ACTION_PROGRESS: u32 = 3;
 
 pub const RIO_COLOR_NAMED: u8 = 0;
 pub const RIO_COLOR_INDEXED: u8 = 1;
@@ -50,6 +53,9 @@ pub struct rio_action_s {
     pub tag: u32,
     pub title: *const c_char,
     pub subtitle: *const c_char,
+    /// Numeric payload; meaning depends on `tag` (see RIO_ACTION_*).
+    pub data_a: u32,
+    pub data_b: u32,
 }
 
 #[repr(C)]
@@ -170,6 +176,8 @@ impl SurfaceDelegate for CDelegate {
                             .as_ref()
                             .map(|s| s.as_ptr())
                             .unwrap_or(std::ptr::null()),
+                        data_a: 0,
+                        data_b: 0,
                     },
                 );
             }
@@ -181,6 +189,21 @@ impl SurfaceDelegate for CDelegate {
                         tag: RIO_ACTION_RING_BELL,
                         title: std::ptr::null(),
                         subtitle: std::ptr::null(),
+                        data_a: 0,
+                        data_b: 0,
+                    },
+                );
+            }
+            Action::Progress { state, value } => {
+                cb(
+                    self.config.userdata,
+                    surface,
+                    rio_action_s {
+                        tag: RIO_ACTION_PROGRESS,
+                        title: std::ptr::null(),
+                        subtitle: std::ptr::null(),
+                        data_a: state as u32,
+                        data_b: value as u32,
                     },
                 );
             }
@@ -192,6 +215,8 @@ impl SurfaceDelegate for CDelegate {
                         tag: RIO_ACTION_CURSOR_BLINKING_CHANGE,
                         title: std::ptr::null(),
                         subtitle: std::ptr::null(),
+                        data_a: 0,
+                        data_b: 0,
                     },
                 );
             }
@@ -918,6 +943,21 @@ pub unsafe extern "C" fn rio_nerd_constrain(
             };
         }
         true
+    }))
+    .unwrap_or(false)
+}
+
+/// Whether the alternate screen (full-screen TUIs) was active at the
+/// last update.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_alt_screen(
+    state: *const RenderState,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return false;
+        }
+        unsafe { &*state }.alt_screen()
     }))
     .unwrap_or(false)
 }

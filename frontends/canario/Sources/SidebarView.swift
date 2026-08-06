@@ -435,6 +435,12 @@ private struct TerminalRowView: View {
 
                 Spacer(minLength: 0)
 
+                if let progress = model.terminalProgress[terminal.id] {
+                    ProgressRingView(
+                        progress: progress,
+                        tint: isSelected ? model.textSelected : model.textPrimary)
+                }
+
                 if terminal.panelCount > 1 {
                     Button {
                         withAnimation(.spring(duration: 0.25)) {

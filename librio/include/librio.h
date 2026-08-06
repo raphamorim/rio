@@ -18,6 +18,9 @@ typedef size_t rio_surface_id_t;
 #define RIO_ACTION_SET_TITLE 0u
 #define RIO_ACTION_RING_BELL 1u
 #define RIO_ACTION_CURSOR_BLINKING_CHANGE 2u
+/* OSC 9;4 progress: data_a is the ConEmu state (0 remove, 1 set, 2 error,
+   3 indeterminate, 4 paused), data_b the 0-100 value. */
+#define RIO_ACTION_PROGRESS 3u
 
 #define RIO_COLOR_NAMED 0u
 #define RIO_COLOR_INDEXED 1u
@@ -61,6 +64,9 @@ typedef struct {
   /* Valid only for the duration of the callback. */
   const char *title;
   const char *subtitle;
+  /* Numeric payload; meaning depends on tag (see RIO_ACTION_*). */
+  uint32_t data_a;
+  uint32_t data_b;
 } rio_action_s;
 
 typedef struct {
@@ -202,6 +208,7 @@ rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
 size_t rio_render_state_display_offset(const rio_render_state_t *state);
+bool rio_render_state_alt_screen(const rio_render_state_t *state);
 
 const uint8_t *rio_symbols_nerd_font(size_t *len);
 

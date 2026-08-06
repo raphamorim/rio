@@ -142,6 +142,15 @@ final class PanelHostView: NSView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         guard let session else { return }
+        // Ctrl+click means context menu. AppKit's translation lives in
+        // NSView's default mouseDown, which this override replaces, so
+        // it has to be done by hand.
+        if event.modifierFlags.contains(.control) {
+            if let menu = menu(for: event) {
+                NSMenu.popUpContextMenu(menu, with: event, for: self)
+            }
+            return
+        }
         let point = surfaceView.convert(event.locationInWindow, from: nil)
         // Kitty images act like objects, not cells: plain click peeks,
         // drag exports. Double/triple click falls through to selection so
@@ -221,8 +230,9 @@ final class PanelHostView: NSView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = surfaceView.convert(event.locationInWindow, from: nil)
-        guard let session, let hit = session.kittyImage(at: point) else {
-            return super.menu(for: event)
+        guard let session else { return super.menu(for: event) }
+        guard let hit = session.kittyImage(at: point) else {
+            return textMenu(for: point, session: session)
         }
         menuImageHit = hit
         let menu = NSMenu()
@@ -242,6 +252,22 @@ final class PanelHostView: NSView {
             keyEquivalent: "")
         share.target = self
         return menu
+    }
+
+    /// Menu for right-clicks that don't hit an image.
+    private func textMenu(for point: NSPoint, session: PanelSession) -> NSMenu? {
+        let menu = NSMenu()
+        let pip = menu.addItem(
+            withTitle: "Pop Out Panel",
+            action: #selector(popOutFromMenu), keyEquivalent: "")
+        pip.target = self
+
+        return menu
+    }
+
+    @objc private func popOutFromMenu() {
+        guard let session else { return }
+        AppModel.shared?.pip.popOut(session)
     }
 
     @objc private func copyImageFromMenu() {

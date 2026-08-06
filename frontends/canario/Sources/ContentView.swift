@@ -317,7 +317,13 @@ private struct PanelTileView: View {
 
     var body: some View {
         let session = model.surfaces.session(for: panel.id, terminal: terminal)
-        TerminalSurface(hostView: session.hostView)
+        Group {
+            if model.pipPanelIDs.contains(panel.id) {
+                pipPlaceholder
+            } else {
+                TerminalSurface(hostView: session.hostView)
+            }
+        }
             .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
             .overlay {
                 if terminal.panelCount > 1 {
@@ -345,6 +351,30 @@ private struct PanelTileView: View {
                     session.hostView.window?.makeFirstResponder(session.hostView)
                 }
             }
+    }
+
+    /// Shown while the pane lives in its picture-in-picture panel.
+    private var pipPlaceholder: some View {
+        ZStack {
+            Color(red: 0x0f / 255, green: 0x0d / 255, blue: 0x0e / 255)
+            VStack(spacing: 10) {
+                Image(systemName: "pip.swap")
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.35))
+                Text("In Picture in Picture")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.45))
+                Button("Bring Back") {
+                    model.pip.bringBack(panel.id)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(.white.opacity(0.12)))
+            }
+        }
     }
 
     private var resizeHandle: some View {
