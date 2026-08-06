@@ -54,6 +54,29 @@ impl SelectionKind {
 struct GridSize {
     rows: usize,
     cols: usize,
+    cell_width: f32,
+    cell_height: f32,
+}
+
+impl GridSize {
+    /// Cell metrics come from the host's pixel size; graphics protocols
+    /// (kitty image placements) need them to map pixels onto cells, so a
+    /// zero pixel size would silently drop every placement.
+    fn new(cols: usize, rows: usize, pixel_width: u16, pixel_height: u16) -> Self {
+        let cell = |pixels: u16, cells: usize| {
+            if pixels == 0 || cells == 0 {
+                0.
+            } else {
+                pixels as f32 / cells as f32
+            }
+        };
+        Self {
+            rows,
+            cols,
+            cell_width: cell(pixel_width, cols),
+            cell_height: cell(pixel_height, rows),
+        }
+    }
 }
 
 impl rio_vt::crosswords::grid::Dimensions for GridSize {
@@ -70,11 +93,11 @@ impl rio_vt::crosswords::grid::Dimensions for GridSize {
     }
 
     fn square_width(&self) -> f32 {
-        0.
+        self.cell_width
     }
 
     fn square_height(&self) -> f32 {
-        0.
+        self.cell_height
     }
 }
 
@@ -256,10 +279,12 @@ impl Surface {
         };
 
         let terminal = Crosswords::new(
-            GridSize {
-                rows: desc.rows as usize,
-                cols: desc.cols as usize,
-            },
+            GridSize::new(
+                desc.cols as usize,
+                desc.rows as usize,
+                desc.pixel_width,
+                desc.pixel_height,
+            ),
             CursorShape::Block,
             listener.clone(),
             WindowId::from(id as u64),
@@ -405,10 +430,12 @@ impl Surface {
     }
 
     pub fn resize(&self, cols: u16, rows: u16, pixel_width: u16, pixel_height: u16) {
-        self.terminal.lock().resize(GridSize {
-            rows: rows as usize,
-            cols: cols as usize,
-        });
+        self.terminal.lock().resize(GridSize::new(
+            cols as usize,
+            rows as usize,
+            pixel_width,
+            pixel_height,
+        ));
         let _ = self.channel.send(Msg::Resize(WindowSize {
             rows,
             cols,
@@ -645,5 +672,141 @@ mod tests {
         // Snapshot text renders the fills as trimmable spaces, not NULs.
         assert_eq!(state.text_row(5), "A");
         assert_eq!(state.text_row(6), "B");
+    }
+
+    // A kitty graphics transmit-and-display (a=T) must surface through
+    // the render-state snapshot: placement geometry resolved against the
+    // viewport, image dimensions, and an RGBA copy for the renderer.
+    #[test]
+    fn kitty_image_reaches_render_state() {
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate);
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+
+        // 2x2 RGBA (red, green, blue, white) placed at row 6, col 5.
+        let pixels: [u8; 16] = [
+            0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, //
+            0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        ];
+        surface.inject_output(
+            b"\x1b[6;5H\x1b_Gf=32,s=2,v=2,i=7,a=T;/wAA/wD/AP8AAP///////w==\x1b\\",
+        );
+        state.update();
+
+        assert_eq!(state.kitty_count(), 1);
+        let (image_id, z_index, geometry) = state
+            .kitty_geometry(0, 8.0, 16.0)
+            .expect("placement in view");
+        assert_eq!(image_id, 7);
+        assert_eq!(z_index, 0);
+        assert_eq!(geometry.x, 4.0 * 8.0);
+        assert_eq!(geometry.y, 5.0 * 16.0);
+        assert_eq!(geometry.width, 2.0);
+        assert_eq!(geometry.height, 2.0);
+        assert_eq!(geometry.source_rect, [0.0, 0.0, 1.0, 1.0]);
+
+        let (width, height, _stamp) = state.kitty_image_info(7).expect("stored image");
+        assert_eq!((width, height), (2, 2));
+
+        let mut buf = [0u8; 16];
+        assert_eq!(state.kitty_image_rgba(7, &mut buf), 16);
+        assert_eq!(buf, pixels);
+
+        // Too-small buffers are refused rather than partially filled.
+        let mut small = [0u8; 4];
+        assert_eq!(state.kitty_image_rgba(7, &mut small), 0);
+    }
+
+    // Same sequence the live repro used: deep scrollback, clear, then a
+    // kitty transmit+display. The placement must resolve on screen.
+    #[test]
+    fn kitty_geometry_survives_scrollback() {
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate);
+        // A tiny scrollback forces ring eviction: kitty dest_rows count
+        // evicted lines too, so the viewport math must include them or
+        // every placement in a long-lived session drifts off-screen.
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                scrollback: 16,
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+
+        let mut text = String::new();
+        for i in 0..200 {
+            text.push_str(&format!("line {i}\r\n"));
+        }
+        surface.inject_output(text.as_bytes());
+        surface.inject_output(b"\x1b[2J\x1b[H");
+        surface
+            .inject_output(b"\x1b_Gf=32,s=2,v=2,i=7,a=T;/wAA/wD/AP8AAP///////w==\x1b\\");
+        state.update();
+
+        assert_eq!(state.kitty_count(), 1);
+        let (image_id, _z, geometry) = state
+            .kitty_geometry(0, 8.0, 16.0)
+            .expect("placement visible after scrollback");
+        assert_eq!(image_id, 7);
+        assert_eq!(geometry.y, 0.0);
+    }
+
+    // Virtual placements (`U=1`): the image is registered but only drawn
+    // where the application prints U+10EEEE placeholder cells whose fg
+    // color + combining diacritics say which image/row/column each cell
+    // shows. This is what `kitten icat --unicode-placeholder` (and yazi
+    // under a multiplexer) emits.
+    #[test]
+    fn kitty_virtual_placeholders_resolve_runs() {
+        use rio_vt::ansi::kitty_virtual::encode_placeholder;
+
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate);
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+
+        // 2x2 RGBA transmitted as a virtual placement spanning 2 cols x 1
+        // row, then a run of two placeholder cells (image row 0, cols 0-1)
+        // with fg palette index 7 = image id 7.
+        let mut text = String::from(
+            "\x1b[2J\x1b[H\x1b_Gf=32,s=2,v=2,i=7,a=T,U=1,c=2,r=1;/wAA/wD/AP8AAP///////w==\x1b\\",
+        );
+        text.push_str("\x1b[4;3H\x1b[38;5;7m");
+        text.push_str(&encode_placeholder(0, 0, None));
+        text.push_str(&encode_placeholder(0, 1, None));
+        text.push_str("\x1b[39m");
+        surface.inject_output(text.as_bytes());
+        state.update();
+
+        assert_eq!(state.kitty_count(), 1);
+        let (image_id, z_index, geometry) = state
+            .kitty_geometry(0, 8.0, 16.0)
+            .expect("run resolves to geometry");
+        assert_eq!(image_id, 7);
+        assert_eq!(z_index, -1, "virtual placements draw under text");
+        // Placement box: 2 cols x 1 row of 8x16 cells = 16x16 px; the 2x2
+        // image aspect-fits to exactly 16x16, and the run starts at cell
+        // (row 3, col 2), i.e. pixel (16, 48).
+        assert_eq!(geometry.x, 16.0);
+        assert_eq!(geometry.y, 48.0);
+        assert_eq!(geometry.width, 16.0);
+        assert_eq!(geometry.height, 16.0);
+        assert_eq!(geometry.source_rect, [0.0, 0.0, 1.0, 1.0]);
+
+        // The RGBA copy path serves virtual images the same way.
+        let mut buf = [0u8; 16];
+        assert_eq!(state.kitty_image_rgba(7, &mut buf), 16);
     }
 }

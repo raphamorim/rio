@@ -922,6 +922,135 @@ pub unsafe extern "C" fn rio_nerd_constrain(
     .unwrap_or(false)
 }
 
+/// A kitty graphics placement resolved to viewport pixels. `x`/`y` are
+/// relative to the grid origin (add your padding); `src_*` is the
+/// normalized source rectangle within the image.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct rio_kitty_placement_s {
+    pub image_id: u32,
+    pub z_index: i32,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub src_x: f32,
+    pub src_y: f32,
+    pub src_w: f32,
+    pub src_h: f32,
+}
+
+/// Number of kitty placements in the last snapshot (visible or not);
+/// iterate them with [`rio_render_state_kitty_placement`], which filters
+/// to the viewport. Ordered by z-index, lowest first.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_kitty_count(
+    state: *const RenderState,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return 0;
+        }
+        unsafe { &*state }.kitty_count()
+    }))
+    .unwrap_or(0)
+}
+
+/// Resolve placement `index` against the current viewport with the
+/// renderer's cell metrics. Returns false when it's scrolled out of view.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_kitty_placement(
+    state: *const RenderState,
+    index: usize,
+    cell_width: f32,
+    cell_height: f32,
+    out: *mut rio_kitty_placement_s,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() || out.is_null() {
+            return false;
+        }
+        let Some((image_id, z_index, geometry)) =
+            unsafe { &*state }.kitty_geometry(index, cell_width, cell_height)
+        else {
+            return false;
+        };
+        unsafe {
+            *out = rio_kitty_placement_s {
+                image_id,
+                z_index,
+                x: geometry.x,
+                y: geometry.y,
+                width: geometry.width,
+                height: geometry.height,
+                // source_rect is [u0, v0, u1, v1]; the C side gets
+                // origin + size, which is what image crops want.
+                src_x: geometry.source_rect[0],
+                src_y: geometry.source_rect[1],
+                src_w: geometry.source_rect[2] - geometry.source_rect[0],
+                src_h: geometry.source_rect[3] - geometry.source_rect[1],
+            };
+        }
+        true
+    }))
+    .unwrap_or(false)
+}
+
+/// Pixel dimensions and a change stamp for a kitty image; the stamp
+/// changes when the image is retransmitted, so decoded bitmaps can be
+/// cached against it.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_kitty_image_info(
+    state: *const RenderState,
+    image_id: u32,
+    out_width: *mut u32,
+    out_height: *mut u32,
+    out_stamp: *mut u64,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return false;
+        }
+        let Some((width, height, stamp)) = unsafe { &*state }.kitty_image_info(image_id)
+        else {
+            return false;
+        };
+        unsafe {
+            if !out_width.is_null() {
+                *out_width = width as u32;
+            }
+            if !out_height.is_null() {
+                *out_height = height as u32;
+            }
+            if !out_stamp.is_null() {
+                *out_stamp = stamp;
+            }
+        }
+        true
+    }))
+    .unwrap_or(false)
+}
+
+/// Copy a kitty image into `buf` as tightly-packed RGBA8. Returns the
+/// bytes written (width * height * 4), or 0 when the image is unknown or
+/// `cap` is too small.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_kitty_image_rgba(
+    state: *const RenderState,
+    image_id: u32,
+    buf: *mut u8,
+    cap: usize,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() || buf.is_null() {
+            return 0;
+        }
+        let slice = unsafe { std::slice::from_raw_parts_mut(buf, cap) };
+        unsafe { &*state }.kitty_image_rgba(image_id, slice)
+    }))
+    .unwrap_or(0)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_cursor(
     state: *const RenderState,

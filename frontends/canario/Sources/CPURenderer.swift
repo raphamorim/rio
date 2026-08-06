@@ -104,6 +104,14 @@ final class CPURenderer {
     }
     private var iconCache: [UInt32: IconGlyph?] = [:]
 
+    /// Decoded kitty images keyed by image id; the stamp changes on
+    /// retransmission, which is the only time pixels need re-decoding.
+    private struct KittyBitmap {
+        let stamp: UInt64
+        let image: CGImage
+    }
+    private var kittyCache: [UInt32: KittyBitmap] = [:]
+
     // Rio's default theme (rio-vt config/colors/defaults.rs); librio resolves
     // cell colors from the same source, these cover what the renderer draws
     // itself. Replace with theme-file values once config loading lands.
@@ -150,30 +158,51 @@ final class CPURenderer {
 
         let selection = rio_render_state_selection(state)
 
+        // Kitty images interleave with the cell passes at the z bounds the
+        // protocol defines (ghostty's renderer/image.zig splits the same
+        // way): z < INT32_MIN/2 under cell backgrounds, z < 0 under text
+        // (where virtual placements land), the rest above.
+        let kitty = collectKittyImages(state: state)
+        drawKittyLayer(kitty.belowBackground)
+
+        // Background pass (skip the default to avoid overdraw). Runs
+        // before any glyph so under-text images can sit between the two.
+        for line in 0..<lines {
+            let y = pad + CGFloat(line) * ch
+            for col in 0..<cols {
+                let cell = rio_render_state_cell(state, UInt16(line), UInt16(col))
+                let inverse = cell.style_flags & StyleFlag.inverse != 0
+                var bg = color(inverse ? cell.fg : cell.bg)
+                if selection.active
+                    && cellSelected(selection, line: line, col: col, cols: cols)
+                {
+                    bg = selectionBackground
+                }
+                if bg != defaultBackground {
+                    bg.setFill()
+                    NSRect(x: pad + CGFloat(col) * cw, y: y, width: cw, height: ch)
+                        .fill()
+                }
+            }
+        }
+
+        drawKittyLayer(kitty.belowText)
+
         for line in 0..<lines {
             let y = pad + CGFloat(line) * ch
             for col in 0..<cols {
                 let x = pad + CGFloat(col) * cw
-                let rect = NSRect(x: x, y: y, width: cw, height: ch)
                 let cell = rio_render_state_cell(state, UInt16(line), UInt16(col))
 
                 let inverse = cell.style_flags & StyleFlag.inverse != 0
                 var fg = color(inverse ? cell.bg : cell.fg)
-                var bg = color(inverse ? cell.fg : cell.bg)
 
                 // Selection recolors the cell (rio-style), rather than
                 // painting a translucent overlay on top of it.
                 if selection.active
                     && cellSelected(selection, line: line, col: col, cols: cols)
                 {
-                    bg = selectionBackground
                     fg = selectionForeground
-                }
-
-                // Background (skip the default to avoid overdraw).
-                if bg != defaultBackground {
-                    bg.setFill()
-                    rect.fill()
                 }
 
                 if cell.style_flags & StyleFlag.hidden != 0 { continue }
@@ -182,7 +211,8 @@ final class CPURenderer {
                 }
 
                 guard let scalar = Unicode.Scalar(cell.codepoint),
-                    cell.codepoint != 0x20, cell.codepoint != 0
+                    cell.codepoint != 0x20, cell.codepoint != 0,
+                    cell.codepoint != 0x10EEEE
                 else { continue }
 
                 // Icon codepoints go through the Nerd Fonts constraint
@@ -223,7 +253,157 @@ final class CPURenderer {
             }
         }
 
+        drawKittyLayer(kitty.aboveText)
         drawCursor(state: state, cols: cols, lines: lines, focused: focused)
+    }
+
+    /// One kitty placement resolved for the host: decoded (cached) bitmap,
+    /// already cropped to its source rect, with a point-space rect in the
+    /// surface view's coordinates. Draw order = array order (z-sorted).
+    struct ResolvedKittyImage {
+        let imageID: UInt32
+        let zIndex: Int32
+        let rect: CGRect
+        let image: CGImage
+    }
+
+    private struct KittyLayers {
+        var belowBackground: [ResolvedKittyImage] = []
+        var belowText: [ResolvedKittyImage] = []
+        var aboveText: [ResolvedKittyImage] = []
+    }
+
+    private func collectKittyImages(state: OpaquePointer) -> KittyLayers {
+        var layers = KittyLayers()
+        // Drawing resolves against the active context's scale; hit-testing
+        // callers pass the window's backing scale instead.
+        let scale =
+            NSGraphicsContext.current?.cgContext
+            .userSpaceToDeviceSpaceTransform.a ?? 2
+        let belowBackgroundLimit = Int32.min / 2
+        for item in resolvedKittyImages(state: state, scale: scale) {
+            if item.zIndex < belowBackgroundLimit {
+                layers.belowBackground.append(item)
+            } else if item.zIndex < 0 {
+                layers.belowText.append(item)
+            } else {
+                layers.aboveText.append(item)
+            }
+        }
+        return layers
+    }
+
+    /// Resolve every kitty placement (librio hands them z-sorted with
+    /// viewport-relative pixel geometry) into a decoded + cropped bitmap
+    /// and a point-space rect. Also the mouse hit-testing entry point for
+    /// image interactions (peek, context menu, drag-out).
+    func resolvedKittyImages(
+        state: OpaquePointer, scale: CGFloat
+    ) -> [ResolvedKittyImage] {
+        var resolved: [ResolvedKittyImage] = []
+        let count = rio_render_state_kitty_count(state)
+        if count == 0 {
+            if !kittyCache.isEmpty { kittyCache.removeAll() }
+            return resolved
+        }
+        let pad = metrics.padding
+        // The surface reports its size to librio in device pixels, so
+        // placements are laid out in that space (images map 1:1 to device
+        // pixels, per the kitty protocol); geometry queries must match it,
+        // and the results scale back down to points.
+        let scale = max(scale, 1)
+
+        for index in 0..<count {
+            var placement = rio_kitty_placement_s()
+            guard
+                rio_render_state_kitty_placement(
+                    state, index, Float(metrics.cellWidth * scale),
+                    Float(metrics.cellHeight * scale), &placement),
+                var image = kittyBitmap(state: state, imageID: placement.image_id)
+            else { continue }
+
+            if placement.src_x > 0 || placement.src_y > 0
+                || placement.src_w < 1 || placement.src_h < 1
+            {
+                let iw = CGFloat(image.width)
+                let ih = CGFloat(image.height)
+                let crop = CGRect(
+                    x: CGFloat(placement.src_x) * iw,
+                    y: CGFloat(placement.src_y) * ih,
+                    width: CGFloat(placement.src_w) * iw,
+                    height: CGFloat(placement.src_h) * ih)
+                guard let cropped = image.cropping(to: crop.integral) else {
+                    continue
+                }
+                image = cropped
+            }
+
+            let rect = CGRect(
+                x: pad + CGFloat(placement.x) / scale,
+                y: pad + CGFloat(placement.y) / scale,
+                width: CGFloat(placement.width) / scale,
+                height: CGFloat(placement.height) / scale)
+            resolved.append(
+                ResolvedKittyImage(
+                    imageID: placement.image_id, zIndex: placement.z_index,
+                    rect: rect, image: image))
+        }
+        return resolved
+    }
+
+    private func drawKittyLayer(_ draws: [ResolvedKittyImage]) {
+        guard !draws.isEmpty,
+            let context = NSGraphicsContext.current?.cgContext
+        else { return }
+        for draw in draws {
+            // CGContext blits images y-up while the view is flipped; flip
+            // locally around the rect so the image lands upright.
+            context.saveGState()
+            context.translateBy(x: 0, y: draw.rect.maxY)
+            context.scaleBy(x: 1, y: -1)
+            context.draw(
+                draw.image,
+                in: CGRect(
+                    x: draw.rect.minX, y: 0,
+                    width: draw.rect.width, height: draw.rect.height))
+            context.restoreGState()
+        }
+    }
+
+    private func kittyBitmap(state: OpaquePointer, imageID: UInt32) -> CGImage? {
+        var width: UInt32 = 0
+        var height: UInt32 = 0
+        var stamp: UInt64 = 0
+        guard
+            rio_render_state_kitty_image_info(
+                state, imageID, &width, &height, &stamp),
+            width > 0, height > 0
+        else { return nil }
+        if let cached = kittyCache[imageID], cached.stamp == stamp {
+            return cached.image
+        }
+
+        let byteCount = Int(width) * Int(height) * 4
+        var pixels = Data(count: byteCount)
+        let copied = pixels.withUnsafeMutableBytes { buffer in
+            rio_render_state_kitty_image_rgba(
+                state, imageID,
+                buffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                byteCount)
+        }
+        guard copied == byteCount,
+            let provider = CGDataProvider(data: pixels as CFData),
+            let image = CGImage(
+                width: Int(width), height: Int(height),
+                bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: Int(width) * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                provider: provider, decode: nil, shouldInterpolate: true,
+                intent: .defaultIntent)
+        else { return nil }
+        kittyCache[imageID] = KittyBitmap(stamp: stamp, image: image)
+        return image
     }
 
     /// Draw an icon glyph through librio's Nerd Fonts constraint math

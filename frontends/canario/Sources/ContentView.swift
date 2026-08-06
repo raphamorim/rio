@@ -72,6 +72,11 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        .overlay {
+            if model.imagePeek != nil {
+                ImagePeekOverlay()
+            }
+        }
         .onChange(of: model.isSidebarCollapsed) { _, _ in
             isSidebarPeeking = false
         }

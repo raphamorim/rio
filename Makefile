@@ -77,7 +77,7 @@ canario: librio-xcframework
 		$(LIBRIO_XCF)/macos-arm64/librio.a \
 		-framework CoreFoundation -framework Foundation -framework AppKit \
 		-framework CoreGraphics -framework CoreText -framework QuartzCore \
-		-framework Carbon -lc++ -liconv \
+		-framework Carbon -framework VisionKit -lc++ -liconv \
 		-o $(CANARIO_APP_DIR)/Contents/MacOS/canario
 	@cp -fp $(CANARIO_DIR)/Info.plist $(CANARIO_APP_DIR)/Contents/Info.plist
 	@cp -fp $(CANARIO_DIR)/Resources/icon.icns $(CANARIO_APP_DIR)/Contents/Resources/icon.icns

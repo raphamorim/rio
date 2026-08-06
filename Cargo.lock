@@ -2577,6 +2577,7 @@ dependencies = [
  "bitflags 2.13.1",
  "corcovado",
  "rio-fonts",
+ "rio-graphics",
  "rio-vt",
  "rustc-hash 2.1.3",
  "teletypewriter",

@@ -184,6 +184,21 @@ final class PanelSession {
         }
     }
 
+    /// Kitty images currently on screen, resolved to view-space rects for
+    /// hit-testing (peek, context menu, drag-out). Uses the last render
+    /// state snapshot; no update, so damage tracking stays untouched.
+    func kittyImages() -> [CPURenderer.ResolvedKittyImage] {
+        guard let renderState, let renderer = cpuRenderer else { return [] }
+        let scale = hostView.window?.backingScaleFactor ?? 2
+        return renderer.resolvedKittyImages(state: renderState, scale: scale)
+    }
+
+    /// Topmost kitty image under `point` (surface-view coordinates).
+    func kittyImage(at point: NSPoint) -> CPURenderer.ResolvedKittyImage? {
+        // Later in the list = higher z; reversed finds the topmost first.
+        kittyImages().reversed().first { $0.rect.contains(point) }
+    }
+
     /// Bitmap of the pane's current contents for sidebar peek previews.
     /// Works for offscreen views too: `cacheDisplay` runs `draw(_:)`, which
     /// paints from the render state whether or not the view is in a window.

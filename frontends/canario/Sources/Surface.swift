@@ -1,6 +1,7 @@
 import AppKit
 import RioKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 final class SurfaceRegistry {
     private var sessions: [UUID: PanelSession] = [:]
@@ -51,6 +52,14 @@ final class PanelHostView: NSView {
     /// past the top or bottom edge keeps scrolling and extending.
     private var autoscrollTimer: Timer?
     private var lastDragPoint: NSPoint?
+    /// Kitty image pressed on mouse-down; resolves to a peek on click or a
+    /// file drag once the pointer travels. Cleared either way.
+    private var pendingImageHit:
+        (image: CPURenderer.ResolvedKittyImage, point: NSPoint)?
+    /// The image under the last right-click, for menu actions.
+    private var menuImageHit: CPURenderer.ResolvedKittyImage?
+    /// Keeps the drag's file-promise delegate alive for the session.
+    private var imageDragDelegate: ImageFilePromiseDelegate?
 
     /// Non-nil while a `keyDown` is in flight. `insertText` appends here
     /// instead of sending, so the key handler can tell text the input method
@@ -134,6 +143,13 @@ final class PanelHostView: NSView {
         window?.makeFirstResponder(self)
         guard let session else { return }
         let point = surfaceView.convert(event.locationInWindow, from: nil)
+        // Kitty images act like objects, not cells: plain click peeks,
+        // drag exports. Double/triple click falls through to selection so
+        // text under an image stays reachable.
+        if event.clickCount == 1, let hit = session.kittyImage(at: point) {
+            pendingImageHit = (hit, point)
+            return
+        }
         switch event.clickCount {
         case 2:
             selectionActive = true
@@ -151,6 +167,13 @@ final class PanelHostView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let session else { return }
         let point = surfaceView.convert(event.locationInWindow, from: nil)
+        if let pending = pendingImageHit {
+            if hypot(point.x - pending.point.x, point.y - pending.point.y) > 4 {
+                pendingImageHit = nil
+                beginImageDrag(pending.image, event: event)
+            }
+            return
+        }
         if !selectionActive {
             guard let anchor = selectionAnchor else { return }
             selectionActive = true
@@ -168,9 +191,99 @@ final class PanelHostView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if let pending = pendingImageHit {
+            pendingImageHit = nil
+            openImagePeek(clicked: pending.image)
+        }
         selectionAnchor = nil
         stopAutoscroll()
         super.mouseUp(with: event)
+    }
+
+    // MARK: Kitty image interactions (peek, context menu, drag-out)
+
+    /// Open the lightbox on the clicked image, with every image currently
+    /// on this surface as the ←/→ gallery, ordered top-to-bottom.
+    private func openImagePeek(clicked: CPURenderer.ResolvedKittyImage) {
+        guard let session, let model = AppModel.shared else { return }
+        let all = session.kittyImages().sorted {
+            ($0.rect.minY, $0.rect.minX) < ($1.rect.minY, $1.rect.minX)
+        }
+        let images = all.map {
+            PeekImage(
+                cgImage: $0.image,
+                sourceRect: surfaceView.convert($0.rect, to: nil))
+        }
+        guard !images.isEmpty else { return }
+        let index = all.firstIndex { $0.rect == clicked.rect } ?? 0
+        model.imagePeek = ImagePeekState(images: images, index: index)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = surfaceView.convert(event.locationInWindow, from: nil)
+        guard let session, let hit = session.kittyImage(at: point) else {
+            return super.menu(for: event)
+        }
+        menuImageHit = hit
+        let menu = NSMenu()
+        let items: [(String, Selector)] = [
+            ("Copy Image", #selector(copyImageFromMenu)),
+            ("Save to Downloads", #selector(saveImageFromMenu)),
+            ("Open in Preview", #selector(openImageInPreviewFromMenu)),
+        ]
+        for (title, action) in items {
+            let item = menu.addItem(
+                withTitle: title, action: action, keyEquivalent: "")
+            item.target = self
+        }
+        menu.addItem(.separator())
+        let share = menu.addItem(
+            withTitle: "Share\u{2026}", action: #selector(shareImageFromMenu),
+            keyEquivalent: "")
+        share.target = self
+        return menu
+    }
+
+    @objc private func copyImageFromMenu() {
+        guard let hit = menuImageHit else { return }
+        ImageActions.copy(hit.image)
+    }
+
+    @objc private func saveImageFromMenu() {
+        guard let hit = menuImageHit else { return }
+        ImageActions.saveToDownloads(hit.image)
+    }
+
+    @objc private func openImageInPreviewFromMenu() {
+        guard let hit = menuImageHit else { return }
+        ImageActions.openInPreview(hit.image)
+    }
+
+    @objc private func shareImageFromMenu() {
+        guard let hit = menuImageHit else { return }
+        let image = NSImage(
+            cgImage: hit.image,
+            size: NSSize(width: hit.image.width, height: hit.image.height))
+        let picker = NSSharingServicePicker(items: [image])
+        let anchor = surfaceView.convert(hit.rect, to: self)
+        picker.show(relativeTo: anchor, of: self, preferredEdge: .minY)
+    }
+
+    /// Drag the image out as a PNG file promise, the way Messages and
+    /// Notes hand images to Finder / Slack / Figma.
+    private func beginImageDrag(
+        _ hit: CPURenderer.ResolvedKittyImage, event: NSEvent
+    ) {
+        let delegate = ImageFilePromiseDelegate(cgImage: hit.image)
+        imageDragDelegate = delegate
+        let provider = NSFilePromiseProvider(
+            fileType: UTType.png.identifier, delegate: delegate)
+        let item = NSDraggingItem(pasteboardWriter: provider)
+        let dragFrame = surfaceView.convert(hit.rect, to: self)
+        item.setDraggingFrame(
+            dragFrame,
+            contents: NSImage(cgImage: hit.image, size: hit.rect.size))
+        beginDraggingSession(with: [item], event: event, source: self)
     }
 
     private func startAutoscroll() {
@@ -446,4 +559,55 @@ struct TerminalSurface: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: PanelHostView, context: Context) {}
+}
+
+
+extension PanelHostView: NSDraggingSource {
+    func draggingSession(
+        _ session: NSDraggingSession,
+        sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+        .copy
+    }
+
+    func draggingSession(
+        _ session: NSDraggingSession, endedAt screenPoint: NSPoint,
+        operation: NSDragOperation
+    ) {
+        imageDragDelegate = nil
+    }
+}
+
+/// Fulfills an image drag's file promise: the destination (Finder, Slack,
+/// Figma) asks for the file only on drop, and gets a fresh PNG.
+final class ImageFilePromiseDelegate: NSObject, NSFilePromiseProviderDelegate {
+    private let cgImage: CGImage
+
+    init(cgImage: CGImage) {
+        self.cgImage = cgImage
+    }
+
+    func filePromiseProvider(
+        _ filePromiseProvider: NSFilePromiseProvider, fileNameForType fileType: String
+    ) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        return "Canario Image \(formatter.string(from: Date())).png"
+    }
+
+    func filePromiseProvider(
+        _ filePromiseProvider: NSFilePromiseProvider, writePromiseTo url: URL,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        guard let data = ImageActions.pngData(cgImage) else {
+            completionHandler(CocoaError(.fileWriteUnknown))
+            return
+        }
+        do {
+            try data.write(to: url)
+            completionHandler(nil)
+        } catch {
+            completionHandler(error)
+        }
+    }
 }

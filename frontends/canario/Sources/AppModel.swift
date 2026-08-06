@@ -208,11 +208,17 @@ final class AppModel {
     var textSelected: Color { textColor.opacity(0.92) }
     var selectedFill: Color { selectionColor.opacity(0.94) }
     var isCommandBarVisible = false
+    /// Kitty image lightbox (Image Peek): set opens the overlay, nil closes.
+    var imagePeek: ImagePeekState?
     /// Pane being previewed from the sidebar (hover peek), if any.
     var peekedPanelID: UUID?
     /// Sidebar row anchoring the peek: a pane row's panel id, or a terminal
     /// row's terminal id (terminal rows preview their focused pane).
     var peekedRowID: UUID?
+
+    /// The live model, for AppKit views (mouse handling in PanelHostView)
+    /// that sit outside the SwiftUI environment.
+    private(set) static weak var shared: AppModel?
 
     @ObservationIgnored
     let surfaces = SurfaceRegistry()
@@ -236,6 +242,7 @@ final class AppModel {
     private var saveWorkItem: DispatchWorkItem?
 
     init() {
+        AppModel.shared = self
         // Font settings persist in UserDefaults (session.json is for the
         // tree; these are app-level preferences).
         let defaults = UserDefaults.standard

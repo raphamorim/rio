@@ -205,6 +205,35 @@ size_t rio_render_state_display_offset(const rio_render_state_t *state);
 
 const uint8_t *rio_symbols_nerd_font(size_t *len);
 
+/* A kitty image placement resolved to pixels. x/y are relative to the
+ * grid origin (add your padding); src_* is the normalized source
+ * rectangle (origin + size) to crop from the image. */
+typedef struct {
+  uint32_t image_id;
+  int32_t z_index;
+  float x;
+  float y;
+  float width;
+  float height;
+  float src_x;
+  float src_y;
+  float src_w;
+  float src_h;
+} rio_kitty_placement_s;
+
+size_t rio_render_state_kitty_count(const rio_render_state_t *state);
+bool rio_render_state_kitty_placement(const rio_render_state_t *state,
+                                      size_t index, float cell_width,
+                                      float cell_height,
+                                      rio_kitty_placement_s *out);
+bool rio_render_state_kitty_image_info(const rio_render_state_t *state,
+                                       uint32_t image_id, uint32_t *out_width,
+                                       uint32_t *out_height,
+                                       uint64_t *out_stamp);
+size_t rio_render_state_kitty_image_rgba(const rio_render_state_t *state,
+                                         uint32_t image_id, uint8_t *buf,
+                                         size_t cap);
+
 typedef struct {
   double x;
   double y;
