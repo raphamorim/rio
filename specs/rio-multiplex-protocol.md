@@ -4,11 +4,11 @@
 **Year:** 2026
 **Last updated:** 2026-08-01
 **Status:** DRAFT v0.1 — nothing here is stable yet.
-**Implementation:** Rio branch `rmx` implements `cap=core,raw`: the six
-app→terminal verbs, `i` events (`in`, `reply`, `resize`, `closed`),
-credit accounting, and owner teardown. Not yet implemented: `focus`
-events, `disp=scrollback`, layout hints (`at`/`dir`/`weight` beyond
-split direction), nesting, and the `rio-open` companion (§14).
+**Implementation:** Rio branch `rmx` implements
+`cap=core,raw,layout,nest,scrollback`: the six app→terminal verbs, all
+five `i` events, credit accounting, owner teardown, placement hints
+(`at`/`dir`/`weight`), nesting to depth 2, and `disp=scrollback`. Not
+yet implemented: the `rio-open` companion (§14).
 
 **See also:**
 - Research and prior-art survey: `rio-multibuffer-protocol-research.md`
@@ -376,7 +376,7 @@ application's job (it is the source of truth for its own output), and
 | Unaware terminal | All frames ignored; `s` timeout; application falls back. |
 | Terminal/PTY hangup (application side) | The application MUST treat every buffer as closed with `reason=teardown`. Recovery on a new connection is `s` → `q` (empty = fresh terminal) → idempotent re-`o` → re-seed via `w`/`t`. Applications holding authoritative pane state (a resident engine such as oj) recover fully; others recover what they retained. |
 | Inside unaware mux (tmux) | APC filtered → same as unaware terminal. rmx does not attempt passthrough in v1. |
-| Nesting (`cap=nest`) | rmx frames arriving *inside a buffer's content* are interpreted by that buffer's terminal instance, creating sub-buffers scoped to it. Terminals MAY cap depth (RECOMMENDED ≥ 2) and MUST count nested buffers against the session quota. Without `nest`, such frames are ignored APC inside that buffer. |
+| Nesting (`cap=nest`) | rmx frames arriving *inside a buffer's content* are interpreted by that buffer's terminal instance, creating sub-buffers scoped to it. Terminals MAY cap depth (RECOMMENDED ≥ 2) and MUST count nested buffers against the session quota. A sub-buffer's replies, credit grants, and `i` events travel back wrapped in its parent buffer's `ev=reply` payload, one envelope per level: a buffer's stream is its sub-buffers' PTY, and the `s` reply a nested stream receives reflects its remaining depth (an empty `cap=` at the cap). Without `nest`, such frames are ignored APC inside that buffer. |
 
 Buffer state is session-scoped: it MUST NOT persist across terminal
 restarts and MUST NOT leak between tabs, windows, panes, or PTY
