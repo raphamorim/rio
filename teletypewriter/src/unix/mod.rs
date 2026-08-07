@@ -21,10 +21,9 @@ use std::ops::Deref;
 use std::os::fd::OwnedFd;
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::ptr;
-use std::sync::Arc;
 
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
@@ -679,10 +678,10 @@ pub fn create_pty_with_spawn(
 
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             let child_unix = Child {
-                id: Arc::new(main),
+                id: main,
                 ptsname,
-                pid: Arc::new(child_process.id().try_into().unwrap()),
-                process: Some(child_process),
+                pid: child_process.id().try_into().unwrap(),
+                exited: false,
             };
 
             Ok(Pty {
@@ -765,10 +764,10 @@ pub fn create_pty_with_fork(
             // In the future add an option to check before release the method
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             let child = Child {
-                id: Arc::new(main),
+                id: main,
                 ptsname,
-                pid: Arc::new(id),
-                process: None,
+                pid: id,
+                exited: false,
             };
 
             unsafe {
@@ -819,12 +818,11 @@ unsafe fn set_nonblocking(fd: libc::c_int) {
 
 #[derive(Debug)]
 pub struct Child {
-    pub id: Arc<libc::c_int>,
-    pub pid: Arc<libc::pid_t>,
+    pub id: libc::c_int,
+    pub pid: libc::pid_t,
     #[allow(dead_code)]
     ptsname: String,
-    #[allow(dead_code)]
-    process: Option<std::process::Child>,
+    exited: bool,
 }
 
 impl Child {
@@ -855,11 +853,11 @@ impl Child {
 
     /// Return the child’s exit status if it has already exited. If the child is still running, return Ok(None).
     /// https://linux.die.net/man/2/waitpid
-    pub fn waitpid(&self) -> Result<Option<i32>, String> {
+    pub fn waitpid(&mut self) -> Result<Option<i32>, String> {
         let mut status = 0 as libc::c_int;
         // If WNOHANG was specified in options and there were no children in a waitable state, then waitid() returns 0 immediately and the state of the siginfo_t structure pointed to by infop is unspecified. To distinguish this case from that where a child was in a waitable state, zero out the si_pid field before the call and check for a nonzero value in this field after the call returns.
         let res =
-            unsafe { waitpid(*self.pid, &mut status as *mut libc::c_int, libc::WNOHANG) };
+            unsafe { waitpid(self.pid, &mut status as *mut libc::c_int, libc::WNOHANG) };
         if res <= -1 {
             return Err(String::from("error"));
         }
@@ -868,6 +866,7 @@ impl Child {
             return Ok(None);
         }
 
+        self.exited = true;
         Ok(Some(status))
     }
 }
@@ -887,8 +886,10 @@ impl Deref for Child {
 
 impl Drop for Child {
     fn drop(&mut self) {
-        unsafe {
-            libc::kill(*self.pid, libc::SIGHUP);
+        if !self.exited {
+            unsafe {
+                libc::kill(self.pid, libc::SIGHUP);
+            }
         }
     }
 }
@@ -1051,12 +1052,7 @@ pub fn foreground_process_path(
 }
 
 /// Start a new process in the background.
-pub fn spawn_daemon<I, S>(
-    program: &str,
-    args: I,
-    main_fd: RawFd,
-    shell_pid: u32,
-) -> io::Result<()>
+pub fn spawn_daemon<I, S>(program: &str, args: I, cwd: Option<&Path>) -> io::Result<()>
 where
     I: IntoIterator<Item = S> + Copy,
     S: AsRef<std::ffi::OsStr>,
@@ -1067,7 +1063,7 @@ where
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    if let Ok(cwd) = foreground_process_path(main_fd, shell_pid) {
+    if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
     unsafe {

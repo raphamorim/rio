@@ -135,10 +135,10 @@ pub enum Action {
 /// nothing rather than forcing unsafe impls on the embedder.
 #[cfg(not(target_arch = "wasm32"))]
 pub trait MaybeSendSync: Send + Sync {}
-#[cfg(not(target_arch = "wasm32"))]
-impl<T: Send + Sync> MaybeSendSync for T {}
 #[cfg(target_arch = "wasm32")]
 pub trait MaybeSendSync {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Send + Sync> MaybeSendSync for T {}
 #[cfg(target_arch = "wasm32")]
 impl<T> MaybeSendSync for T {}
 
@@ -580,9 +580,9 @@ impl Surface {
             .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
 
             #[cfg(not(target_os = "windows"))]
-            let shell_pid = *pty.child.pid.clone() as u32;
+            let shell_pid = pty.child.pid as u32;
             #[cfg(not(target_os = "windows"))]
-            let main_fd = *pty.child.id;
+            let main_fd = pty.child.id;
 
             let machine = Machine::new(
                 Arc::clone(&terminal),
@@ -1100,11 +1100,16 @@ impl Surface {
     /// integration.
     #[cfg(feature = "pty")]
     pub fn foreground_process_name(&self) -> String {
-        #[cfg(target_os = "windows")]
-        return String::new();
-
         #[cfg(not(target_os = "windows"))]
-        teletypewriter::foreground_process_name(self.main_fd, self.shell_pid)
+        {
+            #[cfg(target_os = "windows")]
+            return String::new();
+
+            #[cfg(not(target_os = "windows"))]
+            teletypewriter::foreground_process_name(self.main_fd, self.shell_pid)
+        }
+        #[cfg(target_os = "windows")]
+        String::new()
     }
 
     /// Inject bytes into the terminal's DISPLAY (the VT parser), as if they
