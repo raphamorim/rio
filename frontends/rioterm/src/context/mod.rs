@@ -53,7 +53,7 @@ pub struct Context<T: EventListener> {
     #[cfg(not(target_os = "windows"))]
     pub main_fd: Arc<i32>,
     #[cfg(not(target_os = "windows"))]
-    pub shell_pid: u32,
+    pub shell_pid: Option<u32>,
     pub rich_text_id: usize,
     pub dimension: ContextDimension,
     pub title: ContextTitle,
@@ -67,7 +67,9 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
         let _ = self.messenger.channel.send(Msg::Shutdown);
 
         #[cfg(not(target_os = "windows"))]
-        teletypewriter::kill_pid(self.shell_pid as i32);
+        if let Some(shell_pid) = self.shell_pid {
+            teletypewriter::kill_pid(shell_pid as i32);
+        }
     }
 }
 
@@ -179,7 +181,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         #[cfg(not(target_os = "windows"))]
         main_fd: Arc::new(-1),
         #[cfg(not(target_os = "windows"))]
-        shell_pid: 1,
+        shell_pid: None,
         messenger: Messenger::new(sender),
         renderable_content: RenderableContent::new(Cursor::default()),
         terminal,
@@ -297,7 +299,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         #[cfg(not(target_os = "windows"))]
         let main_fd = pty.child.id.clone();
         #[cfg(not(target_os = "windows"))]
-        let shell_pid = *pty.child.pid.clone() as u32;
+        let shell_pid = Some(*pty.child.pid.clone() as u32);
 
         #[cfg(target_os = "windows")]
         {
@@ -1003,11 +1005,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
-                if let Ok(path) = teletypewriter::foreground_process_path(
-                    *current_context.main_fd,
-                    current_context.shell_pid,
-                ) {
-                    working_dir = Some(path.to_string_lossy().to_string());
+                if let Some(shell_pid) = current_context.shell_pid {
+                    if let Ok(path) = teletypewriter::foreground_process_path(
+                        *current_context.main_fd,
+                        shell_pid,
+                    ) {
+                        working_dir = Some(path.to_string_lossy().to_string());
+                    }
                 }
             }
 
@@ -1122,11 +1126,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
-                if let Ok(path) = teletypewriter::foreground_process_path(
-                    *current_context.main_fd,
-                    current_context.shell_pid,
-                ) {
-                    working_dir = Some(path.to_string_lossy().to_string());
+                if let Some(shell_pid) = current_context.shell_pid {
+                    if let Ok(path) = teletypewriter::foreground_process_path(
+                        *current_context.main_fd,
+                        shell_pid,
+                    ) {
+                        working_dir = Some(path.to_string_lossy().to_string());
+                    }
                 }
             }
 
@@ -1267,6 +1273,8 @@ pub mod test {
         let context_manager =
             ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         assert_eq!(context_manager.capacity, 5);
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(context_manager.current().shell_pid, None);
 
         let mut context_manager =
             ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();

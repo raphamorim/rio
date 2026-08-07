@@ -23,8 +23,12 @@ pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
     context: &Context<T>,
 ) -> Option<ContextTitleExtra> {
     #[cfg(unix)]
-    let program =
-        teletypewriter::foreground_process_name(*context.main_fd, context.shell_pid);
+    let program = context
+        .shell_pid
+        .map(|shell_pid| {
+            teletypewriter::foreground_process_name(*context.main_fd, shell_pid)
+        })
+        .unwrap_or_default();
 
     #[cfg(not(unix))]
     let program = String::default();
@@ -142,10 +146,15 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                 "program" => {
                     #[cfg(unix)]
                     {
-                        let program = teletypewriter::foreground_process_name(
-                            *context.main_fd,
-                            context.shell_pid,
-                        );
+                        let program = context
+                            .shell_pid
+                            .map(|shell_pid| {
+                                teletypewriter::foreground_process_name(
+                                    *context.main_fd,
+                                    shell_pid,
+                                )
+                            })
+                            .unwrap_or_default();
 
                         new_template = new_template.replace(to_replace_str, &program);
                         matched = true;
@@ -168,12 +177,17 @@ pub fn update_title<T: rio_backend::event::EventListener>(
 
                     #[cfg(unix)]
                     {
-                        let path = teletypewriter::foreground_process_path(
-                            *context.main_fd,
-                            context.shell_pid,
-                        )
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_default();
+                        let path = context
+                            .shell_pid
+                            .and_then(|shell_pid| {
+                                teletypewriter::foreground_process_path(
+                                    *context.main_fd,
+                                    shell_pid,
+                                )
+                                .ok()
+                            })
+                            .map(|path| path.to_string_lossy().to_string())
+                            .unwrap_or_default();
 
                         // In case it has a fallback and path is empty
                         // or
@@ -208,12 +222,17 @@ pub fn update_title<T: rio_backend::event::EventListener>(
 
                     #[cfg(unix)]
                     {
-                        let path = teletypewriter::foreground_process_path(
-                            *context.main_fd,
-                            context.shell_pid,
-                        )
-                        .map(|p| shorten_path(&p.to_string_lossy()))
-                        .unwrap_or_default();
+                        let path = context
+                            .shell_pid
+                            .and_then(|shell_pid| {
+                                teletypewriter::foreground_process_path(
+                                    *context.main_fd,
+                                    shell_pid,
+                                )
+                                .ok()
+                            })
+                            .map(|path| shorten_path(&path.to_string_lossy()))
+                            .unwrap_or_default();
 
                         let is_only_one = variables.len() == 1;
                         let is_last = i == variables.len() - 1;

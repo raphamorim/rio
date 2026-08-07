@@ -412,6 +412,20 @@ impl<T: 'static> EventLoop<T> {
         // (The request buffer is flushed during `init_device`)
         let xconn = &EventProcessor::window_target(&event_processor.target).xconn;
 
+        // Workspace switches in reparenting window managers do not necessarily
+        // generate events on the client window, so also observe EWMH desktop
+        // changes on the root window.
+        xconn
+            .xcb_connection()
+            .change_window_attributes(
+                root,
+                &xproto::ChangeWindowAttributesAux::new()
+                    .event_mask(xproto::EventMask::PROPERTY_CHANGE),
+            )
+            .expect_then_ignore_error(
+                "Failed to register for root window property changes",
+            );
+
         xconn
             .select_xinput_events(
                 root,
