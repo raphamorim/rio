@@ -221,10 +221,13 @@ void rio_surface_scroll(rio_surface_t *surface, int32_t delta_lines);
 bool rio_surface_scroll_wheel(rio_surface_t *surface, int32_t lines,
                               uint16_t col, uint16_t row, uint8_t mods);
 
+/* `side_right` is true when the pointer sits in the right half of the cell.
+   It decides whether that cell falls inside the selection, so a drag can
+   reach the cells at both ends. */
 void rio_surface_selection_begin(rio_surface_t *surface, int32_t viewport_line,
-                                 uint16_t col, uint8_t kind);
+                                 uint16_t col, uint8_t kind, bool side_right);
 void rio_surface_selection_update(rio_surface_t *surface, int32_t viewport_line,
-                                  uint16_t col);
+                                  uint16_t col, bool side_right);
 void rio_surface_selection_clear(rio_surface_t *surface);
 /* Returns NULL when nothing is selected. Free with rio_text_free. */
 char *rio_surface_selection_text(const rio_surface_t *surface);

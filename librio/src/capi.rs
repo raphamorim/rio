@@ -2,7 +2,7 @@
 
 use crate::{
     Action, Engine, Key, KeyAction, KeyEvent, Modifiers, RenderState, SelectionKind,
-    Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
+    Side, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
 use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -696,6 +696,7 @@ pub unsafe extern "C" fn rio_surface_selection_begin(
     viewport_line: i32,
     col: u16,
     kind: u8,
+    side_right: bool,
 ) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if surface.is_null() {
@@ -707,7 +708,12 @@ pub unsafe extern "C" fn rio_surface_selection_begin(
             RIO_SELECTION_BLOCK => SelectionKind::Block,
             _ => SelectionKind::Simple,
         };
-        unsafe { &*surface }.selection_begin(viewport_line, col as usize, kind);
+        unsafe { &*surface }.selection_begin(
+            viewport_line,
+            col as usize,
+            kind,
+            if side_right { Side::Right } else { Side::Left },
+        );
     }));
 }
 
@@ -716,12 +722,17 @@ pub unsafe extern "C" fn rio_surface_selection_update(
     surface: *mut Surface,
     viewport_line: i32,
     col: u16,
+    side_right: bool,
 ) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if surface.is_null() {
             return;
         }
-        unsafe { &*surface }.selection_update(viewport_line, col as usize);
+        unsafe { &*surface }.selection_update(
+            viewport_line,
+            col as usize,
+            if side_right { Side::Right } else { Side::Left },
+        );
     }));
 }
 

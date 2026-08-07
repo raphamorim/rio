@@ -1,4 +1,5 @@
 pub mod capi;
+
 pub mod key;
 mod render_state;
 
@@ -14,7 +15,8 @@ pub use rio_vt::crosswords::style::{Style, StyleFlags};
 pub use rio_vt::selection::SelectionRange;
 
 use rio_vt::ansi::CursorShape;
-use rio_vt::crosswords::pos::{Column as PosColumn, Line, Pos, Side};
+pub use rio_vt::crosswords::pos::Side;
+use rio_vt::crosswords::pos::{Column as PosColumn, Line, Pos};
 use rio_vt::crosswords::{Crosswords, Mode};
 use rio_vt::event::sync::FairMutex;
 use rio_vt::event::WindowSize;
@@ -571,20 +573,30 @@ impl Surface {
             .scroll_display(Scroll::Delta(delta_lines));
     }
 
-    pub fn selection_begin(&self, viewport_line: i32, col: usize, kind: SelectionKind) {
+    /// Begin a selection. `side` says which half of the cell the pointer
+    /// is on, which is what decides whether that cell is inside the
+    /// selection; assuming a side makes cells at the ends of a drag
+    /// unreachable in one direction.
+    pub fn selection_begin(
+        &self,
+        viewport_line: i32,
+        col: usize,
+        kind: SelectionKind,
+        side: Side,
+    ) {
         let mut term = self.terminal.lock();
         let offset = term.display_offset() as i32;
         let pos = Pos::new(Line(viewport_line - offset), PosColumn(col));
-        term.selection = Some(Selection::new(kind.to_type(), pos, Side::Left));
+        term.selection = Some(Selection::new(kind.to_type(), pos, side));
         term.mark_fully_damaged();
     }
 
-    pub fn selection_update(&self, viewport_line: i32, col: usize) {
+    pub fn selection_update(&self, viewport_line: i32, col: usize, side: Side) {
         let mut term = self.terminal.lock();
         let offset = term.display_offset() as i32;
         let pos = Pos::new(Line(viewport_line - offset), PosColumn(col));
         if let Some(selection) = &mut term.selection {
-            selection.update(pos, Side::Right);
+            selection.update(pos, side);
             term.mark_fully_damaged();
         }
     }
@@ -774,6 +786,32 @@ mod tests {
         );
     }
 
+    // Dragging right to left has to be able to reach the first column.
+    // The side says which half of the cell the pointer is on; with it
+    // hardcoded to the right, column 0 could never be included because
+    // the drag would have to pass a point left of the screen.
+    #[test]
+    fn a_backwards_drag_reaches_the_first_column() {
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate);
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+
+        surface.inject_output(b"\x1b[H\x1b[2JABCDEF");
+
+        // Press inside the right half of column 5, drag left to column 0.
+        surface.selection_begin(0, 5, SelectionKind::Simple, Side::Right);
+        surface.selection_update(0, 0, Side::Left);
+        let text = surface.selection_text().unwrap_or_default();
+        assert!(
+            text.starts_with('A'),
+            "backwards drag should include column 0, got {text:?}"
+        );
+    }
+
     // OSC 9;4 (ConEmu progress) must reach the embedder as an action:
     // set with a value, then remove.
     #[test]
@@ -841,8 +879,8 @@ mod tests {
         }
         assert!(delegate.wakeups.load(Ordering::SeqCst) > 0);
 
-        surface.selection_begin(0, 0, SelectionKind::Simple);
-        surface.selection_update(0, 9);
+        surface.selection_begin(0, 0, SelectionKind::Simple, Side::Left);
+        surface.selection_update(0, 9, Side::Right);
         let text = surface.selection_text().expect("selection text");
         assert!(!text.is_empty());
         state.update();
@@ -1054,3 +1092,4 @@ mod tests {
         assert_eq!(state.kitty_image_rgba(7, &mut buf), 16);
     }
 }
+
