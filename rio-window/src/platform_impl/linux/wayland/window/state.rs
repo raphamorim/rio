@@ -28,6 +28,7 @@ use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
 use sctk::shm::Shm;
 use sctk::subcompositor::SubcompositorState;
+use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 
 use crate::cursor::CustomCursor as RootCustomCursor;
@@ -35,6 +36,7 @@ use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
 use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
+use crate::platform_impl::wayland::types::ext_background_effect::ExtBackgroundEffectManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
@@ -144,6 +146,8 @@ pub struct WindowState {
     fractional_scale: Option<WpFractionalScaleV1>,
     blur: Option<OrgKdeKwinBlur>,
     blur_manager: Option<KWinBlurManager>,
+    ext_background_effect: Option<ExtBackgroundEffectSurfaceV1>,
+    ext_background_effect_manager: Option<ExtBackgroundEffectManager>,
 
     /// Whether the client side decorations have pending move operations.
     ///
@@ -185,6 +189,10 @@ impl WindowState {
         Self {
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
+            ext_background_effect: None,
+            ext_background_effect_manager: winit_state
+                .ext_background_effect_manager
+                .clone(),
             compositor,
             connection,
             csd_fails: false,
@@ -1071,24 +1079,43 @@ impl WindowState {
         }
     }
 
-    /// Make window background blurred
+    /// Make window background blurred.
+    ///
+    /// Uses `ext-background-effect-v1` when available (COSMIC, GNOME),
+    /// falling back to `org_kde_kwin_blur_manager` for KDE Plasma.
     #[inline]
     pub fn set_blur(&mut self, blurred: bool) {
-        if blurred && self.blur.is_none() {
-            if let Some(blur_manager) = self.blur_manager.as_ref() {
+        if blurred && self.blur.is_none() && self.ext_background_effect.is_none() {
+            // Try ext-background-effect-v1 first (COSMIC, GNOME).
+            if let Some(bg_effect_manager) = self.ext_background_effect_manager.as_ref() {
+                let bg_effect = bg_effect_manager
+                    .get_background_effect(self.window.wl_surface(), &self.queue_handle);
+                // Set a full-surface blur region.
+                if let Ok(region) = Region::new(&*self.compositor) {
+                    region.add(0, 0, i32::MAX, i32::MAX);
+                    bg_effect.set_blur_region(Some(region.wl_region()));
+                }
+                self.window.wl_surface().commit();
+                self.ext_background_effect = Some(bg_effect);
+            } else if let Some(blur_manager) = self.blur_manager.as_ref() {
                 let blur =
                     blur_manager.blur(self.window.wl_surface(), &self.queue_handle);
                 blur.commit();
                 self.blur = Some(blur);
             } else {
-                info!("Blur manager unavailable, unable to change blur")
+                info!("No blur manager available, unable to change blur")
             }
-        } else if !blurred && self.blur.is_some() {
-            self.blur_manager
-                .as_ref()
-                .unwrap()
-                .unset(self.window.wl_surface());
-            self.blur.take().unwrap().release();
+        } else if !blurred {
+            if let Some(bg_effect) = self.ext_background_effect.take() {
+                bg_effect.destroy();
+            }
+            if let Some(blur) = self.blur.take() {
+                self.blur_manager
+                    .as_ref()
+                    .unwrap()
+                    .unset(self.window.wl_surface());
+                blur.release();
+            }
         }
     }
 
@@ -1147,6 +1174,10 @@ impl WindowState {
 
 impl Drop for WindowState {
     fn drop(&mut self) {
+        if let Some(bg_effect) = self.ext_background_effect.take() {
+            bg_effect.destroy();
+        }
+
         if let Some(blur) = self.blur.take() {
             blur.release();
         }
