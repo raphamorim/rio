@@ -113,14 +113,26 @@ checksum:
   name_template: checksums.txt
 
 archives:
+  # Portable builds ship as a zip so the bundled ConPTY (conpty.dll +
+  # OpenConsole.exe) sits next to rio.exe, matching the installer.
   - id: win-x64
-    formats: [binary]
+    formats: [zip]
     ids: [windows-x86_64]
     name_template: "{{ .ProjectName }}-portable-x86_64"
+    files:
+      - src: ./misc/windows/conhost/amd64/conpty.dll
+        dst: conpty.dll
+      - src: ./misc/windows/conhost/amd64/OpenConsole.exe
+        dst: OpenConsole.exe
   - id: win-arm64
-    formats: [binary]
+    formats: [zip]
     ids: [windows-arm64]
     name_template: "{{ .ProjectName }}-portable-aarch64"
+    files:
+      - src: ./misc/windows/conhost/arm64/conpty.dll
+        dst: conpty.dll
+      - src: ./misc/windows/conhost/arm64/OpenConsole.exe
+        dst: OpenConsole.exe
 
 universal_binaries:
   - id: rio
@@ -285,13 +297,21 @@ msi:
     wxs: ./misc/windows/rio.wxs
     ids: [windows-x86_64]
     extensions: [WixToolset.UI.wixext, WixToolset.Util.wixext]
-    extra_files: [./misc/windows/rio.ico, ./misc/windows/License.rtf]
+    extra_files:
+      - ./misc/windows/rio.ico
+      - ./misc/windows/License.rtf
+      - ./misc/windows/conhost/amd64/conpty.dll
+      - ./misc/windows/conhost/amd64/OpenConsole.exe
   - id: win-arm64
     name: "{{ .ProjectName }}-installer-aarch64"
     wxs: ./misc/windows/rio.wxs
     ids: [windows-arm64]
     extensions: [WixToolset.UI.wixext, WixToolset.Util.wixext]
-    extra_files: [./misc/windows/rio.ico, ./misc/windows/License.rtf]
+    extra_files:
+      - ./misc/windows/rio.ico
+      - ./misc/windows/License.rtf
+      - ./misc/windows/conhost/arm64/conpty.dll
+      - ./misc/windows/conhost/arm64/OpenConsole.exe
 
 winget:
   - use: msi
