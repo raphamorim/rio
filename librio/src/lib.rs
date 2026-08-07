@@ -531,6 +531,14 @@ impl Surface {
     /// Dump the whole buffer (scrollback + screen) to plain text, so a
     /// frontend can persist it and replay it as inert scrollback on
     /// restore. Trailing blank rows are trimmed by `bounds_to_string`.
+    /// The foreground process's name (the program the user is running
+    /// right now: `claude`, `vim`, or the shell itself), from the kernel.
+    /// Hosts use it to tell what a pane is running without any shell
+    /// integration.
+    pub fn foreground_process_name(&self) -> String {
+        teletypewriter::foreground_process_name(self.main_fd, self.shell_pid)
+    }
+
     /// Inject bytes into the terminal's DISPLAY (the VT parser), as if they
     /// came from the child process — NOT into the PTY input. Used to replay
     /// saved scrollback on restore; the shell never sees these bytes, so it

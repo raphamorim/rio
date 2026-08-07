@@ -1045,6 +1045,24 @@ pub unsafe extern "C" fn rio_nerd_constrain(
     .unwrap_or(false)
 }
 
+/// The foreground process's name, for host-side program detection
+/// (agent state, tab icons). Free with rio_text_free.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_foreground_process_name(
+    surface: *const Surface,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return std::ptr::null_mut();
+        }
+        let name = unsafe { &*surface }.foreground_process_name();
+        CString::new(name)
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut())
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Whether the alternate screen (full-screen TUIs) was active at the
 /// last update.
 #[no_mangle]
