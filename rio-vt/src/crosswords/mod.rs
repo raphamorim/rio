@@ -2359,19 +2359,26 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     fn set_keyboard_mode(&mut self, mode: u8, apply: KeyboardModesApplyBehavior) {
-        // println!("{:?}", mode);
-        let active_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
-        let new_mode = match apply {
-            KeyboardModesApplyBehavior::Replace => mode,
-            KeyboardModesApplyBehavior::Union => active_mode | mode,
-            KeyboardModesApplyBehavior::Difference => active_mode & !mode,
-        };
-        info!("Setting keyboard mode to {new_mode:?}");
-        self.keyboard_mode_stack[self.keyboard_mode_idx] = new_mode;
+        // ConPTY cannot pass KKP input sequences intact — ESC is consumed before
+        // reaching the child process, producing mangled output like `[103;5u`.
+        #[cfg(not(target_os = "windows"))]
+        {
+            // println!("{:?}", mode);
+            let active_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
+            let new_mode = match apply {
+                KeyboardModesApplyBehavior::Replace => mode,
+                KeyboardModesApplyBehavior::Union => active_mode | mode,
+                KeyboardModesApplyBehavior::Difference => active_mode & !mode,
+            };
+            info!("Setting keyboard mode to {new_mode:?}");
+            self.keyboard_mode_stack[self.keyboard_mode_idx] = new_mode;
 
-        // Sync self.mode with keyboard_mode_stack
-        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
-        self.mode |= Mode::from(KeyboardModes::from_bits_truncate(new_mode));
+            // Sync self.mode with keyboard_mode_stack
+            self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+            self.mode |= Mode::from(KeyboardModes::from_bits_truncate(new_mode));
+        }
+        #[cfg(target_os = "windows")]
+        let _ = (mode, apply);
     }
 
     /// Find the beginning of the current line across linewraps.
@@ -3572,39 +3579,51 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn push_keyboard_mode(&mut self, mode: KeyboardModes) {
-        self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_add(1);
-        if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
-            self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
-        }
-        self.keyboard_mode_stack[self.keyboard_mode_idx] = mode.bits();
+        // ConPTY cannot pass KKP input sequences intact on Windows — no-op here.
+        #[cfg(not(target_os = "windows"))]
+        {
+            self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_add(1);
+            if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+                self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
+            }
+            self.keyboard_mode_stack[self.keyboard_mode_idx] = mode.bits();
 
-        // Sync self.mode with keyboard_mode_stack
-        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
-        self.mode |= Mode::from(mode);
+            // Sync self.mode with keyboard_mode_stack
+            self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+            self.mode |= Mode::from(mode);
+        }
+        #[cfg(target_os = "windows")]
+        let _ = mode;
     }
 
     #[inline]
     fn pop_keyboard_modes(&mut self, to_pop: u16) {
-        // If popping more modes than we have, just clear the stack.
-        if usize::from(to_pop) >= KEYBOARD_MODE_STACK_MAX_DEPTH {
-            self.keyboard_mode_stack.fill(KeyboardModes::NO_MODE.bits());
-            self.keyboard_mode_idx = 0;
-            self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
-            return;
-        }
-        for _ in 0..to_pop {
-            self.keyboard_mode_stack[self.keyboard_mode_idx] =
-                KeyboardModes::NO_MODE.bits();
-            self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_sub(1);
-            if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
-                self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
+        // ConPTY cannot pass KKP input sequences intact on Windows — no-op here.
+        #[cfg(not(target_os = "windows"))]
+        {
+            // If popping more modes than we have, just clear the stack.
+            if usize::from(to_pop) >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+                self.keyboard_mode_stack.fill(KeyboardModes::NO_MODE.bits());
+                self.keyboard_mode_idx = 0;
+                self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+                return;
             }
-        }
+            for _ in 0..to_pop {
+                self.keyboard_mode_stack[self.keyboard_mode_idx] =
+                    KeyboardModes::NO_MODE.bits();
+                self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_sub(1);
+                if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+                    self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
+                }
+            }
 
-        // Sync self.mode with keyboard_mode_stack
-        let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
-        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
-        self.mode |= Mode::from(KeyboardModes::from_bits_truncate(current_mode));
+            // Sync self.mode with keyboard_mode_stack
+            let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
+            self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+            self.mode |= Mode::from(KeyboardModes::from_bits_truncate(current_mode));
+        }
+        #[cfg(target_os = "windows")]
+        let _ = to_pop;
     }
 
     #[inline]
@@ -6685,6 +6704,7 @@ mod tests {
     /// - test_keyboard_mode_reset: Terminal reset behavior on keyboard stack
     /// - test_keyboard_mode_stack_underflow_protection: Stack underflow protection
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_push_pop() {
         let size = CrosswordsSize::new(10, 10);
@@ -6732,6 +6752,7 @@ mod tests {
         assert_eq!(term.keyboard_mode_stack[1], KeyboardModes::NO_MODE.bits()); // Should be cleared
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_stack_wraparound() {
         let size = CrosswordsSize::new(10, 10);
@@ -6791,6 +6812,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_set_replace() {
         let size = CrosswordsSize::new(10, 10);
@@ -6827,6 +6849,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_set_union() {
         let size = CrosswordsSize::new(10, 10);
@@ -6859,6 +6882,7 @@ mod tests {
         assert_eq!(term.keyboard_mode_stack[term.keyboard_mode_idx], expected);
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_set_difference() {
         let size = CrosswordsSize::new(10, 10);
@@ -6894,6 +6918,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_report() {
         let size = CrosswordsSize::new(10, 10);
@@ -6942,6 +6967,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_stack_underflow_protection() {
         let size = CrosswordsSize::new(10, 10);
@@ -7062,6 +7088,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_keyboard_mode_syncs_with_mode() {
         let size = CrosswordsSize::new(10, 10);
@@ -7842,6 +7869,7 @@ mod tests {
 
     /// The flag byte an embedder needs to encode keys is the one the terminal
     /// would report; it must survive set, push and pop.
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn keyboard_mode_reports_the_active_flags() {
         use crate::performer::handler::Processor;
