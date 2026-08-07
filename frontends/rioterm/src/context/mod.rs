@@ -63,15 +63,8 @@ pub struct Context<T: EventListener> {
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
     fn drop(&mut self) {
-        // Shutdown the terminal's PTY.
+        // The performer owns the PTY and terminates its child when it shuts down.
         let _ = self.messenger.channel.send(Msg::Shutdown);
-
-        // `create_dead_context` uses 1 as a placeholder PID, so guard against
-        // signalling init (1) or our own process group (0).
-        #[cfg(not(target_os = "windows"))]
-        if self.shell_pid > 1 {
-            teletypewriter::kill_pid(self.shell_pid as i32);
-        }
     }
 }
 
