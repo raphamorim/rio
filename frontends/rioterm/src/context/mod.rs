@@ -51,9 +51,7 @@ pub struct Context<T: EventListener> {
     pub renderable_content: RenderableContent,
     pub messenger: Messenger,
     #[cfg(not(target_os = "windows"))]
-    pub main_fd: Arc<i32>,
-    #[cfg(not(target_os = "windows"))]
-    pub shell_pid: u32,
+    pty: Option<(i32, u32)>,
     pub rich_text_id: usize,
     pub dimension: ContextDimension,
     pub title: ContextTitle,
@@ -63,15 +61,32 @@ pub struct Context<T: EventListener> {
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
     fn drop(&mut self) {
-        // Shutdown the terminal's PTY.
+        // The performer owns the PTY and terminates its child when it shuts down.
         let _ = self.messenger.channel.send(Msg::Shutdown);
-
-        #[cfg(not(target_os = "windows"))]
-        teletypewriter::kill_pid(self.shell_pid as i32);
     }
 }
 
 impl<T: EventListener> Context<T> {
+    fn foreground_process_name(&self) -> Option<String> {
+        #[cfg(not(target_os = "windows"))]
+        return self.pty.as_ref().map(|(main_fd, shell_pid)| {
+            teletypewriter::foreground_process_name(*main_fd, *shell_pid)
+        });
+
+        #[cfg(target_os = "windows")]
+        None
+    }
+
+    pub(crate) fn foreground_process_path(&self) -> Option<std::path::PathBuf> {
+        #[cfg(not(target_os = "windows"))]
+        return self.pty.as_ref().and_then(|(main_fd, shell_pid)| {
+            teletypewriter::foreground_process_path(*main_fd, *shell_pid).ok()
+        });
+
+        #[cfg(target_os = "windows")]
+        None
+    }
+
     #[inline]
     pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
         let old_selection = self.renderable_content.selection_range;
@@ -177,9 +192,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
     Context {
         route_id,
         #[cfg(not(target_os = "windows"))]
-        main_fd: Arc::new(-1),
-        #[cfg(not(target_os = "windows"))]
-        shell_pid: 1,
+        pty: None,
         messenger: Messenger::new(sender),
         renderable_content: RenderableContent::new(Cursor::default()),
         terminal,
@@ -295,9 +308,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         #[cfg(not(target_os = "windows"))]
-        let main_fd = pty.child.id.clone();
+        let main_fd = pty.child.id;
         #[cfg(not(target_os = "windows"))]
-        let shell_pid = *pty.child.pid.clone() as u32;
+        let shell_pid = pty.child.pid as u32;
 
         #[cfg(target_os = "windows")]
         {
@@ -336,9 +349,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         Ok(Context {
             route_id,
             #[cfg(not(target_os = "windows"))]
-            main_fd,
-            #[cfg(not(target_os = "windows"))]
-            shell_pid,
+            pty: Some((main_fd, shell_pid)),
             messenger,
             terminal,
             rich_text_id,
@@ -1003,10 +1014,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
-                if let Ok(path) = teletypewriter::foreground_process_path(
-                    *current_context.main_fd,
-                    current_context.shell_pid,
-                ) {
+                if let Some(path) = current_context.foreground_process_path() {
                     working_dir = Some(path.to_string_lossy().to_string());
                 }
             }
@@ -1122,10 +1130,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
-                if let Ok(path) = teletypewriter::foreground_process_path(
-                    *current_context.main_fd,
-                    current_context.shell_pid,
-                ) {
+                if let Some(path) = current_context.foreground_process_path() {
                     working_dir = Some(path.to_string_lossy().to_string());
                 }
             }

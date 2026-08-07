@@ -392,9 +392,9 @@ impl Surface {
         .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
 
         #[cfg(not(target_os = "windows"))]
-        let shell_pid = *pty.child.pid.clone() as u32;
+        let shell_pid = pty.child.pid as u32;
         #[cfg(not(target_os = "windows"))]
-        let main_fd = *pty.child.id;
+        let main_fd = pty.child.id;
 
         let machine = Machine::new(
             Arc::clone(&terminal),
@@ -644,7 +644,12 @@ impl Surface {
     /// Hosts use it to tell what a pane is running without any shell
     /// integration.
     pub fn foreground_process_name(&self) -> String {
-        teletypewriter::foreground_process_name(self.main_fd, self.shell_pid)
+        #[cfg(not(target_os = "windows"))]
+        {
+            teletypewriter::foreground_process_name(self.main_fd, self.shell_pid)
+        }
+        #[cfg(target_os = "windows")]
+        String::new()
     }
 
     /// Inject bytes into the terminal's DISPLAY (the VT parser), as if they
@@ -1092,4 +1097,3 @@ mod tests {
         assert_eq!(state.kitty_image_rgba(7, &mut buf), 16);
     }
 }
-
