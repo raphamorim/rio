@@ -225,6 +225,8 @@ char *rio_surface_selection_text(const rio_surface_t *surface);
 /* Session persistence: current working directory (OSC 7), NULL if unknown.
  * Free with rio_text_free. */
 char *rio_surface_working_dir(const rio_surface_t *surface);
+/* Foreground process name (the running program). Free with rio_text_free. */
+char *rio_surface_foreground_process_name(const rio_surface_t *surface);
 /* Inject bytes into the terminal DISPLAY (not the PTY input), for replaying
  * persisted scrollback on restore. */
 void rio_surface_inject_output(rio_surface_t *surface, const char *bytes,
