@@ -1062,8 +1062,12 @@ pub unsafe extern "C" fn rio_surface_scroll_wheel(
         if surface.is_null() {
             return false;
         }
-        unsafe { &*surface }
-            .scroll_wheel(lines, col, row, Modifiers::from_bits_truncate(mods))
+        unsafe { &*surface }.scroll_wheel(
+            lines,
+            col,
+            row,
+            Modifiers::from_bits_truncate(mods),
+        )
     }))
     .unwrap_or(false)
 }
