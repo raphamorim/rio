@@ -1045,6 +1045,29 @@ pub unsafe extern "C" fn rio_nerd_constrain(
     .unwrap_or(false)
 }
 
+/// A wheel scroll. librio decides what it means: a mouse report when the
+/// program asked for mouse events, cursor keys on the alternate screen
+/// with alternate-scroll on, otherwise the scrollback view. `lines` is
+/// positive for scrolling up; `col`/`row` are the cell under the
+/// pointer. Returns true when the program consumed it.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_scroll_wheel(
+    surface: *const Surface,
+    lines: i32,
+    col: u16,
+    row: u16,
+    mods: u8,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return false;
+        }
+        unsafe { &*surface }
+            .scroll_wheel(lines, col, row, Modifiers::from_bits_truncate(mods))
+    }))
+    .unwrap_or(false)
+}
+
 /// The foreground process's name, for host-side program detection
 /// (agent state, tab icons). Free with rio_text_free.
 #[no_mangle]

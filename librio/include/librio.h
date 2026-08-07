@@ -213,6 +213,13 @@ void rio_surface_set_alt_is_meta(rio_surface_t *surface, bool enabled);
 void rio_surface_resize(rio_surface_t *surface, uint16_t cols, uint16_t rows,
                         uint16_t pixel_width, uint16_t pixel_height);
 void rio_surface_scroll(rio_surface_t *surface, int32_t delta_lines);
+/* A wheel scroll, dispatched by librio: a mouse report when the program
+   asked for mouse events, cursor keys on the alternate screen with
+   alternate-scroll on, otherwise the scrollback view. `lines` is positive
+   for scrolling up; `col`/`row` are the cell under the pointer. Returns
+   true when the program consumed it. */
+bool rio_surface_scroll_wheel(rio_surface_t *surface, int32_t lines,
+                              uint16_t col, uint16_t row, uint8_t mods);
 
 void rio_surface_selection_begin(rio_surface_t *surface, int32_t viewport_line,
                                  uint16_t col, uint8_t kind);

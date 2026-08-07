@@ -289,6 +289,29 @@ pub struct Surface {
     )>,
 }
 
+/// Encode one mouse report. SGR (`CSI < b ; x ; y M`) when the program
+/// asked for it, else the original X10 form, whose coordinates are
+/// offset by 32 and cannot exceed 223 without the UTF-8 extension.
+fn mouse_report(button: u8, col: u16, row: u16, sgr: bool, utf8: bool) -> Vec<u8> {
+    let x = col.saturating_add(1);
+    let y = row.saturating_add(1);
+    if sgr {
+        return format!("\x1b[<{button};{x};{y}M").into_bytes();
+    }
+    let mut out = vec![0x1b, b'[', b'M', 32u8.saturating_add(button)];
+    for value in [x, y] {
+        if utf8 && value >= 95 {
+            // Two-byte UTF-8 for the extended range.
+            let encoded = char::from_u32(32 + value as u32).unwrap_or('\u{20}');
+            let mut buffer = [0u8; 4];
+            out.extend_from_slice(encoded.encode_utf8(&mut buffer).as_bytes());
+        } else {
+            out.push(32u8.saturating_add(value.min(223) as u8));
+        }
+    }
+    out
+}
+
 impl Surface {
     fn new(
         engine: &Engine,
@@ -468,6 +491,79 @@ impl Surface {
         }));
     }
 
+    /// A wheel scroll, dispatched the way terminals do it: the program
+    /// running in the terminal gets first claim.
+    ///
+    /// Three cases, in order (the same order rio and ghostty use):
+    /// mouse reporting on, so the wheel is a mouse event; the alternate
+    /// screen with alternate-scroll on, where there is no scrollback to
+    /// move so the wheel becomes cursor keys and pagers scroll; and
+    /// otherwise the host's scrollback view. Holding shift always means
+    /// "give me the scrollback", overriding the first two.
+    ///
+    /// `lines` is positive for scrolling up (towards history). `col` and
+    /// `row` are the cell under the pointer, needed by mouse reports.
+    /// Returns true when the program consumed it, false when the
+    /// scrollback moved instead.
+    pub fn scroll_wheel(&self, lines: i32, col: u16, row: u16, mods: Modifiers) -> bool {
+        if lines == 0 {
+            return false;
+        }
+        let (mouse_mode, alt_screen, alt_scroll, app_cursor, sgr, utf8) = {
+            let terminal = self.terminal.lock();
+            let mode = terminal.mode();
+            (
+                mode.intersects(Mode::MOUSE_MODE),
+                mode.contains(Mode::ALT_SCREEN),
+                mode.contains(Mode::ALTERNATE_SCROLL),
+                mode.contains(Mode::APP_CURSOR),
+                mode.contains(Mode::SGR_MOUSE),
+                mode.contains(Mode::UTF8_MOUSE),
+            )
+        };
+        let shift = mods.contains(Modifiers::SHIFT);
+
+        if mouse_mode && !shift {
+            // Wheel buttons are 64 (up) and 65 (down), with the modifier
+            // bits every mouse report carries.
+            let mut button = if lines > 0 { 64 } else { 65 };
+            if mods.contains(Modifiers::SHIFT) {
+                button += 4;
+            }
+            if mods.contains(Modifiers::ALT) {
+                button += 8;
+            }
+            if mods.contains(Modifiers::CTRL) {
+                button += 16;
+            }
+            let mut out = Vec::new();
+            for _ in 0..lines.abs() {
+                out.extend_from_slice(&mouse_report(button, col, row, sgr, utf8));
+            }
+            self.write(out);
+            return true;
+        }
+
+        if alt_screen && alt_scroll && !shift {
+            let up = lines > 0;
+            let seq: &[u8] = match (app_cursor, up) {
+                (true, true) => b"\x1bOA",
+                (true, false) => b"\x1bOB",
+                (false, true) => b"\x1b[A",
+                (false, false) => b"\x1b[B",
+            };
+            let mut out = Vec::with_capacity(seq.len() * lines.unsigned_abs() as usize);
+            for _ in 0..lines.abs() {
+                out.extend_from_slice(seq);
+            }
+            self.write(out);
+            return true;
+        }
+
+        self.scroll(lines);
+        false
+    }
+
     pub fn scroll(&self, delta_lines: i32) {
         use rio_vt::crosswords::grid::Scroll;
         self.terminal
@@ -603,6 +699,79 @@ mod tests {
         fn action(&self, _surface: SurfaceId, action: Action) {
             self.actions.lock().unwrap().push(action);
         }
+    }
+
+    // The wheel means different things to different programs. A pager on
+    // the alternate screen wants cursor keys (there is no scrollback to
+    // move), a mouse-aware program wants a mouse report, and a plain
+    // shell wants the scrollback view. Shift always means the last one.
+    #[test]
+    fn wheel_becomes_cursor_keys_on_the_alternate_screen() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+
+        // Alternate screen + alternate scroll, as pagers and TUIs set it.
+        surface.inject_output(b"\x1b[?1049h\x1b[?1007h");
+        assert!(surface.scroll_wheel(3, 0, 0, Modifiers::empty()));
+
+        // Application cursor mode swaps CSI for SS3.
+        surface.inject_output(b"\x1b[?1h");
+        assert!(surface.scroll_wheel(-1, 0, 0, Modifiers::empty()));
+
+        // Shift is the user asking for the scrollback regardless.
+        assert!(!surface.scroll_wheel(3, 0, 0, Modifiers::SHIFT));
+    }
+
+    #[test]
+    fn wheel_becomes_a_mouse_report_when_the_program_asks() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+
+        surface.inject_output(b"\x1b[?1000h\x1b[?1006h");
+        assert!(surface.scroll_wheel(1, 4, 2, Modifiers::empty()));
+        assert!(!surface.scroll_wheel(1, 4, 2, Modifiers::SHIFT));
+    }
+
+    #[test]
+    fn wheel_scrolls_the_view_in_a_plain_shell() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+
+        let mut text = String::new();
+        for i in 0..80 {
+            text.push_str(&format!("line {i}\r\n"));
+        }
+        surface.inject_output(text.as_bytes());
+
+        assert!(!surface.scroll_wheel(5, 0, 0, Modifiers::empty()));
+        state.update();
+        assert!(state.display_offset() > 0, "the view should have moved");
+    }
+
+    // SGR is the modern form; the X10 fallback offsets by 32.
+    #[test]
+    fn mouse_reports_encode_both_forms() {
+        assert_eq!(
+            mouse_report(64, 4, 2, true, false),
+            b"\x1b[<64;5;3M".to_vec()
+        );
+        assert_eq!(
+            mouse_report(65, 0, 0, false, false),
+            vec![0x1b, b'[', b'M', 32 + 65, 33, 33]
+        );
     }
 
     // OSC 9;4 (ConEmu progress) must reach the embedder as an action:
