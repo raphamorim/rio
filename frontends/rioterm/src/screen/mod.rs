@@ -119,6 +119,7 @@ impl Screen<'_> {
         event_proxy: EventProxy,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
+        initial_shell: Option<rio_backend::config::Shell>,
     ) -> Result<Screen<'screen>, Box<dyn Error>> {
         let size = window_properties.size;
         let scale = window_properties.scale;
@@ -275,6 +276,7 @@ impl Screen<'_> {
             0,
             rich_text_id,
             context_manager_config,
+            initial_shell,
             context_dimension,
             scaled_margin,
             sugarloaf_errors,

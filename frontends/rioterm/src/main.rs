@@ -173,6 +173,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // windows.shell.args = ["-l"]
     config.overwrite_based_on_platform();
 
+    // Consumed by the first window's first context only; the config
+    // keeps the regular shell so new tabs, splits and windows spawn
+    // the configured shell instead of re-running the command.
+    let cli_shell = args.window_options.terminal_options.command();
+
     {
         let log_to_file = args.window_options.terminal_options.enable_log_file;
         if let Err(e) = setup_logs_by_filter_level(
@@ -180,11 +185,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             log_to_file || config.developer.enable_log_file,
         ) {
             eprintln!("unable to configure the logger: {e:?}");
-        }
-
-        if let Some(command) = args.window_options.terminal_options.command() {
-            config.shell = command;
-            config.use_fork = false;
         }
 
         if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
@@ -244,6 +244,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config_error,
         &window_event_loop,
         app_id,
+        cli_shell,
     );
     let _ = application.run(window_event_loop);
 

@@ -466,6 +466,7 @@ impl Router<'_> {
             None,
             None,
             None,
+            None,
             false,
         );
         let id: WindowId = window.winit_window.id().into();
@@ -511,6 +512,7 @@ impl Router<'_> {
         event_proxy: EventProxy,
         config: &'a rio_backend::config::Config,
         open_url: Option<String>,
+        initial_shell: Option<rio_backend::config::Shell>,
         app_id: Option<&str>,
     ) {
         let tab_id = if config.navigation.is_native() {
@@ -529,6 +531,7 @@ impl Router<'_> {
             RIO_TITLE,
             tab_id.as_deref(),
             open_url,
+            initial_shell,
             app_id,
             false,
         );
@@ -566,6 +569,7 @@ impl Router<'_> {
             None,
             None,
             None,
+            None,
             true,
         );
         let id: WindowId = window.winit_window.id().into();
@@ -598,6 +602,7 @@ impl Router<'_> {
             RIO_TITLE,
             tab_id,
             open_url,
+            None,
             None,
             false,
         );
@@ -715,6 +720,7 @@ impl<'a> RouteWindow<'a> {
         window_name: &str,
         tab_id: Option<&str>,
         open_url: Option<String>,
+        initial_shell: Option<rio_backend::config::Shell>,
         app_id: Option<&str>,
         quake: bool,
     ) -> RouteWindow<'a> {
@@ -749,8 +755,15 @@ impl<'a> RouteWindow<'a> {
             window_id: winit_window.id(),
         };
 
-        let screen = Screen::new(properties, config, event_proxy, font_library, open_url)
-            .expect("Screen not created");
+        let screen = Screen::new(
+            properties,
+            config,
+            event_proxy,
+            font_library,
+            open_url,
+            initial_shell,
+        )
+        .expect("Screen not created");
 
         if config.window.columns.is_some() || config.window.rows.is_some() {
             let (physical_width, physical_height) = compute_window_size_from_grid(
