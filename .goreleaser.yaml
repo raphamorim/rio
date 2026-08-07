@@ -25,9 +25,6 @@ before:
     - if: '{{ eq .Runtime.Goos "windows" }}'
       cmd: wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
       output: true
-    - if: '{{ eq .Runtime.Goos "darwin" }}'
-      cmd: make canario
-      output: true
 
 builds:
   - id: windows-x86_64
@@ -80,14 +77,6 @@ builds:
       - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
     targets: [x86_64-unknown-linux-gnu]
 
-  - id: canario
-    builder: prebuilt
-    goos: [darwin]
-    goarch: [arm64]
-    binary: canario
-    prebuilt:
-      path: target/canario/Canario.app/Contents/MacOS/canario
-
 release:
   make_latest: "{{ if .IsNightly }}false{{ else }}true{{ end }}"
   mode: append
@@ -132,10 +121,6 @@ dmg:
     ids: [rio]
     name: "{{ .ProjectName }}"
     use: appbundle
-  - id: canario
-    ids: [canario]
-    name: "Canario"
-    use: appbundle
 
 notarize:
   macos_native:
@@ -161,28 +146,6 @@ app_bundles:
         dst: Contents/Resources/icon-classic.icns
     templated_extra_files:
       - src: ./misc/osx/Rio.app/Contents/Info.plist
-        dst: Contents/Info.plist
-  - id: canario
-    ids: [canario]
-    name: Canario
-    icon: ./frontends/canario/Resources/icon.icns
-    bundle: com.raphaelamorim.canario
-    extra_files:
-      # Compiled by `make canario` (tic -xe xterm-rio,rio); the app points
-      # TERMINFO here so shells resolve xterm-rio without a system install.
-      - src: ./target/canario-terminfo/78/xterm-rio
-        dst: Contents/Resources/terminfo/78/xterm-rio
-      - src: ./target/canario-terminfo/72/rio
-        dst: Contents/Resources/terminfo/72/rio
-      # Alternate Dock icons selectable in Settings > Icon.
-      - src: ./frontends/canario/Resources/icon-original.png
-        dst: Contents/Resources/icon-original.png
-      - src: ./frontends/canario/Resources/icon-ultramarine.png
-        dst: Contents/Resources/icon-ultramarine.png
-      - src: ./frontends/canario/Resources/icon-rio.png
-        dst: Contents/Resources/icon-rio.png
-    templated_extra_files:
-      - src: ./frontends/canario/Info.plist
         dst: Contents/Info.plist
 
 nfpms:

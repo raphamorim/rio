@@ -64,36 +64,7 @@ $(APP_NAME)-%: $(TARGET)-%
 install-terminfo:
 	@tic -xe xterm-rio,rio -o $(APP_EXTRAS_DIR) $(TERMINFO)
 
-CANARIO_DIR = frontends/canario
-CANARIO_APP_DIR = target/canario/Canario.app
-.PHONY: canario canario-run librio-ctest librio-xcframework
-canario: librio-xcframework
-	@mkdir -p $(CANARIO_APP_DIR)/Contents/MacOS
-	@mkdir -p $(CANARIO_APP_DIR)/Contents/Resources
-	swiftc -O -parse-as-library \
-		-target arm64-apple-macosx14.0 \
-		-I $(LIBRIO_XCF)/macos-arm64/Headers \
-		$(CANARIO_DIR)/Sources/*.swift \
-		$(LIBRIO_XCF)/macos-arm64/librio.a \
-		-framework CoreFoundation -framework Foundation -framework AppKit \
-		-framework CoreGraphics -framework CoreText -framework QuartzCore \
-		-framework Carbon -framework VisionKit -lc++ -liconv \
-		-o $(CANARIO_APP_DIR)/Contents/MacOS/canario
-	@cp -fp $(CANARIO_DIR)/Info.plist $(CANARIO_APP_DIR)/Contents/Info.plist
-	@cp -fp $(CANARIO_DIR)/Resources/icon.icns $(CANARIO_APP_DIR)/Contents/Resources/icon.icns
-	@cp -fp $(CANARIO_DIR)/Resources/icon-original.png \
-		$(CANARIO_DIR)/Resources/icon-ultramarine.png \
-		$(CANARIO_DIR)/Resources/icon-rio.png \
-		$(CANARIO_APP_DIR)/Contents/Resources/
-	@rm -rf target/canario-terminfo
-	@tic -xe xterm-rio,rio -o target/canario-terminfo $(TERMINFO)
-	@cp -R target/canario-terminfo $(CANARIO_APP_DIR)/Contents/Resources/terminfo
-	@codesign --force --sign - "$(CANARIO_APP_DIR)"
-	@echo "Created '$(CANARIO_APP_DIR)'"
-
-canario-run: canario
-	open -n $(CANARIO_APP_DIR)
-
+.PHONY: librio-ctest librio-xcframework
 librio-ctest:
 	cargo build -p librio
 	@mkdir -p target/librio

@@ -28,7 +28,7 @@ unsure about; a partial report is worth more than a silent one.
 
 ## Scope
 
-The applications: **Rio** (Linux, macOS, Windows, BSD) and **Canario** (macOS).
+The application: **Rio** (Linux, macOS, Windows, BSD).
 
 The published crates, whose embedders inherit anything wrong in them:
 `rio-vt`, `librio`, `sugarloaf`, `rio-backend`, `rio-window`, `rio-graphics`,
