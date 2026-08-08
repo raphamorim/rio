@@ -19,7 +19,6 @@ include = [
 [dependencies]
 tracing = { workspace = true }
 iovec = { workspace = true }
-slab = "0.4.12"
 cfg-if = "0.1.9"
 
 [target.'cfg(target_os = "fuchsia")'.dependencies]

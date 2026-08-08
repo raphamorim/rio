@@ -114,7 +114,6 @@ mod token;
 pub mod channel;
 #[cfg(unix)]
 pub mod stream;
-pub mod timer;
 
 pub use event_imp::{PollOpt, Ready};
 pub use poll::{Poll, Registration, SetReadiness};
