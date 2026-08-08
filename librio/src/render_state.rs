@@ -470,6 +470,33 @@ impl RenderState {
         expected
     }
 
+    /// The OSC 8 hyperlink under a viewport cell, if any.
+    pub fn link_at(&self, line: usize, column: usize) -> Option<&str> {
+        let square = self.square(line, column)?;
+        let eid = square.extras_id()?;
+        self.extras
+            .get(&eid)?
+            .hyperlink
+            .as_ref()
+            .map(|link| link.uri())
+    }
+
+    /// The contiguous run of cells on `line` carrying the hyperlink under
+    /// `column`: what a renderer underlines on hover. Runs are per-row on
+    /// purpose; a link that wraps is two runs sharing one URI.
+    pub fn link_run(&self, line: usize, column: usize) -> Option<(usize, usize)> {
+        let uri = self.link_at(line, column)?;
+        let mut start = column;
+        while start > 0 && self.link_at(line, start - 1) == Some(uri) {
+            start -= 1;
+        }
+        let mut end = column;
+        while end + 1 < self.columns() && self.link_at(line, end + 1) == Some(uri) {
+            end += 1;
+        }
+        Some((start, end))
+    }
+
     pub fn text_row(&self, line: usize) -> String {
         let Some(row) = self.rows.get(line) else {
             return String::new();

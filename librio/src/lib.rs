@@ -907,6 +907,32 @@ mod tests {
         );
     }
 
+    // OSC 8 links must resolve through the pulled render state: URI under
+    // a cell, and the row-run a renderer underlines on hover.
+    #[test]
+    fn osc8_links_resolve_from_render_state() {
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate);
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+
+        surface.inject_output(
+            b"\x1b[2J\x1b[Hpre \x1b]8;;https://rioterm.com\x1b\\rio link\x1b]8;;\x1b\\ post",
+        );
+        state.update();
+
+        assert_eq!(state.link_at(0, 0), None);
+        assert_eq!(state.link_at(0, 4), Some("https://rioterm.com"));
+        assert_eq!(state.link_at(0, 11), Some("https://rioterm.com"));
+        assert_eq!(state.link_at(0, 13), None);
+        assert_eq!(state.link_run(0, 6), Some((4, 11)));
+        assert_eq!(state.link_run(0, 0), None);
+    }
+
     // Paste wraps in bracketed-paste markers exactly when the program
     // turned the mode on, and newlines never reach the shell as LF.
     #[test]

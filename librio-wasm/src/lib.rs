@@ -536,6 +536,24 @@ impl RioTerm {
         }
     }
 
+    /// The OSC 8 hyperlink URI under a viewport cell, if any. Hit-test
+    /// shaped on purpose: links only matter on pointer events, so nothing
+    /// is paid per frame.
+    pub fn link_at(&self, line: u32, col: u32) -> Option<String> {
+        self.state
+            .link_at(line as usize, col as usize)
+            .map(str::to_owned)
+    }
+
+    /// `[start_col, end_col]` of the hyperlink run under a cell (what a
+    /// renderer underlines on hover); empty when there is no link.
+    pub fn link_run(&self, line: u32, col: u32) -> Vec<u32> {
+        match self.state.link_run(line as usize, col as usize) {
+            Some((start, end)) => vec![start as u32, end as u32],
+            None => Vec::new(),
+        }
+    }
+
     // ------------------------------------------------------ kitty images
 
     pub fn kitty_count(&self) -> u32 {
