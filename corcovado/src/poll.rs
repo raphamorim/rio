@@ -1567,17 +1567,6 @@ pub fn selector(poll: &Poll) -> &sys::Selector {
  *
  */
 
-// TODO: get rid of this, windows depends on it for now
-#[allow(dead_code)]
-pub fn new_registration(
-    poll: &Poll,
-    token: Token,
-    ready: Ready,
-    opt: PollOpt,
-) -> (Registration, SetReadiness) {
-    Registration::new_priv(poll, token, ready, opt)
-}
-
 impl Registration {
     /// Create and return a new `Registration` and the associated
     /// `SetReadiness`.
