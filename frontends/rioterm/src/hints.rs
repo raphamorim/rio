@@ -2,6 +2,7 @@ use rio_backend::config::hints::Hint;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::crosswords::pos::{Column, Line, Pos};
 use rio_backend::event::EventListener;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -326,12 +327,19 @@ impl HintState {
     }
 
     fn generate_labels(&mut self) {
-        self.labels.clear();
         let mut generator = LabelGenerator::new(&self.alphabet);
+        let mut labels_by_text = HashMap::<&str, Vec<char>>::new();
 
-        for _ in 0..self.matches.len() {
-            self.labels.push(generator.next());
-        }
+        self.labels = self
+            .matches
+            .iter()
+            .map(|hint_match| {
+                labels_by_text
+                    .entry(&hint_match.text)
+                    .or_insert_with(|| generator.next())
+                    .clone()
+            })
+            .collect();
     }
 }
 
@@ -528,6 +536,32 @@ mod tests {
     use super::*;
     use rio_backend::config::hints::{HintAction, HintInternalAction};
 
+    fn hint() -> Rc<Hint> {
+        Rc::new(Hint {
+            regex: Some("test".to_string()),
+            hyperlinks: false,
+            post_processing: true,
+            persist: false,
+            action: HintAction::Action {
+                action: HintInternalAction::Copy,
+            },
+            mouse: Default::default(),
+            binding: None,
+        })
+    }
+
+    fn hint_match(text: &str, col: usize, hint: &Rc<Hint>) -> HintMatch {
+        HintMatch {
+            text: text.to_string(),
+            start: Pos::new(Line(0), Column(col)),
+            end: Pos::new(
+                Line(0),
+                Column(col + text.chars().count().saturating_sub(1)),
+            ),
+            hint: hint.clone(),
+        }
+    }
+
     #[test]
     fn test_label_generator() {
         let mut gen = LabelGenerator::new("abc");
@@ -545,19 +579,7 @@ mod tests {
         let mut state = HintState::new("abc".to_string());
         assert!(!state.is_active());
 
-        let hint = Rc::new(Hint {
-            regex: Some("test".to_string()),
-            hyperlinks: false,
-            post_processing: true,
-            persist: false,
-            action: HintAction::Action {
-                action: HintInternalAction::Copy,
-            },
-            mouse: Default::default(),
-            binding: None,
-        });
-
-        state.start(hint);
+        state.start(hint());
         assert!(state.is_active());
 
         state.stop();
@@ -583,8 +605,25 @@ mod tests {
     }
 
     #[test]
+    fn test_repeated_matches_share_labels() {
+        let hint = hint();
+        let mut state = HintState::new("abc".to_string());
+        state.matches = ["foo.txt", "foo.txt", "bar.txt"]
+            .into_iter()
+            .enumerate()
+            .map(|(col, text)| hint_match(text, col, &hint))
+            .collect();
+
+        state.generate_labels();
+
+        assert_eq!(state.matches.len(), 3);
+        assert_eq!(state.labels, vec![vec!['a'], vec!['a'], vec!['b']]);
+    }
+
+    #[test]
     fn test_keyboard_input_logic() {
         let mut state = HintState::new("jfkdls".to_string());
+        let hint = hint();
 
         // Simulate having some labels
         state.labels = vec![
@@ -598,63 +637,9 @@ mod tests {
 
         // Simulate having matches (we'll use dummy matches)
         state.matches = vec![
-            HintMatch {
-                text: "match0".to_string(),
-                start: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(0),
-                ),
-                end: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(5),
-                ),
-                hint: Rc::new(Hint {
-                    regex: Some("test".to_string()),
-                    hyperlinks: false,
-                    post_processing: true,
-                    persist: false,
-                    action: HintAction::Action {
-                        action: HintInternalAction::Copy,
-                    },
-                    mouse: Default::default(),
-                    binding: None,
-                }),
-            },
-            HintMatch {
-                text: "match1".to_string(),
-                start: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(10),
-                ),
-                end: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(15),
-                ),
-                hint: Rc::new(Hint {
-                    regex: Some("test".to_string()),
-                    hyperlinks: false,
-                    post_processing: true,
-                    persist: false,
-                    action: HintAction::Action {
-                        action: HintInternalAction::Copy,
-                    },
-                    mouse: Default::default(),
-                    binding: None,
-                }),
-            },
+            hint_match("match0", 0, &hint),
+            hint_match("match1", 10, &hint),
         ];
-
-        let hint = Rc::new(Hint {
-            regex: Some("test".to_string()),
-            hyperlinks: false,
-            post_processing: true,
-            persist: false,
-            action: HintAction::Action {
-                action: HintInternalAction::Copy,
-            },
-            mouse: Default::default(),
-            binding: None,
-        });
 
         state.active_hint = Some(hint);
 
