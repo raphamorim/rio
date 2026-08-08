@@ -1,101 +1,24 @@
-//! A fast, low-level IO library for Rust focusing on non-blocking APIs, event
-//! notification, and other useful utilities for building high performance IO
-//! apps.
+//! A low-level readiness-based IO library focused on what Rio needs from its
+//! PTY event loop: event notification backed by epoll, kqueue, and IOCP, plus
+//! a pollable cross-thread channel and user-space readiness (`Registration` /
+//! `SetReadiness`).
 //!
-//! # Features
-//!
-//! * Non-blocking TCP, UDP
-//! * I/O event notification queue backed by epoll, kqueue, and IOCP
-//! * Zero allocations at runtime
-//! * Platform specific extensions
-//!
-//! # Non-goals
-//!
-//! The following are specifically omitted from Mio and are left to the user or higher-level libraries.
-//!
-//! * File operations
-//! * Thread pools / multi-threaded event loop
-//! * Timers
-//!
-//! # Platforms
-//!
-//! Currently supported platforms:
-//!
-//! * Linux
-//! * OS X
-//! * Windows
-//! * FreeBSD
-//! * NetBSD
-//! * Android
-//! * iOS
-//!
-//! mio can handle interfacing with each of the event notification systems of the aforementioned platforms. The details of
-//! their implementation are further discussed in [`Poll`].
+//! Corcovado is a trimmed-down maintained fork of mio 0.6.x. Networking types,
+//! the timer, and the Fuchsia backend from the original crate were removed;
+//! `std` types (or `EventedFd` on unix) cover those needs instead.
 //!
 //! # Usage
 //!
-//! Using mio starts by creating a [`Poll`], which reads events from the OS and
-//! put them into [`Events`]. You can handle IO events from the OS with it.
+//! Create a [`Poll`], register [`event::Evented`] sources with it, and read
+//! events from the OS into [`Events`]. For more detail, see [`Poll`].
 //!
-//! For more detail, see [`Poll`].
+//! # Platforms
+//!
+//! Linux, macOS, Windows, FreeBSD, NetBSD, Android, and iOS.
 //!
 //! [`Poll`]: struct.Poll.html
 //! [`Events`]: struct.Events.html
-//!
-// # Example
-//
-// ```
-// use corcovado::*;
-// use std::net::{TcpListener, TcpStream};
-//
-// // Setup some tokens to allow us to identify which event is
-// // for which socket.
-// const SERVER: Token = Token(0);
-// const CLIENT: Token = Token(1);
-//
-// let addr = "127.0.0.1:13265".parse().unwrap();
-//
-// // Setup the server socket
-// let server = TcpListener::bind(&addr).unwrap();
-//
-// // Create a poll instance
-// let poll = Poll::new().unwrap();
-//
-// // Start listening for incoming connections
-// poll.register(&server, SERVER, Ready::readable(),
-//               PollOpt::edge()).unwrap();
-//
-// // Setup the client socket
-// let sock = TcpStream::connect(&addr).unwrap();
-//
-// // Register the socket
-// poll.register(&sock, CLIENT, Ready::readable(),
-//               PollOpt::edge()).unwrap();
-//
-// // Create storage for events
-// let mut events = Events::with_capacity(1024);
-//
-// loop {
-//     poll.poll(&mut events, None).unwrap();
-//
-//     for event in events.iter() {
-//         match event.token() {
-//             SERVER => {
-//                 // Accept and drop the socket immediately, this will close
-//                 // the socket and notify the client of the EOF.
-//                 let _ = server.accept();
-//             }
-//             CLIENT => {
-//                 // The server just shuts down the socket, let's just exit
-//                 // from our event loop.
-//                 return;
-//             }
-//             _ => unreachable!(),
-//         }
-//     }
-// }
-//
-// ```
+//! [`event::Evented`]: event/trait.Evented.html
 
 mod event_imp;
 mod io;
@@ -130,7 +53,6 @@ pub mod unix {
     pub use crate::sys::EventedFd;
 }
 
-
 /// Windows-only extensions to the mio crate.
 ///
 /// Mio on windows is currently implemented with IOCP for a high-performance
@@ -160,7 +82,8 @@ pub mod unix {
 ///   interface of *readiness* doesn't map directly to the Windows model of
 ///   *completion*. This means that types will have to perform internal
 ///   buffering to ensure that a readiness interface can be provided. For a
-///   sample implementation see the TCP/UDP modules in mio itself.
+///   sample implementation see the anonymous pipe wrappers in
+///   teletypewriter's Windows backend.
 ///
 /// * `Overlapped` - this type is intended to be used as the concrete instances
 ///   of the `OVERLAPPED` type that most win32 methods expect. It's crucial, for
