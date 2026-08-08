@@ -505,7 +505,7 @@ pub fn create_pty_with_spawn(
     };
     let term = create_termp(true);
 
-    let res = unsafe {
+    let mut open = || unsafe {
         openpty(
             &mut main as *mut _,
             &mut child as *mut _,
@@ -515,8 +515,23 @@ pub fn create_pty_with_spawn(
         )
     };
 
+    // openpty fails transiently when many PTYs open concurrently (seen
+    // on macOS under parallel spawns, with garbage errno); a brief retry
+    // absorbs it instead of surfacing a dead surface to the embedder.
+    let mut res = open();
+    for _ in 0..3 {
+        if res >= 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        res = open();
+    }
+
     if res < 0 {
-        return Err(Error::other("openpty failed"));
+        return Err(Error::other(format!(
+            "openpty failed: {}",
+            Error::last_os_error()
+        )));
     }
 
     let user = match ShellUser::from_env() {
