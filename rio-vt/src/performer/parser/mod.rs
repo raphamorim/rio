@@ -884,9 +884,46 @@ impl Parser {
         }
     }
 
+    /// Scalar transcode for wasm, where the C++-backed `simdutf` cannot
+    /// build. Same contract as the SIMD path below: each invalid maximal
+    /// subpart becomes one U+FFFD, except a lone C1 byte, which keeps its
+    /// execute semantics through decode.
+    #[cfg(target_arch = "wasm32")]
+    #[inline]
+    fn decode_codepoints(&mut self, src: &[u8]) {
+        self.decode_buf.clear();
+        self.decode_buf.reserve(src.len());
+
+        let mut consumed = 0;
+        while consumed < src.len() {
+            match std::str::from_utf8(&src[consumed..]) {
+                Ok(valid) => {
+                    self.decode_buf.extend(valid.chars().map(|c| c as u32));
+                    return;
+                }
+                Err(err) => {
+                    let end = consumed + err.valid_up_to();
+                    // SAFETY: the validator just confirmed this prefix.
+                    let valid =
+                        unsafe { std::str::from_utf8_unchecked(&src[consumed..end]) };
+                    self.decode_buf.extend(valid.chars().map(|c| c as u32));
+
+                    let subpart = maximal_subpart(&src[end..]);
+                    if subpart == 1 && (0x80..=0x9F).contains(&src[end]) {
+                        self.decode_buf.push(src[end] as u32);
+                    } else {
+                        self.decode_buf.push(0xFFFD);
+                    }
+                    consumed = end + subpart;
+                }
+            }
+        }
+    }
+
     /// SIMD-transcode a UTF-8 byte slice into [`Self::decode_buf`] as `u32`
     /// codepoints, replacing each invalid UTF-8 maximal subpart with one
     /// U+FFFD inline (W3C/Unicode "Substitution of Maximal Subparts").
+    #[cfg(not(target_arch = "wasm32"))]
     #[inline]
     fn decode_codepoints(&mut self, src: &[u8]) {
         self.decode_buf.clear();

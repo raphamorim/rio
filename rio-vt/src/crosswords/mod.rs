@@ -5157,7 +5157,7 @@ impl<U: EventListener> Crosswords<U> {
             .graphics
             .get_kitty_image(image_id)
             .map(|s| s.transmission_time)
-            .unwrap_or_else(std::time::Instant::now);
+            .unwrap_or_else(crate::time::Instant::now);
         graphic_data.transmit_time = transmit_time;
 
         // Memory is managed in store_kitty_image (eviction happens there)
@@ -7171,7 +7171,7 @@ mod tests {
             display_width: None,
             display_height: None,
             resize: None,
-            transmit_time: std::time::Instant::now(),
+            transmit_time: crate::time::Instant::now(),
         };
 
         cw.insert_graphic(graphic, None, None);
@@ -7212,7 +7212,7 @@ mod tests {
             display_width: None,
             display_height: None,
             resize: None,
-            transmit_time: std::time::Instant::now(),
+            transmit_time: crate::time::Instant::now(),
         };
         cw.insert_graphic(graphic.clone(), None, Some(1));
 
@@ -7253,7 +7253,7 @@ mod tests {
             display_width: None,
             display_height: None,
             resize: None,
-            transmit_time: std::time::Instant::now(),
+            transmit_time: crate::time::Instant::now(),
         };
         cw.insert_graphic(graphic, None, Some(1));
         assert!(cw.graphics.atlas_placements.is_empty());

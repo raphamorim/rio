@@ -6,11 +6,11 @@ use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
+use crate::time::Instant;
 use cursor_icon::CursorIcon;
 use rio_graphics::GraphicData;
 use std::mem;
 use std::time::Duration;
-use std::time::Instant;
 use tracing::{debug, warn};
 
 use crate::crosswords::attr::Attr;

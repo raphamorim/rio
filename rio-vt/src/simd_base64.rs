@@ -7,6 +7,7 @@
 //! - Kitty graphics protocol APC chunks (4 KB+ per chunk, very hot during
 //!   image-heavy TUIs).
 
+#[cfg(not(target_arch = "wasm32"))]
 use simdutf::{
     base64_to_binary, maximal_binary_length_from_base64, Base64Options, ErrorCode,
     LastChunkHandlingOptions,
@@ -14,6 +15,7 @@ use simdutf::{
 
 /// Decode a standard-alphabet base64 byte slice (`+` and `/`, with padding)
 /// to a freshly-allocated `Vec<u8>`. Returns `None` on invalid input.
+#[cfg(not(target_arch = "wasm32"))]
 #[inline]
 pub fn decode(input: &[u8]) -> Option<Vec<u8>> {
     decode_with_options(
@@ -24,6 +26,7 @@ pub fn decode(input: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Decode a standard-alphabet base64 byte slice without padding.
+#[cfg(not(target_arch = "wasm32"))]
 #[inline]
 pub fn decode_no_pad(input: &[u8]) -> Option<Vec<u8>> {
     decode_with_options(
@@ -33,6 +36,33 @@ pub fn decode_no_pad(input: &[u8]) -> Option<Vec<u8>> {
     )
 }
 
+/// Scalar path for wasm, where the C++-backed `simdutf` cannot build. The
+/// engine is padding-indifferent, standing in for both simdutf variants
+/// (whose Loose handling likewise forgives a missing or present pad).
+#[cfg(target_arch = "wasm32")]
+fn scalar_engine() -> base64::engine::GeneralPurpose {
+    use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+    GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::Indifferent),
+    )
+}
+
+#[cfg(target_arch = "wasm32")]
+#[inline]
+pub fn decode(input: &[u8]) -> Option<Vec<u8>> {
+    use base64::Engine;
+    scalar_engine().decode(input).ok()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[inline]
+pub fn decode_no_pad(input: &[u8]) -> Option<Vec<u8>> {
+    decode(input)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 #[inline]
 fn decode_with_options(
     input: &[u8],
