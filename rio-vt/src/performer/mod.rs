@@ -190,8 +190,23 @@ where
         })
     }
 
+    /// Read from the PTY and parse into the terminal.
+    ///
+    /// With `drain_fully` the read loop only stops on `WouldBlock` (or
+    /// `MAX_LOCKED_READ`). Without it, a read shorter than the available
+    /// buffer is treated as "PTY drained" and the loop stops early, skipping
+    /// the extra read that would confirm it with `WouldBlock`. The early stop
+    /// is only sound while the PTY stays registered level-triggered (if more
+    /// data raced in, the next poll returns immediately), so callers that
+    /// exit the event loop right after (the child-exit drain) must pass
+    /// `drain_fully: true`.
     #[inline]
-    fn pty_read(&mut self, state: &mut State, buf: &mut [u8]) -> io::Result<()> {
+    fn pty_read(
+        &mut self,
+        state: &mut State,
+        buf: &mut [u8],
+        drain_fully: bool,
+    ) -> io::Result<()> {
         let mut unprocessed = 0;
         let mut processed = 0;
 
@@ -200,17 +215,25 @@ where
         let mut terminal = None;
 
         loop {
+            let drained;
+
             // Read from the PTY.
             match self.pty.reader().read(&mut buf[unprocessed..]) {
                 // This is received on Windows/macOS when no more data is readable from the PTY.
                 Ok(0) if unprocessed == 0 => break,
-                Ok(got) => unprocessed += got,
+                Ok(got) => {
+                    drained = got < buf.len() - unprocessed;
+                    unprocessed += got;
+                }
                 Err(err) => match err.kind() {
                     ErrorKind::Interrupted | ErrorKind::WouldBlock => {
                         // Go back to mio if we're caught up on parsing and the PTY would block.
                         if unprocessed == 0 {
                             break;
                         }
+                        // An interrupted read says nothing about the PTY
+                        // being drained; only `WouldBlock` does.
+                        drained = err.kind() == ErrorKind::WouldBlock;
                     }
                     _ => return Err(err),
                 },
@@ -235,14 +258,15 @@ where
             processed += unprocessed;
             unprocessed = 0;
 
-            // Assure we're not blocking the terminal too long unnecessarily.
-            if processed >= MAX_LOCKED_READ {
+            // Assure we're not blocking the terminal too long unnecessarily,
+            // and stop as soon as the PTY looks drained.
+            if processed >= MAX_LOCKED_READ || (drained && !drain_fully) {
                 break;
             }
         }
 
         // Notify renderer that new damage is available.
-        // Only send if no event is already in flight — the renderer will
+        // Only send if no event is already in flight: the renderer will
         // extract all accumulated damage when it locks the terminal.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
             if let Some(ref mut term) = terminal {
@@ -412,8 +436,12 @@ where
 
                                 // Drain whatever the child wrote before it
                                 // exited so short-lived commands don't lose
-                                // their final output.
-                                if let Err(err) = self.pty_read(&mut state, &mut buf) {
+                                // their final output. This is the last read
+                                // before the loop exits, so there is no next
+                                // poll to catch leftovers: drain fully.
+                                if let Err(err) =
+                                    self.pty_read(&mut state, &mut buf, true)
+                                {
                                     tracing::debug!(
                                         "PTY drain after child exit failed: {err}"
                                     );
@@ -443,7 +471,9 @@ where
                                 continue;
                             }
                             if event.readiness().is_readable() {
-                                if let Err(err) = self.pty_read(&mut state, &mut buf) {
+                                if let Err(err) =
+                                    self.pty_read(&mut state, &mut buf, false)
+                                {
                                     // On Linux, a `read` on the master side of a PTY can fail
                                     // with `EIO` if the client side hangs up.  In that case,
                                     // just loop back round for the inevitable `Exited` event.
