@@ -304,6 +304,89 @@ fn kitty_flags(modes: rio_vt::ansi::KeyboardModes) -> key::KittyFlags {
     flags
 }
 
+/// Emit `\x1b[0m` plus the minimal SGR codes reproducing `style`.
+fn serialize_style(out: &mut String, style: &Style) {
+    use std::fmt::Write as _;
+
+    out.push_str("\x1b[0");
+    let color = |prefix38: bool, color: &AnsiColor| match color {
+        AnsiColor::Named(n) => {
+            let n = *n as u16;
+            let code = match (n, prefix38) {
+                (0..=7, true) => 30 + n,
+                (0..=7, false) => 40 + n,
+                (8..=15, true) => 90 + (n - 8),
+                (8..=15, false) => 100 + (n - 8),
+                (_, true) => 39,
+                (_, false) => 49,
+            };
+            format!(";{code}")
+        }
+        AnsiColor::Indexed(i) => {
+            format!(";{};5;{i}", if prefix38 { 38 } else { 48 })
+        }
+        AnsiColor::Spec(rgb) => {
+            format!(
+                ";{};2;{};{};{}",
+                if prefix38 { 38 } else { 48 },
+                rgb.r,
+                rgb.g,
+                rgb.b
+            )
+        }
+    };
+    let fg = color(true, &style.fg);
+    let bg = color(false, &style.bg);
+    out.push_str(&fg);
+    out.push_str(&bg);
+
+    let flags = style.flags;
+    if flags.contains(StyleFlags::BOLD) {
+        out.push_str(";1");
+    }
+    if flags.contains(StyleFlags::DIM) {
+        out.push_str(";2");
+    }
+    if flags.contains(StyleFlags::ITALIC) {
+        out.push_str(";3");
+    }
+    if flags.contains(StyleFlags::UNDERLINE) {
+        out.push_str(";4");
+    } else if flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
+        out.push_str(";4:2");
+    } else if flags.contains(StyleFlags::UNDERCURL) {
+        out.push_str(";4:3");
+    } else if flags.contains(StyleFlags::DOTTED_UNDERLINE) {
+        out.push_str(";4:4");
+    } else if flags.contains(StyleFlags::DASHED_UNDERLINE) {
+        out.push_str(";4:5");
+    }
+    if flags.contains(StyleFlags::INVERSE) {
+        out.push_str(";7");
+    }
+    if flags.contains(StyleFlags::HIDDEN) {
+        out.push_str(";8");
+    }
+    if flags.contains(StyleFlags::STRIKEOUT) {
+        out.push_str(";9");
+    }
+    out.push('m');
+
+    if let Some(underline) = &style.underline_color {
+        match underline {
+            AnsiColor::Indexed(i) => {
+                let _ = write!(out, "\x1b[58;5;{i}m");
+            }
+            AnsiColor::Spec(rgb) => {
+                let _ = write!(out, "\x1b[58;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
+            }
+            AnsiColor::Named(n) => {
+                let _ = write!(out, "\x1b[58;5;{}m", *n as u16);
+            }
+        }
+    }
+}
+
 pub struct Surface {
     id: SurfaceId,
     alt_is_meta: std::sync::atomic::AtomicBool,
@@ -729,9 +812,147 @@ impl Surface {
         None
     }
 
-    /// Dump the whole buffer (scrollback + screen) to plain text, so a
-    /// frontend can persist it and replay it as inert scrollback on
-    /// restore. Trailing blank rows are trimmed by `bounds_to_string`.
+    /// Lines currently held in scrollback (the ring, not counting
+    /// eviction). Search coordinates are relative to the top of this ring.
+    pub fn history_size(&self) -> usize {
+        self.terminal.lock().history_size()
+    }
+
+    /// Serialize scrollback + screen to a byte stream that reconstructs
+    /// content, SGR styling, and OSC 8 hyperlinks when replayed into a
+    /// same-width terminal (`inject_output`). The style state machine is
+    /// reset-then-set per change: verbose but unambiguous.
+    pub fn serialize(&self) -> String {
+        use rio_vt::crosswords::grid::{Dimensions, GridSquare};
+        use rio_vt::crosswords::square::{CellFlags, Wide};
+
+        let term = self.terminal.lock();
+        let grid = &term.grid;
+        let cols = grid.columns();
+        let history = term.history_size() as i32;
+        let rows = term.screen_lines() as i32;
+
+        // Trim trailing all-empty screen rows, like dump().
+        let mut last = rows - 1;
+        'trim: while last > -history {
+            let row = &grid[Line(last)];
+            for col in 0..cols {
+                let square = row[PosColumn(col)];
+                if !square.is_empty() || square.style_id() != 0 {
+                    break 'trim;
+                }
+            }
+            last -= 1;
+        }
+
+        let mut out = String::new();
+        let mut style = Style::default();
+        let mut link: Option<String> = None;
+        out.push_str("\x1b[0m");
+
+        for line in -history..=last {
+            let row = &grid[Line(line)];
+            let wrapped = row[PosColumn(cols - 1)]
+                .cell_flags()
+                .contains(CellFlags::WRAPLINE);
+
+            // Within a row, drop the trailing run of default empty cells
+            // (unless the row wraps, where every cell is content).
+            let mut end = cols;
+            if !wrapped {
+                while end > 0 {
+                    let square = row[PosColumn(end - 1)];
+                    if !square.is_empty() || square.style_id() != 0 {
+                        break;
+                    }
+                    end -= 1;
+                }
+            }
+
+            for col in 0..end {
+                let square = row[PosColumn(col)];
+                match square.wide() {
+                    Wide::Spacer | Wide::LeadingSpacer => continue,
+                    _ => {}
+                }
+
+                let cell_style = grid.style_of(&square);
+                if cell_style != style {
+                    serialize_style(&mut out, &cell_style);
+                    style = cell_style;
+                }
+
+                let cell_link = square
+                    .extras_id()
+                    .and_then(|id| grid.extras_table.get(id))
+                    .and_then(|extras| extras.hyperlink.as_ref())
+                    .map(|h| h.uri().to_string());
+                if cell_link != link {
+                    match &cell_link {
+                        Some(uri) => {
+                            out.push_str("\x1b]8;;");
+                            out.push_str(uri);
+                            out.push_str("\x1b\\");
+                        }
+                        None => out.push_str("\x1b]8;;\x1b\\"),
+                    }
+                    link = cell_link;
+                }
+
+                let c = square.c();
+                out.push(if c == '\0' { ' ' } else { c });
+                if let Some(extras) =
+                    square.extras_id().and_then(|id| grid.extras_table.get(id))
+                {
+                    for z in &extras.zerowidth {
+                        out.push(*z);
+                    }
+                }
+            }
+
+            if !wrapped && line < last {
+                out.push_str("\r\n");
+            }
+        }
+
+        if link.is_some() {
+            out.push_str("\x1b]8;;\x1b\\");
+        }
+        out.push_str("\x1b[0m");
+        out
+    }
+
+    /// All regex matches across scrollback + screen, top to bottom, as
+    /// `(start_line, start_col, end_line, end_col)` with lines relative to
+    /// the top of the scrollback ring. `None` when the pattern is invalid.
+    pub fn search(&self, pattern: &str, max: usize) -> Option<Vec<(u32, u16, u32, u16)>> {
+        use rio_vt::crosswords::pos::Direction;
+        use rio_vt::crosswords::search::{RegexIter, RegexSearch};
+
+        let mut regex = RegexSearch::new(pattern).ok()?;
+        let term = self.terminal.lock();
+        let history = term.history_size() as i32;
+        let rows = term.screen_lines() as i32;
+        let cols = term.columns();
+        let start = Pos::new(Line(-history), PosColumn(0));
+        let end = Pos::new(Line(rows - 1), PosColumn(cols - 1));
+
+        let mut matches = Vec::new();
+        for m in RegexIter::new(start, end, Direction::Right, &term, &mut regex) {
+            let (s, e) = (m.start(), m.end());
+            matches.push((
+                (s.row.0 + history) as u32,
+                s.col.0 as u16,
+                (e.row.0 + history) as u32,
+                e.col.0 as u16,
+            ));
+            if matches.len() >= max {
+                break;
+            }
+        }
+        Some(matches)
+    }
+
     /// The foreground process's name (the program the user is running
     /// right now: `claude`, `vim`, or the shell itself), from the kernel.
     /// Hosts use it to tell what a pane is running without any shell
@@ -753,6 +974,9 @@ impl Surface {
         processor.advance(&mut *term, bytes);
     }
 
+    /// Dump the whole buffer (scrollback + screen) to plain text, so a
+    /// frontend can persist it and replay it as inert scrollback on
+    /// restore. Trailing blank rows are trimmed by `bounds_to_string`.
     pub fn dump(&self) -> String {
         let term = self.terminal.lock();
         let rows = term.screen_lines() as i32;
@@ -950,6 +1174,90 @@ mod tests {
         assert_eq!(surface.mode_bits() & (1 << 3), 1 << 3);
         surface.inject_output(b"\x1b[?1h\x1b[?1049h\x1b[?1000h");
         assert_eq!(surface.mode_bits(), 0b1111);
+    }
+
+    // A child that never writes, so buffer contents are exactly what the
+    // test injected and comparisons can't race the shell prompt.
+    fn quiet_surface(cols: u16, rows: u16) -> Surface {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sleep".to_string()),
+                args: vec!["300".to_string()],
+                cols,
+                rows,
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper")
+    }
+
+    // serialize() must reconstruct content, styling, and hyperlinks when
+    // replayed into a fresh same-width terminal. Serializing the replica
+    // again is the equality check: identical bytes means identical state.
+    #[test]
+    fn serialize_round_trips_styles_and_links() {
+        let surface = quiet_surface(40, 10);
+        surface.inject_output(
+            b"\x1b[31mred\x1b[0m plain \x1b[1;4;38;5;208morange\x1b[0m\r\n\
+              \x1b[48;2;10;20;30mrgb bg\x1b[0m \
+              \x1b]8;;https://rioterm.com\x1b\\link\x1b]8;;\x1b\\\r\n\
+              wide: \xe4\xbd\xa0\xe5\xa5\xbd",
+        );
+        let first = surface.serialize();
+        assert!(first.contains("\x1b]8;;https://rioterm.com\x1b\\"));
+
+        let replica = quiet_surface(40, 10);
+        replica.inject_output(first.as_bytes());
+        assert_eq!(replica.dump(), surface.dump());
+        assert_eq!(replica.serialize(), first);
+    }
+
+    // Scrollback rows come first, and wrapped rows are emitted without a
+    // newline so the replica re-wraps them at the same width.
+    #[test]
+    fn serialize_covers_scrollback_and_rewraps() {
+        let surface = quiet_surface(20, 5);
+        for i in 0..12 {
+            surface.inject_output(format!("history line {i}\r\n").as_bytes());
+        }
+        surface.inject_output(b"abcdefghijklmnopqrstuvwxyz");
+        assert!(surface.history_size() > 0);
+        let first = surface.serialize();
+
+        let replica = quiet_surface(20, 5);
+        replica.inject_output(first.as_bytes());
+        assert_eq!(replica.dump(), surface.dump());
+        assert_eq!(replica.history_size(), surface.history_size());
+        assert_eq!(replica.serialize(), first);
+    }
+
+    // Search coordinates are ring-relative: line 0 is the top of the
+    // scrollback, so hits stay valid however the viewport is scrolled.
+    #[test]
+    fn search_reports_ring_relative_coordinates() {
+        let surface = quiet_surface(40, 5);
+        for i in 0..8 {
+            surface.inject_output(format!("filler {i}\r\n").as_bytes());
+        }
+        surface.inject_output(b"needle at last");
+
+        let fillers = surface.search("filler", 100).expect("valid pattern");
+        assert_eq!(fillers.len(), 8);
+        assert_eq!(fillers[0].0, 0);
+        assert_eq!(fillers[7].0, 7);
+
+        let matches = surface.search("needle", 10).expect("valid pattern");
+        assert_eq!(matches.len(), 1);
+        let (start_line, start_col, end_line, end_col) = matches[0];
+        assert_eq!(start_line as usize, surface.history_size() + 4);
+        assert_eq!(start_col, 0);
+        assert_eq!(end_line, start_line);
+        assert_eq!(end_col, 5);
+
+        assert_eq!(surface.search("filler", 3).unwrap().len(), 3);
+        assert!(surface.search("[", 10).is_none());
     }
 
     // OSC 9;4 (ConEmu progress) must reach the embedder as an action:
