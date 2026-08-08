@@ -304,6 +304,33 @@ fn kitty_flags(modes: rio_vt::ansi::KeyboardModes) -> key::KittyFlags {
     flags
 }
 
+/// Scheme-prefixed URL pattern for plain-text link detection. The engine
+/// is regex-automata (no lookbehind), so trailing prose punctuation is
+/// trimmed afterwards by `trailing_url_punctuation`.
+const URL_REGEX: &str = "(?:https://|http://|mailto:|ftp://|file:|ssh://|ssh:|git://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{}\\^⟨⟩`]+";
+
+/// How many trailing characters of a URL match are prose punctuation
+/// rather than URL: `.,;:!?'"` always, and a closing paren/bracket only
+/// when its opener is not part of the match.
+fn trailing_url_punctuation(text: &str) -> usize {
+    let mut len = text.len();
+    let mut trimmed = 0;
+    while let Some(c) = text[..len].chars().last() {
+        let cut = match c {
+            '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '"' => true,
+            ')' => text[..len].matches('(').count() < text[..len].matches(')').count(),
+            ']' => text[..len].matches('[').count() < text[..len].matches(']').count(),
+            _ => false,
+        };
+        if !cut {
+            break;
+        }
+        len -= c.len_utf8();
+        trimmed += 1;
+    }
+    trimmed
+}
+
 /// Emit `\x1b[0m` plus the minimal SGR codes reproducing `style`.
 fn serialize_style(out: &mut String, style: &Style) {
     use std::fmt::Write as _;
@@ -391,6 +418,9 @@ pub struct Surface {
     id: SurfaceId,
     alt_is_meta: std::sync::atomic::AtomicBool,
     terminal: Arc<FairMutex<Crosswords<Listener>>>,
+    /// Compiled URL detector, built on first hover. Hit-testing runs per
+    /// pointer event, so the four lazy DFAs must not be rebuilt each time.
+    url_regex: std::sync::Mutex<Option<rio_vt::crosswords::search::RegexSearch>>,
     /// Non-pty transport: `write` hands the bytes to the delegate instead
     /// of a PTY channel.
     #[cfg(not(feature = "pty"))]
@@ -472,6 +502,7 @@ impl Surface {
                 // Terminals default alt to meta; the host may override it.
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
                 terminal,
+                url_regex: std::sync::Mutex::new(None),
                 delegate: engine.delegate.clone(),
             })
         }
@@ -549,6 +580,7 @@ impl Surface {
                 // Terminals default alt to meta; the host may override it.
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
                 terminal,
+                url_regex: std::sync::Mutex::new(None),
                 channel,
                 #[cfg(not(target_os = "windows"))]
                 shell_pid,
@@ -974,6 +1006,101 @@ impl Surface {
         processor.advance(&mut *term, bytes);
     }
 
+    /// Plain-text URL under a viewport cell, with the run to underline on
+    /// the hovered row: `(uri, start_col, end_col)`. Detection is regex
+    /// over the logical (unwrapped) line containing the cell, so wrapped
+    /// URLs resolve whole. Hit-test shaped: call it from pointer events;
+    /// OSC 8 links should be checked first, they are explicit.
+    pub fn url_at(&self, viewport_line: u16, col: u16) -> Option<(String, u16, u16)> {
+        use rio_vt::crosswords::pos::Direction;
+        use rio_vt::crosswords::search::{RegexIter, RegexSearch};
+        use rio_vt::crosswords::square::CellFlags;
+
+        // A fully wrapped scrollback (one endless logical line) must not
+        // turn a hover into a whole-buffer regex scan.
+        const MAX_WRAP_SCAN: i32 = 100;
+
+        let mut guard = self.url_regex.lock().unwrap();
+        let regex = match guard.as_mut() {
+            Some(regex) => regex,
+            None => guard.insert(
+                RegexSearch::new(URL_REGEX).expect("static URL pattern compiles"),
+            ),
+        };
+
+        let term = self.terminal.lock();
+        let cols = term.columns();
+        let rows = term.screen_lines() as i32;
+        let history = term.history_size() as i32;
+        let display_offset = term.display_offset() as i32;
+        let grid_line = viewport_line as i32 - display_offset;
+        if grid_line >= rows || col as usize >= cols {
+            return None;
+        }
+        let point = Pos::new(Line(grid_line), PosColumn(col as usize));
+
+        let wraps = |line: i32| {
+            term.grid[Line(line)][PosColumn(cols - 1)]
+                .cell_flags()
+                .contains(CellFlags::WRAPLINE)
+        };
+        let mut start_line = grid_line;
+        while start_line > -history
+            && grid_line - start_line < MAX_WRAP_SCAN
+            && wraps(start_line - 1)
+        {
+            start_line -= 1;
+        }
+        let mut end_line = grid_line;
+        while end_line < rows - 1
+            && end_line - grid_line < MAX_WRAP_SCAN
+            && wraps(end_line)
+        {
+            end_line += 1;
+        }
+
+        let from = Pos::new(Line(start_line), PosColumn(0));
+        let to = Pos::new(Line(end_line), PosColumn(cols - 1));
+        for m in RegexIter::new(from, to, Direction::Right, &term, regex) {
+            let (s, mut e) = (*m.start(), *m.end());
+            if point < s {
+                break;
+            }
+            let text = term.bounds_to_string(s, e);
+            // The pattern is greedy about trailing punctuation; prose is
+            // not: `https://rio.dev,` links without the comma, and a paren
+            // only belongs to the URL when it was opened inside it.
+            let trim = trailing_url_punctuation(&text);
+            for _ in 0..trim {
+                if e.col.0 == 0 {
+                    e.row.0 -= 1;
+                    e.col = PosColumn(cols - 1);
+                } else {
+                    e.col.0 -= 1;
+                }
+            }
+            if point > e {
+                continue;
+            }
+            let uri: String = {
+                let chars = text.chars().count() - trim;
+                text.chars().take(chars).collect()
+            };
+            let start_col = if s.row.0 < grid_line {
+                0
+            } else {
+                s.col.0 as u16
+            };
+            let end_col = if e.row.0 > grid_line {
+                (cols - 1) as u16
+            } else {
+                e.col.0 as u16
+            };
+            return Some((uri, start_col, end_col));
+        }
+        None
+    }
+
     /// Dump the whole buffer (scrollback + screen) to plain text, so a
     /// frontend can persist it and replay it as inert scrollback on
     /// restore. Trailing blank rows are trimmed by `bounds_to_string`.
@@ -1258,6 +1385,43 @@ mod tests {
 
         assert_eq!(surface.search("filler", 3).unwrap().len(), 3);
         assert!(surface.search("[", 10).is_none());
+    }
+
+    // Plain-text URLs resolve under the pointer, prose punctuation stays
+    // prose, and non-link text misses.
+    #[test]
+    fn urls_resolve_under_the_pointer() {
+        let surface = quiet_surface(60, 5);
+        surface.inject_output(b"see https://rio.dev, or (http://a.b/c).");
+
+        let (uri, start, end) = surface.url_at(0, 10).expect("hover on the url");
+        assert_eq!(uri, "https://rio.dev");
+        assert_eq!((start, end), (4, 18));
+        // The comma after the URL is prose, not link.
+        assert!(surface.url_at(0, 19).is_none());
+        // Parenthesized URL: closing paren and period trimmed.
+        let (uri, start, end) = surface.url_at(0, 30).expect("hover in parens");
+        assert_eq!(uri, "http://a.b/c");
+        assert_eq!((start, end), (25, 36));
+        // Plain words miss.
+        assert!(surface.url_at(0, 0).is_none());
+    }
+
+    // A URL that wraps across rows resolves whole from either row, with
+    // per-row run bounds for hover underlining.
+    #[test]
+    fn urls_span_wrapped_rows() {
+        let surface = quiet_surface(20, 5);
+        surface.inject_output(b"x https://example.com/abcdef end");
+
+        let (uri, start, end) = surface.url_at(1, 3).expect("hover on second row");
+        assert_eq!(uri, "https://example.com/abcdef");
+        assert_eq!((start, end), (0, 7));
+        let (uri, start, end) = surface.url_at(0, 5).expect("hover on first row");
+        assert_eq!(uri, "https://example.com/abcdef");
+        assert_eq!((start, end), (2, 19));
+        // Past the URL on the second row is plain text again.
+        assert!(surface.url_at(1, 10).is_none());
     }
 
     // OSC 9;4 (ConEmu progress) must reach the embedder as an action:
