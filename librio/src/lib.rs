@@ -1,3 +1,4 @@
+#[cfg(feature = "pty")]
 pub mod capi;
 
 pub mod key;
@@ -19,17 +20,23 @@ pub use rio_vt::crosswords::pos::Side;
 use rio_vt::crosswords::pos::{Column as PosColumn, Line, Pos};
 use rio_vt::crosswords::{Crosswords, Mode};
 use rio_vt::event::sync::FairMutex;
+#[cfg(feature = "pty")]
+use rio_vt::event::Msg;
+#[cfg(feature = "pty")]
 use rio_vt::event::WindowSize;
-use rio_vt::event::{EventListener, Msg, RioEvent, WindowId};
+use rio_vt::event::{EventListener, RioEvent, WindowId};
+#[cfg(feature = "pty")]
 use rio_vt::performer::Machine;
 use rio_vt::selection::{Selection, SelectionType};
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-#[cfg(target_os = "windows")]
+use std::sync::Arc;
+#[cfg(feature = "pty")]
+use std::sync::Mutex;
+#[cfg(all(feature = "pty", target_os = "windows"))]
 use teletypewriter::create_pty;
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(feature = "pty", not(target_os = "windows")))]
 use teletypewriter::create_pty_with_spawn;
 
 pub type SurfaceId = usize;
@@ -120,17 +127,35 @@ pub enum Action {
     },
 }
 
-pub trait SurfaceDelegate: Send + Sync + 'static {
+/// `Send + Sync` everywhere threads exist. On wasm there is one thread and
+/// delegates hold JS callbacks (which are `!Send`), so the bound relaxes to
+/// nothing rather than forcing unsafe impls on the embedder.
+#[cfg(not(target_arch = "wasm32"))]
+pub trait MaybeSendSync: Send + Sync {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Send + Sync> MaybeSendSync for T {}
+#[cfg(target_arch = "wasm32")]
+pub trait MaybeSendSync {}
+#[cfg(target_arch = "wasm32")]
+impl<T> MaybeSendSync for T {}
+
+pub trait SurfaceDelegate: MaybeSendSync + 'static {
     fn wakeup(&self, surface: SurfaceId);
     fn action(&self, _surface: SurfaceId, _action: Action) {}
     fn clipboard_write(&self, _surface: SurfaceId, _kind: ClipboardType, _text: String) {}
     fn close_surface(&self, _surface: SurfaceId) {}
+    /// Bytes the terminal wants delivered to the child process. Only called
+    /// on non-`pty` builds, where the host owns the transport (a WebSocket
+    /// to a real shell, an in-page demo interpreter, ...); with a PTY the
+    /// bytes go straight to it and this never fires.
+    fn output(&self, _surface: SurfaceId, _bytes: &[u8]) {}
 }
 
 #[derive(Clone)]
 pub(crate) struct Listener {
     surface_id: SurfaceId,
     delegate: Arc<dyn SurfaceDelegate>,
+    #[cfg(feature = "pty")]
     pty_writer: Arc<Mutex<Option<corcovado::channel::Sender<Msg>>>>,
 }
 
@@ -171,9 +196,12 @@ impl Listener {
                 self.delegate.clipboard_write(self.surface_id, kind, text);
             }
             RioEvent::PtyWrite(_, text) => {
+                #[cfg(feature = "pty")]
                 if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
                     let _ = channel.send(Msg::Input(Cow::Owned(text.into_bytes())));
                 }
+                #[cfg(not(feature = "pty"))]
+                self.delegate.output(self.surface_id, text.as_bytes());
             }
             RioEvent::CloseTerminal(_) | RioEvent::Exit => {
                 self.delegate.close_surface(self.surface_id);
@@ -280,11 +308,17 @@ pub struct Surface {
     id: SurfaceId,
     alt_is_meta: std::sync::atomic::AtomicBool,
     terminal: Arc<FairMutex<Crosswords<Listener>>>,
+    /// Non-pty transport: `write` hands the bytes to the delegate instead
+    /// of a PTY channel.
+    #[cfg(not(feature = "pty"))]
+    delegate: Arc<dyn SurfaceDelegate>,
+    #[cfg(feature = "pty")]
     channel: corcovado::channel::Sender<Msg>,
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(all(feature = "pty", not(target_os = "windows")))]
     shell_pid: u32,
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(all(feature = "pty", not(target_os = "windows")))]
     main_fd: std::os::fd::RawFd,
+    #[cfg(feature = "pty")]
     _io_thread: std::thread::JoinHandle<(
         Machine<teletypewriter::Pty, Listener>,
         rio_vt::performer::State,
@@ -320,10 +354,12 @@ impl Surface {
         desc: &SurfaceDesc,
     ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
         let id = engine.next_surface_id.fetch_add(1, Ordering::SeqCst);
+        #[cfg(feature = "pty")]
         let pty_writer = Arc::new(Mutex::new(None));
         let listener = Listener {
             surface_id: id,
             delegate: engine.delegate.clone(),
+            #[cfg(feature = "pty")]
             pty_writer: pty_writer.clone(),
         };
 
@@ -340,86 +376,104 @@ impl Surface {
             id,
             desc.scrollback,
         );
+        // On wasm the delegate (and so the whole graph) is single-threaded
+        // by design; Arc stays because the pty build shares it with the IO
+        // thread and the API is one type on every target.
+        #[allow(clippy::arc_with_non_send_sync)]
         let terminal = Arc::new(FairMutex::new(terminal));
 
-        // No shell in the descriptor means "whatever the user's default is",
-        // which teletypewriter resolves (and starts as a login shell).
-        let shell = desc.shell.as_deref();
+        #[cfg(not(feature = "pty"))]
+        {
+            Ok(Surface {
+                id,
+                // Terminals default alt to meta; the host may override it.
+                alt_is_meta: std::sync::atomic::AtomicBool::new(true),
+                terminal,
+                delegate: engine.delegate.clone(),
+            })
+        }
 
-        // The child inherits the host process's environment, which for GUI
-        // hosts has no TERM at all (or a stale one). Resolve it the way rio
-        // does: prefer rio's terminfo when it's installed, else fall back to
-        // the universally known xterm-256color so local prompts and remote
-        // ssh sessions both keep working.
-        #[cfg(not(target_os = "windows"))]
-        let env = {
-            let terminfo = match (
-                teletypewriter::terminfo_exists("xterm-rio"),
-                teletypewriter::terminfo_exists("rio"),
-            ) {
-                (true, _) => "xterm-rio",
-                (false, true) => "rio",
-                (false, false) => "xterm-256color",
+        #[cfg(feature = "pty")]
+        {
+            // No shell in the descriptor means "whatever the user's default is",
+            // which teletypewriter resolves (and starts as a login shell).
+            let shell = desc.shell.as_deref();
+
+            // The child inherits the host process's environment, which for GUI
+            // hosts has no TERM at all (or a stale one). Resolve it the way rio
+            // does: prefer rio's terminfo when it's installed, else fall back to
+            // the universally known xterm-256color so local prompts and remote
+            // ssh sessions both keep working.
+            #[cfg(not(target_os = "windows"))]
+            let env = {
+                let terminfo = match (
+                    teletypewriter::terminfo_exists("xterm-rio"),
+                    teletypewriter::terminfo_exists("rio"),
+                ) {
+                    (true, _) => "xterm-rio",
+                    (false, true) => "rio",
+                    (false, false) => "xterm-256color",
+                };
+                Some(vec![
+                    ("TERM".to_string(), terminfo.to_string()),
+                    ("COLORTERM".to_string(), "truecolor".to_string()),
+                ])
             };
-            Some(vec![
-                ("TERM".to_string(), terminfo.to_string()),
-                ("COLORTERM".to_string(), "truecolor".to_string()),
-            ])
-        };
 
-        #[cfg(not(target_os = "windows"))]
-        let pty = create_pty_with_spawn(
-            shell,
-            desc.args.clone(),
-            &desc.working_dir,
-            env,
-            desc.cols,
-            desc.rows,
-            desc.pixel_width,
-            desc.pixel_height,
-        )
-        .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
-
-        #[cfg(target_os = "windows")]
-        let pty = create_pty(
-            shell,
-            desc.args.clone(),
-            &desc.working_dir,
-            None,
-            desc.cols,
-            desc.rows,
-        )
-        .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
-
-        #[cfg(not(target_os = "windows"))]
-        let shell_pid = *pty.child.pid.clone() as u32;
-        #[cfg(not(target_os = "windows"))]
-        let main_fd = *pty.child.id;
-
-        let machine = Machine::new(
-            Arc::clone(&terminal),
-            pty,
-            listener,
-            WindowId::from(id as u64),
-            id,
-        )
-        .map_err(|err| std::io::Error::other(err.to_string()))?;
-        let channel = machine.channel();
-        *pty_writer.lock().unwrap() = Some(channel.clone());
-        let io_thread = machine.spawn();
-
-        Ok(Surface {
-            id,
-            // Terminals default alt to meta; the host may override it.
-            alt_is_meta: std::sync::atomic::AtomicBool::new(true),
-            terminal,
-            channel,
             #[cfg(not(target_os = "windows"))]
-            shell_pid,
+            let pty = create_pty_with_spawn(
+                shell,
+                desc.args.clone(),
+                &desc.working_dir,
+                env,
+                desc.cols,
+                desc.rows,
+                desc.pixel_width,
+                desc.pixel_height,
+            )
+            .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
+
+            #[cfg(target_os = "windows")]
+            let pty = create_pty(
+                shell,
+                desc.args.clone(),
+                &desc.working_dir,
+                None,
+                desc.cols,
+                desc.rows,
+            )
+            .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
+
             #[cfg(not(target_os = "windows"))]
-            main_fd,
-            _io_thread: io_thread,
-        })
+            let shell_pid = *pty.child.pid.clone() as u32;
+            #[cfg(not(target_os = "windows"))]
+            let main_fd = *pty.child.id;
+
+            let machine = Machine::new(
+                Arc::clone(&terminal),
+                pty,
+                listener,
+                WindowId::from(id as u64),
+                id,
+            )
+            .map_err(|err| std::io::Error::other(err.to_string()))?;
+            let channel = machine.channel();
+            *pty_writer.lock().unwrap() = Some(channel.clone());
+            let io_thread = machine.spawn();
+
+            Ok(Surface {
+                id,
+                // Terminals default alt to meta; the host may override it.
+                alt_is_meta: std::sync::atomic::AtomicBool::new(true),
+                terminal,
+                channel,
+                #[cfg(not(target_os = "windows"))]
+                shell_pid,
+                #[cfg(not(target_os = "windows"))]
+                main_fd,
+                _io_thread: io_thread,
+            })
+        }
     }
 
     pub fn id(&self) -> SurfaceId {
@@ -440,7 +494,10 @@ impl Surface {
                 term.selection = None;
             }
         }
+        #[cfg(feature = "pty")]
         let _ = self.channel.send(Msg::Input(bytes.into()));
+        #[cfg(not(feature = "pty"))]
+        self.delegate.output(self.id, &bytes.into());
     }
 
     pub fn text(&self, text: &str) {
@@ -485,6 +542,7 @@ impl Surface {
             pixel_width,
             pixel_height,
         ));
+        #[cfg(feature = "pty")]
         let _ = self.channel.send(Msg::Resize(WindowSize {
             rows,
             cols,
@@ -626,13 +684,13 @@ impl Surface {
         if reported.is_some() {
             return reported;
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(all(feature = "pty", not(target_os = "windows")))]
         {
             teletypewriter::foreground_process_path(self.main_fd, self.shell_pid)
                 .ok()
                 .map(|path| path.to_string_lossy().into_owned())
         }
-        #[cfg(target_os = "windows")]
+        #[cfg(any(not(feature = "pty"), target_os = "windows"))]
         None
     }
 
@@ -643,6 +701,7 @@ impl Surface {
     /// right now: `claude`, `vim`, or the shell itself), from the kernel.
     /// Hosts use it to tell what a pane is running without any shell
     /// integration.
+    #[cfg(feature = "pty")]
     pub fn foreground_process_name(&self) -> String {
         teletypewriter::foreground_process_name(self.main_fd, self.shell_pid)
     }
@@ -678,6 +737,7 @@ impl Surface {
     }
 }
 
+#[cfg(feature = "pty")]
 impl Drop for Surface {
     fn drop(&mut self) {
         let _ = self.channel.send(Msg::Shutdown);
@@ -686,7 +746,7 @@ impl Drop for Surface {
     }
 }
 
-#[cfg(all(test, not(target_os = "windows")))]
+#[cfg(all(test, feature = "pty", not(target_os = "windows")))]
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;

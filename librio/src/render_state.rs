@@ -78,7 +78,7 @@ pub struct RenderState {
     kitty: Vec<KittyEntry>,
     /// Baseline for image change stamps (Instants aren't representable
     /// over the C ABI; nanoseconds relative to this are).
-    epoch: std::time::Instant,
+    epoch: rio_vt::time::Instant,
 }
 
 impl RenderState {
@@ -101,7 +101,7 @@ impl RenderState {
             history_size: 0,
             alt_screen: false,
             kitty: Vec::new(),
-            epoch: std::time::Instant::now(),
+            epoch: rio_vt::time::Instant::now(),
         }
     }
 
