@@ -21,11 +21,6 @@ tracing = { workspace = true }
 iovec = { workspace = true }
 cfg-if = "0.1.9"
 
-[target.'cfg(target_os = "fuchsia")'.dependencies]
-fuchsia-zircon = "0.3.2"
-fuchsia-zircon-sys = "0.3.2"
-socket2 = "0.6.5"
-
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 

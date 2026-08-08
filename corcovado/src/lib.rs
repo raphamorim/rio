@@ -97,11 +97,6 @@
 //
 // ```
 
-#[cfg(target_os = "fuchsia")]
-use fuchsia_zircon as zircon;
-#[cfg(target_os = "fuchsia")]
-use fuchsia_zircon_sys as zircon_sys;
-
 mod event_imp;
 mod io;
 mod lazycell;
@@ -128,25 +123,13 @@ pub mod event {
 
 pub use event::Events;
 
-#[cfg(all(unix, not(target_os = "fuchsia")))]
+#[cfg(unix)]
 pub mod unix {
     //! Unix only extensions
     pub use crate::sys::unix::UnixReady;
     pub use crate::sys::EventedFd;
 }
 
-#[cfg(target_os = "fuchsia")]
-pub mod fuchsia {
-    //! Fuchsia-only extensions
-    //!
-    //! # Stability
-    //!
-    //! This module depends on the [magenta-sys crate](https://crates.io/crates/magenta-sys)
-    //! and so might introduce breaking changes, even on minor releases,
-    //! so long as that crate remains unstable.
-    pub use crate::sys::fuchsia::{zx_signals_t, FuchsiaReady};
-    pub use crate::sys::EventedHandle;
-}
 
 /// Windows-only extensions to the mio crate.
 ///
