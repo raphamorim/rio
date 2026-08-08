@@ -276,25 +276,6 @@ where
         true
     }
 
-    /// Returns a `bool` indicating whether or not the event loop should continue running.
-    #[inline]
-    fn channel_event(&mut self, token: corcovado::Token, state: &mut State) -> bool {
-        if !self.drain_recv_channel(state) {
-            return false;
-        }
-
-        self.poll
-            .reregister(
-                &self.receiver.rx,
-                token,
-                Ready::readable(),
-                PollOpt::edge() | PollOpt::oneshot(),
-            )
-            .unwrap();
-
-        true
-    }
-
     #[inline]
     fn pty_write(&mut self, state: &mut State) -> io::Result<()> {
         state.ensure_next();
@@ -339,17 +320,28 @@ where
 
             let mut tokens = (0..).map(Into::into);
 
-            let poll_opts = PollOpt::edge() | PollOpt::oneshot();
-
+            // The channel is drained to empty on every wakeup, which clears
+            // its readiness and re-arms the next edge transition, so plain
+            // edge (no oneshot, no re-registration) is enough. Level would go
+            // through the readiness queue's re-enqueue path, which is much
+            // more expensive per wakeup.
             let channel_token = tokens.next().unwrap();
             self.poll
                 .register(
                     &self.receiver.rx,
                     channel_token,
                     Ready::readable(),
-                    poll_opts,
+                    PollOpt::edge(),
                 )
                 .unwrap();
+
+            // The PTY is level-triggered: pty_read may stop before draining
+            // the fd (MAX_LOCKED_READ), which would lose an edge, and level
+            // registrations stay armed so no re-registration is needed after
+            // each event. The write interest must be dropped as soon as the
+            // write queue drains or the poll would keep waking up for the
+            // writable PTY.
+            let poll_opts = PollOpt::level();
 
             // Register TTY through EventedRW interface.
             self.pty
@@ -357,6 +349,7 @@ where
                 .unwrap();
 
             let mut events = Events::with_capacity(1024);
+            let mut last_interest = Ready::readable();
 
             'event_loop: loop {
                 // Wakeup the event loop when a synchronized update timeout was reached.
@@ -402,12 +395,8 @@ where
 
                 for event in events.iter() {
                     match event.token() {
-                        token if token == channel_token => {
-                            // In case should shutdown by message
-                            if !self.channel_event(channel_token, &mut state) {
-                                break 'event_loop;
-                            }
-                        }
+                        // Channel messages were already drained above.
+                        token if token == channel_token => (),
                         token if token == self.pty.child_event_token() => {
                             if let Some(teletypewriter::ChildEvent::Exited(status)) =
                                 self.pty.next_child_event()
@@ -482,15 +471,17 @@ where
                     }
                 }
 
-                // Register write interest if necessary.
+                // Update the PTY registration when write interest changed.
                 let mut interest = Ready::readable();
                 if state.needs_write() {
                     interest.insert(Ready::writable());
                 }
-                // Reregister with new interest.
-                self.pty
-                    .reregister(&self.poll, interest, poll_opts)
-                    .unwrap();
+                if interest != last_interest {
+                    self.pty
+                        .reregister(&self.poll, interest, poll_opts)
+                        .unwrap();
+                    last_interest = interest;
+                }
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
