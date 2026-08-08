@@ -294,6 +294,20 @@ impl RioTerm {
         self.flush();
     }
 
+    /// Paste text: newlines normalized to CR and wrapped in
+    /// bracketed-paste markers when the program enabled the mode.
+    pub fn paste(&self, text: &str) {
+        self.surface.paste(text);
+        self.flush();
+    }
+
+    /// Terminal mode bits for embedder-side input decisions: bit 0 mouse
+    /// reporting, bit 1 application cursor keys, bit 2 alternate screen,
+    /// bit 3 bracketed paste.
+    pub fn mode_bits(&self) -> u32 {
+        self.surface.mode_bits()
+    }
+
     /// A key event as the platform delivered it; librio decides what the
     /// terminal receives (kitty flags, app cursor mode, modifyOtherKeys).
     /// Tags/actions are the `KEY_*` constants. Returns true when the key

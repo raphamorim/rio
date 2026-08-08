@@ -504,6 +504,41 @@ impl Surface {
         self.write(text.as_bytes().to_vec());
     }
 
+    /// Paste text the way terminals do: newlines normalized to CR, and the
+    /// whole run wrapped in bracketed-paste markers when the program asked
+    /// for them (so shells and editors can treat it as one atomic paste).
+    pub fn paste(&self, text: &str) {
+        let normalized = text.replace("\r\n", "\r").replace('\n', "\r");
+        let bracketed = self.terminal.lock().mode().contains(Mode::BRACKETED_PASTE);
+        if bracketed {
+            self.write(format!("\x1b[200~{normalized}\x1b[201~").into_bytes());
+        } else {
+            self.write(normalized.into_bytes());
+        }
+    }
+
+    /// A stable, C-friendly view of the terminal modes an embedder needs
+    /// for input decisions it makes on its own (touch scrolling, key bars).
+    /// Bit 0 mouse reporting, bit 1 application cursor keys, bit 2
+    /// alternate screen, bit 3 bracketed paste.
+    pub fn mode_bits(&self) -> u32 {
+        let mode = self.terminal.lock().mode();
+        let mut bits = 0;
+        if mode.intersects(Mode::MOUSE_MODE) {
+            bits |= 1;
+        }
+        if mode.contains(Mode::APP_CURSOR) {
+            bits |= 1 << 1;
+        }
+        if mode.contains(Mode::ALT_SCREEN) {
+            bits |= 1 << 2;
+        }
+        if mode.contains(Mode::BRACKETED_PASTE) {
+            bits |= 1 << 3;
+        }
+        bits
+    }
+
     /// Whether alt acts as meta, prefixing with ESC, instead of letting the
     /// platform's text through. See [`key::EncodeContext::alt_is_meta`].
     pub fn set_alt_is_meta(&self, enabled: bool) {
@@ -870,6 +905,25 @@ mod tests {
             text.starts_with('A'),
             "backwards drag should include column 0, got {text:?}"
         );
+    }
+
+    // Paste wraps in bracketed-paste markers exactly when the program
+    // turned the mode on, and newlines never reach the shell as LF.
+    #[test]
+    fn paste_brackets_when_the_program_asks() {
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate);
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+
+        assert_eq!(surface.mode_bits() & (1 << 3), 0);
+        surface.inject_output(b"\x1b[?2004h");
+        assert_eq!(surface.mode_bits() & (1 << 3), 1 << 3);
+        surface.inject_output(b"\x1b[?1h\x1b[?1049h\x1b[?1000h");
+        assert_eq!(surface.mode_bits(), 0b1111);
     }
 
     // OSC 9;4 (ConEmu progress) must reach the embedder as an action:
