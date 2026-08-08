@@ -465,6 +465,12 @@ impl RioTerm {
         self.state.cursor().1 as u32
     }
 
+    /// False when the program hid the cursor (`CSI ?25l`) or the view is
+    /// scrolled into history; renderers skip painting it then.
+    pub fn cursor_visible(&self) -> bool {
+        self.state.cursor_visible()
+    }
+
     pub fn display_offset(&self) -> u32 {
         self.state.display_offset() as u32
     }
