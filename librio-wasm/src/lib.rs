@@ -582,6 +582,23 @@ impl RioTerm {
         }
     }
 
+    /// Plain-text URL under a viewport cell (regex detection over the
+    /// logical line, so wrapped URLs resolve whole). Hit-test shaped.
+    pub fn url_at(&self, line: u32, col: u32) -> Option<String> {
+        self.surface
+            .url_at(line as u16, col as u16)
+            .map(|(uri, _, _)| uri)
+    }
+
+    /// `[start_col, end_col]` of the detected URL's run on the hovered
+    /// row; empty when there is none.
+    pub fn url_run(&self, line: u32, col: u32) -> Vec<u32> {
+        match self.surface.url_at(line as u16, col as u16) {
+            Some((_, start, end)) => vec![start as u32, end as u32],
+            None => Vec::new(),
+        }
+    }
+
     // ------------------------------------------------------ kitty images
 
     pub fn kitty_count(&self) -> u32 {
