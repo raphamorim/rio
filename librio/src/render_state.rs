@@ -6,6 +6,7 @@ use rio_vt::ansi::graphics::{
 use rio_vt::ansi::kitty_virtual::{
     compute_run_geometry, IncompletePlacement, PlaceholderRun, PLACEHOLDER,
 };
+use rio_vt::ansi::CursorShape;
 use rio_vt::config::colors::{AnsiColor, ColorRgb};
 use rio_vt::crosswords::grid::row::Row;
 use rio_vt::crosswords::grid::Dimensions;
@@ -68,6 +69,7 @@ pub struct RenderState {
     columns: usize,
     cursor_line: usize,
     cursor_column: usize,
+    cursor_visible: bool,
     display_offset: usize,
     selection: Option<ViewportSelection>,
     history_size: i64,
@@ -96,6 +98,7 @@ impl RenderState {
             columns,
             cursor_line: 0,
             cursor_column: 0,
+            cursor_visible: true,
             display_offset: 0,
             selection: None,
             history_size: 0,
@@ -150,6 +153,9 @@ impl RenderState {
         let cursor = term.cursor();
         self.cursor_line = cursor.pos.row.0.max(0) as usize;
         self.cursor_column = cursor.pos.col.0;
+        // Hidden covers both DECTCEM (CSI ?25l) and a scrolled viewport;
+        // renderers must not paint a cursor in either case.
+        self.cursor_visible = cursor.content != CursorShape::Hidden;
         self.selection = term
             .selection
             .as_ref()
@@ -238,6 +244,12 @@ impl RenderState {
 
     pub fn cursor(&self) -> (usize, usize) {
         (self.cursor_line, self.cursor_column)
+    }
+
+    /// False when the program hid the cursor (DECTCEM, `CSI ?25l`) or the
+    /// view is scrolled into history; renderers skip painting it then.
+    pub fn cursor_visible(&self) -> bool {
+        self.cursor_visible
     }
 
     pub fn display_offset(&self) -> usize {

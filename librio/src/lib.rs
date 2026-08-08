@@ -1387,6 +1387,35 @@ mod tests {
         assert!(surface.search("[", 10).is_none());
     }
 
+    // DECTCEM and a scrolled viewport both hide the cursor from
+    // renderers; showing it again restores visibility.
+    #[test]
+    fn cursor_visibility_tracks_dectcem_and_scroll() {
+        let surface = quiet_surface(40, 5);
+        let mut state = RenderState::new(&surface);
+
+        state.update();
+        assert!(state.cursor_visible());
+
+        surface.inject_output(b"\x1b[?25l");
+        state.update();
+        assert!(!state.cursor_visible());
+
+        surface.inject_output(b"\x1b[?25h");
+        state.update();
+        assert!(state.cursor_visible());
+
+        for i in 0..20 {
+            surface.inject_output(format!("line {i}\r\n").as_bytes());
+        }
+        surface.scroll(5);
+        state.update();
+        assert!(!state.cursor_visible(), "scrolled view has no live cursor");
+        surface.scroll(-100);
+        state.update();
+        assert!(state.cursor_visible());
+    }
+
     // Plain-text URLs resolve under the pointer, prose punctuation stays
     // prose, and non-link text misses.
     #[test]
