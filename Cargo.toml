@@ -12,6 +12,7 @@ members = [
     "rio-notifier",
     "frontends/rioterm",
     "librio",
+    "librio-wasm",
 ]
 resolver = "2"
 

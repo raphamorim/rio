@@ -1,0 +1,23 @@
+[package]
+name = "librio-wasm"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+repository = "https://github.com/raphamorim/rio"
+description = "librio compiled to WebAssembly: the JS ABI behind the rioterm npm package"
+readme = "README.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# rustc emits bulk-memory/sign-ext by default; wasm-opt must accept them.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext"]
+
+[dependencies]
+librio = { path = "../librio", default-features = false }
+wasm-bindgen = "0.2.106"
+js-sys = "0.3.83"
