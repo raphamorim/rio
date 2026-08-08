@@ -1186,6 +1186,7 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // Scroll between origin and bottom
+        self.grid.sync_template_style();
         self.grid.scroll_down(&region, lines);
         self.mark_fully_damaged();
         // Partial-region scrolls move grid-plane images with their
@@ -1213,6 +1214,7 @@ impl<U: EventListener> Crosswords<U> {
                 .and_then(|s| s.rotate(&self.grid, &region, lines as i32));
         }
 
+        self.grid.sync_template_style();
         self.grid.scroll_up(&region, lines);
 
         // Scroll vi mode cursor.
@@ -1430,6 +1432,7 @@ impl<U: EventListener> Crosswords<U> {
     #[inline(always)]
     pub fn write_at_cursor(&mut self, c: char) {
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
+        self.grid.sync_template_style();
         let template = self.cell_template();
         self.write_cell(c, template);
     }
@@ -2044,6 +2047,7 @@ impl<U: EventListener> Crosswords<U> {
         self.set_scrolling_region(1, None);
 
         // Clear grid.
+        self.grid.sync_template_style();
         self.grid.reset_region(..);
         self.mark_fully_damaged();
     }
@@ -2112,6 +2116,7 @@ impl<U: EventListener> Crosswords<U> {
             self.grid.saved_cursor = self.grid.cursor.clone();
 
             // Reset alternate screen contents.
+            self.inactive_grid.sync_template_style();
             self.inactive_grid.reset_region(..);
 
             // The alt screen starts blank: sixel/iTerm2 placements
@@ -2879,7 +2884,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let end = std::cmp::min(start + count, Column(self.grid.columns()));
 
         // Cleared cells have current background color set.
-        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        let bg = self.grid.template_style().bg;
         let blank = self.grid.blank_with_bg(bg);
         let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
@@ -2896,7 +2901,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn delete_chars(&mut self, count: usize) {
         let columns = self.grid.columns();
-        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        let bg = self.grid.template_style().bg;
         let blank = self.grid.blank_with_bg(bg);
 
         // Ensure deleting within terminal bounds.
@@ -2942,7 +2947,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn insert_blank(&mut self, count: usize) {
-        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        let bg = self.grid.template_style().bg;
         let blank = self.grid.blank_with_bg(bg);
 
         // Ensure inserting within terminal bounds
@@ -3348,6 +3353,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             return;
         }
 
+        self.grid.sync_template_style();
         let template = self.cell_template();
         let template_has_extras = template.extras_id().is_some();
 
@@ -3433,6 +3439,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // The cursor template (colors + flags) is constant across a printable
         // run, and ASCII needs no charset map — build the cell template once
         // and write each cell as a single packed store.
+        self.grid.sync_template_style();
         let template = self.cell_template();
         // Two per-run invariants, hoisted out of the cell loop below: whether
         // any image placement could clip a cell, and whether the template
@@ -3656,7 +3663,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn clear_screen(&mut self, mode: ClearMode) {
-        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        self.grid.sync_template_style();
+        let bg = self.grid.template_style().bg;
         let blank = self.grid.blank_with_bg(bg);
 
         let screen_lines = self.grid.screen_lines();
@@ -3996,7 +4004,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn clear_line(&mut self, mode: LineClearMode) {
-        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        let bg = self.grid.template_style().bg;
         let blank = self.grid.blank_with_bg(bg);
         let point = self.grid.cursor.pos;
         let should_wrap = self.grid.cursor.should_wrap;

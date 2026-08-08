@@ -668,25 +668,43 @@ impl Grid<Square> {
     #[inline]
     pub fn set_template_style_id(&mut self, id: StyleId) {
         self.cursor.template.set_style_id(id);
+        self.cursor.pending_style = self.style_set.get(id);
+        self.cursor.style_dirty = false;
     }
 
-    /// Mutate the cursor template's style by recomputing-and-reinterning.
-    /// Used by the SGR handler: `cursor.template` doesn't carry inline
-    /// fg/bg/flags anymore, so updates have to round-trip through the
-    /// style table.
+    /// Mutate the cursor's SGR state. Deliberately does NOT touch the
+    /// style table: a sequence like `CSI 1;38;2;r;g;b m` mutates the
+    /// pending style twice and interns nothing; the id is refreshed once,
+    /// lazily, by [`Self::sync_template_style`] when a cell is written.
     #[inline]
     pub fn update_template_style(&mut self, f: impl FnOnce(&mut Style)) {
-        let mut s = self.style_set.get(self.cursor.template.style_id());
-        f(&mut s);
-        let id = self.style_set.intern(s);
-        self.cursor.template.set_style_id(id);
+        f(&mut self.cursor.pending_style);
+        self.cursor.style_dirty = true;
     }
 
     /// Set the template style by passing a fully-formed `Style`.
     #[inline]
     pub fn set_template_style(&mut self, style: Style) {
-        let id = self.style_set.intern(style);
-        self.cursor.template.set_style_id(id);
+        self.cursor.pending_style = style;
+        self.cursor.style_dirty = true;
+    }
+
+    /// The cursor's current SGR state, without touching the intern table.
+    #[inline]
+    pub fn template_style(&self) -> Style {
+        self.cursor.pending_style
+    }
+
+    /// Absorb pending SGR changes into the template's interned style id.
+    /// Must run before `cursor.template` is used as a cell (prints, fills,
+    /// scroll resets); a no-op when nothing changed.
+    #[inline]
+    pub fn sync_template_style(&mut self) {
+        if self.cursor.style_dirty {
+            let id = self.style_set.intern(self.cursor.pending_style);
+            self.cursor.template.set_style_id(id);
+            self.cursor.style_dirty = false;
+        }
     }
 
     /// Build a "blank cell with this bg color" using the default style for

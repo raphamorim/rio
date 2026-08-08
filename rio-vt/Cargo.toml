@@ -77,3 +77,10 @@ graphics = ["dep:image_rs", "rio-graphics/image", "rio-graphics/glyph"]
 x11 = ["clipboard", "copypasta/x11"]
 wayland = ["clipboard", "copypasta/wayland"]
 wgpu = ["renderer", "dep:sugarloaf", "sugarloaf/wgpu"]
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "vt_input"
+harness = false
