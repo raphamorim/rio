@@ -1092,4 +1092,3 @@ mod tests {
         assert_eq!(state.kitty_image_rgba(7, &mut buf), 16);
     }
 }
-
