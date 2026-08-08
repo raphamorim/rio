@@ -521,6 +521,34 @@ impl RioTerm {
         self.surface.dump()
     }
 
+    /// The whole buffer as a VT byte stream that reproduces content,
+    /// SGR styling, and OSC 8 hyperlinks when written into a fresh
+    /// same-width terminal.
+    pub fn serialize(&self) -> String {
+        self.surface.serialize()
+    }
+
+    /// Lines currently held in scrollback. Search coordinates are
+    /// relative to the top of this ring.
+    pub fn history_lines(&self) -> u32 {
+        self.surface.history_size() as u32
+    }
+
+    /// Regex matches across scrollback + screen, top to bottom, as flat
+    /// quads `[start_line, start_col, end_line, end_col, ...]` with lines
+    /// relative to the top of the scrollback ring. Empty on no match or
+    /// an invalid pattern.
+    pub fn search(&self, pattern: &str, max: u32) -> Vec<u32> {
+        let Some(matches) = self.surface.search(pattern, max as usize) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(matches.len() * 4);
+        for (sl, sc, el, ec) in matches {
+            out.extend_from_slice(&[sl, sc as u32, el, ec as u32]);
+        }
+        out
+    }
+
     /// Selection in viewport coordinates, `[start_line, start_col,
     /// end_line, end_col, is_block]`; empty when there is none.
     pub fn viewport_selection(&self) -> Vec<u32> {
