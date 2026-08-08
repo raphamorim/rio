@@ -307,7 +307,7 @@ fn kitty_flags(modes: rio_vt::ansi::KeyboardModes) -> key::KittyFlags {
 /// Scheme-prefixed URL pattern for plain-text link detection. The engine
 /// is regex-automata (no lookbehind), so trailing prose punctuation is
 /// trimmed afterwards by `trailing_url_punctuation`.
-const URL_REGEX: &str = "(?:https://|http://|mailto:|ftp://|file:|ssh://|ssh:|git://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{}\\^⟨⟩`]+";
+const URL_REGEX: &str = "(?:https://|http://|mailto:|ftp://|file:|ssh://|ssh:|git://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{|}\\^⟨⟩`]+";
 
 /// How many trailing characters of a URL match are prose punctuation
 /// rather than URL: `.,;:!?'"` always, and a closing paren/bracket only
@@ -1405,6 +1405,34 @@ mod tests {
         assert_eq!((start, end), (25, 36));
         // Plain words miss.
         assert!(surface.url_at(0, 0).is_none());
+    }
+
+    // A pipe ends a URL: `curl https://x.dev|jq` must not swallow the
+    // pipeline into the link.
+    #[test]
+    fn urls_stop_at_pipes() {
+        let surface = quiet_surface(60, 5);
+        surface.inject_output(b"curl https://x.dev|jq .");
+        let (uri, start, end) = surface.url_at(0, 10).expect("hover on url");
+        assert_eq!(uri, "https://x.dev");
+        assert_eq!((start, end), (5, 17));
+        assert!(surface.url_at(0, 18).is_none());
+    }
+
+    // Hit-testing takes the scroll position into account: viewport
+    // coordinates keep resolving after the view moves into history.
+    #[test]
+    fn urls_resolve_while_scrolled() {
+        let surface = quiet_surface(40, 5);
+        surface.inject_output(b"https://rio.dev/x first\r\n");
+        for i in 0..8 {
+            surface.inject_output(format!("filler {i}\r\n").as_bytes());
+        }
+        assert!(surface.url_at(0, 3).is_none(), "url is above the viewport");
+        surface.scroll(100);
+        let (uri, start, end) = surface.url_at(0, 3).expect("scrolled to top");
+        assert_eq!(uri, "https://rio.dev/x");
+        assert_eq!((start, end), (0, 16));
     }
 
     // A URL that wraps across rows resolves whole from either row, with
