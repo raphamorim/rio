@@ -295,21 +295,6 @@ impl Renderer {
             let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
 
-            let mut has_ime = false;
-            if let Some(preedit) = context.ime.preedit() {
-                if let Some(content) = preedit.text.chars().next() {
-                    context.renderable_content.cursor.content = content;
-                    context.renderable_content.cursor.is_ime_enabled = true;
-                    has_ime = true;
-                }
-            }
-
-            if !has_ime {
-                context.renderable_content.cursor.is_ime_enabled = false;
-                context.renderable_content.cursor.content =
-                    context.renderable_content.cursor.content_ref;
-            }
-
             let force_full_damage = has_active_changed || self.is_game_mode_enabled;
 
             let is_dirty = context.renderable_content.pending_update.is_dirty();

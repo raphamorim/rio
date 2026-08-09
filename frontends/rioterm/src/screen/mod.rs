@@ -264,7 +264,6 @@ impl Screen<'_> {
             content: config.cursor.shape.into(),
             content_ref: config.cursor.shape.into(),
             state: CursorState::new(config.cursor.shape.into()),
-            is_ime_enabled: false,
         };
 
         let context_manager = context::ContextManager::start(
