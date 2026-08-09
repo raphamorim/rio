@@ -1081,20 +1081,23 @@ impl WindowState {
 
     /// Make window background blurred.
     ///
-    /// Uses `ext-background-effect-v1` when available (COSMIC, GNOME),
-    /// falling back to `org_kde_kwin_blur_manager` for KDE Plasma.
+    /// Uses `ext-background-effect-v1` when available (COSMIC, KWin ≥ 6.4),
+    /// falling back to `org_kde_kwin_blur_manager` for older KDE Plasma.
     #[inline]
     pub fn set_blur(&mut self, blurred: bool) {
         if blurred && self.blur.is_none() && self.ext_background_effect.is_none() {
-            // Try ext-background-effect-v1 first (COSMIC, GNOME).
             if let Some(bg_effect_manager) = self.ext_background_effect_manager.as_ref() {
+                // The initial blur region is empty, so a region must be set
+                // explicitly. It is clipped to the surface size by the
+                // compositor, hence the i32::MAX extents.
+                let Ok(region) = Region::new(&*self.compositor) else {
+                    warn!("Failed to create wl_region, unable to change blur");
+                    return;
+                };
                 let bg_effect = bg_effect_manager
                     .get_background_effect(self.window.wl_surface(), &self.queue_handle);
-                // Set a full-surface blur region.
-                if let Ok(region) = Region::new(&*self.compositor) {
-                    region.add(0, 0, i32::MAX, i32::MAX);
-                    bg_effect.set_blur_region(Some(region.wl_region()));
-                }
+                region.add(0, 0, i32::MAX, i32::MAX);
+                bg_effect.set_blur_region(Some(region.wl_region()));
                 self.window.wl_surface().commit();
                 self.ext_background_effect = Some(bg_effect);
             } else if let Some(blur_manager) = self.blur_manager.as_ref() {
