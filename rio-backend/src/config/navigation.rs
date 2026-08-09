@@ -7,6 +7,13 @@ pub fn default_unfocused_split_opacity() -> f32 {
     0.7
 }
 
+/// macOS hides the strip for a lone tab (the native-app feel);
+/// Linux/Windows keep it, drawn as a centred title.
+#[inline]
+pub fn default_hide_if_single() -> bool {
+    cfg!(target_os = "macos")
+}
+
 #[inline]
 pub fn default_max_tab_width() -> f32 {
     240.0
@@ -143,7 +150,7 @@ pub struct Navigation {
     pub current_working_directory: bool,
     #[serde(default = "bool::default", rename = "use-terminal-title")]
     pub use_terminal_title: bool,
-    #[serde(default = "bool::default", rename = "hide-if-single")]
+    #[serde(default = "default_hide_if_single", rename = "hide-if-single")]
     pub hide_if_single: bool,
     #[serde(default = "default_bool_true", rename = "use-split")]
     pub use_split: bool,
@@ -181,7 +188,7 @@ impl Default for Navigation {
             clickable: false,
             current_working_directory: true,
             use_terminal_title: false,
-            hide_if_single: false,
+            hide_if_single: default_hide_if_single(),
             use_split: true,
             unfocused_split_opacity: default_unfocused_split_opacity(),
             unfocused_split_fill: None,
@@ -237,30 +244,45 @@ mod tests {
         navigation: Navigation,
     }
 
-    /// A single tab keeps the strip: it renders as a centred title with no
-    /// island behind it, so there is something worth showing.
+    /// The default is platform-split: macOS hides the strip for a lone
+    /// tab, Linux/Windows keep it as a centred title with no island
+    /// behind it.
     #[test]
-    fn hide_if_single_is_off_by_default() {
+    fn hide_if_single_platform_default() {
         let decoded = toml::from_str::<Root>("[navigation]\nmode = 'Tab'\n").unwrap();
-        assert!(!decoded.navigation.hide_if_single);
-        assert!(decoded.navigation.island_visible(1));
-        assert!(Navigation::default().island_visible(1));
+        assert_eq!(
+            decoded.navigation.hide_if_single,
+            cfg!(target_os = "macos")
+        );
+        assert_eq!(
+            decoded.navigation.island_visible(1),
+            !cfg!(target_os = "macos")
+        );
+        assert_eq!(
+            Navigation::default().island_visible(1),
+            !cfg!(target_os = "macos")
+        );
+        // More than one tab always shows the strip.
+        assert!(decoded.navigation.island_visible(2));
     }
 
-    /// Opting back in has to keep working, since it is the behaviour that
-    /// used to be the default.
+    /// Both explicit values must override the platform default.
     #[test]
-    fn hide_if_single_can_be_turned_back_on() {
-        let content = r#"
-            [navigation]
-            mode = 'Tab'
-            hide-if-single = true
-        "#;
+    fn hide_if_single_explicit_override() {
+        let on = toml::from_str::<Root>(
+            "[navigation]\nmode = 'Tab'\nhide-if-single = true\n",
+        )
+        .unwrap();
+        assert!(on.navigation.hide_if_single);
+        assert!(!on.navigation.island_visible(1));
+        assert!(on.navigation.island_visible(2));
 
-        let decoded = toml::from_str::<Root>(content).unwrap();
-        assert!(decoded.navigation.hide_if_single);
-        assert!(!decoded.navigation.island_visible(1));
-        assert!(decoded.navigation.island_visible(2));
+        let off = toml::from_str::<Root>(
+            "[navigation]\nmode = 'Tab'\nhide-if-single = false\n",
+        )
+        .unwrap();
+        assert!(!off.navigation.hide_if_single);
+        assert!(off.navigation.island_visible(1));
     }
 
     #[test]
