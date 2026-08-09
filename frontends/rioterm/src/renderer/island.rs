@@ -646,12 +646,13 @@ impl Island {
         }
     }
 
-    /// Render the progress bar below the island
+    /// Render the progress bar below the tab strip, or at the top when hidden.
     fn render_progress_bar(
         &mut self,
         sugarloaf: &mut Sugarloaf,
         window_width: f32,
         scale_factor: f32,
+        y_position: f32,
     ) {
         // Check for timeout first
         self.check_progress_timeout();
@@ -662,7 +663,6 @@ impl Island {
         };
 
         let width = window_width / scale_factor;
-        let y_position = ISLAND_HEIGHT;
 
         // Determine color based on state
         let color = match state {
@@ -751,7 +751,7 @@ impl Island {
             // tabs.
             self.drag = None;
             self.slide_springs.clear();
-            self.render_progress_bar(sugarloaf, window_width, scale_factor);
+            self.render_progress_bar(sugarloaf, window_width, scale_factor, 0.0);
             return;
         }
 
@@ -1035,7 +1035,7 @@ impl Island {
         }
 
         // Render the progress bar below the island
-        self.render_progress_bar(sugarloaf, window_width, scale_factor);
+        self.render_progress_bar(sugarloaf, window_width, scale_factor, ISLAND_HEIGHT);
     }
 
     /// Toggle the color picker for a given tab index
