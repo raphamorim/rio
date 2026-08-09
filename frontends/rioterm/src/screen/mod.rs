@@ -2316,8 +2316,13 @@ impl Screen<'_> {
         #[cfg(unix)]
         {
             let main_fd = *self.ctx().current().main_fd;
-            let shell_pid = &self.ctx().current().shell_pid;
-            match teletypewriter::spawn_daemon(program, args, main_fd, *shell_pid) {
+            let Some(shell_pid) = self.ctx().current().shell_pid else {
+                tracing::warn!(
+                    "Unable to launch {program}: terminal has no shell process"
+                );
+                return;
+            };
+            match teletypewriter::spawn_daemon(program, args, main_fd, shell_pid) {
                 Ok(_) => tracing::debug!("Launched {} with args {:?}", program, args),
                 Err(_) => {
                     tracing::warn!("Unable to launch {} with args {:?}", program, args)

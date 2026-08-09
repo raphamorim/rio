@@ -2068,6 +2068,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::RedrawRequested => {
+                // A platform redraw request requires a presentation even when
+                // the terminal contents have not changed. This is needed after
+                // an X11 workspace becomes visible without an Expose event.
+                route.window.screen.mark_dirty();
                 route.begin_render();
 
                 match route.path {

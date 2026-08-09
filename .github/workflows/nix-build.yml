@@ -7,6 +7,10 @@ on:
       - '**/*.rs'
       - '**/Cargo.toml'
       - '**/Cargo.lock'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'pkgRio.nix'
+      - 'misc/scripts/test-i3-workspace-redraw*.sh'
       - '.github/workflows/nix-build.yml'
   push:
     branches:
@@ -15,6 +19,10 @@ on:
       - '**/*.rs'
       - '**/Cargo.toml'
       - '**/Cargo.lock'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'pkgRio.nix'
+      - 'misc/scripts/test-i3-workspace-redraw*.sh'
       - '.github/workflows/nix-build.yml'
 
 jobs:
@@ -26,4 +34,20 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
-      - run: nix build --max-jobs auto --build-max-jobs auto --print-build-logs
+      - name: Validate flake
+        run: nix flake check --no-write-lock-file
+      - name: Build Rio
+        run: nix build --max-jobs auto --build-max-jobs auto --print-build-logs
+      - name: Build i3 redraw E2E wrapper
+        run: |
+          nix build .#i3-workspace-redraw-e2e \
+            --no-link \
+            --no-write-lock-file \
+            --print-build-logs
+      - name: Run headless i3 smoke test
+        run: |
+          nix run .#i3-workspace-redraw-e2e \
+            --no-write-lock-file \
+            -- \
+            --candidate "$PWD/result/bin/rio" \
+            --iterations 3

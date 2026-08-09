@@ -41,6 +41,39 @@
           rio = msrv;
           default = rio;
         };
+        i3WorkspaceRedrawE2EScripts = pkgs.runCommandLocal "rio-i3-workspace-redraw-e2e-scripts" {} ''
+          install -D -m 755 \
+            ${./misc/scripts/test-i3-workspace-redraw.sh} \
+            $out/test-i3-workspace-redraw.sh
+          install -D -m 755 \
+            ${./misc/scripts/test-i3-workspace-redraw-headless.sh} \
+            $out/test-i3-workspace-redraw-headless.sh
+        '';
+        i3WorkspaceRedrawE2E = pkgs.writeShellApplication {
+          name = "rio-i3-workspace-redraw-e2e";
+          runtimeInputs = with pkgs; [
+            bash
+            coreutils
+            gawk
+            gnused
+            i3
+            imagemagick
+            jq
+            xvfb-run
+            xauth
+          ];
+          text = ''
+            shopt -s nullglob
+            lavapipe_icds=(${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.*.json)
+            if (( ''${#lavapipe_icds[@]} != 1 )); then
+              printf 'expected exactly one Lavapipe ICD, found %d\n' \
+                "''${#lavapipe_icds[@]}" >&2
+              exit 2
+            fi
+            export VK_DRIVER_FILES="''${lavapipe_icds[0]}"
+            exec ${i3WorkspaceRedrawE2EScripts}/test-i3-workspace-redraw-headless.sh "$@"
+          '';
+        };
       in {
         formatter = pkgs.alejandra;
         _module.args.pkgs = import inputs.nixpkgs {
@@ -51,16 +84,26 @@
         # Create overlay to override `rio` with this flake's default
         overlayAttrs = {inherit (self'.packages) rio;};
         packages =
-          lib.mapAttrs' (
-            k: v: {
-              name =
-                if builtins.elem k ["rio" "default"]
-                then k
-                else "rio-${k}";
-              value = pkgs.callPackage ./pkgRio.nix {rust-toolchain = v;};
-            }
-          )
-          toolchains;
+          (lib.mapAttrs' (
+              k: v: {
+                name =
+                  if builtins.elem k ["rio" "default"]
+                  then k
+                  else "rio-${k}";
+                value = pkgs.callPackage ./pkgRio.nix {rust-toolchain = v;};
+              }
+            )
+            toolchains)
+          // lib.optionalAttrs pkgs.stdenv.isLinux {
+            i3-workspace-redraw-e2e = i3WorkspaceRedrawE2E;
+          };
+        apps = lib.optionalAttrs pkgs.stdenv.isLinux {
+          i3-workspace-redraw-e2e = {
+            type = "app";
+            program = lib.getExe i3WorkspaceRedrawE2E;
+            meta.description = "Run the headless i3 workspace redraw E2E test";
+          };
+        };
         # Different devshells for different rust versions
         devShells = lib.mapAttrs (_: v: mkDevShell v) toolchains;
       };
