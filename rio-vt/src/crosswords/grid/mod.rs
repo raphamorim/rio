@@ -426,8 +426,11 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         // Mark every row in the region dirty. Reset rows above already
         // got `dirty = true` from `Row::reset`; the swap/rotate'd ones
         // still have whatever bit they carried in via the source line.
-        for i in (region.start.0..region.end.0).map(Line::from) {
-            self.raw[i].dirty = true;
+        // Full-screen scrolls skip this; the caller marks full damage,
+        // and the snapshot's full path copies rows regardless of the bit.
+        if region.start.0 != 0 || region.end.0 as usize != self.screen_lines() {
+            self.raw
+                .mark_lines_dirty(region.start, (region.end.0 - region.start.0) as usize);
         }
     }
 
@@ -473,7 +476,7 @@ impl<T> Grid<T> {
     /// Reset a visible region within the grid.
     pub fn reset_region<R: RangeBounds<Line>>(&mut self, bounds: R)
     where
-        T: GridSquare + Clone + Default,
+        T: GridSquare + Clone + Default + PartialEq,
     {
         let start = match bounds.start_bound() {
             Bound::Included(line) => *line,
@@ -579,6 +582,25 @@ use crate::crosswords::square::Square;
 use crate::crosswords::style::{Style, StyleId};
 
 impl Grid<Square> {
+    /// The full text of the cell at `pos`: its base character followed by any
+    /// zero-width marks (combining accents, ZWJ joiners, variation selectors).
+    ///
+    /// Prefer this over [`Square::c`], which returns the base character alone
+    /// and so drops the marks. Reading the marks by hand also needs a guard
+    /// that is easy to miss: a background-only cell reuses the extras-id bits
+    /// for its color, so `extras_id()` on one yields a colour channel rather
+    /// than an id.
+    pub fn cell_text(&self, pos: Pos) -> impl Iterator<Item = char> + '_ {
+        let square = self[pos];
+        let marks = square
+            .extras_id()
+            .filter(|_| !square.is_bg_only())
+            .and_then(|id| self.extras_table.get(id))
+            .map(|extras| extras.zerowidth.as_slice())
+            .unwrap_or(&[]);
+        std::iter::once(square.c()).chain(marks.iter().copied())
+    }
+
     /// Free extras slots no longer referenced by any cell.
     ///
     /// Cells are overwritten and rows drop off the scrollback ring without
@@ -646,25 +668,43 @@ impl Grid<Square> {
     #[inline]
     pub fn set_template_style_id(&mut self, id: StyleId) {
         self.cursor.template.set_style_id(id);
+        self.cursor.pending_style = self.style_set.get(id);
+        self.cursor.style_dirty = false;
     }
 
-    /// Mutate the cursor template's style by recomputing-and-reinterning.
-    /// Used by the SGR handler: `cursor.template` doesn't carry inline
-    /// fg/bg/flags anymore, so updates have to round-trip through the
-    /// style table.
+    /// Mutate the cursor's SGR state. Deliberately does NOT touch the
+    /// style table: a sequence like `CSI 1;38;2;r;g;b m` mutates the
+    /// pending style twice and interns nothing; the id is refreshed once,
+    /// lazily, by [`Self::sync_template_style`] when a cell is written.
     #[inline]
     pub fn update_template_style(&mut self, f: impl FnOnce(&mut Style)) {
-        let mut s = self.style_set.get(self.cursor.template.style_id());
-        f(&mut s);
-        let id = self.style_set.intern(s);
-        self.cursor.template.set_style_id(id);
+        f(&mut self.cursor.pending_style);
+        self.cursor.style_dirty = true;
     }
 
     /// Set the template style by passing a fully-formed `Style`.
     #[inline]
     pub fn set_template_style(&mut self, style: Style) {
-        let id = self.style_set.intern(style);
-        self.cursor.template.set_style_id(id);
+        self.cursor.pending_style = style;
+        self.cursor.style_dirty = true;
+    }
+
+    /// The cursor's current SGR state, without touching the intern table.
+    #[inline]
+    pub fn template_style(&self) -> Style {
+        self.cursor.pending_style
+    }
+
+    /// Absorb pending SGR changes into the template's interned style id.
+    /// Must run before `cursor.template` is used as a cell (prints, fills,
+    /// scroll resets); a no-op when nothing changed.
+    #[inline]
+    pub fn sync_template_style(&mut self) {
+        if self.cursor.style_dirty {
+            let id = self.style_set.intern(self.cursor.pending_style);
+            self.cursor.template.set_style_id(id);
+            self.cursor.style_dirty = false;
+        }
     }
 
     /// Build a "blank cell with this bg color" using the default style for

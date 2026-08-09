@@ -424,6 +424,13 @@ declare_class!(
             } else {
                 tracing::info!("Display link reinitialized for new screen");
             }
+
+            // The new screen may carry a different backing scale, and
+            // AppKit does not reliably pair this notification with
+            // windowDidChangeBackingProperties: (ordered-out windows,
+            // wake-time display reshuffles). Re-run the scale check; the
+            // numeric de-dupe makes it a no-op when nothing changed.
+            self.queue_static_scale_factor_changed_event();
         }
     }
 
@@ -756,7 +763,7 @@ impl WindowDelegate {
             _ => NSSize::new(1., 1.),
         };
 
-        let scale_factor = window.backingScaleFactor() as _;
+        let scale_factor = window.backingScaleFactor() as f64;
 
         let current_theme = match attrs.preferred_theme {
             Some(theme) => Some(theme),
@@ -768,7 +775,11 @@ impl WindowDelegate {
             window: window.retain(),
             current_theme: Cell::new(current_theme),
             previous_position: Cell::new(None),
-            previous_scale_factor: Cell::new(scale_factor),
+            // 1.0, not the current scale: the synthesized startup event
+            // below must survive the equality guard in
+            // queue_static_scale_factor_changed_event, otherwise a window
+            // created on a HiDPI display never reports its scale.
+            previous_scale_factor: Cell::new(1.0),
             resize_increments: Cell::new(resize_increments),
             decorations: Cell::new(attrs.decorations),
             resizable: Cell::new(attrs.resizable),
@@ -902,7 +913,7 @@ impl WindowDelegate {
             .queue_window_event(self.window().id(), event);
     }
 
-    fn queue_static_scale_factor_changed_event(&self) {
+    pub(crate) fn queue_static_scale_factor_changed_event(&self) {
         let scale_factor = self.scale_factor();
         if scale_factor == self.ivars().previous_scale_factor.get() {
             return;

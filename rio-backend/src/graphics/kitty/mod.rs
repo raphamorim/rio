@@ -7,7 +7,7 @@ use crate::ansi::kitty_graphics_protocol::{
 };
 use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::Crosswords;
-use crate::event::{EventListener, RioEvent, WindowId};
+use crate::event::{EventListener, WindowId};
 use crate::performer::handler::Handler;
 use rio_graphics::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 
@@ -49,11 +49,7 @@ impl Handler for TestHandler {
 #[derive(Clone)]
 struct TestEventListener;
 
-impl EventListener for TestEventListener {
-    fn event(&self) -> (Option<RioEvent>, bool) {
-        (None, false)
-    }
-}
+impl EventListener for TestEventListener {}
 
 // Integration Tests
 

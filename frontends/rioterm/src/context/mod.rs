@@ -23,7 +23,6 @@ use rio_backend::event::EventListener;
 use rio_backend::event::WindowId;
 use rio_backend::selection::SelectionRange;
 use rio_backend::sugarloaf::{font::SugarloafFont, Rect, Sugarloaf, SugarloafErrors};
-use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -261,7 +260,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             if config.use_fork {
                 tracing::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
-                    &Cow::Borrowed(&config.shell.program),
+                    config.shell.program.as_deref(),
                     &config.shell.args,
                     cols,
                     rows,
@@ -277,9 +276,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             } else {
                 tracing::info!("rio -> teletypewriter: create_pty_with_spawn");
                 pty = match create_pty_with_spawn(
-                    &Cow::Borrowed(&config.shell.program),
+                    config.shell.program.as_deref(),
                     config.shell.args.clone(),
                     &config.working_dir,
+                    None,
                     cols,
                     rows,
                     initial_winsize.width,
@@ -302,9 +302,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         #[cfg(target_os = "windows")]
         {
             pty = match create_pty(
-                &Cow::Borrowed(&config.shell.program),
+                config.shell.program.as_deref(),
                 config.shell.args.clone(),
                 &config.working_dir,
+                None,
                 cols,
                 rows,
             ) {
@@ -797,7 +798,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &mut self,
         route_id: usize,
     ) -> Option<&mut ContextGridItem<T>> {
-        self.contexts[self.current_index].get_by_route_id(route_id)
+        // Search every tab, current first: per-route events (damage marks,
+        // titles, color/size requests) must reach panes in background tabs,
+        // otherwise their state is silently dropped until the pane's own
+        // PTY speaks again.
+        let current = self.current_index;
+        if self.contexts[current].get_by_route_id(route_id).is_some() {
+            return self.contexts[current].get_by_route_id(route_id);
+        }
+        self.contexts
+            .iter_mut()
+            .enumerate()
+            .filter(|(i, _)| *i != current)
+            .find_map(|(_, grid)| grid.get_by_route_id(route_id))
     }
 
     #[inline]

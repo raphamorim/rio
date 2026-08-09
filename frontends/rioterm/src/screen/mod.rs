@@ -567,6 +567,24 @@ impl Screen<'_> {
         self
     }
 
+    /// Re-read the window's live scale factor and re-run the rescale path
+    /// when it diverged from the one being rendered with. Display
+    /// reconfiguration during sleep/wake can change the backing scale
+    /// without a `ScaleFactorChanged` ever being delivered (the macOS
+    /// producer de-dupes on the numeric value and wake notifications
+    /// coalesce), so cheap checkpoints call this instead of trusting
+    /// event delivery. Returns whether a rescale ran.
+    pub fn reconcile_scale(&mut self, winit_window: &rio_window::window::Window) -> bool {
+        let live_scale = winit_window.scale_factor() as f32;
+        if live_scale > 0.0
+            && (live_scale - self.sugarloaf.scale_factor()).abs() > f32::EPSILON
+        {
+            self.set_scale(live_scale, winit_window.inner_size());
+            return true;
+        }
+        false
+    }
+
     #[inline]
     pub fn set_scale(
         &mut self,
@@ -592,9 +610,18 @@ impl Screen<'_> {
                 unscaled_margin.bottom * new_scale,
                 unscaled_margin.left * new_scale,
             ));
+            context_grid.update_scale(new_scale);
 
             for context in context_grid.contexts_mut().values_mut() {
-                context.context_mut().dimension.update_scale(new_scale);
+                let ctx = context.context_mut();
+                ctx.dimension.update_scale(new_scale);
+                // Resident GPU cell buffers hold glyphs shaped at the old
+                // scale; a scale change that preserves cols/rows produces
+                // no terminal damage on its own, so without this the grid
+                // geometry updates while the sprites stay stale.
+                ctx.renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             }
 
             context_grid.update_dimensions(&mut self.sugarloaf);
@@ -2112,10 +2139,8 @@ impl Screen<'_> {
             hyperlinks: true,
             post_processing: true,
             persist: false,
-            action: rio_backend::config::hints::HintAction::Command {
-                command: rio_backend::config::hints::HintCommand::Simple(
-                    "xdg-open".to_string(),
-                ),
+            action: rio_backend::config::hints::HintAction::Action {
+                action: rio_backend::config::hints::HintInternalAction::Open,
             },
             mouse: rio_backend::config::hints::HintMouse::default(),
             binding: None,
@@ -2263,34 +2288,24 @@ impl Screen<'_> {
         // Apply post-processing to remove trailing delimiters and handle uneven brackets
         let processed_uri = post_process_hyperlink_uri(hyperlink.uri());
 
+        self.open_with_default_handler(&processed_uri);
+    }
+
+    /// Hand `target` to the platform's default handler.
+    ///
+    /// `target` comes from terminal output, so it is attacker-controlled and
+    /// must never reach a shell: `cmd /c start` would treat `&` in a URL as a
+    /// command separator, and on Unix a launcher gets it as a single argv
+    /// entry rather than a command line.
+    fn open_with_default_handler(&self, target: &str) {
         #[cfg(not(any(target_os = "macos", windows)))]
-        self.exec("xdg-open", [&processed_uri]);
+        self.exec("xdg-open", [target]);
 
         #[cfg(target_os = "macos")]
-        self.exec("open", [&processed_uri]);
+        self.exec("open", [target]);
 
-        // Going through `cmd /c start` re-quotes the argument and
-        // mangles URLs (metacharacters plus cmd.exe batch escaping);
-        // hand the URL to the default handler directly instead.
         #[cfg(windows)]
-        {
-            use std::os::windows::ffi::OsStrExt;
-            let uri: Vec<u16> = std::ffi::OsStr::new(&processed_uri)
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect();
-            let operation: Vec<u16> = "open\0".encode_utf16().collect();
-            unsafe {
-                windows_sys::Win32::UI::Shell::ShellExecuteW(
-                    std::ptr::null_mut(),
-                    operation.as_ptr(),
-                    uri.as_ptr(),
-                    std::ptr::null(),
-                    std::ptr::null(),
-                    windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
-                );
-            }
-        }
+        shell_execute_open(target);
     }
 
     pub fn exec<I, S>(&self, program: &str, args: I)
@@ -2556,11 +2571,7 @@ impl Screen<'_> {
             let _ = std::process::Command::new("xdg-open").arg(url).spawn();
         }
         #[cfg(windows)]
-        {
-            let _ = std::process::Command::new("cmd")
-                .args(["/c", "start", "", url])
-                .spawn();
-        }
+        shell_execute_open(url);
     }
 
     pub fn handle_scrollbar_click(&mut self) -> bool {
@@ -2853,7 +2864,12 @@ impl Screen<'_> {
             return true;
         }
 
-        if x_in_tabs < 0.0 || x_in_tabs >= layout.tabs_width {
+        // A lone tab is drawn as a title centred across the strip rather than
+        // an island in the first slot, so the whole strip belongs to it and a
+        // right-click anywhere on it should reach that tab. The left margin
+        // (traffic lights on macOS) stays outside either way.
+        let past_last_tab = num_tabs > 1 && x_in_tabs >= layout.tabs_width;
+        if x_in_tabs < 0.0 || past_last_tab {
             if !is_right_click {
                 self.on_chrome_press(window, chrome_press);
             }
@@ -3352,6 +3368,24 @@ impl Screen<'_> {
 
         // Assure the mouse pos is not in the scrollback.
         if pos.row < 0 {
+            return;
+        }
+
+        // X10 reports presses of the left, middle and right buttons only, and
+        // never carries modifiers. Motion never reaches here under X10 because
+        // it is gated on MOUSE_MOTION and MOUSE_DRAG, but releases and the
+        // wheel codes (64 and up) do, and neither is reportable. Both are
+        // dropped rather than falling back to local scrolling, since the
+        // protocol still owns the wheel while it is active.
+        if mode.contains(Mode::MOUSE_REPORT_X10) {
+            if state == ElementState::Pressed && button <= 2 {
+                if mode.contains(Mode::SGR_MOUSE) {
+                    self.sgr_mouse_report(pos, button, state);
+                } else {
+                    self.normal_mouse_report(pos, button);
+                }
+            }
+
             return;
         }
 
@@ -4267,7 +4301,7 @@ impl Screen<'_> {
                 let render_style = crate::grid_emit::cursor_render_style(
                     crate::grid_emit::CursorRenderInputs {
                         visible: p.cursor_visible,
-                        focused: p.is_active,
+                        focused: p.is_active && self.renderer.is_window_focused,
                         blink_visible: p.cursor_blink_visible,
                         blinking: p.cursor_blinking,
                         preedit: p.cursor_preedit,
@@ -4376,6 +4410,13 @@ impl Screen<'_> {
                     self.sugarloaf.render();
                 } else {
                     self.sugarloaf.render_with_grids(&mut frame_grids);
+                }
+                // A dropped frame (no drawable, e.g. right after wake)
+                // already consumed this frame's damage; without a retry
+                // the content is lost until unrelated PTY traffic.
+                if self.sugarloaf.take_frame_dropped() {
+                    self.mark_dirty();
+                    self.context_manager.request_render();
                 }
             } else {
                 // Nothing to draw this frame, but `Renderer::run`
@@ -4559,6 +4600,25 @@ impl Screen<'_> {
         self.mark_dirty();
     }
 
+    /// What a hint should hand to a launcher: the match text, or the path it
+    /// resolves to against the terminal's OSC 7 CWD when it names one that
+    /// exists. URLs and non-existent paths come back unchanged.
+    fn hint_open_target(&self, hint_match: &crate::hints::HintMatch) -> String {
+        // Cloned so the terminal lock is released before resolving, which
+        // goes to the filesystem.
+        let cwd = self
+            .context_manager
+            .current()
+            .terminal
+            .lock()
+            .current_directory
+            .clone();
+        match crate::hints::resolve_path_for_opening(&hint_match.text, cwd.as_deref()) {
+            Some(resolved) => resolved.to_string_lossy().into_owned(),
+            None => hint_match.text.clone(),
+        }
+    }
+
     /// Execute the action for a selected hint
     fn execute_hint_action(
         &mut self,
@@ -4594,26 +4654,13 @@ impl Screen<'_> {
                     drop(terminal);
                     self.mark_dirty();
                 }
+                HintInternalAction::Open => {
+                    let target = self.hint_open_target(hint_match);
+                    self.open_with_default_handler(&target);
+                }
             },
             HintAction::Command { command } => {
-                // If the match looks like a local path, resolve it against
-                // the terminal's OSC 7 CWD and fall back to the raw text if
-                // the path doesn't exist (or the text is a URL).
-                let arg_text = {
-                    let cwd = &self
-                        .context_manager
-                        .current()
-                        .terminal
-                        .lock()
-                        .current_directory;
-                    match crate::hints::resolve_path_for_opening(
-                        &hint_match.text,
-                        cwd.as_deref(),
-                    ) {
-                        Some(resolved) => resolved.to_string_lossy().into_owned(),
-                        None => hint_match.text.clone(),
-                    }
-                };
+                let arg_text = self.hint_open_target(hint_match);
 
                 match command {
                     HintCommand::Simple(program) => {
@@ -4848,6 +4895,37 @@ impl Screen<'_> {
         }
 
         Some((start_col, final_end.col))
+    }
+}
+
+/// Open `target` with whatever Windows has registered for it, without a
+/// shell in the middle. `ShellExecuteW` takes the target as one string
+/// rather than a command line, so metacharacters in it stay data.
+#[cfg(windows)]
+fn shell_execute_open(target: &str) {
+    use std::os::windows::ffi::OsStrExt;
+    let wide_target: Vec<u16> = std::ffi::OsStr::new(target)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let operation: Vec<u16> = "open\0".encode_utf16().collect();
+    let result = unsafe {
+        windows_sys::Win32::UI::Shell::ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            wide_target.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+        )
+    };
+
+    // A return at or below 32 is an error code rather than an instance
+    // handle. Worth logging, because the symptom of failing here is a click
+    // that appears to do nothing at all.
+    let code = result as isize;
+    if code <= 32 {
+        tracing::warn!("ShellExecuteW could not open {target}: code {code}");
     }
 }
 

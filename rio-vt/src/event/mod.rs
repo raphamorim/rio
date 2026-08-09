@@ -14,7 +14,6 @@ use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
-use teletypewriter::WinsizeBuilder;
 
 #[cfg(feature = "rio-window")]
 use rio_window::event_loop::EventLoopProxy;
@@ -53,6 +52,30 @@ impl From<rio_window::window::WindowId> for WindowId {
     }
 }
 
+/// Terminal viewport size, in cells and in pixels.
+///
+/// Owned by the core so the event model does not name the PTY layer's type
+/// for four integers; the PTY driver converts at its own boundary.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WindowSize {
+    pub rows: u16,
+    pub cols: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+#[cfg(feature = "pty")]
+impl From<WindowSize> for teletypewriter::WinsizeBuilder {
+    fn from(size: WindowSize) -> Self {
+        Self {
+            rows: size.rows,
+            cols: size.cols,
+            width: size.width,
+            height: size.height,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum RioEventType {
     Rio(RioEvent),
@@ -68,7 +91,7 @@ pub enum Msg {
     #[allow(dead_code)]
     Shutdown,
 
-    Resize(WinsizeBuilder),
+    Resize(WindowSize),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -213,7 +236,7 @@ pub enum RioEvent {
     /// Request to write the text area size to the PTY of `route_id`.
     TextAreaSizeRequest(
         usize,
-        Arc<dyn Fn(WinsizeBuilder) -> String + Sync + Send + 'static>,
+        Arc<dyn Fn(WindowSize) -> String + Sync + Send + 'static>,
     ),
 
     /// Cursor blinking state has changed.
@@ -241,6 +264,11 @@ pub enum RioEvent {
 
     /// Leave current terminal.
     CloseTerminal(usize),
+
+    /// The PTY's child process exited, with the raw wait status when the
+    /// platform makes it available (interpret with
+    /// `std::process::ExitStatus::from_raw` / `ExitStatusExt`).
+    ChildExited(usize, Option<i32>),
 
     BlinkCursor(u64, usize),
 
@@ -319,6 +347,9 @@ impl Debug for RioEvent {
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::Quit => write!(f, "Quit"),
             RioEvent::CloseTerminal(route) => write!(f, "CloseTerminal {route}"),
+            RioEvent::ChildExited(route, status) => {
+                write!(f, "ChildExited(route={route}, status={status:?})")
+            }
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
             RioEvent::ToggleQuake => write!(f, "ToggleQuake"),
             RioEvent::CloseWindow => write!(f, "CloseWindow"),
@@ -376,13 +407,11 @@ impl From<EventPayload> for RioWindowEvent<EventPayload> {
 }
 
 pub trait OnResize {
-    fn on_resize(&mut self, window_size: WinsizeBuilder);
+    fn on_resize(&mut self, window_size: WindowSize);
 }
 
 /// Event Loop for notifying the renderer about terminal events.
 pub trait EventListener {
-    fn event(&self) -> (Option<RioEvent>, bool);
-
     fn send_event(&self, _event: RioEvent, _id: WindowId) {}
 
     fn send_event_with_high_priority(&self, _event: RioEvent, _id: WindowId) {}
@@ -401,11 +430,7 @@ impl From<RioEvent> for RioEventType {
     }
 }
 
-impl EventListener for VoidListener {
-    fn event(&self) -> (std::option::Option<RioEvent>, bool) {
-        (None, false)
-    }
-}
+impl EventListener for VoidListener {}
 
 #[derive(Debug, Clone)]
 #[cfg(feature = "rio-window")]
@@ -426,10 +451,6 @@ impl EventProxy {
 
 #[cfg(feature = "rio-window")]
 impl EventListener for EventProxy {
-    fn event(&self) -> (std::option::Option<RioEvent>, bool) {
-        (None, false)
-    }
-
     fn send_event(&self, event: RioEvent, id: WindowId) {
         let _ = self.proxy.send_event(EventPayload::new(event.into(), id));
     }

@@ -10,9 +10,6 @@ partial:
 
 report_sizes: true
 
-variables:
-  canario_version: "0.0.1"
-
 env:
   - CARGO_TERM_COLOR=always
   - RUST_BACKTRACE=full
@@ -27,9 +24,6 @@ before:
       output: true
     - if: '{{ eq .Runtime.Goos "windows" }}'
       cmd: wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
-      output: true
-    - if: '{{ eq .Runtime.Goos "darwin" }}'
-      cmd: make canario
       output: true
 
 builds:
@@ -83,14 +77,6 @@ builds:
       - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
     targets: [x86_64-unknown-linux-gnu]
 
-  - id: canario
-    builder: prebuilt
-    goos: [darwin]
-    goarch: [arm64]
-    binary: canario
-    prebuilt:
-      path: target/canario/Canario.app/Contents/MacOS/canario
-
 release:
   make_latest: "{{ if .IsNightly }}false{{ else }}true{{ end }}"
   mode: append
@@ -99,11 +85,9 @@ release:
   replace_existing_draft: false
   replace_existing_artifacts: true
   include_meta: false
-  header: |
-    **Full Changelog**: https://rioterm.com/changelog
-  footer: >-
-    ---
-    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+  # No header or footer here: changelog.disable below skips the pipe that
+  # renders them, so they would never reach the release. The release workflow
+  # sets the body with `gh release edit` instead.
 
 nightly:
   version_template: "{{ incminor .Version }}-nightly"
@@ -137,10 +121,6 @@ dmg:
     ids: [rio]
     name: "{{ .ProjectName }}"
     use: appbundle
-  - id: canario
-    ids: [canario]
-    name: "Canario-{{ .Var.canario_version }}"
-    use: appbundle
 
 notarize:
   macos_native:
@@ -166,14 +146,6 @@ app_bundles:
         dst: Contents/Resources/icon-classic.icns
     templated_extra_files:
       - src: ./misc/osx/Rio.app/Contents/Info.plist
-        dst: Contents/Info.plist
-  - id: canario
-    ids: [canario]
-    name: Canario
-    icon: ./frontends/canario/Resources/icon.icns
-    bundle: com.raphaelamorim.canario
-    templated_extra_files:
-      - src: ./frontends/canario/Info.plist
         dst: Contents/Info.plist
 
 nfpms:

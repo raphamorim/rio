@@ -33,6 +33,16 @@ pub struct Cursor<T> {
     /// Template Square when using this cursor.
     pub template: T,
 
+    /// Live SGR state as a plain style. `template`'s style id is refreshed
+    /// from this lazily (`Grid::sync_template_style`), so a burst of SGR
+    /// attributes costs plain field writes instead of an intern round-trip
+    /// per attribute, and transient in-between styles never pollute the
+    /// style table.
+    pub pending_style: crate::crosswords::style::Style,
+
+    /// Whether `pending_style` has changes `template` has not absorbed yet.
+    pub style_dirty: bool,
+
     /// Currently configured graphic character sets.
     pub charsets: Charsets,
 

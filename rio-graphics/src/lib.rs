@@ -21,6 +21,16 @@ use std::cmp;
 #[cfg(feature = "glyph")]
 pub mod glyph;
 
+/// `Instant` for every target. std's panics on wasm32-unknown-unknown, so
+/// wasm builds use `web-time`, same API backed by `performance.now()`.
+pub mod time {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use std::time::Instant;
+
+    #[cfg(target_arch = "wasm32")]
+    pub use web_time::Instant;
+}
+
 /// RGBA color in linear-light 0..1 space. Mirrors `wgpu::Color`'s
 /// shape so callers don't have to depend on `wgpu`. Sugarloaf's public
 /// API takes/returns this type; the wgpu render path converts at the
@@ -196,7 +206,7 @@ pub struct GraphicData {
 
     /// Generation counter for cache invalidation.
     /// Incremented when image data changes (re-transmission with same ID).
-    pub transmit_time: std::time::Instant,
+    pub transmit_time: crate::time::Instant,
 }
 
 impl GraphicData {
@@ -280,7 +290,7 @@ impl GraphicData {
             resize: None,
             display_width: None,
             display_height: None,
-            transmit_time: std::time::Instant::now(),
+            transmit_time: crate::time::Instant::now(),
         }
     }
 
@@ -480,7 +490,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -506,7 +516,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));

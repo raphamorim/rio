@@ -16,6 +16,10 @@ skrifa = { version = "0.37.0", optional = true }
 parking_lot = { workspace = true, optional = true }
 wgpu = { workspace = true, optional = true }
 
+# `Instant` backed by performance.now(); std's panics on wasm32-unknown-unknown.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "1.1.0"
+
 [features]
 default = []
 # Image decode/resize helpers (the `image` crate). Off by default so the

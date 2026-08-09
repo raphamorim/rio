@@ -6,11 +6,11 @@ use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
+use crate::time::Instant;
 use cursor_icon::CursorIcon;
 use rio_graphics::GraphicData;
 use std::mem;
 use std::time::Duration;
-use std::time::Instant;
 use tracing::{debug, warn};
 
 use crate::crosswords::attr::Attr;
@@ -119,6 +119,15 @@ pub trait Handler {
         for c in s.chars() {
             self.input(c);
         }
+    }
+
+    /// Like [`Handler::input_str`], but the caller guarantees `s` is
+    /// printable ASCII (`0x20..=0x7E`). The parser's ground state emits
+    /// runs through this entry, so implementations can skip revalidating
+    /// the bytes. Default delegates to [`Handler::input_str`].
+    fn input_ascii_str(&mut self, s: &str) {
+        debug_assert!(s.is_ascii());
+        self.input_str(s);
     }
 
     /// A contiguous run of pre-decoded Unicode codepoints to be displayed.
@@ -408,6 +417,10 @@ pub trait Handler {
     /// Handle XTGETTCAP response.
     fn xtgettcap_response(&mut self, _response: String) {}
 
+    /// xterm `modifyOtherKeys` level, from `CSI > 4 ; n m`. Level 0 disables
+    /// it, 1 and 2 widen how many modified keys are reported as `CSI 27 ; …`.
+    fn set_modify_other_keys(&mut self, _level: u8) {}
+
     /// Send a kitty graphics protocol response
     fn kitty_graphics_response(&mut self, _response: String) {}
 
@@ -539,6 +552,13 @@ impl StdSyncHandler {
     fn pending_timeout(&self) -> bool {
         self.timeout.is_some()
     }
+
+    /// Whether an armed synchronized update has outlived its deadline.
+    #[inline]
+    fn expired(&self) -> bool {
+        self.timeout
+            .is_some_and(|deadline| deadline <= Instant::now())
+    }
 }
 
 #[derive(Default)]
@@ -560,7 +580,18 @@ impl Processor {
         H: Handler,
     {
         if self.state.sync_state.timeout.pending_timeout() {
-            self.advance_sync(handler, bytes);
+            // Cap synchronized-update latency for embedders that do not
+            // drive the timeout externally: once the deadline has passed,
+            // flush the buffered update before processing new bytes. Event
+            // loops that poll `sync_timeout()` (like Rio's machine) flush at
+            // the deadline itself and never reach this branch.
+            if self.state.sync_state.timeout.expired() {
+                self.stop_sync(handler);
+                let mut performer = Performer::new(&mut self.state, handler);
+                self.parser.advance(&mut performer, bytes);
+            } else {
+                self.advance_sync(handler, bytes);
+            }
         } else {
             let mut performer = Performer::new(&mut self.state, handler);
             self.parser.advance(&mut performer, bytes);
@@ -601,6 +632,13 @@ impl Processor {
                 let new_len = self.state.sync_state.buffer.len() - bsu_offset;
                 self.state.sync_state.buffer.copy_within(bsu_offset.., 0);
                 self.state.sync_state.buffer.truncate(new_len);
+
+                // Replaying the processed bytes may have parsed an inline ESU
+                // that cleared the timeout, but this BSU is still pending.
+                self.state
+                    .sync_state
+                    .timeout
+                    .set_timeout(SYNC_UPDATE_TIMEOUT);
             }
             // Report mode and clear state if no new BSU is present.
             None => {
@@ -909,7 +947,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
         if s.is_empty() {
             return;
         }
-        self.handler.input_str(s);
+        self.handler.input_ascii_str(s);
         // `preceding_char` is used by REP (CSI Ps b) — it just needs the
         // last printed char, so keep it cheap by reading the last char of
         // `s` rather than tracking per-byte.
@@ -928,8 +966,6 @@ impl<U: Handler> Perform for Performer<'_, U> {
     }
 
     fn execute(&mut self, byte: u8) {
-        tracing::trace!("[execute] {byte:04x}");
-
         match byte {
             C0::HT => self.handler.put_tab(1),
             C0::BS => self.handler.backspace(),
@@ -1324,6 +1360,11 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
             ('l', [b'?']) => {
                 for param in params_iter.map(|param| param[0]) {
+                    // Handle sync updates opaquely.
+                    if param == NamedPrivateMode::SyncUpdate as u16 {
+                        self.state.sync_state.timeout.clear_timeout();
+                    }
+
                     handler.unset_private_mode(PrivateMode::new(param))
                 }
             }
@@ -1332,12 +1373,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 if params.is_empty() {
                     handler.terminal_attribute(Attr::Reset);
                 } else {
-                    for attr in attrs_from_sgr_parameters(&mut params_iter) {
-                        match attr {
-                            Some(attr) => handler.terminal_attribute(attr),
-                            None => csi_unhandled!(),
-                        }
-                    }
+                    attrs_from_sgr_parameters(&mut params_iter, |attr| match attr {
+                        Some(attr) => handler.terminal_attribute(attr),
+                        None => csi_unhandled!(),
+                    });
                 }
             }
             ('n', []) => handler.device_status(next_param_or(0) as usize),
@@ -1407,6 +1446,18 @@ impl<U: Handler> Perform for Performer<'_, U> {
                     _ => KeyboardModesApplyBehavior::Replace,
                 };
                 handler.set_keyboard_mode(mode, behavior);
+            }
+            // xterm modifyOtherKeys. Resource 4 is the only one we model;
+            // `CSI > 4 m` with no level resets to 0, i.e. disabled.
+            ('m', [b'>']) => {
+                let resource = next_param_or(0);
+                let level = next_param_or(0);
+                // xterm defines levels 0, 1 and 2 only; anything else would
+                // reach embedders as a level they cannot interpret.
+                match (resource, level) {
+                    (4, 0..=2) => handler.set_modify_other_keys(level as u8),
+                    _ => csi_unhandled!(),
+                }
             }
             ('u', [b'>']) => {
                 let mode = KeyboardModes::from_bits_truncate(next_param_or(0) as u8);
@@ -1513,9 +1564,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
 }
 
 #[inline]
-fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
-    let mut attrs = Vec::with_capacity(params.size_hint().0);
-
+fn attrs_from_sgr_parameters(
+    params: &mut ParamsIter<'_>,
+    mut emit: impl FnMut(Option<Attr>),
+) {
     while let Some(param) = params.next() {
         let attr = match param {
             [0] => Some(Attr::Reset),
@@ -1595,10 +1647,8 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
             [107] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightWhite))),
             _ => None,
         };
-        attrs.push(attr);
+        emit(attr);
     }
-
-    attrs
 }
 
 /// Process XTGETTCAP request and return DCS response.
@@ -2114,6 +2164,102 @@ fn get_termcap_capability(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Default)]
+    struct SyncHandler {
+        printed: String,
+    }
+
+    impl Handler for SyncHandler {
+        fn input(&mut self, c: char) {
+            self.printed.push(c);
+        }
+    }
+
+    #[test]
+    fn sync_update_inline_bsu_esu_disarms_timeout() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"a\x1b[?2026hb\x1b[?2026lc");
+
+        assert_eq!(handler.printed, "abc");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    #[test]
+    fn sync_update_buffers_across_chunks_until_esu() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+
+        processor.advance(&mut handler, b"hidden");
+        assert_eq!(handler.printed, "");
+
+        processor.advance(&mut handler, b"\x1b[?2026l");
+        assert_eq!(handler.printed, "hidden");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    #[test]
+    fn sync_update_stop_sync_flushes_pending_bytes() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        processor.advance(&mut handler, b"pending");
+        assert_eq!(handler.printed, "");
+
+        processor.stop_sync(&mut handler);
+        assert_eq!(handler.printed, "pending");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// Embedders without an event loop never poll `sync_timeout()`; an
+    /// expired deadline must flush on the next `advance` call instead of
+    /// buffering until `SYNC_BUFFER_SIZE`.
+    #[test]
+    fn sync_update_expired_deadline_flushes_on_next_advance() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        processor.advance(&mut handler, b"hidden");
+        assert_eq!(handler.printed, "");
+
+        // Simulate the deadline passing without an ESU arriving.
+        processor.state.sync_state.timeout.timeout = Some(
+            Instant::now()
+                .checked_sub(Duration::from_millis(1))
+                .unwrap_or_else(Instant::now),
+        );
+
+        processor.advance(&mut handler, b" visible");
+        assert_eq!(handler.printed, "hidden visible");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    #[test]
+    fn sync_update_new_bsu_in_replayed_buffer_stays_armed() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        processor.advance(&mut handler, b"\x1b[?2026l\x1b[?2026htwo");
+        assert_eq!(handler.printed, "");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+
+        processor.advance(&mut handler, b"\x1b[?2026l");
+        assert_eq!(handler.printed, "two");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
 
     #[test]
     fn semantic_prompt_parsing() {

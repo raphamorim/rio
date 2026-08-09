@@ -143,7 +143,7 @@ pub struct Navigation {
     pub current_working_directory: bool,
     #[serde(default = "bool::default", rename = "use-terminal-title")]
     pub use_terminal_title: bool,
-    #[serde(default = "default_bool_true", rename = "hide-if-single")]
+    #[serde(default = "bool::default", rename = "hide-if-single")]
     pub hide_if_single: bool,
     #[serde(default = "default_bool_true", rename = "use-split")]
     pub use_split: bool,
@@ -181,7 +181,7 @@ impl Default for Navigation {
             clickable: false,
             current_working_directory: true,
             use_terminal_title: false,
-            hide_if_single: true,
+            hide_if_single: false,
             use_split: true,
             unfocused_split_opacity: default_unfocused_split_opacity(),
             unfocused_split_fill: None,
@@ -235,6 +235,32 @@ mod tests {
     struct Root {
         #[serde(default = "Navigation::default")]
         navigation: Navigation,
+    }
+
+    /// A single tab keeps the strip: it renders as a centred title with no
+    /// island behind it, so there is something worth showing.
+    #[test]
+    fn hide_if_single_is_off_by_default() {
+        let decoded = toml::from_str::<Root>("[navigation]\nmode = 'Tab'\n").unwrap();
+        assert!(!decoded.navigation.hide_if_single);
+        assert!(decoded.navigation.island_visible(1));
+        assert!(Navigation::default().island_visible(1));
+    }
+
+    /// Opting back in has to keep working, since it is the behaviour that
+    /// used to be the default.
+    #[test]
+    fn hide_if_single_can_be_turned_back_on() {
+        let content = r#"
+            [navigation]
+            mode = 'Tab'
+            hide-if-single = true
+        "#;
+
+        let decoded = toml::from_str::<Root>(content).unwrap();
+        assert!(decoded.navigation.hide_if_single);
+        assert!(!decoded.navigation.island_visible(1));
+        assert!(decoded.navigation.island_visible(2));
     }
 
     #[test]

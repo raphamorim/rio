@@ -1,8 +1,8 @@
 use crate::simd_base64;
+use crate::time::{Duration, Instant};
 use rio_graphics::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 use smallvec::SmallVec;
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
 use tracing::debug;
 
 /// Maximum width or height (per axis) we accept for a kitty-graphics
@@ -1385,7 +1385,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                     resize,
                     display_width: None,
                     display_height: None,
-                    transmit_time: std::time::Instant::now(),
+                    transmit_time: crate::time::Instant::now(),
                 })
             };
             result
@@ -1500,7 +1500,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                 resize,
                 display_width: None,
                 display_height: None,
-                transmit_time: std::time::Instant::now(),
+                transmit_time: crate::time::Instant::now(),
             })
         }
     }

@@ -5,9 +5,10 @@
 //! [`Perform`] implementer.
 //!
 //! Forked from Alacritty's VTE; previously the standalone `copa` crate. The
-//! crate-private [`Perform`] trait keeps a single dispatch shape so the same
-//! state machine drives both the production [`Performer`] and unit-test
-//! dispatchers.
+//! [`Perform`] trait keeps a single dispatch shape so the same state machine
+//! drives the production [`Performer`], unit-test dispatchers, and external
+//! consumers that need a raw escape-sequence parser (e.g. byte-stream
+//! trackers) without pulling in a second VTE implementation.
 //!
 //! [Paul Williams' ANSI parser state machine]: https://vt100.net/emu/dec_ansi_parser
 //! [`Performer`]: super::handler::Performer
@@ -31,7 +32,7 @@ const OSC_FIXED_LEN: usize = 2048;
 
 /// Parser for raw _VTE_ protocol which delegates actions to a [`Perform`].
 #[derive(Default)]
-pub(crate) struct Parser {
+pub struct Parser {
     state: State,
     intermediates: [u8; MAX_INTERMEDIATES],
     intermediate_idx: usize,
@@ -117,6 +118,11 @@ impl OscBuffer {
 }
 
 impl Parser {
+    /// Create a new parser in the ground state.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     #[inline]
     fn params(&self) -> &Params {
         &self.params
@@ -131,7 +137,7 @@ impl Parser {
     ///
     /// Requires a [`Perform`] implementation to handle the triggered actions.
     #[inline]
-    pub(crate) fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
+    pub fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
         let mut i = 0;
 
         // Handle partial codepoints from previous calls to `advance`.
@@ -142,6 +148,9 @@ impl Parser {
         while i != bytes.len() {
             match self.state {
                 State::Ground => i += self.advance_ground(performer, &bytes[i..]),
+                State::CsiParam => {
+                    i += self.advance_csi_param_run(performer, &bytes[i..])
+                }
                 _ => {
                     // Inlining it results in worse codegen.
                     let byte = bytes[i];
@@ -150,6 +159,54 @@ impl Parser {
                 }
             }
         }
+    }
+
+    /// Consume a run of bytes while in `CsiParam`, accumulating digit
+    /// sub-runs into a local instead of paying the state dispatch and the
+    /// `self.param` load/store per byte. Any byte outside the param set
+    /// falls through to the generic per-byte path.
+    fn advance_csi_param_run<P: Perform>(
+        &mut self,
+        performer: &mut P,
+        bytes: &[u8],
+    ) -> usize {
+        let mut i = 0;
+        while i < bytes.len() {
+            let byte = bytes[i];
+            match byte {
+                0x30..=0x39 => {
+                    if self.params.is_full() {
+                        self.ignoring = true;
+                        i += 1;
+                    } else {
+                        let mut param = self.param;
+                        while i < bytes.len() && bytes[i].is_ascii_digit() {
+                            param = param
+                                .saturating_mul(10)
+                                .saturating_add((bytes[i] - b'0') as u16);
+                            i += 1;
+                        }
+                        self.param = param;
+                    }
+                }
+                0x3A => {
+                    self.action_subparam();
+                    i += 1;
+                }
+                0x3B => {
+                    self.action_param();
+                    i += 1;
+                }
+                _ => {
+                    self.advance_csi_param(performer, byte);
+                    i += 1;
+                    if self.state != State::CsiParam {
+                        break;
+                    }
+                }
+            }
+        }
+        i
     }
 
     #[inline(always)]
@@ -777,12 +834,12 @@ impl Parser {
     /// Three batched paths:
     /// - ASCII printable runs (`0x20..=0x7E`) → one [`Perform::print_str`].
     /// - ASCII control bytes (`0x00..=0x1F`, `0x7F`) → [`Perform::execute`].
-    /// - Multi-byte UTF-8 runs (any byte ≥ `0x80`) → SIMD-decoded via
+    /// - Runs containing multi-byte UTF-8 → SIMD-decoded in chunks via
     ///   `simdutf::convert_utf8_to_utf32_with_errors` into
     ///   [`Self::decode_buf`] with inline Maximal-Subpart U+FFFD
-    ///   replacement, then dispatched as one [`Perform::print_codepoints`]
-    ///   call (with C1 controls `U+0080..U+009F` split out as individual
-    ///   `execute`).
+    ///   replacement, then dispatched as [`Perform::print_codepoints`]
+    ///   runs (controls split out as individual `execute` in codepoint
+    ///   space).
     #[inline]
     fn ground_dispatch<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
         let mut i = 0;
@@ -790,12 +847,7 @@ impl Parser {
             let b = bytes[i];
 
             if (0x20..=0x7E).contains(&b) {
-                // LLVM auto-vectorizes this byte-range scan into a SIMD compare.
-                let end = bytes[i..]
-                    .iter()
-                    .position(|&b| !(0x20..=0x7E).contains(&b))
-                    .map(|p| i + p)
-                    .unwrap_or(bytes.len());
+                let end = i + find_non_printable(&bytes[i..]);
                 // SAFETY: every byte in 0x20..=0x7E is valid 1-byte UTF-8.
                 let chunk = unsafe { std::str::from_utf8_unchecked(&bytes[i..end]) };
                 performer.print_str(chunk);
@@ -812,12 +864,19 @@ impl Parser {
                 performer.execute(b);
                 i += 1;
             } else {
-                // Multi-byte UTF-8 run. Find its end (next ASCII byte).
-                let end = bytes[i..]
-                    .iter()
-                    .position(|&b| b < 0x80)
-                    .map(|p| i + p)
-                    .unwrap_or(bytes.len());
+                // Multi-byte UTF-8 run. ASCII decodes to itself (ESC never
+                // reaches here), so one simdutf call covers a mixed chunk;
+                // controls split out in codepoint space after decode.
+                let mut end = (i + DECODE_CHUNK).min(bytes.len());
+                if end < bytes.len() {
+                    let start = end;
+                    while end > i && (bytes[end] & 0xC0) == 0x80 {
+                        end -= 1;
+                    }
+                    if end == i {
+                        end = start;
+                    }
+                }
                 self.decode_codepoints(&bytes[i..end]);
                 Self::dispatch_codepoints(performer, &self.decode_buf);
                 i = end;
@@ -825,9 +884,46 @@ impl Parser {
         }
     }
 
+    /// Scalar transcode for wasm, where the C++-backed `simdutf` cannot
+    /// build. Same contract as the SIMD path below: each invalid maximal
+    /// subpart becomes one U+FFFD, except a lone C1 byte, which keeps its
+    /// execute semantics through decode.
+    #[cfg(target_arch = "wasm32")]
+    #[inline]
+    fn decode_codepoints(&mut self, src: &[u8]) {
+        self.decode_buf.clear();
+        self.decode_buf.reserve(src.len());
+
+        let mut consumed = 0;
+        while consumed < src.len() {
+            match std::str::from_utf8(&src[consumed..]) {
+                Ok(valid) => {
+                    self.decode_buf.extend(valid.chars().map(|c| c as u32));
+                    return;
+                }
+                Err(err) => {
+                    let end = consumed + err.valid_up_to();
+                    // SAFETY: the validator just confirmed this prefix.
+                    let valid =
+                        unsafe { std::str::from_utf8_unchecked(&src[consumed..end]) };
+                    self.decode_buf.extend(valid.chars().map(|c| c as u32));
+
+                    let subpart = maximal_subpart(&src[end..]);
+                    if subpart == 1 && (0x80..=0x9F).contains(&src[end]) {
+                        self.decode_buf.push(src[end] as u32);
+                    } else {
+                        self.decode_buf.push(0xFFFD);
+                    }
+                    consumed = end + subpart;
+                }
+            }
+        }
+    }
+
     /// SIMD-transcode a UTF-8 byte slice into [`Self::decode_buf`] as `u32`
     /// codepoints, replacing each invalid UTF-8 maximal subpart with one
     /// U+FFFD inline (W3C/Unicode "Substitution of Maximal Subparts").
+    #[cfg(not(target_arch = "wasm32"))]
     #[inline]
     fn decode_codepoints(&mut self, src: &[u8]) {
         self.decode_buf.clear();
@@ -870,22 +966,28 @@ impl Parser {
             }
 
             // Emit one U+FFFD for the maximal invalid subpart at the error
-            // position and advance past it.
+            // position and advance past it. A standalone C1 byte keeps its
+            // execute semantics through decode.
             let err_pos = consumed + result.count;
             let subpart = maximal_subpart(&src[err_pos..]);
-            self.decode_buf.push(0xFFFD);
+            if subpart == 1 && (0x80..=0x9F).contains(&src[err_pos]) {
+                self.decode_buf.push(src[err_pos] as u32);
+            } else {
+                self.decode_buf.push(0xFFFD);
+            }
             consumed = err_pos + subpart;
         }
     }
 
-    /// Split a decoded codepoint slice on C1 control codepoints
-    /// (`U+0080..=U+009F`) and emit non-control runs as
-    /// [`Perform::print_codepoints`], C1 codepoints as [`Perform::execute`].
+    /// Split a decoded codepoint slice on control codepoints (C0
+    /// `U+0000..=U+001F`, DEL, and C1 `U+0080..=U+009F`) and emit
+    /// non-control runs as [`Perform::print_codepoints`], controls as
+    /// [`Perform::execute`].
     #[inline]
     fn dispatch_codepoints<P: Perform>(performer: &mut P, codepoints: &[u32]) {
         let mut start = 0;
         for (i, &cp) in codepoints.iter().enumerate() {
-            if (0x80..=0x9F).contains(&cp) {
+            if cp < 0x20 || cp == 0x7F || (0x80..=0x9F).contains(&cp) {
                 if start < i {
                     performer.print_codepoints(&codepoints[start..i]);
                 }
@@ -898,6 +1000,42 @@ impl Parser {
         }
     }
 }
+
+/// Position of the first byte outside printable ASCII (`0x20..=0x7E`),
+/// via a SWAR scan (eight bytes per iteration, little-endian). An
+/// early-exit iterator scan does not vectorize; this does the range
+/// test on a whole word at once.
+#[inline]
+fn find_non_printable(bytes: &[u8]) -> usize {
+    const LO: u64 = 0x0101_0101_0101_0101;
+    const HI: u64 = 0x8080_8080_8080_8080;
+
+    let mut i = 0;
+    let len = bytes.len();
+    while i + 8 <= len {
+        let w = u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap());
+        let lt20 = w.wrapping_sub(LO * 0x20) & !w & HI;
+        let ge80 = w & HI;
+        let x = w ^ (LO * 0x7F);
+        let eq7f = x.wrapping_sub(LO) & !x & HI;
+        let stop = lt20 | ge80 | eq7f;
+        if stop != 0 {
+            return i + (stop.trailing_zeros() as usize) / 8;
+        }
+        i += 8;
+    }
+    while i < len {
+        if !(0x20..=0x7E).contains(&bytes[i]) {
+            return i;
+        }
+        i += 1;
+    }
+    len
+}
+
+/// Byte cap per decode chunk in `ground_dispatch`, bounding `decode_buf`
+/// growth. Chunks never split a UTF-8 sequence.
+const DECODE_CHUNK: usize = 4096;
 
 /// Length of the maximal valid subpart of a UTF-8 sequence starting at
 /// `p[0]`, per Unicode Table 3-7 / W3C "U+FFFD Substitution of Maximal
@@ -1022,13 +1160,14 @@ enum State {
 
 /// Performs actions requested by the [`Parser`].
 ///
-/// Crate-private dispatch trait. The single production implementer is
-/// [`super::handler::Performer`]; tests in this module supply their own
-/// recording dispatchers.
+/// Dispatch trait for [`Parser`] actions. The production implementer is
+/// [`super::handler::Performer`]; external consumers can implement it to
+/// drive their own byte-stream processing (only `print`, `execute`, and the
+/// dispatch methods they care about — everything has a no-op default).
 ///
 /// The methods correspond to actions described in
 /// <http://vt100.net/emu/dec_ansi_parser>.
-pub(crate) trait Perform {
+pub trait Perform {
     /// Draw a character to the screen and update states.
     fn print(&mut self, _c: char) {}
 

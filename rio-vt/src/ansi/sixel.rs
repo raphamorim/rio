@@ -561,7 +561,7 @@ impl Parser {
             resize: None,
             display_width: None,
             display_height: None,
-            transmit_time: std::time::Instant::now(),
+            transmit_time: crate::time::Instant::now(),
         };
 
         Ok((data, self.color_registers))

@@ -73,7 +73,50 @@ impl Default for Style {
 #[derive(Clone, Debug)]
 pub struct StyleSet {
     styles: Vec<Style>,
-    lookup: FxHashMap<Style, StyleId>,
+    /// Lossless 128-bit packing of each interned style, parallel to
+    /// `styles`. Memo verification and hashmap lookups compare/hash this
+    /// single word instead of walking `Style`'s enum fields.
+    packed: Vec<u128>,
+    lookup: FxHashMap<u128, StyleId>,
+    /// Direct-mapped cache of candidate ids fronting `lookup`; slots are
+    /// verified against `packed`, so a stale slot misses, never lies.
+    memo: [StyleId; MEMO_SLOTS],
+}
+
+const MEMO_BITS: u32 = 10;
+const MEMO_SLOTS: usize = 1 << MEMO_BITS;
+
+/// Pack a style into a unique `u128`: 32 bits per color (tag + payload),
+/// 32 for the optional underline color, the flag bits on top. Injective,
+/// so equality of packings IS equality of styles.
+#[inline]
+fn pack_style(style: &Style) -> u128 {
+    #[inline]
+    fn color_key(c: AnsiColor) -> u32 {
+        match c {
+            AnsiColor::Named(n) => 0x0100_0000 | (n as u32),
+            AnsiColor::Indexed(i) => 0x0200_0000 | (i as u32),
+            AnsiColor::Spec(rgb) => {
+                0x0400_0000 | ((rgb.r as u32) << 16 | (rgb.g as u32) << 8 | rgb.b as u32)
+            }
+        }
+    }
+    let underline = match style.underline_color {
+        None => 0u32,
+        Some(c) => 0x0800_0000 | color_key(c),
+    };
+    (color_key(style.fg) as u128)
+        | (color_key(style.bg) as u128) << 32
+        | (underline as u128) << 64
+        | (style.flags.bits() as u128) << 96
+}
+
+/// Direct-mapped slot for a packed style: a cheap multiply-fold.
+#[inline]
+fn memo_index(key: u128) -> usize {
+    let folded = (key as u64) ^ (key >> 64) as u64;
+    let h = (folded as u32 ^ (folded >> 32) as u32).wrapping_mul(0x9E37_79B9);
+    (h >> (32 - MEMO_BITS)) as usize
 }
 
 impl PartialEq for StyleSet {
@@ -88,11 +131,14 @@ impl StyleSet {
     /// Create a new style set with the default style pre-interned at id 0.
     pub fn new() -> Self {
         let default_style = Style::default();
+        let key = pack_style(&default_style);
         let mut lookup = FxHashMap::default();
-        lookup.insert(default_style, DEFAULT_STYLE_ID);
+        lookup.insert(key, DEFAULT_STYLE_ID);
         Self {
             styles: vec![default_style],
+            packed: vec![key],
             lookup,
+            memo: [DEFAULT_STYLE_ID; MEMO_SLOTS],
         }
     }
 
@@ -144,7 +190,21 @@ impl StyleSet {
     /// that returns `DEFAULT_STYLE_ID`. In practice rio sessions use < 100
     /// distinct styles so this is purely defensive.
     pub fn intern(&mut self, style: Style) -> StyleId {
-        if let Some(&id) = self.lookup.get(&style) {
+        let key = pack_style(&style);
+        let slot = memo_index(key);
+        let cand = self.memo[slot];
+        if let Some(&packed) = self.packed.get(cand as usize) {
+            if packed == key {
+                return cand;
+            }
+        }
+        let id = self.intern_slow(style, key);
+        self.memo[slot] = id;
+        id
+    }
+
+    fn intern_slow(&mut self, style: Style, key: u128) -> StyleId {
+        if let Some(&id) = self.lookup.get(&key) {
             return id;
         }
         if self.styles.len() >= u16::MAX as usize {
@@ -156,7 +216,8 @@ impl StyleSet {
         }
         let id = self.styles.len() as StyleId;
         self.styles.push(style);
-        self.lookup.insert(style, id);
+        self.packed.push(key);
+        self.lookup.insert(key, id);
         id
     }
 

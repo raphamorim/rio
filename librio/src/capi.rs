@@ -1,10 +1,10 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::{
-    Action, Engine, Key, KeyEvent, Modifiers, RenderState, SelectionKind, Surface,
-    SurfaceDelegate, SurfaceDesc, SurfaceId,
+    Action, Engine, Key, KeyAction, KeyEvent, Modifiers, RenderState, SelectionKind,
+    Side, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
-use rio_vt::config::colors::{AnsiColor, NamedColor};
+use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
@@ -12,6 +12,9 @@ use std::sync::Arc;
 pub const RIO_ACTION_SET_TITLE: u32 = 0;
 pub const RIO_ACTION_RING_BELL: u32 = 1;
 pub const RIO_ACTION_CURSOR_BLINKING_CHANGE: u32 = 2;
+/// OSC 9;4 progress: `data_a` is the ConEmu state (0 remove, 1 set,
+/// 2 error, 3 indeterminate, 4 paused), `data_b` the 0-100 value.
+pub const RIO_ACTION_PROGRESS: u32 = 3;
 
 pub const RIO_COLOR_NAMED: u8 = 0;
 pub const RIO_COLOR_INDEXED: u8 = 1;
@@ -33,6 +36,22 @@ pub const RIO_KEY_PAGE_DOWN: u32 = 12;
 pub const RIO_KEY_INSERT: u32 = 13;
 pub const RIO_KEY_DELETE: u32 = 14;
 pub const RIO_KEY_F: u32 = 15;
+/// No key, for an event that carries only text (an input method commit).
+pub const RIO_KEY_NONE: u32 = 16;
+// Modifier keys as keys; reported only in kitty report-all mode.
+pub const RIO_KEY_CAPS_LOCK: u32 = 17;
+pub const RIO_KEY_SHIFT_LEFT: u32 = 18;
+pub const RIO_KEY_SHIFT_RIGHT: u32 = 19;
+pub const RIO_KEY_CONTROL_LEFT: u32 = 20;
+pub const RIO_KEY_CONTROL_RIGHT: u32 = 21;
+pub const RIO_KEY_ALT_LEFT: u32 = 22;
+pub const RIO_KEY_ALT_RIGHT: u32 = 23;
+pub const RIO_KEY_SUPER_LEFT: u32 = 24;
+pub const RIO_KEY_SUPER_RIGHT: u32 = 25;
+
+pub const RIO_KEY_ACTION_PRESS: u32 = 0;
+pub const RIO_KEY_ACTION_REPEAT: u32 = 1;
+pub const RIO_KEY_ACTION_RELEASE: u32 = 2;
 
 pub const RIO_SELECTION_SIMPLE: u8 = 0;
 pub const RIO_SELECTION_WORD: u8 = 1;
@@ -44,6 +63,9 @@ pub struct rio_action_s {
     pub tag: u32,
     pub title: *const c_char,
     pub subtitle: *const c_char,
+    /// Numeric payload; meaning depends on `tag` (see RIO_ACTION_*).
+    pub data_a: u32,
+    pub data_b: u32,
 }
 
 #[repr(C)]
@@ -65,6 +87,12 @@ pub struct rio_surface_config_s {
     pub pixel_width: u16,
     pub pixel_height: u16,
     pub scrollback: usize,
+    /// Arguments for the program, after argv[0]. NULL/0 means none. These
+    /// reach the child through `execvp` as separate argv entries, so a host
+    /// that has a command to run can spawn it instead of typing it: nothing
+    /// here is ever read by a shell's line editor.
+    pub args: *const *const c_char,
+    pub args_len: usize,
 }
 
 #[repr(C)]
@@ -102,12 +130,34 @@ pub struct rio_cursor_s {
     pub column: u16,
 }
 
+/// A key event as the platform delivered it.
+///
+/// The host reports what happened; librio decides what the terminal receives,
+/// because that depends on state the host does not track (application cursor
+/// mode, the kitty keyboard flags, `modifyOtherKeys`).
 #[repr(C)]
 pub struct rio_key_event_s {
+    /// `RIO_KEY_ACTION_*`. Releases are dropped unless the program asked for
+    /// event types.
+    pub action: u32,
+    /// `RIO_KEY_*`, naming the key without shift applied: shift+a is
+    /// `RIO_KEY_CHAR` with codepoint `a`, and the `A` belongs in `text`.
     pub tag: u32,
     pub codepoint: u32,
+    /// 1 to 12 when `tag` is `RIO_KEY_F`.
     pub function_key: u8,
+    /// Every modifier held, as `RIO_MOD_*`.
     pub mods: u8,
+    /// The modifiers the platform already spent producing `text`, so they are
+    /// not encoded a second time. Zero if the platform cannot say.
+    pub consumed_mods: u8,
+    /// Whether an input method currently owns the key, in which case nothing
+    /// is encoded and the text arrives when composition commits.
+    pub composing: bool,
+    /// What the platform produced for this key, UTF-8, after any dead key or
+    /// input method composition. May be NULL.
+    pub text: *const c_char,
+    pub text_len: usize,
 }
 
 struct CDelegate {
@@ -142,6 +192,8 @@ impl SurfaceDelegate for CDelegate {
                             .as_ref()
                             .map(|s| s.as_ptr())
                             .unwrap_or(std::ptr::null()),
+                        data_a: 0,
+                        data_b: 0,
                     },
                 );
             }
@@ -153,6 +205,21 @@ impl SurfaceDelegate for CDelegate {
                         tag: RIO_ACTION_RING_BELL,
                         title: std::ptr::null(),
                         subtitle: std::ptr::null(),
+                        data_a: 0,
+                        data_b: 0,
+                    },
+                );
+            }
+            Action::Progress { state, value } => {
+                cb(
+                    self.config.userdata,
+                    surface,
+                    rio_action_s {
+                        tag: RIO_ACTION_PROGRESS,
+                        title: std::ptr::null(),
+                        subtitle: std::ptr::null(),
+                        data_a: state as u32,
+                        data_b: value as u32,
                     },
                 );
             }
@@ -164,6 +231,8 @@ impl SurfaceDelegate for CDelegate {
                         tag: RIO_ACTION_CURSOR_BLINKING_CHANGE,
                         title: std::ptr::null(),
                         subtitle: std::ptr::null(),
+                        data_a: 0,
+                        data_b: 0,
                     },
                 );
             }
@@ -189,34 +258,114 @@ impl SurfaceDelegate for CDelegate {
     }
 }
 
-/// Standard xterm 16-color palette (the conventional defaults). Used to
-/// resolve named / low-indexed colors to concrete RGB.
-fn ansi16(i: u8) -> (u8, u8, u8) {
-    const P: [(u8, u8, u8); 16] = [
-        (0, 0, 0),
-        (205, 0, 0),
-        (0, 205, 0),
-        (205, 205, 0),
-        (0, 0, 238),
-        (205, 0, 205),
-        (0, 205, 205),
-        (229, 229, 229),
-        (127, 127, 127),
-        (255, 0, 0),
-        (0, 255, 0),
-        (255, 255, 0),
-        (92, 92, 255),
-        (255, 0, 255),
-        (0, 255, 255),
-        (255, 255, 255),
-    ];
-    P[(i & 0x0f) as usize]
+/// The active color scheme. Starts as Rio's default theme (shared with the
+/// rio frontend via rio-vt so the two can never drift apart) and is replaced
+/// wholesale by `rio_set_colors`. Everything downstream resolves through it,
+/// so a swap re-themes every cell on the host's next draw: the snapshot
+/// keeps original named/indexed colors and resolves at query time.
+fn theme_lock() -> &'static std::sync::RwLock<rio_vt::config::Colors> {
+    static THEME: std::sync::OnceLock<std::sync::RwLock<rio_vt::config::Colors>> =
+        std::sync::OnceLock::new();
+    THEME.get_or_init(|| std::sync::RwLock::new(rio_vt::config::Colors::default()))
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct rio_rgb_s {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+/// A color scheme, limited to what the engine itself resolves: the 16 ANSI
+/// slots plus the named defaults. Selection/cursor *rendering* colors stay
+/// host-side; `cursor` here covers cells that reference the cursor color.
+#[repr(C)]
+pub struct rio_colors_s {
+    /// ANSI 0-7 normal, 8-15 bright.
+    pub ansi: [rio_rgb_s; 16],
+    pub foreground: rio_rgb_s,
+    pub background: rio_rgb_s,
+    pub cursor: rio_rgb_s,
+}
+
+/// Replace the palette used to resolve named/indexed cell colors. NULL
+/// restores Rio's default theme. Dim variants derive from the new palette
+/// (2/3 luminance, rio's fallback). The host owns redraw: call
+/// `rio_render_state_update` + repaint after this.
+///
+/// # Safety
+/// `colors`, when non-NULL, must point to a valid `rio_colors_s`.
+#[no_mangle]
+pub unsafe extern "C" fn rio_set_colors(colors: *const rio_colors_s) {
+    let mut theme = rio_vt::config::Colors::default();
+    if let Some(colors) = colors.as_ref() {
+        let rgb = |c: rio_rgb_s| ColorRgb {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+        };
+        let arr = |c: rio_rgb_s| rgb(c).to_arr();
+        theme.black = arr(colors.ansi[0]);
+        theme.red = arr(colors.ansi[1]);
+        theme.green = arr(colors.ansi[2]);
+        theme.yellow = arr(colors.ansi[3]);
+        theme.blue = arr(colors.ansi[4]);
+        theme.magenta = arr(colors.ansi[5]);
+        theme.cyan = arr(colors.ansi[6]);
+        theme.white = arr(colors.ansi[7]);
+        theme.light_black = arr(colors.ansi[8]);
+        theme.light_red = arr(colors.ansi[9]);
+        theme.light_green = arr(colors.ansi[10]);
+        theme.light_yellow = arr(colors.ansi[11]);
+        theme.light_blue = arr(colors.ansi[12]);
+        theme.light_magenta = arr(colors.ansi[13]);
+        theme.light_cyan = arr(colors.ansi[14]);
+        theme.light_white = arr(colors.ansi[15]);
+        theme.foreground = arr(colors.foreground);
+        theme.background = rgb(colors.background).to_composition();
+        theme.cursor = arr(colors.cursor);
+    }
+    *theme_lock().write().unwrap() = theme;
+}
+
+/// sRGB 0..1 component array (rio's `ColorArray`) to 8-bit RGB.
+fn arr_rgb(c: [f32; 4]) -> (u8, u8, u8) {
+    (
+        (c[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+}
+
+/// The active 16-color palette. Used to resolve named / low-indexed
+/// colors to concrete RGB.
+fn ansi16(t: &rio_vt::config::Colors, i: u8) -> (u8, u8, u8) {
+    let arr = match i & 0x0f {
+        0 => t.black,
+        1 => t.red,
+        2 => t.green,
+        3 => t.yellow,
+        4 => t.blue,
+        5 => t.magenta,
+        6 => t.cyan,
+        7 => t.white,
+        8 => t.light_black,
+        9 => t.light_red,
+        10 => t.light_green,
+        11 => t.light_yellow,
+        12 => t.light_blue,
+        13 => t.light_magenta,
+        14 => t.light_cyan,
+        _ => t.light_white,
+    };
+    arr_rgb(arr)
 }
 
 /// Resolve a 256-color index to RGB (16 ANSI, 6x6x6 cube, 24 grays).
-fn indexed_rgb(i: u8) -> (u8, u8, u8) {
+fn indexed_rgb(t: &rio_vt::config::Colors, i: u8) -> (u8, u8, u8) {
     match i {
-        0..=15 => ansi16(i),
+        0..=15 => ansi16(t, i),
         16..=231 => {
             const STEPS: [u8; 6] = [0, 95, 135, 175, 215, 255];
             let i = i - 16;
@@ -234,42 +383,57 @@ fn indexed_rgb(i: u8) -> (u8, u8, u8) {
 }
 
 fn dim((r, g, b): (u8, u8, u8)) -> (u8, u8, u8) {
-    (r * 2 / 3, g * 2 / 3, b * 2 / 3)
+    // Widen first: `r * 2` overflows u8 for components >= 128.
+    (
+        (u16::from(r) * 2 / 3) as u8,
+        (u16::from(g) * 2 / 3) as u8,
+        (u16::from(b) * 2 / 3) as u8,
+    )
 }
 
-/// Resolve a named color to RGB. Default foreground/background match Rio's
-/// built-in theme; the ANSI slots use the standard xterm palette.
-fn named_rgb(n: NamedColor) -> (u8, u8, u8) {
+/// Resolve a named color to RGB using the active theme. Dim colors use
+/// the theme's explicit dim entry when present, else 2/3 of the base color
+/// (same fallback rio applies).
+fn named_rgb(t: &rio_vt::config::Colors, n: NamedColor) -> (u8, u8, u8) {
     use NamedColor::*;
+    let dim_or = |explicit: Option<[f32; 4]>, base: u8| {
+        explicit
+            .map(arr_rgb)
+            .unwrap_or_else(|| dim(ansi16(t, base)))
+    };
     match n {
-        Black => ansi16(0),
-        Red => ansi16(1),
-        Green => ansi16(2),
-        Yellow => ansi16(3),
-        Blue => ansi16(4),
-        Magenta => ansi16(5),
-        Cyan => ansi16(6),
-        White => ansi16(7),
-        LightBlack => ansi16(8),
-        LightRed => ansi16(9),
-        LightGreen => ansi16(10),
-        LightYellow => ansi16(11),
-        LightBlue => ansi16(12),
-        LightMagenta => ansi16(13),
-        LightCyan => ansi16(14),
-        LightWhite => ansi16(15),
-        Foreground | LightForeground => (0xf8, 0xf8, 0xf2),
-        DimForeground => (0x9a, 0x9a, 0x9a),
-        Background => (0x0f, 0x0d, 0x0e),
-        Cursor => (0xf8, 0xf8, 0xf2),
-        DimBlack => dim(ansi16(0)),
-        DimRed => dim(ansi16(1)),
-        DimGreen => dim(ansi16(2)),
-        DimYellow => dim(ansi16(3)),
-        DimBlue => dim(ansi16(4)),
-        DimMagenta => dim(ansi16(5)),
-        DimCyan => dim(ansi16(6)),
-        DimWhite => dim(ansi16(7)),
+        Black => ansi16(t, 0),
+        Red => ansi16(t, 1),
+        Green => ansi16(t, 2),
+        Yellow => ansi16(t, 3),
+        Blue => ansi16(t, 4),
+        Magenta => ansi16(t, 5),
+        Cyan => ansi16(t, 6),
+        White => ansi16(t, 7),
+        LightBlack => ansi16(t, 8),
+        LightRed => ansi16(t, 9),
+        LightGreen => ansi16(t, 10),
+        LightYellow => ansi16(t, 11),
+        LightBlue => ansi16(t, 12),
+        LightMagenta => ansi16(t, 13),
+        LightCyan => ansi16(t, 14),
+        LightWhite => ansi16(t, 15),
+        Foreground => arr_rgb(t.foreground),
+        LightForeground => arr_rgb(t.light_foreground.unwrap_or(t.foreground)),
+        DimForeground => t
+            .dim_foreground
+            .map(arr_rgb)
+            .unwrap_or_else(|| dim(arr_rgb(t.foreground))),
+        Background => arr_rgb(t.background.0),
+        Cursor => arr_rgb(t.cursor),
+        DimBlack => dim_or(t.dim_black, 0),
+        DimRed => dim_or(t.dim_red, 1),
+        DimGreen => dim_or(t.dim_green, 2),
+        DimYellow => dim_or(t.dim_yellow, 3),
+        DimBlue => dim_or(t.dim_blue, 4),
+        DimMagenta => dim_or(t.dim_magenta, 5),
+        DimCyan => dim_or(t.dim_cyan, 6),
+        DimWhite => dim_or(t.dim_white, 7),
     }
 }
 
@@ -279,8 +443,8 @@ fn named_rgb(n: NamedColor) -> (u8, u8, u8) {
 /// directly without owning a palette.
 fn color_to_c(color: AnsiColor) -> rio_color_s {
     let (r, g, b) = match color {
-        AnsiColor::Named(named) => named_rgb(named),
-        AnsiColor::Indexed(index) => indexed_rgb(index),
+        AnsiColor::Named(named) => named_rgb(&theme_lock().read().unwrap(), named),
+        AnsiColor::Indexed(index) => indexed_rgb(&theme_lock().read().unwrap(), index),
         AnsiColor::Spec(rgb) => (rgb.r, rgb.g, rgb.b),
     };
     match color {
@@ -351,9 +515,16 @@ pub unsafe extern "C" fn rio_surface_new(
         }
         let engine = unsafe { &*engine };
         let config = unsafe { &*config };
+        let args = if config.args.is_null() {
+            Vec::new()
+        } else {
+            (0..config.args_len)
+                .filter_map(|i| unsafe { cstr_opt(*config.args.add(i)) })
+                .collect()
+        };
         let desc = SurfaceDesc {
             shell: unsafe { cstr_opt(config.shell) },
-            args: Vec::new(),
+            args,
             working_dir: unsafe { cstr_opt(config.working_dir) },
             cols: config.cols.max(2),
             rows: config.rows.max(2),
@@ -410,41 +581,87 @@ pub unsafe extern "C" fn rio_surface_text(
 #[no_mangle]
 pub unsafe extern "C" fn rio_surface_key(
     surface: *mut Surface,
-    event: rio_key_event_s,
+    event: *const rio_key_event_s,
 ) -> bool {
     catch_unwind(AssertUnwindSafe(|| {
-        if surface.is_null() {
+        if surface.is_null() || event.is_null() {
             return false;
         }
+        let event = unsafe { &*event };
         let key = match event.tag {
             RIO_KEY_CHAR => match char::from_u32(event.codepoint) {
-                Some(c) => Key::Char(c),
+                Some(c) => Some(Key::Char(c)),
                 None => return false,
             },
-            RIO_KEY_ENTER => Key::Enter,
-            RIO_KEY_TAB => Key::Tab,
-            RIO_KEY_BACKSPACE => Key::Backspace,
-            RIO_KEY_ESCAPE => Key::Escape,
-            RIO_KEY_UP => Key::Up,
-            RIO_KEY_DOWN => Key::Down,
-            RIO_KEY_LEFT => Key::Left,
-            RIO_KEY_RIGHT => Key::Right,
-            RIO_KEY_HOME => Key::Home,
-            RIO_KEY_END => Key::End,
-            RIO_KEY_PAGE_UP => Key::PageUp,
-            RIO_KEY_PAGE_DOWN => Key::PageDown,
-            RIO_KEY_INSERT => Key::Insert,
-            RIO_KEY_DELETE => Key::Delete,
-            RIO_KEY_F => Key::F(event.function_key),
+            RIO_KEY_ENTER => Some(Key::Enter),
+            RIO_KEY_TAB => Some(Key::Tab),
+            RIO_KEY_BACKSPACE => Some(Key::Backspace),
+            RIO_KEY_ESCAPE => Some(Key::Escape),
+            RIO_KEY_UP => Some(Key::Up),
+            RIO_KEY_DOWN => Some(Key::Down),
+            RIO_KEY_LEFT => Some(Key::Left),
+            RIO_KEY_RIGHT => Some(Key::Right),
+            RIO_KEY_HOME => Some(Key::Home),
+            RIO_KEY_END => Some(Key::End),
+            RIO_KEY_PAGE_UP => Some(Key::PageUp),
+            RIO_KEY_PAGE_DOWN => Some(Key::PageDown),
+            RIO_KEY_INSERT => Some(Key::Insert),
+            RIO_KEY_DELETE => Some(Key::Delete),
+            RIO_KEY_F => Some(Key::F(event.function_key)),
+            RIO_KEY_NONE => None,
+            RIO_KEY_CAPS_LOCK => Some(Key::CapsLock),
+            RIO_KEY_SHIFT_LEFT => Some(Key::ShiftLeft),
+            RIO_KEY_SHIFT_RIGHT => Some(Key::ShiftRight),
+            RIO_KEY_CONTROL_LEFT => Some(Key::ControlLeft),
+            RIO_KEY_CONTROL_RIGHT => Some(Key::ControlRight),
+            RIO_KEY_ALT_LEFT => Some(Key::AltLeft),
+            RIO_KEY_ALT_RIGHT => Some(Key::AltRight),
+            RIO_KEY_SUPER_LEFT => Some(Key::SuperLeft),
+            RIO_KEY_SUPER_RIGHT => Some(Key::SuperRight),
             _ => return false,
         };
+
+        let action = match event.action {
+            RIO_KEY_ACTION_REPEAT => KeyAction::Repeat,
+            RIO_KEY_ACTION_RELEASE => KeyAction::Release,
+            _ => KeyAction::Press,
+        };
+
+        // Lossy: a platform that hands over ill-formed UTF-8 gets replacement
+        // characters rather than a dropped keystroke.
+        let text = if event.text.is_null() || event.text_len == 0 {
+            None
+        } else {
+            let bytes = unsafe {
+                std::slice::from_raw_parts(event.text as *const u8, event.text_len)
+            };
+            Some(String::from_utf8_lossy(bytes).into_owned())
+        };
+
         let event = KeyEvent {
+            action,
             key,
             mods: Modifiers::from_bits_truncate(event.mods),
+            consumed_mods: Modifiers::from_bits_truncate(event.consumed_mods),
+            text,
+            composing: event.composing,
         };
-        unsafe { &*surface }.key(event)
+        unsafe { &*surface }.key(&event)
     }))
     .unwrap_or(false)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_set_alt_is_meta(
+    surface: *mut Surface,
+    enabled: bool,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return;
+        }
+        unsafe { &*surface }.set_alt_is_meta(enabled);
+    }));
 }
 
 #[no_mangle]
@@ -479,6 +696,7 @@ pub unsafe extern "C" fn rio_surface_selection_begin(
     viewport_line: i32,
     col: u16,
     kind: u8,
+    side_right: bool,
 ) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if surface.is_null() {
@@ -490,7 +708,12 @@ pub unsafe extern "C" fn rio_surface_selection_begin(
             RIO_SELECTION_BLOCK => SelectionKind::Block,
             _ => SelectionKind::Simple,
         };
-        unsafe { &*surface }.selection_begin(viewport_line, col as usize, kind);
+        unsafe { &*surface }.selection_begin(
+            viewport_line,
+            col as usize,
+            kind,
+            if side_right { Side::Right } else { Side::Left },
+        );
     }));
 }
 
@@ -499,12 +722,17 @@ pub unsafe extern "C" fn rio_surface_selection_update(
     surface: *mut Surface,
     viewport_line: i32,
     col: u16,
+    side_right: bool,
 ) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if surface.is_null() {
             return;
         }
-        unsafe { &*surface }.selection_update(viewport_line, col as usize);
+        unsafe { &*surface }.selection_update(
+            viewport_line,
+            col as usize,
+            if side_right { Side::Right } else { Side::Left },
+        );
     }));
 }
 
@@ -728,6 +956,293 @@ pub unsafe extern "C" fn rio_render_state_cell(
     })
 }
 
+/// Lines the view is scrolled up into history; 0 means the live screen.
+/// Renderers use this to hide the cursor while scrolled.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_display_offset(
+    state: *const RenderState,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return 0;
+        }
+        unsafe { &*state }.display_offset()
+    }))
+    .unwrap_or(0)
+}
+
+/// Symbols-only Nerd Font, embedded the way libghostty embeds it, so every
+/// embedder can offer icon glyphs (Powerline, Font Awesome, Material, ...)
+/// without shipping a font file or requiring one installed. Pair with
+/// [`rio_nerd_constrain`] for patched-font-quality scaling.
+static SYMBOLS_NERD_FONT: &[u8] = rio_fonts::SYMBOLS_NERD_FONT;
+
+/// The embedded symbols-only Nerd Font as raw TTF bytes. The pointer is
+/// static; never freed, valid for the process lifetime.
+#[no_mangle]
+pub unsafe extern "C" fn rio_symbols_nerd_font(len: *mut usize) -> *const u8 {
+    if !len.is_null() {
+        unsafe { *len = SYMBOLS_NERD_FONT.len() };
+    }
+    SYMBOLS_NERD_FONT.as_ptr()
+}
+
+/// A glyph's bounding box in pixels, y-up, origin at the pen/baseline.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct rio_glyph_box_s {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Apply the Nerd Fonts patcher's scaling/alignment rules to a glyph
+/// (the same generated table ghostty and sugarloaf use). `glyph` is the
+/// glyph's bounding box; `constraint_width` is how many cells are
+/// horizontally free (1 or 2). Writes the adjusted box to `out` and
+/// returns true when the codepoint has a rule; returns false (out
+/// untouched) for codepoints the table doesn't cover.
+///
+/// `icon_height_single` follows the patcher heuristic
+/// `(2 * cap_height + face_height) / 3`; pass the face's values so
+/// single-cell icons sit on the visual x-height like patched fonts do.
+#[no_mangle]
+pub unsafe extern "C" fn rio_nerd_constrain(
+    codepoint: u32,
+    glyph: rio_glyph_box_s,
+    cell_width: f64,
+    cell_height: f64,
+    icon_height_single: f64,
+    constraint_width: u8,
+    out: *mut rio_glyph_box_s,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        use rio_fonts::nerd_font::{self, GlyphSize, Metrics};
+        if out.is_null() {
+            return false;
+        }
+        let Some(constraint) = nerd_font::get_constraint(codepoint) else {
+            return false;
+        };
+        let constrained = constraint.constrain(
+            GlyphSize {
+                width: glyph.width,
+                height: glyph.height,
+                x: glyph.x,
+                y: glyph.y,
+            },
+            Metrics {
+                face_width: cell_width,
+                face_height: cell_height,
+                face_y: 0.0,
+                cell_width: cell_width.round() as u32,
+                cell_height: cell_height.round() as u32,
+                icon_height_single,
+                icon_height: cell_height,
+            },
+            constraint_width.clamp(1, 2),
+        );
+        unsafe {
+            *out = rio_glyph_box_s {
+                x: constrained.x,
+                y: constrained.y,
+                width: constrained.width,
+                height: constrained.height,
+            };
+        }
+        true
+    }))
+    .unwrap_or(false)
+}
+
+/// A wheel scroll. librio decides what it means: a mouse report when the
+/// program asked for mouse events, cursor keys on the alternate screen
+/// with alternate-scroll on, otherwise the scrollback view. `lines` is
+/// positive for scrolling up; `col`/`row` are the cell under the
+/// pointer. Returns true when the program consumed it.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_scroll_wheel(
+    surface: *const Surface,
+    lines: i32,
+    col: u16,
+    row: u16,
+    mods: u8,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return false;
+        }
+        unsafe { &*surface }.scroll_wheel(
+            lines,
+            col,
+            row,
+            Modifiers::from_bits_truncate(mods),
+        )
+    }))
+    .unwrap_or(false)
+}
+
+/// The foreground process's name, for host-side program detection
+/// (agent state, tab icons). Free with rio_text_free.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_foreground_process_name(
+    surface: *const Surface,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return std::ptr::null_mut();
+        }
+        let name = unsafe { &*surface }.foreground_process_name();
+        CString::new(name)
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut())
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Whether the alternate screen (full-screen TUIs) was active at the
+/// last update.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_alt_screen(state: *const RenderState) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return false;
+        }
+        unsafe { &*state }.alt_screen()
+    }))
+    .unwrap_or(false)
+}
+
+/// A kitty graphics placement resolved to viewport pixels. `x`/`y` are
+/// relative to the grid origin (add your padding); `src_*` is the
+/// normalized source rectangle within the image.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct rio_kitty_placement_s {
+    pub image_id: u32,
+    pub z_index: i32,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub src_x: f32,
+    pub src_y: f32,
+    pub src_w: f32,
+    pub src_h: f32,
+}
+
+/// Number of kitty placements in the last snapshot (visible or not);
+/// iterate them with [`rio_render_state_kitty_placement`], which filters
+/// to the viewport. Ordered by z-index, lowest first.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_kitty_count(
+    state: *const RenderState,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return 0;
+        }
+        unsafe { &*state }.kitty_count()
+    }))
+    .unwrap_or(0)
+}
+
+/// Resolve placement `index` against the current viewport with the
+/// renderer's cell metrics. Returns false when it's scrolled out of view.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_kitty_placement(
+    state: *const RenderState,
+    index: usize,
+    cell_width: f32,
+    cell_height: f32,
+    out: *mut rio_kitty_placement_s,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() || out.is_null() {
+            return false;
+        }
+        let Some((image_id, z_index, geometry)) =
+            unsafe { &*state }.kitty_geometry(index, cell_width, cell_height)
+        else {
+            return false;
+        };
+        unsafe {
+            *out = rio_kitty_placement_s {
+                image_id,
+                z_index,
+                x: geometry.x,
+                y: geometry.y,
+                width: geometry.width,
+                height: geometry.height,
+                // source_rect is [u0, v0, u1, v1]; the C side gets
+                // origin + size, which is what image crops want.
+                src_x: geometry.source_rect[0],
+                src_y: geometry.source_rect[1],
+                src_w: geometry.source_rect[2] - geometry.source_rect[0],
+                src_h: geometry.source_rect[3] - geometry.source_rect[1],
+            };
+        }
+        true
+    }))
+    .unwrap_or(false)
+}
+
+/// Pixel dimensions and a change stamp for a kitty image; the stamp
+/// changes when the image is retransmitted, so decoded bitmaps can be
+/// cached against it.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_kitty_image_info(
+    state: *const RenderState,
+    image_id: u32,
+    out_width: *mut u32,
+    out_height: *mut u32,
+    out_stamp: *mut u64,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return false;
+        }
+        let Some((width, height, stamp)) = unsafe { &*state }.kitty_image_info(image_id)
+        else {
+            return false;
+        };
+        unsafe {
+            if !out_width.is_null() {
+                *out_width = width as u32;
+            }
+            if !out_height.is_null() {
+                *out_height = height as u32;
+            }
+            if !out_stamp.is_null() {
+                *out_stamp = stamp;
+            }
+        }
+        true
+    }))
+    .unwrap_or(false)
+}
+
+/// Copy a kitty image into `buf` as tightly-packed RGBA8. Returns the
+/// bytes written (width * height * 4), or 0 when the image is unknown or
+/// `cap` is too small.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_kitty_image_rgba(
+    state: *const RenderState,
+    image_id: u32,
+    buf: *mut u8,
+    cap: usize,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() || buf.is_null() {
+            return 0;
+        }
+        let slice = unsafe { std::slice::from_raw_parts_mut(buf, cap) };
+        unsafe { &*state }.kitty_image_rgba(image_id, slice)
+    }))
+    .unwrap_or(0)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_cursor(
     state: *const RenderState,
@@ -751,22 +1266,97 @@ mod color_tests {
 
     #[test]
     fn resolves_indexed_palette() {
-        assert_eq!(indexed_rgb(0), (0, 0, 0)); // ansi black
-        assert_eq!(indexed_rgb(15), (255, 255, 255)); // ansi bright white
-        assert_eq!(indexed_rgb(16), (0, 0, 0)); // cube origin
-        assert_eq!(indexed_rgb(231), (255, 255, 255)); // cube max
-        assert_eq!(indexed_rgb(232), (8, 8, 8)); // first gray
-        assert_eq!(indexed_rgb(255), (238, 238, 238)); // last gray
+        // One guard for the whole test: the active theme is process-global
+        // and another test may swap it between two separate reads.
+        let t = theme_lock().read().unwrap();
+        // ANSI 0-15 come from the active theme...
+        assert_eq!(indexed_rgb(&t, 0), arr_rgb(t.black));
+        assert_eq!(indexed_rgb(&t, 15), arr_rgb(t.light_white));
+        // ...while the cube and grays stay the standard xterm ramp.
+        assert_eq!(indexed_rgb(&t, 16), (0, 0, 0)); // cube origin
+        assert_eq!(indexed_rgb(&t, 231), (255, 255, 255)); // cube max
+        assert_eq!(indexed_rgb(&t, 232), (8, 8, 8)); // first gray
+        assert_eq!(indexed_rgb(&t, 255), (238, 238, 238)); // last gray
     }
 
+    // Default assertions, the rio_set_colors swap, and the NULL reset live
+    // in ONE test: the theme is process-global, so a separate swap test
+    // would race the default assertions under the parallel test runner.
     #[test]
-    fn named_fills_rgb_and_keeps_kind() {
+    fn named_fills_rgb_and_follows_set_colors() {
+        // Rio's default red (#FF1261), not xterm's (205, 0, 0).
         let c = color_to_c(AnsiColor::Named(NamedColor::Red));
         assert_eq!(c.kind, RIO_COLOR_NAMED);
-        assert_eq!((c.r, c.g, c.b), (205, 0, 0));
+        assert_eq!((c.r, c.g, c.b), (0xff, 0x12, 0x61));
 
         let bg = color_to_c(AnsiColor::Named(NamedColor::Background));
         assert_eq!((bg.r, bg.g, bg.b), (0x0f, 0x0d, 0x0e));
+
+        // Rio's signature pink cursor.
+        let cur = color_to_c(AnsiColor::Named(NamedColor::Cursor));
+        assert_eq!((cur.r, cur.g, cur.b), (0xf7, 0x12, 0xff));
+
+        // Swap in a scheme and every resolution path follows it.
+        let mut scheme = rio_colors_s {
+            ansi: [rio_rgb_s::default(); 16],
+            foreground: rio_rgb_s {
+                r: 0xf8,
+                g: 0xf8,
+                b: 0xf2,
+            },
+            background: rio_rgb_s {
+                r: 0x28,
+                g: 0x2a,
+                b: 0x36,
+            },
+            cursor: rio_rgb_s {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+            },
+        };
+        scheme.ansi[1] = rio_rgb_s {
+            r: 0xff,
+            g: 0x55,
+            b: 0x55,
+        };
+        unsafe { rio_set_colors(&scheme) };
+
+        let c = color_to_c(AnsiColor::Named(NamedColor::Red));
+        assert_eq!((c.r, c.g, c.b), (0xff, 0x55, 0x55));
+        let c = color_to_c(AnsiColor::Indexed(1));
+        assert_eq!((c.r, c.g, c.b), (0xff, 0x55, 0x55));
+        // Dim falls back to 2/3 of the new base, not the old theme's.
+        let c = color_to_c(AnsiColor::Named(NamedColor::DimRed));
+        assert_eq!((c.r, c.g, c.b), (dim((0xff, 0x55, 0x55))));
+        let bg = color_to_c(AnsiColor::Named(NamedColor::Background));
+        assert_eq!((bg.r, bg.g, bg.b), (0x28, 0x2a, 0x36));
+
+        // NULL restores the default theme.
+        unsafe { rio_set_colors(std::ptr::null()) };
+        let c = color_to_c(AnsiColor::Named(NamedColor::Red));
+        assert_eq!((c.r, c.g, c.b), (0xff, 0x12, 0x61));
+    }
+
+    #[test]
+    fn nerd_constrain_scales_icons_and_skips_plain_text() {
+        // U+E0B0 (Powerline right triangle) is in the table: stretch rules.
+        let glyph = rio_glyph_box_s {
+            x: 0.0,
+            y: -2.0,
+            width: 20.0,
+            height: 30.0,
+        };
+        let mut out = rio_glyph_box_s::default();
+        let hit =
+            unsafe { rio_nerd_constrain(0xE0B0, glyph, 10.0, 22.0, 18.0, 1, &mut out) };
+        assert!(hit, "powerline glyphs must be constrained");
+        assert!(out.width <= 10.0 + f64::EPSILON, "fits the cell width");
+
+        // 'a' has no entry: untouched, reported as such.
+        let miss =
+            unsafe { rio_nerd_constrain(0x61, glyph, 10.0, 22.0, 18.0, 1, &mut out) };
+        assert!(!miss);
     }
 
     #[test]
@@ -792,6 +1382,42 @@ mod persistence_tests {
         fn action(&self, _: SurfaceId, _: crate::Action) {}
         fn clipboard_write(&self, _: SurfaceId, _: crate::ClipboardType, _: String) {}
         fn close_surface(&self, _: SurfaceId) {}
+    }
+
+    /// Spawning with argv is what lets a host run a command without typing
+    /// it, so the bytes never reach a shell's line editor. A control
+    /// character in the argument must survive as data: were it interpreted,
+    /// `printf` would not print it back.
+    #[test]
+    fn args_reach_the_child_as_argv() {
+        let engine = crate::Engine::new(Arc::new(NopDelegate));
+        let surface = engine
+            .create_surface(&crate::SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec![
+                    "-c".into(),
+                    // A literal ^U (0x15) between two markers.
+                    "printf '%s' 'AR\u{15}GV_OK'".into(),
+                ],
+                working_dir: None,
+                cols: 80,
+                rows: 24,
+                pixel_width: 640,
+                pixel_height: 384,
+                scrollback: 1000,
+            })
+            .expect("surface");
+        // The child writes and exits; poll rather than sleep a fixed span.
+        let mut dump = String::new();
+        for _ in 0..100 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            dump = surface.dump();
+            if dump.contains("GV_OK") {
+                break;
+            }
+        }
+        assert!(dump.contains("AR"), "dump was: {dump:?}");
+        assert!(dump.contains("GV_OK"), "dump was: {dump:?}");
     }
 
     #[test]

@@ -14,32 +14,30 @@ path = "src/lib.rs"
 
 [dependencies]
 tracing = { workspace = true }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 base64 = { workspace = true }
-memchr = { version = "2.7.4", default-features = false }
+memchr = { version = "2.8.3", default-features = false }
 bitflags = { workspace = true }
-bytemuck = { workspace = true }
-corcovado = { workspace = true }
 rustc-hash = { workspace = true }
 regex = { workspace = true }
-raw-window-handle = { workspace = true, optional = true }
-copypasta = { version = "0.10.2", default-features = false, optional = true }
 image_rs = { workspace = true, optional = true }
-libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
 rio-graphics = { workspace = true }
 rio-grapheme-width = { workspace = true }
-teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
-url = { workspace = true }
-regex-automata = "0.4.9"
+regex-automata = "0.4.16"
 cursor-icon = { version = "1.1.0", default-features = false }
-smallvec = { version = "1.13.2", default-features = false }
-simdutf = { workspace = true }
+smallvec = { workspace = true }
 flate2 = { workspace = true }
-lazy_static = { workspace = true }
+
+# Native-only: SIMD UTF-8/base64 (scalar fallbacks on wasm), the PTY stack,
+# and the system clipboard.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+corcovado = { workspace = true, optional = true }
+raw-window-handle = { workspace = true, optional = true }
+copypasta = { version = "0.10.2", default-features = false, optional = true }
+teletypewriter = { workspace = true, optional = true }
+simdutf = { workspace = true }
 # Optional: only pulled in when the embedder wants the app-level renderer
 # error variant (font-not-found). Off keeps rio-vt free of sugarloaf.
 sugarloaf = { workspace = true, optional = true }
@@ -47,12 +45,21 @@ sugarloaf = { workspace = true, optional = true }
 # standalone `WindowId(u64)`, keeping the core free of the window layer.
 rio-window = { workspace = true, optional = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+# `Instant` backed by performance.now(); std's panics on wasm32-unknown-unknown.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "1.1.0"
+
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
 
 [features]
-# Lean by default: no renderer, no windowing. This is the embeddable core.
-default = []
+# PTY driver on by default; no renderer, no windowing.
+default = ["pty"]
+# The PTY event loop (`performer::Machine`). VT-only embedders turn this off.
+pty = ["dep:corcovado", "dep:teletypewriter"]
 # Expose the app-level `RioErrorType::FontsNotFound` variant (needs a
 # sugarloaf font type). Enabled by rio-backend's own `renderer` feature.
 renderer = ["dep:sugarloaf"]
@@ -70,3 +77,10 @@ graphics = ["dep:image_rs", "rio-graphics/image", "rio-graphics/glyph"]
 x11 = ["clipboard", "copypasta/x11"]
 wayland = ["clipboard", "copypasta/wayland"]
 wgpu = ["renderer", "dep:sugarloaf", "sugarloaf/wgpu"]
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "vt_input"
+harness = false

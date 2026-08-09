@@ -259,6 +259,11 @@ impl Square {
         self.0
     }
 
+    /// The cell's base character only.
+    ///
+    /// This is **not** the cell's full text: combining marks, ZWJ joiners and
+    /// variation selectors live in [`Extras::zerowidth`], so reading only this
+    /// silently drops them. Use `Grid::cell_text` when you want the text.
     #[inline]
     pub fn c(self) -> char {
         let cp = ((self.0 >> CODEPOINT_SHIFT) & CODEPOINT_MASK) as u32;

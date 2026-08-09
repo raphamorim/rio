@@ -97,7 +97,8 @@ bitflags! {
         const REPORT_ALTERNATE_KEYS   = 1 << 20;
         const REPORT_ALL_KEYS_AS_ESC  = 1 << 21;
         const REPORT_ASSOCIATED_TEXT  = 1 << 22;
-        const MOUSE_MODE = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits();
+        const MOUSE_REPORT_X10        = 1 << 23;
+        const MOUSE_MODE = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits() | Self::MOUSE_REPORT_X10.bits();
         const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
                                       | Self::REPORT_EVENT_TYPES.bits()
                                       | Self::REPORT_ALTERNATE_KEYS.bits()
@@ -462,6 +463,7 @@ where
     pub damage_event_in_flight: bool,
 
     // The stack for the keyboard modes.
+    modify_other_keys: u8,
     keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
     keyboard_mode_idx: usize,
     inactive_keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
@@ -518,6 +520,7 @@ impl<U: EventListener> Crosswords<U> {
             current_directory: None,
             user_vars: rustc_hash::FxHashMap::default(),
             damage_event_in_flight: false,
+            modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
             keyboard_mode_idx: 0,
             inactive_keyboard_mode_stack: Default::default(),
@@ -1183,6 +1186,7 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // Scroll between origin and bottom
+        self.grid.sync_template_style();
         self.grid.scroll_down(&region, lines);
         self.mark_fully_damaged();
         // Partial-region scrolls move grid-plane images with their
@@ -1195,8 +1199,6 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn scroll_up_relative(&mut self, origin: Line, mut lines: usize) {
-        debug!("Scrolling up: origin={origin}, lines={lines}");
-
         lines = std::cmp::min(
             lines,
             (self.scroll_region.end - self.scroll_region.start).0 as usize,
@@ -1205,11 +1207,14 @@ impl<U: EventListener> Crosswords<U> {
         let region = origin..self.scroll_region.end;
 
         // Scroll selection.
-        self.selection = self
-            .selection
-            .take()
-            .and_then(|s| s.rotate(&self.grid, &region, lines as i32));
+        if self.selection.is_some() {
+            self.selection = self
+                .selection
+                .take()
+                .and_then(|s| s.rotate(&self.grid, &region, lines as i32));
+        }
 
+        self.grid.sync_template_style();
         self.grid.scroll_up(&region, lines);
 
         // Scroll vi mode cursor.
@@ -1223,9 +1228,14 @@ impl<U: EventListener> Crosswords<U> {
         if (top <= *line) && region.end > *line {
             *line = std::cmp::max(*line - lines, top);
         }
-        // Mark all lines in the scroll region as damaged (not full damage)
-        for line in region.start.0..region.end.0 {
-            self.damage.damage_line(line as usize);
+        // Mark the scroll region as damaged; a full-screen region
+        // coalesces into full damage, like scroll_down_relative.
+        if region.start.0 == 0 && region.end.0 as usize == self.grid.screen_lines() {
+            self.mark_fully_damaged();
+        } else {
+            for line in region.start.0..region.end.0 {
+                self.damage.damage_line(line as usize);
+            }
         }
         if !self.graphics.kitty_placements.is_empty() {
             // Placements whose rows all scrolled off the ring expire,
@@ -1422,6 +1432,7 @@ impl<U: EventListener> Crosswords<U> {
     #[inline(always)]
     pub fn write_at_cursor(&mut self, c: char) {
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
+        self.grid.sync_template_style();
         let template = self.cell_template();
         self.write_cell(c, template);
     }
@@ -1486,6 +1497,220 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Write one non-zero-width codepoint at the cursor with scalar wrap,
+    /// placeholder and wide-pair handling; fallback for the run writers.
+    fn write_codepoint_cell(&mut self, cp: u32, c: char, width: u8) {
+        if self.grid.cursor.should_wrap {
+            self.wrapline();
+        }
+
+        let columns = self.grid.columns();
+
+        // Kitty placeholder bookkeeping: cp can't be ASCII here (parser
+        // routes ASCII through `input_str`) but the placeholder lives at
+        // U+10EEEE, so the check is still needed.
+        if cp == crate::ansi::kitty_virtual::PLACEHOLDER as u32 {
+            let row = self.grid.cursor.pos.row;
+            self.grid[row].kitty_virtual_placeholder = true;
+        }
+
+        // A one-column grid can never hold a wide pair, and the wrap-for-room
+        // branch below cannot create room on it: wrapping lands back on
+        // column 0, which is still the last column. Drop the glyph and leave
+        // a blank narrow cell, as ghostty does for the same degenerate size
+        // (`Terminal.zig`, the else branch of the `width == 2` arm), rather
+        // than running the Spacer off the end of the row. Embedders are
+        // entitled to such a grid: drag-resize and tiling layouts produce
+        // them transiently.
+        let (c, width) = if width == 2 && columns < 2 {
+            (' ', 1)
+        } else {
+            (c, width)
+        };
+
+        if width == 2 {
+            if self.grid.cursor.pos.col + 1 >= columns {
+                if self.mode.contains(Mode::LINE_WRAP) {
+                    self.write_at_cursor(' ');
+                    self.grid
+                        .cursor_cell()
+                        .set_wide(crate::crosswords::square::Wide::LeadingSpacer);
+                    self.wrapline();
+                } else {
+                    self.grid.cursor.should_wrap = true;
+                    return;
+                }
+            }
+
+            self.write_at_cursor(c);
+            self.grid
+                .cursor_cell()
+                .set_wide(crate::crosswords::square::Wide::Wide);
+            self.grid.cursor.pos.col += 1;
+            self.write_at_cursor(' ');
+            self.grid
+                .cursor_cell()
+                .set_wide(crate::crosswords::square::Wide::Spacer);
+        } else {
+            self.write_at_cursor(c);
+        }
+
+        let cursor_line = self.grid.cursor.pos.row.0 as usize;
+        self.damage.damage_line(cursor_line);
+
+        if self.grid.cursor.pos.col + 1 < columns {
+            self.grid.cursor.pos.col += 1;
+        } else {
+            self.grid.cursor.should_wrap = true;
+        }
+    }
+
+    /// Bulk-write a run of width-1 codepoints, mirroring the ASCII bulk
+    /// path in `input_ascii_str`: one destination scan, packed stores,
+    /// cursor and damage updated per row chunk instead of per codepoint.
+    fn write_narrow_run(
+        &mut self,
+        template: crate::crosswords::square::Square,
+        template_has_extras: bool,
+        cps: &[u32],
+    ) {
+        let mut idx = 0;
+        while idx < cps.len() {
+            if self.grid.cursor.should_wrap {
+                self.wrapline();
+            }
+
+            let columns = self.grid.columns();
+            let cursor_col = self.grid.cursor.pos.col.0;
+            let remaining = columns.saturating_sub(cursor_col);
+            if remaining == 0 {
+                for &cp in &cps[idx..] {
+                    let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                    self.write_codepoint_cell(cp, c, 1);
+                }
+                return;
+            }
+
+            let take = (cps.len() - idx).min(remaining);
+            let mut wrote_bulk = false;
+            {
+                let line = self.grid.cursor.pos.row;
+                let row = &mut self.grid[line];
+                let cells = &mut row[Column(cursor_col)..Column(cursor_col + take)];
+                let needs_cleanup = cells
+                    .iter()
+                    .fold(false, |acc, c| acc | c.needs_wide_cleanup());
+                if !needs_cleanup {
+                    for (cell, &cp) in cells.iter_mut().zip(&cps[idx..idx + take]) {
+                        let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                        *cell =
+                            crate::crosswords::square::Square::from_template(template, c);
+                    }
+                    if template_has_extras {
+                        row.has_extras = true;
+                    }
+                    wrote_bulk = true;
+                }
+            }
+
+            if wrote_bulk {
+                let end = cursor_col + take;
+                if end < columns {
+                    self.grid.cursor.pos.col = Column(end);
+                } else {
+                    self.grid.cursor.pos.col = Column(columns - 1);
+                    self.grid.cursor.should_wrap = true;
+                }
+                let row = self.grid.cursor.pos.row;
+                self.damage.damage_line(row.0 as usize);
+            } else {
+                for &cp in &cps[idx..idx + take] {
+                    let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                    self.write_codepoint_cell(cp, c, 1);
+                }
+            }
+            idx += take;
+        }
+    }
+
+    /// Bulk-write a run of width-2 codepoints as (wide, spacer) cell pairs.
+    /// Pairs never split across rows; the end-of-row leading-spacer case
+    /// defers to the scalar writer.
+    fn write_wide_run(
+        &mut self,
+        template: crate::crosswords::square::Square,
+        template_has_extras: bool,
+        cps: &[u32],
+    ) {
+        use crate::crosswords::square::{Square, Wide};
+
+        let mut spacer = Square::from_template(template, ' ');
+        spacer.set_wide(Wide::Spacer);
+
+        let mut idx = 0;
+        while idx < cps.len() {
+            if self.grid.cursor.should_wrap {
+                self.wrapline();
+            }
+
+            let columns = self.grid.columns();
+            let cursor_col = self.grid.cursor.pos.col.0;
+            let remaining = columns.saturating_sub(cursor_col);
+            if remaining < 2 {
+                let cp = cps[idx];
+                let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                self.write_codepoint_cell(cp, c, 2);
+                idx += 1;
+                continue;
+            }
+
+            let take = (cps.len() - idx).min(remaining / 2);
+            let mut wrote_bulk = false;
+            {
+                let line = self.grid.cursor.pos.row;
+                let row = &mut self.grid[line];
+                let cells = &mut row[Column(cursor_col)..Column(cursor_col + take * 2)];
+                let needs_cleanup = cells
+                    .iter()
+                    .fold(false, |acc, c| acc | c.needs_wide_cleanup());
+                if !needs_cleanup {
+                    for (pair, &cp) in
+                        cells.chunks_exact_mut(2).zip(&cps[idx..idx + take])
+                    {
+                        let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                        let mut wide = Square::from_template(template, c);
+                        wide.set_wide(Wide::Wide);
+                        pair[0] = wide;
+                        pair[1] = spacer;
+                    }
+                    if template_has_extras {
+                        row.has_extras = true;
+                    }
+                    wrote_bulk = true;
+                }
+            }
+
+            if wrote_bulk {
+                let end = cursor_col + take * 2;
+                if end < columns {
+                    self.grid.cursor.pos.col = Column(end);
+                } else {
+                    self.grid.cursor.pos.col = Column(columns - 1);
+                    self.grid.cursor.should_wrap = true;
+                }
+                let row = self.grid.cursor.pos.row;
+                self.damage.damage_line(row.0 as usize);
+                idx += take;
+            } else {
+                for &cp in &cps[idx..idx + take] {
+                    let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                    self.write_codepoint_cell(cp, c, 2);
+                }
+                idx += take;
+            }
+        }
+    }
+
     /// Build the cursor's current style/extras/flags into a zero-codepoint
     /// `Square` template for `write_cell`.
     #[inline]
@@ -1508,6 +1733,12 @@ impl<U: EventListener> Crosswords<U> {
     #[inline(never)]
     fn apply_emoji_vs16(&mut self) {
         let columns = self.grid.columns();
+        // No wide pair fits on one column, so leave the base narrow: the
+        // wrap branch below would place the trailing Spacer at column 1 of
+        // the new row, off the end of it.
+        if columns < 2 {
+            return;
+        }
         let row = self.grid.cursor.pos.row;
         let cursor_col = self.grid.cursor.pos.col.0;
         let should_wrap = self.grid.cursor.should_wrap;
@@ -1675,13 +1906,7 @@ impl<U: EventListener> Crosswords<U> {
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
     ) {
         use crate::event::TerminalDamage;
-        let mut start = self.scroll_region.start.0;
-        let mut end = self.scroll_region.end.0;
-        let scroll = self.display_offset() as i32;
-        if scroll != 0 {
-            start -= scroll;
-            end -= scroll;
-        }
+        let (start, end) = self.visible_line_bounds();
         let count = (end - start) as usize;
 
         let _ = cols;
@@ -1763,19 +1988,26 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Half-open grid line range currently on screen, as `(start, end)`.
+    ///
+    /// This is the full screen height offset by the scrollback position, and
+    /// deliberately has nothing to do with `scroll_region`: DECSTBM bounds
+    /// where scrolling happens, not what is displayed. Both were once read
+    /// from `scroll_region`, so an app that narrowed it (vim, less, htop,
+    /// tmux, man) lost rows off the snapshot.
+    #[inline]
+    fn visible_line_bounds(&self) -> (i32, i32) {
+        let scroll = self.display_offset() as i32;
+        (-scroll, self.grid.screen_lines() as i32 - scroll)
+    }
+
     /// Copy the visible viewport into `dst` in place. Reuses both the
     /// outer `Vec`'s capacity and each inner `Row`'s `Vec<Square>`
     /// allocation (via [`Row::copy_from`]) so the renderer's frame
     /// buffer doesn't reallocate every frame at steady state.
     #[inline]
     pub fn fill_visible_rows(&self, dst: &mut Vec<Row<Square>>) {
-        let mut start = self.scroll_region.start.0;
-        let mut end = self.scroll_region.end.0;
-        let scroll = self.display_offset() as i32;
-        if scroll != 0 {
-            start -= scroll;
-            end -= scroll;
-        }
+        let (start, end) = self.visible_line_bounds();
         let count = (end - start) as usize;
 
         // Copy each visible row into the matching slot. Excess slots
@@ -1815,8 +2047,31 @@ impl<U: EventListener> Crosswords<U> {
         self.set_scrolling_region(1, None);
 
         // Clear grid.
+        self.grid.sync_template_style();
         self.grid.reset_region(..);
         self.mark_fully_damaged();
+    }
+
+    /// The active xterm `modifyOtherKeys` level, or `None` when disabled.
+    ///
+    /// Set by `CSI > 4 ; n m`. An embedder that encodes key events needs this
+    /// to know whether the application wants keys like ctrl+enter reported as
+    /// `CSI 27 ; …` rather than as their legacy control bytes.
+    #[inline]
+    pub fn modify_other_keys(&self) -> Option<u8> {
+        (self.modify_other_keys > 0).then_some(self.modify_other_keys)
+    }
+
+    /// The kitty keyboard protocol flags currently in effect, i.e. the top of
+    /// the mode stack. This is the same value the terminal reports back to the
+    /// application, so an embedder encoding key events itself does not have to
+    /// rebuild the flag byte out of [`Mode`] bits and keep that bit order in
+    /// sync by hand.
+    #[inline]
+    pub fn keyboard_mode(&self) -> KeyboardModes {
+        KeyboardModes::from_bits_truncate(
+            self.keyboard_mode_stack[self.keyboard_mode_idx],
+        )
     }
 
     pub fn mode(&self) -> Mode {
@@ -1861,6 +2116,7 @@ impl<U: EventListener> Crosswords<U> {
             self.grid.saved_cursor = self.grid.cursor.clone();
 
             // Reset alternate screen contents.
+            self.inactive_grid.sync_template_style();
             self.inactive_grid.reset_region(..);
 
             // The alt screen starts blank: sixel/iTerm2 placements
@@ -2270,6 +2526,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::ShowCursor => self.mode.insert(Mode::SHOW_CURSOR),
             NamedPrivateMode::CursorKeys => self.mode.insert(Mode::APP_CURSOR),
             // Mouse protocols are mutually exclusive.
+            NamedPrivateMode::ReportX10MouseClicks => {
+                self.mode.remove(Mode::MOUSE_MODE);
+                self.mode.insert(Mode::MOUSE_REPORT_X10);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
+            }
             NamedPrivateMode::ReportMouseClicks => {
                 self.mode.remove(Mode::MOUSE_MODE);
                 self.mode.insert(Mode::MOUSE_REPORT_CLICK);
@@ -2352,18 +2614,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             NamedPrivateMode::ShowCursor => self.mode.remove(Mode::SHOW_CURSOR),
             NamedPrivateMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
-            NamedPrivateMode::ReportMouseClicks => {
-                self.mode.remove(Mode::MOUSE_REPORT_CLICK);
-                self.event_proxy
-                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
-            }
-            NamedPrivateMode::ReportCellMouseMotion => {
-                self.mode.remove(Mode::MOUSE_DRAG);
-                self.event_proxy
-                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
-            }
-            NamedPrivateMode::ReportAllMouseMotion => {
-                self.mode.remove(Mode::MOUSE_MOTION);
+            // The mouse protocols are one setting, so resetting any of them
+            // turns reporting off. There is no protocol underneath to fall
+            // back to: setting one already cleared the others.
+            NamedPrivateMode::ReportX10MouseClicks
+            | NamedPrivateMode::ReportMouseClicks
+            | NamedPrivateMode::ReportCellMouseMotion
+            | NamedPrivateMode::ReportAllMouseMotion => {
+                self.mode.remove(Mode::MOUSE_MODE);
                 self.event_proxy
                     .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
@@ -2397,6 +2655,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 NamedPrivateMode::BlinkingCursor => self.blinking_cursor.into(),
                 NamedPrivateMode::ShowCursor => {
                     self.mode.contains(Mode::SHOW_CURSOR).into()
+                }
+                NamedPrivateMode::ReportX10MouseClicks => {
+                    self.mode.contains(Mode::MOUSE_REPORT_X10).into()
                 }
                 NamedPrivateMode::ReportMouseClicks => {
                     self.mode.contains(Mode::MOUSE_REPORT_CLICK).into()
@@ -2623,7 +2884,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let end = std::cmp::min(start + count, Column(self.grid.columns()));
 
         // Cleared cells have current background color set.
-        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        let bg = self.grid.template_style().bg;
         let blank = self.grid.blank_with_bg(bg);
         let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
@@ -2640,7 +2901,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn delete_chars(&mut self, count: usize) {
         let columns = self.grid.columns();
-        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        let bg = self.grid.template_style().bg;
         let blank = self.grid.blank_with_bg(bg);
 
         // Ensure deleting within terminal bounds.
@@ -2686,7 +2947,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn insert_blank(&mut self, count: usize) {
-        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        let bg = self.grid.template_style().bg;
         let blank = self.grid.blank_with_bg(bg);
 
         // Ensure inserting within terminal bounds
@@ -2742,6 +3003,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
         self.tabs = TabStops::new(self.grid.columns());
         self.title_stack = Vec::new();
+        self.modify_other_keys = 0;
         self.keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
         self.inactive_keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
         self.keyboard_mode_idx = 0;
@@ -3056,8 +3318,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     fn input_codepoints(&mut self, codepoints: &[u32]) {
         // Insert mode falls back: cell-rotation is per-char and the cost of
-        // bulk-handling it correctly outweighs the win.
-        if self.mode.contains(Mode::INSERT) {
+        // bulk-handling it correctly outweighs the win. Non-ASCII charsets
+        // fall back too: decode runs can carry ASCII that needs mapping.
+        let active = self.grid.cursor.charsets[self.active_charset];
+        if self.mode.contains(Mode::INSERT)
+            || active != crate::crosswords::pos::StandardCharset::Ascii
+        {
             for &cp in codepoints {
                 let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
                 self.input(c);
@@ -3065,14 +3331,42 @@ impl<U: EventListener> Handler for Crosswords<U> {
             return;
         }
 
-        for &cp in codepoints {
-            let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
-            // Registered glyphs keep their system `wcwidth` here (see the
-            // note in `input`); the declared width is a render-time hint
-            // only, applied as pixel overflow in the renderer.
-            let width = match crate::codepoint_width::codepoint_width(cp) {
+        // Registered glyphs keep their system `wcwidth` here (see the
+        // note in `input`); the declared width is a render-time hint
+        // only, applied as pixel overflow in the renderer.
+        let table = crate::codepoint_width::width_table();
+
+        // Image placements can clip cells, which the scalar writer owns.
+        if !self.graphics.atlas_placements.is_empty() {
+            for &cp in codepoints {
+                let width = match crate::codepoint_width::width_in(table, cp) {
+                    Some(w) => w,
+                    None => continue,
+                };
+                let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                if width == 0 {
+                    self.input(c);
+                } else {
+                    self.write_codepoint_cell(cp, c, width);
+                }
+            }
+            return;
+        }
+
+        self.grid.sync_template_style();
+        let template = self.cell_template();
+        let template_has_extras = template.extras_id().is_some();
+
+        let mut i = 0;
+        let n = codepoints.len();
+        while i < n {
+            let cp = codepoints[i];
+            let width = match crate::codepoint_width::width_in(table, cp) {
                 Some(w) => w,
-                None => continue,
+                None => {
+                    i += 1;
+                    continue;
+                }
             };
 
             if width == 0 {
@@ -3080,71 +3374,60 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 // owns the emoji-presentation flip and grapheme-extension
                 // logic (attaches to preceding cell rather than writing a
                 // new one).
+                let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
                 self.input(c);
+                i += 1;
                 continue;
             }
 
-            if self.grid.cursor.should_wrap {
-                self.wrapline();
-            }
-
-            let columns = self.grid.columns();
-
-            // Kitty placeholder bookkeeping: cp can't be ASCII here (parser
-            // routes ASCII through `input_str`) but the placeholder lives at
-            // U+10EEEE, so the check is still needed.
             if cp == crate::ansi::kitty_virtual::PLACEHOLDER as u32 {
-                let row = self.grid.cursor.pos.row;
-                self.grid[row].kitty_virtual_placeholder = true;
+                let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                self.write_codepoint_cell(cp, c, width);
+                i += 1;
+                continue;
             }
 
-            if width == 2 {
-                if self.grid.cursor.pos.col + 1 >= columns {
-                    if self.mode.contains(Mode::LINE_WRAP) {
-                        self.write_at_cursor(' ');
-                        self.grid
-                            .cursor_cell()
-                            .set_wide(crate::crosswords::square::Wide::LeadingSpacer);
-                        self.wrapline();
-                    } else {
-                        self.grid.cursor.should_wrap = true;
-                        continue;
-                    }
+            // Maximal run of same-width codepoints, written in bulk.
+            let mut j = i + 1;
+            while j < n {
+                let next = codepoints[j];
+                if next == crate::ansi::kitty_virtual::PLACEHOLDER as u32
+                    || crate::codepoint_width::width_in(table, next) != Some(width)
+                {
+                    break;
                 }
-
-                self.write_at_cursor(c);
-                self.grid
-                    .cursor_cell()
-                    .set_wide(crate::crosswords::square::Wide::Wide);
-                self.grid.cursor.pos.col += 1;
-                self.write_at_cursor(' ');
-                self.grid
-                    .cursor_cell()
-                    .set_wide(crate::crosswords::square::Wide::Spacer);
-            } else {
-                // width == 1
-                self.write_at_cursor(c);
+                j += 1;
             }
 
-            let cursor_line = self.grid.cursor.pos.row.0 as usize;
-            self.damage.damage_line(cursor_line);
-
-            if self.grid.cursor.pos.col + 1 < columns {
-                self.grid.cursor.pos.col += 1;
+            if width == 1 {
+                self.write_narrow_run(template, template_has_extras, &codepoints[i..j]);
             } else {
-                self.grid.cursor.should_wrap = true;
+                self.write_wide_run(template, template_has_extras, &codepoints[i..j]);
             }
+            i = j;
         }
     }
 
     fn input_str(&mut self, s: &str) {
+        if !s.is_ascii() {
+            for c in s.chars() {
+                self.input(c);
+            }
+            return;
+        }
+        self.input_ascii_str(s);
+    }
+
+    fn input_ascii_str(&mut self, s: &str) {
         // Fast path: ASCII printable runs are the common case (vim redraws,
         // log tails, prompt rendering). Side-step the per-char `input()`
         // dispatch which does width lookup, wide-char/zero-width checks,
         // kitty placeholder bookkeeping, and per-byte wrap branching.
+        // The caller guarantees `s` is ASCII; charset mapping and insert
+        // mode still defer to the scalar path.
+        debug_assert!(s.is_ascii());
         let active = self.grid.cursor.charsets[self.active_charset];
-        if !s.is_ascii()
-            || active != crate::crosswords::pos::StandardCharset::Ascii
+        if active != crate::crosswords::pos::StandardCharset::Ascii
             || self.mode.contains(Mode::INSERT)
         {
             for c in s.chars() {
@@ -3156,6 +3439,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // The cursor template (colors + flags) is constant across a printable
         // run, and ASCII needs no charset map — build the cell template once
         // and write each cell as a single packed store.
+        self.grid.sync_template_style();
         let template = self.cell_template();
         // Two per-run invariants, hoisted out of the cell loop below: whether
         // any image placement could clip a cell, and whether the template
@@ -3200,7 +3484,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let line = self.grid.cursor.pos.row;
                 let row = &mut self.grid[line];
                 let cells = &mut row[Column(cursor_col)..Column(cursor_col + take)];
-                if !cells.iter().any(|c| c.needs_wide_cleanup()) {
+                // Branchless fold; an early-exit any() does not vectorize.
+                let needs_cleanup = cells
+                    .iter()
+                    .fold(false, |acc, c| acc | c.needs_wide_cleanup());
+                if !needs_cleanup {
                     let src = &bytes[idx..idx + take];
                     for (cell, &b) in cells.iter_mut().zip(src) {
                         *cell = crate::crosswords::square::Square::from_template(
@@ -3274,6 +3562,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let text = format!("\x1bP>|Rio {version}\x1b\\");
         self.event_proxy
             .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+    }
+
+    #[inline]
+    fn set_modify_other_keys(&mut self, level: u8) {
+        self.modify_other_keys = level;
     }
 
     #[inline]
@@ -3370,7 +3663,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn clear_screen(&mut self, mode: ClearMode) {
-        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        self.grid.sync_template_style();
+        let bg = self.grid.template_style().bg;
         let blank = self.grid.blank_with_bg(bg);
 
         let screen_lines = self.grid.screen_lines();
@@ -3662,7 +3956,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn carriage_return(&mut self) {
-        trace!("Carriage return");
         let new_col = 0;
         let row = self.grid.cursor.pos.row.0 as usize;
         self.damage.damage_line(row);
@@ -3711,7 +4004,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn clear_line(&mut self, mode: LineClearMode) {
-        let bg = self.grid.style_of(&self.grid.cursor.template).bg;
+        let bg = self.grid.template_style().bg;
         let blank = self.grid.blank_with_bg(bg);
         let point = self.grid.cursor.pos;
         let should_wrap = self.grid.cursor.should_wrap;
@@ -3965,6 +4258,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         );
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
+
+        // Headless embedders never report cell dimensions; without this
+        // guard the row-fill loop below would `step_by(0)` and panic.
+        if cell_width == 0 || cell_height == 0 {
+            return;
+        }
 
         // Store last palette if we receive a new one, and it is shared.
         if let Some(palette) = palette {
@@ -4866,7 +5165,7 @@ impl<U: EventListener> Crosswords<U> {
             .graphics
             .get_kitty_image(image_id)
             .map(|s| s.transmission_time)
-            .unwrap_or_else(std::time::Instant::now);
+            .unwrap_or_else(crate::time::Instant::now);
         graphic_data.transmit_time = transmit_time;
 
         // Memory is managed in store_kitty_image (eviction happens there)
@@ -6687,10 +6986,6 @@ mod tests {
         }
 
         impl EventListener for TestListener {
-            fn event(&self) -> (Option<RioEvent>, bool) {
-                (None, false)
-            }
-
             fn send_event(&self, event: RioEvent, _id: WindowId) {
                 self.events.borrow_mut().push(event);
             }
@@ -6746,10 +7041,6 @@ mod tests {
         }
 
         impl EventListener for TestListener {
-            fn event(&self) -> (Option<RioEvent>, bool) {
-                (None, false)
-            }
-
             fn send_event(&self, event: RioEvent, _id: WindowId) {
                 self.events.borrow_mut().push(event);
             }
@@ -6888,7 +7179,7 @@ mod tests {
             display_width: None,
             display_height: None,
             resize: None,
-            transmit_time: std::time::Instant::now(),
+            transmit_time: crate::time::Instant::now(),
         };
 
         cw.insert_graphic(graphic, None, None);
@@ -6929,7 +7220,7 @@ mod tests {
             display_width: None,
             display_height: None,
             resize: None,
-            transmit_time: std::time::Instant::now(),
+            transmit_time: crate::time::Instant::now(),
         };
         cw.insert_graphic(graphic.clone(), None, Some(1));
 
@@ -6942,6 +7233,38 @@ mod tests {
         cw.insert_graphic(graphic, None, Some(1));
         assert_eq!(cw.graphics.atlas_placements.len(), 1);
         assert_eq!(cw.graphics.atlas_key_refs.len(), 1);
+    }
+
+    /// Headless embedders never set `graphics.cell_width`/`cell_height`;
+    /// inserting a graphic then must be a no-op instead of panicking in the
+    /// row-fill loop (`step_by(0)`).
+    #[test]
+    fn insert_graphic_without_cell_dimensions_is_noop() {
+        let size = CrosswordsSize::new(20, 10);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+
+        let graphic = GraphicData {
+            id: rio_graphics::GraphicId::new(0),
+            width: 10,
+            height: 10,
+            pixels: vec![0u8; 10 * 10 * 4],
+            color_type: rio_graphics::ColorType::Rgba,
+            is_opaque: true,
+            display_width: None,
+            display_height: None,
+            resize: None,
+            transmit_time: crate::time::Instant::now(),
+        };
+        cw.insert_graphic(graphic, None, Some(1));
+        assert!(cw.graphics.atlas_placements.is_empty());
     }
 
     // ------------------------------------------------------------------
@@ -7464,5 +7787,362 @@ mod tests {
 
         // Cursor must be untouched.
         assert_eq!(cw.grid.cursor.pos, cursor_before);
+    }
+
+    /// DECSTBM bounds where scrolling happens, not what is on screen. Both
+    /// shapes matter: `1;N` only shrinks `end`, so a fix that just zeroed
+    /// `start` would pass that case while still dropping the bottom rows.
+    #[test]
+    fn visible_rows_ignore_the_scroll_region() {
+        use crate::performer::handler::Processor;
+        fn term_with_lines(rows: usize) -> (Crosswords<VoidListener>, Processor) {
+            let mut term = Crosswords::new(
+                CrosswordsSize::new(20, rows),
+                CursorShape::Block,
+                VoidListener,
+                crate::event::WindowId::from(0),
+                0,
+                100,
+            );
+            let mut parser = Processor::default();
+            for i in 0..rows {
+                parser
+                    .advance(&mut term, format!("\x1b[{};1Hline{}", i + 1, i).as_bytes());
+            }
+            (term, parser)
+        }
+
+        let first_row_text = |term: &Crosswords<VoidListener>| -> String {
+            let rows = term.visible_rows();
+            (0..5).map(|c| rows[0][Column(c)].c()).collect()
+        };
+
+        // Region narrowed at both ends: full height, no vertical shift.
+        let (mut term, mut parser) = term_with_lines(10);
+        parser.advance(&mut term, b"\x1b[2;8r");
+        assert_eq!(term.screen_lines(), 10);
+        assert_eq!(term.visible_rows().len(), 10);
+        assert_eq!(first_row_text(&term), "line0");
+
+        // Region narrowed at the bottom only, as vim does around its status
+        // line: the last row must still be reported.
+        let (mut term, mut parser) = term_with_lines(10);
+        parser.advance(&mut term, b"\x1b[1;9r");
+        assert_eq!(term.visible_rows().len(), 10);
+        assert_eq!(first_row_text(&term), "line0");
+
+        // Same on the alternate screen.
+        let (mut term, mut parser) = term_with_lines(6);
+        parser.advance(&mut term, b"\x1b[?1049h\x1b[1;3r");
+        assert_eq!(term.visible_rows().len(), 6);
+
+        // Scrolled into history, the viewport still spans the screen height
+        // and starts one line up per scrolled line.
+        let (mut term, mut parser) = term_with_lines(4);
+        for i in 0..4 {
+            parser.advance(&mut term, format!("\r\nscroll{i}").as_bytes());
+        }
+        parser.advance(&mut term, b"\x1b[2;3r");
+        term.scroll_display(crate::crosswords::grid::Scroll::Delta(2));
+        assert_eq!(term.display_offset(), 2);
+        assert_eq!(term.visible_rows().len(), 4);
+    }
+
+    /// The flag byte an embedder needs to encode keys is the one the terminal
+    /// would report; it must survive set, push and pop.
+    #[test]
+    fn keyboard_mode_reports_the_active_flags() {
+        use crate::performer::handler::Processor;
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 3),
+            CursorShape::Block,
+            VoidListener,
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = Processor::default();
+        assert_eq!(term.keyboard_mode(), KeyboardModes::NO_MODE);
+
+        // CSI = 5 ; 1 u -> disambiguate + report alternate keys.
+        parser.advance(&mut term, b"\x1b[=5;1u");
+        assert_eq!(
+            term.keyboard_mode(),
+            KeyboardModes::DISAMBIGUATE_ESC_CODES | KeyboardModes::REPORT_ALTERNATE_KEYS
+        );
+
+        // Pushing a new mode shadows it, popping restores it.
+        parser.advance(&mut term, b"\x1b[>1u");
+        assert_eq!(term.keyboard_mode(), KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        parser.advance(&mut term, b"\x1b[<1u");
+        assert_eq!(
+            term.keyboard_mode(),
+            KeyboardModes::DISAMBIGUATE_ESC_CODES | KeyboardModes::REPORT_ALTERNATE_KEYS
+        );
+    }
+
+    /// `c()` alone drops combining marks, which is the trap `cell_text`
+    /// exists to close. Also covers the bg-only guard: those cells reuse the
+    /// extras-id bits for colour, so an unguarded lookup reads a channel as
+    /// an id.
+    #[test]
+    fn cell_text_includes_zero_width_marks() {
+        use crate::performer::handler::Processor;
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 2),
+            CursorShape::Block,
+            VoidListener,
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = Processor::default();
+        // "e" + U+0301 COMBINING ACUTE, then "X".
+        parser.advance(&mut term, "e\u{0301}X".as_bytes());
+
+        let cell = Pos::new(Line(0), Column(0));
+        assert_eq!(term.grid[cell].c(), 'e', "base char only");
+        assert_eq!(
+            term.grid.cell_text(cell).collect::<String>(),
+            "e\u{0301}",
+            "cell_text keeps the mark"
+        );
+        assert_eq!(
+            term.grid
+                .cell_text(Pos::new(Line(0), Column(1)))
+                .collect::<String>(),
+            "X"
+        );
+
+        // A background-only cell has no text and must not read its colour
+        // bits as an extras id.
+        let bg = Pos::new(Line(1), Column(0));
+        term.grid[bg].set_bg_rgb(0xAA, 0xBB, 0xCC);
+        assert!(term.grid[bg].is_bg_only());
+        assert_eq!(
+            term.grid.cell_text(bg).collect::<String>(),
+            "\0",
+            "bg-only cell is blank, with no marks"
+        );
+    }
+
+    /// modifyOtherKeys has no Mode bit, so without this an embedder has to
+    /// sniff raw PTY bytes outside the parser to find it.
+    #[test]
+    fn modify_other_keys_tracks_the_level() {
+        use crate::performer::handler::Processor;
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 2),
+            CursorShape::Block,
+            VoidListener,
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = Processor::default();
+        assert_eq!(term.modify_other_keys(), None);
+
+        parser.advance(&mut term, b"\x1b[>4;2m");
+        assert_eq!(term.modify_other_keys(), Some(2));
+
+        parser.advance(&mut term, b"\x1b[>4;1m");
+        assert_eq!(term.modify_other_keys(), Some(1));
+
+        // No level, and an explicit 0, both disable it.
+        parser.advance(&mut term, b"\x1b[>4m");
+        assert_eq!(term.modify_other_keys(), None);
+        parser.advance(&mut term, b"\x1b[>4;2m\x1b[>4;0m");
+        assert_eq!(term.modify_other_keys(), None);
+
+        // Another resource must not be mistaken for modifyOtherKeys, and an
+        // out-of-range level must not reach an embedder as a level it cannot
+        // interpret.
+        parser.advance(&mut term, b"\x1b[>2;2m");
+        assert_eq!(term.modify_other_keys(), None);
+        parser.advance(&mut term, b"\x1b[>4;7m");
+        assert_eq!(term.modify_other_keys(), None);
+
+        // RIS clears it, like the other keyboard state.
+        parser.advance(&mut term, b"\x1b[>4;2m");
+        assert_eq!(term.modify_other_keys(), Some(2));
+        parser.advance(&mut term, b"\x1bc");
+        assert_eq!(term.modify_other_keys(), None);
+    }
+    /// A grid one column wide cannot hold a wide pair. Every path that can
+    /// place or preserve one has to cope: the per-cell write, the bulk wide
+    /// run, the VS16 promotion that widens an already-written cell, and the
+    /// reflow that shrinks a grid under existing wide content. Before this
+    /// was handled the first two panicked out of bounds and the last looped
+    /// forever, growing the new row buffer without bound.
+    #[test]
+    fn one_column_grid_handles_wide_glyphs() {
+        use crate::performer::handler::Processor;
+
+        let feed = |cols: usize, bytes: &[u8]| {
+            let mut term = Crosswords::new(
+                CrosswordsSize::new(cols, 3),
+                CursorShape::Block,
+                VoidListener,
+                crate::event::WindowId::from(0),
+                0,
+                100,
+            );
+            Processor::default().advance(&mut term, bytes);
+            term
+        };
+
+        // The reported repro: one wide char, one column. The glyph cannot be
+        // represented, so it is dropped for a blank narrow cell, matching
+        // ghostty on the same degenerate size.
+        let term = feed(1, "你".as_bytes());
+        let cell = term.grid[Pos::new(Line(0), Column(0))];
+        assert!(!cell.is_wide(), "nothing to pair a wide cell with");
+        assert!(!cell.is_spacer(), "and no orphaned Spacer either");
+        assert_eq!(cell.c(), ' ');
+
+        for cols in [1, 2] {
+            feed(cols, "你好世界".as_bytes());
+            feed(cols, "🦀".as_bytes());
+            feed(cols, "\u{2764}\u{FE0F}".as_bytes());
+            feed(cols, "你\u{0301}".as_bytes());
+            feed(cols, "你\r\n好\r\n世".as_bytes());
+            feed(cols, "\x1b[?1049h你好".as_bytes());
+            feed(cols, "\x1b[1;2r你好".as_bytes());
+        }
+
+        // Shrinking under existing wide content, then writing, then growing.
+        // Reflowing to one column destroys the wide chars, so no row should
+        // come out of it still claiming to be wide or a Spacer.
+        let mut term = feed(4, "你好".as_bytes());
+        term.resize(CrosswordsSize::new(1, 3));
+        for row in term.visible_rows() {
+            let cell = row[Column(0)];
+            assert!(!cell.is_wide() && !cell.is_spacer());
+        }
+        Processor::default().advance(&mut term, "世".as_bytes());
+        term.resize(CrosswordsSize::new(4, 3));
+    }
+
+    /// The mouse protocols are one setting with four states, not four
+    /// independent flags, so the last mode set wins and clears the rest.
+    #[test]
+    fn x10_mouse_mode_displaces_the_other_protocols() {
+        use crate::performer::handler::Processor;
+
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            VoidListener,
+            WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = Processor::default();
+
+        parser.advance(&mut term, b"\x1b[?9h");
+        assert!(term.mode().contains(Mode::MOUSE_REPORT_X10));
+        assert!(term.mode().intersects(Mode::MOUSE_MODE));
+
+        // 1000 supersedes X10.
+        parser.advance(&mut term, b"\x1b[?1000h");
+        assert!(!term.mode().contains(Mode::MOUSE_REPORT_X10));
+        assert!(term.mode().contains(Mode::MOUSE_REPORT_CLICK));
+
+        // And X10 displaces 1000 in turn.
+        parser.advance(&mut term, b"\x1b[?9h");
+        assert!(term.mode().contains(Mode::MOUSE_REPORT_X10));
+        assert!(!term.mode().contains(Mode::MOUSE_REPORT_CLICK));
+
+        parser.advance(&mut term, b"\x1b[?9l");
+        assert!(!term.mode().intersects(Mode::MOUSE_MODE));
+    }
+
+    /// Resetting one protocol while another is active turns reporting off
+    /// rather than leaving the active one running, because the four are one
+    /// setting and a reset cannot name a protocol to fall back to.
+    #[test]
+    fn resetting_any_mouse_protocol_clears_reporting() {
+        use crate::performer::handler::Processor;
+
+        let sequences: [&[u8]; 4] =
+            [b"\x1b[?9l", b"\x1b[?1000l", b"\x1b[?1002l", b"\x1b[?1003l"];
+        for reset in sequences {
+            let sets: [&[u8]; 4] =
+                [b"\x1b[?9h", b"\x1b[?1000h", b"\x1b[?1002h", b"\x1b[?1003h"];
+            for set in sets {
+                let mut term = Crosswords::new(
+                    CrosswordsSize::new(10, 10),
+                    CursorShape::Block,
+                    VoidListener,
+                    WindowId::from(0),
+                    0,
+                    10,
+                );
+                let mut parser = Processor::default();
+
+                parser.advance(&mut term, set);
+                assert!(term.mode().intersects(Mode::MOUSE_MODE));
+
+                parser.advance(&mut term, reset);
+                assert!(
+                    !term.mode().intersects(Mode::MOUSE_MODE),
+                    "{:?} left reporting on after {:?}",
+                    String::from_utf8_lossy(reset),
+                    String::from_utf8_lossy(set),
+                );
+            }
+        }
+    }
+
+    /// DECRQM has to answer for mode 9 now that it is tracked, otherwise
+    /// programs cannot tell that their request took effect.
+    #[test]
+    fn x10_mouse_mode_answers_decrqm() {
+        use crate::performer::handler::Processor;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        #[derive(Clone)]
+        struct TestListener {
+            events: Rc<RefCell<Vec<RioEvent>>>,
+        }
+
+        impl EventListener for TestListener {
+            fn send_event(&self, event: RioEvent, _id: WindowId) {
+                self.events.borrow_mut().push(event);
+            }
+        }
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = Processor::default();
+
+        let replies = |events: &Rc<RefCell<Vec<RioEvent>>>| -> Vec<String> {
+            events
+                .borrow()
+                .iter()
+                .filter_map(|event| match event {
+                    RioEvent::PtyWrite(_, text) => Some(text.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        // Reset (2) before it is set, set (1) after.
+        parser.advance(&mut term, b"\x1b[?9$p");
+        assert_eq!(replies(&events), vec!["\x1b[?9;2$y".to_string()]);
+
+        events.borrow_mut().clear();
+        parser.advance(&mut term, b"\x1b[?9h\x1b[?9$p");
+        assert_eq!(replies(&events), vec!["\x1b[?9;1$y".to_string()]);
     }
 }

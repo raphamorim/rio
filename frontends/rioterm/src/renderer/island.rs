@@ -243,6 +243,32 @@ fn island_rect(slot_x: f32, tab_width: f32) -> (f32, f32, f32, f32, f32) {
     (x, y, w, h, radius)
 }
 
+/// How much width a lone tab's title may occupy, in logical pixels.
+///
+/// `window_width` is physical, as `render` receives it, while everything
+/// drawn is logical, the same conversion `tab_strip_layout` makes.
+#[inline]
+fn single_title_budget(window_width: f32, scale_factor: f32, left_margin: f32) -> f32 {
+    ((window_width / scale_factor)
+        - left_margin
+        - ISLAND_MARGIN_RIGHT
+        - TAB_PADDING_X * 2.0)
+        .max(0.0)
+}
+
+/// Where a lone tab's title starts: centred on the strip, but never far
+/// enough left to sit under the traffic lights on macOS. Physical in,
+/// logical out, as above.
+#[inline]
+fn single_title_x(
+    window_width: f32,
+    scale_factor: f32,
+    text_width: f32,
+    left_margin: f32,
+) -> f32 {
+    (((window_width / scale_factor) - text_width) / 2.0).max(left_margin + TAB_PADDING_X)
+}
+
 #[inline]
 fn close_button_center(island_x: f32, island_w: f32) -> Option<f32> {
     (island_w >= CLOSE_MIN_ISLAND_WIDTH)
@@ -729,6 +755,15 @@ impl Island {
             return;
         }
 
+        // A lone tab draws as a centred title with no island, and cannot be
+        // reordered. A drag can only start with two or more tabs, but one can
+        // outlive the second tab (its shell exits mid-drag), and that would
+        // float an island where the title belongs.
+        if num_tabs == 1 {
+            self.drag = None;
+            self.slide_springs.clear();
+        }
+
         // A reorder that didn't come from this drag (tab closed via
         // shell exit, keyboard move) breaks the drag.tab_index ==
         // current_index invariant — drop the drag instead of floating
@@ -800,10 +835,28 @@ impl Island {
                 x_position += tab_width;
                 continue;
             }
-            let max_text_width = (tab_width - TAB_PADDING_X * 2.0).max(0.0);
+            // A lone tab has nothing to be distinguished from, so it gets no
+            // island at all: just its title, centred across the strip. That
+            // leaves the width of the window to spend on the title, and no
+            // fill to carry a custom colour, which moves to the text.
+            let single = num_tabs == 1;
+
+            let max_text_width = if single {
+                single_title_budget(window_width, scale_factor, left_margin)
+            } else {
+                (tab_width - TAB_PADDING_X * 2.0).max(0.0)
+            };
             let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
 
-            let text_color = if is_active {
+            let text_color = if single {
+                match context_manager.custom_color(tab_index) {
+                    Some(mut custom) => {
+                        custom[3] = 1.0;
+                        custom
+                    }
+                    None => self.active_text_color,
+                }
+            } else if is_active {
                 self.active_text_color
             } else {
                 self.inactive_text_color
@@ -830,9 +883,19 @@ impl Island {
                 // text_id bookkeeping.
                 let ui = sugarloaf.text_mut();
                 let text_width = ui.measure(&title, &title_opts);
-                let text_x = tab_x + (tab_width - text_width) / 2.0;
+                let text_x = if single {
+                    single_title_x(window_width, scale_factor, text_width, left_margin)
+                } else {
+                    tab_x + (tab_width - text_width) / 2.0
+                };
                 let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
                 ui.draw(text_x, text_y, &title, &title_opts);
+            }
+
+            // Nothing is drawn behind a lone title.
+            if single {
+                x_position += tab_width;
+                continue;
             }
 
             // Rounded island for this tab. A custom color (picker /
@@ -1404,6 +1467,60 @@ mod tests {
             assert!(CLOSE_MARGIN_RIGHT + CLOSE_HIT_HALF_WIDTH < CLOSE_MIN_ISLAND_WIDTH);
             assert!(CLOSE_HOVER_HALF * 2.0 <= ISLAND_HEIGHT - TAB_INSET_Y * 2.0);
         }
+    }
+
+    /// The regression that shipped: `window_width` is physical while draws
+    /// are logical, so centring on it put the title off the right edge of a
+    /// 2x display and nothing appeared at all.
+    #[test]
+    fn single_title_is_centred_in_logical_pixels() {
+        // 1600 physical at 2x is an 800pt strip, so a 100pt title starts at
+        // 350, not at 750 (which would be centred on the physical width and
+        // sit past the right edge).
+        let x = single_title_x(1600.0, 2.0, 100.0, 0.0);
+        assert_eq!(x, 350.0);
+        assert!(x + 100.0 <= 800.0, "title must stay on screen: {x}");
+
+        // At 1x the two agree, which is why this only showed up on retina.
+        assert_eq!(single_title_x(800.0, 1.0, 100.0, 0.0), 350.0);
+    }
+
+    #[test]
+    fn single_title_never_reaches_under_the_traffic_lights() {
+        let margin = 76.0;
+        // A title wider than the strip would centre at a negative x.
+        let x = single_title_x(1600.0, 2.0, 900.0, margin);
+        assert_eq!(x, margin + TAB_PADDING_X);
+    }
+
+    #[test]
+    fn single_title_budget_leaves_both_margins() {
+        // 800pt strip, no left margin: full width less the right margin and
+        // the padding on each side.
+        assert_eq!(
+            single_title_budget(1600.0, 2.0, 0.0),
+            800.0 - ISLAND_MARGIN_RIGHT - TAB_PADDING_X * 2.0
+        );
+        // The macOS left margin comes off the top of that.
+        assert_eq!(
+            single_title_budget(1600.0, 2.0, 76.0),
+            800.0 - 76.0 - ISLAND_MARGIN_RIGHT - TAB_PADDING_X * 2.0
+        );
+        // A window too narrow to hold any text yields no budget, not a
+        // negative one that would underflow the truncation.
+        assert_eq!(single_title_budget(100.0, 2.0, 76.0), 0.0);
+    }
+
+    /// A lone title gets far more room than a tab slot would give it, which
+    /// is the point of dropping the island.
+    #[test]
+    fn single_title_budget_beats_a_tab_slot() {
+        let slot = tab_strip_layout(1600.0, 2.0, 1, 240.0).tab_width;
+        let slot_budget = (slot - TAB_PADDING_X * 2.0).max(0.0);
+        assert!(
+            single_title_budget(1600.0, 2.0, 0.0) > slot_budget,
+            "expected more than a slot's {slot_budget}"
+        );
     }
 
     #[test]

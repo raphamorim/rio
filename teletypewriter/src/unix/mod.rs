@@ -468,12 +468,22 @@ fn login_argv(
 /// which is a command in Unix and Unix-like operating systems to print the file name of the
 /// terminal connected to standard input. tty stands for TeleTYpewriter.
 ///
+/// `env`, when given, is applied on top of the inherited environment,
+/// overriding inherited variables of the same name. `None` inherits as-is.
+///
+/// `shell` of `None` means no program was configured: the user's default shell
+/// is looked up and, on macOS, wrapped in `/usr/bin/login` so the child gets a
+/// login session. A caller that names a program gets exactly that program,
+/// spawned directly, with no `login` in between.
+///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn create_pty_with_spawn(
-    shell: &str,
+    shell: Option<&str>,
     args: Vec<String>,
     working_directory: &Option<String>,
+    env: Option<Vec<(String, String)>>,
     columns: u16,
     rows: u16,
     width: u16,
@@ -495,7 +505,7 @@ pub fn create_pty_with_spawn(
     };
     let term = create_termp(true);
 
-    let res = unsafe {
+    let mut open = || unsafe {
         openpty(
             &mut main as *mut _,
             &mut child as *mut _,
@@ -505,37 +515,58 @@ pub fn create_pty_with_spawn(
         )
     };
 
-    if res < 0 {
-        return Err(Error::other("openpty failed"));
+    // openpty fails transiently when many PTYs open concurrently (seen
+    // on macOS under parallel spawns, with garbage errno); a brief retry
+    // absorbs it instead of surfacing a dead surface to the embedder.
+    let mut res = open();
+    for _ in 0..3 {
+        if res >= 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        res = open();
     }
 
-    let mut shell_program = shell;
+    if res < 0 {
+        return Err(Error::other(format!(
+            "openpty failed: {}",
+            Error::last_os_error()
+        )));
+    }
 
     let user = match ShellUser::from_env() {
         Ok(data) => data,
         Err(..) => ShellUser {
-            shell: shell.to_string(),
+            shell: shell.unwrap_or_default().to_string(),
             ..Default::default()
         },
     };
 
-    if shell.is_empty() {
-        shell_program = &user.shell;
-    }
+    // No program means the caller wants the user's default shell, which is the
+    // only case that goes through `login`. A named program is spawned as given.
+    let uses_default_shell = shell.is_none();
+    let shell_program = shell.unwrap_or(&user.shell);
 
     tracing::info!("spawn {:?} {:?}", shell_program, args);
 
     let mut builder = {
         #[cfg(target_os = "macos")]
         {
-            // On macOS, use /usr/bin/login to ensure proper login shell environment
-            // This ensures PATH includes directories like /usr/local/bin
-            let hushlogin = std::path::Path::new(&user.home).join(".hushlogin").exists();
+            if uses_default_shell {
+                // On macOS, use /usr/bin/login to ensure proper login shell environment
+                // This ensures PATH includes directories like /usr/local/bin
+                let hushlogin =
+                    std::path::Path::new(&user.home).join(".hushlogin").exists();
 
-            let mut login_cmd = Command::new("/usr/bin/login");
-            login_cmd.args(login_argv(hushlogin, &user.user, shell_program, &args));
+                let mut login_cmd = Command::new("/usr/bin/login");
+                login_cmd.args(login_argv(hushlogin, &user.user, shell_program, &args));
 
-            login_cmd
+                login_cmd
+            } else {
+                let mut cmd = Command::new(shell_program);
+                cmd.args(args);
+                cmd
+            }
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -593,6 +624,9 @@ pub fn create_pty_with_spawn(
 
     builder.env("USER", user.user);
     builder.env("HOME", user.home);
+    if let Some(env) = env {
+        builder.envs(env);
+    }
 
     unsafe {
         builder.pre_exec(move || {
@@ -616,6 +650,13 @@ pub fn create_pty_with_spawn(
             libc::signal(libc::SIGQUIT, libc::SIG_DFL);
             libc::signal(libc::SIGTERM, libc::SIG_DFL);
             libc::signal(libc::SIGALRM, libc::SIG_DFL);
+
+            // The embedding process may run with signals blocked (e.g. on a
+            // background thread); the child must not inherit that mask or
+            // Ctrl-C and friends stop working in the spawned shell.
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            libc::sigprocmask(libc::SIG_SETMASK, &set, std::ptr::null_mut());
 
             Ok(())
         });
@@ -673,7 +714,7 @@ pub fn create_pty_with_spawn(
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
 pub fn create_pty_with_fork(
-    shell: &str,
+    shell: Option<&str>,
     args: &[String],
     columns: u16,
     rows: u16,
@@ -689,20 +730,18 @@ pub fn create_pty_with_fork(
     };
     let term = create_termp(true);
 
-    let mut shell_program = shell;
-
     let user = match ShellUser::from_env() {
         Ok(data) => data,
         Err(..) => ShellUser {
-            shell: shell.to_string(),
+            shell: shell.unwrap_or_default().to_string(),
             ..Default::default()
         },
     };
 
-    if shell.is_empty() {
-        tracing::info!("shell configuration is empty, will retrieve from env");
-        shell_program = &user.shell;
-    }
+    let shell_program = shell.unwrap_or_else(|| {
+        tracing::info!("no shell configured, will retrieve from env");
+        &user.shell
+    });
 
     tracing::info!("fork {:?}", shell_program);
 
@@ -883,7 +922,7 @@ impl EventedPty for Pty {
                     None
                 }
                 Ok(None) => None,
-                Ok(Some(..)) => Some(ChildEvent::Exited),
+                Ok(Some(status)) => Some(ChildEvent::Exited(Some(status))),
             }
         })
     }

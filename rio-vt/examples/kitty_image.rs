@@ -18,10 +18,6 @@ use std::sync::{Arc, Mutex};
 struct ImageSink(Arc<Mutex<Vec<(u32, usize, usize, usize)>>>);
 
 impl EventListener for ImageSink {
-    fn event(&self) -> (Option<RioEvent>, bool) {
-        (None, false)
-    }
-
     fn send_event(&self, event: RioEvent, _window: WindowId) {
         if let RioEvent::UpdateGraphics { queues, .. } = event {
             let mut sink = self.0.lock().unwrap();

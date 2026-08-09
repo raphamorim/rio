@@ -1,9 +1,9 @@
 use crate::event_imp::{self as event, Event, Evented, PollOpt, Ready};
 use crate::{sys, Token};
 use std::cell::UnsafeCell;
-#[cfg(all(unix, not(target_os = "fuchsia")))]
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
-#[cfg(all(unix, not(target_os = "fuchsia")))]
+#[cfg(unix)]
 use std::os::unix::io::RawFd;
 use std::process;
 use std::rc::Rc;
@@ -1260,7 +1260,7 @@ impl fmt::Debug for Poll {
     }
 }
 
-#[cfg(all(unix, not(target_os = "fuchsia")))]
+#[cfg(unix)]
 impl AsRawFd for Poll {
     fn as_raw_fd(&self) -> RawFd {
         self.selector.as_raw_fd()
@@ -1566,17 +1566,6 @@ pub fn selector(poll: &Poll) -> &sys::Selector {
  * ===== Registration =====
  *
  */
-
-// TODO: get rid of this, windows depends on it for now
-#[allow(dead_code)]
-pub fn new_registration(
-    poll: &Poll,
-    token: Token,
-    ready: Ready,
-    opt: PollOpt,
-) -> (Registration, SetReadiness) {
-    Registration::new_priv(poll, token, ready, opt)
-}
 
 impl Registration {
     /// Create and return a new `Registration` and the associated
@@ -2858,7 +2847,7 @@ impl Clone for SelectorId {
 }
 
 #[test]
-#[cfg(all(unix, not(target_os = "fuchsia")))]
+#[cfg(unix)]
 pub fn as_raw_fd() {
     let poll = Poll::new().unwrap();
     assert!(poll.as_raw_fd() > 0);

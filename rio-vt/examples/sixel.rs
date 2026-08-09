@@ -18,10 +18,6 @@ use std::sync::{Arc, Mutex};
 struct GraphicSink(Arc<Mutex<Vec<(u64, usize, usize, usize)>>>);
 
 impl EventListener for GraphicSink {
-    fn event(&self) -> (Option<RioEvent>, bool) {
-        (None, false)
-    }
-
     fn send_event(&self, event: RioEvent, _window: WindowId) {
         if let RioEvent::UpdateGraphics { queues, .. } = event {
             let mut sink = self.0.lock().unwrap();

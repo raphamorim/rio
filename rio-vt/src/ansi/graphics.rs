@@ -32,7 +32,7 @@ pub const KITTY_PLACEHOLDER: char = '\u{10EEEE}';
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredImage {
     pub data: GraphicData,
-    pub transmission_time: std::time::Instant,
+    pub transmission_time: crate::time::Instant,
 }
 
 /// Overlay placement for a kitty graphics image.
@@ -82,7 +82,7 @@ pub struct KittyPlacement {
     /// Z-index layer for rendering order.
     pub z_index: i32,
     /// Transmission timestamp for cache invalidation.
-    pub transmit_time: std::time::Instant,
+    pub transmit_time: crate::time::Instant,
 }
 
 /// Resolve a raw kitty source rectangle against the image's current
@@ -620,7 +620,7 @@ pub struct Graphics {
 
     /// Tracks when each graphic was added (for eviction priority)
     /// Maps GraphicId to insertion timestamp
-    pub image_timestamps: FxHashMap<GraphicId, std::time::Instant>,
+    pub image_timestamps: FxHashMap<GraphicId, crate::time::Instant>,
 
     /// Weak references to placed textures, for O(1) liveness checks.
     /// Avoids scanning the entire grid to find which graphics are in use.
@@ -880,7 +880,7 @@ impl Graphics {
         image_number: Option<u32>,
         mut data: GraphicData,
     ) {
-        let now = std::time::Instant::now();
+        let now = crate::time::Instant::now();
         data.transmit_time = now;
 
         // Evict before storing to protect images with active placements
@@ -1002,7 +1002,7 @@ impl Graphics {
         // Candidate: (sentinel GraphicId, timestamp, is_used, bytes, source)
         let mut candidates: Vec<(
             GraphicId,
-            std::time::Instant,
+            crate::time::Instant,
             bool,
             usize,
             CandidateSource,
@@ -1177,7 +1177,7 @@ impl Graphics {
     /// Track a new graphic's memory usage and timestamp
     pub fn track_graphic(&mut self, graphic_id: GraphicId, bytes: usize) {
         self.image_timestamps
-            .insert(graphic_id, std::time::Instant::now());
+            .insert(graphic_id, crate::time::Instant::now());
         self.total_bytes += bytes;
         debug!(
             "Tracked graphic id={}, bytes={}, total_bytes={}",
@@ -1209,7 +1209,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -1235,7 +1235,7 @@ fn check_opaque_region() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));
@@ -1259,7 +1259,7 @@ fn test_graphics_memory_tracking() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
 
     let bytes = Graphics::calculate_graphic_bytes(&graphic);
@@ -1299,7 +1299,7 @@ fn test_graphics_eviction_unused_first() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -1319,7 +1319,7 @@ fn test_graphics_eviction_unused_first() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
     graphics.pending.push(graphic2);
     graphics.track_graphic(GraphicId::new(2), pixels2.len());
@@ -1360,7 +1360,7 @@ fn test_graphics_eviction_oldest_first() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -1379,7 +1379,7 @@ fn test_graphics_eviction_oldest_first() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
     graphics.pending.push(graphic2);
     graphics.track_graphic(GraphicId::new(2), pixels2.len());
@@ -1416,7 +1416,7 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
@@ -1458,7 +1458,7 @@ fn test_graphics_no_eviction_when_under_limit() {
         resize: None,
         display_width: None,
         display_height: None,
-        transmit_time: std::time::Instant::now(),
+        transmit_time: crate::time::Instant::now(),
     };
     graphics.pending.push(graphic1);
     graphics.track_graphic(GraphicId::new(1), pixels1.len());
