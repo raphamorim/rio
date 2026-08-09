@@ -1740,6 +1740,20 @@ unsafe fn public_window_callback_inner(
                             window_id: RootWindowId(WindowId(window)),
                             event: WindowEvent::Ime(Ime::Commit(text)),
                         });
+                    } else {
+                        // Composition ended with a live preedit but no
+                        // result string — the IME was cancelled (Esc,
+                        // focus loss, IME switch) and no final
+                        // WM_IME_COMPOSITION with an empty GCS_COMPSTR
+                        // is guaranteed to follow. `Ime::Disabled` is
+                        // no longer dispatched, so this clear is the
+                        // only thing standing between the app and a
+                        // stale `ime.preedit` that short-circuits
+                        // every subsequent key press.
+                        userdata.send_event(Event::WindowEvent {
+                            window_id: RootWindowId(WindowId(window)),
+                            event: WindowEvent::Ime(Ime::Preedit(String::new(), None)),
+                        });
                     }
                 }
 
