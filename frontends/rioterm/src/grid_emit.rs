@@ -1761,7 +1761,7 @@ pub fn build_row_fg(
         // BOOL_IS_CURSOR_GLYPH for the inverse-on-cursor swap) goes
         // through a single-cell shaping path so it can't accidentally
         // form ligatures with the underlying terminal text.
-        if preedit.map_or(false, |p| p.cell(x).is_some()) {
+        if preedit.is_some_and(|p| p.cell(x).is_some()) {
             x += 1;
             continue;
         }
@@ -1977,7 +1977,7 @@ pub fn build_row_fg(
         while end < cols {
             // Stop the run before stepping into a preedit cell — the
             // composition takes over those cells in the dedicated pass.
-            if preedit.map_or(false, |p| p.cell(end).is_some()) {
+            if preedit.is_some_and(|p| p.cell(end).is_some()) {
                 break;
             }
             let sq2 = row[Column(end)];
@@ -2476,6 +2476,7 @@ fn emit_preedit_char(
 }
 
 /// Emit the IME caret beam decoration glyph at `(col, y)`.
+#[allow(clippy::too_many_arguments)]
 fn emit_ime_caret(
     col: u16,
     y: u16,
@@ -2532,7 +2533,7 @@ fn emit_underlines(
         // Suppress decorations on preedit cells — composing text
         // shouldn't pick up the underline / hover affordance of
         // whatever was under the cursor.
-        if preedit.map_or(false, |p| p.cell(x).is_some()) {
+        if preedit.is_some_and(|p| p.cell(x).is_some()) {
             continue;
         }
         let sq = row[Column(x)];
@@ -2607,7 +2608,7 @@ fn emit_strikethroughs(
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
-        if preedit.map_or(false, |p| p.cell(x).is_some()) {
+        if preedit.is_some_and(|p| p.cell(x).is_some()) {
             continue;
         }
         let sq = row[Column(x)];

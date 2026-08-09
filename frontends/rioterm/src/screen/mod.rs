@@ -4057,8 +4057,8 @@ impl Screen<'_> {
                 // cursor position. `cursor.state.pos` is screen-relative
                 // (Line within 0..screen_lines).
                 let preedit_overlay = ctx.ime.preedit().and_then(|preedit| {
-                    let cols_usize = dim.columns.max(1) as usize;
-                    let rows_usize = dim.lines.max(1) as usize;
+                    let cols_usize = dim.columns.max(1);
+                    let rows_usize = dim.lines.max(1);
                     let start_row =
                         (cursor_row as usize).min(rows_usize.saturating_sub(1));
                     let start_col =
