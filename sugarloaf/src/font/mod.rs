@@ -1728,7 +1728,8 @@ enum FindResult {
 
 /// Select a color bitmap that Swash can safely render for Rio's premultiplied
 /// RGBA atlas. Raw premultiplied strikes cannot pass through Swash's resampler.
-#[cfg(not(target_os = "macos"))]
+/// Only the non-macOS rasterizers call this, but it is compiled everywhere so
+/// its tests run on every platform.
 pub fn select_color_bitmap(
     font: swash::FontRef<'_>,
     glyph_id: u16,
@@ -1798,7 +1799,6 @@ pub fn select_color_bitmap(
 
 /// Normalize a bitmap selected by [`select_color_bitmap`] after Swash renders
 /// it. Color outlines are already premultiplied RGBA and remain unchanged.
-#[cfg(not(target_os = "macos"))]
 pub fn normalize_color_bitmap(image: &mut swash::scale::image::Image) {
     use swash::scale::{Source, StrikeWith};
 
@@ -1829,9 +1829,9 @@ pub fn normalize_color_bitmap(image: &mut swash::scale::image::Image) {
     }
 }
 
-#[cfg(all(test, not(target_os = "macos")))]
+#[cfg(test)]
 mod color_bitmap_tests {
-    use super::normalize_color_bitmap;
+    use super::{normalize_color_bitmap, select_color_bitmap};
     use swash::scale::{image::Image, Source, StrikeWith};
 
     #[test]
@@ -1852,6 +1852,157 @@ mod color_bitmap_tests {
         assert_eq!(png.data, [0, 0, 0, 0, 100, 50, 25, 128, 9, 8, 7, 255]);
         assert_eq!(bgra.data, [100, 50, 25, 128, 9, 8, 7, 255]);
         assert_eq!(outline.data, [25, 50, 100, 128, 7, 8, 9, 255]);
+    }
+
+    #[test]
+    fn normalize_rejects_unaligned_data_untouched() {
+        let mut image = Image::new();
+        image.source = Source::ColorBitmap(StrikeWith::BestFit);
+        image.data = vec![10, 20, 30, 128, 40];
+        normalize_color_bitmap(&mut image);
+        assert_eq!(image.data, [10, 20, 30, 128, 40]);
+
+        let mut empty = Image::new();
+        empty.source = Source::ColorBitmap(StrikeWith::ExactSize);
+        normalize_color_bitmap(&mut empty);
+        assert!(empty.data.is_empty());
+    }
+
+    /// Assemble a minimal sfnt: magic + table directory (records must be
+    /// pre-sorted by tag; Swash binary-searches them) + table data.
+    fn build_font(tables: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&0x00010000u32.to_be_bytes());
+        out.extend_from_slice(&(tables.len() as u16).to_be_bytes());
+        out.extend_from_slice(&[0u8; 6]);
+        let mut offset = 12 + tables.len() * 16;
+        for (tag, data) in tables {
+            out.extend_from_slice(*tag);
+            out.extend_from_slice(&0u32.to_be_bytes());
+            out.extend_from_slice(&(offset as u32).to_be_bytes());
+            out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            offset += data.len();
+        }
+        for (_, data) in tables {
+            out.extend_from_slice(data);
+        }
+        out
+    }
+
+    /// Assemble a CBLC table: one index subtable per strike, laid out
+    /// after the strike records. `strikes` entries are
+    /// `(ppem, bit_depth, image_format, first_glyph..=last_glyph)`.
+    fn build_cblc(strikes: &[(u8, u8, u16, std::ops::RangeInclusive<u16>)]) -> Vec<u8> {
+        let mut out = vec![0u8; 8 + strikes.len() * 48];
+        out[1] = 3; // majorVersion = 3
+        out[4..8].copy_from_slice(&(strikes.len() as u32).to_be_bytes());
+        for (i, (ppem, depth, format, glyphs)) in strikes.iter().enumerate() {
+            let strike = 8 + i * 48;
+            let array = out.len() as u32;
+            out[strike..strike + 4].copy_from_slice(&array.to_be_bytes());
+            out[strike + 8..strike + 12].copy_from_slice(&1u32.to_be_bytes());
+            out[strike + 40..strike + 42].copy_from_slice(&glyphs.start().to_be_bytes());
+            out[strike + 42..strike + 44].copy_from_slice(&glyphs.end().to_be_bytes());
+            out[strike + 44] = *ppem;
+            out[strike + 45] = *ppem;
+            out[strike + 46] = *depth;
+            // One indexSubTableArray entry, its subtable right behind it.
+            out.extend_from_slice(&glyphs.start().to_be_bytes());
+            out.extend_from_slice(&glyphs.end().to_be_bytes());
+            out.extend_from_slice(&8u32.to_be_bytes());
+            out.extend_from_slice(&1u16.to_be_bytes()); // indexFormat
+            out.extend_from_slice(&format.to_be_bytes()); // imageFormat
+            out.extend_from_slice(&0u32.to_be_bytes()); // imageDataOffset
+        }
+        out
+    }
+
+    fn select(data: &[u8], glyph_id: u16, size: f32) -> Option<Source> {
+        let font = swash::FontRef::from_index(data, 0).expect("synthetic font parses");
+        select_color_bitmap(font, glyph_id, size)
+    }
+
+    #[test]
+    fn png_strikes_use_best_fit() {
+        let font = build_font(&[(b"CBLC", build_cblc(&[(128, 32, 17, 0..=10)]))]);
+        for size in [16.0, 128.0, 200.0] {
+            assert!(matches!(
+                select(&font, 5, size),
+                Some(Source::ColorBitmap(StrikeWith::BestFit))
+            ));
+        }
+    }
+
+    #[test]
+    fn raw_strikes_only_at_exact_size() {
+        let font = build_font(&[(b"CBLC", build_cblc(&[(64, 32, 1, 0..=10)]))]);
+        assert!(matches!(
+            select(&font, 5, 64.0),
+            Some(Source::ColorBitmap(StrikeWith::ExactSize))
+        ));
+        // Any other size would resample premultiplied BGRA; skip the bitmap.
+        assert!(select(&font, 5, 32.0).is_none());
+        assert!(select(&font, 5, 65.0).is_none());
+    }
+
+    #[test]
+    fn packed_strikes_are_skipped() {
+        // Formats 2, 5 and 7 make Swash under-allocate and panic on decode.
+        for format in [2u16, 5, 7] {
+            let font = build_font(&[(b"CBLC", build_cblc(&[(64, 32, format, 0..=10)]))]);
+            assert!(select(&font, 5, 64.0).is_none());
+        }
+    }
+
+    #[test]
+    fn glyph_outside_strike_range_finds_nothing() {
+        let font = build_font(&[(b"CBLC", build_cblc(&[(64, 32, 17, 4..=10)]))]);
+        assert!(select(&font, 3, 64.0).is_none());
+        assert!(select(&font, 11, 64.0).is_none());
+    }
+
+    #[test]
+    fn sbix_fonts_use_best_fit_without_cblc() {
+        let font = build_font(&[(b"sbix", vec![0u8; 8])]);
+        assert!(matches!(
+            select(&font, 5, 20.0),
+            Some(Source::ColorBitmap(StrikeWith::BestFit))
+        ));
+    }
+
+    /// Mirrors Swash's nearest-ppem walk: strikes are scanned in order and
+    /// the first one at or above the requested size wins, so the packed
+    /// small strike must not veto the PNG strike that Swash will render.
+    #[test]
+    fn nearest_strike_decides_the_format() {
+        let font = build_font(&[(
+            b"CBLC",
+            build_cblc(&[(32, 32, 5, 0..=10), (128, 32, 17, 0..=10)]),
+        )]);
+        assert!(matches!(
+            select(&font, 5, 40.0),
+            Some(Source::ColorBitmap(StrikeWith::BestFit))
+        ));
+        // At size <= 32 the packed strike is nearest: skip the bitmap.
+        assert!(select(&font, 5, 32.0).is_none());
+    }
+
+    #[test]
+    fn truncated_cblc_is_rejected_without_panicking() {
+        let mut cblc = build_cblc(&[(64, 32, 17, 0..=10)]);
+        for len in [0, 4, 8, 20, 50] {
+            cblc.truncate(len);
+            let font = build_font(&[(b"CBLC", cblc.clone())]);
+            assert!(select(&font, 5, 64.0).is_none());
+        }
+        // numSizes claiming more strikes than the data holds.
+        let mut lying = build_cblc(&[(64, 32, 17, 0..=10)]);
+        lying[4..8].copy_from_slice(&9u32.to_be_bytes());
+        let font = build_font(&[(b"CBLC", lying)]);
+        assert!(matches!(
+            select(&font, 5, 64.0),
+            Some(Source::ColorBitmap(StrikeWith::BestFit))
+        ));
     }
 }
 
