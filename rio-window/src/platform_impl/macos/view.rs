@@ -560,6 +560,23 @@ declare_class!(
             let mask = self.ivars().forward_to_ime_modifier_mask.get();
             let forward_to_ime = mods.is_empty() || mask.contains(mods);
             let routed_to_ime = self.ivars().ime_allowed.get() && forward_to_ime;
+
+            // Snapshot the input source before the IME sees the key. Some
+            // IMEs (AquaSKK, macSKK) switch input mode on bare keys — Ctrl+J
+            // for hiragana, `q` for katakana — through `selectMode()`, with
+            // no NSTextInputClient callback to observe. Each mode is a
+            // distinct input source, so a source ID that changed across
+            // `interpretKeyEvents` means the IME captured the key. Only
+            // checked outside composition: during preedit those keys produce
+            // `setMarkedText` calls and are handled by the state machine.
+            // (Same detection ghostty ships since ghostty-org/ghostty#4609.)
+            let marked_before = unsafe { self.hasMarkedText() };
+            let source_before = if routed_to_ime && !marked_before {
+                Some(self.current_input_source())
+            } else {
+                None
+            };
+
             if routed_to_ime {
                 let events_for_nsview = NSArray::from_slice(&[&*event]);
                 unsafe { self.interpretKeyEvents(&events_for_nsview) };
@@ -570,6 +587,9 @@ declare_class!(
                     *self.ivars().marked_text.borrow_mut() = NSMutableAttributedString::new();
                 }
             }
+
+            let ime_switched_source = source_before
+                .is_some_and(|source| source != self.current_input_source());
 
             self.update_modifiers(&event, false);
 
@@ -584,18 +604,16 @@ declare_class!(
                 _ => old_ime_state != self.ivars().ime_state.get(),
             };
 
-            // When the event was routed through the IME, only forward it to
-            // the application if `doCommandBySelector:` explicitly asked us to
-            // (`forward_key_to_app`). Otherwise the IME is assumed to have
-            // consumed the key — even when it produced no NSTextInputClient
-            // callbacks (e.g. SKK switching input mode via
-            // `IMKTextInput.selectMode()` on Ctrl+J or `q`). When the event
-            // was *not* routed to the IME, fall back to the historical
-            // behavior of forwarding it as long as no preedit/commit happened.
-            let should_forward_key = if routed_to_ime {
-                self.ivars().forward_key_to_app.get()
+            // A key that switched the input source belongs to the IME, never
+            // the application. Everything else keeps the historical rule —
+            // forward unless the IME produced preedit/commit activity, or
+            // `doCommandBySelector:` explicitly asked us to forward — so an
+            // IME quietly inspecting a key (Chinese and Korean IMEs do this
+            // with Ctrl combinations) can't swallow app-bound input.
+            let should_forward_key = if ime_switched_source {
+                false
             } else {
-                !had_ime_input
+                !had_ime_input || self.ivars().forward_key_to_app.get()
             };
             if should_forward_key {
                 let key_event = create_key_event(&event, true, unsafe { event.isARepeat() }, None);
