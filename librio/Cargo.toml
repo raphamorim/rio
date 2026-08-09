@@ -14,7 +14,7 @@ publish = false
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-rio-vt = { path = "../rio-vt", version = "0.5.0", default-features = false, features = ["graphics"] }
+rio-vt = { path = "../rio-vt", version = "0.5.0", default-features = false }
 rio-fonts = { workspace = true, features = ["symbols-nerd-font"] }
 rio-graphics = { workspace = true }
 rustc-hash = { workspace = true }
@@ -30,5 +30,10 @@ corcovado = { workspace = true, optional = true }
 # Without it (the wasm/web build) the host is the transport: bytes the
 # terminal wants sent to the child go to `SurfaceDelegate::output`, and
 # child output comes back in through `Surface::feed`.
-default = ["pty"]
+default = ["pty", "graphics"]
 pty = ["rio-vt/pty", "dep:teletypewriter", "dep:corcovado"]
+# Image decode (png/jpeg/webp/...) and glyph-protocol font parsing for
+# kitty graphics. Off in the wasm/web build: the codecs and font
+# machinery are most of the binary, and the protocol paths still parse
+# without them; only pixel decode is stubbed out.
+graphics = ["rio-vt/graphics"]
