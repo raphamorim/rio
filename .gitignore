@@ -30,3 +30,6 @@ dist/
 # Compiled SPIR-V — generated at build time by sugarloaf/build.rs into
 # OUT_DIR. The GLSL sources are checked in; the bytecode isn't.
 sugarloaf/src/**/*.spv
+
+# Claude Code worktrees/session data
+.claude/
