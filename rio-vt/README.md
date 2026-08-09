@@ -118,7 +118,7 @@ impl EventListener for MyListener {
     fn send_event(&self, event: RioEvent, _window: WindowId) {
         match event {
             RioEvent::PtyWrite(_route_id, text) => { /* write `text` to the PTY */ }
-            RioEvent::Title(title) => { /* update the window title */ }
+            RioEvent::Title(route_id, title) => { /* update the window title */ }
             RioEvent::Bell => { /* ring */ }
             _ => {}
         }

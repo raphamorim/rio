@@ -789,15 +789,28 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     );
                 }
             }
-            RioEventType::Rio(RioEvent::Title(title)) => {
+            RioEventType::Rio(RioEvent::Title(route_id, _)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    route.set_window_title(&title);
-                }
-            }
-            RioEventType::Rio(RioEvent::TitleWithSubtitle(title, subtitle)) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    route.set_window_title(&title);
-                    route.set_window_subtitle(&subtitle);
+                    let Some(is_current) = route
+                        .window
+                        .screen
+                        .context_manager
+                        .refresh_route_title(route_id)
+                    else {
+                        return;
+                    };
+                    if is_current {
+                        let title = route
+                            .window
+                            .screen
+                            .context_manager
+                            .current()
+                            .title
+                            .content
+                            .clone();
+                        route.set_window_title(&title);
+                    }
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::UpdateTitles) => {
@@ -2054,6 +2067,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 let focus_changed = route.window.is_focused != focused;
                 route.window.is_focused = focused;
+
+                if focus_changed {
+                    route.window.screen.context_manager.publish_current_title();
+                }
 
                 // Focus is a cheap checkpoint to catch backing-scale changes
                 // whose ScaleFactorChanged never arrived (sleep/wake display
