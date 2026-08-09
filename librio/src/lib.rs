@@ -421,6 +421,11 @@ pub struct Surface {
     /// Compiled URL detector, built on first hover. Hit-testing runs per
     /// pointer event, so the four lazy DFAs must not be rebuilt each time.
     url_regex: std::sync::Mutex<Option<rio_vt::crosswords::search::RegexSearch>>,
+    /// VT parser for host-injected output. Persistent so escape sequences
+    /// split across `inject_output` calls resume mid-sequence instead of
+    /// mis-parsing (and so its sync buffer is allocated once, not per
+    /// write).
+    processor: std::sync::Mutex<Option<rio_vt::performer::handler::Processor>>,
     /// Non-pty transport: `write` hands the bytes to the delegate instead
     /// of a PTY channel.
     #[cfg(not(feature = "pty"))]
@@ -503,6 +508,7 @@ impl Surface {
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
+                processor: std::sync::Mutex::new(None),
                 delegate: engine.delegate.clone(),
             })
         }
@@ -581,6 +587,7 @@ impl Surface {
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
+                processor: std::sync::Mutex::new(None),
                 channel,
                 #[cfg(not(target_os = "windows"))]
                 shell_pid,
@@ -999,10 +1006,16 @@ impl Surface {
     /// saved scrollback on restore; the shell never sees these bytes, so it
     /// can't execute them. Bytes are plain output (convert `\n` to `\r\n`
     /// upstream if you want proper line starts).
+    ///
+    /// The parser is persistent: an escape sequence split across two
+    /// calls resumes where it left off, exactly like PTY chunking.
     pub fn inject_output(&self, bytes: &[u8]) {
-        use rio_vt::performer::handler::Processor;
+        if bytes.is_empty() {
+            return;
+        }
+        let mut guard = self.processor.lock().unwrap();
+        let processor = guard.get_or_insert_with(Default::default);
         let mut term = self.terminal.lock();
-        let mut processor = Processor::default();
         processor.advance(&mut *term, bytes);
     }
 
@@ -1385,6 +1398,26 @@ mod tests {
 
         assert_eq!(surface.search("filler", 3).unwrap().len(), 3);
         assert!(surface.search("[", 10).is_none());
+    }
+
+    // The parser must survive chunk boundaries: transports split output
+    // arbitrarily, including mid-escape-sequence. A discarded parser
+    // would print the tail of the sequence as literal text.
+    #[test]
+    fn escape_sequences_survive_chunk_boundaries() {
+        let surface = quiet_surface(40, 5);
+        // Split an SGR sequence in the middle: "\x1b[31m" + "red".
+        surface.inject_output(b"\x1b[3");
+        surface.inject_output(b"1mred");
+        let dump = surface.dump();
+        assert_eq!(dump.trim_end(), "red", "no literal escape tail: {dump:?}");
+        // The style applied: serialize carries the red foreground.
+        assert!(surface.serialize().contains("\x1b[0;31;49m"));
+
+        // Split inside an OSC title too.
+        surface.inject_output(b"\x1b]0;hel");
+        surface.inject_output(b"lo\x07after");
+        assert!(surface.dump().contains("redafter"));
     }
 
     // DECTCEM and a scrolled viewport both hide the cursor from
