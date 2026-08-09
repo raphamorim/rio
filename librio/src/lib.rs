@@ -998,6 +998,10 @@ impl Surface {
     /// integration.
     #[cfg(feature = "pty")]
     pub fn foreground_process_name(&self) -> String {
+        #[cfg(target_os = "windows")]
+        return String::new();
+
+        #[cfg(not(target_os = "windows"))]
         teletypewriter::foreground_process_name(self.main_fd, self.shell_pid)
     }
 
