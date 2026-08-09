@@ -250,10 +250,7 @@ mod tests {
     #[test]
     fn hide_if_single_platform_default() {
         let decoded = toml::from_str::<Root>("[navigation]\nmode = 'Tab'\n").unwrap();
-        assert_eq!(
-            decoded.navigation.hide_if_single,
-            cfg!(target_os = "macos")
-        );
+        assert_eq!(decoded.navigation.hide_if_single, cfg!(target_os = "macos"));
         assert_eq!(
             decoded.navigation.island_visible(1),
             !cfg!(target_os = "macos")
@@ -269,10 +266,9 @@ mod tests {
     /// Both explicit values must override the platform default.
     #[test]
     fn hide_if_single_explicit_override() {
-        let on = toml::from_str::<Root>(
-            "[navigation]\nmode = 'Tab'\nhide-if-single = true\n",
-        )
-        .unwrap();
+        let on =
+            toml::from_str::<Root>("[navigation]\nmode = 'Tab'\nhide-if-single = true\n")
+                .unwrap();
         assert!(on.navigation.hide_if_single);
         assert!(!on.navigation.island_visible(1));
         assert!(on.navigation.island_visible(2));
