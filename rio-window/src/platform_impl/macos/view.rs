@@ -135,15 +135,13 @@ pub struct ViewState {
     /// to the application, even during IME
     forward_key_to_app: Cell<bool>,
 
-    /// True if we're currently processing a key event
-    in_key_event: Cell<bool>,
-
-    /// Characters of the currently-processed key event, as reported by
-    /// `NSEvent`. Tuple of (characters, charactersIgnoringModifiers).
-    /// Used by `insertText:` to distinguish IME direct commits (e.g. SKK
-    /// hiragana mode) from raw keyboard pass-through (where the IME echoes
-    /// the same characters).
-    current_key_event_chars: RefCell<Option<(String, String)>>,
+    /// Text the IME committed during the current `keyDown` event.
+    /// `Some` doubles as "we are inside a key event": while it is set,
+    /// `insertText:` only records into it and `keyDown` decides afterwards
+    /// what each string means (echo, direct commit, preedit commit) with
+    /// the whole `interpretKeyEvents` round trip visible. `None` outside
+    /// key events, where `insertText:` means picker/dictation input.
+    key_text_accumulator: RefCell<Option<Vec<String>>>,
 
     marked_text: RefCell<Retained<NSMutableAttributedString>>,
     accepts_first_mouse: bool,
@@ -430,60 +428,33 @@ declare_class!(
                 unsafe { &*string }.to_string()
             };
 
-            let is_control = string.chars().next().is_some_and(|c| c.is_control());
-            let has_marked_text = unsafe { self.hasMarkedText() };
-            let is_in_key_event = self.ivars().in_key_event.get();
-
-            // Detect IME direct commits (e.g. SKK hiragana mode) that bypass
-            // preedit: an `insertText:` whose payload differs from the raw
-            // NSEvent characters is something the IME synthesised, not a
-            // pass-through of the pressed key.
-            let is_ime_direct_commit = is_in_key_event
-                && self
-                    .ivars()
-                    .current_key_event_chars
-                    .borrow()
-                    .as_ref()
-                    .is_some_and(|(chars, chars_unmod)| {
-                        string != chars.as_str() && string != chars_unmod.as_str()
-                    });
-
-            if self.is_ime_enabled() {
-                if has_marked_text && !is_control {
-                    // Clear preedit and commit the text (normal IME flow)
-                    self.queue_event(WindowEvent::Ime(Ime::Preedit(String::new(), None)));
-                    self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
-                    self.ivars().ime_state.set(ImeState::Committed);
-                } else if !is_control
-                    && !string.is_empty()
-                    && (!is_in_key_event || is_ime_direct_commit)
-                {
-                    // Direct input not from keyboard (e.g., emoji picker) or
-                    // an IME committing without preedit (e.g., SKK).
-                    self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
-                    self.ivars().ime_state.set(ImeState::Committed);
-                } else if is_in_key_event && !is_ime_direct_commit {
-                    // The IME passed the raw key through unchanged (typical
-                    // when the active input source is ASCII-only or the IME
-                    // is in a passthrough mode, e.g. SKK ASCII/eisuu mode).
-                    // Treat this as "IME did not consume the key" so the key
-                    // event is forwarded to the application.
-                    self.ivars().forward_key_to_app.set(true);
-                }
-            } else if !is_control
-                && !string.is_empty()
-                && (!is_in_key_event || is_ime_direct_commit)
+            // Inside a key event: record the text and return. `keyDown`
+            // decides what it means — echo, direct commit, preedit commit —
+            // once `interpretKeyEvents` has fully run and preedit history,
+            // input-source switches and the raw event are all visible.
+            if let Some(accumulator) =
+                self.ivars().key_text_accumulator.borrow_mut().as_mut()
             {
-                // IME is disabled but we got non-keyboard input (e.g., emoji picker)
-                // or an IME-style direct commit. Temporarily enable IME for
-                // this input.
-                self.queue_event(WindowEvent::Ime(Ime::Enabled));
-                self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
-                self.ivars().ime_state.set(ImeState::Committed);
-            } else if is_in_key_event && !is_ime_direct_commit {
-                // IME disabled and the IME echoed the raw key — forward it.
-                self.ivars().forward_key_to_app.set(true);
+                accumulator.push(string);
+                return;
             }
+
+            // Input arriving outside any key event: emoji picker, character
+            // viewer, dictation, or an IME candidate-window click.
+            let is_control = string.chars().next().is_some_and(|c| c.is_control());
+            if string.is_empty() || is_control {
+                return;
+            }
+            if unsafe { self.hasMarkedText() } {
+                // A candidate click commits the composition it replaces.
+                self.queue_event(WindowEvent::Ime(Ime::Preedit(String::new(), None)));
+            }
+            if !self.is_ime_enabled() {
+                // Temporarily enable IME so the commit is deliverable.
+                self.queue_event(WindowEvent::Ime(Ime::Enabled));
+            }
+            self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
+            self.ivars().ime_state.set(ImeState::Committed);
         }
 
         // Basically, we're sent this message whenever a keyboard event that doesn't generate a "human
@@ -491,9 +462,20 @@ declare_class!(
         #[method(doCommandBySelector:)]
         fn do_command_by_selector(&self, _command: Sel) {
             trace_scope!("doCommandBySelector:");
-            // We shouldn't forward any character from just committed text, since we'll end up sending
-            // it twice with some IMEs like Korean one. We'll also always send `Enter` in that case,
-            // which is not desired given it was used to confirm IME input.
+            // A selector arriving after the IME already committed text within
+            // this same key event (Korean Enter) is the IME confirming that
+            // commit; forwarding the key too would type it twice.
+            if self
+                .ivars()
+                .key_text_accumulator
+                .borrow()
+                .as_ref()
+                .is_some_and(|accumulator| !accumulator.is_empty())
+            {
+                return;
+            }
+            // Same protection when the commit landed outside a key event
+            // (candidate-window click) right before this key.
             if self.ivars().ime_state.get() == ImeState::Committed {
                 return;
             }
@@ -516,8 +498,9 @@ declare_class!(
             // Mark input received for 1-second presentation window
             self.mark_input_received();
 
-            // Set flag to indicate we're in a key event
-            self.ivars().in_key_event.set(true);
+            // Non-None marks "inside a key event": `insertText:` records
+            // committed text here instead of interpreting it.
+            *self.ivars().key_text_accumulator.borrow_mut() = Some(Vec::new());
 
             {
                 let mut prev_input_source = self.ivars().input_source.borrow_mut();
@@ -530,21 +513,17 @@ declare_class!(
                 }
             }
 
+            // A commit that landed outside any key event (candidate-window
+            // click) can leave stale marked text behind; drop it before
+            // reading the preedit state for this key.
+            if self.ivars().ime_state.get() == ImeState::Committed {
+                *self.ivars().marked_text.borrow_mut() = NSMutableAttributedString::new();
+            }
+
             // Get the characters from the event.
             let old_ime_state = self.ivars().ime_state.get();
             self.ivars().forward_key_to_app.set(false);
             let event = replace_event(event, self.option_as_alt());
-
-            // Snapshot the NSEvent characters so `insertText:` can tell IME
-            // direct commits (e.g. SKK hiragana mode) from raw key pass-through.
-            let chars = unsafe { event.characters() }
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            let chars_unmod = unsafe { event.charactersIgnoringModifiers() }
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            *self.ivars().current_key_event_chars.borrow_mut() =
-                Some((chars, chars_unmod));
 
             // The `interpretKeyEvents` function might call
             // `setMarkedText`, `insertText`, and `doCommandBySelector`.
@@ -580,12 +559,6 @@ declare_class!(
             if routed_to_ime {
                 let events_for_nsview = NSArray::from_slice(&[&*event]);
                 unsafe { self.interpretKeyEvents(&events_for_nsview) };
-
-                // If the text was committed we must treat the next keyboard event as IME related.
-                if self.ivars().ime_state.get() == ImeState::Committed {
-                    // Remove any marked text, so normal input can continue.
-                    *self.ivars().marked_text.borrow_mut() = NSMutableAttributedString::new();
-                }
             }
 
             let ime_switched_source = source_before
@@ -593,28 +566,99 @@ declare_class!(
 
             self.update_modifiers(&event, false);
 
-            let had_ime_input = match self.ivars().ime_state.get() {
-                ImeState::Committed => {
-                    // Allow normal input after the commit.
-                    self.ivars().ime_state.set(ImeState::Ground);
-                    true
-                }
-                ImeState::Preedit => true,
-                // `key_down` could result in preedit clear, so compare old and current state.
-                _ => old_ime_state != self.ivars().ime_state.get(),
-            };
+            let committed_text = self
+                .ivars()
+                .key_text_accumulator
+                .borrow_mut()
+                .take()
+                .unwrap_or_default();
 
-            // A key that switched the input source belongs to the IME, never
-            // the application. Everything else keeps the historical rule —
-            // forward unless the IME produced preedit/commit activity, or
-            // `doCommandBySelector:` explicitly asked us to forward — so an
-            // IME quietly inspecting a key (Chinese and Korean IMEs do this
-            // with Ctrl combinations) can't swallow app-bound input.
-            let should_forward_key = if ime_switched_source {
-                false
-            } else {
-                !had_ime_input || self.ivars().forward_key_to_app.get()
-            };
+            // A key that switched the input source belongs to the IME
+            // entirely, text and all: mode-switch keys never reach the
+            // application.
+            if ime_switched_source {
+                return;
+            }
+
+            // Deliver whatever the IME committed during this key event,
+            // deciding here — with preedit history and the raw event both
+            // known — what each string means.
+            let chars = unsafe { event.characters() }
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            let chars_unmod = unsafe { event.charactersIgnoringModifiers() }
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            let composing = marked_before || unsafe { self.hasMarkedText() };
+            let mut forward_echo = false;
+            let mut committed_any = false;
+            for text in committed_text {
+                if text.is_empty() {
+                    continue;
+                }
+                // A bare C0 control accumulated while composing (ctrl+h
+                // cancelling romaji) is the IME editing its own preedit,
+                // not terminal input.
+                if composing
+                    && text.chars().count() == 1
+                    && text.chars().next().is_some_and(|c| (c as u32) < 0x20)
+                {
+                    continue;
+                }
+                // The IME echoed the raw key through unchanged (ASCII/eisuu
+                // passthrough): encode it as the key event below, not as
+                // committed text.
+                if !marked_before && (text == chars || text == chars_unmod) {
+                    forward_echo = true;
+                    continue;
+                }
+                // A preedit commit or a direct commit (SKK hiragana).
+                if !committed_any {
+                    // Clear the preedit the commit consumed — unless the IME
+                    // already started a fresh one this event (continuous
+                    // conversion), which `setMarkedText` reported itself.
+                    if marked_before && self.ivars().ime_state.get() != ImeState::Preedit
+                    {
+                        self.queue_event(WindowEvent::Ime(Ime::Preedit(
+                            String::new(),
+                            None,
+                        )));
+                    }
+                    if !self.is_ime_enabled() {
+                        self.queue_event(WindowEvent::Ime(Ime::Enabled));
+                    }
+                }
+                self.queue_event(WindowEvent::Ime(Ime::Commit(text)));
+                committed_any = true;
+            }
+            if committed_any && self.ivars().ime_state.get() != ImeState::Preedit {
+                // The commit consumed the composition; reset to ground so
+                // the next key starts clean. When the IME began a fresh
+                // preedit in the same event, that state stays untouched.
+                *self.ivars().marked_text.borrow_mut() = NSMutableAttributedString::new();
+                self.ivars().ime_state.set(ImeState::Ground);
+            }
+
+            let had_ime_input = committed_any
+                || match self.ivars().ime_state.get() {
+                    ImeState::Committed => {
+                        // An external commit right before this key: allow
+                        // normal input again after swallowing this one.
+                        self.ivars().ime_state.set(ImeState::Ground);
+                        true
+                    }
+                    ImeState::Preedit => true,
+                    // `key_down` could result in preedit clear, so compare old and current state.
+                    _ => old_ime_state != self.ivars().ime_state.get(),
+                };
+
+            // Forward unless the IME produced preedit/commit activity this
+            // event; `doCommandBySelector:` and an echoed passthrough both
+            // override, so an IME quietly inspecting a key (Chinese and
+            // Korean IMEs do this with Ctrl combinations) can't swallow
+            // app-bound input.
+            let should_forward_key =
+                forward_echo || !had_ime_input || self.ivars().forward_key_to_app.get();
             if should_forward_key {
                 let key_event = create_key_event(&event, true, unsafe { event.isARepeat() }, None);
                 self.queue_event(WindowEvent::KeyboardInput {
@@ -623,18 +667,16 @@ declare_class!(
                     is_synthetic: false,
                 });
             }
-
-            // Clear the flag after processing
-            self.ivars().in_key_event.set(false);
-            *self.ivars().current_key_event_chars.borrow_mut() = None;
         }
 
         #[method(keyUp:)]
         fn key_up(&self, event: &NSEvent) {
             trace_scope!("keyUp:");
 
-            // Set flag to indicate we're in a key event
-            self.ivars().in_key_event.set(true);
+            // Mark "inside a key event" so a stray `insertText:` during
+            // key-up is not mistaken for picker/dictation input; anything
+            // accumulated here is dropped.
+            *self.ivars().key_text_accumulator.borrow_mut() = Some(Vec::new());
 
             let event = replace_event(event, self.option_as_alt());
             self.update_modifiers(&event, false);
@@ -651,8 +693,7 @@ declare_class!(
                 });
             }
 
-            // Clear the flag after processing
-            self.ivars().in_key_event.set(false);
+            *self.ivars().key_text_accumulator.borrow_mut() = None;
         }
 
         #[method(flagsChanged:)]
@@ -953,14 +994,13 @@ impl WinitView {
             input_source: Default::default(),
             ime_allowed: Default::default(),
             forward_key_to_app: Default::default(),
-            in_key_event: Default::default(),
+            key_text_accumulator: RefCell::new(None),
             marked_text: Default::default(),
             accepts_first_mouse,
             mouse_down_can_move_window,
             _ns_window: WeakId::new(&window.retain()),
             option_as_alt: Cell::new(option_as_alt),
             forward_to_ime_modifier_mask: Cell::new(ModifiersState::all()),
-            current_key_event_chars: RefCell::new(None),
         });
         let this: Retained<Self> = unsafe { msg_send_id![super(this), init] };
 
