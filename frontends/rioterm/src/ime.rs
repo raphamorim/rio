@@ -56,21 +56,46 @@ pub struct Preedit {
 
 impl Preedit {
     pub fn new(text: String, cursor_byte_offset: Option<usize>) -> Self {
-        let cursor_end_offset = if let Some(byte_offset) = cursor_byte_offset {
-            // Convert byte offset into char offset.
-            let cursor_end_offset = text[byte_offset..]
+        let cursor_byte_offset =
+            cursor_byte_offset.filter(|&byte_offset| text.is_char_boundary(byte_offset));
+        let cursor_end_offset = cursor_byte_offset.map(|byte_offset| {
+            text[byte_offset..]
                 .chars()
-                .fold(0, |acc, ch| acc + ch.width().unwrap_or(1));
-
-            Some(cursor_end_offset)
-        } else {
-            None
-        };
+                .fold(0, |acc, ch| acc + ch.width().unwrap_or(1))
+        });
 
         Self {
             text,
             cursor_byte_offset,
             cursor_end_offset,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preedit_new_rejects_invalid_byte_offset() {
+        let preedit = Preedit::new("啊a".to_string(), Some(1));
+        assert!(preedit.cursor_byte_offset.is_none());
+        assert!(preedit.cursor_end_offset.is_none());
+    }
+
+    #[test]
+    fn preedit_new_computes_cursor_end_offset() {
+        let preedit = Preedit::new("啊a".to_string(), Some(0));
+        assert_eq!(preedit.cursor_byte_offset, Some(0));
+        assert_eq!(preedit.cursor_end_offset, Some(3));
+    }
+
+    #[test]
+    fn set_preedit_clears_on_none() {
+        let mut ime = Ime::new();
+        ime.set_preedit(Some(Preedit::new("a".to_string(), Some(1))));
+        assert!(ime.preedit().is_some());
+        ime.set_preedit(None);
+        assert!(ime.preedit().is_none());
     }
 }

@@ -116,7 +116,6 @@ impl<T: EventListener> Context<T> {
             state: self.renderable_content.cursor.state.new_from_self(),
             content: self.renderable_content.cursor.content_ref,
             content_ref: self.renderable_content.cursor.content_ref,
-            is_ime_enabled: false,
         }
     }
 }
