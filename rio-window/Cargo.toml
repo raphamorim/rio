@@ -176,7 +176,7 @@ wayland-backend = { version = "0.3.10", default-features = false, features = [
     "client_system",
 ], optional = true }
 wayland-client = { version = "0.31.10", optional = true }
-wayland-protocols = { version = "0.32.8", features = [
+wayland-protocols = { version = "0.32.9", features = [
     "staging",
 ], optional = true }
 wayland-protocols-plasma = { version = "0.3.8", features = [
