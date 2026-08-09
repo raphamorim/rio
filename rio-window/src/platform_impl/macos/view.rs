@@ -157,7 +157,7 @@ pub struct ViewState {
 
     /// Modifier mask deciding when a key event is forwarded to the IME.
     /// A key event is forwarded when no modifier is pressed, or when the
-    /// pressed modifiers intersect this mask.
+    /// pressed modifiers are all contained in this mask.
     forward_to_ime_modifier_mask: Cell<ModifiersState>,
 }
 
@@ -553,12 +553,12 @@ declare_class!(
             // `doCommandBySelector`. (doCommandBySelector means that the keyboard input
             // is not handled by IME and should be handled by the application)
             //
-            // The IME is bypassed when modifiers are pressed that do not intersect the
+            // The IME is bypassed when any pressed modifier falls outside the
             // configured `forward_to_ime_modifier_mask`. Events with no modifiers are
             // always forwarded.
             let mods = event_mods(&event).state();
             let mask = self.ivars().forward_to_ime_modifier_mask.get();
-            let forward_to_ime = mods.is_empty() || mods.intersects(mask);
+            let forward_to_ime = mods.is_empty() || mask.contains(mods);
             let routed_to_ime = self.ivars().ime_allowed.get() && forward_to_ime;
             if routed_to_ime {
                 let events_for_nsview = NSArray::from_slice(&[&*event]);

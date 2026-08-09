@@ -25,7 +25,7 @@ pub struct Keyboard {
 
     // Modifier mask deciding when a key event is forwarded to the macOS IME.
     // A key event is forwarded when no modifier is pressed, or when the
-    // pressed modifiers intersect this mask. Otherwise the event is handled
+    // pressed modifiers are all contained in this mask. Otherwise the event is handled
     // directly by the application without going through the IME.
     //
     // Accepted values (case-insensitive): "shift", "ctrl", "alt", "super".

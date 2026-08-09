@@ -111,7 +111,7 @@ pub trait WindowExtMacOS {
     /// IME (`interpretKeyEvents:`).
     ///
     /// A key event is forwarded to the IME when no modifier is pressed, OR
-    /// when the pressed modifiers intersect this mask. Otherwise the event is
+    /// when the pressed modifiers are all contained in this mask. Otherwise the event is
     /// handled directly by the application without going through the IME.
     ///
     /// This is useful for input methods (e.g. SKK) that need to receive
