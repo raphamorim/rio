@@ -4301,7 +4301,7 @@ impl Screen<'_> {
                 let render_style = crate::grid_emit::cursor_render_style(
                     crate::grid_emit::CursorRenderInputs {
                         visible: p.cursor_visible,
-                        focused: p.is_active,
+                        focused: p.is_active && self.renderer.is_window_focused,
                         blink_visible: p.cursor_blink_visible,
                         blinking: p.cursor_blinking,
                         preedit: p.cursor_preedit,
