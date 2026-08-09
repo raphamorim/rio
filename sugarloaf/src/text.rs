@@ -1213,7 +1213,7 @@ fn rasterize_swash_glyph(
 ) -> Option<SwashRawGlyph> {
     use swash::scale::{
         image::{Content, Image as GlyphImage},
-        Render, Source, StrikeWith,
+        Render, Source,
     };
     use swash::zeno::{Angle, Format, Transform};
     use swash::{FontRef, Setting};
@@ -1243,12 +1243,12 @@ fn rasterize_swash_glyph(
         .variations(var_slice.iter().copied())
         .build();
 
+    let sources: &[Source] =
+        match crate::font::select_color_bitmap(font_ref, glyph_id, size_px) {
+            Some(bitmap) => &[Source::ColorOutline(0), bitmap, Source::Outline],
+            None => &[Source::ColorOutline(0), Source::Outline],
+        };
     let mut image = GlyphImage::new();
-    let sources: &[Source] = &[
-        Source::ColorOutline(0),
-        Source::ColorBitmap(StrikeWith::BestFit),
-        Source::Outline,
-    ];
     let embolden_amount = if synthetic_bold {
         (size_px / 14.0).max(1.0)
     } else {
@@ -1271,6 +1271,7 @@ fn rasterize_swash_glyph(
         return None;
     }
 
+    crate::font::normalize_color_bitmap(&mut image);
     let is_color = image.content == Content::Color;
     Some(SwashRawGlyph {
         width: image.placement.width,

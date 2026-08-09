@@ -1726,6 +1726,135 @@ enum FindResult {
     NotFound(SugarloafFont),
 }
 
+/// Select a color bitmap that Swash can safely render for Rio's premultiplied
+/// RGBA atlas. Raw premultiplied strikes cannot pass through Swash's resampler.
+#[cfg(not(target_os = "macos"))]
+pub fn select_color_bitmap(
+    font: swash::FontRef<'_>,
+    glyph_id: u16,
+    size: f32,
+) -> Option<swash::scale::Source> {
+    use swash::scale::{Source, StrikeWith};
+    use swash::tag_from_bytes;
+
+    if font.table(tag_from_bytes(b"sbix")).is_some() {
+        return Some(Source::ColorBitmap(StrikeWith::BestFit));
+    }
+
+    // Follow Swash's strike and glyph-range selection exactly. Packed 32-bit
+    // CBDT records must be skipped: Swash allocates them as one-channel data
+    // and panics while decoding their four-byte pixels.
+    let table = font.table(tag_from_bytes(b"CBLC"))?;
+    let read_u16 = |offset| {
+        table
+            .get(offset..)?
+            .get(..2)
+            .map(|bytes| u16::from_be_bytes(bytes.try_into().unwrap()))
+    };
+    let read_u32 = |offset| {
+        table
+            .get(offset..)?
+            .get(..4)
+            .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()) as usize)
+    };
+    let mut selected = None;
+    for index in 0..read_u32(4)? {
+        let strike = 8usize.checked_add(index.checked_mul(48)?)?;
+        let first_glyph = read_u16(strike.checked_add(40)?)?;
+        let last_glyph = read_u16(strike.checked_add(42)?)?;
+        if !(first_glyph..=last_glyph).contains(&glyph_id) {
+            continue;
+        }
+        let array = read_u32(strike)?;
+        for subtable in 0..read_u32(strike.checked_add(8)?)? {
+            let entry = array.checked_add(subtable.checked_mul(8)?)?;
+            if (read_u16(entry)?..=read_u16(entry.checked_add(2)?)?).contains(&glyph_id) {
+                let subtable = array.checked_add(read_u32(entry.checked_add(4)?)?)?;
+                selected = Some((
+                    table.get(strike.checked_add(45)?).copied()?,
+                    table.get(strike.checked_add(46)?).copied()?,
+                    read_u16(subtable.checked_add(2)?)?,
+                ));
+                break;
+            }
+        }
+        if selected.is_some_and(|(ppem, _, _)| u16::from(ppem) >= size as u16) {
+            break;
+        }
+    }
+
+    match selected? {
+        (_, _, 17..=19) => Some(Source::ColorBitmap(StrikeWith::BestFit)),
+        (ppem, 32, 1 | 6) if size == f32::from(ppem) => {
+            Some(Source::ColorBitmap(StrikeWith::ExactSize))
+        }
+        (_, 32, 2 | 5 | 7) => None,
+        (_, bit_depth, format) => {
+            tracing::warn!(glyph_id, bit_depth, format, "unsupported color strike");
+            None
+        }
+    }
+}
+
+/// Normalize a bitmap selected by [`select_color_bitmap`] after Swash renders
+/// it. Color outlines are already premultiplied RGBA and remain unchanged.
+#[cfg(not(target_os = "macos"))]
+pub fn normalize_color_bitmap(image: &mut swash::scale::image::Image) {
+    use swash::scale::{Source, StrikeWith};
+
+    let png = match image.source {
+        Source::ColorBitmap(StrikeWith::BestFit) => true,
+        Source::ColorBitmap(StrikeWith::ExactSize) => false,
+        Source::ColorBitmap(mode) => {
+            tracing::error!(?mode, "unexpected Swash color bitmap selection mode");
+            return;
+        }
+        _ => return,
+    };
+    let byte_len = image.data.len();
+    let (pixels, remainder) = image.data.as_chunks_mut::<4>();
+    if !remainder.is_empty() {
+        tracing::error!(byte_len, "Swash color bitmap is not RGBA-aligned");
+        return;
+    }
+    for pixel in pixels {
+        if png {
+            let alpha = pixel[3] as u16;
+            for channel in &mut pixel[..3] {
+                *channel = ((*channel as u16 * alpha + 127) / 255) as u8;
+            }
+        } else {
+            pixel.swap(0, 2);
+        }
+    }
+}
+
+#[cfg(all(test, not(target_os = "macos")))]
+mod color_bitmap_tests {
+    use super::normalize_color_bitmap;
+    use swash::scale::{image::Image, Source, StrikeWith};
+
+    #[test]
+    fn normalizes_png_and_raw_color_bitmaps() {
+        let mut png = Image::new();
+        png.source = Source::ColorBitmap(StrikeWith::BestFit);
+        png.data = vec![71, 112, 76, 0, 200, 100, 50, 128, 9, 8, 7, 255];
+        let mut bgra = png.clone();
+        bgra.source = Source::ColorBitmap(StrikeWith::ExactSize);
+        bgra.data = vec![25, 50, 100, 128, 7, 8, 9, 255];
+        let mut outline = bgra.clone();
+        outline.source = Source::ColorOutline(0);
+
+        normalize_color_bitmap(&mut png);
+        normalize_color_bitmap(&mut bgra);
+        normalize_color_bitmap(&mut outline);
+
+        assert_eq!(png.data, [0, 0, 0, 0, 100, 50, 25, 128, 9, 8, 7, 255]);
+        assert_eq!(bgra.data, [100, 50, 25, 128, 9, 8, 7, 255]);
+        assert_eq!(outline.data, [25, 50, 100, 128, 7, 8, 9, 255]);
+    }
+}
+
 /// Parse `fonts.features` entries into OpenType feature settings.
 /// Accepts `"ss01"`, `"+ss01"`, `"-liga"` and `"cv01=2"` forms.
 pub fn parse_font_features(entries: &[String]) -> Vec<swash::Setting<u16>> {

@@ -2570,7 +2570,7 @@ fn rasterize_glyph_native(
     use rio_backend::sugarloaf::swash::{
         scale::{
             image::{Content, Image as GlyphImage},
-            Render, Source, StrikeWith,
+            Render, Source,
         },
         zeno::{Angle, Format, Transform},
         FontRef, Setting,
@@ -2608,11 +2608,14 @@ fn rasterize_glyph_native(
         .variations(wght_var.iter().copied())
         .build();
 
-    let sources: &[Source] = &[
-        Source::ColorOutline(0),
-        Source::ColorBitmap(StrikeWith::BestFit),
-        Source::Outline,
-    ];
+    let sources: &[Source] = match rio_backend::sugarloaf::font::select_color_bitmap(
+        font_ref,
+        glyph_id,
+        size_u16 as f32,
+    ) {
+        Some(bitmap) => &[Source::ColorOutline(0), bitmap, Source::Outline],
+        None => &[Source::ColorOutline(0), Source::Outline],
+    };
     let mut image = GlyphImage::new();
     let embolden_amount = if synthetic_bold {
         (size_u16 as f32 / 14.0).max(1.0)
@@ -2634,6 +2637,7 @@ fn rasterize_glyph_native(
     if !ok {
         return None;
     }
+    rio_backend::sugarloaf::font::normalize_color_bitmap(&mut image);
     let is_color = image.content == Content::Color;
     Some(RawGlyph {
         width: image.placement.width,
