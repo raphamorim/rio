@@ -2125,13 +2125,15 @@ impl<U: EventListener> Crosswords<U> {
             // intentionally persists per screen).
             let stale = &mut self.graphics.kitty_inactive_screen;
             if !stale.atlas_placements.is_empty() {
-                let mut removals = self.graphics.texture_operations.lock();
-                for key in stale.atlas_key_refs.keys() {
-                    removals.push(*key);
+                let keys: Vec<u64> = stale.atlas_key_refs.keys().copied().collect();
+                {
+                    let mut removals = self.graphics.texture_operations.lock();
+                    removals.extend(keys.iter().copied());
                 }
-                drop(removals);
                 stale.atlas_placements.clear();
                 stale.atlas_key_refs.clear();
+                // The bytes go back to the budget with the textures.
+                self.graphics.untrack_atlas_keys(&keys);
                 self.send_graphics_updates();
             }
         }
@@ -4589,7 +4591,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn place_graphic(
         &mut self,
         placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
-    ) {
+    ) -> bool {
         debug!(
             "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}, virtual={}",
             placement.image_id,
@@ -4600,24 +4602,32 @@ impl<U: EventListener> Handler for Crosswords<U> {
             placement.virtual_placement,
         );
 
+        // `a=p` always references a previously transmitted image; per
+        // the kitty spec placing an unknown id is ENOENT, which the
+        // dispatcher reports from this return value. This covers
+        // virtual placements too — registering placeholder metadata
+        // for an image that does not exist would render nothing while
+        // telling the client everything worked.
+        let image_id = placement.image_id;
+        if self.graphics.get_kitty_image(image_id).is_none() {
+            warn!(
+                "Attempted to place non-existent kitty graphic: id={}",
+                placement.image_id
+            );
+            return false;
+        }
+
         // `U=1` → virtual placement: store metadata, the application
         // emits U+10EEEE placeholder cells itself. The renderer scans
         // visible cells and composites the image at those positions.
         if placement.virtual_placement {
             self.place_virtual_graphic(placement);
-            return;
+            return true;
         }
 
         // Direct placement: use overlay path
-        let image_id = placement.image_id;
-        if self.graphics.get_kitty_image(image_id).is_some() {
-            self.place_kitty_overlay(image_id, &placement);
-        } else {
-            warn!(
-                "Attempted to place non-existent kitty graphic: id={}",
-                placement.image_id
-            );
-        }
+        self.place_kitty_overlay(image_id, &placement);
+        true
     }
 
     #[inline]
@@ -4634,8 +4644,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         match delete.action {
             b'a' | b'A' => {
-                // Delete all overlay placements
+                // Delete all placements — virtual (U=1) ones included:
+                // their placeholder cells keep rendering the image if
+                // the metadata survives, where kitty blanks them.
                 self.graphics.kitty_placements.clear();
+                self.graphics.kitty_virtual_placements.clear();
                 overlay_changed = true;
 
                 if delete.delete_data {
@@ -4645,18 +4658,27 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             b'i' | b'I' => {
                 let image_id_to_match = delete.image_id;
-                // Delete overlay placements for this image
-                let before = self.graphics.kitty_placements.len();
+                // Delete overlay and virtual placements for this image
+                let before = self.graphics.kitty_placements.len()
+                    + self.graphics.kitty_virtual_placements.len();
                 if delete.placement_id != 0 {
                     self.graphics
                         .kitty_placements
+                        .remove(&(image_id_to_match, delete.placement_id));
+                    self.graphics
+                        .kitty_virtual_placements
                         .remove(&(image_id_to_match, delete.placement_id));
                 } else {
                     self.graphics
                         .kitty_placements
                         .retain(|k, _| k.0 != image_id_to_match);
+                    self.graphics
+                        .kitty_virtual_placements
+                        .retain(|k, _| k.0 != image_id_to_match);
                 }
-                overlay_changed = self.graphics.kitty_placements.len() != before;
+                overlay_changed = self.graphics.kitty_placements.len()
+                    + self.graphics.kitty_virtual_placements.len()
+                    != before;
 
                 if delete.delete_data {
                     self.graphics
@@ -4761,17 +4783,26 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 if let Some(&image_id) =
                     self.graphics.kitty_image_numbers.get(&lookup_number)
                 {
-                    let before = self.graphics.kitty_placements.len();
+                    let before = self.graphics.kitty_placements.len()
+                        + self.graphics.kitty_virtual_placements.len();
                     if delete.placement_id != 0 {
                         self.graphics
                             .kitty_placements
+                            .remove(&(image_id, delete.placement_id));
+                        self.graphics
+                            .kitty_virtual_placements
                             .remove(&(image_id, delete.placement_id));
                     } else {
                         self.graphics
                             .kitty_placements
                             .retain(|k, _| k.0 != image_id);
+                        self.graphics
+                            .kitty_virtual_placements
+                            .retain(|k, _| k.0 != image_id);
                     }
-                    overlay_changed = self.graphics.kitty_placements.len() != before;
+                    overlay_changed = self.graphics.kitty_placements.len()
+                        + self.graphics.kitty_virtual_placements.len()
+                        != before;
 
                     if delete.delete_data {
                         self.graphics.delete_kitty_images(|id, _| *id == image_id);
@@ -7724,6 +7755,93 @@ mod tests {
     /// placeholder cells itself as ordinary text afterwards. This test
     /// pins that contract: previously rio also auto-wrote the cells,
     /// which raced kitty's own writes and broke the rendering.
+    /// `a=d,d=i` (and `d=a`) must remove virtual (U=1) placements —
+    /// their placeholder cells keep rendering the image if the metadata
+    /// survives, where kitty blanks them.
+    #[test]
+    fn delete_removes_virtual_placements() {
+        use crate::ansi::kitty_graphics_protocol::{DeleteRequest, PlacementRequest};
+
+        let size = CrosswordsSize::new(40, 20);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+
+        let store = |cw: &mut Crosswords<VoidListener>, id: u32| {
+            cw.graphics.store_kitty_image(
+                id,
+                None,
+                GraphicData {
+                    id: rio_graphics::GraphicId::new(id as u64),
+                    width: 1,
+                    height: 1,
+                    pixels: vec![0u8; 4],
+                    color_type: rio_graphics::ColorType::Rgba,
+                    is_opaque: true,
+                    display_width: None,
+                    display_height: None,
+                    resize: None,
+                    transmit_time: crate::time::Instant::now(),
+                },
+            );
+        };
+        let place = |cw: &mut Crosswords<VoidListener>, id: u32, pid: u32| {
+            assert!(cw.place_graphic(PlacementRequest {
+                image_id: id,
+                placement_id: pid,
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                columns: 2,
+                rows: 1,
+                z_index: 0,
+                virtual_placement: true,
+                unicode_placeholder: 0,
+                cursor_movement: 0,
+                cell_x_offset: 0,
+                cell_y_offset: 0,
+            }));
+        };
+        let delete = |action: u8, image_id: u32, placement_id: u32| DeleteRequest {
+            action,
+            image_id,
+            image_number: 0,
+            placement_id,
+            x: 0,
+            y: 0,
+            z_index: 0,
+            delete_data: false,
+        };
+
+        store(&mut cw, 1);
+        store(&mut cw, 2);
+        place(&mut cw, 1, 5);
+        place(&mut cw, 1, 6);
+        place(&mut cw, 2, 5);
+        assert_eq!(cw.graphics.kitty_virtual_placements.len(), 3);
+
+        // By id and placement: only (1, 5) goes.
+        cw.delete_graphics(delete(b'i', 1, 5));
+        assert_eq!(cw.graphics.kitty_virtual_placements.len(), 2);
+        assert!(!cw.graphics.kitty_virtual_placements.contains_key(&(1, 5)));
+
+        // By id: the rest of image 1 goes, image 2 stays.
+        cw.delete_graphics(delete(b'i', 1, 0));
+        assert_eq!(cw.graphics.kitty_virtual_placements.len(), 1);
+        assert!(cw.graphics.kitty_virtual_placements.contains_key(&(2, 5)));
+
+        // Delete all.
+        cw.delete_graphics(delete(b'a', 0, 0));
+        assert!(cw.graphics.kitty_virtual_placements.is_empty());
+    }
+
     #[test]
     fn place_virtual_graphic_stores_metadata_without_writing_cells() {
         use crate::ansi::kitty_graphics_protocol::PlacementRequest;
@@ -7739,6 +7857,25 @@ mod tests {
             window_id,
             0,
             10_000,
+        );
+
+        // Virtual placements reference a transmitted image like any
+        // other `a=p`; placing an unknown id is ENOENT.
+        cw.graphics.store_kitty_image(
+            1234,
+            None,
+            GraphicData {
+                id: rio_graphics::GraphicId::new(1234),
+                width: 1,
+                height: 1,
+                pixels: vec![0u8; 4],
+                color_type: rio_graphics::ColorType::Rgba,
+                is_opaque: true,
+                display_width: None,
+                display_height: None,
+                resize: None,
+                transmit_time: crate::time::Instant::now(),
+            },
         );
 
         let cursor_before = cw.grid.cursor.pos;
@@ -7759,7 +7896,7 @@ mod tests {
             cell_y_offset: 0,
         };
 
-        cw.place_graphic(placement);
+        assert!(cw.place_graphic(placement), "image exists, must place");
 
         // Metadata stored …
         let vp = cw
