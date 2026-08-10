@@ -350,8 +350,8 @@ impl<T: event::EventListener> Crosswords<T> {
         }
 
         'outer: loop {
-            // Feed every char the cell carries — the base plus its
-            // attached cluster codepoints — so a search for composed
+            // Feed every char the cell carries (the base plus its
+            // attached cluster codepoints) so a search for composed
             // text (a decomposed `é`, a ZWJ emoji) can match. Match
             // positions stay cell-granular: the whole cluster is one
             // grid position.

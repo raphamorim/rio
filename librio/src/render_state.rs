@@ -206,8 +206,8 @@ impl RenderState {
         }
     }
 
-    /// The codepoints attached to a square's grapheme cluster —
-    /// combining marks, or a full mode-2027 cluster tail — when it
+    /// The codepoints attached to a square's grapheme cluster
+    /// (combining marks, or a full mode-2027 cluster tail) when it
     /// carries any. Bg-only squares reuse the extras-id bits for
     /// color and never report a cluster.
     pub fn cluster_of(&self, square: &Square) -> Option<&[char]> {
@@ -227,8 +227,8 @@ impl RenderState {
         }
     }
 
-    /// The cell's full text — base codepoint plus attached cluster
-    /// codepoints — or `None` for cells with no attachments.
+    /// The cell's full text (base codepoint plus attached cluster
+    /// codepoints), or `None` for cells with no attachments.
     pub fn cell_cluster_text(&self, line: usize, column: usize) -> Option<String> {
         let square = self.square(line, column)?;
         let cluster = self.cluster_of(square)?;

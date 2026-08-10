@@ -968,8 +968,8 @@ pub unsafe extern "C" fn rio_render_state_cell(
 /// base char. StyleFlags proper occupies bits 0..10; this is bit 15.
 pub const RIO_CELL_HAS_CLUSTER: u16 = 1 << 15;
 
-/// Write the full text of a cell — base codepoint plus attached
-/// cluster codepoints — as UTF-32 into `out` (capacity `cap` code
+/// Write the full text of a cell (base codepoint plus attached
+/// cluster codepoints) as UTF-32 into `out` (capacity `cap` code
 /// units). Returns the total codepoint count, which may exceed `cap`
 /// (call again with a larger buffer); 0 for plain cells, so callers
 /// can treat 0 as "draw `codepoint` as usual".

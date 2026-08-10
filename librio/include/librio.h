@@ -262,8 +262,8 @@ void rio_render_state_reset_dirty(rio_render_state_t *state);
  * bits 0..10; this is bit 15. */
 #define RIO_CELL_HAS_CLUSTER (1u << 15)
 
-/* Write the full text of a cell — base codepoint plus attached cluster
- * codepoints — as UTF-32 into `out` (capacity `cap` code units).
+/* Write the full text of a cell (base codepoint plus attached cluster
+ * codepoints) as UTF-32 into `out` (capacity `cap` code units).
  * Returns the total codepoint count, which may exceed `cap` (call
  * again with a larger buffer); 0 for plain cells. */
 size_t rio_render_state_cell_cluster(const rio_render_state_t *state,

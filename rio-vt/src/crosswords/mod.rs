@@ -1545,14 +1545,14 @@ impl<U: EventListener> Crosswords<U> {
         // channel: reading them as an id would clone an unrelated
         // slot onto this cell, and writing one back would corrupt
         // the color. A combining mark with no base character has
-        // nothing to attach to — drop it.
+        // nothing to attach to, so drop it.
         if !matches!(
             self.grid[row][column].content_tag(),
             crate::crosswords::square::ContentTag::Codepoint
         ) {
             return;
         }
-        // Copy-on-write: slots are interned and shared — every
+        // Copy-on-write: slots are interned and shared; every
         // cell written under one OSC 8 template references the
         // same slot, so pushing into it in place would attach the
         // mark to the whole hyperlink span. Clone, extend, and
@@ -1578,14 +1578,14 @@ impl<U: EventListener> Crosswords<U> {
     /// Mode-2027 cluster continuation. `true` means `c` was consumed:
     /// appended to the previous cell's cluster (possibly widening it),
     /// or deliberately ignored (an invalid variation selector, the
-    /// ghostty `.ignore` contract). `false` means a grapheme break —
+    /// ghostty `.ignore` contract). `false` means a grapheme break:
     /// the caller writes `c` through the normal paths.
     ///
     /// There is no cross-call segmentation state. Any no-break
     /// sequence accumulates into a single cell, so everything the
-    /// break rules can look behind at — an emoji ZWJ run (GB11),
+    /// break rules can look behind at, an emoji ZWJ run (GB11),
     /// regional-indicator parity (GB12/13), an Indic conjunct chain
-    /// (GB9c) — is exactly the previous cell's contents, and the
+    /// (GB9c), is exactly the previous cell's contents, and the
     /// `BreakState` is rebuilt from them (a handful of codepoints).
     /// Cursor movement, clears, scrolling, and screen switches
     /// invalidate a cluster automatically: whatever cell precedes the
@@ -3554,7 +3554,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         //
         // Codepoints <= 0xFF never continue a cluster (matching
         // ghostty; the only UAX29 rule this waives is Prepend x
-        // Latin-1, which the bulk ASCII writer already waives — this
+        // Latin-1, which the bulk ASCII writer already waives; this
         // keeps scalar and bulk agreeing regardless of how the parser
         // chunks the stream) and are the common case, so that check
         // goes first.
@@ -3568,7 +3568,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Handle zero-width characters.
         if width == 0 {
             // Mode 2027: the cluster path above is the only legitimate
-            // attach. Reaching here means there was no base to join —
+            // attach. Reaching here means there was no base to join:
             // a column-0 orphan, an empty or bg-only previous cell.
             // Attaching wcwidth-style would contradict the boundary
             // the mode just computed, so drop the codepoint (matching
@@ -8013,8 +8013,8 @@ mod tests {
     }
 
     /// Indic conjuncts join across the linker (GB9c) and the cluster
-    /// goes wide the moment a second width-bearing codepoint joins —
-    /// the ghostty width rule.
+    /// goes wide the moment a second width-bearing codepoint joins
+    /// (the ghostty width rule).
     #[test]
     fn mode_2027_indic_conjunct_joins() {
         use crate::performer::handler::Handler;
@@ -8193,7 +8193,7 @@ mod tests {
     }
 
     /// Mode 2027: a zero-width codepoint with no base to join (orphan
-    /// at column 0) is dropped, never legacy-attached — the mode just
+    /// at column 0) is dropped, never legacy-attached: the mode just
     /// computed a boundary and wcwidth-attaching would contradict it
     /// (ghostty Terminal.zig, print width==0 branch).
     #[test]
@@ -8210,7 +8210,7 @@ mod tests {
     }
 
     /// Mode 2027: variation-selector validity is judged against the
-    /// cluster's *last* codepoint, not its base — a selector modifies
+    /// cluster's *last* codepoint, not its base: a selector modifies
     /// the character immediately before it (ghostty checks `prev` in
     /// `graphemeWidthEffect`). U+261D is a valid VS16 base but the
     /// skin tone that joined after it is not, so the trailing VS16 is

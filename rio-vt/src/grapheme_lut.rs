@@ -95,7 +95,7 @@ mod tests {
     use super::*;
 
     /// Every table entry must agree with the reference implementation
-    /// it was built from — including the class table's fallback seam.
+    /// it was built from, including the class table's fallback seam.
     #[test]
     fn tables_match_reference() {
         for cp in (0..TABLE_LEN as u32 + 0x100).step_by(7) {

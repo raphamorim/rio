@@ -75,7 +75,7 @@ pub const CELL_WORDS: usize = 4;
 /// Word-0 flag: the cell carries attached cluster codepoints
 /// (combining marks, or a mode-2027 grapheme cluster tail) beyond the
 /// base codepoint in bits 0..21. Fetch the full text with
-/// [`RioTerm::cluster_text`] and draw that instead of the base char —
+/// [`RioTerm::cluster_text`] and draw that instead of the base char;
 /// a renderer that ignores the bit simply keeps drawing bases.
 pub const CELL_HAS_CLUSTER: u32 = 1 << 23;
 
