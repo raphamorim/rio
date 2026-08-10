@@ -24,6 +24,8 @@ parking_lot = { workspace = true }
 serde = { workspace = true }
 rio-graphics = { workspace = true }
 rio-grapheme-width = { workspace = true }
+# The workspace aliases this to the rio-unicode crate, which also
+# carries the UAX #29 grapheme segmentation used by mode 2027.
 unicode-width = { workspace = true }
 regex-automata = "0.4.16"
 cursor-icon = { version = "1.1.0", default-features = false }

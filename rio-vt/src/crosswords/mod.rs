@@ -1527,6 +1527,135 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Append `c` to the cluster of the cell most recently written at
+    /// the cursor (legacy zero-width semantics: `saturating_sub`
+    /// column math, so a mark at column 0 targets column 0).
+    fn attach_to_prev_cell(&mut self, c: char) {
+        let mut column = self.grid.cursor.pos.col;
+        if !self.grid.cursor.should_wrap {
+            column.0 = column.saturating_sub(1);
+        }
+
+        let row = self.grid.cursor.pos.row;
+        if matches!(self.grid[row][column].wide(), Wide::Spacer) {
+            column.0 = column.saturating_sub(1);
+        }
+
+        // A bg-only cell reuses the extras-id bits for its color
+        // channel: reading them as an id would clone an unrelated
+        // slot onto this cell, and writing one back would corrupt
+        // the color. A combining mark with no base character has
+        // nothing to attach to — drop it.
+        if !matches!(
+            self.grid[row][column].content_tag(),
+            crate::crosswords::square::ContentTag::Codepoint
+        ) {
+            return;
+        }
+        // Copy-on-write: slots are interned and shared — every
+        // cell written under one OSC 8 template references the
+        // same slot, so pushing into it in place would attach the
+        // mark to the whole hyperlink span. Clone, extend, and
+        // re-intern instead; the marked cell gets its own
+        // (marks + hyperlink) slot and its neighbors keep theirs.
+        let existing_id = self.grid[row][column].extras_id();
+        let mut extras = existing_id
+            .and_then(|id| self.grid.extras_table.get(id).cloned())
+            .unwrap_or_default();
+        extras.zerowidth.push(c);
+        let id = self.grid.alloc_extras(extras);
+        if id != 0 {
+            let cell = &mut self.grid[row][column];
+            cell.set_extras_id(Some(id));
+            cell.insert_cell_flag(CellFlags::GRAPHEME);
+            self.grid[row].has_extras = true;
+        }
+        // id == 0: slot space exhausted. Keep the cell's existing
+        // extras (hyperlink, earlier marks) rather than erasing
+        // them; only the new mark is lost.
+    }
+
+    /// Mode-2027 cluster continuation. `true` means `c` was consumed:
+    /// appended to the previous cell's cluster (possibly widening it),
+    /// or deliberately ignored (an invalid variation selector, the
+    /// ghostty `.ignore` contract). `false` means a grapheme break —
+    /// the caller writes `c` through the normal paths.
+    ///
+    /// There is no cross-call segmentation state. Any no-break
+    /// sequence accumulates into a single cell, so everything the
+    /// break rules can look behind at — an emoji ZWJ run (GB11),
+    /// regional-indicator parity (GB12/13), an Indic conjunct chain
+    /// (GB9c) — is exactly the previous cell's contents, and the
+    /// `BreakState` is rebuilt from them (a handful of codepoints).
+    /// Cursor movement, clears, scrolling, and screen switches
+    /// invalidate a cluster automatically: whatever cell precedes the
+    /// cursor *is* the truth, with no reset hooks to forget.
+    fn try_cluster_append(&mut self, c: char, width: usize) -> bool {
+        use unicode_width::grapheme::{grapheme_class, is_break, BreakState};
+
+        let row = self.grid.cursor.pos.row;
+        let Some(base_col) = self.prev_cell_col() else {
+            return false;
+        };
+        let cell = self.grid[row][Column(base_col)];
+        if !matches!(
+            cell.content_tag(),
+            crate::crosswords::square::ContentTag::Codepoint
+        ) {
+            return false;
+        }
+        let base = cell.c();
+        if base == '\0' {
+            // Never-written cell: nothing to continue.
+            return false;
+        }
+
+        // Reconstruct the segmentation state from the cluster itself.
+        let mut prev = grapheme_class(base);
+        let mut state = BreakState::start(prev);
+        if let Some(id) = cell.extras_id() {
+            if let Some(extras) = self.grid.extras_table.get(id) {
+                for &attached in &extras.zerowidth {
+                    let class = grapheme_class(attached);
+                    let _ = is_break(prev, class, &mut state);
+                    prev = class;
+                }
+            }
+        }
+        if is_break(prev, grapheme_class(c), &mut state) {
+            return false;
+        }
+
+        // Joined. Decide the width effect (ghostty
+        // `graphemeWidthEffect`): variation selectors flip a valid
+        // base's width and are otherwise ignored outright; any other
+        // width-bearing continuation makes the whole cluster wide
+        // (the base already contributed one column); zero-width
+        // continuations change nothing.
+        match c {
+            '\u{FE0F}' => {
+                if vs_is_valid_base(base, c) {
+                    self.apply_emoji_vs16();
+                    self.attach_to_prev_cell(c);
+                }
+                // Invalid selector: ignore. The cell is untouched, so
+                // the reconstructed state next time is identical.
+            }
+            '\u{FE0E}' => {
+                if vs_is_valid_base(base, c) {
+                    self.apply_emoji_vs15();
+                    self.attach_to_prev_cell(c);
+                }
+            }
+            _ if width == 0 => self.attach_to_prev_cell(c),
+            _ => {
+                self.widen_prev_cell();
+                self.attach_to_prev_cell(c);
+            }
+        }
+        true
+    }
+
     fn write_cell(&mut self, c: char, template: crate::crosswords::square::Square) {
         use crate::crosswords::square::{Square, Wide};
 
@@ -1815,6 +1944,43 @@ impl<U: EventListener> Crosswords<U> {
     /// via cmap format 14, so the grid must budget two cells for it.
     #[inline(never)]
     fn apply_emoji_vs16(&mut self) {
+        let Some(base_col) = self.prev_cell_col() else {
+            return;
+        };
+        let base_cell = &self.grid[self.grid.cursor.pos.row][Column(base_col)];
+        if !matches!(base_cell.wide(), Wide::Narrow) {
+            return;
+        }
+        if !vs_is_valid_base(base_cell.c(), '\u{FE0F}') {
+            return;
+        }
+        self.widen_prev_cell();
+    }
+
+    /// The column of the cell most recently written at the cursor: the
+    /// cursor column itself while a pending wrap holds the cursor past
+    /// the edge, otherwise the column before it, stepping over a wide
+    /// pair's spacer to its lead. `None` when no such cell exists.
+    fn prev_cell_col(&self) -> Option<usize> {
+        let col = self.grid.cursor.pos.col.0;
+        let col = if self.grid.cursor.should_wrap {
+            col
+        } else {
+            col.checked_sub(1)?
+        };
+        let row = self.grid.cursor.pos.row;
+        Some(match self.grid[row][Column(col)].wide() {
+            Wide::Spacer => col.checked_sub(1)?,
+            _ => col,
+        })
+    }
+
+    /// Widen the narrow cell preceding the cursor into a wide pair,
+    /// handling the row-edge wrap. Shared by VS16 promotion and
+    /// mode-2027 cluster continuation (a width-bearing codepoint
+    /// joining a narrow cluster makes the whole cluster wide).
+    #[inline(never)]
+    fn widen_prev_cell(&mut self) {
         let columns = self.grid.columns();
         // No wide pair fits on one column, so leave the base narrow: the
         // wrap branch below would place the trailing Spacer at column 1 of
@@ -1823,23 +1989,10 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
         let row = self.grid.cursor.pos.row;
-        let cursor_col = self.grid.cursor.pos.col.0;
-        let should_wrap = self.grid.cursor.should_wrap;
-
-        let base_col = if should_wrap {
-            cursor_col
-        } else if cursor_col == 0 {
+        let Some(base_col) = self.prev_cell_col() else {
             return;
-        } else {
-            cursor_col - 1
         };
-
-        let base_cell = &self.grid[row][Column(base_col)];
-        if !matches!(base_cell.wide(), Wide::Narrow) {
-            return;
-        }
-        let base_char = base_cell.c();
-        if !vs_is_valid_base(base_char, '\u{FE0F}') {
+        if !matches!(self.grid[row][Column(base_col)].wide(), Wide::Narrow) {
             return;
         }
 
@@ -3356,6 +3509,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
             None => return,
         };
 
+        // Mode 2027: try to continue the previous cell's grapheme
+        // cluster first. On a break (or nothing to continue) fall
+        // through to the legacy paths: zero-width codepoints attach
+        // wcwidth-style, everything else writes a fresh cell.
+        if self.mode.contains(Mode::GRAPHEME_CLUSTER) && self.try_cluster_append(c, width)
+        {
+            return;
+        }
+
         // Handle zero-width characters.
         if width == 0 {
             // Emoji presentation variation selectors flip the *width* of
@@ -3370,48 +3532,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 _ => {}
             }
 
-            let mut column = self.grid.cursor.pos.col;
-            if !self.grid.cursor.should_wrap {
-                column.0 = column.saturating_sub(1);
-            }
-
-            let row = self.grid.cursor.pos.row;
-            if matches!(self.grid[row][column].wide(), Wide::Spacer) {
-                column.0 = column.saturating_sub(1);
-            }
-
-            // A bg-only cell reuses the extras-id bits for its color
-            // channel: reading them as an id would clone an unrelated
-            // slot onto this cell, and writing one back would corrupt
-            // the color. A combining mark with no base character has
-            // nothing to attach to — drop it.
-            if !matches!(
-                self.grid[row][column].content_tag(),
-                crate::crosswords::square::ContentTag::Codepoint
-            ) {
-                return;
-            }
-            // Copy-on-write: slots are interned and shared — every
-            // cell written under one OSC 8 template references the
-            // same slot, so pushing into it in place would attach the
-            // mark to the whole hyperlink span. Clone, extend, and
-            // re-intern instead; the marked cell gets its own
-            // (marks + hyperlink) slot and its neighbors keep theirs.
-            let existing_id = self.grid[row][column].extras_id();
-            let mut extras = existing_id
-                .and_then(|id| self.grid.extras_table.get(id).cloned())
-                .unwrap_or_default();
-            extras.zerowidth.push(c);
-            let id = self.grid.alloc_extras(extras);
-            if id != 0 {
-                let cell = &mut self.grid[row][column];
-                cell.set_extras_id(Some(id));
-                cell.insert_cell_flag(CellFlags::GRAPHEME);
-                self.grid[row].has_extras = true;
-            }
-            // id == 0: slot space exhausted. Keep the cell's existing
-            // extras (hyperlink, earlier marks) rather than erasing
-            // them; only the new mark is lost.
+            self.attach_to_prev_cell(c);
             return;
         }
 
@@ -3484,6 +3605,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let active = self.grid.cursor.charsets[self.active_charset];
         if self.mode.contains(Mode::INSERT)
             || active != crate::crosswords::pos::StandardCharset::Ascii
+            // Grapheme clustering decides cell layout per codepoint
+            // against the previous cell; the bulk writers place whole
+            // width-runs at once and would split clusters. ASCII bulk
+            // paths stay fast: ASCII never continues a cluster, and
+            // the cluster check anchors on the previous cell, so it
+            // self-invalidates across a bulk run.
+            || self.mode.contains(Mode::GRAPHEME_CLUSTER)
         {
             for &cp in codepoints {
                 let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
@@ -7768,6 +7896,161 @@ mod tests {
     /// re-interned into the alt grid's table: extras ids are
     /// table-local, and the seeded cursor template would otherwise
     /// stamp a foreign id onto every alt-screen cell.
+    fn term_2027(cols: usize, rows: usize) -> Crosswords<VoidListener> {
+        use crate::ansi::mode::PrivateMode;
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(cols, rows);
+        cw.set_private_mode(PrivateMode::new(2027));
+        cw
+    }
+
+    fn extras_of(cw: &Crosswords<VoidListener>, line: i32, col: usize) -> Vec<char> {
+        cw.grid[Line(line)][Column(col)]
+            .extras_id()
+            .and_then(|id| cw.grid.extras_table.get(id))
+            .map(|e| e.zerowidth.clone())
+            .unwrap_or_default()
+    }
+
+    /// ZWJ emoji occupy one two-cell slot under mode 2027 (GB11),
+    /// and shatter into per-emoji cells without it.
+    #[test]
+    fn mode_2027_zwj_emoji_is_one_cluster() {
+        use crate::performer::handler::Handler;
+        let farmer = ['\u{1F9D1}', '\u{200D}', '\u{1F33E}'];
+
+        let mut cw = term_2027(10, 2);
+        for c in farmer {
+            cw.input(c);
+        }
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), '\u{1F9D1}');
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Spacer);
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{200D}', '\u{1F33E}']);
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+
+        // Legacy: the trailing emoji starts its own pair.
+        let mut cw = new_term(10, 2);
+        for c in farmer {
+            cw.input(c);
+        }
+        assert_eq!(cw.grid[Line(0)][Column(2)].c(), '\u{1F33E}');
+        assert_eq!(cw.grid.cursor.pos.col, Column(4));
+    }
+
+    /// Regional indicators pair up (GB12/13): two RIs form one wide
+    /// cluster, the third starts a new cell.
+    #[test]
+    fn mode_2027_regional_indicators_pair() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(10, 2);
+        let ri = ['\u{1F1E7}', '\u{1F1F7}', '\u{1F1E6}'];
+        for c in ri {
+            cw.input(c);
+        }
+        // First pair: one wide cluster.
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{1F1F7}']);
+        // Third RI: fresh narrow cell (parity even at the boundary).
+        assert_eq!(cw.grid[Line(0)][Column(2)].c(), '\u{1F1E6}');
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::Narrow);
+    }
+
+    /// Indic conjuncts join across the linker (GB9c) and the cluster
+    /// goes wide the moment a second width-bearing codepoint joins —
+    /// the ghostty width rule.
+    #[test]
+    fn mode_2027_indic_conjunct_joins() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(10, 2);
+        for c in ['\u{915}', '\u{94D}', '\u{937}'] {
+            cw.input(c);
+        }
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), '\u{915}');
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{94D}', '\u{937}']);
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+    }
+
+    /// A valid emoji variation sequence widens within the cluster; an
+    /// invalid selector is ignored outright (ghostty `.ignore`) rather
+    /// than attached like the legacy path does.
+    #[test]
+    fn mode_2027_variation_selectors() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(10, 2);
+        cw.input('\u{1F39F}'); // text-presentation default, narrow
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Narrow);
+        cw.input('\u{FE0F}');
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{FE0F}']);
+
+        let mut cw = term_2027(10, 2);
+        cw.input('a');
+        cw.input('\u{FE0F}'); // 'a' is no emoji base: dropped entirely
+        assert_eq!(extras_of(&cw, 0, 0), Vec::<char>::new());
+        assert!(!cw.grid[Line(0)][Column(0)].has_grapheme());
+        assert_eq!(cw.grid.cursor.pos.col, Column(1));
+    }
+
+    /// A skin-tone modifier (width-bearing Extend) joins its emoji
+    /// without growing the already-wide cluster.
+    #[test]
+    fn mode_2027_skin_tone_joins() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(10, 2);
+        cw.input('\u{1F44B}');
+        cw.input('\u{1F3FB}');
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{1F3FB}']);
+        assert_eq!(cw.grid.cursor.pos.col, Column(2));
+    }
+
+    /// Plain combining marks behave as before: joined, still narrow.
+    /// Plain text never joins anything.
+    #[test]
+    fn mode_2027_narrow_cases() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(10, 2);
+        cw.input('e');
+        cw.input('\u{301}');
+        cw.input('x');
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{301}']);
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), 'x');
+    }
+
+    /// A width-bearing continuation arriving when the narrow cluster
+    /// sits at the last column widens it through the wrap dance:
+    /// LeadingSpacer stays behind, the cluster moves to the next row.
+    #[test]
+    fn mode_2027_cluster_widens_across_row_edge() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(3, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{1F1E7}'); // narrow RI at the last column
+        cw.input('\u{1F1F7}'); // pairs: cluster must go wide → wraps
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::LeadingSpacer);
+        assert_eq!(cw.grid[Line(1)][Column(0)].c(), '\u{1F1E7}');
+        assert_eq!(cw.grid[Line(1)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, 1, 0), ['\u{1F1F7}']);
+    }
+
+    /// The bulk decode path must route through the cluster machine:
+    /// a ZWJ sequence arriving as one codepoint batch clusters the
+    /// same as scalar input.
+    #[test]
+    fn mode_2027_bulk_codepoints_cluster() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(10, 2);
+        cw.input_codepoints(&[0x1F9D1, 0x200D, 0x1F33E, 0x61]);
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{200D}', '\u{1F33E}']);
+        assert_eq!(cw.grid[Line(0)][Column(2)].c(), 'a');
+        assert_eq!(cw.grid.cursor.pos.col, Column(3));
+    }
+
     #[test]
     fn hyperlink_crosses_alt_screen_into_the_alt_table() {
         use crate::performer::handler::Handler;
