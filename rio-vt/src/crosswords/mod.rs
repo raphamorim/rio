@@ -3515,7 +3515,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // cluster first. On a break (or nothing to continue) fall
         // through to the legacy paths: zero-width codepoints attach
         // wcwidth-style, everything else writes a fresh cell.
-        if self.mode.contains(Mode::GRAPHEME_CLUSTER) && self.try_cluster_append(c, width)
+        //
+        // Codepoints <= 0xFF never continue a cluster (matching
+        // ghostty; the only UAX29 rule this waives is Prepend x
+        // Latin-1, which the bulk ASCII writer already waives — this
+        // keeps scalar and bulk agreeing regardless of how the parser
+        // chunks the stream) and are the common case, so that check
+        // goes first.
+        if c > '\u{FF}'
+            && self.mode.contains(Mode::GRAPHEME_CLUSTER)
+            && self.try_cluster_append(c, width)
         {
             return;
         }
