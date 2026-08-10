@@ -622,6 +622,14 @@ pub struct Graphics {
     /// Maps GraphicId to insertion timestamp
     pub image_timestamps: FxHashMap<GraphicId, crate::time::Instant>,
 
+    /// Byte sizes of tracked atlas (sixel/iTerm2) graphics. The pixels
+    /// leave for the frontend via `take_queues`, so when a graphic's
+    /// last placement dies this map is the only way to give its bytes
+    /// back to `total_bytes` — without it every atlas image counted
+    /// against the budget forever and starved kitty images into
+    /// eviction.
+    pub graphic_sizes: FxHashMap<GraphicId, usize>,
+
     /// Weak references to placed textures, for O(1) liveness checks.
     /// Avoids scanning the entire grid to find which graphics are in use.
     /// When an image loses its last placement, the
@@ -679,6 +687,7 @@ impl Default for Graphics {
             total_bytes: 0,
             total_limit: 320 * 1024 * 1024, // 320MB per kitty spec
             image_timestamps: FxHashMap::default(),
+            graphic_sizes: FxHashMap::default(),
             kitty_placements: FxHashMap::default(),
             atlas_placements: Vec::new(),
             atlas_key_refs: FxHashMap::default(),
@@ -774,38 +783,63 @@ impl Graphics {
     /// pixel store and the GPU texture. The vec is tiny, so a full
     /// recount beats distributed per-child bookkeeping.
     pub fn recount_atlas_keys(&mut self) {
-        Self::recount_atlas_keys_for(
+        let lost = Self::recount_atlas_keys_for(
             &self.atlas_placements,
             &mut self.atlas_key_refs,
             &self.texture_operations,
         );
+        self.untrack_atlas_keys(&lost);
     }
 
     pub fn recount_inactive_atlas_keys(&mut self) {
-        Self::recount_atlas_keys_for(
+        let lost = Self::recount_atlas_keys_for(
             &self.kitty_inactive_screen.atlas_placements,
             &mut self.kitty_inactive_screen.atlas_key_refs,
             &self.texture_operations,
         );
+        self.untrack_atlas_keys(&lost);
     }
 
     fn recount_atlas_keys_for(
         placements: &[AtlasPlacement],
         key_refs: &mut FxHashMap<u64, u32>,
         texture_operations: &std::sync::Arc<parking_lot::Mutex<Vec<u64>>>,
-    ) {
+    ) -> Vec<u64> {
         let mut refs: FxHashMap<u64, u32> = FxHashMap::default();
         for placement in placements {
             *refs.entry(placement.image_key).or_insert(0) += 1;
         }
+        let mut lost = Vec::new();
         let mut removals = texture_operations.lock();
         for key in key_refs.keys() {
             if !refs.contains_key(key) {
                 removals.push(*key);
+                lost.push(*key);
             }
         }
         drop(removals);
         *key_refs = refs;
+        lost
+    }
+
+    /// Give the bytes of released atlas keys back to the budget. Their
+    /// pixels left with the frontend on `take_queues`, so the eviction
+    /// scan can never find them again — this is the only release path.
+    /// A key still referenced by the other screen keeps its bytes.
+    pub fn untrack_atlas_keys(&mut self, keys: &[u64]) {
+        for &key in keys {
+            if self.atlas_key_refs.contains_key(&key)
+                || self.kitty_inactive_screen.atlas_key_refs.contains_key(&key)
+            {
+                continue;
+            }
+            // Atlas keys live above 2^32; recover the GraphicId part.
+            let graphic_id = GraphicId::new(key.saturating_sub(1u64 << 32));
+            if let Some(bytes) = self.graphic_sizes.remove(&graphic_id) {
+                self.image_timestamps.remove(&graphic_id);
+                self.total_bytes = self.total_bytes.saturating_sub(bytes);
+            }
+        }
     }
 
     pub fn swap_kitty_screen_state(&mut self) {
@@ -867,6 +901,24 @@ impl Graphics {
         }
         self.atlas_placements.clear();
         self.atlas_key_refs.clear();
+
+        // Give the atlas bytes back to the budget with the textures —
+        // except graphics still waiting in `pending`, whose bytes the
+        // eviction scan can still see and free itself.
+        let pending_ids: std::collections::HashSet<GraphicId> =
+            self.pending.iter().map(|g| g.id).collect();
+        let released: Vec<GraphicId> = self
+            .graphic_sizes
+            .keys()
+            .filter(|id| !pending_ids.contains(id))
+            .copied()
+            .collect();
+        for id in released {
+            if let Some(bytes) = self.graphic_sizes.remove(&id) {
+                self.image_timestamps.remove(&id);
+                self.total_bytes = self.total_bytes.saturating_sub(bytes);
+            }
+        }
 
         self.kitty_inactive_screen = KittyScreenState::default();
         self.kitty_graphics_dirty = true;
@@ -1097,6 +1149,10 @@ impl Graphics {
             match source {
                 CandidateSource::Pending => {
                     self.pending.retain(|g| g.id != id);
+                    // Its bytes join `freed_bytes` below; drop the size
+                    // entry so a later placement release cannot subtract
+                    // them a second time.
+                    self.graphic_sizes.remove(&id);
                 }
                 CandidateSource::ActiveKitty => {
                     self.kitty_images.remove(&evicted_u32);
@@ -1178,6 +1234,7 @@ impl Graphics {
     pub fn track_graphic(&mut self, graphic_id: GraphicId, bytes: usize) {
         self.image_timestamps
             .insert(graphic_id, crate::time::Instant::now());
+        self.graphic_sizes.insert(graphic_id, bytes);
         self.total_bytes += bytes;
         debug!(
             "Tracked graphic id={}, bytes={}, total_bytes={}",
@@ -1188,12 +1245,60 @@ impl Graphics {
     /// Update total_bytes when a graphic is removed
     pub fn untrack_graphic(&mut self, graphic_id: GraphicId, bytes: usize) {
         self.image_timestamps.remove(&graphic_id);
+        self.graphic_sizes.remove(&graphic_id);
         self.total_bytes = self.total_bytes.saturating_sub(bytes);
         debug!(
             "Untracked graphic id={}, bytes={}, total_bytes={}",
             graphic_id.0, bytes, self.total_bytes
         );
     }
+}
+
+/// A placed atlas graphic's pixels leave via `take_queues`; when its
+/// last placement dies, the recount must give its bytes back to the
+/// budget — before this, every sixel/iTerm2 image counted against the
+/// 320MB kitty budget forever and starved kitty images into eviction.
+#[test]
+fn atlas_key_release_returns_bytes_to_the_budget() {
+    let mut graphics = Graphics::default();
+    let key = rio_graphics::atlas_image_key(1);
+
+    graphics.track_graphic(GraphicId::new(1), 5_000);
+    graphics.atlas_key_refs.insert(key, 1);
+    assert_eq!(graphics.total_bytes, 5_000);
+
+    // The placement vec is the source of truth; it is empty, so the
+    // recount releases the key.
+    graphics.recount_atlas_keys();
+    assert_eq!(graphics.total_bytes, 0, "released key must free its bytes");
+    assert!(graphics.graphic_sizes.is_empty());
+    assert!(graphics.image_timestamps.is_empty());
+    assert_eq!(
+        graphics.texture_operations.lock().as_slice(),
+        &[key],
+        "the texture removal must still be queued"
+    );
+}
+
+/// A key still referenced by the inactive screen keeps its bytes.
+#[test]
+fn atlas_key_release_respects_the_other_screen() {
+    let mut graphics = Graphics::default();
+    let key = rio_graphics::atlas_image_key(1);
+
+    graphics.track_graphic(GraphicId::new(1), 5_000);
+    graphics.atlas_key_refs.insert(key, 1);
+    graphics.kitty_inactive_screen.atlas_key_refs.insert(key, 1);
+
+    graphics.recount_atlas_keys();
+    assert_eq!(
+        graphics.total_bytes, 5_000,
+        "bytes stay while the inactive screen references the key"
+    );
+
+    graphics.kitty_inactive_screen.atlas_key_refs.clear();
+    graphics.untrack_atlas_keys(&[key]);
+    assert_eq!(graphics.total_bytes, 0);
 }
 
 #[test]
