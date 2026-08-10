@@ -8,108 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[cfg(feature = "bench")]
-use super::{UnicodeWidthChar, UnicodeWidthStr};
-#[cfg(feature = "bench")]
-use std::iter;
-#[cfg(feature = "bench")]
-use test::{self, Bencher};
-
 use std::prelude::v1::*;
 
-#[cfg(feature = "bench")]
-#[bench]
-fn cargo(b: &mut Bencher) {
-    let string = iter::repeat('a').take(4096).collect::<String>();
-
-    b.iter(|| {
-        for c in string.chars() {
-            test::black_box(UnicodeWidthChar::width(c));
-        }
-    });
-}
-
-#[cfg(feature = "bench")]
-#[bench]
-#[allow(deprecated)]
-fn stdlib(b: &mut Bencher) {
-    let string = iter::repeat('a').take(4096).collect::<String>();
-
-    b.iter(|| {
-        for c in string.chars() {
-            test::black_box(c.width());
-        }
-    });
-}
-
-#[cfg(feature = "bench")]
-#[bench]
-fn simple_if(b: &mut Bencher) {
-    let string = iter::repeat('a').take(4096).collect::<String>();
-
-    b.iter(|| {
-        for c in string.chars() {
-            test::black_box(simple_width_if(c));
-        }
-    });
-}
-
-#[cfg(feature = "bench")]
-#[bench]
-fn simple_match(b: &mut Bencher) {
-    let string = iter::repeat('a').take(4096).collect::<String>();
-
-    b.iter(|| {
-        for c in string.chars() {
-            test::black_box(simple_width_match(c));
-        }
-    });
-}
-
-#[cfg(feature = "bench")]
-#[inline]
-fn simple_width_if(c: char) -> Option<usize> {
-    let cu = c as u32;
-    if cu < 127 {
-        if cu > 31 {
-            Some(1)
-        } else if cu == 0 {
-            Some(0)
-        } else {
-            None
-        }
-    } else {
-        UnicodeWidthChar::width(c)
-    }
-}
-
-#[cfg(feature = "bench")]
-#[inline]
-fn simple_width_match(c: char) -> Option<usize> {
-    match c as u32 {
-        cu if cu == 0 => Some(0),
-        cu if cu < 0x20 => None,
-        cu if cu < 0x7f => Some(1),
-        _ => UnicodeWidthChar::width(c),
-    }
-}
-#[cfg(all(feature = "bench", not(feature = "no_std")))]
-#[bench]
-fn enwik8(b: &mut Bencher) {
-    // To benchmark, download & unzip `enwik8` from https://data.deepai.org/enwik8.zip
-    let data_path = "bench_data/enwik8";
-    let string = std::fs::read_to_string(data_path).unwrap_or_default();
-    b.iter(|| test::black_box(UnicodeWidthStr::width(string.as_str())));
-}
-#[cfg(all(feature = "bench", not(feature = "no_std")))]
-#[bench]
-fn jawiki(b: &mut Bencher) {
-    // To benchmark, download & extract `jawiki-20220501-pages-articles-multistream-index.txt` from
-    // https://dumps.wikimedia.org/jawiki/20220501/jawiki-20220501-pages-articles-multistream-index.txt.bz2
-    let data_path = "bench_data/jawiki-20220501-pages-articles-multistream-index.txt";
-    let string = std::fs::read_to_string(data_path).unwrap_or_default();
-    b.iter(|| test::black_box(UnicodeWidthStr::width(string.as_str())));
-}
 #[test]
 fn test_str() {
     use super::UnicodeWidthStr;
@@ -140,9 +40,6 @@ fn test_emoji() {
 #[test]
 fn test_char() {
     use super::UnicodeWidthChar;
-    #[cfg(feature = "no_std")]
-    use core::option::Option::{None, Some};
-
     assert_eq!(UnicodeWidthChar::width('ｈ'), Some(2));
     assert_eq!('ｈ'.width_cjk(), Some(2));
     assert_eq!(UnicodeWidthChar::width('\x00'), Some(0));
@@ -156,9 +53,6 @@ fn test_char() {
 #[test]
 fn test_char2() {
     use super::UnicodeWidthChar;
-    #[cfg(feature = "no_std")]
-    use core::option::Option::{None, Some};
-
     assert_eq!(UnicodeWidthChar::width('\x00'), Some(0));
     assert_eq!('\x00'.width_cjk(), Some(0));
 
@@ -187,8 +81,5 @@ fn test_char2() {
 #[test]
 fn unicode_12() {
     use super::UnicodeWidthChar;
-    #[cfg(feature = "no_std")]
-    use core::option::Option::{None, Some};
-
     assert_eq!(UnicodeWidthChar::width('\u{1F971}'), Some(2));
 }
