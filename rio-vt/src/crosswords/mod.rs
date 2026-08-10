@@ -3236,21 +3236,22 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 column.0 = column.saturating_sub(1);
             }
 
+            // Copy-on-write: slots are interned and shared — every
+            // cell written under one OSC 8 template references the
+            // same slot, so pushing into it in place would attach the
+            // mark to the whole hyperlink span. Clone, extend, and
+            // re-intern instead; the marked cell gets its own
+            // (marks + hyperlink) slot and its neighbors keep theirs.
+            let existing_id = self.grid[row][column].extras_id();
+            let mut extras = existing_id
+                .and_then(|id| self.grid.extras_table.get(id).cloned())
+                .unwrap_or_default();
+            extras.zerowidth.push(c);
+            let id = self.grid.alloc_extras(extras);
             let cell = &mut self.grid[row][column];
-            let existing_id = cell.extras_id();
-            if let Some(id) = existing_id {
-                if let Some(extras) = self.grid.extras_table.get_mut(id) {
-                    extras.zerowidth.push(c);
-                }
-            } else {
-                let mut extras = crate::crosswords::square::Extras::default();
-                extras.zerowidth.push(c);
-                let id = self.grid.alloc_extras(extras);
-                let cell = &mut self.grid[row][column];
-                cell.set_extras_id(Some(id));
-                cell.insert_cell_flag(CellFlags::GRAPHEME);
-                self.grid[row].has_extras = true;
-            }
+            cell.set_extras_id(Some(id));
+            cell.insert_cell_flag(CellFlags::GRAPHEME);
+            self.grid[row].has_extras = true;
             return;
         }
 
@@ -7404,6 +7405,78 @@ mod tests {
         assert!(!cw.grid.cursor.should_wrap);
     }
 
+    /// Identical extras content interns into one slot: the u16 id
+    /// space stops being a per-occurrence budget.
+    #[test]
+    fn extras_intern_by_content() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 2);
+        cw.input('e');
+        cw.input('\u{301}');
+        cw.input('e');
+        cw.input('\u{301}');
+        let a = cw.grid[Line(0)][Column(0)].extras_id().unwrap();
+        let b = cw.grid[Line(0)][Column(1)].extras_id().unwrap();
+        assert_eq!(a, b);
+        // Different content gets its own slot.
+        cw.input('e');
+        cw.input('\u{302}');
+        let c = cw.grid[Line(0)][Column(2)].extras_id().unwrap();
+        assert_ne!(a, c);
+    }
+
+    /// A combining mark typed inside an OSC 8 hyperlink must attach to
+    /// its own cell only. The old in-place mutation edited the shared
+    /// template slot, leaking the mark into every cell of the span —
+    /// and the marked cell must keep the hyperlink.
+    #[test]
+    fn combining_mark_inside_hyperlink_stays_on_one_cell() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 2);
+        let link = Hyperlink::new(None::<&str>, "https://example.com");
+        cw.set_hyperlink(Some(link.clone()));
+        cw.input('a');
+        cw.input('\u{301}');
+        cw.input('b');
+        cw.set_hyperlink(None);
+
+        // The marked cell carries mark + hyperlink.
+        let a_id = cw.grid[Line(0)][Column(0)].extras_id().unwrap();
+        let a = cw.grid.extras_table.get(a_id).unwrap();
+        assert_eq!(a.zerowidth, vec!['\u{301}']);
+        assert_eq!(a.hyperlink.as_ref(), Some(&link));
+
+        // Its neighbor keeps the pristine hyperlink-only slot.
+        let b_id = cw.grid[Line(0)][Column(1)].extras_id().unwrap();
+        let b = cw.grid.extras_table.get(b_id).unwrap();
+        assert!(b.zerowidth.is_empty());
+        assert_eq!(b.hyperlink.as_ref(), Some(&link));
+        assert_ne!(a_id, b_id);
+    }
+
+    /// The interning lookup must be purged when slots are swept, or a
+    /// re-alloc of old content would return a dead slot id.
+    #[test]
+    fn reclaim_purges_interning_lookup() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 2);
+        cw.input('e');
+        cw.input('\u{301}');
+        let content = cw
+            .grid
+            .extras_table
+            .get(cw.grid[Line(0)][Column(0)].extras_id().unwrap())
+            .unwrap()
+            .clone();
+        // Drop the only reference and sweep.
+        cw.clear_screen(ClearMode::All);
+        cw.grid.reclaim_extras();
+        // Re-alloc of the same content must yield a live slot.
+        let id = cw.grid.alloc_extras(content.clone());
+        assert_ne!(id, 0);
+        assert_eq!(cw.grid.extras_table.get(id), Some(&content));
+    }
+
     #[test]
     fn vs16_at_last_column_preserves_base_extras() {
         use crate::performer::handler::Handler;
@@ -7421,10 +7494,15 @@ mod tests {
 
         cw.input('\u{FE0F}');
 
-        // The wide base on the new row should still carry the same extras
-        // entry (the ZWJ we attached earlier).
+        // The wide base on the new row still carries the earlier ZWJ
+        // plus the VS16 that widened it. Slots are interned with
+        // copy-on-write now, so the id may change; the content is the
+        // contract (comparing ids would pin the old in-place-mutation
+        // behavior, which leaked pushes into shared slots).
         let moved_extras = cw.grid[Line(1)][Column(0)].extras_id();
-        assert_eq!(moved_extras, original_extras);
+        assert!(moved_extras.is_some());
+        let extras = cw.grid.extras_table.get(moved_extras.unwrap()).unwrap();
+        assert_eq!(extras.zerowidth, vec!['\u{200D}', '\u{FE0F}']);
         assert_eq!(cw.grid[Line(1)][Column(0)].wide(), Wide::Wide);
         assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::LeadingSpacer);
     }

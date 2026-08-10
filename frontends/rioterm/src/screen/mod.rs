@@ -2105,16 +2105,18 @@ impl Screen<'_> {
 
         // Look up the cell's hyperlink via the per-grid extras table.
         // Cells in the same OSC 8 span share an `extras_id`, so we
-        // walk left/right comparing ids (cheap u16 compare) to find
-        // the span boundaries, then look up the URI once.
-        let id = terminal.cell_hyperlink_id(point.row, point.col)?;
+        // walk left/right comparing the hyperlink itself (extras slots
+        // are interned by content, so a cell with combining marks has
+        // a different id while belonging to the same link) to find the
+        // span boundaries.
+        let hyperlink = terminal.cell_hyperlink(point.row, point.col)?;
 
         let mut start_col = point.col;
         let mut end_col = point.col;
 
         while start_col > rio_backend::crosswords::pos::Column(0) {
             let prev_col = start_col - 1;
-            if terminal.cell_hyperlink_id(point.row, prev_col) == Some(id) {
+            if terminal.cell_hyperlink(point.row, prev_col).as_ref() == Some(&hyperlink) {
                 start_col = prev_col;
             } else {
                 break;
@@ -2122,14 +2124,12 @@ impl Screen<'_> {
         }
         while end_col < grid.columns() - 1 {
             let next_col = end_col + 1;
-            if terminal.cell_hyperlink_id(point.row, next_col) == Some(id) {
+            if terminal.cell_hyperlink(point.row, next_col).as_ref() == Some(&hyperlink) {
                 end_col = next_col;
             } else {
                 break;
             }
         }
-
-        let hyperlink = terminal.cell_hyperlink(point.row, point.col)?;
 
         // Build a synthetic hint config so the rest of the hint
         // pipeline (highlighting, click action) treats this just like
