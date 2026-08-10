@@ -231,14 +231,30 @@ impl Renderer {
         }
     }
 
+    /// Resolve the color painted as a cell's background.
+    ///
+    /// DIM (SGR 2) and BOLD (SGR 1) are *glyph* intensity attributes:
+    /// per ECMA-48 they change how the character is rendered, never
+    /// the area behind it. They only reach a background here when
+    /// INVERSE already swapped fg/bg in `cell_style`, in which case
+    /// the "background" is really the foreground color and keeps its
+    /// intensity.
+    ///
+    /// Without this gate, faint text over an explicitly-set
+    /// background (`\e[48;2;R;G;Bm`, or a palette index) paints a
+    /// darkened block behind the glyphs. tmux hits this constantly:
+    /// it tracks OSC 11 per pane, so it re-emits the pane background
+    /// as an explicit SGR 48 on every dim cell instead of leaving it
+    /// as the terminal default.
     #[inline]
     pub(crate) fn compute_bg_color(
         &self,
         cell_style: &CellStyle,
         term_colors: &TermColors,
     ) -> ColorArray {
-        let dim = cell_style.flags.contains(StyleFlags::DIM);
-        let bold = cell_style.flags.contains(StyleFlags::BOLD);
+        let inverse = cell_style.flags.contains(StyleFlags::INVERSE);
+        let dim = inverse && cell_style.flags.contains(StyleFlags::DIM);
+        let bold = inverse && cell_style.flags.contains(StyleFlags::BOLD);
         match cell_style.bg {
             AnsiColor::Named(ansi) => self.color(ansi as usize, term_colors),
             AnsiColor::Spec(rgb) => {
@@ -976,5 +992,116 @@ impl Renderer {
                 overlays.push(overlay);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod compute_bg_color_tests {
+    use super::*;
+    use rio_backend::config::colors::ColorRgb;
+
+    fn renderer(draw_bold_text_with_light_colors: bool) -> Renderer {
+        Renderer::new(&Config {
+            draw_bold_text_with_light_colors,
+            ..Config::default()
+        })
+    }
+
+    fn style(bg: AnsiColor, flags: StyleFlags) -> CellStyle {
+        CellStyle {
+            bg,
+            flags,
+            ..CellStyle::default()
+        }
+    }
+
+    /// The reported regression: faint text over an explicitly-set RGB
+    /// background painted a darker block behind the glyphs. tmux
+    /// tracks OSC 11 per pane and re-emits it as `\e[48;2;40;44;52m`
+    /// on every cell, so `SGR 2` used to scale the pane background by
+    /// `DIM_FACTOR` and break it out of the surrounding field.
+    #[test]
+    fn dim_leaves_an_explicit_rgb_background_alone() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+        let bg = ColorRgb {
+            r: 0x28,
+            g: 0x2c,
+            b: 0x34,
+        };
+
+        let plain =
+            r.compute_bg_color(&style(AnsiColor::Spec(bg), StyleFlags::empty()), &colors);
+        let dimmed =
+            r.compute_bg_color(&style(AnsiColor::Spec(bg), StyleFlags::DIM), &colors);
+
+        assert_eq!(plain, bg.to_arr());
+        assert_eq!(dimmed, plain);
+    }
+
+    /// Same rule for the palette: `SGR 2` must not remap an indexed
+    /// background to its dim slot (0..=7) or to the non-bright half
+    /// of the pair (8..=15).
+    #[test]
+    fn dim_leaves_an_indexed_background_alone() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+
+        for idx in [1u8, 9] {
+            let dimmed = r.compute_bg_color(
+                &style(AnsiColor::Indexed(idx), StyleFlags::DIM),
+                &colors,
+            );
+            assert_eq!(dimmed, r.colors[idx as usize], "index {idx}");
+        }
+    }
+
+    /// INVERSE is the one case where intensity legitimately reaches a
+    /// background: `cell_bg` swaps fg/bg before calling in, so the
+    /// "background" is really the foreground color and stays dim.
+    #[test]
+    fn inverse_still_dims_the_swapped_foreground() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+        let fg = ColorRgb {
+            r: 0xab,
+            g: 0xb2,
+            b: 0xbf,
+        };
+
+        let spec = r.compute_bg_color(
+            &style(AnsiColor::Spec(fg), StyleFlags::DIM | StyleFlags::INVERSE),
+            &colors,
+        );
+        assert_eq!(spec, (fg * DIM_FACTOR).to_arr());
+
+        let indexed = r.compute_bg_color(
+            &style(AnsiColor::Indexed(1), StyleFlags::DIM | StyleFlags::INVERSE),
+            &colors,
+        );
+        assert_eq!(indexed, r.colors[NamedColor::DimBlack as usize + 1]);
+    }
+
+    /// `draw-bold-text-with-light-colors` is a rule about text. Bold
+    /// must not promote a cell's own background to the bright half of
+    /// the palette, but it still applies once INVERSE has made that
+    /// background the foreground color.
+    #[test]
+    fn bold_brightens_an_indexed_background_only_under_inverse() {
+        let r = renderer(true);
+        let colors = TermColors::default();
+
+        let plain =
+            r.compute_bg_color(&style(AnsiColor::Indexed(1), StyleFlags::BOLD), &colors);
+        assert_eq!(plain, r.colors[1]);
+
+        let inverted = r.compute_bg_color(
+            &style(
+                AnsiColor::Indexed(1),
+                StyleFlags::BOLD | StyleFlags::INVERSE,
+            ),
+            &colors,
+        );
+        assert_eq!(inverted, r.colors[9]);
     }
 }
