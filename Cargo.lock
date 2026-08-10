@@ -3921,6 +3921,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rio-unicode"
+version = "0.1.0"
+dependencies = [
+ "unicode-segmentation",
+ "unicode-width-16",
+]
+
+[[package]]
 name = "rio-vt"
 version = "0.5.20"
 dependencies = [
@@ -3940,6 +3948,7 @@ dependencies = [
  "regex-automata",
  "rio-grapheme-width",
  "rio-graphics",
+ "rio-unicode",
  "rio-window",
  "rustc-hash 2.1.3",
  "serde",
@@ -3948,7 +3957,6 @@ dependencies = [
  "sugarloaf",
  "teletypewriter",
  "tracing",
- "unicode-width-16",
  "web-time",
  "windows-sys 0.61.2",
 ]
@@ -4035,6 +4043,7 @@ dependencies = [
  "regex",
  "rio-backend",
  "rio-notifier",
+ "rio-unicode",
  "rio-window",
  "rustc-hash 2.1.3",
  "serde",
@@ -4045,7 +4054,6 @@ dependencies = [
  "tinyvec",
  "tracing",
  "tracing-subscriber",
- "unicode-width-16",
  "url",
  "wgpu",
  "windows-sys 0.60.2",
@@ -4588,6 +4596,7 @@ dependencies = [
  "rayon",
  "rio-fonts",
  "rio-graphics",
+ "rio-unicode",
  "rio-window",
  "rustc-hash 2.1.3",
  "serde",
@@ -4600,7 +4609,6 @@ dependencies = [
  "tracing",
  "ttf-parser",
  "twox-hash",
- "unicode-width-16",
  "walkdir",
  "wasm-bindgen",
  "wasm-bindgen-futures",
