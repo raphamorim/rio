@@ -1,0 +1,18 @@
+[package]
+name = "rio-unicode"
+version = "0.1.0"
+edition = "2021"
+description = """
+Unicode tables for rio, on a single Unicode version: character width
+(vendored from unicode-width 0.1.14, tables regenerated for Unicode 17)
+and grapheme cluster breaks (UAX #29 state machine). One crate so the
+grid's widths and the renderer's segmentation can never disagree on
+what Unicode says.
+"""
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/raphamorim/rio"
+
+
+[dev-dependencies]
+unicode-segmentation = "1.13"
+unicode-width-16 = "0.1.0"

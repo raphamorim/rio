@@ -254,11 +254,12 @@ impl HintState {
     ) {
         // Walk the visible region looking for OSC 8 hyperlink spans.
         //
-        // After the cell repack, hyperlinks live in the per-grid
-        // `extras_table`. Each cell carries an `extras_id: u16`; cells
-        // in the same hyperlink span share that id. We compare ids
-        // (cheap u16 compare) to find the start and end of each span,
-        // then look up the URI once via `Crosswords::cell_hyperlink`.
+        // Spans are found by comparing the hyperlink itself, not the
+        // cell's `extras_id`: extras slots are interned by content, so
+        // a cell that also carries combining marks holds a different
+        // slot than its neighbors while belonging to the same link.
+        // `Hyperlink` is an `Arc` around (id, uri); the comparison is
+        // content equality, matching the OSC 8 `id=` semantics.
         let grid = &term.grid;
         let display_offset = grid.display_offset();
         let visible_lines = grid.screen_lines();
@@ -272,8 +273,8 @@ impl HintState {
             let mut col = 0usize;
             let cols = grid.columns();
             while col < cols {
-                let id = match term.cell_hyperlink_id(line, Column(col)) {
-                    Some(id) => id,
+                let link = match term.cell_hyperlink(line, Column(col)) {
+                    Some(link) => link,
                     None => {
                         col += 1;
                         continue;
@@ -281,11 +282,11 @@ impl HintState {
                 };
 
                 // Found the start of a hyperlink span. Walk forward
-                // until the extras_id changes.
+                // while the cells carry the same hyperlink.
                 let start_col = col;
                 let mut end_col = col;
                 while end_col < cols
-                    && term.cell_hyperlink_id(line, Column(end_col)) == Some(id)
+                    && term.cell_hyperlink(line, Column(end_col)).as_ref() == Some(&link)
                 {
                     end_col += 1;
                 }

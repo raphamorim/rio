@@ -4890,13 +4890,14 @@ fn test_reclaim_cadence_trigger() {
     let mut term = geometry_test_term();
     assert!(!term.grid.extras_table.should_reclaim());
 
-    // Burn through the allocation cadence with throwaway slots.
-    for _ in 0..4096 {
-        let id = term
-            .grid
-            .extras_table
-            .alloc(crate::crosswords::square::Extras::default());
-        term.grid.extras_table.free(id);
+    // Burn through the allocation cadence. Contents must be unique:
+    // slots are interned, so repeat content reuses its slot without
+    // counting as an allocation (and per-slot free no longer exists —
+    // the sweep is the only reclamation).
+    for i in 0..4096u32 {
+        let mut extras = crate::crosswords::square::Extras::default();
+        extras.zerowidth.push(char::from_u32(0x1000 + i).unwrap());
+        let _ = term.grid.extras_table.alloc(extras);
     }
     assert!(term.grid.extras_table.should_reclaim(), "cadence elapsed");
 

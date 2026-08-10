@@ -126,6 +126,16 @@ impl ReflowRemap {
 pub struct ExtrasTable {
     slots: Vec<Option<crate::crosswords::square::Extras>>,
     free: Vec<u16>,
+    /// Content-hash interning: identical extras share one slot.
+    /// Emoji and combining sequences repeat constantly, and every
+    /// entry here used to burn a fresh slot toward the `u16::MAX`
+    /// cap (whose overflow silently drops extras). Invariant: every
+    /// live slot's content maps back to its id, maintained by
+    /// `alloc` and `sweep_unmarked`/`free`/`clear`. Interning also
+    /// means slots are shared — mutating one in place would edit
+    /// every referencing cell, so writers must copy-on-write
+    /// (clone, modify, re-alloc).
+    lookup: rustc_hash::FxHashMap<crate::crosswords::square::Extras, u16>,
     /// Allocations since the last mark-and-sweep. The table holds
     /// hyperlink and zero-width data whose slots stay referenced by
     /// cells until their rows scroll off the ring; without a periodic
@@ -148,6 +158,7 @@ impl ExtrasTable {
         Self {
             slots: vec![None],
             free: Vec::new(),
+            lookup: rustc_hash::FxHashMap::default(),
             allocs_since_reclaim: 0,
         }
     }
@@ -159,20 +170,24 @@ impl ExtrasTable {
         self.slots.get(id as usize)?.as_ref()
     }
 
-    pub fn get_mut(
-        &mut self,
-        id: crate::crosswords::square::ExtrasId,
-    ) -> Option<&mut crate::crosswords::square::Extras> {
-        self.slots.get_mut(id as usize)?.as_mut()
-    }
+    // NOTE: there is deliberately no `get_mut`. Slots are interned and
+    // shared by every cell with equal content; handing out `&mut`
+    // would let a writer edit all of them at once. Mutate by cloning,
+    // changing, and re-`alloc`ing (copy-on-write).
 
-    /// Allocate a new extras slot, returning its id (always non-zero).
+    /// Return the slot holding `extras`, interning by content: repeat
+    /// content reuses its existing slot, new content allocates one.
+    /// The returned id is always non-zero (0 on slot exhaustion).
     pub fn alloc(
         &mut self,
         extras: crate::crosswords::square::Extras,
     ) -> crate::crosswords::square::ExtrasId {
+        if let Some(&id) = self.lookup.get(&extras) {
+            return id;
+        }
         self.allocs_since_reclaim += 1;
         if let Some(id) = self.free.pop() {
+            self.lookup.insert(extras.clone(), id);
             self.slots[id as usize] = Some(extras);
             return id;
         }
@@ -181,6 +196,7 @@ impl ExtrasTable {
             return 0;
         }
         let id = self.slots.len() as u16;
+        self.lookup.insert(extras.clone(), id);
         self.slots.push(Some(extras));
         id
     }
@@ -205,29 +221,18 @@ impl ExtrasTable {
         for id in 1..self.slots.len() {
             let marked = live[id / 64] & (1 << (id % 64)) != 0;
             if !marked && self.slots[id].is_some() {
-                self.slots[id] = None;
+                if let Some(extras) = self.slots[id].take() {
+                    self.lookup.remove(&extras);
+                }
                 self.free.push(id as u16);
             }
         }
     }
 
-    /// Free a previously-allocated slot. No-op if `id == 0`.
-    pub fn free(&mut self, id: crate::crosswords::square::ExtrasId) {
-        if id == 0 {
-            return;
-        }
-        if let Some(slot) = self.slots.get_mut(id as usize) {
-            if slot.take().is_some() {
-                self.free.push(id);
-            }
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.slots.clear();
-        self.slots.push(None);
-        self.free.clear();
-    }
+    // NOTE: there is deliberately no per-slot `free()`. Slots are
+    // interned and may be referenced by any number of cells; the only
+    // safe reclamation is the mark-and-sweep (`sweep_unmarked`), which
+    // proves a slot unreferenced before releasing it.
 }
 
 impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {

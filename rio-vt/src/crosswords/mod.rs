@@ -1444,6 +1444,85 @@ impl<U: EventListener> Crosswords<U> {
     /// of its per-cell loop; the write is then a single packed store, and the
     /// cursor cell is resolved once (not twice) in the common narrow case.
     #[inline]
+    /// Clear the wide pair that a cell boundary before `col` would
+    /// split, plus the cross-row links a mutation at that boundary
+    /// severs. The ghostty model (`Screen.splitCellBoundary`): each
+    /// range mutation names the exact seams it cuts, O(1) per seam,
+    /// instead of sweeping the row afterwards.
+    ///
+    /// `col` may equal `columns`, meaning the boundary to the right of
+    /// the final cell — that clears stale pre-wrap padding
+    /// (`LeadingSpacer`) so a shift can't drag it into the interior.
+    ///
+    /// A cleared cell takes `blank` but keeps WRAPLINE: the flag marks
+    /// the logical line for reflow and lives on the row's last cell,
+    /// which the mutation never targeted.
+    fn split_wide_seam(
+        &mut self,
+        line: Line,
+        col: usize,
+        blank: crate::crosswords::square::Square,
+    ) {
+        use crate::crosswords::square::Wide;
+        let columns = self.grid.columns();
+
+        // Boundary right of the final cell.
+        if col >= columns {
+            let last = Column(columns - 1);
+            if matches!(self.grid[line][last].wide(), Wide::LeadingSpacer) {
+                self.grid[line][last].set_wide(Wide::Narrow);
+            }
+            return;
+        }
+
+        // A wide char at column 0 pairs with a `LeadingSpacer` closing
+        // the previous row; a mutation reaching columns 0/1 severs
+        // that link. Mirrors `write_cell`'s revert (including its
+        // history-row reach when line 0 scrolled something out).
+        if col <= 1
+            && matches!(self.grid[line][Column(0)].wide(), Wide::Wide)
+            && line != self.grid.topmost_line()
+        {
+            let last = self.grid.last_column();
+            let prev = &mut self.grid[line - 1i32][last];
+            if matches!(prev.wide(), Wide::LeadingSpacer) {
+                prev.set_wide(Wide::Narrow);
+                if line.0 > 0 {
+                    self.damage.damage_line((line.0 - 1) as usize);
+                }
+            }
+        }
+        if col == 0 {
+            return;
+        }
+
+        // Interior boundary: splitting between col-1 and col cuts a
+        // pair whose lead sits at col-1. Erasing half a wide char
+        // erases the whole char (the xterm/ghostty convention).
+        if matches!(self.grid[line][Column(col - 1)].wide(), Wide::Wide) {
+            self.clear_pair_preserving_wrapline(line, col - 1, blank);
+        }
+    }
+
+    /// Clear both halves of the wide pair with its lead at `col`,
+    /// keeping each cell's WRAPLINE bit.
+    fn clear_pair_preserving_wrapline(
+        &mut self,
+        line: Line,
+        col: usize,
+        blank: crate::crosswords::square::Square,
+    ) {
+        let columns = self.grid.columns();
+        for c in col..(col + 2).min(columns) {
+            let cell = &mut self.grid[line][Column(c)];
+            let wrapline = cell.wrapline();
+            *cell = blank;
+            if wrapline {
+                cell.set_wrapline(true);
+            }
+        }
+    }
+
     fn write_cell(&mut self, c: char, template: crate::crosswords::square::Square) {
         use crate::crosswords::square::{Square, Wide};
 
@@ -1789,6 +1868,11 @@ impl<U: EventListener> Crosswords<U> {
             let mut moved = base_snapshot;
             moved.set_wide(Wide::Wide);
             self.grid[new_row][Column(0)] = moved;
+            // IndexMut doesn't maintain the row's extras hint; without
+            // it, reclaim would sweep this cell's live slot.
+            if moved.extras_id().is_some() {
+                self.grid[new_row].has_extras = true;
+            }
 
             self.grid.cursor.pos.col = Column(1);
             self.write_at_cursor(' ');
@@ -1961,7 +2045,9 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Insert (overwriting) every extras id referenced by `row`'s
     /// cells into `extras`. Overwrite semantics are deliberate — when
-    /// extras data is mutated in place on the live grid (e.g., a
+    /// Live slots are immutable under interning (writers copy-on-
+    // write into fresh ids), so an overwrite here only ever swaps
+    // which immutable content a row's ids resolve to.
     /// zerowidth combining codepoint appended to an existing cell),
     /// the cell's row is marked dirty by the surrounding `IndexMut`
     /// write, so any other rows referencing the same id pick up the
@@ -2111,6 +2197,30 @@ impl<U: EventListener> Crosswords<U> {
         if !self.mode.contains(Mode::ALT_SCREEN) {
             // Set alt screen cursor to the current primary screen cursor.
             self.inactive_grid.cursor = self.grid.cursor.clone();
+
+            // Extras ids are local to a grid's table. If the template
+            // carries a hyperlink (OSC 8 open across the screen
+            // switch), re-intern it into the alt table; a foreign id
+            // would resolve against the wrong table on every cell the
+            // alt screen writes.
+            if let Some(id) = self.inactive_grid.cursor.template.extras_id() {
+                let hyperlink = self
+                    .grid
+                    .extras_table
+                    .get(id)
+                    .and_then(|extras| extras.hyperlink.clone());
+                let new_id = hyperlink.map(|hyperlink| {
+                    self.inactive_grid
+                        .alloc_extras(crate::crosswords::square::Extras {
+                            hyperlink: Some(hyperlink),
+                            ..Default::default()
+                        })
+                });
+                self.inactive_grid
+                    .cursor
+                    .template
+                    .set_extras_id(new_id.filter(|&id| id != 0));
+            }
 
             // Drop information about the primary screens saved cursor.
             self.grid.saved_cursor = self.grid.cursor.clone();
@@ -2890,6 +3000,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let blank = self.grid.blank_with_bg(bg);
         let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
+        self.split_wide_seam(line, start.0, blank);
+        self.split_wide_seam(line, end.0, blank);
         let row = &mut self.grid[line];
         for cell in &mut row[start..end] {
             *cell = blank;
@@ -2915,6 +3027,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
+        self.split_wide_seam(line, start, blank);
+        self.split_wide_seam(line, (start + count).min(columns), blank);
+        self.split_wide_seam(line, columns, blank);
         let row = &mut self.grid[line][..];
 
         for offset in 0..num_cells {
@@ -2962,6 +3077,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
+        self.split_wide_seam(line, source.0, blank);
+        self.split_wide_seam(line, self.grid.columns(), blank);
+        // The last shifted cell lands on the row's final column; if it
+        // is a wide lead its spacer will not survive the shift, so
+        // clear the pair up front (ghostty `insertBlanks`).
+        if num_cells > 0 {
+            let last_src = source.0 + num_cells - 1;
+            if matches!(
+                self.grid[line][Column(last_src)].wide(),
+                crate::crosswords::square::Wide::Wide
+            ) {
+                self.clear_pair_preserving_wrapline(line, last_src, blank);
+            }
+        }
 
         let row = &mut self.grid[line][..];
 
@@ -3238,21 +3367,38 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 column.0 = column.saturating_sub(1);
             }
 
-            let cell = &mut self.grid[row][column];
-            let existing_id = cell.extras_id();
-            if let Some(id) = existing_id {
-                if let Some(extras) = self.grid.extras_table.get_mut(id) {
-                    extras.zerowidth.push(c);
-                }
-            } else {
-                let mut extras = crate::crosswords::square::Extras::default();
-                extras.zerowidth.push(c);
-                let id = self.grid.alloc_extras(extras);
+            // A bg-only cell reuses the extras-id bits for its color
+            // channel: reading them as an id would clone an unrelated
+            // slot onto this cell, and writing one back would corrupt
+            // the color. A combining mark with no base character has
+            // nothing to attach to — drop it.
+            if !matches!(
+                self.grid[row][column].content_tag(),
+                crate::crosswords::square::ContentTag::Codepoint
+            ) {
+                return;
+            }
+            // Copy-on-write: slots are interned and shared — every
+            // cell written under one OSC 8 template references the
+            // same slot, so pushing into it in place would attach the
+            // mark to the whole hyperlink span. Clone, extend, and
+            // re-intern instead; the marked cell gets its own
+            // (marks + hyperlink) slot and its neighbors keep theirs.
+            let existing_id = self.grid[row][column].extras_id();
+            let mut extras = existing_id
+                .and_then(|id| self.grid.extras_table.get(id).cloned())
+                .unwrap_or_default();
+            extras.zerowidth.push(c);
+            let id = self.grid.alloc_extras(extras);
+            if id != 0 {
                 let cell = &mut self.grid[row][column];
                 cell.set_extras_id(Some(id));
                 cell.insert_cell_flag(CellFlags::GRAPHEME);
                 self.grid[row].has_extras = true;
             }
+            // id == 0: slot space exhausted. Keep the cell's existing
+            // extras (hyperlink, earlier marks) rather than erasing
+            // them; only the new mark is lost.
             return;
         }
 
@@ -3683,6 +3829,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
                 // Clear up to the current column in the current line.
                 let end = std::cmp::min(cursor.col + 1, Column(self.grid.columns()));
+                self.split_wide_seam(cursor.row, 0, blank);
+                self.split_wide_seam(cursor.row, end.0, blank);
                 for cell in &mut self.grid[cursor.row][..end] {
                     *cell = blank;
                 }
@@ -3697,6 +3845,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             ClearMode::Below => {
                 let cursor = self.grid.cursor.pos;
+                self.split_wide_seam(cursor.row, cursor.col.0, blank);
                 for cell in &mut self.grid[cursor.row][cursor.col..] {
                     *cell = blank;
                 }
@@ -4020,11 +4169,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         self.damage.damage_line(point.row.0 as usize);
 
+        self.split_wide_seam(point.row, left.0, blank);
+        self.split_wide_seam(point.row, right.0, blank);
         let row = &mut self.grid[point.row];
         for cell in &mut row[left..right] {
             *cell = blank;
         }
-
         let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
         self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
         self.clip_atlas_placements(point.row.0, point.row.0 + 1, left.0, right.0);
@@ -7407,6 +7557,140 @@ mod tests {
         assert_eq!(cw.grid.cursor.pos.col, Column(0));
     }
 
+    /// Repairing a stranded spacer at the row's last column must keep
+    /// WRAPLINE: the flag marks the logical line for reflow, and the
+    /// op never targeted that cell.
+    #[test]
+    fn seam_repair_preserves_wrapline() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(4, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{5BBD}'); // Wide at 2, Spacer at 3
+        cw.input('b'); // wraps; WRAPLINE lands on the spacer at (0,3)
+        assert!(cw.grid[Line(0)][Column(3)].wrapline());
+        cw.goto(Line(0), Column(2));
+        cw.erase_chars(Column(1)); // blank the lead; sweep repairs the spacer
+        assert_eq!(cw.grid[Line(0)][Column(3)].wide(), Wide::Narrow);
+        assert!(cw.grid[Line(0)][Column(3)].wrapline());
+    }
+
+    /// ED partial-row clears split pairs at the cursor boundary too.
+    #[test]
+    fn clear_screen_partial_rows_repair_seams() {
+        use crate::performer::handler::Handler;
+        // Above: cursor on the lead → clears [..=0], strands the spacer.
+        let mut cw = new_term(6, 3);
+        cw.input('\u{5BBD}'); // Wide at 0, Spacer at 1
+        cw.goto(Line(0), Column(0));
+        cw.clear_screen(ClearMode::Above);
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Narrow);
+
+        // Below: cursor on the spacer → clears [2..], strands the lead.
+        let mut cw = new_term(6, 3);
+        cw.input('a');
+        cw.input('\u{5BBD}'); // Wide at 1, Spacer at 2
+        cw.goto(Line(0), Column(2));
+        cw.clear_screen(ClearMode::Below);
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), '\0');
+    }
+
+    /// DCH dragging a row-final LeadingSpacer into the interior leaves
+    /// meaningless padding; the sweep reverts it to narrow.
+    #[test]
+    fn delete_chars_normalizes_interior_leading_spacer() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(4, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{5BBD}'); // no room: LeadingSpacer at (0,3), pair wraps
+        assert_eq!(cw.grid[Line(0)][Column(3)].wide(), Wide::LeadingSpacer);
+        cw.goto(Line(0), Column(0));
+        cw.delete_chars(1); // LeadingSpacer shifts to col 2
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::Narrow);
+    }
+
+    /// ECH erasing only the spacer half of a wide pair must clear the
+    /// stranded lead too, mirroring `write_cell`'s overwrite cleanup.
+    #[test]
+    fn erase_chars_repairs_split_wide_pair() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 2);
+        cw.input('\u{5BBD}'); // 宽: Wide at 0, Spacer at 1
+        cw.goto(Line(0), Column(1));
+        cw.erase_chars(Column(1)); // erase just the spacer
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), '\0');
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Narrow);
+
+        // And the mirror case: erase through the lead, strand the spacer.
+        let mut cw = new_term(6, 2);
+        cw.input('a');
+        cw.input('\u{5BBD}'); // Wide at 1, Spacer at 2
+        cw.goto(Line(0), Column(0));
+        cw.erase_chars(Column(2)); // erases 'a' + the lead
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(2)].c(), '\0');
+    }
+
+    /// DCH shifting a spacer into a position whose lead was deleted
+    /// must not leave the orphan behind.
+    #[test]
+    fn delete_chars_repairs_orphaned_spacer() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 2);
+        cw.input('a');
+        cw.input('\u{5BBD}'); // a at 0, Wide at 1, Spacer at 2
+        cw.goto(Line(0), Column(1));
+        cw.delete_chars(1); // deletes the lead; spacer shifts to col 1
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), '\0');
+    }
+
+    /// ICH pushing a wide pair so its lead lands on the last column
+    /// (spacer pushed off the row) must clear the stranded lead.
+    #[test]
+    fn insert_blank_repairs_pair_pushed_off_the_edge() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(4, 2);
+        cw.goto(Line(0), Column(2));
+        cw.input('\u{5BBD}'); // Wide at 2, Spacer at 3
+        cw.goto(Line(0), Column(0));
+        cw.insert_blank(1); // lead lands at 3, spacer falls off
+        assert_eq!(cw.grid[Line(0)][Column(3)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(3)].c(), '\0');
+    }
+
+    /// EL to the left of the cursor erases the lead of a pair the
+    /// cursor sits on; the spacer past the cleared range must go too.
+    #[test]
+    fn clear_line_left_repairs_stranded_spacer() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 2);
+        cw.input('\u{5BBD}'); // Wide at 0, Spacer at 1
+        cw.goto(Line(0), Column(0));
+        cw.clear_line(LineClearMode::Left); // clears only col 0
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), '\0');
+    }
+
+    /// Clearing the wide char at column 0 of a wrapped row must revert
+    /// the `LeadingSpacer` closing the previous row.
+    #[test]
+    fn clear_line_reverts_stale_leading_spacer() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(3, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{5BBD}'); // no room: LeadingSpacer at (0,2), pair on row 1
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::LeadingSpacer);
+        cw.goto(Line(1), Column(0));
+        cw.clear_line(LineClearMode::All);
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::Narrow);
+    }
+
     #[test]
     fn vs16_at_last_column_wraps_base_to_next_row() {
         use crate::performer::handler::Handler;
@@ -7435,6 +7719,126 @@ mod tests {
         assert!(!cw.grid.cursor.should_wrap);
     }
 
+    /// A combining mark aimed at a bg-only cell must be dropped: those
+    /// cells store color where the extras id lives, so reading an id
+    /// there would clone an unrelated slot (someone's hyperlink) onto
+    /// the cell, and writing one back would corrupt the color.
+    #[test]
+    fn combining_mark_on_bg_only_cell_is_dropped() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 3);
+        // Keep an early slot id live so a garbage id would hit it.
+        let link = Hyperlink::new(None::<&str>, "https://x.example");
+        cw.set_hyperlink(Some(link));
+        cw.input('a');
+        cw.set_hyperlink(None);
+        // Colored bg-only blanks.
+        cw.terminal_attribute(Attr::Background(crate::config::colors::AnsiColor::Spec(
+            ColorRgb { r: 0, g: 0, b: 200 },
+        )));
+        cw.goto(Line(1), Column(0));
+        cw.erase_chars(Column(3));
+        let before = cw.grid[Line(1)][Column(0)];
+        assert!(!matches!(
+            before.content_tag(),
+            crate::crosswords::square::ContentTag::Codepoint
+        ));
+        // Mark lands after the blank at column 0.
+        cw.goto(Line(1), Column(1));
+        cw.input('\u{301}');
+        let after = cw.grid[Line(1)][Column(0)];
+        assert_eq!(after, before, "bg-only cell must be untouched");
+        assert!(!after.has_grapheme());
+    }
+
+    /// An OSC 8 hyperlink left open across an alt-screen switch must be
+    /// re-interned into the alt grid's table: extras ids are
+    /// table-local, and the seeded cursor template would otherwise
+    /// stamp a foreign id onto every alt-screen cell.
+    #[test]
+    fn hyperlink_crosses_alt_screen_into_the_alt_table() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 3);
+        let link = Hyperlink::new(None::<&str>, "https://alt.example");
+        cw.set_hyperlink(Some(link.clone()));
+        cw.swap_alt();
+        cw.input('x');
+        assert_eq!(cw.cell_hyperlink(Line(0), Column(0)), Some(link));
+        cw.swap_alt();
+    }
+
+    /// Identical extras content interns into one slot: the u16 id
+    /// space stops being a per-occurrence budget.
+    #[test]
+    fn extras_intern_by_content() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 2);
+        cw.input('e');
+        cw.input('\u{301}');
+        cw.input('e');
+        cw.input('\u{301}');
+        let a = cw.grid[Line(0)][Column(0)].extras_id().unwrap();
+        let b = cw.grid[Line(0)][Column(1)].extras_id().unwrap();
+        assert_eq!(a, b);
+        // Different content gets its own slot.
+        cw.input('e');
+        cw.input('\u{302}');
+        let c = cw.grid[Line(0)][Column(2)].extras_id().unwrap();
+        assert_ne!(a, c);
+    }
+
+    /// A combining mark typed inside an OSC 8 hyperlink must attach to
+    /// its own cell only. The old in-place mutation edited the shared
+    /// template slot, leaking the mark into every cell of the span —
+    /// and the marked cell must keep the hyperlink.
+    #[test]
+    fn combining_mark_inside_hyperlink_stays_on_one_cell() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 2);
+        let link = Hyperlink::new(None::<&str>, "https://example.com");
+        cw.set_hyperlink(Some(link.clone()));
+        cw.input('a');
+        cw.input('\u{301}');
+        cw.input('b');
+        cw.set_hyperlink(None);
+
+        // The marked cell carries mark + hyperlink.
+        let a_id = cw.grid[Line(0)][Column(0)].extras_id().unwrap();
+        let a = cw.grid.extras_table.get(a_id).unwrap();
+        assert_eq!(a.zerowidth, vec!['\u{301}']);
+        assert_eq!(a.hyperlink.as_ref(), Some(&link));
+
+        // Its neighbor keeps the pristine hyperlink-only slot.
+        let b_id = cw.grid[Line(0)][Column(1)].extras_id().unwrap();
+        let b = cw.grid.extras_table.get(b_id).unwrap();
+        assert!(b.zerowidth.is_empty());
+        assert_eq!(b.hyperlink.as_ref(), Some(&link));
+        assert_ne!(a_id, b_id);
+    }
+
+    /// The interning lookup must be purged when slots are swept, or a
+    /// re-alloc of old content would return a dead slot id.
+    #[test]
+    fn reclaim_purges_interning_lookup() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 2);
+        cw.input('e');
+        cw.input('\u{301}');
+        let content = cw
+            .grid
+            .extras_table
+            .get(cw.grid[Line(0)][Column(0)].extras_id().unwrap())
+            .unwrap()
+            .clone();
+        // Drop the only reference and sweep.
+        cw.clear_screen(ClearMode::All);
+        cw.grid.reclaim_extras();
+        // Re-alloc of the same content must yield a live slot.
+        let id = cw.grid.alloc_extras(content.clone());
+        assert_ne!(id, 0);
+        assert_eq!(cw.grid.extras_table.get(id), Some(&content));
+    }
+
     #[test]
     fn vs16_at_last_column_preserves_base_extras() {
         use crate::performer::handler::Handler;
@@ -7452,10 +7856,15 @@ mod tests {
 
         cw.input('\u{FE0F}');
 
-        // The wide base on the new row should still carry the same extras
-        // entry (the ZWJ we attached earlier).
+        // The wide base on the new row still carries the earlier ZWJ
+        // plus the VS16 that widened it. Slots are interned with
+        // copy-on-write now, so the id may change; the content is the
+        // contract (comparing ids would pin the old in-place-mutation
+        // behavior, which leaked pushes into shared slots).
         let moved_extras = cw.grid[Line(1)][Column(0)].extras_id();
-        assert_eq!(moved_extras, original_extras);
+        assert!(moved_extras.is_some());
+        let extras = cw.grid.extras_table.get(moved_extras.unwrap()).unwrap();
+        assert_eq!(extras.zerowidth, vec!['\u{200D}', '\u{FE0F}']);
         assert_eq!(cw.grid[Line(1)][Column(0)].wide(), Wide::Wide);
         assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::LeadingSpacer);
     }

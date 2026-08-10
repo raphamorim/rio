@@ -1140,7 +1140,9 @@ const RUN_BUCKET_COUNT: usize = 256;
 const RUN_BUCKET_SIZE: usize = 8;
 
 /// One shaped glyph. Same shape from both CoreText (macOS) and swash
-/// (non-macOS). `cluster` is a UTF-8 byte offset into the run string.
+/// (non-macOS). `cluster` is the shaping-buffer offset of the source
+/// cell: UTF-16 code units on macOS (CoreText string indices), UTF-8
+/// bytes elsewhere (swash `cluster.source.start`).
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)] // `x` / `y` / `advance` kept for future kerning-aware layout
 struct ShapedGlyph {
@@ -1195,11 +1197,13 @@ pub struct GridGlyphRasterizer {
     // cell mapping.
     #[cfg(target_os = "macos")]
     run_utf16_scratch: Vec<u16>,
-    /// On macOS, `run_cell_starts[i]` is the offset (in UTF-16 code
-    /// units) where cell `i` of the run begins inside
-    /// `run_utf16_scratch`. Length = cells in the run. Used to walk
-    /// shaped glyphs back to the cell they belong to.
-    #[cfg(target_os = "macos")]
+    /// `run_cell_starts[i]` is the offset where cell `i` of the run
+    /// begins inside the platform shaping buffer — UTF-16 code units
+    /// into `run_utf16_scratch` on macOS, UTF-8 bytes into
+    /// `run_str_scratch` elsewhere. Length = cells in the run. Used to
+    /// walk shaped glyphs back to the cell they belong to; explicit
+    /// because a cell can contribute several codepoints (its attached
+    /// combining marks shape together with the base).
     run_cell_starts: Vec<u32>,
     /// `run_cell_columns[i]` is the absolute grid column for the
     /// `i`-th appended cell in the run. Decouples the cell-index-
@@ -1259,7 +1263,6 @@ impl GridGlyphRasterizer {
             run_hasher: rapidhash::fast::RapidHasher::default(),
             #[cfg(target_os = "macos")]
             run_utf16_scratch: Vec::new(),
-            #[cfg(target_os = "macos")]
             run_cell_starts: Vec::new(),
             run_cell_columns: Vec::new(),
             #[cfg(not(target_os = "macos"))]
@@ -1411,6 +1414,48 @@ fn hash_combining(
         }
         rasterizer.run_hasher.write_u32(cp as u32);
         rasterizer.run_hasher.write_u32(cluster);
+    }
+}
+
+/// Append a cell's attached combining codepoints to the shaping
+/// buffer, so the shaper composes them with the base glyph (`e` +
+/// U+0301 renders as `é` instead of a bare `e`). Mirrors
+/// [`hash_combining`]: VS15/VS16 are skipped — presentation is
+/// already resolved into `font_id`, and feeding a selector to a text
+/// font's shaper can only produce a notdef.
+fn push_cluster_text(
+    rasterizer: &mut GridGlyphRasterizer,
+    extras_table: &ExtrasMap,
+    sq: Square,
+) {
+    if !sq.has_grapheme() {
+        return;
+    }
+    let Some(id) = sq.extras_id() else {
+        return;
+    };
+    let Some(extras) = extras_table.get(&id) else {
+        return;
+    };
+    push_cluster_chars(rasterizer, &extras.zerowidth);
+}
+
+/// Platform-specific tail of [`push_cluster_text`], split out so the
+/// buffer layout is unit-testable without building a `Square`.
+fn push_cluster_chars(rasterizer: &mut GridGlyphRasterizer, marks: &[char]) {
+    for &cp in marks {
+        if cp == '\u{FE0E}' || cp == '\u{FE0F}' {
+            continue;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let mut buf = [0u16; 2];
+            rasterizer
+                .run_utf16_scratch
+                .extend_from_slice(cp.encode_utf16(&mut buf));
+        }
+        #[cfg(not(target_os = "macos"))]
+        rasterizer.run_str_scratch.push(cp);
     }
 }
 
@@ -1889,7 +1934,15 @@ pub fn build_row_fg(
         #[cfg(not(target_os = "macos"))]
         {
             rasterizer.run_str_scratch.clear();
+            rasterizer.run_cell_starts.clear();
+            rasterizer.run_cell_starts.push(0);
             rasterizer.run_str_scratch.push(shape_ch);
+        }
+        // Attached combining marks shape together with their base so
+        // `e` + U+0301 composes; kitty placeholder cells are excluded —
+        // their `zerowidth` encodes image-slice coordinates, not text.
+        if ch != rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+            push_cluster_text(rasterizer, extras_table, sq);
         }
         rasterizer.run_cell_columns.clear();
         rasterizer.run_cell_columns.push(x as u16);
@@ -2008,7 +2061,13 @@ pub fn build_row_fg(
             }
             #[cfg(not(target_os = "macos"))]
             {
+                rasterizer
+                    .run_cell_starts
+                    .push(rasterizer.run_str_scratch.len() as u32);
                 rasterizer.run_str_scratch.push(shape_ch2);
+            }
+            if ch2 != rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+                push_cluster_text(rasterizer, extras_table, sq2);
             }
             // Stamp the cell into the per-run hasher with its relative
             // cluster offset (`end - run_start`, captured *before* the
@@ -2077,32 +2136,19 @@ pub fn build_row_fg(
             let glyphs =
                 run_cache_get(&mut rasterizer.run_cache, hash).expect("just inserted");
             let mut cell_idx_in_run: u16 = 0;
-            #[cfg(target_os = "macos")]
-            {
-                let cell_starts = &rasterizer.run_cell_starts;
-                for g in glyphs {
-                    while (cell_idx_in_run as usize + 1) < cell_starts.len()
-                        && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
-                    {
-                        cell_idx_in_run = cell_idx_in_run.saturating_add(1);
-                    }
-                    glyph_emits.push((g.id, cell_idx_in_run));
+            // Both platforms record explicit per-cell starts into the
+            // shaping buffer (UTF-16 units on macOS, UTF-8 bytes on
+            // swash), so one walk serves both. A per-char cursor would
+            // miscount: cells with combining marks contribute several
+            // chars each.
+            let cell_starts = &rasterizer.run_cell_starts;
+            for g in glyphs {
+                while (cell_idx_in_run as usize + 1) < cell_starts.len()
+                    && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
+                {
+                    cell_idx_in_run = cell_idx_in_run.saturating_add(1);
                 }
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                let mut char_cursor =
-                    rasterizer.run_str_scratch.char_indices().peekable();
-                for g in glyphs {
-                    while let Some(&(byte_offset, _)) = char_cursor.peek() {
-                        if (byte_offset as u32) >= g.cluster {
-                            break;
-                        }
-                        char_cursor.next();
-                        cell_idx_in_run = cell_idx_in_run.saturating_add(1);
-                    }
-                    glyph_emits.push((g.id, cell_idx_in_run));
-                }
+                glyph_emits.push((g.id, cell_idx_in_run));
             }
         }
 
@@ -2717,5 +2763,57 @@ mod hint_label_tests {
         let mut hints = Vec::new();
         assert!(overlay_hint_labels(&row, &oob, 3, 0, 5, &mut hints).is_none());
         assert!(hints.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod cluster_text_tests {
+    use super::*;
+
+    /// The shaping buffer must receive attached combining marks (so
+    /// the shaper can compose them) but never variation selectors,
+    /// whose effect is already resolved into the font choice.
+    #[test]
+    fn push_cluster_chars_appends_marks_and_skips_selectors() {
+        let mut r = GridGlyphRasterizer::new();
+
+        #[cfg(target_os = "macos")]
+        {
+            let mut buf = [0u16; 2];
+            r.run_utf16_scratch
+                .extend_from_slice('e'.encode_utf16(&mut buf));
+            push_cluster_chars(&mut r, &['\u{301}', '\u{FE0F}', '\u{302}']);
+            let s = String::from_utf16(&r.run_utf16_scratch).unwrap();
+            assert_eq!(s, "e\u{301}\u{302}");
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            r.run_str_scratch.push('e');
+            push_cluster_chars(&mut r, &['\u{301}', '\u{FE0F}', '\u{302}']);
+            assert_eq!(r.run_str_scratch, "e\u{301}\u{302}");
+        }
+    }
+
+    /// Cell-start bookkeeping: with marks in the buffer, per-cell
+    /// starts (not a per-char cursor) must map shaped clusters back to
+    /// cells. Simulates a run of `e`+U+0301 then `x`: a glyph whose
+    /// cluster points at the mark still belongs to cell 0, and `x`'s
+    /// glyph to cell 1.
+    #[test]
+    fn cell_starts_attribute_marked_cells_correctly() {
+        // Buffer layout (UTF-8 bytes): e=0, U+0301=1..3, x=3.
+        let cell_starts: Vec<u32> = vec![0, 3];
+        let clusters = [0u32, 1, 3];
+        let mut cell_idx: u16 = 0;
+        let mut out = Vec::new();
+        for g in clusters {
+            while (cell_idx as usize + 1) < cell_starts.len()
+                && cell_starts[cell_idx as usize + 1] <= g
+            {
+                cell_idx = cell_idx.saturating_add(1);
+            }
+            out.push(cell_idx);
+        }
+        assert_eq!(out, [0, 0, 1]);
     }
 }
