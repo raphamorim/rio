@@ -231,18 +231,10 @@ impl ExtrasTable {
         }
     }
 
-    /// Free a previously-allocated slot. No-op if `id == 0`.
-    pub fn free(&mut self, id: crate::crosswords::square::ExtrasId) {
-        if id == 0 {
-            return;
-        }
-        if let Some(slot) = self.slots.get_mut(id as usize) {
-            if let Some(extras) = slot.take() {
-                self.lookup.remove(&extras);
-                self.free.push(id);
-            }
-        }
-    }
+    // NOTE: there is deliberately no per-slot `free()`. Slots are
+    // interned and may be referenced by any number of cells; the only
+    // safe reclamation is the mark-and-sweep (`sweep_unmarked`), which
+    // proves a slot unreferenced before releasing it.
 
     pub fn clear(&mut self) {
         self.slots.clear();
