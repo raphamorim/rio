@@ -143,6 +143,7 @@ pub struct ContextManagerConfig {
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
     pub scrollback_history_limit: usize,
+    pub grapheme_clustering: bool,
 }
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
@@ -255,6 +256,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             route_id,
             config.scrollback_history_limit,
         );
+        terminal.set_grapheme_clustering(config.grapheme_clustering);
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
@@ -1090,6 +1092,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title: config.title,
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
+            grapheme_clustering: config.grapheme_clustering,
         };
 
         let current = self.current();

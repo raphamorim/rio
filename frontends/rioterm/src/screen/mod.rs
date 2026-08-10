@@ -230,6 +230,7 @@ impl Screen<'_> {
             title: config.title.clone(),
             keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
+            grapheme_clustering: config.grapheme_clustering,
         };
 
         let rich_text_id = next_rich_text_id();

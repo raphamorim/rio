@@ -671,6 +671,15 @@ impl Surface {
         self.alt_is_meta.load(Ordering::Relaxed)
     }
 
+    /// Configure the default for grapheme cluster processing (DEC
+    /// private mode 2027). On by default; embedders whose renderers
+    /// assume legacy wcwidth cell layout can turn it off. Applied
+    /// immediately and restored by RIS; a program's DECSET/DECRST
+    /// still wins at runtime.
+    pub fn set_grapheme_clustering(&self, enabled: bool) {
+        self.terminal.lock().set_grapheme_clustering(enabled);
+    }
+
     pub fn key(&self, event: &KeyEvent) -> bool {
         // The encoding depends on terminal state the embedder does not track,
         // which is the reason this lives here and not in the host.

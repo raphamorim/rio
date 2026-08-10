@@ -385,6 +385,14 @@ impl RioTerm {
         self.surface.set_alt_is_meta(enabled);
     }
 
+    /// Grapheme cluster processing (DEC private mode 2027) as the
+    /// default for cell layout. On by default; a renderer that does
+    /// not read `CELL_HAS_CLUSTER` / `cluster_text()` yet can turn it
+    /// off to keep legacy wcwidth layout.
+    pub fn set_grapheme_clustering(&self, enabled: bool) {
+        self.surface.set_grapheme_clustering(enabled);
+    }
+
     /// Wheel scroll: the running program gets first claim (mouse reports,
     /// alternate scroll), else the scrollback view moves. `lines` positive
     /// scrolls towards history. Returns true when the program consumed it.

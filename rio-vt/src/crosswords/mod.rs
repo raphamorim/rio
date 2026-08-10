@@ -466,6 +466,13 @@ where
     /// Set by PTY thread before sending; cleared by renderer after extracting damage.
     pub damage_event_in_flight: bool,
 
+    /// What DECRQM callers see after a full reset: the
+    /// consumer-configured default for grapheme clustering (mode
+    /// 2027). On by default, like ghostty's `grapheme-width-method =
+    /// unicode`; embedders serving legacy wcwidth consumers flip it
+    /// via [`set_grapheme_clustering`](Self::set_grapheme_clustering).
+    grapheme_clustering_default: bool,
+
     // The stack for the keyboard modes.
     modify_other_keys: u8,
     keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
@@ -510,7 +517,9 @@ impl<U: EventListener> Crosswords<U> {
             mode: Mode::SHOW_CURSOR
                 | Mode::LINE_WRAP
                 | Mode::ALTERNATE_SCROLL
-                | Mode::URGENCY_HINTS,
+                | Mode::URGENCY_HINTS
+                | Mode::GRAPHEME_CLUSTER,
+            grapheme_clustering_default: true,
             damage: TermDamageState::new(rows),
             graphics: Graphics::new(&dimensions),
             #[cfg(feature = "graphics")]
@@ -530,6 +539,16 @@ impl<U: EventListener> Crosswords<U> {
             inactive_keyboard_mode_stack: Default::default(),
             inactive_keyboard_mode_idx: 0,
         }
+    }
+
+    /// Configure the default for grapheme cluster processing (DEC
+    /// private mode 2027): applied immediately and restored by RIS. A
+    /// program's DECSET/DECRST still wins at runtime. Defaults to
+    /// enabled; consumers whose renderers or downstream protocols
+    /// assume legacy wcwidth cell layout can turn it off.
+    pub fn set_grapheme_clustering(&mut self, enabled: bool) {
+        self.grapheme_clustering_default = enabled;
+        self.mode.set(Mode::GRAPHEME_CLUSTER, enabled);
     }
 
     pub fn mark_fully_damaged(&mut self) {
@@ -3357,6 +3376,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
         self.mode.insert(Mode::default());
+        self.mode
+            .set(Mode::GRAPHEME_CLUSTER, self.grapheme_clustering_default);
 
         self.event_proxy
             .send_event(RioEvent::CursorBlinkingChange, self.window_id);
@@ -3615,6 +3636,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
             let line = self.grid.cursor.pos.row;
             self.grid[line].kitty_virtual_placeholder = true;
         }
+
+        // A one-column grid can never hold a wide pair, and the
+        // wrap-for-room branch below cannot create room on it: wrapping
+        // lands back on column 0, still the last column, and the Spacer
+        // write runs off the end of the row. Drop the glyph for a blank
+        // narrow cell, matching `write_codepoint_cell` and ghostty on
+        // the same degenerate size.
+        let (c, width) = if width == 2 && columns < 2 {
+            (' ', 1)
+        } else {
+            (c, width)
+        };
 
         if width == 1 {
             self.write_at_cursor(c);
@@ -7985,8 +8018,10 @@ mod tests {
         assert_eq!(extras_of(&cw, 0, 0), ['\u{200D}', '\u{1F33E}']);
         assert_eq!(cw.grid.cursor.pos.col, Column(2));
 
-        // Legacy: the trailing emoji starts its own pair.
+        // Legacy (consumer opt-out): the trailing emoji starts its
+        // own pair.
         let mut cw = new_term(10, 2);
+        cw.set_grapheme_clustering(false);
         for c in farmer {
             cw.input(c);
         }
@@ -8244,14 +8279,15 @@ mod tests {
         use crate::performer::handler::Handler;
         let mut cw = new_term(6, 3);
 
-        // Default: reset.
-        assert!(!cw.mode().contains(Mode::GRAPHEME_CLUSTER));
-
-        // DECSET / DECRST round-trip.
-        cw.set_private_mode(PrivateMode::new(2027));
+        // Default: set, like ghostty's `grapheme-width-method =
+        // unicode` (the consumer knob below configures it).
         assert!(cw.mode().contains(Mode::GRAPHEME_CLUSTER));
+
+        // DECRST / DECSET round-trip: the program wins at runtime.
         cw.unset_private_mode(PrivateMode::new(2027));
         assert!(!cw.mode().contains(Mode::GRAPHEME_CLUSTER));
+        cw.set_private_mode(PrivateMode::new(2027));
+        assert!(cw.mode().contains(Mode::GRAPHEME_CLUSTER));
 
         // 2027 resolves to the named mode, not Unknown.
         assert!(matches!(
@@ -8265,7 +8301,18 @@ mod tests {
         assert!(cw.mode().contains(Mode::GRAPHEME_CLUSTER));
         cw.swap_alt();
 
-        // RIS resets to default (off).
+        // RIS restores the configured default: on out of the box,
+        // whatever a program had DECRST'd...
+        cw.unset_private_mode(PrivateMode::new(2027));
+        cw.reset_state();
+        assert!(cw.mode().contains(Mode::GRAPHEME_CLUSTER));
+
+        // ...and off for a consumer that opted out, surviving both a
+        // program's DECSET and the RIS after it.
+        cw.set_grapheme_clustering(false);
+        assert!(!cw.mode().contains(Mode::GRAPHEME_CLUSTER));
+        cw.set_private_mode(PrivateMode::new(2027));
+        assert!(cw.mode().contains(Mode::GRAPHEME_CLUSTER));
         cw.reset_state();
         assert!(!cw.mode().contains(Mode::GRAPHEME_CLUSTER));
     }
@@ -8348,7 +8395,11 @@ mod tests {
         // Attach a combining mark to the base BEFORE VS16 arrives, then
         // trigger the right-edge wrap and confirm the extras follow the
         // base to the new row (matches ghostty's grapheme transfer block).
+        // Legacy path (clustering off): under mode 2027 a VS16 whose
+        // cluster ends in ZWJ is ignored instead, per ghostty's
+        // `graphemeWidthEffect` prev-codepoint validation.
         let mut cw = new_term(3, 3);
+        cw.set_grapheme_clustering(false);
         cw.input('a');
         cw.input('a');
         cw.input('\u{1F39F}');
@@ -8379,7 +8430,11 @@ mod tests {
         // The (🎟, VS15) entry in the variation map is (Text, Text) — our
         // predicate matches any listed (base, vs) pair, not just the
         // "changes presentation" ones, so round-tripping works.
+        // Legacy path (clustering off): under mode 2027 the VS15 is
+        // judged against the trailing VS16 and ignored, matching
+        // ghostty, so the round-trip is a legacy-only contract.
         let mut cw = new_term(10, 3);
+        cw.set_grapheme_clustering(false);
         cw.input('\u{1F39F}');
         cw.input('\u{FE0F}');
         cw.input('\u{FE0E}');

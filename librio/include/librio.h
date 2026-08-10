@@ -210,6 +210,11 @@ bool rio_surface_key(rio_surface_t *surface, const rio_key_event_s *event);
  * the platform produced through. Defaults to true, as terminals do: it is the
  * difference between alt+d deleting a word and inserting a character. */
 void rio_surface_set_alt_is_meta(rio_surface_t *surface, bool enabled);
+/* Grapheme cluster processing (DEC private mode 2027) as the default for
+ * cell layout. On by default; embedders whose renderers assume legacy
+ * wcwidth layout can turn it off. A program's DECSET/DECRST still wins at
+ * runtime, and RIS restores this configured default. */
+void rio_surface_set_grapheme_clustering(rio_surface_t *surface, bool enabled);
 void rio_surface_resize(rio_surface_t *surface, uint16_t cols, uint16_t rows,
                         uint16_t pixel_width, uint16_t pixel_height);
 void rio_surface_scroll(rio_surface_t *surface, int32_t delta_lines);

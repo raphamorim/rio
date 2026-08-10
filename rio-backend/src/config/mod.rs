@@ -158,6 +158,11 @@ pub struct Config {
     pub ignore_selection_fg_color: bool,
     #[serde(default = "default_bool_true", rename = "confirm-before-quit")]
     pub confirm_before_quit: bool,
+    /// Unicode grapheme clusters as the unit of cell layout (presets
+    /// DEC private mode 2027; ghostty's `grapheme-width-method`). A
+    /// program's DECSET/DECRST still wins at runtime.
+    #[serde(default = "default_bool_true", rename = "grapheme-clustering")]
+    pub grapheme_clustering: bool,
     #[serde(default = "bool::default", rename = "copy-on-select")]
     pub copy_on_select: bool,
     #[serde(
@@ -677,6 +682,7 @@ impl Default for Config {
             working_dir: default_working_dir(),
             ignore_selection_fg_color: false,
             confirm_before_quit: true,
+            grapheme_clustering: true,
             copy_on_select: false,
             hide_cursor_when_typing: false,
             draw_bold_text_with_light_colors: false,

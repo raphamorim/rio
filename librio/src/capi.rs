@@ -665,6 +665,19 @@ pub unsafe extern "C" fn rio_surface_set_alt_is_meta(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn rio_surface_set_grapheme_clustering(
+    surface: *mut Surface,
+    enabled: bool,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return;
+        }
+        unsafe { &*surface }.set_grapheme_clustering(enabled);
+    }));
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn rio_surface_resize(
     surface: *mut Surface,
     cols: u16,
