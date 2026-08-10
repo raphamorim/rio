@@ -62,6 +62,13 @@ pub struct KittyGraphicsResponse {
     pub placement_request: Option<PlacementRequest>,
     pub delete_request: Option<DeleteRequest>,
     pub response: Option<String>,
+    /// Pre-encoded failure reply for actions whose outcome only the
+    /// terminal state layer knows (today: `a=p`, which needs the image
+    /// store to tell whether the referenced image exists). The
+    /// dispatcher sends `response` on success and this on failure.
+    /// Built at parse time because only the parser knows the ids and
+    /// the `q=` quiet level.
+    pub error_response: Option<String>,
     /// True when this "response" is just a chunk-accumulation
     /// acknowledgement — the parser stored the chunk and is waiting
     /// for more. The dispatcher should treat this as a successful
@@ -82,6 +89,7 @@ impl KittyGraphicsResponse {
             placement_request: None,
             delete_request: None,
             response: None,
+            error_response: None,
             incomplete: true,
         }
     }
@@ -408,43 +416,32 @@ pub fn parse(
                 cmd.quiet,
                 true,
             ),
+            error_response: None,
             incomplete: false,
         });
     }
 
-    // Handle query action: requires an image id per kitty spec. Without
-    // one we cannot even build a response addressed to anything, so we
-    // surface EINVAL instead of pretending success.
-    if cmd.action == Action::Query {
-        if cmd.image_id == 0 {
-            return Some(KittyGraphicsResponse {
-                graphic_data: None,
-                placement_request: None,
-                delete_request: None,
-                response: encode_response_quiet(
-                    cmd.image_id,
-                    cmd.image_number,
-                    cmd.placement_id,
-                    "EINVAL: image ID required",
-                    cmd.quiet,
-                    true,
-                ),
-                incomplete: false,
-            });
-        }
-        let response = encode_response_quiet(
-            cmd.image_id,
-            cmd.image_number,
-            cmd.placement_id,
-            "OK",
-            cmd.quiet,
-            false,
-        );
+    // A query requires an image id per kitty spec. Without one we cannot
+    // even build a response addressed to anything, so we surface EINVAL
+    // instead of pretending success. Valid queries fall through to the
+    // chunk accumulation and the `Action::Query` arm below, which runs
+    // the real decode path — answering OK up front here made clients
+    // trust formats and media the terminal could not actually load, and
+    // broke chunked queries by never storing their first chunk.
+    if cmd.action == Action::Query && cmd.image_id == 0 {
         return Some(KittyGraphicsResponse {
             graphic_data: None,
             placement_request: None,
             delete_request: None,
-            response,
+            response: encode_response_quiet(
+                cmd.image_id,
+                cmd.image_number,
+                cmd.placement_id,
+                "EINVAL: image ID required",
+                cmd.quiet,
+                true,
+            ),
+            error_response: None,
             incomplete: false,
         });
     }
@@ -599,6 +596,7 @@ pub fn parse(
                                 true,
                             )
                         },
+                        error_response: None,
                         incomplete: false,
                     });
                 }
@@ -646,6 +644,7 @@ pub fn parse(
                 placement_request,
                 delete_request: None,
                 response,
+                error_response: None,
                 incomplete: false,
             })
         }
@@ -679,11 +678,24 @@ pub fn parse(
                     false,
                 )
             };
+            // Whether the referenced image exists only the terminal
+            // state layer knows; it picks this reply over `response`
+            // when the placement fails. Kitty answers ENOENT there,
+            // and clients rely on it to retransmit evicted images.
+            let error_response = encode_response_quiet(
+                cmd.image_id,
+                cmd.image_number,
+                cmd.placement_id,
+                "ENOENT: image not found",
+                cmd.quiet,
+                true,
+            );
             Some(KittyGraphicsResponse {
                 graphic_data: None,
                 placement_request: Some(placement),
                 delete_request: None,
                 response,
+                error_response,
                 incomplete: false,
             })
         }
@@ -705,14 +717,42 @@ pub fn parse(
                 placement_request: None,
                 delete_request: Some(delete),
                 response: None,
+                error_response: None,
                 incomplete: false,
             })
         }
         Action::Query => {
-            // Query is handled earlier in the function before the
-            // chunking branches; the early return makes this arm
-            // unreachable in practice.
-            unreachable!("Query handled above")
+            // A query must behave exactly like a transmission — decode
+            // the payload, read the file, or map and unlink the shared
+            // memory — and report whether that worked, without storing
+            // anything. The kitty spec has clients probe support this
+            // way; an unconditional OK would disable their fallbacks.
+            let response = match create_graphic_data(&cmd) {
+                Ok(_) => encode_response_quiet(
+                    cmd.image_id,
+                    cmd.image_number,
+                    cmd.placement_id,
+                    "OK",
+                    cmd.quiet,
+                    false,
+                ),
+                Err(err) => encode_response_quiet(
+                    cmd.image_id,
+                    cmd.image_number,
+                    cmd.placement_id,
+                    err.message(),
+                    cmd.quiet,
+                    true,
+                ),
+            };
+            Some(KittyGraphicsResponse {
+                graphic_data: None,
+                placement_request: None,
+                delete_request: None,
+                response,
+                error_response: None,
+                incomplete: false,
+            })
         }
         Action::Frame | Action::Animate | Action::Compose => {
             // Animation actions are not supported. Per the kitty spec we
@@ -746,6 +786,7 @@ pub fn parse(
                 placement_request: None,
                 delete_request: None,
                 response,
+                error_response: None,
                 incomplete: false,
             })
         }
@@ -1632,12 +1673,26 @@ mod tests {
 
     #[test]
     fn test_parse_query() {
-        let result = parse_kitty_graphics_protocol("a=q,i=1", "");
+        // A valid query runs the real decode path and reports OK.
+        let result = parse_kitty_graphics_protocol("a=q,i=1,f=32,s=1,v=1", "AAAAAA==");
         assert!(result.is_some());
 
         let response = result.unwrap();
-        assert!(response.response.is_some());
-        assert!(response.response.unwrap().contains("OK"));
+        assert!(response.graphic_data.is_none(), "queries must not store");
+        let body = response.response.expect("response expected");
+        assert!(body.contains(";OK"), "valid query must succeed: {body}");
+
+        // A query the terminal cannot actually load reports the failure
+        // instead of a blanket OK, so clients keep their fallbacks.
+        let result = parse_kitty_graphics_protocol("a=q,i=1", "");
+        let body = result
+            .expect("response struct must exist")
+            .response
+            .expect("error response expected");
+        assert!(
+            !body.contains(";OK"),
+            "undecodable query must not report OK: {body}"
+        );
     }
 
     #[test]
@@ -2036,7 +2091,7 @@ mod tests {
         assert!(body.contains("I=7"));
 
         // With an explicit id, query succeeds with OK.
-        let result = parse_kitty_graphics_protocol("a=q,i=42", "")
+        let result = parse_kitty_graphics_protocol("a=q,i=42,f=32,s=1,v=1", "AAAAAA==")
             .expect("response struct must exist");
         let body = result.response.expect("OK response expected");
         assert!(body.contains("i=42"));

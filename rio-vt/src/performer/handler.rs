@@ -379,7 +379,16 @@ pub trait Handler {
     }
 
     /// Place an existing graphic at a specific location (for a=p).
-    fn place_graphic(&mut self, _placement: kitty_graphics_protocol::PlacementRequest) {}
+    /// Place a previously transmitted kitty graphic (for `a=p`).
+    /// Returns whether the referenced image exists — the dispatcher
+    /// answers ENOENT instead of OK when it does not, so clients can
+    /// retransmit evicted images instead of waiting on a blank cell.
+    fn place_graphic(
+        &mut self,
+        _placement: kitty_graphics_protocol::PlacementRequest,
+    ) -> bool {
+        false
+    }
 
     /// Delete graphics based on the specified criteria.
     fn delete_graphics(&mut self, _delete: kitty_graphics_protocol::DeleteRequest) {}
@@ -812,7 +821,7 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                 return;
             };
 
-            if let Some(response) =
+            if let Some(mut response) =
                 kitty_graphics_protocol::parse(&kitty_params, chunking_state)
             {
                 if response.incomplete {
@@ -848,8 +857,12 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                         placement.image_id
                     );
 
-                    // a=p: Display previously stored image
-                    self.handler.place_graphic(placement);
+                    // a=p: Display previously stored image. A placement
+                    // of an unknown image answers ENOENT rather than OK,
+                    // matching kitty, so the client knows to retransmit.
+                    if !self.handler.place_graphic(placement) {
+                        response.response = response.error_response.take();
+                    }
                 }
 
                 if let Some(delete) = response.delete_request {
@@ -2174,6 +2187,76 @@ mod tests {
         fn input(&mut self, c: char) {
             self.printed.push(c);
         }
+    }
+
+    /// Captures kitty graphics replies and simulates an image store, so
+    /// the dispatch's success/failure reply selection can be observed.
+    #[derive(Default)]
+    struct KittyReplyHandler {
+        stored: std::collections::HashSet<u32>,
+        replies: Vec<String>,
+        chunking: kitty_graphics_protocol::KittyGraphicsState,
+    }
+
+    impl Handler for KittyReplyHandler {
+        fn place_graphic(
+            &mut self,
+            placement: kitty_graphics_protocol::PlacementRequest,
+        ) -> bool {
+            self.stored.contains(&placement.image_id)
+        }
+
+        fn kitty_graphics_response(&mut self, response: String) {
+            self.replies.push(response);
+        }
+
+        fn kitty_chunking_state_mut(
+            &mut self,
+        ) -> Option<&mut kitty_graphics_protocol::KittyGraphicsState> {
+            Some(&mut self.chunking)
+        }
+    }
+
+    /// `a=p` referencing an image the terminal does not hold must answer
+    /// ENOENT — kitty clients use it to retransmit evicted images. An
+    /// unconditional OK left them waiting on a permanently blank cell.
+    #[test]
+    fn placement_of_missing_image_replies_enoent() {
+        let mut handler = KittyReplyHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=99\x1b\\");
+        assert_eq!(handler.replies.len(), 1);
+        assert!(
+            handler.replies[0].contains("ENOENT"),
+            "missing image must be ENOENT: {:?}",
+            handler.replies[0]
+        );
+        assert!(handler.replies[0].contains("i=99"));
+
+        handler.replies.clear();
+        handler.stored.insert(99);
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=99\x1b\\");
+        assert_eq!(handler.replies.len(), 1);
+        assert!(
+            handler.replies[0].contains(";OK"),
+            "existing image must be OK: {:?}",
+            handler.replies[0]
+        );
+    }
+
+    /// `q=2` suppresses both outcomes, `q=1` still reports failures.
+    #[test]
+    fn placement_replies_respect_quiet_levels() {
+        let mut handler = KittyReplyHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=7,q=2\x1b\\");
+        assert!(handler.replies.is_empty(), "q=2 must suppress ENOENT");
+
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=7,q=1\x1b\\");
+        assert_eq!(handler.replies.len(), 1, "q=1 must still report errors");
+        assert!(handler.replies[0].contains("ENOENT"));
     }
 
     #[test]
