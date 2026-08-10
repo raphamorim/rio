@@ -12,9 +12,6 @@ what Unicode says.
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/raphamorim/rio"
 
-[features]
-default = ["cjk"]
-cjk = []
 
 [dev-dependencies]
 unicode-segmentation = "1.13"

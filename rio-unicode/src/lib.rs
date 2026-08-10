@@ -27,20 +27,14 @@
 //! }
 //! ```
 //!
-//! # features
+//! # Provenance
 //!
-//! unicode-width supports a `no_std` feature. This eliminates dependence
-//! on std, and instead uses equivalent functions from core.
-//!
-//! # crates.io
-//!
-//! You can use this package in your project by adding the following
-//! to your `Cargo.toml`:
-//!
-//! ```toml
-//! [dependencies]
-//! unicode-width = "0.1.5"
-//! ```
+//! The width half of this crate is vendored from the alacritty
+//! `unicode-width-16` fork (upstream unicode-width v0.1.11 lineage),
+//! with tables regenerated for Unicode 17 by `scripts/unicode.py`.
+//! The [`grapheme`] module is rio's own, generated from the same UCD
+//! release by `scripts/grapheme.py`, so widths and cluster boundaries
+//! can never come from different Unicode versions.
 
 #![deny(missing_docs, unsafe_code)]
 #![doc(

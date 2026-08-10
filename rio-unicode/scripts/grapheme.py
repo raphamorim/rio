@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Generate rio-unicode's grapheme-cluster-break tables.
 
-Reads (from the working directory, as fetched by unicode.py's runs):
-  - GraphemeBreakProperty.txt   (UAX #29 GCB classes)
-  - emoji-data.txt              (Extended_Pictographic)
+Fetches its inputs from unicode.org (UNIDATA = latest release) into
+the working directory when missing, then reads:
+  - GraphemeBreakProperty.txt   (UAX #29 GCB classes; auxiliary/)
+  - emoji-data.txt              (Extended_Pictographic; emoji/)
   - DerivedCoreProperties.txt   (InCB=Consonant/Linker/Extend, for GB9c)
-  - GraphemeBreakTest.txt       (conformance vectors)
+  - GraphemeBreakTest.txt       (conformance vectors; auxiliary/)
 
 Emits:
   - ../src/grapheme_tables.rs   (class ranges + Unicode version)
@@ -15,8 +16,26 @@ Each codepoint gets exactly one class; InCB values refine the GCB
 Extend/ZWJ/Other classes so the GB9c state machine can run on classes
 alone.
 """
+import os
 import re
+import urllib.request
 from collections import defaultdict
+
+UNIDATA = "https://www.unicode.org/Public/UNIDATA/"
+REMOTE = {
+    "GraphemeBreakProperty.txt": "auxiliary/GraphemeBreakProperty.txt",
+    "GraphemeBreakTest.txt": "auxiliary/GraphemeBreakTest.txt",
+    "emoji-data.txt": "emoji/emoji-data.txt",
+    "DerivedCoreProperties.txt": "DerivedCoreProperties.txt",
+}
+
+def ensure(filename):
+    """Download `filename` if missing; urllib raises on HTTP errors, so
+    a 404 can never be saved as table data."""
+    if not os.path.exists(filename):
+        urllib.request.urlretrieve(UNIDATA + REMOTE[filename], filename)
+    return filename
+
 
 def parse_props(path, wanted_prop=None):
     """Yield (lo, hi, value) from a UCD file."""
@@ -40,17 +59,17 @@ def parse_props(path, wanted_prop=None):
     return out
 
 gcb = {}
-for lo, hi, v in parse_props("GraphemeBreakProperty.txt"):
+for lo, hi, v in parse_props(ensure("GraphemeBreakProperty.txt")):
     for cp in range(lo, hi + 1):
         gcb[cp] = v
 
 extpic = set()
-for lo, hi, v in parse_props("emoji-data.txt"):
+for lo, hi, v in parse_props(ensure("emoji-data.txt")):
     if v == "Extended_Pictographic":
         extpic.update(range(lo, hi + 1))
 
 incb = {}
-with open("DerivedCoreProperties.txt", encoding="utf-8") as f:
+with open(ensure("DerivedCoreProperties.txt"), encoding="utf-8") as f:
     for line in f:
         line = line.split("#", 1)[0].strip()
         if not line or "; InCB;" not in line:
@@ -125,7 +144,7 @@ print(f"grapheme_tables.rs: {len(ranges)} ranges (Unicode {version})")
 
 # Conformance vectors.
 tests = []
-with open("GraphemeBreakTest.txt", encoding="utf-8") as f:
+with open(ensure("GraphemeBreakTest.txt"), encoding="utf-8") as f:
     for line in f:
         line = line.split("#", 1)[0].strip()
         if not line:
