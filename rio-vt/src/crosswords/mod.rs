@@ -1444,76 +1444,81 @@ impl<U: EventListener> Crosswords<U> {
     /// of its per-cell loop; the write is then a single packed store, and the
     /// cursor cell is resolved once (not twice) in the common narrow case.
     #[inline]
-    /// Repair wide-pair seams on `line` after a range mutation.
+    /// Clear the wide pair that a cell boundary before `col` would
+    /// split, plus the cross-row links a mutation at that boundary
+    /// severs. The ghostty model (`Screen.splitCellBoundary`): each
+    /// range mutation names the exact seams it cuts, O(1) per seam,
+    /// instead of sweeping the row afterwards.
     ///
-    /// A blanket blank (ECH / EL) or a cell shift (DCH / ICH) can
-    /// split a wide pair at the edges of the affected range: a `Wide`
-    /// lead stranded without its `Spacer`, a `Spacer` stranded without
-    /// its lead, or a `LeadingSpacer` at the end of the previous row
-    /// whose wide char at column 0 was cleared. Mirrors `write_cell`'s
-    /// single-cell cleanup: a stranded half is cleared to `blank`, a
-    /// stranded `LeadingSpacer` reverts to narrow. Left-to-right, so a
-    /// cleared lead correctly strands (and clears) the spacer after it.
-    fn repair_wide_seams(
+    /// `col` may equal `columns`, meaning the boundary to the right of
+    /// the final cell — that clears stale pre-wrap padding
+    /// (`LeadingSpacer`) so a shift can't drag it into the interior.
+    ///
+    /// A cleared cell takes `blank` but keeps WRAPLINE: the flag marks
+    /// the logical line for reflow and lives on the row's last cell,
+    /// which the mutation never targeted.
+    fn split_wide_seam(
         &mut self,
         line: Line,
+        col: usize,
         blank: crate::crosswords::square::Square,
     ) {
         use crate::crosswords::square::Wide;
         let columns = self.grid.columns();
-        // A repaired cell takes the op's blank but keeps WRAPLINE: the
-        // flag lives on the row's last cell — often a wide pair's
-        // spacer — and marks the logical line for reflow/selection.
-        // The op never targeted it; destroying it would turn a soft
-        // wrap into a hard break on resize.
-        let repair = |cell: &mut crate::crosswords::square::Square| {
+
+        // Boundary right of the final cell.
+        if col >= columns {
+            let last = Column(columns - 1);
+            if matches!(self.grid[line][last].wide(), Wide::LeadingSpacer) {
+                self.grid[line][last].set_wide(Wide::Narrow);
+            }
+            return;
+        }
+
+        // A wide char at column 0 pairs with a `LeadingSpacer` closing
+        // the previous row; a mutation reaching columns 0/1 severs
+        // that link. Mirrors `write_cell`'s revert (including its
+        // history-row reach when line 0 scrolled something out).
+        if col <= 1
+            && matches!(self.grid[line][Column(0)].wide(), Wide::Wide)
+            && line != self.grid.topmost_line()
+        {
+            let last = self.grid.last_column();
+            let prev = &mut self.grid[line - 1i32][last];
+            if matches!(prev.wide(), Wide::LeadingSpacer) {
+                prev.set_wide(Wide::Narrow);
+                if line.0 > 0 {
+                    self.damage.damage_line((line.0 - 1) as usize);
+                }
+            }
+        }
+        if col == 0 {
+            return;
+        }
+
+        // Interior boundary: splitting between col-1 and col cuts a
+        // pair whose lead sits at col-1. Erasing half a wide char
+        // erases the whole char (the xterm/ghostty convention).
+        if matches!(self.grid[line][Column(col - 1)].wide(), Wide::Wide) {
+            self.clear_pair_preserving_wrapline(line, col - 1, blank);
+        }
+    }
+
+    /// Clear both halves of the wide pair with its lead at `col`,
+    /// keeping each cell's WRAPLINE bit.
+    fn clear_pair_preserving_wrapline(
+        &mut self,
+        line: Line,
+        col: usize,
+        blank: crate::crosswords::square::Square,
+    ) {
+        let columns = self.grid.columns();
+        for c in col..(col + 2).min(columns) {
+            let cell = &mut self.grid[line][Column(c)];
             let wrapline = cell.wrapline();
             *cell = blank;
             if wrapline {
                 cell.set_wrapline(true);
-            }
-        };
-        for col in 0..columns {
-            match self.grid[line][Column(col)].wide() {
-                Wide::Wide => {
-                    let has_spacer = col + 1 < columns
-                        && matches!(
-                            self.grid[line][Column(col + 1)].wide(),
-                            Wide::Spacer
-                        );
-                    if !has_spacer {
-                        repair(&mut self.grid[line][Column(col)]);
-                    }
-                }
-                Wide::Spacer => {
-                    let has_lead = col > 0
-                        && matches!(self.grid[line][Column(col - 1)].wide(), Wide::Wide);
-                    if !has_lead {
-                        repair(&mut self.grid[line][Column(col)]);
-                    }
-                }
-                // A shift (DCH) can drag a row-final `LeadingSpacer`
-                // into the interior, where it is meaningless padding.
-                Wide::LeadingSpacer if col + 1 < columns => {
-                    self.grid[line][Column(col)].set_wide(Wide::Narrow);
-                }
-                _ => {}
-            }
-        }
-        // A wide char at column 0 pairs with a `LeadingSpacer` closing
-        // the previous row; without it the spacer is stale padding.
-        if line != self.grid.topmost_line() {
-            let last = self.grid.last_column();
-            let col0_is_wide = matches!(self.grid[line][Column(0)].wide(), Wide::Wide);
-            let prev = &mut self.grid[line - 1i32][last];
-            if matches!(prev.wide(), Wide::LeadingSpacer) && !col0_is_wide {
-                prev.set_wide(Wide::Narrow);
-                // History rows (a row-0 predecessor) aren't
-                // representable in the damage vec; skip, matching
-                // `write_cell`'s revert.
-                if line.0 > 0 {
-                    self.damage.damage_line((line.0 - 1) as usize);
-                }
             }
         }
     }
@@ -2962,11 +2967,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let blank = self.grid.blank_with_bg(bg);
         let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
+        self.split_wide_seam(line, start.0, blank);
+        self.split_wide_seam(line, end.0, blank);
         let row = &mut self.grid[line];
         for cell in &mut row[start..end] {
             *cell = blank;
         }
-        self.repair_wide_seams(line, blank);
         self.clip_atlas_placements(line.0, line.0 + 1, start.0, end.0);
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
@@ -2988,6 +2994,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
+        self.split_wide_seam(line, start, blank);
+        self.split_wide_seam(line, (start + count).min(columns), blank);
+        self.split_wide_seam(line, columns, blank);
         let row = &mut self.grid[line][..];
 
         for offset in 0..num_cells {
@@ -3000,7 +3009,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[end..] {
             *cell = blank;
         }
-        self.repair_wide_seams(line, blank);
         // Image cells in the shifted tail stop showing their slices
         // (placement-model approximation, like other placement-based
         // terminals).
@@ -3036,6 +3044,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let line = self.grid.cursor.pos.row;
         self.damage.damage_line(line.0 as usize);
+        self.split_wide_seam(line, source.0, blank);
+        self.split_wide_seam(line, self.grid.columns(), blank);
+        // The last shifted cell lands on the row's final column; if it
+        // is a wide lead its spacer will not survive the shift, so
+        // clear the pair up front (ghostty `insertBlanks`).
+        if num_cells > 0 {
+            let last_src = source.0 + num_cells - 1;
+            if matches!(
+                self.grid[line][Column(last_src)].wide(),
+                crate::crosswords::square::Wide::Wide
+            ) {
+                self.clear_pair_preserving_wrapline(line, last_src, blank);
+            }
+        }
 
         let row = &mut self.grid[line][..];
 
@@ -3048,7 +3070,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[source.0..destination] {
             *cell = blank;
         }
-        self.repair_wide_seams(line, blank);
         // Placement-model approximation: image cells from the insert
         // point onward stop showing their slices.
         let columns = self.grid.columns();
@@ -3758,10 +3779,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
                 // Clear up to the current column in the current line.
                 let end = std::cmp::min(cursor.col + 1, Column(self.grid.columns()));
+                self.split_wide_seam(cursor.row, 0, blank);
+                self.split_wide_seam(cursor.row, end.0, blank);
                 for cell in &mut self.grid[cursor.row][..end] {
                     *cell = blank;
                 }
-                self.repair_wide_seams(cursor.row, blank);
 
                 let range = Line(0)..=cursor.row;
                 self.selection =
@@ -3773,10 +3795,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             ClearMode::Below => {
                 let cursor = self.grid.cursor.pos;
+                self.split_wide_seam(cursor.row, cursor.col.0, blank);
                 for cell in &mut self.grid[cursor.row][cursor.col..] {
                     *cell = blank;
                 }
-                self.repair_wide_seams(cursor.row, blank);
 
                 if (cursor.row.0 as usize) < screen_lines - 1 {
                     self.grid.reset_region((cursor.row + 1)..);
@@ -4097,12 +4119,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         self.damage.damage_line(point.row.0 as usize);
 
+        self.split_wide_seam(point.row, left.0, blank);
+        self.split_wide_seam(point.row, right.0, blank);
         let row = &mut self.grid[point.row];
         for cell in &mut row[left..right] {
             *cell = blank;
         }
-
-        self.repair_wide_seams(point.row, blank);
         let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
         self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
         self.clip_atlas_placements(point.row.0, point.row.0 + 1, left.0, right.0);
