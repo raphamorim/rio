@@ -941,11 +941,16 @@ pub unsafe extern "C" fn rio_render_state_cell(
             return empty;
         };
         let style = state.style_of(square);
+        let cluster = if state.cluster_of(square).is_some() {
+            RIO_CELL_HAS_CLUSTER
+        } else {
+            0
+        };
         rio_cell_s {
             codepoint: square.c() as u32,
             fg: color_to_c(style.fg),
             bg: color_to_c(style.bg),
-            style_flags: style.flags.bits(),
+            style_flags: style.flags.bits() | cluster,
         }
     }))
     .unwrap_or(rio_cell_s {
@@ -954,6 +959,51 @@ pub unsafe extern "C" fn rio_render_state_cell(
         bg: rio_color_s::default(),
         style_flags: 0,
     })
+}
+
+/// Set in `rio_cell_s.style_flags` when the cell carries attached
+/// cluster codepoints (combining marks, or a mode-2027 grapheme
+/// cluster) beyond `codepoint`. Fetch the full text with
+/// [`rio_render_state_cell_cluster`] and draw that instead of the
+/// base char. StyleFlags proper occupies bits 0..10; this is bit 15.
+pub const RIO_CELL_HAS_CLUSTER: u16 = 1 << 15;
+
+/// Write the full text of a cell — base codepoint plus attached
+/// cluster codepoints — as UTF-32 into `out` (capacity `cap` code
+/// units). Returns the total codepoint count, which may exceed `cap`
+/// (call again with a larger buffer); 0 for plain cells, so callers
+/// can treat 0 as "draw `codepoint` as usual".
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_cell_cluster(
+    state: *const RenderState,
+    line: u16,
+    column: u16,
+    out: *mut u32,
+    cap: usize,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return 0;
+        }
+        let state = unsafe { &*state };
+        let Some(square) = state.square(line as usize, column as usize) else {
+            return 0;
+        };
+        let Some(cluster) = state.cluster_of(square) else {
+            return 0;
+        };
+        let total = 1 + cluster.len();
+        if !out.is_null() {
+            let write = total.min(cap);
+            let dst = unsafe { core::slice::from_raw_parts_mut(out, write) };
+            let mut src = core::iter::once(square.c()).chain(cluster.iter().copied());
+            for slot in dst.iter_mut() {
+                *slot = src.next().unwrap_or('\0') as u32;
+            }
+        }
+        total
+    }))
+    .unwrap_or(0)
 }
 
 /// Lines the view is scrolled up into history; 0 means the live screen.

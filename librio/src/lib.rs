@@ -1236,6 +1236,33 @@ mod tests {
         assert!(state.display_offset() > 0, "the view should have moved");
     }
 
+    // The wasm renderer draws a cell's full cluster text (base +
+    // attached codepoints) when the wire flag says one exists; the
+    // accessor is the source of that text.
+    #[test]
+    fn render_state_exposes_cluster_text() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+
+        // Mode 2027 on, then a ZWJ emoji and a decomposed accent.
+        surface
+            .inject_output("\x1b[?2027h\u{1F9D1}\u{200D}\u{1F33E}e\u{301}x".as_bytes());
+        state.update();
+
+        assert_eq!(
+            state.cell_cluster_text(0, 0).as_deref(),
+            Some("\u{1F9D1}\u{200D}\u{1F33E}")
+        );
+        assert_eq!(state.cell_cluster_text(0, 2).as_deref(), Some("e\u{301}"));
+        // Plain cells report nothing.
+        assert_eq!(state.cell_cluster_text(0, 3), None);
+    }
+
     // SGR is the modern form; the X10 fallback offsets by 32.
     #[test]
     fn mouse_reports_encode_both_forms() {

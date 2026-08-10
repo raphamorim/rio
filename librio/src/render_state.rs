@@ -206,6 +206,38 @@ impl RenderState {
         }
     }
 
+    /// The codepoints attached to a square's grapheme cluster —
+    /// combining marks, or a full mode-2027 cluster tail — when it
+    /// carries any. Bg-only squares reuse the extras-id bits for
+    /// color and never report a cluster.
+    pub fn cluster_of(&self, square: &Square) -> Option<&[char]> {
+        if !square.has_grapheme()
+            || !matches!(
+                square.content_tag(),
+                rio_vt::crosswords::square::ContentTag::Codepoint
+            )
+        {
+            return None;
+        }
+        let extras = square.extras_id().and_then(|eid| self.extras.get(&eid))?;
+        if extras.zerowidth.is_empty() {
+            None
+        } else {
+            Some(&extras.zerowidth)
+        }
+    }
+
+    /// The cell's full text — base codepoint plus attached cluster
+    /// codepoints — or `None` for cells with no attachments.
+    pub fn cell_cluster_text(&self, line: usize, column: usize) -> Option<String> {
+        let square = self.square(line, column)?;
+        let cluster = self.cluster_of(square)?;
+        let mut text = String::with_capacity(4 * (1 + cluster.len()));
+        text.push(square.c());
+        text.extend(cluster.iter());
+        Some(text)
+    }
+
     pub fn square(&self, line: usize, column: usize) -> Option<&Square> {
         let row = self.rows.get(line)?;
         if column >= self.columns {

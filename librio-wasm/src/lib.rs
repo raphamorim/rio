@@ -69,8 +69,15 @@ pub const COLOR_INDEXED: u32 = 1;
 pub const COLOR_RGB: u32 = 2;
 
 /// u32 words per cell in [`RioTerm::write_cells`]:
-/// `[codepoint | wide << 21, fg, bg, style_flags]`.
+/// `[codepoint | wide << 21 | flags, fg, bg, style_flags]`.
 pub const CELL_WORDS: usize = 4;
+
+/// Word-0 flag: the cell carries attached cluster codepoints
+/// (combining marks, or a mode-2027 grapheme cluster tail) beyond the
+/// base codepoint in bits 0..21. Fetch the full text with
+/// [`RioTerm::cluster_text`] and draw that instead of the base char —
+/// a renderer that ignores the bit simply keeps drawing bases.
+pub const CELL_HAS_CLUSTER: u32 = 1 << 23;
 
 enum Event {
     Output(Vec<u8>),
@@ -658,6 +665,16 @@ impl RioTerm {
     pub fn kitty_image_rgba(&self, image_id: u32, out: &mut [u8]) -> usize {
         self.state.kitty_image_rgba(image_id, out)
     }
+
+    /// The full text of a cell flagged [`CELL_HAS_CLUSTER`]: the base
+    /// codepoint followed by its attached cluster codepoints
+    /// (combining marks, or a mode-2027 grapheme cluster). Draw this
+    /// string in place of the base char so a ZWJ emoji or a
+    /// decomposed accent renders as the glyph the sequence means.
+    /// `undefined` for cells without attachments.
+    pub fn cluster_text(&self, line: usize, column: usize) -> Option<String> {
+        self.state.cell_cluster_text(line, column)
+    }
 }
 
 impl RioTerm {
@@ -667,8 +684,14 @@ impl RioTerm {
             match self.state.square(line, col) {
                 Some(square) => {
                     let style = self.state.style_of(square);
-                    out[base] =
-                        (square.c() as u32 & 0x1F_FFFF) | ((square.wide() as u32) << 21);
+                    let cluster = if self.state.cluster_of(square).is_some() {
+                        CELL_HAS_CLUSTER
+                    } else {
+                        0
+                    };
+                    out[base] = (square.c() as u32 & 0x1F_FFFF)
+                        | ((square.wide() as u32) << 21)
+                        | cluster;
                     out[base + 1] = pack_color(style.fg);
                     out[base + 2] = pack_color(style.bg);
                     out[base + 3] = style.flags.bits() as u32;

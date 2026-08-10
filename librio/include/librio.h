@@ -255,6 +255,21 @@ uint16_t rio_render_state_lines(const rio_render_state_t *state);
 uint16_t rio_render_state_columns(const rio_render_state_t *state);
 bool rio_render_state_row_dirty(const rio_render_state_t *state, uint16_t line);
 void rio_render_state_reset_dirty(rio_render_state_t *state);
+/* Set in rio_cell_s.style_flags when the cell carries attached cluster
+ * codepoints (combining marks, or a DEC-2027 grapheme cluster) beyond
+ * `codepoint`. Fetch the full text with rio_render_state_cell_cluster
+ * and draw that instead of the base char. StyleFlags proper occupies
+ * bits 0..10; this is bit 15. */
+#define RIO_CELL_HAS_CLUSTER (1u << 15)
+
+/* Write the full text of a cell — base codepoint plus attached cluster
+ * codepoints — as UTF-32 into `out` (capacity `cap` code units).
+ * Returns the total codepoint count, which may exceed `cap` (call
+ * again with a larger buffer); 0 for plain cells. */
+size_t rio_render_state_cell_cluster(const rio_render_state_t *state,
+                                     uint16_t line, uint16_t column,
+                                     uint32_t *out, size_t cap);
+
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
