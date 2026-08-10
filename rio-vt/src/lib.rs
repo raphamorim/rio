@@ -16,6 +16,7 @@
 pub mod ansi;
 pub mod clipboard;
 pub mod codepoint_width;
+pub mod grapheme_lut;
 pub mod config;
 pub mod crosswords;
 pub mod error;

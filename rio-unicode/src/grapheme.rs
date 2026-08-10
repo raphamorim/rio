@@ -49,6 +49,38 @@ pub enum GraphemeClass {
     Consonant,
 }
 
+impl GraphemeClass {
+    /// Number of classes; `as u8` values are contiguous in
+    /// `0..COUNT`, so classes can index precomputed tables.
+    pub const COUNT: usize = 18;
+
+    /// Inverse of `as u8`, for table builders enumerating classes.
+    pub fn from_u8(value: u8) -> Option<Self> {
+        use GraphemeClass as G;
+        Some(match value {
+            0 => G::Other,
+            1 => G::CR,
+            2 => G::LF,
+            3 => G::Control,
+            4 => G::Extend,
+            5 => G::ExtendIncb,
+            6 => G::Linker,
+            7 => G::Zwj,
+            8 => G::RegionalIndicator,
+            9 => G::Prepend,
+            10 => G::SpacingMark,
+            11 => G::L,
+            12 => G::V,
+            13 => G::T,
+            14 => G::LV,
+            15 => G::LVT,
+            16 => G::ExtPic,
+            17 => G::Consonant,
+            _ => return None,
+        })
+    }
+}
+
 /// Class lookup: binary search over the generated ranges.
 pub fn grapheme_class(c: char) -> GraphemeClass {
     let cp = c as u32;
@@ -101,6 +133,45 @@ pub struct BreakState {
 }
 
 impl BreakState {
+    /// Number of distinct states; `pack` values are contiguous in
+    /// `0..COUNT`, so states can index precomputed transition tables.
+    pub const COUNT: usize = 18;
+
+    /// Pack into `0..COUNT` for table indexing.
+    pub fn pack(self) -> u8 {
+        let emoji = match self.emoji {
+            EmojiSeq::None => 0u8,
+            EmojiSeq::Emoji => 1,
+            EmojiSeq::EmojiZwj => 2,
+        };
+        let incb = match self.incb {
+            Incb::None => 0u8,
+            Incb::Consonant => 1,
+            Incb::LinkerSeen => 2,
+        };
+        emoji * 6 + incb * 2 + self.ri_odd as u8
+    }
+
+    /// Inverse of [`pack`](Self::pack).
+    pub fn unpack(value: u8) -> Option<Self> {
+        if value as usize >= Self::COUNT {
+            return None;
+        }
+        Some(Self {
+            emoji: match value / 6 {
+                0 => EmojiSeq::None,
+                1 => EmojiSeq::Emoji,
+                _ => EmojiSeq::EmojiZwj,
+            },
+            incb: match (value % 6) / 2 {
+                0 => Incb::None,
+                1 => Incb::Consonant,
+                _ => Incb::LinkerSeen,
+            },
+            ri_odd: value % 2 == 1,
+        })
+    }
+
     /// State after the first codepoint of a sequence.
     pub fn start(first: GraphemeClass) -> Self {
         let mut state = Self::default();

@@ -1591,7 +1591,7 @@ impl<U: EventListener> Crosswords<U> {
     /// invalidate a cluster automatically: whatever cell precedes the
     /// cursor *is* the truth, with no reset hooks to forget.
     fn try_cluster_append(&mut self, c: char, width: usize) -> bool {
-        use unicode_width::grapheme::{grapheme_class, is_break, BreakState};
+        use crate::grapheme_lut::{class_of, is_break_lut, start_state};
 
         let row = self.grid.cursor.pos.row;
         let Some(base_col) = self.prev_cell_col() else {
@@ -1611,18 +1611,20 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // Reconstruct the segmentation state from the cluster itself.
-        let mut prev = grapheme_class(base);
-        let mut state = BreakState::start(prev);
+        // Flat-table hops (ghostty devlog-006): one class lookup per
+        // codepoint and one transition index per step, no rule chain.
+        let mut prev = class_of(base);
+        let mut state = start_state(prev);
         if let Some(id) = cell.extras_id() {
             if let Some(extras) = self.grid.extras_table.get(id) {
                 for &attached in &extras.zerowidth {
-                    let class = grapheme_class(attached);
-                    let _ = is_break(prev, class, &mut state);
+                    let class = class_of(attached);
+                    let _ = is_break_lut(prev, class, &mut state);
                     prev = class;
                 }
             }
         }
-        if is_break(prev, grapheme_class(c), &mut state) {
+        if is_break_lut(prev, class_of(c), &mut state) {
             return false;
         }
 
