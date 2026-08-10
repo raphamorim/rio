@@ -331,7 +331,9 @@ impl<T: event::EventListener> Crosswords<T> {
 
         let mut cell = iter.square();
         self.skip_fullwidth(&mut iter, &mut cell, regex.direction);
-        let mut c = cell.c();
+        let mut cell_chars: Vec<char> = Vec::with_capacity(4);
+        self.cell_search_chars(cell, regex.direction, &mut cell_chars);
+        let mut char_idx = 0;
         let mut last_wrapped = iter.square().wrapline();
 
         let mut point = iter.pos();
@@ -348,58 +350,67 @@ impl<T: event::EventListener> Crosswords<T> {
         }
 
         'outer: loop {
-            // Convert char to array of bytes.
-            let mut buf = [0; 4];
-            let utf8_len = c.encode_utf8(&mut buf).len();
+            // Feed every char the cell carries — the base plus its
+            // attached cluster codepoints — so a search for composed
+            // text (a decomposed `é`, a ZWJ emoji) can match. Match
+            // positions stay cell-granular: the whole cluster is one
+            // grid position.
+            'chars: while char_idx < cell_chars.len() {
+                let c = cell_chars[char_idx];
+                // Convert char to array of bytes.
+                let mut buf = [0; 4];
+                let utf8_len = c.encode_utf8(&mut buf).len();
 
-            // Pass char to DFA as individual bytes.
-            for i in 0..utf8_len {
-                // Inverse byte order when going left.
-                let byte = match regex.direction {
-                    Direction::Right => buf[i],
-                    Direction::Left => buf[utf8_len - i - 1],
-                };
+                // Pass char to DFA as individual bytes.
+                for i in 0..utf8_len {
+                    // Inverse byte order when going left.
+                    let byte = match regex.direction {
+                        Direction::Right => buf[i],
+                        Direction::Left => buf[utf8_len - i - 1],
+                    };
 
-                state = regex.dfa.next_state(&mut regex.cache, state, byte)?;
-                consumed_bytes += 1;
+                    state = regex.dfa.next_state(&mut regex.cache, state, byte)?;
+                    consumed_bytes += 1;
 
-                if i == 0 && state.is_match() {
-                    // Matches require one additional BYTE of lookahead, so we check the match state
-                    // for the first byte of every new character to determine if the last character
-                    // was a match.
-                    regex_match = Some(last_point);
-                } else if state.is_dead() {
-                    if consumed_bytes == 2 {
-                        // Reset search if we found an empty match.
-                        //
-                        // With an unanchored search, a dead state only occurs after the end of a
-                        // match has been found. While we want to abort after the first match has
-                        // ended, we don't want empty matches since we cannot highlight them.
-                        //
-                        // So once we encounter an empty match, we reset our parser state and clear
-                        // the match, effectively starting a new search one character farther than
-                        // before.
-                        //
-                        // An empty match requires consuming `2` bytes, since the first byte will
-                        // report the match for the empty string, while the second byte then
-                        // reports the dead state indicating the first character isn't part of the
-                        // match.
-                        reset_state!();
+                    if i == 0 && state.is_match() {
+                        // Matches require one additional BYTE of lookahead: the match state
+                        // for the first byte of every new character tells whether the last
+                        // character completed a match.
+                        regex_match = Some(last_point);
+                    } else if state.is_dead() {
+                        if consumed_bytes == 2 {
+                            // Reset search if we found an empty match.
+                            //
+                            // With an unanchored search, a dead state only occurs after the end of a
+                            // match has been found. While we want to abort after the first match has
+                            // ended, we don't want empty matches since we cannot highlight them.
+                            //
+                            // So once we encounter an empty match, we reset our parser state and clear
+                            // the match, effectively starting a new search one character farther than
+                            // before.
+                            //
+                            // An empty match requires consuming `2` bytes, since the first byte will
+                            // report the match for the empty string, while the second byte then
+                            // reports the dead state indicating the first character isn't part of the
+                            // match.
+                            reset_state!();
 
-                        // Retry this character if first byte caused failure.
-                        //
-                        // After finding an empty match, we want to advance the search start by one
-                        // character. So if the first character has multiple bytes and the dead
-                        // state isn't reached at `i == 0`, then we continue with the rest of the
-                        // loop to advance the parser by one character.
-                        if i == 0 {
-                            continue 'outer;
+                            // Retry this character if first byte caused failure.
+                            //
+                            // After finding an empty match, we want to advance the search start by one
+                            // character. So if the first character has multiple bytes and the dead
+                            // state isn't reached at `i == 0`, then we continue with the rest of the
+                            // loop to advance the parser by one character.
+                            if i == 0 {
+                                continue 'chars;
+                            }
+                        } else {
+                            // Abort on dead state.
+                            break 'outer;
                         }
-                    } else {
-                        // Abort on dead state.
-                        break 'outer;
                     }
                 }
+                char_idx += 1;
             }
 
             // Stop once we've reached the target point.
@@ -434,7 +445,8 @@ impl<T: event::EventListener> Crosswords<T> {
 
             self.skip_fullwidth(&mut iter, &mut cell, regex.direction);
 
-            c = cell.c();
+            self.cell_search_chars(cell, regex.direction, &mut cell_chars);
+            char_idx = 0;
             let wrapped = iter.square().wrapline();
 
             last_point = mem::replace(&mut point, iter.pos());
@@ -466,6 +478,38 @@ impl<T: event::EventListener> Crosswords<T> {
         }
 
         Ok(regex_match)
+    }
+
+    /// The characters a cell contributes to a regex search: its base
+    /// codepoint plus attached cluster codepoints, reversed for a
+    /// leftward search (the byte loop reverses within each char). A
+    /// bg-only cell stores color where the codepoint lives and reads
+    /// as a blank, not as the color bits decoded into a char.
+    fn cell_search_chars(
+        &self,
+        cell: &Square,
+        direction: Direction,
+        out: &mut Vec<char>,
+    ) {
+        out.clear();
+        if !matches!(
+            cell.content_tag(),
+            crate::crosswords::square::ContentTag::Codepoint
+        ) {
+            out.push(' ');
+            return;
+        }
+        out.push(cell.c());
+        if cell.has_grapheme() {
+            if let Some(id) = cell.extras_id() {
+                if let Some(extras) = self.grid.extras_table.get(id) {
+                    out.extend(extras.zerowidth.iter().copied());
+                }
+            }
+        }
+        if direction == Direction::Left {
+            out.reverse();
+        }
     }
 
     /// Advance a grid iterator over fullwidth characters.
@@ -1406,6 +1450,69 @@ mod tests {
         let end = term.semantic_search_right(Pos::new(Line(0), Column(6)));
         assert_eq!(start, Pos::new(Line(0), Column(6)));
         assert_eq!(end, Pos::new(Line(0), Column(6)));
+    }
+
+    /// Attached cluster codepoints feed the DFA, so a search for
+    /// composed text can match cells built from marks.
+    #[test]
+    fn search_matches_attached_marks() {
+        use crate::performer::handler::Handler;
+        let window_id = crate::event::WindowId::from(0);
+        let size = CrosswordsSize::new(8, 2);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 0);
+        for c in ['x', 'e', '\u{301}', 'y'] {
+            term.input(c);
+        }
+
+        // Decomposed é, matched both ways.
+        let mut regex = RegexSearch::new("e\u{301}").unwrap();
+        let start = Pos::new(Line(0), Column(0));
+        let end = Pos::new(Line(0), Column(7));
+        assert_eq!(
+            term.regex_search_right(&mut regex, start, end),
+            Some(Pos::new(Line(0), Column(1))..=Pos::new(Line(0), Column(1)))
+        );
+        let mut regex = RegexSearch::new("e\u{301}").unwrap();
+        assert_eq!(
+            term.regex_search_left(&mut regex, end, start),
+            Some(Pos::new(Line(0), Column(1))..=Pos::new(Line(0), Column(1)))
+        );
+
+        // Spanning into the next plain char: marks sit between base
+        // and neighbor in the fed stream.
+        let mut regex = RegexSearch::new("e\u{301}y").unwrap();
+        assert_eq!(
+            term.regex_search_right(&mut regex, start, end),
+            Some(Pos::new(Line(0), Column(1))..=Pos::new(Line(0), Column(2)))
+        );
+    }
+
+    /// A mode-2027 ZWJ cluster is searchable by its full sequence and
+    /// matches as one cell-granular position.
+    #[test]
+    fn search_matches_zwj_cluster() {
+        use crate::ansi::mode::PrivateMode;
+        use crate::performer::handler::Handler;
+        let window_id = crate::event::WindowId::from(0);
+        let size = CrosswordsSize::new(8, 2);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 0);
+        term.set_private_mode(PrivateMode::new(2027));
+        for c in ['a', '\u{1F9D1}', '\u{200D}', '\u{1F33E}', 'b'] {
+            term.input(c);
+        }
+
+        let farmer = "\u{1F9D1}\u{200D}\u{1F33E}";
+        let mut regex = RegexSearch::new(farmer).unwrap();
+        let start = Pos::new(Line(0), Column(0));
+        let end = Pos::new(Line(0), Column(7));
+        // The cluster occupies cells 1-2 (wide pair): the match spans
+        // the pair.
+        assert_eq!(
+            term.regex_search_right(&mut regex, start, end),
+            Some(Pos::new(Line(0), Column(1))..=Pos::new(Line(0), Column(2)))
+        );
     }
 
     #[test]

@@ -8051,6 +8051,79 @@ mod tests {
         assert_eq!(cw.grid.cursor.pos.col, Column(3));
     }
 
+    /// Reflow moves a cluster atomically: the wide pair and its
+    /// attached codepoints survive shrink-rewrap and grow-unwrap.
+    #[test]
+    fn mode_2027_cluster_survives_reflow() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(6, 3);
+        cw.input('a');
+        cw.input('b');
+        for c in ['\u{1F9D1}', '\u{200D}', '\u{1F33E}'] {
+            cw.input(c);
+        }
+
+        // Shrink: the cluster no longer fits after "ab" and rewraps.
+        cw.resize(CrosswordsSize::new(3, 3));
+        let mut found = None;
+        for line in cw.grid.topmost_line().0..3 {
+            for col in 0..3 {
+                let cell = cw.grid[Line(line)][Column(col)];
+                if cell.c() == '\u{1F9D1}' {
+                    found = Some((line, col));
+                }
+            }
+        }
+        let (line, col) = found.expect("cluster base survives shrink");
+        assert_eq!(cw.grid[Line(line)][Column(col)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, line, col), ['\u{200D}', '\u{1F33E}']);
+
+        // Grow back: still one intact cluster.
+        cw.resize(CrosswordsSize::new(6, 3));
+        let mut found = None;
+        for line in cw.grid.topmost_line().0..3 {
+            for col in 0..6 {
+                let cell = cw.grid[Line(line)][Column(col)];
+                if cell.c() == '\u{1F9D1}' {
+                    found = Some((line, col));
+                }
+            }
+        }
+        let (line, col) = found.expect("cluster base survives grow");
+        assert_eq!(cw.grid[Line(line)][Column(col)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, line, col), ['\u{200D}', '\u{1F33E}']);
+
+        // The moved cells' rows must keep the extras hint, or reclaim
+        // would sweep the live slot out from under them.
+        cw.grid.reclaim_extras();
+        assert_eq!(extras_of(&cw, line, col), ['\u{200D}', '\u{1F33E}']);
+    }
+
+    /// Copy/serialize emits the full cluster text, and replaying that
+    /// text into a fresh mode-2027 terminal reproduces the same cells.
+    #[test]
+    fn mode_2027_cluster_round_trips_through_text() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(10, 2);
+        cw.input('a');
+        for c in ['\u{1F9D1}', '\u{200D}', '\u{1F33E}'] {
+            cw.input(c);
+        }
+        cw.input('b');
+
+        let text = cw
+            .bounds_to_string(Pos::new(Line(0), Column(0)), Pos::new(Line(0), Column(4)));
+        assert_eq!(text, "a\u{1F9D1}\u{200D}\u{1F33E}b");
+
+        let mut replay = term_2027(10, 2);
+        for c in text.chars() {
+            replay.input(c);
+        }
+        assert_eq!(replay.grid[Line(0)][Column(1)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&replay, 0, 1), ['\u{200D}', '\u{1F33E}']);
+        assert_eq!(replay.grid[Line(0)][Column(3)].c(), 'b');
+    }
+
     #[test]
     fn hyperlink_crosses_alt_screen_into_the_alt_table() {
         use crate::performer::handler::Handler;
