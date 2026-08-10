@@ -1615,12 +1615,14 @@ impl<U: EventListener> Crosswords<U> {
         // codepoint and one transition index per step, no rule chain.
         let mut prev = class_of(base);
         let mut state = start_state(prev);
+        let mut last_cp = base;
         if let Some(id) = cell.extras_id() {
             if let Some(extras) = self.grid.extras_table.get(id) {
                 for &attached in &extras.zerowidth {
                     let class = class_of(attached);
                     let _ = is_break_lut(prev, class, &mut state);
                     prev = class;
+                    last_cp = attached;
                 }
             }
         }
@@ -1636,16 +1638,21 @@ impl<U: EventListener> Crosswords<U> {
         // continuations change nothing.
         match c {
             '\u{FE0F}' => {
-                if vs_is_valid_base(base, c) {
-                    self.apply_emoji_vs16();
+                // A selector modifies the codepoint immediately before
+                // it, so validity is judged against the *last* codepoint
+                // of the cluster, not its base (ghostty checks `prev`
+                // in `graphemeWidthEffect`). The width helpers are
+                // no-ops when the cell is already in the target state.
+                if vs_is_valid_base(last_cp, c) {
+                    self.widen_prev_cell();
                     self.attach_to_prev_cell(c);
                 }
                 // Invalid selector: ignore. The cell is untouched, so
                 // the reconstructed state next time is identical.
             }
             '\u{FE0E}' => {
-                if vs_is_valid_base(base, c) {
-                    self.apply_emoji_vs15();
+                if vs_is_valid_base(last_cp, c) {
+                    self.narrow_prev_cell();
                     self.attach_to_prev_cell(c);
                 }
             }
@@ -2074,6 +2081,40 @@ impl<U: EventListener> Crosswords<U> {
         let cursor_col = self.grid.cursor.pos.col.0;
         let should_wrap = self.grid.cursor.should_wrap;
 
+        let base_col = if should_wrap {
+            if cursor_col == 0 {
+                return;
+            }
+            cursor_col - 1
+        } else {
+            if cursor_col < 2 {
+                return;
+            }
+            cursor_col - 2
+        };
+
+        let base_cell = &self.grid[row][Column(base_col)];
+        if !matches!(base_cell.wide(), Wide::Wide) {
+            return;
+        }
+        if !vs_is_valid_base(base_cell.c(), '\u{FE0E}') {
+            return;
+        }
+
+        self.narrow_prev_cell();
+    }
+
+    /// Shrink the wide pair preceding the cursor back to a narrow cell,
+    /// clearing its spacer and retracting the cursor. No-op unless a
+    /// wide pair is there. Validity-free counterpart of
+    /// [`widen_prev_cell`]: VS15 demotion (via `apply_emoji_vs15`,
+    /// which gates on the base) and mode-2027 cluster continuation
+    /// (which gates on the cluster's last codepoint) share it.
+    fn narrow_prev_cell(&mut self) {
+        let row = self.grid.cursor.pos.row;
+        let cursor_col = self.grid.cursor.pos.col.0;
+        let should_wrap = self.grid.cursor.should_wrap;
+
         let (base_col, spacer_col) = if should_wrap {
             if cursor_col == 0 {
                 return;
@@ -2086,12 +2127,7 @@ impl<U: EventListener> Crosswords<U> {
             (cursor_col - 2, cursor_col - 1)
         };
 
-        let base_cell = &self.grid[row][Column(base_col)];
-        if !matches!(base_cell.wide(), Wide::Wide) {
-            return;
-        }
-        let base_char = base_cell.c();
-        if !vs_is_valid_base(base_char, '\u{FE0E}') {
+        if !matches!(self.grid[row][Column(base_col)].wide(), Wide::Wide) {
             return;
         }
 
@@ -3531,6 +3567,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         // Handle zero-width characters.
         if width == 0 {
+            // Mode 2027: the cluster path above is the only legitimate
+            // attach. Reaching here means there was no base to join —
+            // a column-0 orphan, an empty or bg-only previous cell.
+            // Attaching wcwidth-style would contradict the boundary
+            // the mode just computed, so drop the codepoint (matching
+            // ghostty).
+            if self.mode.contains(Mode::GRAPHEME_CLUSTER) {
+                return;
+            }
             // Emoji presentation variation selectors flip the *width* of
             // the preceding cell before being attached as combining data.
             // Matches kitty/ghostty; see emoji-variation-sequences.txt.
@@ -8145,6 +8190,48 @@ mod tests {
         cw.input('x');
         assert_eq!(cw.cell_hyperlink(Line(0), Column(0)), Some(link));
         cw.swap_alt();
+    }
+
+    /// Mode 2027: a zero-width codepoint with no base to join (orphan
+    /// at column 0) is dropped, never legacy-attached — the mode just
+    /// computed a boundary and wcwidth-attaching would contradict it
+    /// (ghostty Terminal.zig, print width==0 branch).
+    #[test]
+    fn mode_2027_orphan_zero_width_dropped() {
+        use crate::ansi::mode::PrivateMode;
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 3);
+        cw.set_private_mode(PrivateMode::new(2027));
+        cw.input('\u{0301}');
+        let cell = cw.grid[Line(0)][Column(0)];
+        assert_eq!(cell.c(), '\0');
+        assert!(cell.extras_id().is_none());
+        assert_eq!(cw.grid.cursor.pos.col, Column(0));
+    }
+
+    /// Mode 2027: variation-selector validity is judged against the
+    /// cluster's *last* codepoint, not its base — a selector modifies
+    /// the character immediately before it (ghostty checks `prev` in
+    /// `graphemeWidthEffect`). U+261D is a valid VS16 base but the
+    /// skin tone that joined after it is not, so the trailing VS16 is
+    /// ignored outright.
+    #[test]
+    fn mode_2027_vs_validated_against_last_codepoint() {
+        use crate::ansi::mode::PrivateMode;
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(8, 3);
+        cw.set_private_mode(PrivateMode::new(2027));
+        cw.input('\u{261D}'); // ☝ narrow, valid VS16 base
+        cw.input('\u{1F3FB}'); // skin tone: Extend, width 2 → cluster goes wide
+        let col_after_modifier = cw.grid.cursor.pos.col;
+        cw.input('\u{FE0F}'); // last cp is the skin tone → invalid → ignored
+
+        let cell = cw.grid[Line(0)][Column(0)];
+        assert_eq!(cell.c(), '\u{261D}');
+        assert_eq!(cell.wide(), Wide::Wide);
+        let extras = cw.grid.extras_table.get(cell.extras_id().unwrap()).unwrap();
+        assert_eq!(extras.zerowidth, vec!['\u{1F3FB}']);
+        assert_eq!(cw.grid.cursor.pos.col, col_after_modifier);
     }
 
     /// DEC private mode 2027 (grapheme cluster processing): set,
