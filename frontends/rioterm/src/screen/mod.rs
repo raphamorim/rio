@@ -73,6 +73,16 @@ pub struct Screen<'screen> {
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
+    /// IME state is per window, not per context: the platform IME
+    /// composes into whichever context is current, and exactly one
+    /// composition can exist per view. Keeping it here (instead of on
+    /// `Context`) makes a stale preedit on a background tab or split
+    /// structurally impossible.
+    pub ime: crate::ime::Ime,
+    /// Screen row the preedit rendered on last frame, so the row can
+    /// be rebuilt when the composition moves or ends even when
+    /// terminal damage reports nothing.
+    last_preedit_row: Option<usize>,
     last_ime_cursor_pos: Option<(f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
     pub resize_state: Option<crate::layout::ResizeState>,
@@ -264,7 +274,6 @@ impl Screen<'_> {
             content: config.cursor.shape.into(),
             content_ref: config.cursor.shape.into(),
             state: CursorState::new(config.cursor.shape.into()),
-            is_ime_enabled: false,
         };
 
         let context_manager = context::ContextManager::start(
@@ -306,6 +315,8 @@ impl Screen<'_> {
             mouse_bindings: crate::bindings::default_mouse_bindings(),
             modifiers: Modifiers::default(),
             context_manager,
+            ime: crate::ime::Ime::new(),
+            last_preedit_row: None,
             sugarloaf,
             mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
             touchpurpose: TouchPurpose::default(),
@@ -692,7 +703,7 @@ impl Screen<'_> {
         key: &rio_window::event::KeyEvent,
         clipboard: &mut Clipboard,
     ) {
-        if self.context_manager.current().ime.preedit().is_some() {
+        if self.ime.preedit().is_some() {
             return;
         }
 
@@ -3928,6 +3939,12 @@ impl Screen<'_> {
                 )>,
                 hint_labels: Option<Vec<crate::context::renderable::HintLabel>>,
                 label_style_base: Option<u16>,
+                /// Active IME composition, laid out on the cursor row.
+                /// Only ever `Some` for the active panel with an
+                /// unscrolled viewport: the composition belongs to the
+                /// focused context, and a scrolled viewport has no
+                /// on-screen cursor row to anchor it to.
+                preedit_line: Option<crate::renderer::preedit::PreeditLine>,
             }
 
             let (active_key, scaled_margin) = {
@@ -4034,7 +4051,24 @@ impl Screen<'_> {
                 let cursor_blinking = ctx.renderable_content.has_blinking_enabled;
                 let cursor_blink_visible =
                     !cursor_blinking || ctx.renderable_content.is_blinking_cursor_visible;
-                let cursor_preedit = ctx.ime.preedit().is_some();
+                // IME state is window-level (`self.ime`); it renders
+                // on the active panel only, and never over scrollback
+                // (the cursor row is off-viewport there — an anchor
+                // computed from it would paint on history).
+                let preedit_line = if is_active && display_offset == 0 {
+                    self.ime.preedit().and_then(|preedit| {
+                        crate::renderer::preedit::PreeditLine::new(
+                            preedit,
+                            (cursor.state.pos.row.0.max(0) as usize)
+                                .min(ctx.renderable_content.screen_lines.max(1) - 1),
+                            cursor.state.pos.col.0,
+                            ctx.renderable_content.columns.max(1),
+                        )
+                    })
+                } else {
+                    None
+                };
+                let cursor_preedit = preedit_line.is_some();
                 // OSC 12 wins; otherwise fall back to the named-color
                 // theme value. `Renderer::color`'s fallback (the
                 // indexed-color List) is not populated for the Cursor
@@ -4072,6 +4106,7 @@ impl Screen<'_> {
                     hovered_hyperlink,
                     hint_labels,
                     label_style_base,
+                    preedit_line,
                 });
             }
 
@@ -4199,6 +4234,13 @@ impl Screen<'_> {
                             }
                             _ => row,
                         };
+                        // Thread the composition only into its own
+                        // row: everything else renders untouched.
+                        let preedit_row = p
+                            .preedit_line
+                            .as_ref()
+                            .filter(|line| line.row == y)
+                            .map(|line| crate::grid_emit::PreeditRow { line });
                         crate::grid_emit::build_row_bg(
                             row,
                             cols,
@@ -4207,6 +4249,7 @@ impl Screen<'_> {
                             &p.term_colors,
                             row_sel,
                             &hint_scratch,
+                            preedit_row.as_ref(),
                             &mut bg_scratch,
                         );
                         let cursor_col_for_row = if p.cursor_visible
@@ -4232,6 +4275,7 @@ impl Screen<'_> {
                             p.cell_h,
                             row_sel,
                             &hint_scratch,
+                            preedit_row.as_ref(),
                             &font_library,
                             p.route_id,
                             cursor_col_for_row,
@@ -4271,6 +4315,29 @@ impl Screen<'_> {
                             p.visible_rows[y].dirty = false;
                         }
                     }
+                }
+
+                // The composition is painted into the row's CPU
+                // cells, so its row must rebuild whenever the overlay
+                // exists, moved, or just disappeared — even when
+                // terminal damage says nothing changed (the text under
+                // it didn't; the overlay did). Cheap: at most two rows.
+                if p.is_active {
+                    let current = p.preedit_line.as_ref().map(|line| line.row);
+                    for row in [
+                        self.last_preedit_row
+                            .filter(|_| self.last_preedit_row != current),
+                        current,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    {
+                        if row < p.visible_rows.len() {
+                            rebuild_row(p, row, grid, rasterizer);
+                            p.visible_rows[row].dirty = false;
+                        }
+                    }
+                    self.last_preedit_row = current;
                 }
 
                 // Atlas-full recovery: the backend cleared the atlas

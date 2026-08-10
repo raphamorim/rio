@@ -39,7 +39,21 @@ use smallvec::SmallVec;
 /// cells. The renderer reads via `extras.get(&id)`.
 pub(crate) type ExtrasMap = FxHashMap<u16, Extras>;
 
+use crate::renderer::preedit::{PreeditCaret, PreeditCell, PreeditLine};
 use crate::renderer::Renderer;
+
+/// The IME composition threaded into a row build. Only handed to the
+/// emit passes for the single row the composition lives on.
+pub struct PreeditRow<'a> {
+    pub line: &'a PreeditLine,
+}
+
+impl PreeditRow<'_> {
+    #[inline]
+    fn cell(&self, col: usize) -> Option<PreeditCell> {
+        self.line.cell(col)
+    }
+}
 
 #[inline(always)]
 pub(crate) fn resolve_style(style_table: &[Style], sq: Square) -> Style {
@@ -399,6 +413,15 @@ enum DecorationStyle {
     DashedUnderline = 3,
     CurlyUnderline = 4,
     Strikethrough = 5,
+    /// Thick underline marking the IME caret on a composition cell.
+    /// Drawn in the terminal background color so it reads against the
+    /// cursor-colored block — a beam there would be cursor-on-cursor
+    /// and invisible.
+    ImeCaretUnderline = 6,
+    /// Vertical beam marking the IME caret one cell past the
+    /// composition, where there is no block behind it; drawn in the
+    /// cursor color against the normal background.
+    ImeCaretBeam = 7,
 }
 
 /// Sentinel font_id base for decoration sprites. Real font_ids come
@@ -889,6 +912,22 @@ fn rasterize_decoration(
             let bearing_y = center_from_bottom as i16 + (thickness as i16 + 1) / 2;
             (bytes, cell_w, thickness, bearing_y)
         }
+        DecorationStyle::ImeCaretUnderline => {
+            // Double-thickness underline at the underline position —
+            // the ghostty presentation for the caret inside a
+            // composition.
+            let h = (thickness * 2).max(2).min(cell_h);
+            let bytes = vec![0xFFu8; (cell_w * h) as usize];
+            let bearing_y = (h + underline_gap_below(cell_h)) as i16;
+            (bytes, cell_w, h, bearing_y)
+        }
+        DecorationStyle::ImeCaretBeam => {
+            // Full-height beam pinned to the cell's left edge, in the
+            // same visual weight as the underline decorations.
+            let w = thickness.max(1).min(cell_w);
+            let bytes = vec![0xFFu8; (w * cell_h) as usize];
+            (bytes, w, cell_h, cell_h as i16)
+        }
     }
 }
 
@@ -1059,18 +1098,30 @@ pub fn build_row_bg(
     term_colors: &TermColors,
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
+    preedit: Option<&PreeditRow<'_>>,
     bg_scratch: &mut Vec<CellBg>,
 ) {
     bg_scratch.clear();
 
-    // Fast path: row has no selection and no color-changing hints
-    // (HyperlinkHover only contributes an underline, never bg). The
-    // overwhelming majority of rows in idle terminals hit this path —
-    // strip the per-cell `cell_in_row_sel` / `cell_in_row_hints`
-    // checks and just walk cells.
+    // Block fill behind every composition cell — the same resolved
+    // cursor color the cursor-block uniforms use (OSC 12 wins, then
+    // the theme), so the block and the forced block cursor on the
+    // first composition cell can never be two different colors.
+    let preedit_block_bg = preedit.map(|_| {
+        normalized_to_u8(
+            term_colors[NamedColor::Cursor as usize]
+                .unwrap_or(renderer.named_colors.cursor),
+        )
+    });
+
+    // Fast path: row has no selection, no color-changing hints, and no
+    // composition. (HyperlinkHover only contributes an underline,
+    // never bg.) The overwhelming majority of rows in idle terminals
+    // hit this path — strip the per-cell `cell_in_row_sel` /
+    // `cell_in_row_hints` checks and just walk cells.
     let has_sel = row_sel.is_some();
     let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
-    if !has_sel && !has_color_hints {
+    if !has_sel && !has_color_hints && preedit.is_none() {
         bg_scratch.reserve(cols);
         for x in 0..cols {
             let sq = row[Column(x)];
@@ -1103,7 +1154,17 @@ pub fn build_row_bg(
         let sq = row[Column(x)];
         let style = resolve_style(style_table, sq);
         let col = x as u16;
-        let rgba = if cell_in_row_sel(row_sel, col) {
+        // The composition wins over selection / hint backgrounds: the
+        // user is actively typing here, that signal reads first. Both
+        // Start and Continuation cells take the fill so wide clusters
+        // span one continuous block.
+        let preedit_here = match (preedit, preedit_block_bg) {
+            (Some(p), Some(bg)) if p.cell(x).is_some() => Some(bg),
+            _ => None,
+        };
+        let rgba = if let Some(bg) = preedit_here {
+            bg
+        } else if cell_in_row_sel(row_sel, col) {
             // Selection bg wins over hint bg and the cell's own bg,
             // matching `generic.zig:2775-2800` (selection check
             // runs before highlight check).
@@ -1629,6 +1690,7 @@ pub fn build_row_fg(
     cell_h: f32,
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
+    preedit: Option<&PreeditRow<'_>>,
     font_library: &FontLibrary,
     route_id: usize,
     // Column of the cursor on this row, or `None` if the cursor isn't
@@ -1683,6 +1745,7 @@ pub fn build_row_fg(
         thickness,
         row_sel,
         row_hints,
+        preedit,
         fg_scratch,
     );
 
@@ -1698,6 +1761,12 @@ pub fn build_row_fg(
     let mut x: usize = 0;
     while x < max {
         let sq = row[Column(x)];
+        // Composition cells emit in their own pass below, shaped per
+        // grapheme cluster so they can't ligate with terminal text.
+        if preedit.is_some_and(|p| p.cell(x).is_some()) {
+            x += 1;
+            continue;
+        }
         if is_run_breaker(sq) {
             x += 1;
             continue;
@@ -1908,6 +1977,11 @@ pub fn build_row_fg(
         // Extend the run while (font_id, style_flags) match.
         let mut end = x + 1;
         while end < cols {
+            // Stop before stepping onto composition cells — those are
+            // taken over by the preedit pass.
+            if preedit.is_some_and(|p| p.cell(end).is_some()) {
+                break;
+            }
             let sq2 = row[Column(end)];
             if is_run_breaker(sq2) {
                 break;
@@ -2201,6 +2275,34 @@ pub fn build_row_fg(
         x = end;
     }
 
+    // Phase 2.5: composition pass. Every grapheme cluster shapes as
+    // its own run — never ligating with the surrounding terminal text
+    // — with the foreground forced to the terminal background and
+    // BOOL_IS_CURSOR_GLYPH set, so the glyph reads inverted against
+    // the cursor-colored block painted in `build_row_bg`.
+    if let Some(pre) = preedit {
+        let text_fg = normalized_to_u8(renderer.named_colors.background.0);
+        for col in pre.line.start_col..pre.line.end_col().min(cols) {
+            let Some(PreeditCell::Start(cluster)) = pre.cell(col) else {
+                continue;
+            };
+            emit_preedit_cluster(
+                pre.line.cluster(cluster),
+                col as u16,
+                y,
+                rasterizer,
+                grid,
+                font_library,
+                route_id,
+                size_u16,
+                size_bucket,
+                cell_h,
+                text_fg,
+                fg_scratch,
+            );
+        }
+    }
+
     // Phase 3: strikethrough pass. Emitted last so the strike overlays
     // the glyph.
     emit_strikethroughs(
@@ -2216,8 +2318,207 @@ pub fn build_row_fg(
         thickness,
         row_sel,
         row_hints,
+        preedit,
         fg_scratch,
     );
+
+    // Phase 4: the IME caret, topmost element of the composition.
+    // On a composition cell it must not be a beam — cursor color on
+    // the cursor-colored block is invisible — so it renders as a
+    // thick underline in the text color instead; past the end of the
+    // composition there is no block, so a beam in the cursor color
+    // reads correctly there.
+    if let Some(pre) = preedit {
+        let (col, style, color) = match pre.line.caret {
+            PreeditCaret::OnCell(col) => (
+                col,
+                DecorationStyle::ImeCaretUnderline,
+                normalized_to_u8(renderer.named_colors.background.0),
+            ),
+            PreeditCaret::PastEnd(col) => (
+                col,
+                DecorationStyle::ImeCaretBeam,
+                normalized_to_u8(
+                    term_colors[NamedColor::Cursor as usize]
+                        .unwrap_or(renderer.named_colors.cursor),
+                ),
+            ),
+        };
+        if col < cols {
+            emit_preedit_caret(
+                col as u16, y, grid, cell_w_u32, cell_h_u32, thickness, style, color,
+                fg_scratch,
+            );
+        }
+    }
+}
+
+/// Shape one grapheme cluster as a standalone run and emit its glyphs
+/// at `(grid_col, y)` with a forced foreground color. Composition
+/// cells always shape in the plain style: composing text shouldn't
+/// inherit bold/italic from whatever prompt segment sat under the
+/// cursor.
+#[allow(clippy::too_many_arguments)]
+fn emit_preedit_cluster(
+    cluster: &str,
+    grid_col: u16,
+    y: u16,
+    rasterizer: &mut GridGlyphRasterizer,
+    grid: &mut GridRenderer,
+    font_library: &FontLibrary,
+    route_id: usize,
+    size_u16: u16,
+    size_bucket: u16,
+    cell_h: f32,
+    text_fg: [u8; 4],
+    fg_scratch: &mut Vec<CellText>,
+) {
+    let Some(base) = cluster.chars().next() else {
+        return;
+    };
+    let run_style_flags = 0u8;
+    let (font_id, is_emoji) =
+        rasterizer.resolve_font(base, run_style_flags, font_library, route_id);
+
+    #[cfg(target_os = "macos")]
+    {
+        rasterizer.run_utf16_scratch.clear();
+        rasterizer.run_cell_starts.clear();
+        rasterizer
+            .run_cell_starts
+            .push(rasterizer.run_utf16_scratch.len() as u32);
+        let mut buf = [0u16; 2];
+        for ch in cluster.chars() {
+            rasterizer
+                .run_utf16_scratch
+                .extend_from_slice(ch.encode_utf16(&mut buf));
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        rasterizer.run_str_scratch.clear();
+        rasterizer.run_str_scratch.extend(cluster.chars());
+    }
+
+    // Composition runs get their own cache namespace (the leading
+    // sentinel): sharing keys with the grid's per-cell scheme would
+    // require proving the two hash layouts can never collide across
+    // every combining/cluster shape, and the composition holds a
+    // handful of entries at most — disjointness is cheaper than the
+    // proof.
+    rasterizer.run_hasher = rapidhash::fast::RapidHasher::default();
+    rasterizer.run_hasher.write_u32(0x5052_4545); // "PREE"
+    for (i, ch) in cluster.chars().enumerate() {
+        rasterizer.run_hasher.write_u32(ch as u32);
+        rasterizer.run_hasher.write_u32(i as u32);
+    }
+    rasterizer.run_hasher.write_u32(font_id);
+    rasterizer.run_hasher.write_u16(size_bucket);
+    let hash = rasterizer.run_hasher.finish();
+
+    let ascent_px = if run_cache_get(&mut rasterizer.run_cache, hash).is_some() {
+        rasterizer
+            .ascent_cache
+            .get(&(font_id, size_bucket))
+            .copied()
+            .unwrap_or(0)
+    } else {
+        #[cfg(target_os = "macos")]
+        let shaped_opt =
+            shape_run_ct(rasterizer, font_id, size_u16, size_bucket, font_library);
+        #[cfg(not(target_os = "macos"))]
+        let shaped_opt =
+            shape_run_swash(rasterizer, font_id, size_u16, size_bucket, font_library);
+        let Some((glyphs, ascent_px)) = shaped_opt else {
+            return;
+        };
+        run_cache_put(&mut rasterizer.run_cache, RunCacheEntry { hash, glyphs });
+        ascent_px
+    };
+
+    let (synthetic_bold, synthetic_italic) =
+        rasterizer.get_synthesis(font_id, font_library);
+
+    let mut glyph_ids: SmallVec<[u16; 4]> = SmallVec::new();
+    {
+        let glyphs =
+            run_cache_get(&mut rasterizer.run_cache, hash).expect("just inserted");
+        for g in glyphs {
+            glyph_ids.push(g.id);
+        }
+    }
+
+    for glyph_id in glyph_ids {
+        let Some((_, slot, is_color)) = ensure_glyph_by_id(
+            rasterizer,
+            grid,
+            font_id,
+            glyph_id,
+            size_bucket,
+            size_u16,
+            cell_h,
+            ascent_px,
+            is_emoji,
+            synthetic_italic,
+            synthetic_bold,
+        ) else {
+            continue;
+        };
+        if slot.w == 0 || slot.h == 0 {
+            continue;
+        }
+        let (atlas, color) = if is_color {
+            (CellText::ATLAS_COLOR, [255, 255, 255, 255])
+        } else {
+            (CellText::ATLAS_GRAYSCALE, text_fg)
+        };
+        fg_scratch.push(CellText {
+            glyph_pos: [slot.x as u32, slot.y as u32],
+            glyph_size: [slot.w as u32, slot.h as u32],
+            bearings: [slot.bearing_x, slot.bearing_y],
+            grid_pos: [grid_col, y],
+            color,
+            atlas,
+            // We computed the inverse foreground ourselves; the shader
+            // must not swap it again on the forced-cursor cell.
+            bools: CellText::BOOL_IS_CURSOR_GLYPH,
+            page: slot.page,
+            _pad: 0,
+        });
+    }
+}
+
+/// Emit the IME caret decoration sprite at `(col, y)`.
+#[allow(clippy::too_many_arguments)]
+fn emit_preedit_caret(
+    col: u16,
+    y: u16,
+    grid: &mut GridRenderer,
+    cell_w: u32,
+    cell_h: u32,
+    thickness: u32,
+    style: DecorationStyle,
+    color: [u8; 4],
+    fg_scratch: &mut Vec<CellText>,
+) {
+    let Some(slot) = ensure_decoration_slot(grid, style, cell_w, cell_h, thickness)
+    else {
+        return;
+    };
+    if slot.w == 0 || slot.h == 0 {
+        return;
+    }
+    fg_scratch.push(CellText {
+        glyph_pos: [slot.x as u32, slot.y as u32],
+        glyph_size: [slot.w as u32, slot.h as u32],
+        bearings: [slot.bearing_x, slot.bearing_y],
+        grid_pos: [col, y],
+        color,
+        atlas: CellText::ATLAS_GRAYSCALE,
+        bools: CellText::BOOL_IS_CURSOR_GLYPH,
+        page: slot.page,
+        _pad: 0,
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2234,9 +2535,15 @@ fn emit_underlines(
     thickness: u32,
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
+    preedit: Option<&PreeditRow<'_>>,
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
+        // Composing text takes no decorations from whatever
+        // was underneath it.
+        if preedit.is_some_and(|p| p.cell(x).is_some()) {
+            continue;
+        }
         let sq = row[Column(x)];
         let style = resolve_style(style_table, sq);
         let col = x as u16;
@@ -2305,9 +2612,15 @@ fn emit_strikethroughs(
     thickness: u32,
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
+    preedit: Option<&PreeditRow<'_>>,
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
+        // Composing text takes no decorations from whatever
+        // was underneath it.
+        if preedit.is_some_and(|p| p.cell(x).is_some()) {
+            continue;
+        }
         let sq = row[Column(x)];
         let style = resolve_style(style_table, sq);
         if !style.flags.contains(StyleFlags::STRIKEOUT) {

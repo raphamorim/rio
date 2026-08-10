@@ -27,7 +27,6 @@ pub struct Cursor {
     pub state: CursorState,
     pub content: char,
     pub content_ref: char,
-    pub is_ime_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -145,7 +144,6 @@ impl RenderableContent {
             content: config_cursor.shape.into(),
             content_ref: config_cursor.shape.into(),
             state: CursorState::new(config_cursor.shape.into()),
-            is_ime_enabled: false,
         };
         Self::new(cursor)
     }

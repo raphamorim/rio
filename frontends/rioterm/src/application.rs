@@ -1937,36 +1937,49 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             Some(Preedit::new(text, cursor_offset.map(|offset| offset.0)))
                         };
 
-                        if route.window.screen.context_manager.current().ime.preedit()
-                            != preedit.as_ref()
-                        {
+                        if route.window.screen.ime.preedit() != preedit.as_ref() {
+                            route.window.screen.ime.set_preedit(preedit);
+                            // The overlay lives in the grid's CPU cell
+                            // buffers: force the current panel to
+                            // repaint so the composition (or its
+                            // removal) is visible this frame, not
+                            // whenever the terminal next damages.
                             route
                                 .window
                                 .screen
                                 .context_manager
                                 .current_mut()
-                                .ime
-                                .set_preedit(preedit);
+                                .renderable_content
+                                .pending_update
+                                .set_terminal_damage(
+                                    rio_backend::event::TerminalDamage::Full,
+                                );
                             route.request_redraw();
                         }
                     }
                     Ime::Enabled => {
-                        route
-                            .window
-                            .screen
-                            .context_manager
-                            .current_mut()
-                            .ime
-                            .set_enabled(true);
+                        route.window.screen.ime.set_enabled(true);
                     }
                     Ime::Disabled => {
-                        route
-                            .window
-                            .screen
-                            .context_manager
-                            .current_mut()
-                            .ime
-                            .set_enabled(false);
+                        // Disabling wipes any live preedit (input
+                        // source switched mid-composition): damage and
+                        // repaint like the Preedit arm, or the block
+                        // ghosts on screen until unrelated damage.
+                        let had_preedit = route.window.screen.ime.preedit().is_some();
+                        route.window.screen.ime.set_enabled(false);
+                        if had_preedit {
+                            route
+                                .window
+                                .screen
+                                .context_manager
+                                .current_mut()
+                                .renderable_content
+                                .pending_update
+                                .set_terminal_damage(
+                                    rio_backend::event::TerminalDamage::Full,
+                                );
+                            route.request_redraw();
+                        }
                     }
                 }
             }

@@ -7,7 +7,6 @@ use crate::context::title::{
 };
 use crate::event::sync::FairMutex;
 use crate::event::{Msg, RioEvent};
-use crate::ime::Ime;
 pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
 use crate::performer::{self, Machine};
@@ -57,7 +56,6 @@ pub struct Context<T: EventListener> {
     pub rich_text_id: usize,
     pub dimension: ContextDimension,
     pub title: ContextTitle,
-    pub ime: Ime,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
 
@@ -116,7 +114,6 @@ impl<T: EventListener> Context<T> {
             state: self.renderable_content.cursor.state.new_from_self(),
             content: self.renderable_content.cursor.content_ref,
             content_ref: self.renderable_content.cursor.content_ref,
-            is_ime_enabled: false,
         }
     }
 }
@@ -190,7 +187,6 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         rich_text_id,
         dimension,
         title: ContextTitle::default(),
-        ime: Ime::new(),
         _io_thread: None,
     }
 }
@@ -349,7 +345,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             renderable_content: RenderableContent::new(cursor_state.0.clone()),
             dimension,
             title: ContextTitle::default(),
-            ime: Ime::new(),
             _io_thread: io_thread,
         })
     }

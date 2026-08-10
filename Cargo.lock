@@ -4045,6 +4045,7 @@ dependencies = [
  "tinyvec",
  "tracing",
  "tracing-subscriber",
+ "unicode-segmentation",
  "unicode-width-16",
  "url",
  "wgpu",
