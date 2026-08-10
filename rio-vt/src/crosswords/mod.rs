@@ -1461,6 +1461,18 @@ impl<U: EventListener> Crosswords<U> {
     ) {
         use crate::crosswords::square::Wide;
         let columns = self.grid.columns();
+        // A repaired cell takes the op's blank but keeps WRAPLINE: the
+        // flag lives on the row's last cell — often a wide pair's
+        // spacer — and marks the logical line for reflow/selection.
+        // The op never targeted it; destroying it would turn a soft
+        // wrap into a hard break on resize.
+        let repair = |cell: &mut crate::crosswords::square::Square| {
+            let wrapline = cell.wrapline();
+            *cell = blank;
+            if wrapline {
+                cell.set_wrapline(true);
+            }
+        };
         for col in 0..columns {
             match self.grid[line][Column(col)].wide() {
                 Wide::Wide => {
@@ -1470,15 +1482,20 @@ impl<U: EventListener> Crosswords<U> {
                             Wide::Spacer
                         );
                     if !has_spacer {
-                        self.grid[line][Column(col)] = blank;
+                        repair(&mut self.grid[line][Column(col)]);
                     }
                 }
                 Wide::Spacer => {
                     let has_lead = col > 0
                         && matches!(self.grid[line][Column(col - 1)].wide(), Wide::Wide);
                     if !has_lead {
-                        self.grid[line][Column(col)] = blank;
+                        repair(&mut self.grid[line][Column(col)]);
                     }
+                }
+                // A shift (DCH) can drag a row-final `LeadingSpacer`
+                // into the interior, where it is meaningless padding.
+                Wide::LeadingSpacer if col + 1 < columns => {
+                    self.grid[line][Column(col)].set_wide(Wide::Narrow);
                 }
                 _ => {}
             }
@@ -1491,7 +1508,12 @@ impl<U: EventListener> Crosswords<U> {
             let prev = &mut self.grid[line - 1i32][last];
             if matches!(prev.wide(), Wide::LeadingSpacer) && !col0_is_wide {
                 prev.set_wide(Wide::Narrow);
-                self.damage.damage_line((line.0 - 1).max(0) as usize);
+                // History rows (a row-0 predecessor) aren't
+                // representable in the damage vec; skip, matching
+                // `write_cell`'s revert.
+                if line.0 > 0 {
+                    self.damage.damage_line((line.0 - 1) as usize);
+                }
             }
         }
     }
@@ -3739,6 +3761,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 for cell in &mut self.grid[cursor.row][..end] {
                     *cell = blank;
                 }
+                self.repair_wide_seams(cursor.row, blank);
 
                 let range = Line(0)..=cursor.row;
                 self.selection =
@@ -3753,6 +3776,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 for cell in &mut self.grid[cursor.row][cursor.col..] {
                     *cell = blank;
                 }
+                self.repair_wide_seams(cursor.row, blank);
 
                 if (cursor.row.0 as usize) < screen_lines - 1 {
                     self.grid.reset_region((cursor.row + 1)..);
@@ -7430,6 +7454,61 @@ mod tests {
         let row = Line(0);
         assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
         assert_eq!(cw.grid.cursor.pos.col, Column(0));
+    }
+
+    /// Repairing a stranded spacer at the row's last column must keep
+    /// WRAPLINE: the flag marks the logical line for reflow, and the
+    /// op never targeted that cell.
+    #[test]
+    fn seam_repair_preserves_wrapline() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(4, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{5BBD}'); // Wide at 2, Spacer at 3
+        cw.input('b'); // wraps; WRAPLINE lands on the spacer at (0,3)
+        assert!(cw.grid[Line(0)][Column(3)].wrapline());
+        cw.goto(Line(0), Column(2));
+        cw.erase_chars(Column(1)); // blank the lead; sweep repairs the spacer
+        assert_eq!(cw.grid[Line(0)][Column(3)].wide(), Wide::Narrow);
+        assert!(cw.grid[Line(0)][Column(3)].wrapline());
+    }
+
+    /// ED partial-row clears split pairs at the cursor boundary too.
+    #[test]
+    fn clear_screen_partial_rows_repair_seams() {
+        use crate::performer::handler::Handler;
+        // Above: cursor on the lead → clears [..=0], strands the spacer.
+        let mut cw = new_term(6, 3);
+        cw.input('\u{5BBD}'); // Wide at 0, Spacer at 1
+        cw.goto(Line(0), Column(0));
+        cw.clear_screen(ClearMode::Above);
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Narrow);
+
+        // Below: cursor on the spacer → clears [2..], strands the lead.
+        let mut cw = new_term(6, 3);
+        cw.input('a');
+        cw.input('\u{5BBD}'); // Wide at 1, Spacer at 2
+        cw.goto(Line(0), Column(2));
+        cw.clear_screen(ClearMode::Below);
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), '\0');
+    }
+
+    /// DCH dragging a row-final LeadingSpacer into the interior leaves
+    /// meaningless padding; the sweep reverts it to narrow.
+    #[test]
+    fn delete_chars_normalizes_interior_leading_spacer() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(4, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{5BBD}'); // no room: LeadingSpacer at (0,3), pair wraps
+        assert_eq!(cw.grid[Line(0)][Column(3)].wide(), Wide::LeadingSpacer);
+        cw.goto(Line(0), Column(0));
+        cw.delete_chars(1); // LeadingSpacer shifts to col 2
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::Narrow);
     }
 
     /// ECH erasing only the spacer half of a wide pair must clear the
