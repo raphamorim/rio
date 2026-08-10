@@ -45,6 +45,7 @@ parking_lot = { workspace = true }
 serde = { workspace = true }
 taffy = { version = "0.10.1", features = ["flexbox","grid"] }
 teletypewriter = { workspace = true }
+unicode-segmentation = "1.12.0"
 unicode-width = { workspace = true }
 url = { workspace = true }
 smallvec = { workspace = true }

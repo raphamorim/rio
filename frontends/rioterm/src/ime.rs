@@ -1,4 +1,3 @@
-use unicode_width::UnicodeWidthChar;
 #[derive(Debug, Default)]
 pub struct Ime {
     /// Whether the IME is enabled.
@@ -45,32 +44,48 @@ pub struct Preedit {
     /// The preedit text.
     pub text: String,
 
-    /// Byte offset for cursor start into the preedit text.
+    /// Byte offset of the IME caret into the preedit text.
     ///
-    /// `None` means that the cursor is invisible.
+    /// `None` means the caret is at the end of the text. Offsets that
+    /// don't land on a char boundary (macOS reports UTF-16 ranges that
+    /// can split a surrogate pair) are dropped rather than trusted —
+    /// slicing on one would panic downstream.
     pub cursor_byte_offset: Option<usize>,
-
-    /// The cursor offset from the end of the preedit in char width.
-    pub cursor_end_offset: Option<usize>,
 }
 
 impl Preedit {
     pub fn new(text: String, cursor_byte_offset: Option<usize>) -> Self {
-        let cursor_end_offset = if let Some(byte_offset) = cursor_byte_offset {
-            // Convert byte offset into char offset.
-            let cursor_end_offset = text[byte_offset..]
-                .chars()
-                .fold(0, |acc, ch| acc + ch.width().unwrap_or(1));
-
-            Some(cursor_end_offset)
-        } else {
-            None
-        };
-
+        let cursor_byte_offset =
+            cursor_byte_offset.filter(|&offset| text.is_char_boundary(offset));
         Self {
             text,
             cursor_byte_offset,
-            cursor_end_offset,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preedit_new_rejects_invalid_byte_offset() {
+        // Byte 1 is inside 啊's UTF-8 encoding: not a char boundary.
+        let preedit = Preedit::new("啊a".to_string(), Some(1));
+        assert!(preedit.cursor_byte_offset.is_none());
+        // Boundary offsets survive, including one-past-the-end.
+        let preedit = Preedit::new("啊a".to_string(), Some(3));
+        assert_eq!(preedit.cursor_byte_offset, Some(3));
+        let preedit = Preedit::new("啊a".to_string(), Some(4));
+        assert_eq!(preedit.cursor_byte_offset, Some(4));
+    }
+
+    #[test]
+    fn set_preedit_clears_on_none() {
+        let mut ime = Ime::new();
+        ime.set_preedit(Some(Preedit::new("a".to_string(), Some(1))));
+        assert!(ime.preedit().is_some());
+        ime.set_preedit(None);
+        assert!(ime.preedit().is_none());
     }
 }

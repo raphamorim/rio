@@ -4,6 +4,7 @@ pub mod confirm_quit;
 pub mod custom_cursor;
 pub mod helpers;
 pub mod island;
+pub mod preedit;
 pub mod scrollbar;
 pub mod search;
 pub mod trail_cursor;
@@ -293,21 +294,6 @@ impl Renderer {
         for (_key, grid_context) in grid.contexts_mut().iter_mut() {
             let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
-
-            let mut has_ime = false;
-            if let Some(preedit) = context.ime.preedit() {
-                if let Some(content) = preedit.text.chars().next() {
-                    context.renderable_content.cursor.content = content;
-                    context.renderable_content.cursor.is_ime_enabled = true;
-                    has_ime = true;
-                }
-            }
-
-            if !has_ime {
-                context.renderable_content.cursor.is_ime_enabled = false;
-                context.renderable_content.cursor.content =
-                    context.renderable_content.cursor.content_ref;
-            }
 
             let force_full_damage = has_active_changed || self.is_game_mode_enabled;
 
