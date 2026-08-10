@@ -1444,6 +1444,58 @@ impl<U: EventListener> Crosswords<U> {
     /// of its per-cell loop; the write is then a single packed store, and the
     /// cursor cell is resolved once (not twice) in the common narrow case.
     #[inline]
+    /// Repair wide-pair seams on `line` after a range mutation.
+    ///
+    /// A blanket blank (ECH / EL) or a cell shift (DCH / ICH) can
+    /// split a wide pair at the edges of the affected range: a `Wide`
+    /// lead stranded without its `Spacer`, a `Spacer` stranded without
+    /// its lead, or a `LeadingSpacer` at the end of the previous row
+    /// whose wide char at column 0 was cleared. Mirrors `write_cell`'s
+    /// single-cell cleanup: a stranded half is cleared to `blank`, a
+    /// stranded `LeadingSpacer` reverts to narrow. Left-to-right, so a
+    /// cleared lead correctly strands (and clears) the spacer after it.
+    fn repair_wide_seams(
+        &mut self,
+        line: Line,
+        blank: crate::crosswords::square::Square,
+    ) {
+        use crate::crosswords::square::Wide;
+        let columns = self.grid.columns();
+        for col in 0..columns {
+            match self.grid[line][Column(col)].wide() {
+                Wide::Wide => {
+                    let has_spacer = col + 1 < columns
+                        && matches!(
+                            self.grid[line][Column(col + 1)].wide(),
+                            Wide::Spacer
+                        );
+                    if !has_spacer {
+                        self.grid[line][Column(col)] = blank;
+                    }
+                }
+                Wide::Spacer => {
+                    let has_lead = col > 0
+                        && matches!(self.grid[line][Column(col - 1)].wide(), Wide::Wide);
+                    if !has_lead {
+                        self.grid[line][Column(col)] = blank;
+                    }
+                }
+                _ => {}
+            }
+        }
+        // A wide char at column 0 pairs with a `LeadingSpacer` closing
+        // the previous row; without it the spacer is stale padding.
+        if line != self.grid.topmost_line() {
+            let last = self.grid.last_column();
+            let col0_is_wide = matches!(self.grid[line][Column(0)].wide(), Wide::Wide);
+            let prev = &mut self.grid[line - 1i32][last];
+            if matches!(prev.wide(), Wide::LeadingSpacer) && !col0_is_wide {
+                prev.set_wide(Wide::Narrow);
+                self.damage.damage_line((line.0 - 1).max(0) as usize);
+            }
+        }
+    }
+
     fn write_cell(&mut self, c: char, template: crate::crosswords::square::Square) {
         use crate::crosswords::square::{Square, Wide};
 
@@ -2892,6 +2944,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[start..end] {
             *cell = blank;
         }
+        self.repair_wide_seams(line, blank);
         self.clip_atlas_placements(line.0, line.0 + 1, start.0, end.0);
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
@@ -2925,6 +2978,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[end..] {
             *cell = blank;
         }
+        self.repair_wide_seams(line, blank);
         // Image cells in the shifted tail stop showing their slices
         // (placement-model approximation, like other placement-based
         // terminals).
@@ -2972,6 +3026,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         for cell in &mut row[source.0..destination] {
             *cell = blank;
         }
+        self.repair_wide_seams(line, blank);
         // Placement-model approximation: image cells from the insert
         // point onward stop showing their slices.
         let columns = self.grid.columns();
@@ -4023,6 +4078,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             *cell = blank;
         }
 
+        self.repair_wide_seams(point.row, blank);
         let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
         self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
         self.clip_atlas_placements(point.row.0, point.row.0 + 1, left.0, right.0);
@@ -7374,6 +7430,85 @@ mod tests {
         let row = Line(0);
         assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
         assert_eq!(cw.grid.cursor.pos.col, Column(0));
+    }
+
+    /// ECH erasing only the spacer half of a wide pair must clear the
+    /// stranded lead too, mirroring `write_cell`'s overwrite cleanup.
+    #[test]
+    fn erase_chars_repairs_split_wide_pair() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 2);
+        cw.input('\u{5BBD}'); // 宽: Wide at 0, Spacer at 1
+        cw.goto(Line(0), Column(1));
+        cw.erase_chars(Column(1)); // erase just the spacer
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), '\0');
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Narrow);
+
+        // And the mirror case: erase through the lead, strand the spacer.
+        let mut cw = new_term(6, 2);
+        cw.input('a');
+        cw.input('\u{5BBD}'); // Wide at 1, Spacer at 2
+        cw.goto(Line(0), Column(0));
+        cw.erase_chars(Column(2)); // erases 'a' + the lead
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(2)].c(), '\0');
+    }
+
+    /// DCH shifting a spacer into a position whose lead was deleted
+    /// must not leave the orphan behind.
+    #[test]
+    fn delete_chars_repairs_orphaned_spacer() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 2);
+        cw.input('a');
+        cw.input('\u{5BBD}'); // a at 0, Wide at 1, Spacer at 2
+        cw.goto(Line(0), Column(1));
+        cw.delete_chars(1); // deletes the lead; spacer shifts to col 1
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), '\0');
+    }
+
+    /// ICH pushing a wide pair so its lead lands on the last column
+    /// (spacer pushed off the row) must clear the stranded lead.
+    #[test]
+    fn insert_blank_repairs_pair_pushed_off_the_edge() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(4, 2);
+        cw.goto(Line(0), Column(2));
+        cw.input('\u{5BBD}'); // Wide at 2, Spacer at 3
+        cw.goto(Line(0), Column(0));
+        cw.insert_blank(1); // lead lands at 3, spacer falls off
+        assert_eq!(cw.grid[Line(0)][Column(3)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(3)].c(), '\0');
+    }
+
+    /// EL to the left of the cursor erases the lead of a pair the
+    /// cursor sits on; the spacer past the cleared range must go too.
+    #[test]
+    fn clear_line_left_repairs_stranded_spacer() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 2);
+        cw.input('\u{5BBD}'); // Wide at 0, Spacer at 1
+        cw.goto(Line(0), Column(0));
+        cw.clear_line(LineClearMode::Left); // clears only col 0
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), '\0');
+    }
+
+    /// Clearing the wide char at column 0 of a wrapped row must revert
+    /// the `LeadingSpacer` closing the previous row.
+    #[test]
+    fn clear_line_reverts_stale_leading_spacer() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(3, 3);
+        cw.input('a');
+        cw.input('a');
+        cw.input('\u{5BBD}'); // no room: LeadingSpacer at (0,2), pair on row 1
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::LeadingSpacer);
+        cw.goto(Line(1), Column(0));
+        cw.clear_line(LineClearMode::All);
+        assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::Narrow);
     }
 
     #[test]
