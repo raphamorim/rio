@@ -1140,7 +1140,9 @@ const RUN_BUCKET_COUNT: usize = 256;
 const RUN_BUCKET_SIZE: usize = 8;
 
 /// One shaped glyph. Same shape from both CoreText (macOS) and swash
-/// (non-macOS). `cluster` is a UTF-8 byte offset into the run string.
+/// (non-macOS). `cluster` is the shaping-buffer offset of the source
+/// cell: UTF-16 code units on macOS (CoreText string indices), UTF-8
+/// bytes elsewhere (swash `cluster.source.start`).
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)] // `x` / `y` / `advance` kept for future kerning-aware layout
 struct ShapedGlyph {

@@ -1868,6 +1868,11 @@ impl<U: EventListener> Crosswords<U> {
             let mut moved = base_snapshot;
             moved.set_wide(Wide::Wide);
             self.grid[new_row][Column(0)] = moved;
+            // IndexMut doesn't maintain the row's extras hint; without
+            // it, reclaim would sweep this cell's live slot.
+            if moved.extras_id().is_some() {
+                self.grid[new_row].has_extras = true;
+            }
 
             self.grid.cursor.pos.col = Column(1);
             self.write_at_cursor(' ');
@@ -2040,7 +2045,9 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Insert (overwriting) every extras id referenced by `row`'s
     /// cells into `extras`. Overwrite semantics are deliberate — when
-    /// extras data is mutated in place on the live grid (e.g., a
+    /// Live slots are immutable under interning (writers copy-on-
+    // write into fresh ids), so an overwrite here only ever swaps
+    // which immutable content a row's ids resolve to.
     /// zerowidth combining codepoint appended to an existing cell),
     /// the cell's row is marked dirty by the surrounding `IndexMut`
     /// write, so any other rows referencing the same id pick up the
@@ -2190,6 +2197,30 @@ impl<U: EventListener> Crosswords<U> {
         if !self.mode.contains(Mode::ALT_SCREEN) {
             // Set alt screen cursor to the current primary screen cursor.
             self.inactive_grid.cursor = self.grid.cursor.clone();
+
+            // Extras ids are local to a grid's table. If the template
+            // carries a hyperlink (OSC 8 open across the screen
+            // switch), re-intern it into the alt table; a foreign id
+            // would resolve against the wrong table on every cell the
+            // alt screen writes.
+            if let Some(id) = self.inactive_grid.cursor.template.extras_id() {
+                let hyperlink = self
+                    .grid
+                    .extras_table
+                    .get(id)
+                    .and_then(|extras| extras.hyperlink.clone());
+                let new_id = hyperlink.map(|hyperlink| {
+                    self.inactive_grid
+                        .alloc_extras(crate::crosswords::square::Extras {
+                            hyperlink: Some(hyperlink),
+                            ..Default::default()
+                        })
+                });
+                self.inactive_grid
+                    .cursor
+                    .template
+                    .set_extras_id(new_id.filter(|&id| id != 0));
+            }
 
             // Drop information about the primary screens saved cursor.
             self.grid.saved_cursor = self.grid.cursor.clone();
@@ -3334,6 +3365,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 column.0 = column.saturating_sub(1);
             }
 
+            // A bg-only cell reuses the extras-id bits for its color
+            // channel: reading them as an id would clone an unrelated
+            // slot onto this cell, and writing one back would corrupt
+            // the color. A combining mark with no base character has
+            // nothing to attach to — drop it.
+            if !matches!(
+                self.grid[row][column].content_tag(),
+                crate::crosswords::square::ContentTag::Codepoint
+            ) {
+                return;
+            }
             // Copy-on-write: slots are interned and shared — every
             // cell written under one OSC 8 template references the
             // same slot, so pushing into it in place would attach the
@@ -3346,10 +3388,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 .unwrap_or_default();
             extras.zerowidth.push(c);
             let id = self.grid.alloc_extras(extras);
-            let cell = &mut self.grid[row][column];
-            cell.set_extras_id(Some(id));
-            cell.insert_cell_flag(CellFlags::GRAPHEME);
-            self.grid[row].has_extras = true;
+            if id != 0 {
+                let cell = &mut self.grid[row][column];
+                cell.set_extras_id(Some(id));
+                cell.insert_cell_flag(CellFlags::GRAPHEME);
+                self.grid[row].has_extras = true;
+            }
+            // id == 0: slot space exhausted. Keep the cell's existing
+            // extras (hyperlink, earlier marks) rather than erasing
+            // them; only the new mark is lost.
             return;
         }
 
@@ -7639,6 +7686,54 @@ mod tests {
         assert_eq!(cw.grid.cursor.pos.row, Line(1));
         assert_eq!(cw.grid.cursor.pos.col, Column(2));
         assert!(!cw.grid.cursor.should_wrap);
+    }
+
+    /// A combining mark aimed at a bg-only cell must be dropped: those
+    /// cells store color where the extras id lives, so reading an id
+    /// there would clone an unrelated slot (someone's hyperlink) onto
+    /// the cell, and writing one back would corrupt the color.
+    #[test]
+    fn combining_mark_on_bg_only_cell_is_dropped() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 3);
+        // Keep an early slot id live so a garbage id would hit it.
+        let link = Hyperlink::new(None::<&str>, "https://x.example");
+        cw.set_hyperlink(Some(link));
+        cw.input('a');
+        cw.set_hyperlink(None);
+        // Colored bg-only blanks.
+        cw.terminal_attribute(Attr::Background(crate::config::colors::AnsiColor::Spec(
+            ColorRgb { r: 0, g: 0, b: 200 },
+        )));
+        cw.goto(Line(1), Column(0));
+        cw.erase_chars(Column(3));
+        let before = cw.grid[Line(1)][Column(0)];
+        assert!(!matches!(
+            before.content_tag(),
+            crate::crosswords::square::ContentTag::Codepoint
+        ));
+        // Mark lands after the blank at column 0.
+        cw.goto(Line(1), Column(1));
+        cw.input('\u{301}');
+        let after = cw.grid[Line(1)][Column(0)];
+        assert_eq!(after, before, "bg-only cell must be untouched");
+        assert!(!after.has_grapheme());
+    }
+
+    /// An OSC 8 hyperlink left open across an alt-screen switch must be
+    /// re-interned into the alt grid's table: extras ids are
+    /// table-local, and the seeded cursor template would otherwise
+    /// stamp a foreign id onto every alt-screen cell.
+    #[test]
+    fn hyperlink_crosses_alt_screen_into_the_alt_table() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 3);
+        let link = Hyperlink::new(None::<&str>, "https://alt.example");
+        cw.set_hyperlink(Some(link.clone()));
+        cw.swap_alt();
+        cw.input('x');
+        assert_eq!(cw.cell_hyperlink(Line(0), Column(0)), Some(link));
+        cw.swap_alt();
     }
 
     /// Identical extras content interns into one slot: the u16 id

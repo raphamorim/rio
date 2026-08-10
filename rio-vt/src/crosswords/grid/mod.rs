@@ -170,12 +170,10 @@ impl ExtrasTable {
         self.slots.get(id as usize)?.as_ref()
     }
 
-    pub fn get_mut(
-        &mut self,
-        id: crate::crosswords::square::ExtrasId,
-    ) -> Option<&mut crate::crosswords::square::Extras> {
-        self.slots.get_mut(id as usize)?.as_mut()
-    }
+    // NOTE: there is deliberately no `get_mut`. Slots are interned and
+    // shared by every cell with equal content; handing out `&mut`
+    // would let a writer edit all of them at once. Mutate by cloning,
+    // changing, and re-`alloc`ing (copy-on-write).
 
     /// Return the slot holding `extras`, interning by content: repeat
     /// content reuses its existing slot, new content allocates one.
@@ -235,13 +233,6 @@ impl ExtrasTable {
     // interned and may be referenced by any number of cells; the only
     // safe reclamation is the mark-and-sweep (`sweep_unmarked`), which
     // proves a slot unreferenced before releasing it.
-
-    pub fn clear(&mut self) {
-        self.slots.clear();
-        self.slots.push(None);
-        self.free.clear();
-        self.lookup.clear();
-    }
 }
 
 impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
