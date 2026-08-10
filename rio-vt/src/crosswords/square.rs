@@ -199,7 +199,7 @@ pub type ExtrasId = u16;
 
 /// Storage for the rare per-cell data that used to live inside `CellExtra`.
 /// Allocated only for cells that need it; pooled in a `Vec` on the grid.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Extras {
     pub zerowidth: Vec<char>,
     pub hyperlink: Option<Hyperlink>,
