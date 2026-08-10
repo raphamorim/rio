@@ -98,6 +98,10 @@ bitflags! {
         const REPORT_ALL_KEYS_AS_ESC  = 1 << 21;
         const REPORT_ASSOCIATED_TEXT  = 1 << 22;
         const MOUSE_REPORT_X10        = 1 << 23;
+        /// DEC private mode 2027: grapheme cluster processing. Shared
+        /// across main/alt screens (the mode lives on the terminal,
+        /// not the grid), matching ghostty and contour.
+        const GRAPHEME_CLUSTER        = 1 << 24;
         const MOUSE_MODE = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits() | Self::MOUSE_REPORT_X10.bits();
         const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
                                       | Self::REPORT_EVENT_TYPES.bits()
@@ -2682,6 +2686,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
+            NamedPrivateMode::GraphemeCluster => self.mode.insert(Mode::GRAPHEME_CLUSTER),
             NamedPrivateMode::SyncUpdate => (),
         }
     }
@@ -2750,6 +2755,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
+            NamedPrivateMode::GraphemeCluster => self.mode.remove(Mode::GRAPHEME_CLUSTER),
             NamedPrivateMode::SyncUpdate => (),
         }
     }
@@ -2798,6 +2804,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
                 NamedPrivateMode::BracketedPaste => {
                     self.mode.contains(Mode::BRACKETED_PASTE).into()
+                }
+                NamedPrivateMode::GraphemeCluster => {
+                    if self.mode.contains(Mode::GRAPHEME_CLUSTER) {
+                        ModeState::Set
+                    } else {
+                        ModeState::Reset
+                    }
                 }
                 NamedPrivateMode::SyncUpdate => ModeState::Reset,
                 NamedPrivateMode::ColumnMode => ModeState::NotSupported,
@@ -7765,6 +7778,42 @@ mod tests {
         cw.input('x');
         assert_eq!(cw.cell_hyperlink(Line(0), Column(0)), Some(link));
         cw.swap_alt();
+    }
+
+    /// DEC private mode 2027 (grapheme cluster processing): set,
+    /// reset, DECRQM visibility, RIS, and cross-screen sharing. The
+    /// mode is plumbing-complete here; segmentation behavior arrives
+    /// with the cluster input path.
+    #[test]
+    fn mode_2027_plumbing() {
+        use crate::ansi::mode::{NamedPrivateMode, PrivateMode};
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(6, 3);
+
+        // Default: reset.
+        assert!(!cw.mode().contains(Mode::GRAPHEME_CLUSTER));
+
+        // DECSET / DECRST round-trip.
+        cw.set_private_mode(PrivateMode::new(2027));
+        assert!(cw.mode().contains(Mode::GRAPHEME_CLUSTER));
+        cw.unset_private_mode(PrivateMode::new(2027));
+        assert!(!cw.mode().contains(Mode::GRAPHEME_CLUSTER));
+
+        // 2027 resolves to the named mode, not Unknown.
+        assert!(matches!(
+            PrivateMode::new(2027),
+            PrivateMode::Named(NamedPrivateMode::GraphemeCluster)
+        ));
+
+        // Shared across screens: the mode lives on the terminal.
+        cw.set_private_mode(PrivateMode::new(2027));
+        cw.swap_alt();
+        assert!(cw.mode().contains(Mode::GRAPHEME_CLUSTER));
+        cw.swap_alt();
+
+        // RIS resets to default (off).
+        cw.reset_state();
+        assert!(!cw.mode().contains(Mode::GRAPHEME_CLUSTER));
     }
 
     /// Identical extras content interns into one slot: the u16 id
