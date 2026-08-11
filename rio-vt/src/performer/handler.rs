@@ -527,6 +527,9 @@ struct ApcState {
     /// Buffer for accumulating APC data.
     /// Pre-allocated to a reasonable size for Kitty graphics chunks.
     buffer: Vec<u8>,
+    /// The current Kitty APC exceeded its configured encoded bound and is
+    /// being ignored until its terminator arrives.
+    discarding_oversized_kitty: bool,
 }
 
 impl Default for SyncState {
@@ -1561,6 +1564,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
     fn apc_start(&mut self) {
         debug!("[apc_start] Beginning APC accumulation");
         self.state.apc_state.buffer.clear();
+        self.state.apc_state.discarding_oversized_kitty = false;
         // Pre-allocate reasonable size for Kitty graphics chunks (typically 4KB)
         self.state.apc_state.buffer.reserve(4096);
     }
@@ -1570,6 +1574,30 @@ impl<U: Handler> Perform for Performer<'_, U> {
     /// We accumulate all bytes here to handle large sequences that exceed Copa's
     /// default OSC buffer size (1024 bytes).
     fn apc_put(&mut self, byte: u8) {
+        if self.state.apc_state.discarding_oversized_kitty {
+            return;
+        }
+        let kitty = self.state.apc_state.buffer.first() == Some(&b'G')
+            || (self.state.apc_state.buffer.is_empty() && byte == b'G');
+        if kitty {
+            const KITTY_CONTROL_ALLOWANCE: usize = 4 * 1024;
+            let limit = self
+                .handler
+                .kitty_chunking_state_mut()
+                .map(|state| {
+                    state
+                        .config()
+                        .max_encoded_bytes
+                        .saturating_add(KITTY_CONTROL_ALLOWANCE)
+                })
+                .unwrap_or(KITTY_CONTROL_ALLOWANCE);
+            if self.state.apc_state.buffer.len() >= limit {
+                warn!(limit, "discarding oversized Kitty APC");
+                self.state.apc_state.buffer.clear();
+                self.state.apc_state.discarding_oversized_kitty = true;
+                return;
+            }
+        }
         self.state.apc_state.buffer.push(byte);
     }
 
@@ -1579,6 +1607,12 @@ impl<U: Handler> Perform for Performer<'_, U> {
             "[apc_end] APC complete, accumulated {} bytes",
             self.state.apc_state.buffer.len()
         );
+
+        if self.state.apc_state.discarding_oversized_kitty {
+            self.state.apc_state.buffer.clear();
+            self.state.apc_state.discarding_oversized_kitty = false;
+            return;
+        }
 
         // Process the accumulated buffer
         self.process_apc_buffer();
@@ -2265,6 +2299,34 @@ mod tests {
 
         processor.advance(&mut handler, b"\x1b_Ga=p,i=7,q=1\x1b\\");
         assert_eq!(handler.replies.len(), 1, "q=1 must still report errors");
+        assert!(handler.replies[0].contains("ENOENT"));
+    }
+
+    #[test]
+    fn oversized_kitty_apc_is_bounded_and_parser_recovers() {
+        let mut handler = KittyReplyHandler::default();
+        handler
+            .chunking
+            .set_config(kitty_graphics_protocol::KittyGraphicsConfig {
+                max_encoded_bytes: 8,
+                ..kitty_graphics_protocol::KittyGraphicsConfig::default()
+            });
+        let mut processor = Processor::default();
+
+        let mut oversized = b"\x1b_Ga=t,f=24,s=1,v=1;".to_vec();
+        oversized.extend(std::iter::repeat_n(b'A', 5_000));
+        processor.advance(&mut handler, &oversized);
+
+        assert!(processor.state.apc_state.buffer.is_empty());
+        assert!(processor.state.apc_state.discarding_oversized_kitty);
+        assert!(handler.replies.is_empty());
+
+        processor.advance(&mut handler, b"\x1b\\");
+        assert!(!processor.state.apc_state.discarding_oversized_kitty);
+        assert!(processor.state.apc_state.buffer.is_empty());
+
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=99\x1b\\");
+        assert_eq!(handler.replies.len(), 1);
         assert!(handler.replies[0].contains("ENOENT"));
     }
 
