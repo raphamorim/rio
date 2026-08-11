@@ -1647,9 +1647,9 @@ fn test_delete_intersecting_cursor() {
     let cursor_abs_row = 1i64;
     graphics.kitty_placements.retain(|_, p| {
         !(p.dest_col <= cursor_col
-            && cursor_col < p.dest_col + p.columns as usize
+            && cursor_col < p.dest_col.saturating_add(p.columns as usize)
             && p.dest_row <= cursor_abs_row
-            && cursor_abs_row < p.dest_row + p.rows as i64)
+            && cursor_abs_row < p.dest_row.saturating_add(p.rows as i64))
     });
 
     assert_eq!(graphics.kitty_placements.len(), 1);
@@ -1675,9 +1675,9 @@ fn test_delete_intersecting_cursor_hits_multiple() {
     let cursor_abs_row = 2i64;
     graphics.kitty_placements.retain(|_, p| {
         !(p.dest_col <= cursor_col
-            && cursor_col < p.dest_col + p.columns as usize
+            && cursor_col < p.dest_col.saturating_add(p.columns as usize)
             && p.dest_row <= cursor_abs_row
-            && cursor_abs_row < p.dest_row + p.rows as i64)
+            && cursor_abs_row < p.dest_row.saturating_add(p.rows as i64))
     });
 
     assert_eq!(
@@ -1709,9 +1709,9 @@ fn test_delete_by_column() {
 
     // Delete placements intersecting column 3
     let col = 3usize;
-    graphics
-        .kitty_placements
-        .retain(|_, p| !(p.dest_col <= col && col < p.dest_col + p.columns as usize));
+    graphics.kitty_placements.retain(|_, p| {
+        !(p.dest_col <= col && col < p.dest_col.saturating_add(p.columns as usize))
+    });
 
     assert_eq!(graphics.kitty_placements.len(), 1);
     assert!(
@@ -1738,9 +1738,9 @@ fn test_delete_by_row() {
 
     // Delete placements intersecting row 1
     let abs_row = 1i64;
-    graphics
-        .kitty_placements
-        .retain(|_, p| !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64));
+    graphics.kitty_placements.retain(|_, p| {
+        !(p.dest_row <= abs_row && abs_row < p.dest_row.saturating_add(p.rows as i64))
+    });
 
     assert_eq!(graphics.kitty_placements.len(), 1);
     assert!(graphics.kitty_placements.contains_key(&(2, 0)));
@@ -1765,9 +1765,9 @@ fn test_delete_by_column_1x1() {
 
     // Delete column 1
     let col = 1usize;
-    graphics
-        .kitty_placements
-        .retain(|_, p| !(p.dest_col <= col && col < p.dest_col + p.columns as usize));
+    graphics.kitty_placements.retain(|_, p| {
+        !(p.dest_col <= col && col < p.dest_col.saturating_add(p.columns as usize))
+    });
 
     assert_eq!(graphics.kitty_placements.len(), 2);
     assert!(graphics.kitty_placements.contains_key(&(1, 0)));
@@ -1794,9 +1794,9 @@ fn test_delete_by_row_1x1() {
 
     // Delete row 1
     let abs_row = 1i64;
-    graphics
-        .kitty_placements
-        .retain(|_, p| !(p.dest_row <= abs_row && abs_row < p.dest_row + p.rows as i64));
+    graphics.kitty_placements.retain(|_, p| {
+        !(p.dest_row <= abs_row && abs_row < p.dest_row.saturating_add(p.rows as i64))
+    });
 
     assert_eq!(graphics.kitty_placements.len(), 2);
     assert!(graphics.kitty_placements.contains_key(&(1, 0)));
@@ -2161,9 +2161,9 @@ fn test_delete_at_cell_with_z_filter() {
     graphics.kitty_placements.retain(|_, p| {
         !(p.z_index == z
             && p.dest_col <= col
-            && col < p.dest_col + p.columns as usize
+            && col < p.dest_col.saturating_add(p.columns as usize)
             && p.dest_row <= abs_row
-            && abs_row < p.dest_row + p.rows as i64)
+            && abs_row < p.dest_row.saturating_add(p.rows as i64))
     });
 
     assert_eq!(graphics.kitty_placements.len(), 1);
@@ -2606,7 +2606,7 @@ fn test_delete_uppercase_i_actually_frees_image_data() {
 }
 
 #[test]
-fn test_delete_uppercase_a_clears_all_image_data() {
+fn test_delete_uppercase_a_without_visible_placements_keeps_image_data() {
     let mut term = make_test_term();
     store_red_pixel(&mut term, 1);
     store_red_pixel(&mut term, 2);
@@ -2625,11 +2625,11 @@ fn test_delete_uppercase_a_clears_all_image_data() {
     };
     term.delete_graphics(delete);
 
-    assert!(
-        term.graphics.kitty_images.is_empty(),
-        "d=A must clear all image data, not just placements"
+    assert_eq!(
+        term.graphics.kitty_images.len(),
+        3,
+        "d=A only frees image data referenced by placements it deletes"
     );
-    assert!(term.graphics.kitty_image_numbers.is_empty());
 }
 
 #[test]
@@ -3070,6 +3070,7 @@ fn test_eviction_prefers_inactive_screen_images() {
             data: inactive_data,
             transmission_time: std::time::Instant::now()
                 - std::time::Duration::from_secs(60),
+            image_number: None,
         },
     );
     // Inactive bytes also count toward total_bytes (kept consistent).
@@ -3135,6 +3136,7 @@ fn test_eviction_keeps_active_used_image_when_inactive_available() {
         StoredImage {
             data: inactive,
             transmission_time: std::time::Instant::now(),
+            image_number: None,
         },
     );
     graphics.total_bytes += 50;
@@ -3186,6 +3188,7 @@ fn test_inactive_same_id_eviction_keeps_active_texture_key() {
             data: data(2),
             transmission_time: std::time::Instant::now()
                 - std::time::Duration::from_secs(60),
+            image_number: None,
         },
     );
     graphics.total_bytes += 40;
@@ -3316,12 +3319,10 @@ fn test_kitten_icat_two_invocations_without_explicit_id_keep_both_images() {
 }
 
 #[test]
-fn test_kitten_icat_two_invocations_with_same_explicit_id_each_get_unique_placement() {
-    // Even when icat reuses the same `i=N` (which kitty itself allows
-    // and uses for re-transmission), the *placements* should still be
-    // distinct so both copies render. The image data is shared (the
-    // second transmission overwrites it per spec) but each placement
-    // gets its own internal placement_id.
+fn test_kitten_icat_retransmission_replaces_previous_placement() {
+    // Reusing the same explicit `i=N` is a retransmission. Per protocol,
+    // replacing the image data first deletes every placement that refers
+    // to the old transmission; the new `a=T` then creates one placement.
     let mut term = make_test_term();
     term.graphics.cell_width = 10.0;
     term.graphics.cell_height = 20.0;
@@ -3329,15 +3330,11 @@ fn test_kitten_icat_two_invocations_with_same_explicit_id_each_get_unique_placem
     icat_invocation(&mut term, b"/wAA/w==", Some(1));
     icat_invocation(&mut term, b"/wAA/w==", Some(1));
 
-    // One image (re-transmissions overwrite at same id per spec).
     assert_eq!(term.graphics.kitty_images.len(), 1);
-    // Two placements (each `a=T` with implicit p=0 must get its own
-    // internal placement_id so the prior placement isn't overwritten).
     assert_eq!(
         term.graphics.kitty_placements.len(),
-        2,
-        "Two `a=T` calls with the same image_id must produce two \
-         placements, not collapse into one"
+        1,
+        "the retransmission removes the old placement before displaying the replacement"
     );
 }
 
@@ -4876,7 +4873,7 @@ fn test_overlay_geometry_clamps_raw_offsets() {
 }
 
 #[test]
-fn test_retransmit_reclamps_crop_and_updates_footprint() {
+fn test_retransmit_deletes_existing_cropped_placement() {
     use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
 
     let mut term = geometry_test_term();
@@ -4901,9 +4898,8 @@ fn test_retransmit_reclamps_crop_and_updates_footprint() {
     assert_eq!(geometry.height, 50.0);
     assert_eq!(geometry.source_rect, [0.0, 0.5, 1.0, 1.0]);
 
-    // Retransmit the same id as 100x60: the crop re-resolves against
-    // the new dimensions instead of showing a stale region, and the
-    // grid footprint follows.
+    // Retransmitting the same id replaces the image and removes every old
+    // placement, including placements with a source crop.
     term.graphics.kitty_graphics_dirty = false;
     let graphic = GraphicData {
         id: GraphicId::new(1),
@@ -4919,14 +4915,7 @@ fn test_retransmit_reclamps_crop_and_updates_footprint() {
     };
     term.store_graphic(graphic);
 
-    let stored = term.graphics.kitty_placements.get(&(1, 11)).unwrap();
-    assert_eq!(stored.pixel_height, 10, "60 - 50 remaining below the crop");
-    assert_eq!(stored.rows, 1);
-    let geometry = kitty_overlay_geometry(stored, 100, 60, &viewport).unwrap();
-    assert_eq!(geometry.height, 10.0);
-    let [_, v0, _, v1] = geometry.source_rect;
-    assert!((v0 - 50.0 / 60.0).abs() < 1e-6);
-    assert_eq!(v1, 1.0);
+    assert!(!term.graphics.kitty_placements.contains_key(&(1, 11)));
 
     // The new pixels were dispatched for upload without a re-place
     // (send_graphics_updates drains the queue into an event, so the
@@ -4935,7 +4924,7 @@ fn test_retransmit_reclamps_crop_and_updates_footprint() {
 }
 
 #[test]
-fn test_retransmit_can_make_degenerate_placement_visible() {
+fn test_retransmit_deletes_degenerate_placement() {
     let mut term = geometry_test_term();
 
     // Fully outside the 100x100 image: invisible, zero footprint.
@@ -4947,7 +4936,7 @@ fn test_retransmit_can_make_degenerate_placement_visible() {
         0
     );
 
-    // Retransmit taller: the placement comes alive.
+    // Retransmitting the same image id removes even a degenerate placement.
     let graphic = GraphicData {
         id: GraphicId::new(1),
         width: 100,
@@ -4962,9 +4951,7 @@ fn test_retransmit_can_make_degenerate_placement_visible() {
     };
     term.store_graphic(graphic);
 
-    let stored = term.graphics.kitty_placements.get(&(1, 12)).unwrap();
-    assert_eq!(stored.pixel_height, 100, "rows 100..200 of the new image");
-    assert_eq!(stored.rows, 5, "ceil(100 / 20)");
+    assert!(!term.graphics.kitty_placements.contains_key(&(1, 12)));
 }
 
 #[test]
@@ -5082,7 +5069,7 @@ fn test_cursor_movement_clears_pending_wrap() {
 }
 
 #[test]
-fn test_transmit_and_display_refreshes_sibling_placements() {
+fn test_transmit_and_display_replaces_sibling_placements() {
     let mut term = geometry_test_term();
 
     // Direct placement of the 100x100 image: 5 rows at 20px cells.
@@ -5094,9 +5081,8 @@ fn test_transmit_and_display_refreshes_sibling_placements() {
         5
     );
 
-    // a=T retransmit of the same id (new 100x200 pixels + a second
-    // placement): the first placement's footprint must follow the new
-    // dimensions like the a=t path.
+    // An a=T retransmission removes the first placement, stores the new
+    // pixels, and then creates only the placement carried by this command.
     let graphic = GraphicData {
         id: GraphicId::new(1),
         width: 100,
@@ -5113,11 +5099,7 @@ fn test_transmit_and_display_refreshes_sibling_placements() {
     second.cursor_movement = 1;
     term.kitty_transmit_and_display(graphic, second);
 
-    assert_eq!(
-        term.graphics.kitty_placements.get(&(1, 15)).unwrap().rows,
-        10,
-        "sibling placement footprint follows the retransmit"
-    );
+    assert!(!term.graphics.kitty_placements.contains_key(&(1, 15)));
     assert_eq!(
         term.graphics.kitty_placements.get(&(1, 16)).unwrap().rows,
         10
@@ -5515,9 +5497,9 @@ fn test_text_over_image_clips_exactly_that_cell() {
     let covers = |row: i64, col: usize| {
         placements.iter().any(|p| {
             row >= p.abs_row
-                && row < p.abs_row + p.rows as i64
+                && row < p.abs_row.saturating_add(p.rows as i64)
                 && col >= p.col
-                && col < p.col + p.columns
+                && col < p.col.saturating_add(p.columns)
         })
     };
     assert!(!covers(1, 1), "written cell is clipped out");

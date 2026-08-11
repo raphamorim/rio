@@ -372,6 +372,12 @@ pub trait Handler {
         false
     }
 
+    /// Reserve a parser-proposed terminal-owned Kitty image id against the
+    /// storage currently live on both terminal screens.
+    fn reserve_kitty_image_id(&mut self, proposed: u32) -> u32 {
+        proposed
+    }
+
     /// Store a graphic and bind an optional client-owned image number.
     fn store_graphic_with_number(
         &mut self,
@@ -868,6 +874,16 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                 }
 
                 debug!("[process_apc_buffer] Kitty graphics parsed successfully");
+
+                if response.terminal_assigned_image_id {
+                    let proposed = response
+                        .graphic_data
+                        .as_ref()
+                        .map(|graphic| graphic.id.get() as u32)
+                        .unwrap_or(1);
+                    let reserved = self.handler.reserve_kitty_image_id(proposed);
+                    response.remap_terminal_assigned_image_id(reserved);
+                }
 
                 if let Some(graphic_data) = response.graphic_data {
                     debug!(

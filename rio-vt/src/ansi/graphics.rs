@@ -33,6 +33,9 @@ pub const KITTY_PLACEHOLDER: char = '\u{10EEEE}';
 pub struct StoredImage {
     pub data: GraphicData,
     pub transmission_time: crate::time::Instant,
+    /// Client-owned `I=` number, retained so deleting the newest matching
+    /// image can fall back to the previous live transmission.
+    pub image_number: Option<u32>,
 }
 
 /// Overlay placement for a kitty graphics image.
@@ -345,7 +348,7 @@ pub fn kitty_overlay_geometry(
     // placement down relative to the viewport.
     let screen_row =
         placement.dest_row - (viewport.history_size - viewport.display_offset);
-    let bottom_row = screen_row + placement.rows as i64;
+    let bottom_row = screen_row.saturating_add(placement.rows as i64);
     if bottom_row <= 0 || screen_row >= viewport.screen_lines {
         return None;
     }
@@ -519,9 +522,9 @@ impl AtlasPlacement {
         out: &mut Vec<AtlasPlacement>,
     ) -> Option<()> {
         let p_r0 = self.abs_row;
-        let p_r1 = self.abs_row + self.rows as i64;
+        let p_r1 = self.abs_row.saturating_add(self.rows as i64);
         let p_c0 = self.col;
-        let p_c1 = self.col + self.columns;
+        let p_c1 = self.col.saturating_add(self.columns);
         if hr1 <= p_r0 || hr0 >= p_r1 || hc1 <= p_c0 || hc0 >= p_c1 {
             return None;
         }
@@ -565,7 +568,7 @@ pub fn atlas_overlay_geometry(
 ) -> Option<KittyOverlayGeometry> {
     let screen_row =
         placement.abs_row - (viewport.history_size - viewport.display_offset);
-    let bottom_row = screen_row + placement.rows as i64;
+    let bottom_row = screen_row.saturating_add(placement.rows as i64);
     if bottom_row <= 0 || screen_row >= viewport.screen_lines {
         return None;
     }
@@ -834,16 +837,31 @@ impl Graphics {
     /// client running `kitten icat` repeatedly) for the same image_id
     /// would each insert at key `(image_id, 0)` and the second would
     /// silently overwrite the first.
-    pub fn allocate_internal_placement_id(&mut self) -> u32 {
+    pub fn allocate_internal_placement_id(&mut self, image_id: u32) -> u32 {
         if self.next_internal_placement_id < 0x80000000 {
             self.next_internal_placement_id = 0x80000000;
         }
-        let id = self.next_internal_placement_id;
-        self.next_internal_placement_id = self
-            .next_internal_placement_id
-            .checked_add(1)
-            .unwrap_or(0x80000000);
-        id
+        loop {
+            let id = self.next_internal_placement_id;
+            self.next_internal_placement_id = self
+                .next_internal_placement_id
+                .checked_add(1)
+                .unwrap_or(0x80000000);
+            let key = (image_id, id);
+            if !self.kitty_placements.contains_key(&key)
+                && !self.kitty_virtual_placements.contains_key(&key)
+                && !self
+                    .kitty_inactive_screen
+                    .kitty_placements
+                    .contains_key(&key)
+                && !self
+                    .kitty_inactive_screen
+                    .kitty_virtual_placements
+                    .contains_key(&key)
+            {
+                return id;
+            }
+        }
     }
 
     /// Swap kitty graphics state between the active and inactive screen.
@@ -1059,10 +1077,21 @@ impl Graphics {
         self.kitty_chunking_state.set_config(config);
     }
 
-    pub fn can_insert_kitty_placement(&self, image_id: u32, placement_id: u32) -> bool {
+    pub fn can_insert_kitty_placement(
+        &self,
+        image_id: u32,
+        placement_id: u32,
+        virtual_placement: bool,
+    ) -> bool {
         let key = (image_id, placement_id);
-        self.kitty_placements.contains_key(&key)
-            || self.kitty_virtual_placements.contains_key(&key)
+        // Direct p=0 placements are assigned a fresh internal id later and
+        // can therefore never replace a `(image_id, 0)` virtual prototype.
+        // Every named placement, and virtual p=0, has protocol identity and
+        // replaces the same pair regardless of which placement map owns it.
+        let replaces_existing = (virtual_placement || placement_id != 0)
+            && (self.kitty_placements.contains_key(&key)
+                || self.kitty_virtual_placements.contains_key(&key));
+        replaces_existing
             || self
                 .kitty_placements
                 .len()
@@ -1070,6 +1099,99 @@ impl Graphics {
                 .saturating_add(self.kitty_inactive_screen.kitty_placements.len())
                 .saturating_add(self.kitty_inactive_screen.kitty_virtual_placements.len())
                 < self.max_kitty_placements
+    }
+
+    /// Placement-cap preflight for `a=T`: retransmitting the image first
+    /// deletes every old placement of that image, so account for the slots
+    /// that operation releases before deciding whether the new placement fits.
+    pub fn can_retransmit_and_insert_kitty_placement(
+        &self,
+        image_id: u32,
+        placement_id: u32,
+        virtual_placement: bool,
+    ) -> bool {
+        if self.can_insert_kitty_placement(image_id, placement_id, virtual_placement) {
+            return true;
+        }
+        let removed = self
+            .kitty_placements
+            .keys()
+            .filter(|key| key.0 == image_id)
+            .count()
+            .saturating_add(
+                self.kitty_virtual_placements
+                    .keys()
+                    .filter(|key| key.0 == image_id)
+                    .count(),
+            );
+        removed > 0
+            && self
+                .kitty_placements
+                .len()
+                .saturating_add(self.kitty_virtual_placements.len())
+                .saturating_add(self.kitty_inactive_screen.kitty_placements.len())
+                .saturating_add(self.kitty_inactive_screen.kitty_virtual_placements.len())
+                .saturating_sub(removed)
+                < self.max_kitty_placements
+    }
+
+    /// Pick a terminal-owned image id that does not collide with either
+    /// screen's client-supplied image ids.
+    pub fn allocate_kitty_image_id(&self, preferred: u32) -> u32 {
+        let mut candidate = preferred.max(1);
+        loop {
+            if !self.kitty_images.contains_key(&candidate)
+                && !self
+                    .kitty_inactive_screen
+                    .kitty_images
+                    .contains_key(&candidate)
+                && !self
+                    .kitty_chunking_state
+                    .incomplete_image_ids()
+                    .any(|image_id| image_id == candidate)
+            {
+                return candidate;
+            }
+            candidate = candidate.checked_add(1).unwrap_or(1);
+        }
+    }
+
+    /// Remove every active-screen placement of an image while retaining its
+    /// stored pixels. Retransmission uses this before the new image can be
+    /// displayed, as required by the Kitty protocol.
+    pub fn remove_kitty_placements_for_image(&mut self, image_id: u32) -> bool {
+        let before = self
+            .kitty_placements
+            .len()
+            .saturating_add(self.kitty_virtual_placements.len());
+        self.kitty_placements.retain(|key, _| key.0 != image_id);
+        self.kitty_virtual_placements
+            .retain(|key, _| key.0 != image_id);
+        let changed = before
+            != self
+                .kitty_placements
+                .len()
+                .saturating_add(self.kitty_virtual_placements.len());
+        self.kitty_graphics_dirty |= changed;
+        changed
+    }
+
+    /// Delete only candidate images that no surviving direct or virtual
+    /// placement references. Uppercase Kitty delete actions use this so a
+    /// targeted placement deletion cannot accidentally destroy its siblings.
+    pub fn delete_unreferenced_kitty_images(
+        &mut self,
+        candidates: &std::collections::HashSet<u32>,
+    ) {
+        let referenced = self
+            .kitty_placements
+            .keys()
+            .chain(self.kitty_virtual_placements.keys())
+            .map(|key| key.0)
+            .collect::<std::collections::HashSet<_>>();
+        self.delete_kitty_images(|id, _| {
+            candidates.contains(id) && !referenced.contains(id)
+        });
     }
 
     /// Store a kitty graphics image for later placement.
@@ -1123,15 +1245,13 @@ impl Graphics {
             StoredImage {
                 data,
                 transmission_time: now,
+                image_number,
             },
         );
         self.total_bytes += new_bytes;
         self.kitty_graphics_dirty = true;
 
-        // Update image number mapping if provided
-        if let Some(number) = image_number {
-            self.kitty_image_numbers.insert(number, image_id);
-        }
+        self.rebuild_kitty_image_numbers();
         true
     }
 
@@ -1188,9 +1308,36 @@ impl Graphics {
             .retain(|(image_id, _), _| !removed_ids.contains(image_id));
         self.kitty_virtual_placements
             .retain(|(image_id, _), _| !removed_ids.contains(image_id));
-        // Clean up stale number mappings
-        self.kitty_image_numbers
-            .retain(|_, id| self.kitty_images.contains_key(id));
+        self.rebuild_kitty_image_numbers();
+    }
+
+    fn rebuild_kitty_image_numbers(&mut self) {
+        Self::rebuild_kitty_image_number_map(
+            &self.kitty_images,
+            &mut self.kitty_image_numbers,
+        );
+    }
+
+    fn rebuild_kitty_image_number_map(
+        images: &FxHashMap<u32, StoredImage>,
+        image_numbers: &mut FxHashMap<u32, u32>,
+    ) {
+        let mut newest = FxHashMap::<u32, (crate::time::Instant, u32)>::default();
+        for (&image_id, image) in images {
+            let Some(number) = image.image_number else {
+                continue;
+            };
+            match newest.get(&number) {
+                Some((timestamp, _)) if *timestamp >= image.transmission_time => {}
+                _ => {
+                    newest.insert(number, (image.transmission_time, image_id));
+                }
+            }
+        }
+        *image_numbers = newest
+            .into_iter()
+            .map(|(number, (_, image_id))| (number, image_id))
+            .collect();
     }
 
     /// Calculate the memory size of a graphic in bytes
@@ -1389,6 +1536,11 @@ impl Graphics {
                 self.texture_operations.lock().push(key);
             }
         }
+        self.rebuild_kitty_image_numbers();
+        Self::rebuild_kitty_image_number_map(
+            &self.kitty_inactive_screen.kitty_images,
+            &mut self.kitty_inactive_screen.kitty_image_numbers,
+        );
 
         // Sweep dangling placements on both screens. A placement is
         // dangling if its referenced image_id is no longer in the
