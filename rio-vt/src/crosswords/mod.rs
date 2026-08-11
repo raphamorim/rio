@@ -9739,6 +9739,102 @@ mod tests {
     }
 
     #[test]
+    fn external_placements_follow_every_vt_region_scroll_path() {
+        use crate::performer::handler::Processor;
+
+        let cases: &[(&str, &[u8], i64)] = &[
+            ("SU", b"\x1b[2;4r\x1b[S", 1),
+            ("SD", b"\x1b[2;4r\x1b[T", 3),
+            ("IND", b"\x1b[2;4r\x1b[4;1H\x1bD", 1),
+            ("LF", b"\x1b[2;4r\x1b[4;1H\n", 1),
+            ("RI", b"\x1b[2;4r\x1b[2;1H\x1bM", 3),
+            ("IL", b"\x1b[2;4r\x1b[2;1H\x1b[L", 3),
+            ("DL", b"\x1b[2;4r\x1b[2;1H\x1b[M", 1),
+        ];
+
+        for &(name, sequence, expected_row) in cases {
+            let mut term = make_crosswords();
+            term.register_external_placement(external_test_placement(
+                &term,
+                1,
+                2,
+                1,
+                ExternalPlacementErasePolicy::Preserve,
+            ));
+
+            Processor::default().advance(&mut term, sequence);
+
+            let geometry = term
+                .external_placement_geometries()
+                .into_iter()
+                .find(|geometry| geometry.id == 1)
+                .unwrap_or_else(|| panic!("{name} unexpectedly removed the placement"));
+            assert_eq!(geometry.row, expected_row, "{name} moved the wrong rows");
+        }
+    }
+
+    #[test]
+    fn oversized_region_scroll_counts_expire_fully_clipped_placements() {
+        use crate::performer::handler::Processor;
+
+        let cases: &[(&str, &[u8])] = &[
+            ("SU", b"\x1b[2;4r\x1b[99S"),
+            ("SD", b"\x1b[2;4r\x1b[99T"),
+            ("IL", b"\x1b[2;4r\x1b[2;1H\x1b[99L"),
+            ("DL", b"\x1b[2;4r\x1b[2;1H\x1b[99M"),
+        ];
+
+        for &(name, sequence) in cases {
+            let mut term = make_crosswords();
+            term.register_external_placement(external_test_placement(
+                &term,
+                1,
+                2,
+                1,
+                ExternalPlacementErasePolicy::Preserve,
+            ));
+
+            Processor::default().advance(&mut term, sequence);
+
+            assert!(
+                term.external_placement_geometries().is_empty(),
+                "{name} must expire a placement moved entirely through the margin"
+            );
+        }
+    }
+
+    #[test]
+    fn top_anchored_partial_scroll_keeps_rows_below_the_margin_fixed() {
+        use crate::performer::handler::Processor;
+
+        let mut term = make_crosswords();
+        term.register_external_placement(external_test_placement(
+            &term,
+            1,
+            1,
+            1,
+            ExternalPlacementErasePolicy::Preserve,
+        ));
+        term.register_external_placement(external_test_placement(
+            &term,
+            2,
+            3,
+            1,
+            ExternalPlacementErasePolicy::Preserve,
+        ));
+
+        Processor::default().advance(&mut term, b"\x1b[1;3r\x1b[S");
+
+        let rows = term
+            .external_placement_geometries()
+            .into_iter()
+            .map(|geometry| (geometry.id, geometry.row))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(rows[&1], 0, "in-region content scrolls into history");
+        assert_eq!(rows[&2], 3, "rows below the bottom margin stay fixed");
+    }
+
+    #[test]
     fn external_placement_tracks_full_scroll_and_scrollback_view() {
         let mut term = make_crosswords();
         let placement = external_test_placement(
@@ -9763,6 +9859,16 @@ mod tests {
 
         term.scroll_display(Scroll::Delta(1));
         assert_eq!(term.external_placement_geometries()[0].row, 1);
+
+        term.scroll_display(Scroll::Bottom);
+        for _ in 0..20 {
+            term.scroll_up_relative(Line(0), 1);
+        }
+        assert!(
+            term.external_placement(ExternalPlacementScreen::Main, 7)
+                .is_none(),
+            "placement must expire after its complete row range leaves the retained ring"
+        );
     }
 
     #[test]
@@ -9866,6 +9972,13 @@ mod tests {
             (kitty.dest_row, kitty.rows, kitty.clip_top_rows),
             (base + 1, 1, 1)
         );
+
+        crate::performer::handler::Processor::default()
+            .advance(&mut term, b"\x1b[2;1H\x1b[2K");
+        assert!(
+            term.graphics.kitty_placements.contains_key(&(3, 1)),
+            "ordinary text erasure must preserve direct Kitty placements"
+        );
     }
 
     #[test]
@@ -9893,6 +10006,13 @@ mod tests {
             .external_placement(ExternalPlacementScreen::Main, 2)
             .is_none());
 
+        crate::performer::handler::Processor::default().advance(&mut term, b"\x1b[2J");
+        assert!(
+            term.external_placement(ExternalPlacementScreen::Main, 1)
+                .is_some(),
+            "screen text clear must preserve external placements"
+        );
+
         term.swap_alt();
         assert!(term.external_placement_geometries().is_empty());
         term.register_external_placement(external_test_placement(
@@ -9914,5 +10034,24 @@ mod tests {
         assert!(term
             .external_placement(ExternalPlacementScreen::Alternate, 3)
             .is_none());
+
+        term.register_external_placement(external_test_placement(
+            &term,
+            4,
+            0,
+            1,
+            ExternalPlacementErasePolicy::Preserve,
+        ));
+        term.reset_state();
+        assert_eq!(
+            term.external_placements(ExternalPlacementScreen::Main)
+                .count(),
+            0
+        );
+        assert_eq!(
+            term.external_placements(ExternalPlacementScreen::Alternate)
+                .count(),
+            0
+        );
     }
 }
