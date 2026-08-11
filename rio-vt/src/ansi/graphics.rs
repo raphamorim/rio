@@ -919,6 +919,14 @@ impl Graphics {
             &mut self.atlas_key_refs,
             &mut self.kitty_inactive_screen.atlas_key_refs,
         );
+        // The two screens may use the same protocol image id for different
+        // pixels. Refresh every newly active image so a frontend cache keyed
+        // by image id cannot keep showing the screen we just left.
+        self.pending_images.extend(
+            self.kitty_images
+                .iter()
+                .map(|(image_id, stored)| (*image_id, stored.data.clone())),
+        );
         self.kitty_graphics_dirty = true;
     }
 
@@ -1749,4 +1757,34 @@ fn kitty_resident_limit_is_a_hard_cap() {
     assert!(!stored);
     assert_eq!(graphics.total_bytes, 0);
     assert!(graphics.kitty_images.is_empty());
+}
+
+#[test]
+fn kitty_screen_swap_reuploads_same_id_from_newly_active_screen() {
+    let graphic = |pixel| GraphicData {
+        id: GraphicId::new(7),
+        width: 1,
+        height: 1,
+        color_type: rio_graphics::ColorType::Rgba,
+        pixels: vec![pixel; 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: crate::time::Instant::now(),
+    };
+    let mut graphics = Graphics::default();
+    assert!(graphics.store_kitty_image(7, None, graphic(1)));
+    graphics.swap_kitty_screen_state();
+    graphics.pending_images.clear();
+    assert!(graphics.store_kitty_image(7, None, graphic(2)));
+
+    graphics.swap_kitty_screen_state();
+
+    let restored = graphics
+        .pending_images
+        .iter()
+        .find(|(image_id, _)| *image_id == 7)
+        .expect("newly active image must be queued");
+    assert_eq!(restored.1.pixels, vec![1; 4]);
 }

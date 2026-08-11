@@ -2801,6 +2801,7 @@ impl<U: EventListener> Crosswords<U> {
         // (Marks the overlay layer dirty as a side effect so the renderer
         // rebuilds against the new active screen.)
         self.graphics.swap_kitty_screen_state();
+        self.send_graphics_updates();
         self.mark_fully_damaged();
     }
 
