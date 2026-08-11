@@ -5384,7 +5384,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // emits U+10EEEE placeholder cells itself. The renderer scans
         // visible cells and composites the image at those positions.
         if placement.virtual_placement {
+            let pixel_data = self
+                .graphics
+                .get_kitty_image(image_id)
+                .map(|stored| stored.data.clone());
             self.place_virtual_graphic(placement);
+            // A prior `a=t` intentionally retained pixels without uploading
+            // them. The first separate `a=p,U=1` is the boundary at which a
+            // frontend can render placeholder cells, so publish the stored
+            // image now just like the combined `a=T,U=1` path.
+            if let Some(pixel_data) = pixel_data {
+                self.graphics.pending_images.push((image_id, pixel_data));
+                self.graphics.kitty_graphics_dirty = true;
+                self.send_graphics_updates();
+            }
             return true;
         }
 
@@ -8991,6 +9004,60 @@ mod tests {
                 "row {past} (no placeholders) must not have the flag set",
             );
         }
+    }
+
+    #[test]
+    fn separate_unicode_placeholder_placement_uploads_previously_stored_pixels() {
+        use crate::performer::handler::Processor;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        #[derive(Clone)]
+        struct TestListener {
+            events: Rc<RefCell<Vec<RioEvent>>>,
+        }
+
+        impl EventListener for TestListener {
+            fn send_event(&self, event: RioEvent, _id: WindowId) {
+                self.events.borrow_mut().push(event);
+            }
+        }
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 4),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            0,
+            10,
+        );
+        let mut processor = Processor::default();
+        processor.advance(&mut term, b"\x1b_Ga=t,f=32,s=1,v=1,i=77;/wAA/w==\x1b\\");
+        assert!(!events
+            .borrow()
+            .iter()
+            .any(|event| matches!(event, RioEvent::UpdateGraphics { .. })));
+
+        processor.advance(&mut term, b"\x1b_Ga=p,U=1,i=77,c=1,r=1,q=2\x1b\\");
+        let uploaded_ids = events
+            .borrow()
+            .iter()
+            .filter_map(|event| match event {
+                RioEvent::UpdateGraphics { queues, .. } => Some(
+                    queues
+                        .pending_images
+                        .iter()
+                        .map(|(image_id, _)| *image_id)
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        assert_eq!(uploaded_ids, [77]);
     }
 
     /// End-to-end: yazi's kgp driver (yazi-adapter/src/drivers/kgp.rs)
