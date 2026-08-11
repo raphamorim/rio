@@ -1646,6 +1646,9 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 warn!(limit, "discarding oversized Kitty APC");
                 self.state.apc_state.buffer.clear();
                 self.state.apc_state.discarding_oversized_kitty = true;
+                if let Some(state) = self.handler.kitty_chunking_state_mut() {
+                    state.clear_incomplete_transfers();
+                }
                 return;
             }
         }
@@ -2379,6 +2382,34 @@ mod tests {
         processor.advance(&mut handler, b"\x1b_Ga=p,i=99\x1b\\");
         assert_eq!(handler.replies.len(), 1);
         assert!(handler.replies[0].contains("ENOENT"));
+    }
+
+    #[test]
+    fn oversized_kitty_continuation_aborts_the_pending_transfer() {
+        let mut handler = KittyReplyHandler::default();
+        handler
+            .chunking
+            .set_config(kitty_graphics_protocol::KittyGraphicsConfig {
+                max_encoded_bytes: 8,
+                ..kitty_graphics_protocol::KittyGraphicsConfig::default()
+            });
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_Ga=t,f=32,s=1,v=1,m=1,i=17;/wAA\x1b\\");
+        assert_eq!(
+            handler.chunking.incomplete_image_ids().collect::<Vec<_>>(),
+            [17]
+        );
+
+        let mut oversized = b"\x1b_Gm=1;".to_vec();
+        oversized.extend(std::iter::repeat_n(b'A', 5_000));
+        processor.advance(&mut handler, &oversized);
+
+        assert!(processor.state.apc_state.discarding_oversized_kitty);
+        assert!(handler.chunking.incomplete_image_ids().next().is_none());
+
+        processor.advance(&mut handler, b"\x1b\\\x1b_Gm=0;AA==\x1b\\");
+        assert!(handler.chunking.incomplete_image_ids().next().is_none());
     }
 
     #[test]
