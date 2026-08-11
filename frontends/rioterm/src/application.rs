@@ -1177,6 +1177,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::ModifiersChanged(modifiers) => {
                 route.window.screen.set_modifiers(modifiers);
+
+                // Hint mods (cmd on macOS) are pressed with the pointer
+                // already parked over the link, and `CursorMoved` only
+                // recomputes hints when the pointer crosses a cell
+                // boundary. Without refreshing here the link is never
+                // highlighted, so the click that follows has nothing to
+                // activate.
+                if route.path == RoutePath::Terminal
+                    && route.window.screen.mouse.inside_text_area
+                    && route.window.screen.update_highlighted_hints()
+                {
+                    route
+                        .window
+                        .winit_window
+                        .set_cursor(route.window.screen.mouse_cursor_icon());
+                    route.window.screen.context_manager.request_render();
+                }
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
@@ -1359,9 +1376,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // Always try panel switching first: if the click
                         // targets a different panel, switch to it regardless
                         // of mouse mode (e.g. neovim capturing clicks).
+                        //
+                        // A left click on a highlighted hint bypasses mouse
+                        // reporting the same way shift does: the hint's mods
+                        // are held, so the user is following the link, not
+                        // clicking inside the application.
+                        let hint_click = button == MouseButton::Left
+                            && route.window.screen.has_highlighted_hint();
+
                         if route.window.screen.select_current_based_on_mouse() {
                             route.request_redraw();
                         } else if !route.window.screen.modifiers.state().shift_key()
+                            && !hint_click
                             && route.window.screen.mouse_mode()
                         {
                             // Process mouse press before bindings to update the `click_state`.
@@ -1387,10 +1413,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 &mut self.router.clipboard,
                             );
                         } else {
-                            if route.window.screen.trigger_hyperlink() {
-                                return;
-                            }
-
                             // Load mouse point, treating message bar and padding as the closest square.
                             let display_offset = route.window.screen.display_offset();
 
@@ -1448,7 +1470,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
+                        // A left click that follows a highlighted hint bypasses
+                        // mouse reporting, matching the press handler: the
+                        // hint fires below instead of being swallowed by the
+                        // application.
+                        let hint_click = button == MouseButton::Left
+                            && route.window.screen.has_highlighted_hint();
+
                         if !route.window.screen.modifiers.state().shift_key()
+                            && !hint_click
                             && route.window.screen.mouse_mode()
                         {
                             let code = match button {
@@ -1769,35 +1799,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     && (route.window.screen.modifiers.state().shift_key()
                         || !route.window.screen.mouse_mode());
 
-                if !is_selecting && route.window.screen.update_highlighted_hints() {
-                    route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.context_manager.request_render();
-                } else if !is_selecting {
-                    let cursor_icon =
-                        if !route.window.screen.modifiers.state().shift_key()
-                            && route.window.screen.mouse_mode()
-                        {
-                            CursorIcon::Default
-                        } else {
-                            CursorIcon::Text
-                        };
-
-                    route.window.winit_window.set_cursor(cursor_icon);
-
-                    // In case hyperlink range has cleaned trigger one more render
-                    if route
+                if !is_selecting {
+                    let hint_changed = route.window.screen.update_highlighted_hints();
+                    route
                         .window
-                        .screen
-                        .context_manager
-                        .current()
-                        .has_hyperlink_range()
-                    {
-                        route
-                            .window
-                            .screen
-                            .context_manager
-                            .current_mut()
-                            .set_hyperlink_range(None);
+                        .winit_window
+                        .set_cursor(route.window.screen.mouse_cursor_icon());
+
+                    if hint_changed {
                         route.window.screen.context_manager.request_render();
                     }
                 }
