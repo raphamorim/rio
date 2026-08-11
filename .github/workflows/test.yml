@@ -63,11 +63,13 @@ jobs:
           path: target/cargo-timings/
           if-no-files-found: ignore
   msys2-build-test: #cargo test doesn't necessarily build the exec we want
+    # PR-only smoke of the modern default flavor; the full 3-flavor
+    # release-profile matrix runs as a gate in release.yml instead of
+    # on every main push.
+    if: github.event_name == 'pull_request'
     strategy:
       matrix:
-        # PRs smoke-test the modern default flavor only; pushes to main
-        # keep full gnu-toolchain coverage.
-        sys: ${{ github.event_name == 'pull_request' && fromJSON('["UCRT64"]') || fromJSON('["MINGW64", "UCRT64", "CLANG64"]') }}
+        sys: [UCRT64]
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -93,21 +95,12 @@ jobs:
           fontconfig:p
 
     - name: Cache target dir
-      if: github.event_name == 'pull_request'
       uses: actions/cache@v4
       with:
         path: target
         key: msys2-${{ matrix.sys }}-debug-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: msys2-${{ matrix.sys }}-debug-
 
-    - name: Build (PR smoke, debug)
-      if: github.event_name == 'pull_request'
+    - name: Build (smoke, debug)
       shell: msys2 {0}
       run: cargo build --features wgpu
-
-    - name: Build (main, release)
-      # Release keeps LTO/codegen coverage on the gnu toolchains where
-      # it historically breaks, without charging every PR for it.
-      if: github.event_name != 'pull_request'
-      shell: msys2 {0}
-      run: cargo build --release --features wgpu
