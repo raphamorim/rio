@@ -2817,3 +2817,61 @@ mod cluster_text_tests {
         assert_eq!(out, [0, 0, 1]);
     }
 }
+
+#[cfg(test)]
+mod cell_bg_tests {
+    use super::*;
+    use rio_backend::config::colors::ColorRgb;
+    use rio_backend::config::Config;
+
+    /// End-to-end guard for the tmux faint-text regression: tmux
+    /// re-emits the pane's OSC 11 as an explicit SGR 48 on every cell,
+    /// so a faint cell arrived as `Spec(bg) + DIM` and was painted at
+    /// `bg * DIM_FACTOR`, a dark block against the field around it.
+    #[test]
+    fn dim_cell_paints_its_explicit_background_unchanged() {
+        let renderer = Renderer::new(&Config::default());
+        let colors = TermColors::default();
+        let sq = Square::from_char('x');
+        let bg = ColorRgb {
+            r: 0x28,
+            g: 0x2c,
+            b: 0x34,
+        };
+        let style = Style {
+            bg: AnsiColor::Spec(bg),
+            ..Style::default()
+        };
+
+        let plain = cell_bg(sq, style, &renderer, &colors);
+        let dimmed = cell_bg(
+            sq,
+            Style {
+                flags: StyleFlags::DIM,
+                ..style
+            },
+            &renderer,
+            &colors,
+        );
+
+        assert_eq!(plain, [0x28, 0x2c, 0x34, 255]);
+        assert_eq!(dimmed, plain);
+    }
+
+    /// A faint cell that never had its background set still paints
+    /// nothing, so window transparency keeps showing through.
+    #[test]
+    fn dim_cell_with_default_background_stays_unpainted() {
+        let renderer = Renderer::new(&Config::default());
+        let colors = TermColors::default();
+        let style = Style {
+            flags: StyleFlags::DIM,
+            ..Style::default()
+        };
+
+        assert_eq!(
+            cell_bg(Square::from_char('x'), style, &renderer, &colors),
+            [0, 0, 0, 0]
+        );
+    }
+}

@@ -231,16 +231,42 @@ impl Renderer {
         }
     }
 
+    /// Resolve the color painted as a cell's background.
+    ///
+    /// DIM and BOLD are glyph intensity attributes (ECMA-48), so they
+    /// tint a background only under INVERSE, where `cell_bg` already
+    /// swapped fg/bg and this color is really the foreground. Ungated,
+    /// faint text over an explicit background painted a darker block
+    /// (tmux always sets one: it re-emits the pane's OSC 11 as SGR 48
+    /// on every cell it draws).
     #[inline]
     pub(crate) fn compute_bg_color(
         &self,
         cell_style: &CellStyle,
         term_colors: &TermColors,
     ) -> ColorArray {
-        let dim = cell_style.flags.contains(StyleFlags::DIM);
-        let bold = cell_style.flags.contains(StyleFlags::BOLD);
+        let inverse = cell_style.flags.contains(StyleFlags::INVERSE);
+        let dim = inverse && cell_style.flags.contains(StyleFlags::DIM);
+        let bold = inverse && cell_style.flags.contains(StyleFlags::BOLD);
         match cell_style.bg {
-            AnsiColor::Named(ansi) => self.color(ansi as usize, term_colors),
+            // A named color lands here dimmable only via the inverse
+            // swap, so apply the same intensity table as the fg path
+            // in `compute_color` (alacritty resolves the fg first and
+            // swaps after, which yields the same result).
+            AnsiColor::Named(ansi) => {
+                let idx = match (self.draw_bold_text_with_light_colors, dim, bold) {
+                    (_, true, true)
+                        if ansi == NamedColor::Foreground
+                            && self.named_colors.light_foreground.is_none() =>
+                    {
+                        NamedColor::DimForeground as usize
+                    }
+                    (true, false, true) => ansi.to_light() as usize,
+                    (_, true, false) | (false, true, true) => ansi.to_dim() as usize,
+                    _ => ansi as usize,
+                };
+                self.color(idx, term_colors)
+            }
             AnsiColor::Spec(rgb) => {
                 if dim {
                     (&(rgb * DIM_FACTOR)).into()
@@ -976,5 +1002,133 @@ impl Renderer {
                 overlays.push(overlay);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod compute_bg_color_tests {
+    use super::*;
+    use rio_backend::config::colors::ColorRgb;
+
+    fn renderer(draw_bold_text_with_light_colors: bool) -> Renderer {
+        Renderer::new(&Config {
+            draw_bold_text_with_light_colors,
+            ..Config::default()
+        })
+    }
+
+    fn style(bg: AnsiColor, flags: StyleFlags) -> CellStyle {
+        CellStyle {
+            bg,
+            flags,
+            ..CellStyle::default()
+        }
+    }
+
+    /// The reported regression: SGR 2 scaled an explicit RGB
+    /// background by DIM_FACTOR, a darker block behind the glyphs.
+    #[test]
+    fn dim_leaves_an_explicit_rgb_background_alone() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+        let bg = ColorRgb {
+            r: 0x28,
+            g: 0x2c,
+            b: 0x34,
+        };
+
+        let plain =
+            r.compute_bg_color(&style(AnsiColor::Spec(bg), StyleFlags::empty()), &colors);
+        let dimmed =
+            r.compute_bg_color(&style(AnsiColor::Spec(bg), StyleFlags::DIM), &colors);
+
+        assert_eq!(plain, bg.to_arr());
+        assert_eq!(dimmed, plain);
+    }
+
+    /// Same rule for the palette: no remap to the dim slot (0..=7)
+    /// or to the non-bright half (8..=15).
+    #[test]
+    fn dim_leaves_an_indexed_background_alone() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+
+        for idx in [1u8, 9] {
+            let dimmed = r.compute_bg_color(
+                &style(AnsiColor::Indexed(idx), StyleFlags::DIM),
+                &colors,
+            );
+            assert_eq!(dimmed, r.colors[idx as usize], "index {idx}");
+        }
+    }
+
+    /// Under INVERSE the bg slot holds the real foreground, which
+    /// keeps its intensity.
+    #[test]
+    fn inverse_still_dims_the_swapped_foreground() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+        let fg = ColorRgb {
+            r: 0xab,
+            g: 0xb2,
+            b: 0xbf,
+        };
+
+        let spec = r.compute_bg_color(
+            &style(AnsiColor::Spec(fg), StyleFlags::DIM | StyleFlags::INVERSE),
+            &colors,
+        );
+        assert_eq!(spec, (fg * DIM_FACTOR).to_arr());
+
+        let indexed = r.compute_bg_color(
+            &style(AnsiColor::Indexed(1), StyleFlags::DIM | StyleFlags::INVERSE),
+            &colors,
+        );
+        assert_eq!(indexed, r.colors[NamedColor::DimBlack as usize + 1]);
+    }
+
+    /// The default-colors case of the same rule: dim inverse text
+    /// paints its block in DimForeground, exactly what the fg path
+    /// resolves (alacritty gets this from resolving before the swap).
+    #[test]
+    fn inverse_dims_a_named_swapped_foreground() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+
+        let plain = r.compute_bg_color(
+            &style(AnsiColor::Named(NamedColor::Foreground), StyleFlags::DIM),
+            &colors,
+        );
+        assert_eq!(plain, r.colors[NamedColor::Foreground as usize]);
+
+        let inverted = r.compute_bg_color(
+            &style(
+                AnsiColor::Named(NamedColor::Foreground),
+                StyleFlags::DIM | StyleFlags::INVERSE,
+            ),
+            &colors,
+        );
+        assert_eq!(inverted, r.colors[NamedColor::DimForeground as usize]);
+    }
+
+    /// `draw-bold-text-with-light-colors` is a rule about text: it
+    /// applies to a background only once INVERSE made it the text.
+    #[test]
+    fn bold_brightens_an_indexed_background_only_under_inverse() {
+        let r = renderer(true);
+        let colors = TermColors::default();
+
+        let plain =
+            r.compute_bg_color(&style(AnsiColor::Indexed(1), StyleFlags::BOLD), &colors);
+        assert_eq!(plain, r.colors[1]);
+
+        let inverted = r.compute_bg_color(
+            &style(
+                AnsiColor::Indexed(1),
+                StyleFlags::BOLD | StyleFlags::INVERSE,
+            ),
+            &colors,
+        );
+        assert_eq!(inverted, r.colors[9]);
     }
 }
