@@ -32,7 +32,12 @@ concurrency:
 jobs:
   lints:
     name: Build
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        # Both Linux arches so the cachix cache serves x86_64 users too,
+        # not just the arm runner's own architecture.
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     # flakehub-cache authenticates via OIDC; without these permissions it
     # silently disables itself and falls back to the GHA cache.
