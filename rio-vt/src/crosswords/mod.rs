@@ -2794,6 +2794,10 @@ impl<U: EventListener> Crosswords<U> {
 
         mem::swap(&mut self.grid, &mut self.inactive_grid);
         self.mode ^= Mode::ALT_SCREEN;
+        // Geometry consumers select placements by active screen. A screen
+        // swap changes the externally visible set even if neither map was
+        // otherwise mutated.
+        self.bump_external_placements_revision();
         self.selection = None;
 
         // Swap kitty graphics state per screen so each screen owns its
