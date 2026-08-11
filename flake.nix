@@ -1,6 +1,14 @@
 {
   description = "Rio | A hardware-accelerated GPU terminal emulator";
 
+  # Binary cache populated by CI on every merge to main; nix offers to
+  # enable it on first use so `nix run github:raphamorim/rio` becomes a
+  # download instead of a build.
+  nixConfig = {
+    extra-substituters = ["https://rioterm.cachix.org"];
+    extra-trusted-public-keys = ["rioterm.cachix.org-1:cs/H9Jf0ZpHyR4WgjoNJZVBpkVi69Y4JASUK5ReEQPE="];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
