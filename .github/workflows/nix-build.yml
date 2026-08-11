@@ -39,18 +39,15 @@ jobs:
         os: [ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    # flakehub-cache authenticates via OIDC; without these permissions it
-    # silently disables itself and falls back to the GHA cache.
     permissions:
-      id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/flakehub-cache-action@main
-      # User-facing binary cache: flake users add rioterm.cachix.org as a
-      # substituter (the flake's nixConfig offers it) and download rio
-      # instead of building it. Only main builds are pushed.
+      # Binary cache, both directions: substitutes previously-built paths
+      # for CI, and flake users get rioterm.cachix.org as a substituter
+      # (the flake's nixConfig offers it) so `nix run` is a download.
+      # Only main builds are pushed.
       - uses: cachix/cachix-action@v17
         with:
           name: rioterm
