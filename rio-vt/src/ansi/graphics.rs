@@ -140,18 +140,21 @@ pub fn kitty_display_size(
     match (requested_columns, requested_rows) {
         (0, 0) => (source_width, source_height),
         (c, 0) => {
-            let w = c as usize * cell_width;
+            let w = (c as usize).saturating_mul(cell_width);
             let h =
                 (source_height as f64 * w as f64 / source_width as f64).round() as usize;
             (w, h)
         }
         (0, r) => {
-            let h = r as usize * cell_height;
+            let h = (r as usize).saturating_mul(cell_height);
             let w =
                 (source_width as f64 * h as f64 / source_height as f64).round() as usize;
             (w, h)
         }
-        (c, r) => (c as usize * cell_width, r as usize * cell_height),
+        (c, r) => (
+            (c as usize).saturating_mul(cell_width),
+            (r as usize).saturating_mul(cell_height),
+        ),
     }
 }
 
@@ -198,8 +201,8 @@ impl KittyPlacement {
         if w == 0 || h == 0 {
             return;
         }
-        self.pixel_width = w as u32;
-        self.pixel_height = h as u32;
+        self.pixel_width = u32::try_from(w).unwrap_or(u32::MAX);
+        self.pixel_height = u32::try_from(h).unwrap_or(u32::MAX);
         // Offsets are stored raw and clamped where they're read, so a
         // shrink-then-grow of the cell size can't lose the original.
         let x_offset = (self.cell_x_offset as usize).min(cell_width - 1);
@@ -207,12 +210,14 @@ impl KittyPlacement {
         self.columns = if self.requested_columns > 0 {
             self.requested_columns
         } else {
-            (w + x_offset).div_ceil(cell_width) as u32
+            u32::try_from(w.saturating_add(x_offset).div_ceil(cell_width))
+                .unwrap_or(u32::MAX)
         };
         let full_rows = if self.requested_rows > 0 {
             self.requested_rows
         } else {
-            (h + y_offset).div_ceil(cell_height) as u32
+            u32::try_from(h.saturating_add(y_offset).div_ceil(cell_height))
+                .unwrap_or(u32::MAX)
         };
         self.unclipped_rows = full_rows;
         self.rows = full_rows
@@ -1469,6 +1474,13 @@ impl Graphics {
 /// last placement dies, the recount must give its bytes back to the
 /// budget — before this, every sixel/iTerm2 image counted against the
 /// 320MB kitty budget forever and starved kitty images into eviction.
+#[test]
+fn kitty_display_size_saturates_malicious_cell_spans() {
+    let (width, height) = kitty_display_size(1, 1, u32::MAX, u32::MAX, usize::MAX, 2);
+    assert_eq!(width, usize::MAX);
+    assert_eq!(height, (u32::MAX as usize).saturating_mul(2));
+}
+
 #[test]
 fn atlas_key_release_returns_bytes_to_the_budget() {
     let mut graphics = Graphics::default();

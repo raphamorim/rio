@@ -6046,12 +6046,20 @@ impl<U: EventListener> Crosswords<U> {
             let columns = if placement.columns > 0 {
                 placement.columns
             } else {
-                (display_w + cell_x_offset).div_ceil(cell_width) as u32
+                u32::try_from(
+                    display_w.saturating_add(cell_x_offset).div_ceil(cell_width),
+                )
+                .unwrap_or(u32::MAX)
             };
             let rows = if placement.rows > 0 {
                 placement.rows
             } else {
-                (display_h + cell_y_offset).div_ceil(cell_height) as u32
+                u32::try_from(
+                    display_h
+                        .saturating_add(cell_y_offset)
+                        .div_ceil(cell_height),
+                )
+                .unwrap_or(u32::MAX)
             };
             (columns, rows)
         };
@@ -6085,8 +6093,8 @@ impl<U: EventListener> Crosswords<U> {
             unclipped_rows: rows,
             requested_columns: placement.columns,
             requested_rows: placement.rows,
-            pixel_width: display_w as u32,
-            pixel_height: display_h as u32,
+            pixel_width: u32::try_from(display_w).unwrap_or(u32::MAX),
+            pixel_height: u32::try_from(display_h).unwrap_or(u32::MAX),
             cell_x_offset: placement.cell_x_offset,
             cell_y_offset: placement.cell_y_offset,
             z_index: placement.z_index,
