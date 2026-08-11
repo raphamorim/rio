@@ -1881,6 +1881,36 @@ fn test_image_number_mapping() {
 }
 
 #[test]
+fn test_wire_image_number_transmit_and_put_uses_terminal_assigned_id() {
+    let mut term = make_test_term();
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+    let mut state = KittyGraphicsState::default();
+
+    let transmit = vec![
+        b"G".as_ref(),
+        b"a=t,f=32,s=1,v=1,I=7".as_ref(),
+        b"/wAA/w==".as_ref(),
+    ];
+    let response = kitty_graphics_protocol::parse(&transmit, &mut state).unwrap();
+    let image_id = response.graphic_data.as_ref().unwrap().id.get() as u32;
+    assert_ne!(image_id, 0);
+    assert!(term.store_graphic_with_number(
+        response.graphic_data.unwrap(),
+        response.image_number,
+    ));
+    assert_eq!(term.graphics.kitty_image_numbers.get(&7), Some(&image_id));
+
+    let put = vec![b"G".as_ref(), b"a=p,I=7,p=9,c=1,r=1".as_ref()];
+    let response = kitty_graphics_protocol::parse(&put, &mut state).unwrap();
+    assert!(term.place_graphic_with_number(
+        response.placement_request.unwrap(),
+        response.image_number,
+    ));
+    assert!(term.graphics.kitty_placements.contains_key(&(image_id, 9)));
+}
+
+#[test]
 fn test_image_number_remapping_on_retransmit() {
     // Kitty: re-transmitting with same I= gets new image data but same mapping
     use crate::ansi::graphics::Graphics;
@@ -2628,6 +2658,51 @@ fn test_delete_lowercase_a_keeps_image_data() {
 }
 
 #[test]
+fn test_positional_data_delete_keeps_unrelated_virtual_image() {
+    use crate::ansi::kitty_graphics_protocol::PlacementRequest;
+    use crate::performer::handler::Handler;
+
+    let mut term = make_test_term();
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+    store_red_pixel(&mut term, 1);
+    store_red_pixel(&mut term, 2);
+    let placement = |image_id, placement_id, virtual_placement| PlacementRequest {
+        image_id,
+        placement_id,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        virtual_placement,
+        unicode_placeholder: 0,
+        cursor_movement: 1,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+    };
+    assert!(term.place_graphic(placement(1, 1, true)));
+    assert!(term.place_graphic(placement(2, 1, false)));
+
+    term.delete_graphics(DeleteRequest {
+        action: b'C',
+        image_id: 0,
+        image_number: 0,
+        placement_id: 0,
+        x: 0,
+        y: 0,
+        z_index: 0,
+        delete_data: true,
+    });
+
+    assert!(term.graphics.get_kitty_image(1).is_some());
+    assert!(term.graphics.kitty_virtual_placements.contains_key(&(1, 1)));
+    assert!(term.graphics.get_kitty_image(2).is_none());
+}
+
+#[test]
 fn test_delete_uppercase_n_frees_image_via_number() {
     // d=N: delete by image number, free data
     let mut term = make_test_term();
@@ -2844,6 +2919,87 @@ fn test_swap_alt_marks_kitty_dirty() {
 }
 
 #[test]
+fn test_text_clear_preserves_direct_and_virtual_kitty_placements() {
+    use crate::ansi::kitty_graphics_protocol::PlacementRequest;
+    use crate::performer::handler::{Handler, Processor};
+
+    let mut term = make_test_term();
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+    store_red_pixel(&mut term, 1);
+
+    let placement = |placement_id, virtual_placement| PlacementRequest {
+        image_id: 1,
+        placement_id,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        virtual_placement,
+        unicode_placeholder: 0,
+        cursor_movement: 1,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+    };
+    assert!(term.place_graphic(placement(1, false)));
+    assert!(term.place_graphic(placement(2, true)));
+
+    Processor::default().advance(&mut term, b"\x1b[2J");
+
+    assert!(term.graphics.kitty_placements.contains_key(&(1, 1)));
+    assert!(term.graphics.kitty_virtual_placements.contains_key(&(1, 2)));
+    assert!(term.graphics.get_kitty_image(1).is_some());
+}
+
+#[test]
+fn test_native_direct_placement_above_legacy_atlas_limit_is_renderable() {
+    use crate::ansi::kitty_graphics_protocol::PlacementRequest;
+    use crate::performer::handler::Handler;
+
+    let mut term = make_test_term();
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+    let width = 4097usize;
+    assert!(term.graphics.store_kitty_image(
+        77,
+        None,
+        GraphicData {
+            id: GraphicId::new(77),
+            width,
+            height: 1,
+            color_type: ColorType::Rgba,
+            pixels: vec![255; width * 4],
+            is_opaque: true,
+            resize: None,
+            display_width: None,
+            display_height: None,
+            transmit_time: std::time::Instant::now(),
+        },
+    ));
+
+    assert!(term.place_graphic(PlacementRequest {
+        image_id: 77,
+        placement_id: 1,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 0,
+        rows: 0,
+        z_index: 0,
+        virtual_placement: false,
+        unicode_placeholder: 0,
+        cursor_movement: 1,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+    }));
+    assert!(term.graphics.kitty_placements.contains_key(&(77, 1)));
+}
+
+#[test]
 fn test_full_reset_clears_both_screens() {
     // reset_state should clear images on both main and alt screens.
     let mut term = make_test_term();
@@ -3000,6 +3156,101 @@ fn test_eviction_keeps_active_used_image_when_inactive_available() {
         !graphics.kitty_inactive_screen.kitty_images.contains_key(&2),
         "Inactive image should be the eviction target"
     );
+}
+
+#[test]
+fn test_inactive_same_id_eviction_keeps_active_texture_key() {
+    use crate::ansi::graphics::{Graphics, KittyScreenState, StoredImage};
+
+    let data = |byte| GraphicData {
+        id: GraphicId::new(7),
+        width: 5,
+        height: 2,
+        color_type: ColorType::Rgba,
+        pixels: vec![byte; 40],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    let mut graphics = Graphics {
+        total_limit: 80,
+        ..Graphics::default()
+    };
+    assert!(graphics.store_kitty_image(7, None, data(1)));
+    graphics.kitty_inactive_screen = KittyScreenState::default();
+    graphics.kitty_inactive_screen.kitty_images.insert(
+        7,
+        StoredImage {
+            data: data(2),
+            transmission_time: std::time::Instant::now()
+                - std::time::Duration::from_secs(60),
+        },
+    );
+    graphics.total_bytes += 40;
+
+    assert!(graphics.evict_images(40, &std::collections::HashSet::new()));
+    assert!(graphics.kitty_images.contains_key(&7));
+    assert!(!graphics.kitty_inactive_screen.kitty_images.contains_key(&7));
+    assert!(
+        !graphics
+            .texture_operations
+            .lock()
+            .contains(&rio_graphics::kitty_image_key(7)),
+        "the active screen still owns the shared frontend key"
+    );
+}
+
+#[test]
+fn test_virtual_placement_protects_image_and_is_swept_with_eviction() {
+    use crate::ansi::graphics::{Graphics, VirtualPlacement};
+
+    let data = |id, byte| GraphicData {
+        id: GraphicId::new(id),
+        width: 5,
+        height: 2,
+        color_type: ColorType::Rgba,
+        pixels: vec![byte; 40],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: std::time::Instant::now(),
+    };
+    let mut graphics = Graphics {
+        total_limit: 80,
+        ..Graphics::default()
+    };
+    assert!(graphics.store_kitty_image(1, None, data(1, 1)));
+    graphics.kitty_virtual_placements.insert(
+        (1, 1),
+        VirtualPlacement {
+            image_id: 1,
+            placement_id: 1,
+            columns: 1,
+            rows: 1,
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            z_index: 0,
+        },
+    );
+    assert!(graphics.store_kitty_image(2, None, data(2, 2)));
+
+    // Storing a third image must evict unused image 2, not the image
+    // referenced by visible placeholder metadata.
+    assert!(graphics.store_kitty_image(3, None, data(3, 3)));
+    assert!(graphics.kitty_images.contains_key(&1));
+    assert!(graphics.kitty_virtual_placements.contains_key(&(1, 1)));
+    assert!(!graphics.kitty_images.contains_key(&2));
+
+    // If pressure is high enough to evict even used images as a last resort,
+    // their virtual metadata must be swept with them.
+    let used = graphics.collect_active_graphic_ids();
+    assert!(graphics.evict_images(80, &used));
+    assert!(graphics.kitty_virtual_placements.is_empty());
 }
 
 // kitten icat regression: multiple invocations must not collapse into
@@ -4426,6 +4677,64 @@ fn test_overlay_geometry_partial_visibility_and_full_source() {
 
     // Zero crop falls back to the full texture.
     assert_eq!(geometry.source_rect, [0.0, 0.0, 1.0, 1.0]);
+}
+
+#[test]
+fn test_overlay_geometry_clips_asymmetric_offset_rows_by_pixels() {
+    use crate::ansi::graphics::{kitty_overlay_geometry, OverlayViewport};
+
+    // A 25px native image with Y=10 occupies two 20px cells: the first
+    // occupied row contains 10 image pixels and the second contains 15.
+    let placement = KittyPlacement {
+        image_id: 1,
+        placement_id: 1,
+        source_x: 0,
+        source_y: 0,
+        source_width: 0,
+        source_height: 0,
+        dest_col: 0,
+        dest_row: 1,
+        columns: 1,
+        rows: 1,
+        clip_top_rows: 1,
+        clip_bottom_rows: 0,
+        unclipped_rows: 2,
+        requested_columns: 0,
+        requested_rows: 0,
+        pixel_width: 10,
+        pixel_height: 25,
+        cell_x_offset: 0,
+        cell_y_offset: 10,
+        z_index: 0,
+        transmit_time: std::time::Instant::now(),
+    };
+    let viewport = OverlayViewport {
+        cell_width: 10.0,
+        cell_height: 20.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        history_size: 0,
+        display_offset: 0,
+        screen_lines: 4,
+    };
+
+    let top = kitty_overlay_geometry(&placement, 10, 25, &viewport).unwrap();
+    assert_eq!(top.y, 20.0);
+    assert_eq!(top.height, 15.0);
+    assert!((top.source_rect[1] - 0.4).abs() < f32::EPSILON);
+    assert_eq!(top.source_rect[3], 1.0);
+
+    let bottom_placement = KittyPlacement {
+        dest_row: 0,
+        clip_top_rows: 0,
+        clip_bottom_rows: 1,
+        ..placement
+    };
+    let bottom = kitty_overlay_geometry(&bottom_placement, 10, 25, &viewport).unwrap();
+    assert_eq!(bottom.y, 10.0);
+    assert_eq!(bottom.height, 10.0);
+    assert_eq!(bottom.source_rect[1], 0.0);
+    assert!((bottom.source_rect[3] - 0.4).abs() < f32::EPSILON);
 }
 
 #[test]

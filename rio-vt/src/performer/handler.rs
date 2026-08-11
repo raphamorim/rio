@@ -372,6 +372,15 @@ pub trait Handler {
         false
     }
 
+    /// Store a graphic and bind an optional client-owned image number.
+    fn store_graphic_with_number(
+        &mut self,
+        data: GraphicData,
+        _image_number: Option<u32>,
+    ) -> bool {
+        self.store_graphic(data)
+    }
+
     /// Transmit and display a kitty graphic as an overlay (for a=T).
     fn kitty_transmit_and_display(
         &mut self,
@@ -379,6 +388,16 @@ pub trait Handler {
         _placement: kitty_graphics_protocol::PlacementRequest,
     ) -> bool {
         false
+    }
+
+    /// Transmit/display while binding an optional client image number.
+    fn kitty_transmit_and_display_with_number(
+        &mut self,
+        data: GraphicData,
+        placement: kitty_graphics_protocol::PlacementRequest,
+        _image_number: Option<u32>,
+    ) -> bool {
+        self.kitty_transmit_and_display(data, placement)
     }
 
     /// Place an existing graphic at a specific location (for a=p).
@@ -391,6 +410,15 @@ pub trait Handler {
         _placement: kitty_graphics_protocol::PlacementRequest,
     ) -> bool {
         false
+    }
+
+    /// Place an existing graphic addressed by `i=` or `I=`.
+    fn place_graphic_with_number(
+        &mut self,
+        placement: kitty_graphics_protocol::PlacementRequest,
+        _image_number: Option<u32>,
+    ) -> bool {
+        self.place_graphic(placement)
     }
 
     /// Delete graphics based on the specified criteria.
@@ -851,15 +879,19 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
 
                     if let Some(placement) = response.placement_request {
                         // a=T: Transmit and display as overlay
-                        if !self
-                            .handler
-                            .kitty_transmit_and_display(graphic_data, placement)
-                        {
+                        if !self.handler.kitty_transmit_and_display_with_number(
+                            graphic_data,
+                            placement,
+                            response.image_number,
+                        ) {
                             response.response = response.error_response.take();
                         }
                     } else {
                         // a=t: Transmit only
-                        if !self.handler.store_graphic(graphic_data) {
+                        if !self.handler.store_graphic_with_number(
+                            graphic_data,
+                            response.image_number,
+                        ) {
                             response.response = response.error_response.take();
                         }
                     }
@@ -872,7 +904,10 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                     // a=p: Display previously stored image. A placement
                     // of an unknown image answers ENOENT rather than OK,
                     // matching kitty, so the client knows to retransmit.
-                    if !self.handler.place_graphic(placement) {
+                    if !self
+                        .handler
+                        .place_graphic_with_number(placement, response.image_number)
+                    {
                         response.response = response.error_response.take();
                     }
                 }

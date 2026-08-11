@@ -375,15 +375,35 @@ pub fn kitty_overlay_geometry(
     // three image shaders share.
     let image_width = image_width as f32;
     let image_height = image_height as f32;
-    let full_rows = placement.unclipped_rows.max(1) as f32;
-    let top_fraction = placement.clip_top_rows as f32 / full_rows;
-    let bottom_fraction = placement.clip_bottom_rows as f32 / full_rows;
-    let visible_fraction = (1.0 - top_fraction - bottom_fraction).max(0.0);
-    if visible_fraction <= 0.0 {
+    // Region scrolling clips at cell boundaries, but occupied rows need not
+    // cover equal image-pixel heights (native-size images and Y= offsets are
+    // common). Resolve the actual display-pixel intersection instead of
+    // dividing by the number of occupied rows.
+    let raw_y_offset = (placement.cell_y_offset as f32).min(viewport.cell_height - 1.0);
+    let image_top = raw_y_offset;
+    let image_bottom = image_top + display_height as f32;
+    let top_boundary = placement.clip_top_rows as f32 * viewport.cell_height;
+    let remaining_rows = placement
+        .unclipped_rows
+        .saturating_sub(placement.clip_bottom_rows);
+    let bottom_boundary = remaining_rows as f32 * viewport.cell_height;
+    let visible_top = if placement.clip_top_rows == 0 {
+        image_top
+    } else {
+        image_top.max(top_boundary)
+    };
+    let visible_bottom = if placement.clip_bottom_rows == 0 {
+        image_bottom
+    } else {
+        image_bottom.min(bottom_boundary)
+    };
+    if visible_bottom <= visible_top {
         return None;
     }
+    let top_fraction = (visible_top - image_top) / display_height as f32;
+    let bottom_fraction = (visible_bottom - image_top) / display_height as f32;
     let source_top = source_y as f32 + source_height as f32 * top_fraction;
-    let source_bottom = source_y as f32 + source_height as f32 * (1.0 - bottom_fraction);
+    let source_bottom = source_y as f32 + source_height as f32 * bottom_fraction;
     let source_rect = [
         source_x as f32 / image_width,
         source_top / image_height,
@@ -395,17 +415,13 @@ pub fn kitty_overlay_geometry(
     // box; stored values are raw, so clamp against the current cell
     // size here.
     let x_offset = (placement.cell_x_offset as f32).min(viewport.cell_width - 1.0);
-    let y_offset = if placement.clip_top_rows == 0 {
-        (placement.cell_y_offset as f32).min(viewport.cell_height - 1.0)
-    } else {
-        0.0
-    };
+    let y_offset = visible_top - top_boundary;
 
     Some(KittyOverlayGeometry {
         x: viewport.origin_x + placement.dest_col as f32 * viewport.cell_width + x_offset,
         y: viewport.origin_y + screen_row as f32 * viewport.cell_height + y_offset,
         width: display_width as f32,
-        height: display_height as f32 * visible_fraction,
+        height: visible_bottom - visible_top,
         source_rect,
     })
 }
@@ -590,6 +606,8 @@ pub struct VirtualPlacement {
     pub y: u32,
     pub width: u32,
     pub height: u32,
+    /// Z-index applied to the real images rendered over placeholder cells.
+    pub z_index: i32,
 }
 
 /// Per-screen Kitty graphics state.
@@ -930,38 +948,25 @@ impl Graphics {
         self.kitty_graphics_dirty = true;
     }
 
-    /// Clear the inactive screen before a fresh 1049 alternate-screen entry.
-    pub fn clear_inactive_screen(&mut self) {
-        let inactive_ids: Vec<u32> = self
-            .kitty_inactive_screen
-            .kitty_images
-            .keys()
-            .copied()
-            .collect();
-        let inactive_bytes: usize = self
-            .kitty_inactive_screen
-            .kitty_images
-            .values()
-            .map(|stored| stored.data.pixels.len())
-            .sum();
-        self.total_bytes = self.total_bytes.saturating_sub(inactive_bytes);
-        {
-            let mut removals = self.texture_operations.lock();
-            removals.extend(
-                inactive_ids
-                    .into_iter()
-                    .filter(|id| !self.kitty_images.contains_key(id))
-                    .map(rio_graphics::kitty_image_key),
-            );
-            removals.extend(self.kitty_inactive_screen.atlas_key_refs.keys().copied());
-        }
+    /// Clear DEC-grid atlas placements from the inactive screen before a
+    /// fresh 1049 alternate-screen entry. Kitty image caches and placements
+    /// are screen-owned protocol state and survive screen swaps.
+    pub fn clear_inactive_atlas_placements(&mut self) {
         let atlas_keys: Vec<u64> = self
             .kitty_inactive_screen
             .atlas_key_refs
             .keys()
             .copied()
             .collect();
-        self.kitty_inactive_screen = KittyScreenState::default();
+        if atlas_keys.is_empty() && self.kitty_inactive_screen.atlas_placements.is_empty()
+        {
+            return;
+        }
+        self.texture_operations
+            .lock()
+            .extend(atlas_keys.iter().copied());
+        self.kitty_inactive_screen.atlas_placements.clear();
+        self.kitty_inactive_screen.atlas_key_refs.clear();
         self.untrack_atlas_keys(&atlas_keys);
         self.kitty_graphics_dirty = true;
     }
@@ -1057,6 +1062,8 @@ impl Graphics {
                 .kitty_placements
                 .len()
                 .saturating_add(self.kitty_virtual_placements.len())
+                .saturating_add(self.kitty_inactive_screen.kitty_placements.len())
+                .saturating_add(self.kitty_inactive_screen.kitty_virtual_placements.len())
                 < self.max_kitty_placements
     }
 
@@ -1082,6 +1089,9 @@ impl Graphics {
             // Collect active IDs — images with placements are protected
             let mut active = std::collections::HashSet::new();
             for placement in self.kitty_placements.values() {
+                active.insert(placement.image_id as u64);
+            }
+            for placement in self.kitty_virtual_placements.values() {
                 active.insert(placement.image_id as u64);
             }
             // Also protect the image we're about to store
@@ -1360,7 +1370,19 @@ impl Graphics {
                     rio_graphics::kitty_image_key(id.get() as u32)
                 }
             };
-            self.texture_operations.lock().push(key);
+            let retained_on_other_screen = match source {
+                CandidateSource::Pending => false,
+                CandidateSource::ActiveKitty => self
+                    .kitty_inactive_screen
+                    .kitty_images
+                    .contains_key(&evicted_u32),
+                CandidateSource::InactiveKitty => {
+                    self.kitty_images.contains_key(&evicted_u32)
+                }
+            };
+            if !retained_on_other_screen {
+                self.texture_operations.lock().push(key);
+            }
         }
 
         // Sweep dangling placements on both screens. A placement is
@@ -1375,6 +1397,8 @@ impl Graphics {
             self.kitty_images.keys().copied().collect();
         self.kitty_placements
             .retain(|_, p| active_ids.contains(&p.image_id));
+        self.kitty_virtual_placements
+            .retain(|_, p| active_ids.contains(&p.image_id));
         let inactive_ids: std::collections::HashSet<u32> = self
             .kitty_inactive_screen
             .kitty_images
@@ -1383,6 +1407,9 @@ impl Graphics {
             .collect();
         self.kitty_inactive_screen
             .kitty_placements
+            .retain(|_, p| inactive_ids.contains(&p.image_id));
+        self.kitty_inactive_screen
+            .kitty_virtual_placements
             .retain(|_, p| inactive_ids.contains(&p.image_id));
 
         // Update total_bytes
@@ -1406,6 +1433,9 @@ impl Graphics {
         }
         // Overlay-based (kitty) liveness — use image_id directly
         for placement in self.kitty_placements.values() {
+            active.insert(placement.image_id as u64);
+        }
+        for placement in self.kitty_virtual_placements.values() {
             active.insert(placement.image_id as u64);
         }
         active

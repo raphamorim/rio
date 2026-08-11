@@ -24,7 +24,7 @@ pub struct KittyGraphicsConfig {
     pub max_height: u32,
     /// Maximum resident bytes across graphics stores.
     pub max_total_bytes: usize,
-    /// Maximum direct and virtual placements on the active screen.
+    /// Maximum direct and virtual placements retained across both screens.
     pub max_placements: usize,
     /// Maximum simultaneous incomplete chunked transmissions.
     pub max_incomplete_transfers: usize,
@@ -66,12 +66,12 @@ impl Default for KittyGraphicsConfig {
 #[derive(Debug, Default)]
 pub struct KittyGraphicsState {
     /// Stores incomplete image transfers (chunked transmissions).
-    /// Key is the image_id or image_number from the first chunk.
-    incomplete_images: HashMap<u32, KittyGraphicsCommand>,
+    /// Image IDs and image numbers occupy distinct protocol namespaces.
+    incomplete_images: HashMap<TransmissionKey, KittyGraphicsCommand>,
 
     /// Tracks the current transmission key for chunks that don't specify an image ID.
     /// This is used for continuation chunks that only have m=1 or m=0.
-    current_transmission_key: u32,
+    current_transmission_key: Option<TransmissionKey>,
 
     /// Counter for auto-assigned image IDs. Per kitty spec, when a
     /// client transmits an image without an explicit `i=` (or `I=`)
@@ -114,17 +114,17 @@ impl KittyGraphicsState {
             };
             self.incomplete_images.remove(&oldest);
         }
-        if !self
-            .incomplete_images
-            .contains_key(&self.current_transmission_key)
+        if self
+            .current_transmission_key
+            .is_some_and(|key| !self.incomplete_images.contains_key(&key))
         {
-            self.current_transmission_key = 0;
+            self.current_transmission_key = None;
         }
     }
 
     pub fn clear_incomplete_transfers(&mut self) {
         self.incomplete_images.clear();
-        self.current_transmission_key = 0;
+        self.current_transmission_key = None;
     }
 
     /// Allocate a fresh image_id for an implicit transmission.
@@ -152,6 +152,9 @@ pub struct KittyGraphicsResponse {
     /// Built at parse time because only the parser knows the ids and
     /// the `q=` quiet level.
     pub error_response: Option<String>,
+    /// Client image number (`I=`) to bind to a terminal-assigned image ID
+    /// after a successful transmission.
+    pub image_number: Option<u32>,
     /// True when this "response" is just a chunk-accumulation
     /// acknowledgement — the parser stored the chunk and is waiting
     /// for more. The dispatcher should treat this as a successful
@@ -173,6 +176,7 @@ impl KittyGraphicsResponse {
             delete_request: None,
             response: None,
             error_response: None,
+            image_number: None,
             incomplete: true,
         }
     }
@@ -254,6 +258,12 @@ enum TransmissionMedium {
 enum Compression {
     None,
     Zlib,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum TransmissionKey {
+    ImageId(u32),
+    ImageNumber(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -453,7 +463,28 @@ fn command_error(cmd: &KittyGraphicsCommand, message: &str) -> KittyGraphicsResp
             true,
         ),
         error_response: None,
+        image_number: None,
         incomplete: false,
+    }
+}
+
+fn explicit_transmission_key(cmd: &KittyGraphicsCommand) -> Option<TransmissionKey> {
+    match (cmd.image_id, cmd.image_number) {
+        (image_id, 0) if image_id > 0 => Some(TransmissionKey::ImageId(image_id)),
+        (0, image_number) if image_number > 0 => {
+            Some(TransmissionKey::ImageNumber(image_number))
+        }
+        _ => None,
+    }
+}
+
+fn abort_transfer(state: &mut KittyGraphicsState, key: Option<TransmissionKey>) {
+    let Some(key) = key else {
+        return;
+    };
+    state.incomplete_images.remove(&key);
+    if state.current_transmission_key == Some(key) {
+        state.current_transmission_key = None;
     }
 }
 
@@ -489,35 +520,6 @@ pub fn parse(
         }
     }
 
-    // Decode payload if present. We always decode base64 up front
-    // (matching ghostty) so that each APC command's payload is
-    // self-contained: clients like chafa which pad every chunk
-    // independently can be merged by simply concatenating the decoded
-    // byte streams, rather than trying to splice base64 text and running
-    // into stray `=` padding in the middle.
-    if let Some(payload) = params.get(2) {
-        if !payload.is_empty() {
-            if payload.len() > state.config.max_encoded_bytes {
-                return Some(command_error(&cmd, "E2BIG: encoded payload too large"));
-            }
-            let Some(decoded) = decode_payload_base64(payload) else {
-                // A malformed continuation invalidates the pinned transfer;
-                // retaining it would let later commands append to stale data.
-                if state.current_transmission_key != 0 {
-                    state
-                        .incomplete_images
-                        .remove(&state.current_transmission_key);
-                    state.current_transmission_key = 0;
-                }
-                return Some(command_error(&cmd, "EINVAL: invalid base64 payload"));
-            };
-            if decoded.len() > state.config.max_decoded_bytes {
-                return Some(command_error(&cmd, "E2BIG: image too large"));
-            }
-            cmd.payload = SmallVec::from_vec(decoded);
-        }
-    }
-
     // Validation: `i=` and `I=` are mutually exclusive per kitty spec
     // (the image is either referenced by id or by number, never both).
     if cmd.image_id > 0 && cmd.image_number > 0 {
@@ -534,6 +536,7 @@ pub fn parse(
                 true,
             ),
             error_response: None,
+            image_number: None,
             incomplete: false,
         });
     }
@@ -559,8 +562,44 @@ pub fn parse(
                 true,
             ),
             error_response: None,
+            image_number: None,
             incomplete: false,
         });
+    }
+
+    // The Kitty protocol requires every delete command to abort all partial
+    // uploads. Do this before payload handling/key resolution so a delete can
+    // never be mistaken for the final chunk of a transfer with the same ID.
+    if cmd.action == Action::Delete {
+        state.clear_incomplete_transfers();
+    }
+
+    let explicit_key = explicit_transmission_key(&cmd);
+    let command_key = explicit_key.or(state.current_transmission_key);
+
+    // Decode payload if present. We always decode base64 up front
+    // (matching ghostty) so that each APC command's payload is
+    // self-contained: clients like chafa which pad every chunk
+    // independently can be merged by simply concatenating the decoded
+    // byte streams, rather than trying to splice base64 text and running
+    // into stray `=` padding in the middle. Any error aborts only this
+    // command's namespaced transfer, never an unrelated pinned upload.
+    if let Some(payload) = params.get(2) {
+        if !payload.is_empty() {
+            if payload.len() > state.config.max_encoded_bytes {
+                abort_transfer(state, command_key);
+                return Some(command_error(&cmd, "E2BIG: encoded payload too large"));
+            }
+            let Some(decoded) = decode_payload_base64(payload) else {
+                abort_transfer(state, command_key);
+                return Some(command_error(&cmd, "EINVAL: invalid base64 payload"));
+            };
+            if decoded.len() > state.config.max_decoded_bytes {
+                abort_transfer(state, command_key);
+                return Some(command_error(&cmd, "E2BIG: image too large"));
+            }
+            cmd.payload = SmallVec::from_vec(decoded);
+        }
     }
 
     // Handle chunked data
@@ -575,23 +614,30 @@ pub fn parse(
     // when this is a chunked command (`cmd.more` is true). Pinning on
     // every command leaked into the next implicit command and made it
     // think it was a continuation chunk.
-    let image_key = if cmd.image_id > 0 || cmd.image_number > 0 {
-        if cmd.image_id > 0 {
-            cmd.image_id
-        } else {
-            cmd.image_number
-        }
-    } else if state.current_transmission_key != 0 {
+    let image_key = if let Some(key) = explicit_key {
+        key
+    } else if let Some(key) = state.current_transmission_key {
         // Continuation chunk: reuse the in-progress key
-        state.current_transmission_key
+        key
     } else {
         // Fresh command without explicit id — allocate one. Mark as
         // implicit so we suppress the response per spec.
         let key = state.allocate_image_id();
         cmd.image_id = key;
         cmd.implicit_id = true;
-        key
+        TransmissionKey::ImageId(key)
     };
+
+    // `I=` is a client-owned image number, not the image's storage ID.
+    // Allocate a terminal ID for transmissions and bind the number after
+    // the terminal layer accepts the image. Put/delete requests retain
+    // only the number so the terminal can resolve its per-screen mapping.
+    if cmd.image_number > 0
+        && cmd.image_id == 0
+        && matches!(cmd.action, Action::Transmit | Action::TransmitAndDisplay)
+    {
+        cmd.image_id = state.allocate_image_id();
+    }
 
     // Drop any chunked uploads that have been idle for too long. Runs
     // on every chunk event, so worst case we scan `incomplete_images`
@@ -602,7 +648,7 @@ pub fn parse(
         // Pin the key for continuation chunks. Only chunked commands
         // touch `current_transmission_key` so non-chunked commands
         // don't leak state into subsequent transmissions.
-        state.current_transmission_key = image_key;
+        state.current_transmission_key = Some(image_key);
 
         // Store chunk for later - preserve all metadata from first chunk.
         // Payload is already base64-decoded at this point, so subsequent
@@ -612,7 +658,7 @@ pub fn parse(
         if !state.incomplete_images.contains_key(&image_key)
             && state.incomplete_images.len() >= state.config.max_incomplete_transfers
         {
-            state.current_transmission_key = 0;
+            state.current_transmission_key = None;
             return Some(command_error(
                 &cmd,
                 "ENOSPC: too many incomplete transmissions",
@@ -631,7 +677,7 @@ pub fn parse(
             || declared_size > state.config.max_decoded_bytes
         {
             state.incomplete_images.remove(&image_key);
-            state.current_transmission_key = 0;
+            state.current_transmission_key = None;
             return Some(command_error(&cmd, "E2BIG: image too large"));
         }
         if total_without_current.saturating_add(next_len)
@@ -639,7 +685,7 @@ pub fn parse(
             || declared_size > state.config.max_total_incomplete_bytes
         {
             state.incomplete_images.remove(&image_key);
-            state.current_transmission_key = 0;
+            state.current_transmission_key = None;
             return Some(command_error(
                 &cmd,
                 "ENOSPC: incomplete transmission byte limit exceeded",
@@ -655,14 +701,14 @@ pub fn parse(
                     cmd.payload
                         .reserve(expected_size.saturating_sub(cmd.payload.len()));
                     debug!(
-                        "First chunk for image key {}: {} bytes, reserved {} bytes total",
+                        "First chunk for image key {:?}: {} bytes, reserved {} bytes total",
                         image_key,
                         cmd.payload.len(),
                         expected_size
                     );
                 } else {
                     debug!(
-                        "First chunk for image key {}: {} bytes",
+                        "First chunk for image key {:?}: {} bytes",
                         image_key,
                         cmd.payload.len()
                     );
@@ -678,19 +724,19 @@ pub fn parse(
                     > state.config.max_decoded_bytes
                 {
                     debug!(
-                        "Dropping chunked upload {}: would exceed decoded limit ({})",
+                        "Dropping chunked upload {:?}: would exceed decoded limit ({})",
                         image_key, state.config.max_decoded_bytes
                     );
                     // Evict the abandoned upload so it can't be resumed
                     // into an oversized state.
                     e.remove();
-                    state.current_transmission_key = 0;
+                    state.current_transmission_key = None;
                     return Some(command_error(&cmd, "E2BIG: image too large"));
                 }
                 stored_cmd.payload.extend_from_slice(&cmd.payload);
                 stored_cmd.last_touched = Instant::now();
                 debug!(
-                    "Appended chunk for image key {}: {} bytes accumulated",
+                    "Appended chunk for image key {:?}: {} bytes accumulated",
                     image_key,
                     stored_cmd.payload.len()
                 );
@@ -710,21 +756,21 @@ pub fn parse(
                 > state.config.max_decoded_bytes
             {
                 debug!(
-                    "Dropping final chunk {}: would exceed decoded limit ({})",
+                    "Dropping final chunk {:?}: would exceed decoded limit ({})",
                     image_key, state.config.max_decoded_bytes
                 );
-                state.current_transmission_key = 0;
+                state.current_transmission_key = None;
                 return Some(command_error(&cmd, "E2BIG: image too large"));
             }
             stored_cmd.payload.extend_from_slice(&cmd.payload);
             cmd = stored_cmd; // Use stored metadata
             debug!(
-                "Retrieved accumulated image key {}: total {} bytes",
+                "Retrieved accumulated image key {:?}: total {} bytes",
                 image_key,
                 cmd.payload.len()
             );
             // Reset current transmission key after completing this transmission
-            state.current_transmission_key = 0;
+            state.current_transmission_key = None;
         }
     }
 
@@ -755,6 +801,7 @@ pub fn parse(
                             )
                         },
                         error_response: None,
+                        image_number: None,
                         incomplete: false,
                     });
                 }
@@ -817,6 +864,7 @@ pub fn parse(
                     )
                 })
                 .flatten(),
+                image_number: (cmd.image_number > 0).then_some(cmd.image_number),
                 incomplete: false,
             })
         }
@@ -868,6 +916,7 @@ pub fn parse(
                 delete_request: None,
                 response,
                 error_response,
+                image_number: (cmd.image_number > 0).then_some(cmd.image_number),
                 incomplete: false,
             })
         }
@@ -890,6 +939,7 @@ pub fn parse(
                 delete_request: Some(delete),
                 response: None,
                 error_response: None,
+                image_number: None,
                 incomplete: false,
             })
         }
@@ -923,6 +973,7 @@ pub fn parse(
                 delete_request: None,
                 response,
                 error_response: None,
+                image_number: None,
                 incomplete: false,
             })
         }
@@ -959,6 +1010,7 @@ pub fn parse(
                 delete_request: None,
                 response,
                 error_response: None,
+                image_number: None,
                 incomplete: false,
             })
         }
@@ -1129,11 +1181,11 @@ fn evict_stale_chunks(state: &mut KittyGraphicsState) {
         );
         // If the pinned transmission key was evicted, clear it so that a
         // new chunkless command can't accidentally resume it.
-        if !state
-            .incomplete_images
-            .contains_key(&state.current_transmission_key)
+        if state
+            .current_transmission_key
+            .is_some_and(|key| !state.incomplete_images.contains_key(&key))
         {
-            state.current_transmission_key = 0;
+            state.current_transmission_key = None;
         }
     }
 }
@@ -1200,6 +1252,24 @@ impl GraphicError {
             GraphicError::FileNotFound => "ENOENT: file not found",
         }
     }
+}
+
+fn checked_rgba_output_len(
+    width: u32,
+    height: u32,
+    config: &KittyGraphicsConfig,
+) -> Result<usize, GraphicError> {
+    if width > config.max_width || height > config.max_height {
+        return Err(GraphicError::DimensionsTooLarge);
+    }
+    let bytes = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or(GraphicError::TooLarge)?;
+    if bytes > config.max_decompressed_bytes {
+        return Err(GraphicError::TooLarge);
+    }
+    Ok(bytes)
 }
 
 fn create_graphic_data(
@@ -1558,14 +1628,38 @@ fn create_graphic_data(
             };
             #[cfg(feature = "graphics")]
             let result = {
-                // Decode PNG data
-                use image_rs::ImageFormat;
+                // Inspect the PNG header under decoder limits before decoding
+                // pixel storage. The protocol's byte limit applies to the
+                // normalized RGBA buffer Ratty will retain, not merely to the
+                // compressed PNG or its source color format.
+                use image_rs::{ImageFormat, ImageReader, Limits};
+                use std::io::Cursor;
+
+                let png_limits = || {
+                    let mut limits = Limits::default();
+                    limits.max_image_width = Some(config.max_width);
+                    limits.max_image_height = Some(config.max_height);
+                    limits.max_alloc = Some(config.max_decompressed_bytes as u64);
+                    limits
+                };
+
+                let mut header = ImageReader::with_format(
+                    Cursor::new(pixel_data.as_slice()),
+                    ImageFormat::Png,
+                );
+                header.limits(png_limits());
+                let (header_width, header_height) = header
+                    .into_dimensions()
+                    .map_err(|_| GraphicError::InvalidData)?;
+                checked_rgba_output_len(header_width, header_height, config)?;
 
                 debug!("Decoding PNG, pixel_data length: {}", pixel_data.len());
-                let img = match image_rs::load_from_memory_with_format(
-                    &pixel_data,
+                let mut reader = ImageReader::with_format(
+                    Cursor::new(pixel_data.as_slice()),
                     ImageFormat::Png,
-                ) {
+                );
+                reader.limits(png_limits());
+                let img = match reader.decode() {
                     Ok(img) => {
                         debug!(
                             "PNG decoded successfully: {}x{}",
@@ -1579,12 +1673,7 @@ fn create_graphic_data(
                         return Err(GraphicError::InvalidData);
                     }
                 };
-                // PNG dimensions come from the decoded header — now enforce
-                // the cap we couldn't check up front.
-                if img.width() > config.max_width || img.height() > config.max_height {
-                    return Err(GraphicError::DimensionsTooLarge);
-                }
-                let rgba_img = img.to_rgba8();
+                let rgba_img = img.into_rgba8();
                 let (width, height) =
                     (rgba_img.width() as usize, rgba_img.height() as usize);
                 let pixels = rgba_img.into_raw();
@@ -1643,13 +1732,16 @@ fn create_graphic_data(
             }
 
             // Validate data size
-            let expected_size = (cmd.width as usize)
+            let pixel_count = (cmd.width as usize)
                 .checked_mul(cmd.height as usize)
-                .and_then(|pixels| pixels.checked_mul(bytes_per_pixel))
+                .ok_or(GraphicError::TooLarge)?;
+            let expected_size = pixel_count
+                .checked_mul(bytes_per_pixel)
                 .ok_or(GraphicError::TooLarge)?;
             if expected_size > config.max_decompressed_bytes {
                 return Err(GraphicError::TooLarge);
             }
+            let rgba_size = checked_rgba_output_len(cmd.width, cmd.height, config)?;
             if pixel_data.len() < expected_size {
                 debug!(
                     "Pixel data size insufficient: got {} bytes, expected at least {}",
@@ -1670,8 +1762,7 @@ fn create_graphic_data(
             let (pixels, is_opaque) = match cmd.format {
                 Format::Gray => {
                     // 1 bpp: R=G=B=gray, A=255
-                    let mut rgba =
-                        Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
+                    let mut rgba = Vec::with_capacity(rgba_size);
                     for &g in &pixel_data {
                         rgba.extend_from_slice(&[g, g, g, 255]);
                     }
@@ -1679,8 +1770,7 @@ fn create_graphic_data(
                 }
                 Format::GrayAlpha => {
                     // 2 bpp: R=G=B=gray, A=alpha
-                    let mut rgba =
-                        Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
+                    let mut rgba = Vec::with_capacity(rgba_size);
                     let mut opaque = true;
                     for chunk in pixel_data.chunks_exact(2) {
                         let g = chunk[0];
@@ -1694,8 +1784,7 @@ fn create_graphic_data(
                 }
                 Format::Rgb24 => {
                     // 3 bpp: add A=255
-                    let mut rgba =
-                        Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
+                    let mut rgba = Vec::with_capacity(rgba_size);
                     for chunk in pixel_data.chunks_exact(3) {
                         rgba.extend_from_slice(&[chunk[0], chunk[1], chunk[2], 255]);
                     }
@@ -2280,6 +2369,52 @@ mod tests {
     }
 
     #[test]
+    fn image_number_transmission_gets_a_nonzero_terminal_id() {
+        let mut state = KittyGraphicsState::default();
+        let params = vec![
+            b"G".as_ref(),
+            b"a=t,f=32,s=1,v=1,I=7".as_ref(),
+            b"/wAA/w==".as_ref(),
+        ];
+        let response = parse(&params, &mut state).expect("valid transmission");
+        let graphic = response.graphic_data.expect("decoded pixels");
+
+        assert_ne!(graphic.id, GraphicId::new(0));
+        assert_eq!(response.image_number, Some(7));
+        let reply = response.response.expect("numbered transmission replies");
+        assert!(reply.contains("i="));
+        assert!(reply.contains("I=7"));
+    }
+
+    #[test]
+    fn image_id_and_number_chunk_namespaces_and_error_cleanup_are_isolated() {
+        let mut state = KittyGraphicsState::default();
+        let id_chunk = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=7", b"/wAA"];
+        let number_chunk = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,I=7", b"/wAA"];
+        assert!(parse(&id_chunk, &mut state).unwrap().incomplete);
+        assert!(parse(&number_chunk, &mut state).unwrap().incomplete);
+        assert!(state
+            .incomplete_images
+            .contains_key(&TransmissionKey::ImageId(7)));
+        assert!(state
+            .incomplete_images
+            .contains_key(&TransmissionKey::ImageNumber(7)));
+
+        let malformed_number = vec![b"G".as_ref(), b"m=0,I=7", b"not base64!"];
+        let response = parse(&malformed_number, &mut state).unwrap();
+        assert!(response.response.unwrap().contains("invalid base64"));
+        assert!(
+            state
+                .incomplete_images
+                .contains_key(&TransmissionKey::ImageId(7)),
+            "an I= error must not abort an i= transfer with the same integer"
+        );
+        assert!(!state
+            .incomplete_images
+            .contains_key(&TransmissionKey::ImageNumber(7)));
+    }
+
+    #[test]
     fn configured_incomplete_transfer_cap_and_malformed_chunk_abort() {
         let mut state = KittyGraphicsState::default();
         state.set_config(KittyGraphicsConfig {
@@ -2295,12 +2430,28 @@ mod tests {
         assert_eq!(state.incomplete_images.len(), 1);
 
         // Resume the original transfer, then corrupt its final chunk.
-        state.current_transmission_key = 1;
+        state.current_transmission_key = Some(TransmissionKey::ImageId(1));
         let malformed = vec![b"G".as_ref(), b"m=0,i=1", b"not base64!"];
         let response = parse(&malformed, &mut state).unwrap();
         assert!(response.response.unwrap().contains("invalid base64"));
         assert!(state.incomplete_images.is_empty());
-        assert_eq!(state.current_transmission_key, 0);
+        assert_eq!(state.current_transmission_key, None);
+    }
+
+    #[test]
+    fn delete_aborts_every_incomplete_transfer_without_completing_one() {
+        let mut state = KittyGraphicsState::default();
+        let first = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=1", b"/wAA"];
+        let second = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,I=2", b"/wAA"];
+        assert!(parse(&first, &mut state).unwrap().incomplete);
+        assert!(parse(&second, &mut state).unwrap().incomplete);
+
+        let delete = vec![b"G".as_ref(), b"a=d,d=i,i=1".as_ref()];
+        let response = parse(&delete, &mut state).expect("delete request");
+        assert!(response.graphic_data.is_none());
+        assert!(response.delete_request.is_some());
+        assert!(state.incomplete_images.is_empty());
+        assert_eq!(state.current_transmission_key, None);
     }
 
     #[test]
@@ -2320,8 +2471,12 @@ mod tests {
         let second = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=2", b"AAA"];
         let response = parse(&second, &mut state).unwrap();
         assert!(response.response.unwrap().contains("byte limit"));
-        assert!(state.incomplete_images.contains_key(&1));
-        assert!(!state.incomplete_images.contains_key(&2));
+        assert!(state
+            .incomplete_images
+            .contains_key(&TransmissionKey::ImageId(1)));
+        assert!(!state
+            .incomplete_images
+            .contains_key(&TransmissionKey::ImageId(2)));
         assert_eq!(incomplete_payload_bytes(&state), 2);
     }
 
@@ -2361,6 +2516,56 @@ mod tests {
         let params = vec![
             b"G".as_ref(),
             b"a=q,f=32,s=4,v=4,o=z,i=44".as_ref(),
+            payload.as_bytes(),
+        ];
+        let response = parse(&params, &mut state).unwrap();
+        assert!(response.response.unwrap().contains("image too large"));
+    }
+
+    #[test]
+    fn normalized_rgba_output_must_fit_the_decompressed_byte_cap() {
+        for (format, raw, cap) in [
+            ("8", vec![1u8, 2], 6usize),
+            ("16", vec![1u8, 255, 2, 255], 6usize),
+            ("24", vec![1u8, 2, 3, 4, 5, 6], 7usize),
+        ] {
+            let payload = BASE64.encode(raw);
+            let control = format!("a=q,f={format},s=2,v=1,i=47");
+            let mut state = KittyGraphicsState::default();
+            state.set_config(KittyGraphicsConfig {
+                max_decompressed_bytes: cap,
+                ..KittyGraphicsConfig::default()
+            });
+            let params = vec![b"G".as_ref(), control.as_bytes(), payload.as_bytes()];
+            let response = parse(&params, &mut state).unwrap();
+            assert!(
+                response.response.unwrap().contains("image too large"),
+                "format {format} expands to eight RGBA bytes above cap {cap}"
+            );
+        }
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn png_rgba_output_is_bounded_before_pixel_decode() {
+        use image_rs::codecs::png::PngEncoder;
+        use image_rs::{ExtendedColorType, ImageEncoder};
+
+        let mut png = Vec::new();
+        PngEncoder::new(&mut png)
+            .write_image(&[0u8; 4 * 4 * 4], 4, 4, ExtendedColorType::Rgba8)
+            .unwrap();
+        let payload = BASE64.encode(png);
+        let mut state = KittyGraphicsState::default();
+        state.set_config(KittyGraphicsConfig {
+            max_encoded_bytes: payload.len(),
+            max_decoded_bytes: payload.len(),
+            max_decompressed_bytes: 63,
+            ..KittyGraphicsConfig::default()
+        });
+        let params = vec![
+            b"G".as_ref(),
+            b"a=q,f=100,i=48".as_ref(),
             payload.as_bytes(),
         ];
         let response = parse(&params, &mut state).unwrap();
@@ -2570,7 +2775,10 @@ mod tests {
         // Artificially age the stored command past the timeout.
         let stale =
             Instant::now() - state.config.incomplete_timeout - Duration::from_secs(1);
-        if let Some(cmd) = state.incomplete_images.get_mut(&777) {
+        if let Some(cmd) = state
+            .incomplete_images
+            .get_mut(&TransmissionKey::ImageId(777))
+        {
             cmd.last_touched = stale;
         }
 
@@ -2580,7 +2788,9 @@ mod tests {
         let _ = parse(&p2, &mut state);
 
         assert!(
-            !state.incomplete_images.contains_key(&777),
+            !state
+                .incomplete_images
+                .contains_key(&TransmissionKey::ImageId(777)),
             "stale chunk must have been evicted"
         );
     }

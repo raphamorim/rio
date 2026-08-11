@@ -2776,10 +2776,10 @@ impl<U: EventListener> Crosswords<U> {
             self.inactive_grid.sync_template_style();
             self.inactive_grid.reset_region(..);
 
-            // A 1049 entry starts with a blank alternate screen. Clear every
-            // terminal-owned placement for that screen before swapping it in.
-            self.graphics.clear_inactive_screen();
-            self.clear_external_placements(ExternalPlacementScreen::Alternate);
+            // A 1049 entry starts with blank grid contents. DEC-grid atlas
+            // placements die with those contents, while Kitty and external
+            // preserve-policy placements remain owned by the alternate screen.
+            self.graphics.clear_inactive_atlas_placements();
             self.send_graphics_updates();
         }
 
@@ -4453,11 +4453,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     0,
                     columns,
                 );
-                // Kitty specifies ESC[2J as the one text clear operation
-                // that removes displayed images. Transmitted image data is
-                // retained for a later a=p; other erase commands do not
-                // touch kitty placements.
-                self.graphics.clear_active_kitty_placements();
                 if self.mode.contains(Mode::ALT_SCREEN) {
                     self.grid.reset_region(..);
                     self.clip_atlas_placements(0, screen_lines as i32, 0, columns);
@@ -5249,6 +5244,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn store_graphic(&mut self, graphic: GraphicData) -> bool {
+        self.store_graphic_with_number(graphic, None)
+    }
+
+    fn store_graphic_with_number(
+        &mut self,
+        graphic: GraphicData,
+        image_number: Option<u32>,
+    ) -> bool {
         // a=t: Store graphic without displaying.
         // No GPU upload here — pixel data is sent to GPU when a=p placement arrives.
         let image_id = graphic.id.get() as u32;
@@ -5267,7 +5270,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let image_width = graphic.width;
         let image_height = graphic.height;
         let pixel_data = has_placements.then(|| graphic.clone());
-        if !self.graphics.store_kitty_image(image_id, None, graphic) {
+        if !self
+            .graphics
+            .store_kitty_image(image_id, image_number, graphic)
+        {
             return false;
         }
 
@@ -5284,6 +5290,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
         &mut self,
         graphic_data: GraphicData,
         placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
+    ) -> bool {
+        self.kitty_transmit_and_display_with_number(graphic_data, placement, None)
+    }
+
+    fn kitty_transmit_and_display_with_number(
+        &mut self,
+        graphic_data: GraphicData,
+        placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
+        image_number: Option<u32>,
     ) -> bool {
         let image_id = graphic_data.id.get() as u32;
         debug!(
@@ -5316,7 +5331,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             let pixel_data = graphic_data.clone();
             if !self
                 .graphics
-                .store_kitty_image(image_id, None, graphic_data)
+                .store_kitty_image(image_id, image_number, graphic_data)
             {
                 return false;
             }
@@ -5331,21 +5346,28 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Store takes ownership and sets transmit_time.
         if !self
             .graphics
-            .store_kitty_image(image_id, None, graphic_data)
+            .store_kitty_image(image_id, image_number, graphic_data)
         {
             return false;
         }
         self.refresh_placements_for_image(image_id, image_width, image_height);
 
         // Place as overlay — handles GPU upload internally.
-        self.place_kitty_overlay(image_id, &placement);
-        true
+        self.place_kitty_overlay(image_id, &placement)
     }
 
     #[inline]
     fn place_graphic(
         &mut self,
         placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
+    ) -> bool {
+        self.place_graphic_with_number(placement, None)
+    }
+
+    fn place_graphic_with_number(
+        &mut self,
+        placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
+        image_number: Option<u32>,
     ) -> bool {
         debug!(
             "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}, virtual={}",
@@ -5363,7 +5385,25 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // virtual placements too — registering placeholder metadata
         // for an image that does not exist would render nothing while
         // telling the client everything worked.
-        let image_id = placement.image_id;
+        let image_id = if placement.image_id > 0 {
+            placement.image_id
+        } else if let Some(image_number) = image_number.filter(|number| *number > 0) {
+            let Some(image_id) = self
+                .graphics
+                .kitty_image_numbers
+                .get(&image_number)
+                .copied()
+            else {
+                warn!(
+                    "Attempted to place non-existent kitty graphic number: {}",
+                    image_number
+                );
+                return false;
+            };
+            image_id
+        } else {
+            return false;
+        };
         if self.graphics.get_kitty_image(image_id).is_none() {
             warn!(
                 "Attempted to place non-existent kitty graphic: id={}",
@@ -5379,6 +5419,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             warn!("Kitty placement limit reached");
             return false;
         }
+
+        let mut placement = placement;
+        placement.image_id = image_id;
 
         // `U=1` → virtual placement: store metadata, the application
         // emits U+10EEEE placeholder cells itself. The renderer scans
@@ -5402,8 +5445,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         // Direct placement: use overlay path
-        self.place_kitty_overlay(image_id, &placement);
-        true
+        self.place_kitty_overlay(image_id, &placement)
     }
 
     #[inline]
@@ -5902,14 +5944,14 @@ impl<U: EventListener> Crosswords<U> {
         &mut self,
         image_id: u32,
         placement: &crate::ansi::kitty_graphics_protocol::PlacementRequest,
-    ) {
+    ) -> bool {
         // Read image data from the store (clone needed: one copy for
         // metadata/dimensions, consumed by pending push for GPU upload)
         let stored = match self.graphics.get_kitty_image(image_id) {
             Some(s) => s,
             None => {
                 warn!("place_kitty_overlay: image {} not found", image_id);
-                return;
+                return false;
             }
         };
         let mut graphic_data = stored.data.clone();
@@ -5917,14 +5959,14 @@ impl<U: EventListener> Crosswords<U> {
         let image_width = graphic_data.width;
         let image_height = graphic_data.height;
         if image_width == 0 || image_height == 0 {
-            return;
+            return false;
         }
 
         let cell_width = self.graphics.cell_width.round() as usize;
         let cell_height = self.graphics.cell_height.round() as usize;
 
         if cell_width == 0 || cell_height == 0 {
-            return;
+            return false;
         }
 
         // Resolve the source rectangle (kitty `x=`/`y=`/`w=`/`h=`)
@@ -5956,11 +5998,6 @@ impl<U: EventListener> Crosswords<U> {
             }
             None => (0, 0),
         };
-
-        if display_w > MAX_GRAPHIC_DIMENSIONS[0] || display_h > MAX_GRAPHIC_DIMENSIONS[1]
-        {
-            return;
-        }
 
         // Set display dimensions for GPU scaling
         graphic_data.display_width = Some(display_w);
@@ -6091,6 +6128,7 @@ impl<U: EventListener> Crosswords<U> {
                 self.advance_cursor_past_placement(dest_col, columns, rows);
             }
         }
+        true
     }
 
     /// Refresh the grid footprint of every live placement of an image
@@ -6168,6 +6206,7 @@ impl<U: EventListener> Crosswords<U> {
             y: placement.y,
             width: placement.width,
             height: placement.height,
+            z_index: placement.z_index,
         };
         self.graphics
             .kitty_virtual_placements
@@ -10030,10 +10069,10 @@ mod tests {
             .external_placement(ExternalPlacementScreen::Alternate, 3)
             .is_some());
         term.swap_alt();
-        assert!(term.external_placement_geometries().is_empty());
+        assert_eq!(term.external_placement_geometries().len(), 1);
         assert!(term
             .external_placement(ExternalPlacementScreen::Alternate, 3)
-            .is_none());
+            .is_some());
 
         term.register_external_placement(external_test_placement(
             &term,
