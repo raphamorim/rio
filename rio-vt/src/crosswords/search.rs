@@ -795,7 +795,7 @@ mod tests {
     use crate::crosswords::CrosswordsSize;
     use crate::crosswords::CursorShape;
     use crate::event::VoidListener;
-    use unicode_width::UnicodeWidthChar;
+    use rio_unicode::UnicodeWidthChar;
 
     pub fn mock_term(content: &str) -> Crosswords<VoidListener> {
         let lines: Vec<&str> = content.split('\n').collect();

@@ -49,7 +49,7 @@ serde = { workspace = true, features = ["derive"] }
 image_rs = { workspace = true }
 rio-graphics = { workspace = true, features = ["glyph"] }
 rio-fonts = { workspace = true }
-unicode-width = { workspace = true }
+rio-unicode = { workspace = true }
 guillotiere = "0.6.2"
 rustc-hash = { workspace = true }
 raw-window-handle = { workspace = true }

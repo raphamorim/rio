@@ -14,8 +14,8 @@
 //! implementation*, so they are correct by construction and can never
 //! drift from the conformance-tested rules.
 
+use rio_unicode::grapheme::{grapheme_class, is_break, BreakState, GraphemeClass};
 use std::sync::OnceLock;
-use unicode_width::grapheme::{grapheme_class, is_break, BreakState, GraphemeClass};
 
 const TABLE_LEN: usize = 0x2_0000;
 

@@ -55,7 +55,9 @@ smallvec = { version = "1.15.2", default-features = false }
 # One Unicode version for the whole tree: width tables and grapheme
 # segmentation both come from rio-unicode (currently Unicode 17),
 # replacing the alacritty unicode-width fork that froze at Unicode 16.
-unicode-width = { package = "rio-unicode", path = "rio-unicode" }
+# version alongside path so publishable crates (sugarloaf) can be
+# packaged: crates.io strips the path and keeps the version.
+rio-unicode = { version = "0.1.0", path = "rio-unicode" }
 simdutf = "0.7.0"
 base64 = "0.23.0"
 image_rs = { package = "image", version = "0.25.10", default-features = false, features = [

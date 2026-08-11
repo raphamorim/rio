@@ -5,9 +5,9 @@
 
 use crate::sugarloaf::primitives::is_private_user_area;
 use crate::SpanStyle;
+use rio_unicode::UnicodeWidthChar;
 use rustc_hash::FxHashMap;
 use swash::Attributes;
-use unicode_width::UnicodeWidthChar;
 
 /// Unscaled horizontal advance for a glyph + the font's units-per-em,
 /// stored together so callers can recover pixels at any font size:

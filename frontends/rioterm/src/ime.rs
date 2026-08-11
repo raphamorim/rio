@@ -1,4 +1,4 @@
-use unicode_width::UnicodeWidthChar;
+use rio_unicode::UnicodeWidthChar;
 #[derive(Debug, Default)]
 pub struct Ime {
     /// Whether the IME is enabled.
