@@ -368,14 +368,17 @@ pub trait Handler {
     }
 
     /// Store a graphic without displaying (for a=t transmit-only).
-    fn store_graphic(&mut self, _data: GraphicData) {}
+    fn store_graphic(&mut self, _data: GraphicData) -> bool {
+        false
+    }
 
     /// Transmit and display a kitty graphic as an overlay (for a=T).
     fn kitty_transmit_and_display(
         &mut self,
         _data: GraphicData,
         _placement: kitty_graphics_protocol::PlacementRequest,
-    ) {
+    ) -> bool {
+        false
     }
 
     /// Place an existing graphic at a specific location (for a=p).
@@ -845,11 +848,17 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
 
                     if let Some(placement) = response.placement_request {
                         // a=T: Transmit and display as overlay
-                        self.handler
-                            .kitty_transmit_and_display(graphic_data, placement);
+                        if !self
+                            .handler
+                            .kitty_transmit_and_display(graphic_data, placement)
+                        {
+                            response.response = response.error_response.take();
+                        }
                     } else {
                         // a=t: Transmit only
-                        self.handler.store_graphic(graphic_data);
+                        if !self.handler.store_graphic(graphic_data) {
+                            response.response = response.error_response.take();
+                        }
                     }
                 } else if let Some(placement) = response.placement_request {
                     debug!(

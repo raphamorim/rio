@@ -66,6 +66,11 @@ pub struct KittyPlacement {
     /// Display size in cells.
     pub columns: u32,
     pub rows: u32,
+    /// Cell rows clipped from the top/bottom by page-margin scrolling.
+    pub clip_top_rows: u32,
+    pub clip_bottom_rows: u32,
+    /// Full row span before page-margin clipping.
+    pub unclipped_rows: u32,
     /// The `c=`/`r=` span the client requested (0 = derived). Kept
     /// separate from `columns`/`rows` so a cell size change can tell
     /// cell-sized placements (which track the grid) apart from
@@ -204,11 +209,39 @@ impl KittyPlacement {
         } else {
             (w + x_offset).div_ceil(cell_width) as u32
         };
-        self.rows = if self.requested_rows > 0 {
+        let full_rows = if self.requested_rows > 0 {
             self.requested_rows
         } else {
             (h + y_offset).div_ceil(cell_height) as u32
         };
+        self.unclipped_rows = full_rows;
+        self.rows = full_rows
+            .saturating_sub(self.clip_top_rows)
+            .saturating_sub(self.clip_bottom_rows);
+    }
+
+    /// Move a placement wholly inside an absolute row region, clipping
+    /// destination and source geometry at its margins.
+    pub(crate) fn scroll_region(&mut self, r0: i64, r1: i64, delta: i64) -> bool {
+        let end = self.dest_row.saturating_add(self.rows as i64);
+        if self.dest_row < r0 || end > r1 {
+            return false;
+        }
+        let shifted_start = self.dest_row.saturating_add(delta);
+        let shifted_end = end.saturating_add(delta);
+        let clipped_start = shifted_start.max(r0);
+        let clipped_end = shifted_end.min(r1);
+        if clipped_end <= clipped_start {
+            self.rows = 0;
+            return true;
+        }
+        let top = clipped_start.saturating_sub(shifted_start) as u32;
+        let bottom = shifted_end.saturating_sub(clipped_end) as u32;
+        self.clip_top_rows = self.clip_top_rows.saturating_add(top);
+        self.clip_bottom_rows = self.clip_bottom_rows.saturating_add(bottom);
+        self.dest_row = clipped_start;
+        self.rows = (clipped_end - clipped_start) as u32;
+        true
     }
 }
 
@@ -342,24 +375,37 @@ pub fn kitty_overlay_geometry(
     // three image shaders share.
     let image_width = image_width as f32;
     let image_height = image_height as f32;
+    let full_rows = placement.unclipped_rows.max(1) as f32;
+    let top_fraction = placement.clip_top_rows as f32 / full_rows;
+    let bottom_fraction = placement.clip_bottom_rows as f32 / full_rows;
+    let visible_fraction = (1.0 - top_fraction - bottom_fraction).max(0.0);
+    if visible_fraction <= 0.0 {
+        return None;
+    }
+    let source_top = source_y as f32 + source_height as f32 * top_fraction;
+    let source_bottom = source_y as f32 + source_height as f32 * (1.0 - bottom_fraction);
     let source_rect = [
         source_x as f32 / image_width,
-        source_y as f32 / image_height,
+        source_top / image_height,
         (source_x + source_width) as f32 / image_width,
-        (source_y + source_height) as f32 / image_height,
+        source_bottom / image_height,
     ];
 
     // Per the kitty spec the sub-cell offset stays inside the cell
     // box; stored values are raw, so clamp against the current cell
     // size here.
     let x_offset = (placement.cell_x_offset as f32).min(viewport.cell_width - 1.0);
-    let y_offset = (placement.cell_y_offset as f32).min(viewport.cell_height - 1.0);
+    let y_offset = if placement.clip_top_rows == 0 {
+        (placement.cell_y_offset as f32).min(viewport.cell_height - 1.0)
+    } else {
+        0.0
+    };
 
     Some(KittyOverlayGeometry {
         x: viewport.origin_x + placement.dest_col as f32 * viewport.cell_width + x_offset,
         y: viewport.origin_y + screen_row as f32 * viewport.cell_height + y_offset,
         width: display_width as f32,
-        height: display_height as f32,
+        height: display_height as f32 * visible_fraction,
         source_rect,
     })
 }
@@ -618,6 +664,9 @@ pub struct Graphics {
     /// If this is exceeded, oldest/unused images will be evicted
     pub total_limit: usize,
 
+    /// Maximum direct plus virtual Kitty placements on one screen.
+    pub max_kitty_placements: usize,
+
     /// Tracks when each graphic was added (for eviction priority)
     /// Maps GraphicId to insertion timestamp
     pub image_timestamps: FxHashMap<GraphicId, crate::time::Instant>,
@@ -670,6 +719,8 @@ pub struct Graphics {
 
 impl Default for Graphics {
     fn default() -> Self {
+        let kitty_config =
+            crate::ansi::kitty_graphics_protocol::KittyGraphicsConfig::default();
         Self {
             last_id: 0,
             pending: Vec::new(),
@@ -685,7 +736,8 @@ impl Default for Graphics {
             kitty_chunking_state:
                 crate::ansi::kitty_graphics_protocol::KittyGraphicsState::default(),
             total_bytes: 0,
-            total_limit: 320 * 1024 * 1024, // 320MB per kitty spec
+            total_limit: kitty_config.max_total_bytes,
+            max_kitty_placements: kitty_config.max_placements,
             image_timestamps: FxHashMap::default(),
             graphic_sizes: FxHashMap::default(),
             kitty_placements: FxHashMap::default(),
@@ -870,17 +922,71 @@ impl Graphics {
         self.kitty_graphics_dirty = true;
     }
 
-    /// Clear all kitty graphics state on both screens. Used by full reset.
-    pub fn clear_all_kitty_state(&mut self) {
-        // Subtract bytes from the inactive screen before dropping it,
-        // since total_bytes is the *global* counter.
+    /// Clear the inactive screen before a fresh 1049 alternate-screen entry.
+    pub fn clear_inactive_screen(&mut self) {
+        let inactive_ids: Vec<u32> = self
+            .kitty_inactive_screen
+            .kitty_images
+            .keys()
+            .copied()
+            .collect();
         let inactive_bytes: usize = self
             .kitty_inactive_screen
             .kitty_images
             .values()
-            .map(|s| s.data.pixels.len())
+            .map(|stored| stored.data.pixels.len())
             .sum();
         self.total_bytes = self.total_bytes.saturating_sub(inactive_bytes);
+        {
+            let mut removals = self.texture_operations.lock();
+            removals.extend(
+                inactive_ids
+                    .into_iter()
+                    .filter(|id| !self.kitty_images.contains_key(id))
+                    .map(rio_graphics::kitty_image_key),
+            );
+            removals.extend(self.kitty_inactive_screen.atlas_key_refs.keys().copied());
+        }
+        let atlas_keys: Vec<u64> = self
+            .kitty_inactive_screen
+            .atlas_key_refs
+            .keys()
+            .copied()
+            .collect();
+        self.kitty_inactive_screen = KittyScreenState::default();
+        self.untrack_atlas_keys(&atlas_keys);
+        self.kitty_graphics_dirty = true;
+    }
+
+    /// Clear every active-screen placement while retaining transmitted images.
+    pub fn clear_active_kitty_placements(&mut self) {
+        if self.kitty_placements.is_empty() && self.kitty_virtual_placements.is_empty() {
+            return;
+        }
+        self.kitty_placements.clear();
+        self.kitty_virtual_placements.clear();
+        self.kitty_graphics_dirty = true;
+    }
+
+    /// Clear all kitty graphics state on both screens. Used by full reset.
+    pub fn clear_all_kitty_state(&mut self) {
+        // Subtract bytes from both screens before dropping them, since
+        // total_bytes is the global counter.
+        let kitty_bytes: usize = self
+            .kitty_images
+            .values()
+            .chain(self.kitty_inactive_screen.kitty_images.values())
+            .map(|s| s.data.pixels.len())
+            .sum();
+        self.total_bytes = self.total_bytes.saturating_sub(kitty_bytes);
+
+        let kitty_keys: std::collections::HashSet<u64> = self
+            .kitty_images
+            .keys()
+            .chain(self.kitty_inactive_screen.kitty_images.keys())
+            .copied()
+            .map(rio_graphics::kitty_image_key)
+            .collect();
 
         self.kitty_images.clear();
         self.kitty_image_numbers.clear();
@@ -892,6 +998,7 @@ impl Graphics {
         // pixel store and GPU textures.
         {
             let mut removals = self.texture_operations.lock();
+            removals.extend(kitty_keys);
             for key in self.atlas_key_refs.keys() {
                 removals.push(*key);
             }
@@ -921,7 +1028,28 @@ impl Graphics {
         }
 
         self.kitty_inactive_screen = KittyScreenState::default();
+        self.kitty_chunking_state.clear_incomplete_transfers();
         self.kitty_graphics_dirty = true;
+    }
+
+    pub fn set_kitty_graphics_config(
+        &mut self,
+        config: crate::ansi::kitty_graphics_protocol::KittyGraphicsConfig,
+    ) {
+        self.total_limit = config.max_total_bytes;
+        self.max_kitty_placements = config.max_placements;
+        self.kitty_chunking_state.set_config(config);
+    }
+
+    pub fn can_insert_kitty_placement(&self, image_id: u32, placement_id: u32) -> bool {
+        let key = (image_id, placement_id);
+        self.kitty_placements.contains_key(&key)
+            || self.kitty_virtual_placements.contains_key(&key)
+            || self
+                .kitty_placements
+                .len()
+                .saturating_add(self.kitty_virtual_placements.len())
+                < self.max_kitty_placements
     }
 
     /// Store a kitty graphics image for later placement.
@@ -931,13 +1059,18 @@ impl Graphics {
         image_id: u32,
         image_number: Option<u32>,
         mut data: GraphicData,
-    ) {
+    ) -> bool {
         let now = crate::time::Instant::now();
         data.transmit_time = now;
 
         // Evict before storing to protect images with active placements
         let new_bytes = data.pixels.len();
-        if self.total_bytes + new_bytes > self.total_limit {
+        let replaced_bytes = self
+            .kitty_images
+            .get(&image_id)
+            .map_or(0, |old| old.data.pixels.len());
+        let additional_bytes = new_bytes.saturating_sub(replaced_bytes);
+        if self.total_bytes.saturating_add(additional_bytes) > self.total_limit {
             // Collect active IDs — images with placements are protected
             let mut active = std::collections::HashSet::new();
             for placement in self.kitty_placements.values() {
@@ -945,7 +1078,16 @@ impl Graphics {
             }
             // Also protect the image we're about to store
             active.insert(image_id as u64);
-            self.evict_images(new_bytes, &active);
+            self.evict_images(additional_bytes, &active);
+        }
+
+        if self
+            .total_bytes
+            .saturating_sub(replaced_bytes)
+            .saturating_add(new_bytes)
+            > self.total_limit
+        {
+            return false;
         }
 
         // If replacing an existing image, subtract its bytes first
@@ -967,6 +1109,7 @@ impl Graphics {
         if let Some(number) = image_number {
             self.kitty_image_numbers.insert(number, image_id);
         }
+        true
     }
 
     /// Get a stored kitty graphics image by ID
@@ -1576,4 +1719,34 @@ fn test_graphics_no_eviction_when_under_limit() {
     // No eviction should occur
     assert_eq!(graphics.pending.len(), 1);
     assert_eq!(graphics.total_bytes, 50_000);
+}
+
+#[test]
+fn kitty_resident_limit_is_a_hard_cap() {
+    let mut graphics = Graphics::default();
+    graphics.set_kitty_graphics_config(
+        crate::ansi::kitty_graphics_protocol::KittyGraphicsConfig {
+            max_total_bytes: 3,
+            ..Default::default()
+        },
+    );
+    let stored = graphics.store_kitty_image(
+        1,
+        None,
+        GraphicData {
+            id: GraphicId::new(1),
+            width: 1,
+            height: 1,
+            color_type: rio_graphics::ColorType::Rgba,
+            pixels: vec![0; 4],
+            is_opaque: true,
+            resize: None,
+            display_width: None,
+            display_height: None,
+            transmit_time: crate::time::Instant::now(),
+        },
+    );
+    assert!(!stored);
+    assert_eq!(graphics.total_bytes, 0);
+    assert!(graphics.kitty_images.is_empty());
 }

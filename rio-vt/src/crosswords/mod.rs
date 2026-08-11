@@ -15,6 +15,7 @@
 */
 
 pub mod attr;
+pub mod external_placement;
 pub mod formatter;
 pub mod grid;
 pub mod pos;
@@ -37,6 +38,10 @@ use crate::ansi::{
 use crate::clipboard::ClipboardType;
 use crate::config::colors::{self, ColorRgb};
 use crate::crosswords::colors::term::TermColors;
+use crate::crosswords::external_placement::{
+    ExternalPlacement, ExternalPlacementErasePolicy, ExternalPlacementGeometry,
+    ExternalPlacementId, ExternalPlacementScreen, ExternalPlacementScrollPolicy,
+};
 use crate::crosswords::grid::{Dimensions, Grid, Scroll};
 use crate::crosswords::square::{CellFlags, Wide};
 use crate::event::WindowId;
@@ -442,6 +447,11 @@ where
     pub title: String,
     damage: TermDamageState,
     pub graphics: Graphics,
+    external_main_placements:
+        rustc_hash::FxHashMap<ExternalPlacementId, ExternalPlacement>,
+    external_alternate_placements:
+        rustc_hash::FxHashMap<ExternalPlacementId, ExternalPlacement>,
+    external_placements_revision: u64,
     /// Per-session registry of glyphs registered over Glyph Protocol
     /// (APC `25a1`). `None` until a program in this session actually
     /// uses the protocol, so terminals that never see a Glyph
@@ -522,6 +532,9 @@ impl<U: EventListener> Crosswords<U> {
             grapheme_clustering_default: true,
             damage: TermDamageState::new(rows),
             graphics: Graphics::new(&dimensions),
+            external_main_placements: rustc_hash::FxHashMap::default(),
+            external_alternate_placements: rustc_hash::FxHashMap::default(),
+            external_placements_revision: 0,
             #[cfg(feature = "graphics")]
             glyph_registry: None,
             default_cursor_shape: cursor_shape,
@@ -549,6 +562,133 @@ impl<U: EventListener> Crosswords<U> {
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
         self.grapheme_clustering_default = enabled;
         self.mode.set(Mode::GRAPHEME_CLUSTER, enabled);
+    }
+
+    /// Configure Kitty graphics resource limits and allowed transmission media.
+    pub fn set_kitty_graphics_config(
+        &mut self,
+        config: crate::ansi::kitty_graphics_protocol::KittyGraphicsConfig,
+    ) {
+        self.graphics.set_kitty_graphics_config(config);
+    }
+
+    /// Screen currently receiving terminal output.
+    pub fn active_external_placement_screen(&self) -> ExternalPlacementScreen {
+        if self.mode.contains(Mode::ALT_SCREEN) {
+            ExternalPlacementScreen::Alternate
+        } else {
+            ExternalPlacementScreen::Main
+        }
+    }
+
+    /// Convert a visible row into the active grid's stable absolute row space.
+    ///
+    /// Call this immediately when an embedder receives a placement command;
+    /// the result intentionally ignores the user's scrollback display offset.
+    pub fn external_placement_absolute_row(&self, visible_row: i64) -> i64 {
+        (self.grid.lines_evicted() as i64)
+            .saturating_add(self.history_size() as i64)
+            .saturating_add(visible_row)
+    }
+
+    /// Insert or replace one external placement in its owning screen.
+    pub fn register_external_placement(&mut self, placement: ExternalPlacement) {
+        let map = match placement.screen {
+            ExternalPlacementScreen::Main => &mut self.external_main_placements,
+            ExternalPlacementScreen::Alternate => &mut self.external_alternate_placements,
+        };
+        if map.get(&placement.id) == Some(&placement) {
+            return;
+        }
+        map.insert(placement.id, placement);
+        self.bump_external_placements_revision();
+    }
+
+    /// Remove one external placement from a specific screen.
+    pub fn remove_external_placement(
+        &mut self,
+        screen: ExternalPlacementScreen,
+        id: ExternalPlacementId,
+    ) -> Option<ExternalPlacement> {
+        let removed = match screen {
+            ExternalPlacementScreen::Main => self.external_main_placements.remove(&id),
+            ExternalPlacementScreen::Alternate => {
+                self.external_alternate_placements.remove(&id)
+            }
+        };
+        if removed.is_some() {
+            self.bump_external_placements_revision();
+        }
+        removed
+    }
+
+    /// Remove all external placements owned by one screen.
+    pub fn clear_external_placements(&mut self, screen: ExternalPlacementScreen) {
+        let map = match screen {
+            ExternalPlacementScreen::Main => &mut self.external_main_placements,
+            ExternalPlacementScreen::Alternate => &mut self.external_alternate_placements,
+        };
+        if !map.is_empty() {
+            map.clear();
+            self.bump_external_placements_revision();
+        }
+    }
+
+    /// Iterate terminal-owned placements for a screen in absolute coordinates.
+    pub fn external_placements(
+        &self,
+        screen: ExternalPlacementScreen,
+    ) -> impl Iterator<Item = &ExternalPlacement> {
+        let map = match screen {
+            ExternalPlacementScreen::Main => &self.external_main_placements,
+            ExternalPlacementScreen::Alternate => &self.external_alternate_placements,
+        };
+        map.values()
+    }
+
+    /// Look up one external placement without changing its ownership or geometry.
+    pub fn external_placement(
+        &self,
+        screen: ExternalPlacementScreen,
+        id: ExternalPlacementId,
+    ) -> Option<&ExternalPlacement> {
+        match screen {
+            ExternalPlacementScreen::Main => self.external_main_placements.get(&id),
+            ExternalPlacementScreen::Alternate => {
+                self.external_alternate_placements.get(&id)
+            }
+        }
+    }
+
+    /// Return active-screen placement geometry relative to the displayed viewport.
+    pub fn external_placement_geometries(&self) -> Vec<ExternalPlacementGeometry> {
+        let screen = self.active_external_placement_screen();
+        let viewport_top = self
+            .external_placement_absolute_row(0)
+            .saturating_sub(self.display_offset() as i64);
+        self.external_placements(screen)
+            .map(|placement| ExternalPlacementGeometry {
+                id: placement.id,
+                row: placement.abs_row.saturating_sub(viewport_top),
+                col: placement.col,
+                columns: placement.columns,
+                rows: placement.rows,
+                source_col: placement.source_col,
+                source_row: placement.source_row,
+                source_columns: placement.source_columns,
+                source_rows: placement.source_rows,
+            })
+            .collect()
+    }
+
+    /// Monotonic change counter for external placement geometry and ownership.
+    pub fn external_placements_revision(&self) -> u64 {
+        self.external_placements_revision
+    }
+
+    fn bump_external_placements_revision(&mut self) {
+        self.external_placements_revision =
+            self.external_placements_revision.wrapping_add(1);
     }
 
     pub fn mark_fully_damaged(&mut self) {
@@ -823,8 +963,20 @@ impl<U: EventListener> Crosswords<U> {
         // placements; tracking costs a Vec sized to the ring. Vertical
         // resizes never move content in absolute row space and produce
         // no remap.
+        let is_alt = self.mode.contains(Mode::ALT_SCREEN);
+        let active_external_has_placements = if is_alt {
+            !self.external_alternate_placements.is_empty()
+        } else {
+            !self.external_main_placements.is_empty()
+        };
+        let inactive_external_has_placements = if is_alt {
+            !self.external_main_placements.is_empty()
+        } else {
+            !self.external_alternate_placements.is_empty()
+        };
         let active_has_placements = !self.graphics.kitty_placements.is_empty()
-            || !self.graphics.atlas_placements.is_empty();
+            || !self.graphics.atlas_placements.is_empty()
+            || active_external_has_placements;
         let inactive_has_placements = !self
             .graphics
             .kitty_inactive_screen
@@ -834,9 +986,9 @@ impl<U: EventListener> Crosswords<U> {
                 .graphics
                 .kitty_inactive_screen
                 .atlas_placements
-                .is_empty();
+                .is_empty()
+            || inactive_external_has_placements;
 
-        let is_alt = self.mode.contains(Mode::ALT_SCREEN);
         self.grid.track_reflow_remap = active_has_placements;
         self.inactive_grid.track_reflow_remap = inactive_has_placements;
         self.grid.resize(!is_alt, num_lines, num_cols);
@@ -911,18 +1063,37 @@ impl<U: EventListener> Crosswords<U> {
 
         // Re-anchor placements through the exact reflow row mapping:
         // each one moves to wherever its anchor row's content landed.
-        // Kitty placements on a dropped row stay put (they float and
-        // get culled off screen); sixel/iTerm2 placements are grid
-        // content and are destroyed, along with any that a truncation
-        // pushed past the ring end.
+        // A placement whose anchor row was dropped is destroyed, along
+        // with any placement a truncation pushed past the ring end.
         if let Some(remap) = &active_remap {
             let max_abs =
                 self.grid.lines_evicted() as i64 + self.grid.total_lines() as i64;
-            for p in self.graphics.kitty_placements.values_mut() {
-                if let Some(abs) = remap.remap_abs(p.dest_row) {
-                    p.dest_row = abs;
+            self.graphics.kitty_placements.retain(|_, placement| {
+                match remap.remap_abs(placement.dest_row) {
+                    Some(abs) if abs < max_abs => {
+                        placement.dest_row = abs;
+                        true
+                    }
+                    _ => false,
                 }
-            }
+            });
+            let active_external = if is_alt {
+                &mut self.external_alternate_placements
+            } else {
+                &mut self.external_main_placements
+            };
+            active_external.retain(|_, placement| {
+                if placement.scroll_policy != ExternalPlacementScrollPolicy::Content {
+                    return true;
+                }
+                match remap.remap_abs(placement.abs_row) {
+                    Some(abs) if abs < max_abs => {
+                        placement.abs_row = abs;
+                        true
+                    }
+                    _ => false,
+                }
+            });
             let before = self.graphics.atlas_placements.len();
             self.graphics.atlas_placements.retain_mut(|p| {
                 match remap.remap_abs(p.abs_row) {
@@ -942,11 +1113,32 @@ impl<U: EventListener> Crosswords<U> {
             let max_abs = self.inactive_grid.lines_evicted() as i64
                 + self.inactive_grid.total_lines() as i64;
             let inactive = &mut self.graphics.kitty_inactive_screen;
-            for p in inactive.kitty_placements.values_mut() {
-                if let Some(abs) = remap.remap_abs(p.dest_row) {
-                    p.dest_row = abs;
+            inactive.kitty_placements.retain(|_, placement| {
+                match remap.remap_abs(placement.dest_row) {
+                    Some(abs) if abs < max_abs => {
+                        placement.dest_row = abs;
+                        true
+                    }
+                    _ => false,
                 }
-            }
+            });
+            let inactive_external = if is_alt {
+                &mut self.external_main_placements
+            } else {
+                &mut self.external_alternate_placements
+            };
+            inactive_external.retain(|_, placement| {
+                if placement.scroll_policy != ExternalPlacementScrollPolicy::Content {
+                    return true;
+                }
+                match remap.remap_abs(placement.abs_row) {
+                    Some(abs) if abs < max_abs => {
+                        placement.abs_row = abs;
+                        true
+                    }
+                    _ => false,
+                }
+            });
             let before = inactive.atlas_placements.len();
             inactive
                 .atlas_placements
@@ -969,7 +1161,12 @@ impl<U: EventListener> Crosswords<U> {
         if active_has_placements || inactive_has_placements {
             self.graphics.kitty_graphics_dirty = true;
         }
+        if active_external_has_placements || inactive_external_has_placements {
+            self.bump_external_placements_revision();
+        }
         self.expire_atlas_placements();
+        self.expire_external_placements();
+        self.expire_kitty_placements();
     }
 
     /// Toggle the vi mode.
@@ -1212,9 +1409,12 @@ impl<U: EventListener> Crosswords<U> {
         self.grid.sync_template_style();
         self.grid.scroll_down(&region, lines);
         self.mark_fully_damaged();
-        // Partial-region scrolls move grid-plane images with their
-        // content (kitty placements float and are not adjusted).
+        // Region scrolling is applied at the same mutation boundary for
+        // every placement model. Kitty and external placements move only
+        // when wholly inside the page area and clip at its margins.
         self.shift_atlas_placements_in_region(&region, lines as i64);
+        self.scroll_external_placements_in_region(&region, lines as i64);
+        self.scroll_kitty_placements_in_region(&region, lines as i64);
         if !self.graphics.kitty_placements.is_empty() {
             self.graphics.kitty_graphics_dirty = true;
         }
@@ -1260,29 +1460,27 @@ impl<U: EventListener> Crosswords<U> {
                 self.damage.damage_line(line as usize);
             }
         }
-        if !self.graphics.kitty_placements.is_empty() {
-            // Placements whose rows all scrolled off the ring expire,
-            // like kitty: the image data survives for future
-            // placements, the placement itself dies with its content.
-            let base = self.grid.lines_evicted() as i64;
-            self.graphics
-                .kitty_placements
-                .retain(|_, p| p.dest_row + p.rows as i64 > base);
-            self.graphics.kitty_graphics_dirty = true;
-        }
-        // Grid-plane images follow their content through region
-        // scrolls; kitty placements float and are not adjusted.
+        // Absolute anchors already follow a full-width top-origin scroll
+        // into history. Partial regions below row zero need an explicit
+        // movement; a top-origin partial region instead advances the fixed
+        // rows beneath it in absolute space.
         if region.start.0 == 0 {
             if (region.end.0 as usize) < self.grid.screen_lines() {
                 // History grew under the fixed bottom rows.
                 self.shift_atlas_placements_below(region.end, lines as i64);
+                self.shift_external_placements_below(region.end, lines as i64);
+                self.shift_kitty_placements_below(region.end, lines as i64);
             }
             // In-region content keeps its absolute rows (they moved
             // into history), so nothing else to do.
         } else {
             self.shift_atlas_placements_in_region(&region, -(lines as i64));
+            self.scroll_external_placements_in_region(&region, -(lines as i64));
+            self.scroll_kitty_placements_in_region(&region, -(lines as i64));
         }
         self.expire_atlas_placements();
+        self.expire_external_placements();
+        self.expire_kitty_placements();
     }
 
     /// Drop sixel/iTerm2 placements whose rows all scrolled off the
@@ -1315,6 +1513,12 @@ impl<U: EventListener> Crosswords<U> {
         col_start: usize,
         col_end: usize,
     ) {
+        self.remove_erased_external_placements(
+            screen_row_start,
+            screen_row_end,
+            col_start,
+            col_end,
+        );
         if self.graphics.atlas_placements.is_empty() {
             return;
         }
@@ -1449,6 +1653,130 @@ impl<U: EventListener> Crosswords<U> {
         if changed {
             self.graphics.recount_atlas_keys();
             self.graphics.kitty_graphics_dirty = true;
+        }
+    }
+
+    fn scroll_external_placements_in_region(&mut self, region: &Range<Line>, delta: i64) {
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64;
+        let r0 = base + region.start.0 as i64;
+        let r1 = base + region.end.0 as i64;
+        let screen = self.active_external_placement_screen();
+        let placements = match screen {
+            ExternalPlacementScreen::Main => &mut self.external_main_placements,
+            ExternalPlacementScreen::Alternate => &mut self.external_alternate_placements,
+        };
+        let mut changed = false;
+        placements.retain(|_, placement| {
+            changed |= placement.scroll_region(r0, r1, delta);
+            placement.rows > 0
+        });
+        if changed {
+            self.bump_external_placements_revision();
+        }
+    }
+
+    fn scroll_kitty_placements_in_region(&mut self, region: &Range<Line>, delta: i64) {
+        if self.graphics.kitty_placements.is_empty() {
+            return;
+        }
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64;
+        let r0 = base + region.start.0 as i64;
+        let r1 = base + region.end.0 as i64;
+        let mut changed = false;
+        self.graphics.kitty_placements.retain(|_, placement| {
+            changed |= placement.scroll_region(r0, r1, delta);
+            placement.rows > 0
+        });
+        self.graphics.kitty_graphics_dirty |= changed;
+    }
+
+    fn shift_external_placements_below(&mut self, boundary: Line, delta: i64) {
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64 - delta;
+        let boundary = base + boundary.0 as i64;
+        let screen = self.active_external_placement_screen();
+        let placements = match screen {
+            ExternalPlacementScreen::Main => &mut self.external_main_placements,
+            ExternalPlacementScreen::Alternate => &mut self.external_alternate_placements,
+        };
+        let mut changed = false;
+        for placement in placements.values_mut() {
+            if placement.scroll_policy == ExternalPlacementScrollPolicy::Content
+                && placement.abs_row >= boundary
+            {
+                placement.abs_row = placement.abs_row.saturating_add(delta);
+                changed = true;
+            }
+        }
+        if changed {
+            self.bump_external_placements_revision();
+        }
+    }
+
+    fn shift_kitty_placements_below(&mut self, boundary: Line, delta: i64) {
+        if self.graphics.kitty_placements.is_empty() {
+            return;
+        }
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64 - delta;
+        let boundary = base + boundary.0 as i64;
+        let mut changed = false;
+        for placement in self.graphics.kitty_placements.values_mut() {
+            if placement.dest_row >= boundary {
+                placement.dest_row = placement.dest_row.saturating_add(delta);
+                changed = true;
+            }
+        }
+        self.graphics.kitty_graphics_dirty |= changed;
+    }
+
+    fn expire_external_placements(&mut self) {
+        let base = self.grid.lines_evicted() as i64;
+        let screen = self.active_external_placement_screen();
+        let placements = match screen {
+            ExternalPlacementScreen::Main => &mut self.external_main_placements,
+            ExternalPlacementScreen::Alternate => &mut self.external_alternate_placements,
+        };
+        let before = placements.len();
+        placements.retain(|_, placement| placement.end_row() > base);
+        if placements.len() != before {
+            self.bump_external_placements_revision();
+        }
+    }
+
+    fn expire_kitty_placements(&mut self) {
+        if self.graphics.kitty_placements.is_empty() {
+            return;
+        }
+        let base = self.grid.lines_evicted() as i64;
+        let before = self.graphics.kitty_placements.len();
+        self.graphics
+            .kitty_placements
+            .retain(|_, placement| placement.dest_row + placement.rows as i64 > base);
+        self.graphics.kitty_graphics_dirty |=
+            self.graphics.kitty_placements.len() != before;
+    }
+
+    fn remove_erased_external_placements(
+        &mut self,
+        screen_row_start: i32,
+        screen_row_end: i32,
+        col_start: usize,
+        col_end: usize,
+    ) {
+        let base = self.grid.lines_evicted() as i64 + self.history_size() as i64;
+        let r0 = base + screen_row_start as i64;
+        let r1 = base + screen_row_end as i64;
+        let screen = self.active_external_placement_screen();
+        let placements = match screen {
+            ExternalPlacementScreen::Main => &mut self.external_main_placements,
+            ExternalPlacementScreen::Alternate => &mut self.external_alternate_placements,
+        };
+        let before = placements.len();
+        placements.retain(|_, placement| {
+            placement.erase_policy == ExternalPlacementErasePolicy::Preserve
+                || !placement.intersects(r0, r1, col_start, col_end)
+        });
+        if placements.len() != before {
+            self.bump_external_placements_revision();
         }
     }
 
@@ -1690,7 +2018,12 @@ impl<U: EventListener> Crosswords<U> {
         // DEC semantics: printing into a cell covered by a sixel or iTerm2
         // image clips exactly that cell out of the placement. One branch
         // when no images exist.
-        if !self.graphics.atlas_placements.is_empty() {
+        let has_external_erase = self
+            .external_placements(self.active_external_placement_screen())
+            .any(|placement| {
+                placement.erase_policy == ExternalPlacementErasePolicy::Remove
+            });
+        if !self.graphics.atlas_placements.is_empty() || has_external_erase {
             let pos = self.grid.cursor.pos;
             self.clip_atlas_placements(
                 pos.row.0,
@@ -2443,23 +2776,11 @@ impl<U: EventListener> Crosswords<U> {
             self.inactive_grid.sync_template_style();
             self.inactive_grid.reset_region(..);
 
-            // The alt screen starts blank: sixel/iTerm2 placements
-            // stashed from a previous alt session die with its
-            // contents (DEC grid-plane semantics; kitty state
-            // intentionally persists per screen).
-            let stale = &mut self.graphics.kitty_inactive_screen;
-            if !stale.atlas_placements.is_empty() {
-                let keys: Vec<u64> = stale.atlas_key_refs.keys().copied().collect();
-                {
-                    let mut removals = self.graphics.texture_operations.lock();
-                    removals.extend(keys.iter().copied());
-                }
-                stale.atlas_placements.clear();
-                stale.atlas_key_refs.clear();
-                // The bytes go back to the budget with the textures.
-                self.graphics.untrack_atlas_keys(&keys);
-                self.send_graphics_updates();
-            }
+            // A 1049 entry starts with a blank alternate screen. Clear every
+            // terminal-owned placement for that screen before swapping it in.
+            self.graphics.clear_inactive_screen();
+            self.clear_external_placements(ExternalPlacementScreen::Alternate);
+            self.send_graphics_updates();
         }
 
         mem::swap(
@@ -3371,6 +3692,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Clear all graphics on full reset (both screens, kitty and
         // sixel/iTerm2) and dispatch the queued texture removals.
         self.graphics.clear_all_kitty_state();
+        let had_external = !self.external_main_placements.is_empty()
+            || !self.external_alternate_placements.is_empty();
+        self.external_main_placements.clear();
+        self.external_alternate_placements.clear();
+        if had_external {
+            self.bump_external_placements_revision();
+        }
         self.send_graphics_updates();
 
         // Preserve vi mode across resets.
@@ -3715,7 +4043,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let table = crate::codepoint_width::width_table();
 
         // Image placements can clip cells, which the scalar writer owns.
-        if !self.graphics.atlas_placements.is_empty() {
+        let has_external_erase = self
+            .external_placements(self.active_external_placement_screen())
+            .any(|placement| {
+                placement.erase_policy == ExternalPlacementErasePolicy::Remove
+            });
+        if !self.graphics.atlas_placements.is_empty() || has_external_erase {
             for &cp in codepoints {
                 let width = match crate::codepoint_width::width_in(table, cp) {
                     Some(w) => w,
@@ -3822,7 +4155,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Two per-run invariants, hoisted out of the cell loop below: whether
         // any image placement could clip a cell, and whether the template
         // carries extras (so `has_extras` is set once for the whole run).
-        let has_atlas = !self.graphics.atlas_placements.is_empty();
+        let has_clippable_placement = !self.graphics.atlas_placements.is_empty()
+            || self
+                .external_placements(self.active_external_placement_screen())
+                .any(|placement| {
+                    placement.erase_policy == ExternalPlacementErasePolicy::Remove
+                });
         let template_has_extras = template.extras_id().is_some();
 
         let bytes = s.as_bytes();
@@ -3858,7 +4196,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             // as `template | codepoint`. Splitting the scan from the fill lets
             // the compiler vectorize both, versus the branchy per-cell path.
             let mut wrote_bulk = false;
-            if !has_atlas {
+            if !has_clippable_placement {
                 let line = self.grid.cursor.pos.row;
                 let row = &mut self.grid[line];
                 let cells = &mut row[Column(cursor_col)..Column(cursor_col + take)];
@@ -4103,9 +4441,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 );
             }
             ClearMode::All => {
+                let columns = self.grid.columns();
+                self.remove_erased_external_placements(
+                    0,
+                    screen_lines as i32,
+                    0,
+                    columns,
+                );
+                // Kitty specifies ESC[2J as the one text clear operation
+                // that removes displayed images. Transmitted image data is
+                // retained for a later a=p; other erase commands do not
+                // touch kitty placements.
+                self.graphics.clear_active_kitty_placements();
                 if self.mode.contains(Mode::ALT_SCREEN) {
                     self.grid.reset_region(..);
-                    let columns = self.grid.columns();
                     self.clip_atlas_placements(0, screen_lines as i32, 0, columns);
                 } else {
                     // The viewport scrolls into history below; atlas
@@ -4127,6 +4476,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
             ClearMode::Saved if self.history_size() > 0 => {
                 self.grid.clear_history();
                 self.expire_atlas_placements();
+                self.expire_external_placements();
+                self.expire_kitty_placements();
 
                 self.vi_mode_cursor.pos.row = self
                     .vi_mode_cursor
@@ -4892,7 +5243,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn store_graphic(&mut self, graphic: GraphicData) {
+    fn store_graphic(&mut self, graphic: GraphicData) -> bool {
         // a=t: Store graphic without displaying.
         // No GPU upload here — pixel data is sent to GPU when a=p placement arrives.
         let image_id = graphic.id.get() as u32;
@@ -4911,7 +5262,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let image_width = graphic.width;
         let image_height = graphic.height;
         let pixel_data = has_placements.then(|| graphic.clone());
-        self.graphics.store_kitty_image(image_id, None, graphic);
+        if !self.graphics.store_kitty_image(image_id, None, graphic) {
+            return false;
+        }
 
         if let Some(pixel_data) = pixel_data {
             self.refresh_placements_for_image(image_id, image_width, image_height);
@@ -4919,13 +5272,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.graphics.kitty_graphics_dirty = true;
             self.send_graphics_updates();
         }
+        true
     }
 
     fn kitty_transmit_and_display(
         &mut self,
         graphic_data: GraphicData,
         placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
-    ) {
+    ) -> bool {
         let image_id = graphic_data.id.get() as u32;
         debug!(
             "Kitty transmit+display: id={}, {}x{}",
@@ -4946,25 +5300,41 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let image_width = graphic_data.width;
         let image_height = graphic_data.height;
 
+        if !self
+            .graphics
+            .can_insert_kitty_placement(placement.image_id, placement.placement_id)
+        {
+            return false;
+        }
+
         if placement.virtual_placement {
             let pixel_data = graphic_data.clone();
-            self.graphics
-                .store_kitty_image(image_id, None, graphic_data);
+            if !self
+                .graphics
+                .store_kitty_image(image_id, None, graphic_data)
+            {
+                return false;
+            }
             self.refresh_placements_for_image(image_id, image_width, image_height);
             self.graphics.pending_images.push((image_id, pixel_data));
             self.graphics.kitty_graphics_dirty = true;
             self.send_graphics_updates();
             self.place_virtual_graphic(placement);
-            return;
+            return true;
         }
 
         // Store takes ownership and sets transmit_time.
-        self.graphics
-            .store_kitty_image(image_id, None, graphic_data);
+        if !self
+            .graphics
+            .store_kitty_image(image_id, None, graphic_data)
+        {
+            return false;
+        }
         self.refresh_placements_for_image(image_id, image_width, image_height);
 
         // Place as overlay — handles GPU upload internally.
         self.place_kitty_overlay(image_id, &placement);
+        true
     }
 
     #[inline]
@@ -4994,6 +5364,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 "Attempted to place non-existent kitty graphic: id={}",
                 placement.image_id
             );
+            return false;
+        }
+
+        if !self
+            .graphics
+            .can_insert_kitty_placement(image_id, placement.placement_id)
+        {
+            warn!("Kitty placement limit reached");
             return false;
         }
 
@@ -5647,6 +6025,9 @@ impl<U: EventListener> Crosswords<U> {
             dest_row,
             columns,
             rows,
+            clip_top_rows: 0,
+            clip_bottom_rows: 0,
+            unclipped_rows: rows,
             requested_columns: placement.columns,
             requested_rows: placement.rows,
             pixel_width: display_w as u32,
@@ -9248,5 +9629,203 @@ mod tests {
         events.borrow_mut().clear();
         parser.advance(&mut term, b"\x1b[?9h\x1b[?9$p");
         assert_eq!(replies(&events), vec!["\x1b[?9;1$y".to_string()]);
+    }
+
+    fn external_test_placement(
+        term: &Crosswords<VoidListener>,
+        id: u64,
+        row: i64,
+        rows: usize,
+        erase_policy: ExternalPlacementErasePolicy,
+    ) -> ExternalPlacement {
+        ExternalPlacement::new(
+            id,
+            term.active_external_placement_screen(),
+            term.external_placement_absolute_row(row),
+            0,
+            2,
+            rows,
+            ExternalPlacementScrollPolicy::Content,
+            erase_policy,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn external_placement_tracks_full_scroll_and_scrollback_view() {
+        let mut term = make_crosswords();
+        let placement = external_test_placement(
+            &term,
+            7,
+            1,
+            1,
+            ExternalPlacementErasePolicy::Preserve,
+        );
+        let absolute_row = placement.abs_row;
+        term.register_external_placement(placement);
+
+        term.scroll_up_relative(Line(0), 1);
+        let geometry = term.external_placement_geometries();
+        assert_eq!(geometry[0].row, 0);
+        assert_eq!(
+            term.external_placement(ExternalPlacementScreen::Main, 7)
+                .unwrap()
+                .abs_row,
+            absolute_row
+        );
+
+        term.scroll_display(Scroll::Delta(1));
+        assert_eq!(term.external_placement_geometries()[0].row, 1);
+    }
+
+    #[test]
+    fn external_content_placement_reflows_while_absolute_policy_stays_fixed() {
+        use crate::performer::handler::Processor;
+
+        let mut term = make_crosswords();
+        Processor::default().advance(&mut term, b"abcdef");
+        let content = external_test_placement(
+            &term,
+            8,
+            1,
+            1,
+            ExternalPlacementErasePolicy::Preserve,
+        );
+        let mut absolute = content.clone();
+        absolute.id = 9;
+        absolute.scroll_policy = ExternalPlacementScrollPolicy::Absolute;
+        let old_row = content.abs_row;
+        term.register_external_placement(content);
+        term.register_external_placement(absolute);
+
+        term.resize(CrosswordsSize::new(2, 4));
+
+        assert!(
+            term.external_placement(ExternalPlacementScreen::Main, 8)
+                .unwrap()
+                .abs_row
+                > old_row
+        );
+        assert_eq!(
+            term.external_placement(ExternalPlacementScreen::Main, 9)
+                .unwrap()
+                .abs_row,
+            old_row
+        );
+    }
+
+    #[test]
+    fn external_and_kitty_placements_follow_page_margin_rules() {
+        let mut term = make_crosswords();
+        term.set_scrolling_region(2, Some(4));
+        let base = term.external_placement_absolute_row(0);
+
+        term.register_external_placement(external_test_placement(
+            &term,
+            1,
+            1,
+            2,
+            ExternalPlacementErasePolicy::Preserve,
+        ));
+        term.register_external_placement(external_test_placement(
+            &term,
+            2,
+            0,
+            2,
+            ExternalPlacementErasePolicy::Preserve,
+        ));
+        term.graphics.kitty_placements.insert(
+            (3, 1),
+            KittyPlacement {
+                image_id: 3,
+                placement_id: 1,
+                source_x: 0,
+                source_y: 0,
+                source_width: 1,
+                source_height: 1,
+                dest_col: 0,
+                dest_row: base + 1,
+                columns: 1,
+                rows: 2,
+                clip_top_rows: 0,
+                clip_bottom_rows: 0,
+                unclipped_rows: 2,
+                requested_columns: 1,
+                requested_rows: 2,
+                pixel_width: 1,
+                pixel_height: 1,
+                cell_x_offset: 0,
+                cell_y_offset: 0,
+                z_index: 0,
+                transmit_time: crate::time::Instant::now(),
+            },
+        );
+
+        term.scroll_up(1);
+
+        let clipped = term
+            .external_placement(ExternalPlacementScreen::Main, 1)
+            .unwrap();
+        assert_eq!(
+            (clipped.abs_row, clipped.rows, clipped.source_row),
+            (base + 1, 1, 1)
+        );
+        let crossing = term
+            .external_placement(ExternalPlacementScreen::Main, 2)
+            .unwrap();
+        assert_eq!((crossing.abs_row, crossing.rows), (base, 2));
+        let kitty = term.graphics.kitty_placements.get(&(3, 1)).unwrap();
+        assert_eq!(
+            (kitty.dest_row, kitty.rows, kitty.clip_top_rows),
+            (base + 1, 1, 1)
+        );
+    }
+
+    #[test]
+    fn external_screen_ownership_and_erase_policy_are_terminal_owned() {
+        let mut term = make_crosswords();
+        term.register_external_placement(external_test_placement(
+            &term,
+            1,
+            0,
+            1,
+            ExternalPlacementErasePolicy::Preserve,
+        ));
+        term.register_external_placement(external_test_placement(
+            &term,
+            2,
+            0,
+            1,
+            ExternalPlacementErasePolicy::Remove,
+        ));
+        term.clear_line(LineClearMode::All);
+        assert!(term
+            .external_placement(ExternalPlacementScreen::Main, 1)
+            .is_some());
+        assert!(term
+            .external_placement(ExternalPlacementScreen::Main, 2)
+            .is_none());
+
+        term.swap_alt();
+        assert!(term.external_placement_geometries().is_empty());
+        term.register_external_placement(external_test_placement(
+            &term,
+            3,
+            0,
+            1,
+            ExternalPlacementErasePolicy::Preserve,
+        ));
+        term.swap_alt();
+        assert!(term
+            .external_placement(ExternalPlacementScreen::Main, 1)
+            .is_some());
+        assert!(term
+            .external_placement(ExternalPlacementScreen::Alternate, 3)
+            .is_some());
+        term.swap_alt();
+        assert!(term.external_placement_geometries().is_empty());
+        assert!(term
+            .external_placement(ExternalPlacementScreen::Alternate, 3)
+            .is_none());
     }
 }

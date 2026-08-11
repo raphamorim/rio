@@ -5,21 +5,54 @@ use smallvec::SmallVec;
 use std::collections::HashMap;
 use tracing::debug;
 
-/// Maximum width or height (per axis) we accept for a kitty-graphics
-/// image. Matches ghostty / upstream kitty. Anything larger is a DoS
-/// vector — we refuse with `EINVAL: dimensions too large`.
-const MAX_DIMENSION: u32 = 10_000;
+/// Resource and trust policy for Kitty graphics input.
+///
+/// Embedders should tighten this for their process model. In particular,
+/// applications which consume PTY output from an untrusted child should
+/// normally leave every out-of-band transmission medium disabled.
+#[derive(Clone, Debug)]
+pub struct KittyGraphicsConfig {
+    /// Maximum base64 bytes accepted in one APC command.
+    pub max_encoded_bytes: usize,
+    /// Maximum decoded bytes accepted for one complete transmission.
+    pub max_decoded_bytes: usize,
+    /// Maximum bytes produced by decompression.
+    pub max_decompressed_bytes: usize,
+    /// Maximum width or height in pixels.
+    pub max_dimension: u32,
+    /// Maximum resident bytes across graphics stores.
+    pub max_total_bytes: usize,
+    /// Maximum direct and virtual placements on the active screen.
+    pub max_placements: usize,
+    /// Maximum simultaneous incomplete chunked transmissions.
+    pub max_incomplete_transfers: usize,
+    /// Idle timeout for an incomplete chunked transmission.
+    pub incomplete_timeout: Duration,
+    pub allow_direct: bool,
+    pub allow_file: bool,
+    pub allow_temp_file: bool,
+    pub allow_shared_memory: bool,
+}
 
-/// Maximum decoded payload size (bytes) we accept. 400 MiB matches
-/// ghostty / upstream kitty. Guards against runaway base64 blobs filling
-/// memory before `create_graphic_data` validates them.
-const MAX_SIZE: usize = 400 * 1024 * 1024;
-
-/// How long an in-progress chunked upload may sit idle before the
-/// accumulator drops it. Prevents `incomplete_images` from growing
-/// without bound when a client abandons a chunked transmission
-/// mid-stream.
-const CHUNK_STALE_TIMEOUT: Duration = Duration::from_secs(10);
+impl Default for KittyGraphicsConfig {
+    fn default() -> Self {
+        Self {
+            // Base64 expands by 4/3. Keep a small allowance for padding.
+            max_encoded_bytes: 534 * 1024 * 1024,
+            max_decoded_bytes: 400 * 1024 * 1024,
+            max_decompressed_bytes: 400 * 1024 * 1024,
+            max_dimension: 10_000,
+            max_total_bytes: 320 * 1024 * 1024,
+            max_placements: 4096,
+            max_incomplete_transfers: 64,
+            incomplete_timeout: Duration::from_secs(10),
+            allow_direct: true,
+            allow_file: true,
+            allow_temp_file: true,
+            allow_shared_memory: true,
+        }
+    }
+}
 
 /// Per-terminal state for Kitty graphics protocol.
 /// This stores the accumulated command state for chunked transmissions.
@@ -41,9 +74,42 @@ pub struct KittyGraphicsState {
     /// not collide with client-supplied IDs (which clients typically
     /// pick from `1..0x80000000`).
     next_auto_image_id: u32,
+
+    config: KittyGraphicsConfig,
 }
 
 impl KittyGraphicsState {
+    pub fn config(&self) -> &KittyGraphicsConfig {
+        &self.config
+    }
+
+    pub fn set_config(&mut self, config: KittyGraphicsConfig) {
+        self.config = config;
+        evict_stale_chunks(self);
+        while self.incomplete_images.len() > self.config.max_incomplete_transfers {
+            let Some(oldest) = self
+                .incomplete_images
+                .iter()
+                .min_by_key(|(_, command)| command.last_touched)
+                .map(|(key, _)| *key)
+            else {
+                break;
+            };
+            self.incomplete_images.remove(&oldest);
+        }
+        if !self
+            .incomplete_images
+            .contains_key(&self.current_transmission_key)
+        {
+            self.current_transmission_key = 0;
+        }
+    }
+
+    pub fn clear_incomplete_transfers(&mut self) {
+        self.incomplete_images.clear();
+        self.current_transmission_key = 0;
+    }
+
     /// Allocate a fresh image_id for an implicit transmission.
     fn allocate_image_id(&mut self) -> u32 {
         if self.next_auto_image_id < 0x80000000 {
@@ -356,6 +422,24 @@ fn encode_response_quiet(
     }
 }
 
+fn command_error(cmd: &KittyGraphicsCommand, message: &str) -> KittyGraphicsResponse {
+    KittyGraphicsResponse {
+        graphic_data: None,
+        placement_request: None,
+        delete_request: None,
+        response: encode_response_quiet(
+            cmd.image_id,
+            cmd.image_number,
+            cmd.placement_id,
+            message,
+            cmd.quiet,
+            true,
+        ),
+        error_response: None,
+        incomplete: false,
+    }
+}
+
 pub fn parse(
     params: &[&[u8]],
     state: &mut KittyGraphicsState,
@@ -396,7 +480,23 @@ pub fn parse(
     // into stray `=` padding in the middle.
     if let Some(payload) = params.get(2) {
         if !payload.is_empty() {
-            let decoded = decode_payload_base64(payload)?;
+            if payload.len() > state.config.max_encoded_bytes {
+                return Some(command_error(&cmd, "E2BIG: encoded payload too large"));
+            }
+            let Some(decoded) = decode_payload_base64(payload) else {
+                // A malformed continuation invalidates the pinned transfer;
+                // retaining it would let later commands append to stale data.
+                if state.current_transmission_key != 0 {
+                    state
+                        .incomplete_images
+                        .remove(&state.current_transmission_key);
+                    state.current_transmission_key = 0;
+                }
+                return Some(command_error(&cmd, "EINVAL: invalid base64 payload"));
+            };
+            if decoded.len() > state.config.max_decoded_bytes {
+                return Some(command_error(&cmd, "E2BIG: image too large"));
+            }
             cmd.payload = SmallVec::from_vec(decoded);
         }
     }
@@ -492,6 +592,16 @@ pub fn parse(
         // chunks can simply append their bytes.
         use std::collections::hash_map::Entry;
 
+        if !state.incomplete_images.contains_key(&image_key)
+            && state.incomplete_images.len() >= state.config.max_incomplete_transfers
+        {
+            state.current_transmission_key = 0;
+            return Some(command_error(
+                &cmd,
+                "ENOSPC: too many incomplete transmissions",
+            ));
+        }
+
         match state.incomplete_images.entry(image_key) {
             Entry::Vacant(e) => {
                 // First chunk - move cmd into storage (no clone!)
@@ -520,16 +630,18 @@ pub fn parse(
                 // Subsequent chunk - append decoded bytes, refusing if
                 // the accumulated size would exceed our cap.
                 let stored_cmd = e.get_mut();
-                if stored_cmd.payload.len().saturating_add(cmd.payload.len()) > MAX_SIZE {
+                if stored_cmd.payload.len().saturating_add(cmd.payload.len())
+                    > state.config.max_decoded_bytes
+                {
                     debug!(
-                        "Dropping chunked upload {}: would exceed MAX_SIZE ({})",
-                        image_key, MAX_SIZE
+                        "Dropping chunked upload {}: would exceed decoded limit ({})",
+                        image_key, state.config.max_decoded_bytes
                     );
                     // Evict the abandoned upload so it can't be resumed
                     // into an oversized state.
                     e.remove();
                     state.current_transmission_key = 0;
-                    return None;
+                    return Some(command_error(&cmd, "E2BIG: image too large"));
                 }
                 stored_cmd.payload.extend_from_slice(&cmd.payload);
                 stored_cmd.last_touched = Instant::now();
@@ -550,13 +662,15 @@ pub fn parse(
         if let Some(mut stored_cmd) = state.incomplete_images.remove(&image_key) {
             // Final chunk: append this chunk's decoded bytes to the
             // already-accumulated stored payload.
-            if stored_cmd.payload.len().saturating_add(cmd.payload.len()) > MAX_SIZE {
+            if stored_cmd.payload.len().saturating_add(cmd.payload.len())
+                > state.config.max_decoded_bytes
+            {
                 debug!(
-                    "Dropping final chunk {}: would exceed MAX_SIZE ({})",
-                    image_key, MAX_SIZE
+                    "Dropping final chunk {}: would exceed decoded limit ({})",
+                    image_key, state.config.max_decoded_bytes
                 );
                 state.current_transmission_key = 0;
-                return None;
+                return Some(command_error(&cmd, "E2BIG: image too large"));
             }
             stored_cmd.payload.extend_from_slice(&cmd.payload);
             cmd = stored_cmd; // Use stored metadata
@@ -577,7 +691,7 @@ pub fn parse(
         Action::Transmit | Action::TransmitAndDisplay => {
             debug!("Creating graphic data: format={:?}, medium={:?}, compression={:?}, width={}, height={}, payload_len={}",
                 cmd.format, cmd.medium, cmd.compression, cmd.width, cmd.height, cmd.payload.len());
-            let graphic_data = match create_graphic_data(&cmd) {
+            let graphic_data = match create_graphic_data(&cmd, &state.config) {
                 Ok(g) => g,
                 Err(err) => {
                     return Some(KittyGraphicsResponse {
@@ -644,7 +758,21 @@ pub fn parse(
                 placement_request,
                 delete_request: None,
                 response,
-                error_response: None,
+                error_response: matches!(
+                    cmd.action,
+                    Action::Transmit | Action::TransmitAndDisplay
+                )
+                .then(|| {
+                    encode_response_quiet(
+                        cmd.image_id,
+                        cmd.image_number,
+                        cmd.placement_id,
+                        "ENOSPC: placement limit reached",
+                        cmd.quiet,
+                        true,
+                    )
+                })
+                .flatten(),
                 incomplete: false,
             })
         }
@@ -727,7 +855,7 @@ pub fn parse(
             // memory — and report whether that worked, without storing
             // anything. The kitty spec has clients probe support this
             // way; an unconditional OK would disable their fallbacks.
-            let response = match create_graphic_data(&cmd) {
+            let response = match create_graphic_data(&cmd, &state.config) {
                 Ok(_) => encode_response_quiet(
                     cmd.image_id,
                     cmd.image_number,
@@ -937,7 +1065,7 @@ fn parse_compression(value: &str) -> Compression {
 }
 
 /// Evict entries from `incomplete_images` that have not received a
-/// chunk within `CHUNK_STALE_TIMEOUT`. Prevents unbounded growth when
+/// chunk within the configured timeout. Prevents unbounded growth when
 /// clients abandon chunked uploads.
 fn evict_stale_chunks(state: &mut KittyGraphicsState) {
     if state.incomplete_images.is_empty() {
@@ -945,15 +1073,15 @@ fn evict_stale_chunks(state: &mut KittyGraphicsState) {
     }
     let now = Instant::now();
     let before = state.incomplete_images.len();
-    state
-        .incomplete_images
-        .retain(|_, cmd| now.duration_since(cmd.last_touched) < CHUNK_STALE_TIMEOUT);
+    state.incomplete_images.retain(|_, cmd| {
+        now.duration_since(cmd.last_touched) < state.config.incomplete_timeout
+    });
     let after = state.incomplete_images.len();
     if after < before {
         debug!(
             "Evicted {} stale chunked uploads (>{}s idle)",
             before - after,
-            CHUNK_STALE_TIMEOUT.as_secs()
+            state.config.incomplete_timeout.as_secs()
         );
         // If the pinned transmission key was evicted, clear it so that a
         // new chunkless command can't accidentally resume it.
@@ -1021,16 +1149,19 @@ impl GraphicError {
     }
 }
 
-fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, GraphicError> {
+fn create_graphic_data(
+    cmd: &KittyGraphicsCommand,
+    config: &KittyGraphicsConfig,
+) -> Result<GraphicData, GraphicError> {
     // Early dimension guard — applies to every non-PNG path. PNG
     // commands may transmit without declaring width/height (we pick
     // them up after decoding); we re-check post-decode.
     if cmd.format != Format::Png
-        && (cmd.width > MAX_DIMENSION || cmd.height > MAX_DIMENSION)
+        && (cmd.width > config.max_dimension || cmd.height > config.max_dimension)
     {
         debug!(
             "Rejecting kitty image: {}x{} exceeds {} cap",
-            cmd.width, cmd.height, MAX_DIMENSION
+            cmd.width, cmd.height, config.max_dimension
         );
         return Err(GraphicError::DimensionsTooLarge);
     }
@@ -1040,13 +1171,24 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
     // bytes, file/shm means they're a path/name.
     let raw_data = match cmd.medium {
         TransmissionMedium::Direct => {
-            if cmd.payload.len() > MAX_SIZE {
+            if !config.allow_direct {
+                return Err(GraphicError::UnsupportedMedium);
+            }
+            if cmd.payload.len() > config.max_decoded_bytes {
                 return Err(GraphicError::TooLarge);
             }
             debug!("Using decoded Direct payload: {} bytes", cmd.payload.len());
             cmd.payload.to_vec()
         }
         TransmissionMedium::File | TransmissionMedium::TempFile => {
+            let medium_allowed = match cmd.medium {
+                TransmissionMedium::File => config.allow_file,
+                TransmissionMedium::TempFile => config.allow_temp_file,
+                _ => unreachable!(),
+            };
+            if !medium_allowed {
+                return Err(GraphicError::UnsupportedMedium);
+            }
             // Read from file
             use std::fs::File;
             use std::io::Read;
@@ -1083,7 +1225,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
 
             // Cap the explicit `S=` read size before we allocate. Keeps
             // a malicious `S=<huge>` from exploding our heap.
-            if cmd.size as usize > MAX_SIZE {
+            if cmd.size as usize > config.max_decoded_bytes {
                 return Err(GraphicError::TooLarge);
             }
 
@@ -1103,11 +1245,11 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             } else {
                 // Read entire file. Cap the total so a huge file on disk
                 // can't be silently loaded through this channel.
-                let limit = (MAX_SIZE as u64).saturating_add(1);
+                let limit = (config.max_decoded_bytes as u64).saturating_add(1);
                 file.take(limit)
                     .read_to_end(&mut data)
                     .map_err(|_| GraphicError::InvalidData)?;
-                if data.len() > MAX_SIZE {
+                if data.len() > config.max_decoded_bytes {
                     return Err(GraphicError::TooLarge);
                 }
             }
@@ -1120,6 +1262,9 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             data
         }
         TransmissionMedium::SharedMemory => {
+            if !config.allow_shared_memory {
+                return Err(GraphicError::UnsupportedMedium);
+            }
             #[cfg(unix)]
             {
                 use std::ffi::CString;
@@ -1182,7 +1327,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                         return Err(GraphicError::InvalidData);
                     }
 
-                    if data_size > MAX_SIZE {
+                    if data_size > config.max_decoded_bytes {
                         libc::close(fd);
                         libc::shm_unlink(shm_name.as_ptr());
                         return Err(GraphicError::TooLarge);
@@ -1300,7 +1445,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                         return Err(GraphicError::InvalidData);
                     }
 
-                    if data_size > MAX_SIZE {
+                    if data_size > config.max_decoded_bytes {
                         UnmapViewOfFile(base_ptr);
                         CloseHandle(handle);
                         return Err(GraphicError::TooLarge);
@@ -1339,10 +1484,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             // then check the size we actually got.
             let mut decompressed = Vec::new();
             decoder
-                .take((MAX_SIZE as u64).saturating_add(1))
+                .take((config.max_decompressed_bytes as u64).saturating_add(1))
                 .read_to_end(&mut decompressed)
                 .map_err(|_| GraphicError::DecompressionFailed)?;
-            if decompressed.len() > MAX_SIZE {
+            if decompressed.len() > config.max_decompressed_bytes {
                 return Err(GraphicError::TooLarge);
             }
             decompressed
@@ -1383,7 +1528,9 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                 };
                 // PNG dimensions come from the decoded header — now enforce
                 // the cap we couldn't check up front.
-                if img.width() > MAX_DIMENSION || img.height() > MAX_DIMENSION {
+                if img.width() > config.max_dimension
+                    || img.height() > config.max_dimension
+                {
                     return Err(GraphicError::DimensionsTooLarge);
                 }
                 let rgba_img = img.to_rgba8();
@@ -1445,9 +1592,11 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             }
 
             // Validate data size
-            let expected_size =
-                cmd.width as usize * cmd.height as usize * bytes_per_pixel;
-            if expected_size > MAX_SIZE {
+            let expected_size = (cmd.width as usize)
+                .checked_mul(cmd.height as usize)
+                .and_then(|pixels| pixels.checked_mul(bytes_per_pixel))
+                .ok_or(GraphicError::TooLarge)?;
+            if expected_size > config.max_decompressed_bytes {
                 return Err(GraphicError::TooLarge);
             }
             if pixel_data.len() < expected_size {
@@ -2057,6 +2206,109 @@ mod tests {
     }
 
     #[test]
+    fn configured_encoded_and_decoded_caps_reject_before_accumulation() {
+        let mut state = KittyGraphicsState::default();
+        let mut config = KittyGraphicsConfig {
+            max_encoded_bytes: 4,
+            max_decoded_bytes: 2,
+            ..KittyGraphicsConfig::default()
+        };
+        state.set_config(config.clone());
+
+        let encoded = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,i=8", b"AAAAAA=="];
+        let response = parse(&encoded, &mut state).unwrap();
+        assert!(response.response.unwrap().contains("encoded payload"));
+        assert!(state.incomplete_images.is_empty());
+
+        config.max_encoded_bytes = 16;
+        state.set_config(config);
+        let decoded = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,i=9", b"AAAA"];
+        let response = parse(&decoded, &mut state).unwrap();
+        assert!(response.response.unwrap().contains("image too large"));
+        assert!(state.incomplete_images.is_empty());
+    }
+
+    #[test]
+    fn configured_incomplete_transfer_cap_and_malformed_chunk_abort() {
+        let mut state = KittyGraphicsState::default();
+        state.set_config(KittyGraphicsConfig {
+            max_incomplete_transfers: 1,
+            ..KittyGraphicsConfig::default()
+        });
+
+        let first = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=1", b"/wAA"];
+        assert!(parse(&first, &mut state).unwrap().incomplete);
+        let second = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=2", b"/wAA"];
+        let response = parse(&second, &mut state).unwrap();
+        assert!(response.response.unwrap().contains("too many incomplete"));
+        assert_eq!(state.incomplete_images.len(), 1);
+
+        // Resume the original transfer, then corrupt its final chunk.
+        state.current_transmission_key = 1;
+        let malformed = vec![b"G".as_ref(), b"m=0,i=1", b"not base64!"];
+        let response = parse(&malformed, &mut state).unwrap();
+        assert!(response.response.unwrap().contains("invalid base64"));
+        assert!(state.incomplete_images.is_empty());
+        assert_eq!(state.current_transmission_key, 0);
+    }
+
+    #[test]
+    fn configured_decompression_cap_rejects_zip_bomb_shape() {
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression as FlateCompression;
+        use std::io::Write;
+
+        let mut encoder = ZlibEncoder::new(Vec::new(), FlateCompression::default());
+        encoder.write_all(&[0u8; 64]).unwrap();
+        let payload = BASE64.encode(encoder.finish().unwrap());
+        let mut state = KittyGraphicsState::default();
+        state.set_config(KittyGraphicsConfig {
+            max_decompressed_bytes: 8,
+            ..KittyGraphicsConfig::default()
+        });
+        let params = vec![
+            b"G".as_ref(),
+            b"a=q,f=32,s=4,v=4,o=z,i=44".as_ref(),
+            payload.as_bytes(),
+        ];
+        let response = parse(&params, &mut state).unwrap();
+        assert!(response.response.unwrap().contains("image too large"));
+    }
+
+    #[test]
+    fn configured_media_policy_makes_queries_truthful() {
+        let mut state = KittyGraphicsState::default();
+        state.set_config(KittyGraphicsConfig {
+            allow_file: false,
+            allow_temp_file: false,
+            allow_shared_memory: false,
+            ..KittyGraphicsConfig::default()
+        });
+        let path = BASE64.encode(b"/tmp/does-not-matter");
+        for medium in ["f", "t", "s"] {
+            let control = format!("a=q,t={medium},f=32,s=1,v=1,i=45");
+            let params = vec![b"G".as_ref(), control.as_bytes(), path.as_bytes()];
+            let response = parse(&params, &mut state).unwrap();
+            assert!(response.response.unwrap().contains("unsupported medium"));
+        }
+
+        let direct = vec![b"G".as_ref(), b"a=q,t=d,f=32,s=1,v=1,i=46", b"/wAA/w=="];
+        assert!(parse(&direct, &mut state)
+            .unwrap()
+            .response
+            .unwrap()
+            .contains(";OK"));
+    }
+
+    #[cfg(not(feature = "graphics"))]
+    #[test]
+    fn png_query_reports_unsupported_without_graphics_feature() {
+        let result = parse_kitty_graphics_protocol("a=q,f=100,i=50", "AAAA")
+            .expect("response struct must exist");
+        assert!(!result.response.unwrap().contains(";OK"));
+    }
+
+    #[test]
     fn test_iid_mutually_exclusive() {
         // Setting both i= and I= must be rejected with a specific EINVAL.
         let result = parse_kitty_graphics_protocol("a=t,f=32,s=1,v=1,i=5,I=6", "AAAA")
@@ -2214,7 +2466,7 @@ mod tests {
     #[test]
     fn test_stale_chunk_eviction() {
         // An in-progress chunked upload whose `last_touched` is older
-        // than CHUNK_STALE_TIMEOUT must be dropped on the next chunk
+        // than the configured timeout must be dropped on the next chunk
         // event.
         let mut state = KittyGraphicsState::default();
 
@@ -2224,7 +2476,8 @@ mod tests {
         assert_eq!(state.incomplete_images.len(), 1);
 
         // Artificially age the stored command past the timeout.
-        let stale = Instant::now() - CHUNK_STALE_TIMEOUT - Duration::from_secs(1);
+        let stale =
+            Instant::now() - state.config.incomplete_timeout - Duration::from_secs(1);
         if let Some(cmd) = state.incomplete_images.get_mut(&777) {
             cmd.last_touched = stale;
         }
