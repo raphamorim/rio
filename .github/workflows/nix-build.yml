@@ -34,9 +34,14 @@ jobs:
     name: Build
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
+    # flakehub-cache authenticates via OIDC; without these permissions it
+    # silently disables itself and falls back to the GHA cache.
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/flakehub-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
       - run: nix build --max-jobs auto --build-max-jobs auto --print-build-logs

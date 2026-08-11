@@ -52,7 +52,16 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo fmt -- --check --color always
       - run: cargo clippy --all-targets --all-features
-      - run: cargo test --features wgpu
+      - run: cargo test --features wgpu ${{ runner.os == 'Linux' && '--timings' || '' }}
+      - name: Upload build timings
+        # One HTML per run showing which crates dominated and whether the
+        # cache actually hit; download it when CI feels slow.
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings
+          path: target/cargo-timings/
+          if-no-files-found: ignore
   msys2-build-test: #cargo test doesn't necessarily build the exec we want
     strategy:
       matrix:

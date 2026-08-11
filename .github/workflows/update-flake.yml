@@ -7,12 +7,18 @@ on:
 jobs:
   lockfile:
     runs-on: ubuntu-latest
+    # id-token for flakehub-cache OIDC; contents+pull-requests write so
+    # update-flake-lock can push its branch and open the PR.
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
-      - name: Enable magic Nix cache
+      - name: Enable FlakeHub cache
         uses: DeterminateSystems/flakehub-cache-action@main
       - name: Check flake
         uses: DeterminateSystems/flake-checker-action@main
