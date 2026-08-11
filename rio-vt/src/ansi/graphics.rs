@@ -1138,11 +1138,41 @@ impl Graphics {
         &mut self,
         predicate: impl Fn(&u32, &StoredImage) -> bool,
     ) {
-        let before = self.kitty_images.len();
-        self.kitty_images.retain(|id, img| !predicate(id, img));
-        if self.kitty_images.len() != before {
-            self.kitty_graphics_dirty = true;
+        let removed = self
+            .kitty_images
+            .iter()
+            .filter_map(|(id, image)| {
+                predicate(id, image).then_some((*id, image.data.pixels.len()))
+            })
+            .collect::<Vec<_>>();
+        if removed.is_empty() {
+            return;
         }
+        let removed_ids = removed
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<std::collections::HashSet<_>>();
+        self.kitty_images.retain(|id, _| !removed_ids.contains(id));
+        self.pending_images
+            .retain(|(id, _)| !removed_ids.contains(id));
+        self.total_bytes = self.total_bytes.saturating_sub(
+            removed
+                .iter()
+                .map(|(_, bytes)| *bytes)
+                .fold(0usize, usize::saturating_add),
+        );
+        self.texture_operations.lock().extend(
+            removed
+                .iter()
+                .map(|(id, _)| *id)
+                .filter(|id| !self.kitty_inactive_screen.kitty_images.contains_key(id))
+                .map(rio_graphics::kitty_image_key),
+        );
+        self.kitty_graphics_dirty = true;
+        self.kitty_placements
+            .retain(|(image_id, _), _| !removed_ids.contains(image_id));
+        self.kitty_virtual_placements
+            .retain(|(image_id, _), _| !removed_ids.contains(image_id));
         // Clean up stale number mappings
         self.kitty_image_numbers
             .retain(|_, id| self.kitty_images.contains_key(id));
@@ -1757,6 +1787,37 @@ fn kitty_resident_limit_is_a_hard_cap() {
     assert!(!stored);
     assert_eq!(graphics.total_bytes, 0);
     assert!(graphics.kitty_images.is_empty());
+}
+
+#[test]
+fn kitty_data_delete_releases_resident_bytes_and_frontend_texture() {
+    let mut graphics = Graphics::default();
+    assert!(graphics.store_kitty_image(
+        7,
+        None,
+        GraphicData {
+            id: GraphicId::new(7),
+            width: 1,
+            height: 1,
+            color_type: rio_graphics::ColorType::Rgba,
+            pixels: vec![0; 4],
+            is_opaque: true,
+            resize: None,
+            display_width: None,
+            display_height: None,
+            transmit_time: crate::time::Instant::now(),
+        },
+    ));
+    assert_eq!(graphics.total_bytes, 4);
+
+    graphics.delete_kitty_images(|id, _| *id == 7);
+
+    assert_eq!(graphics.total_bytes, 0);
+    assert!(graphics.kitty_images.is_empty());
+    assert_eq!(
+        graphics.take_queues().unwrap().remove_queue,
+        [rio_graphics::kitty_image_key(7)]
+    );
 }
 
 #[test]

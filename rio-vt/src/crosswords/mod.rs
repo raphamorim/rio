@@ -5428,8 +5428,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 overlay_changed = true;
 
                 if delete.delete_data {
-                    self.graphics.kitty_images.clear();
-                    self.graphics.kitty_image_numbers.clear();
+                    self.graphics.delete_kitty_images(|_, _| true);
                 }
             }
             b'i' | b'I' => {
@@ -9058,6 +9057,22 @@ mod tests {
             .flatten()
             .collect::<Vec<_>>();
         assert_eq!(uploaded_ids, [77]);
+
+        events.borrow_mut().clear();
+        processor.advance(&mut term, b"\x1b_Ga=d,d=I,i=77\x1b\\");
+        assert!(term.graphics.get_kitty_image(77).is_none());
+        let removed_keys = events
+            .borrow()
+            .iter()
+            .filter_map(|event| match event {
+                RioEvent::UpdateGraphics { queues, .. } => {
+                    Some(queues.remove_queue.clone())
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        assert_eq!(removed_keys, [rio_graphics::kitty_image_key(77)]);
     }
 
     /// End-to-end: yazi's kgp driver (yazi-adapter/src/drivers/kgp.rs)
