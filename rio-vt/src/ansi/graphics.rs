@@ -994,13 +994,37 @@ impl Graphics {
         self.kitty_graphics_dirty = true;
     }
 
-    /// Clear every active-screen placement while retaining transmitted images.
-    pub fn clear_active_kitty_placements(&mut self) {
-        if self.kitty_placements.is_empty() && self.kitty_virtual_placements.is_empty() {
+    /// Clear direct active-screen placements intersecting a viewport while
+    /// retaining transmitted images and non-positional virtual prototypes.
+    pub fn clear_visible_active_kitty_placements(
+        &mut self,
+        viewport_top: i64,
+        viewport_bottom: i64,
+        screen_columns: usize,
+    ) {
+        let before = self.kitty_placements.len();
+        self.kitty_placements.retain(|_, placement| {
+            !(placement.rows > 0
+                && placement.columns > 0
+                && placement.dest_col < screen_columns
+                && placement.dest_row < viewport_bottom
+                && placement.dest_row.saturating_add(i64::from(placement.rows))
+                    > viewport_top)
+        });
+        if self.kitty_placements.len() == before {
             return;
         }
-        self.kitty_placements.clear();
-        self.kitty_virtual_placements.clear();
+        self.kitty_graphics_dirty = true;
+    }
+
+    /// A fresh DECSET 1049 entry blanks the inactive alternate grid and every
+    /// direct image placement on it. Pixel data and virtual prototypes remain
+    /// available for future explicit placements/placeholder cells.
+    pub fn clear_inactive_kitty_placements(&mut self) {
+        if self.kitty_inactive_screen.kitty_placements.is_empty() {
+            return;
+        }
+        self.kitty_inactive_screen.kitty_placements.clear();
         self.kitty_graphics_dirty = true;
     }
 

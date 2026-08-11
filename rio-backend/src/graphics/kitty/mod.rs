@@ -2874,6 +2874,44 @@ fn test_swap_alt_isolates_placements() {
 }
 
 #[test]
+fn test_fresh_1049_entry_clears_stale_alternate_direct_placements() {
+    use crate::ansi::kitty_graphics_protocol::PlacementRequest;
+    use crate::performer::handler::Handler;
+
+    let mut term = make_test_term();
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+    term.swap_alt();
+    store_red_pixel(&mut term, 9);
+    assert!(term.place_graphic(PlacementRequest {
+        image_id: 9,
+        placement_id: 1,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        columns: 1,
+        rows: 1,
+        z_index: 0,
+        virtual_placement: false,
+        unicode_placeholder: 0,
+        cursor_movement: 1,
+        cell_x_offset: 0,
+        cell_y_offset: 0,
+    }));
+    assert!(term.graphics.kitty_placements.contains_key(&(9, 1)));
+
+    term.swap_alt();
+    term.swap_alt();
+
+    assert!(term.graphics.kitty_placements.is_empty());
+    assert!(
+        term.graphics.get_kitty_image(9).is_some(),
+        "1049 clears alternate placements without discarding reusable pixels"
+    );
+}
+
+#[test]
 fn test_swap_alt_isolates_image_numbers() {
     // Image-number mappings (I=) are per-screen too.
     let mut term = make_test_term();
@@ -2919,7 +2957,7 @@ fn test_swap_alt_marks_kitty_dirty() {
 }
 
 #[test]
-fn test_text_clear_preserves_direct_and_virtual_kitty_placements() {
+fn test_full_screen_clear_removes_direct_but_preserves_virtual_kitty_placement() {
     use crate::ansi::kitty_graphics_protocol::PlacementRequest;
     use crate::performer::handler::{Handler, Processor};
 
@@ -2949,7 +2987,7 @@ fn test_text_clear_preserves_direct_and_virtual_kitty_placements() {
 
     Processor::default().advance(&mut term, b"\x1b[2J");
 
-    assert!(term.graphics.kitty_placements.contains_key(&(1, 1)));
+    assert!(!term.graphics.kitty_placements.contains_key(&(1, 1)));
     assert!(term.graphics.kitty_virtual_placements.contains_key(&(1, 2)));
     assert!(term.graphics.get_kitty_image(1).is_some());
 }

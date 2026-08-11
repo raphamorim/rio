@@ -60,6 +60,14 @@ impl Default for KittyGraphicsConfig {
     }
 }
 
+fn max_transfer_bytes(config: &KittyGraphicsConfig) -> usize {
+    config.max_decoded_bytes.min(config.max_total_bytes)
+}
+
+fn max_image_output_bytes(config: &KittyGraphicsConfig) -> usize {
+    config.max_decompressed_bytes.min(config.max_total_bytes)
+}
+
 /// Per-terminal state for Kitty graphics protocol.
 /// This stores the accumulated command state for chunked transmissions.
 /// Each terminal instance should have its own state to prevent conflicts between tabs.
@@ -647,7 +655,7 @@ pub fn parse(
                 abort_transfer(state, command_key);
                 return Some(command_error(&cmd, "EINVAL: invalid base64 payload"));
             };
-            if decoded.len() > state.config.max_decoded_bytes {
+            if decoded.len() > max_transfer_bytes(&state.config) {
                 abort_transfer(state, command_key);
                 return Some(command_error(&cmd, "E2BIG: image too large"));
             }
@@ -726,9 +734,8 @@ pub fn parse(
         let total_without_current =
             incomplete_payload_bytes(state).saturating_sub(previous_len);
         let declared_size = cmd.size as usize;
-        if next_len > state.config.max_decoded_bytes
-            || declared_size > state.config.max_decoded_bytes
-        {
+        let transfer_limit = max_transfer_bytes(&state.config);
+        if next_len > transfer_limit || declared_size > transfer_limit {
             state.incomplete_images.remove(&image_key);
             state.current_transmission_key = None;
             return Some(command_error(&cmd, "E2BIG: image too large"));
@@ -748,24 +755,15 @@ pub fn parse(
         match state.incomplete_images.entry(image_key) {
             Entry::Vacant(e) => {
                 // First chunk - move cmd into storage (no clone!)
-                // Pre-allocate capacity if size is known to avoid reallocations
-                let expected_size = cmd.size as usize;
-                if expected_size > 0 && cmd.payload.capacity() < expected_size {
-                    cmd.payload
-                        .reserve(expected_size.saturating_sub(cmd.payload.len()));
-                    debug!(
-                        "First chunk for image key {:?}: {} bytes, reserved {} bytes total",
-                        image_key,
-                        cmd.payload.len(),
-                        expected_size
-                    );
-                } else {
-                    debug!(
-                        "First chunk for image key {:?}: {} bytes",
-                        image_key,
-                        cmd.payload.len()
-                    );
-                }
+                // Do not reserve the attacker-controlled declared `S=` size.
+                // Aggregate limits account bytes actually retained; reserving
+                // each declaration would let many tiny incomplete transfers
+                // hold multiples of the configured aggregate byte budget.
+                debug!(
+                    "First chunk for image key {:?}: {} bytes",
+                    image_key,
+                    cmd.payload.len()
+                );
                 cmd.last_touched = Instant::now();
                 e.insert(cmd);
             }
@@ -774,11 +772,11 @@ pub fn parse(
                 // the accumulated size would exceed our cap.
                 let stored_cmd = e.get_mut();
                 if stored_cmd.payload.len().saturating_add(cmd.payload.len())
-                    > state.config.max_decoded_bytes
+                    > transfer_limit
                 {
                     debug!(
                         "Dropping chunked upload {:?}: would exceed decoded limit ({})",
-                        image_key, state.config.max_decoded_bytes
+                        image_key, transfer_limit
                     );
                     // Evict the abandoned upload so it can't be resumed
                     // into an oversized state.
@@ -806,11 +804,12 @@ pub fn parse(
             // Final chunk: append this chunk's decoded bytes to the
             // already-accumulated stored payload.
             if stored_cmd.payload.len().saturating_add(cmd.payload.len())
-                > state.config.max_decoded_bytes
+                > max_transfer_bytes(&state.config)
             {
                 debug!(
                     "Dropping final chunk {:?}: would exceed decoded limit ({})",
-                    image_key, state.config.max_decoded_bytes
+                    image_key,
+                    max_transfer_bytes(&state.config)
                 );
                 state.current_transmission_key = None;
                 return Some(command_error(&cmd, "E2BIG: image too large"));
@@ -1325,10 +1324,119 @@ fn checked_rgba_output_len(
         .checked_mul(height as usize)
         .and_then(|pixels| pixels.checked_mul(4))
         .ok_or(GraphicError::TooLarge)?;
-    if bytes > config.max_decompressed_bytes {
+    if bytes > max_image_output_bytes(config) {
         return Err(GraphicError::TooLarge);
     }
     Ok(bytes)
+}
+
+fn kitty_temp_roots() -> Vec<std::path::PathBuf> {
+    let mut roots = vec![std::env::temp_dir()];
+    for variable in ["TMPDIR", "TEMP", "TMP"] {
+        if let Some(root) = std::env::var_os(variable).filter(|value| !value.is_empty()) {
+            roots.push(root.into());
+        }
+    }
+    #[cfg(unix)]
+    {
+        roots.push("/tmp".into());
+        roots.push("/dev/shm".into());
+    }
+    roots
+}
+
+fn resolve_kitty_temp_file_path_in_roots(
+    path: &std::path::Path,
+    roots: &[std::path::PathBuf],
+) -> Result<std::path::PathBuf, GraphicError> {
+    let resolved = std::fs::canonicalize(path).map_err(|_| GraphicError::FileNotFound)?;
+    let has_marker = resolved
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.contains("tty-graphics-protocol"));
+    if !has_marker {
+        return Err(GraphicError::InvalidData);
+    }
+    let allowed = roots.iter().any(|root| {
+        std::fs::canonicalize(root)
+            .is_ok_and(|resolved_root| resolved.starts_with(resolved_root))
+    });
+    if !allowed {
+        return Err(GraphicError::InvalidData);
+    }
+    Ok(resolved)
+}
+
+fn resolve_kitty_file_path(
+    path: &std::path::Path,
+    medium: TransmissionMedium,
+) -> Result<std::path::PathBuf, GraphicError> {
+    if medium == TransmissionMedium::TempFile {
+        return resolve_kitty_temp_file_path_in_roots(path, &kitty_temp_roots());
+    }
+
+    let resolved = std::fs::canonicalize(path).map_err(|_| GraphicError::FileNotFound)?;
+    #[cfg(unix)]
+    if ["/proc", "/sys", "/dev"]
+        .iter()
+        .any(|root| resolved.starts_with(root))
+    {
+        return Err(GraphicError::InvalidData);
+    }
+    Ok(resolved)
+}
+
+#[cfg(unix)]
+fn open_kitty_regular_file(
+    path: &std::path::Path,
+) -> Result<(std::fs::File, std::fs::Metadata), GraphicError> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)
+        .map_err(|_| GraphicError::FileNotFound)?;
+    let metadata = file.metadata().map_err(|_| GraphicError::InvalidData)?;
+    if !metadata.file_type().is_file() {
+        return Err(GraphicError::InvalidData);
+    }
+    Ok((file, metadata))
+}
+
+#[cfg(not(unix))]
+fn open_kitty_regular_file(
+    path: &std::path::Path,
+) -> Result<(std::fs::File, std::fs::Metadata), GraphicError> {
+    let file = std::fs::File::open(path).map_err(|_| GraphicError::FileNotFound)?;
+    let metadata = file.metadata().map_err(|_| GraphicError::InvalidData)?;
+    if !metadata.file_type().is_file() {
+        return Err(GraphicError::InvalidData);
+    }
+    Ok((file, metadata))
+}
+
+#[cfg(unix)]
+fn remove_opened_kitty_temp_file(path: &std::path::Path, opened: &std::fs::Metadata) {
+    use std::os::unix::fs::MetadataExt;
+
+    if let Ok(current) = std::fs::symlink_metadata(path) {
+        if current.file_type().is_file()
+            && current.dev() == opened.dev()
+            && current.ino() == opened.ino()
+        {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn remove_opened_kitty_temp_file(path: &std::path::Path, opened: &std::fs::Metadata) {
+    if std::fs::symlink_metadata(path).is_ok_and(|current| {
+        current.file_type().is_file() && current.len() == opened.len()
+    }) {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 #[cfg(unix)]
@@ -1390,7 +1498,7 @@ fn create_graphic_data(
             if !config.allow_direct {
                 return Err(GraphicError::UnsupportedMedium);
             }
-            if cmd.payload.len() > config.max_decoded_bytes {
+            if cmd.payload.len() > max_transfer_bytes(config) {
                 return Err(GraphicError::TooLarge);
             }
             debug!("Using decoded Direct payload: {} bytes", cmd.payload.len());
@@ -1405,8 +1513,6 @@ fn create_graphic_data(
             if !medium_allowed {
                 return Err(GraphicError::UnsupportedMedium);
             }
-            // Read from file
-            use std::fs::File;
             use std::io::Read;
             use std::path::Path;
 
@@ -1416,36 +1522,21 @@ fn create_graphic_data(
             let path_str = std::str::from_utf8(&cmd.payload)
                 .map_err(|_| GraphicError::InvalidData)?;
             debug!("File path: {}", path_str);
-            let path = Path::new(path_str);
-
-            // Security checks
-            if !path.is_file() {
-                return Err(GraphicError::FileNotFound);
-            }
-
-            // Check for sensitive paths
-            let path_str_lower = path_str.to_lowercase();
-            if path_str_lower.contains("/proc/")
-                || path_str_lower.contains("/sys/")
-                || path_str_lower.contains("/dev/")
-            {
-                return Err(GraphicError::InvalidData);
-            }
-
-            // For temp files, verify it contains "tty-graphics-protocol"
-            if cmd.medium == TransmissionMedium::TempFile
-                && !path_str.contains("tty-graphics-protocol")
-            {
-                return Err(GraphicError::InvalidData);
-            }
+            // Resolve symlinks before policy checks. Temp-file transmissions
+            // are accepted only inside a known temporary root and only under
+            // Kitty's required marker filename.
+            let path = resolve_kitty_file_path(Path::new(path_str), cmd.medium)?;
 
             // Cap the explicit `S=` read size before we allocate. Keeps
             // a malicious `S=<huge>` from exploding our heap.
-            if cmd.size as usize > config.max_decoded_bytes {
+            if cmd.size as usize > max_transfer_bytes(config) {
                 return Err(GraphicError::TooLarge);
             }
 
-            let mut file = File::open(path).map_err(|_| GraphicError::FileNotFound)?;
+            // On Unix, O_NONBLOCK prevents a raced FIFO from wedging the
+            // terminal, O_NOFOLLOW rejects a replaced final-component
+            // symlink, and descriptor metadata closes the check/open race.
+            let (mut file, opened_metadata) = open_kitty_regular_file(&path)?;
             let mut data = Vec::new();
 
             if cmd.size > 0 {
@@ -1461,18 +1552,22 @@ fn create_graphic_data(
             } else {
                 // Read entire file. Cap the total so a huge file on disk
                 // can't be silently loaded through this channel.
-                let limit = (config.max_decoded_bytes as u64).saturating_add(1);
-                file.take(limit)
+                let limit = (max_transfer_bytes(config) as u64).saturating_add(1);
+                if opened_metadata.len() >= limit {
+                    return Err(GraphicError::TooLarge);
+                }
+                (&mut file)
+                    .take(limit)
                     .read_to_end(&mut data)
                     .map_err(|_| GraphicError::InvalidData)?;
-                if data.len() > config.max_decoded_bytes {
+                if data.len() > max_transfer_bytes(config) {
                     return Err(GraphicError::TooLarge);
                 }
             }
 
             // Delete temp file if requested
             if cmd.medium == TransmissionMedium::TempFile {
-                let _ = std::fs::remove_file(path);
+                remove_opened_kitty_temp_file(&path, &opened_metadata);
             }
 
             data
@@ -1534,7 +1629,7 @@ fn create_graphic_data(
                             shm_size,
                             cmd.offset,
                             cmd.size,
-                            config.max_decoded_bytes,
+                            max_transfer_bytes(config),
                         )
                     })();
                     drop(file);
@@ -1631,7 +1726,7 @@ fn create_graphic_data(
                         return Err(GraphicError::InvalidData);
                     }
 
-                    if data_size > config.max_decoded_bytes {
+                    if data_size > max_transfer_bytes(config) {
                         UnmapViewOfFile(base_ptr);
                         CloseHandle(handle);
                         return Err(GraphicError::TooLarge);
@@ -1669,11 +1764,12 @@ fn create_graphic_data(
             // terminal. `Take` passes the limit through the decoder; we
             // then check the size we actually got.
             let mut decompressed = Vec::new();
+            let output_limit = max_image_output_bytes(config);
             decoder
-                .take((config.max_decompressed_bytes as u64).saturating_add(1))
+                .take((output_limit as u64).saturating_add(1))
                 .read_to_end(&mut decompressed)
                 .map_err(|_| GraphicError::DecompressionFailed)?;
-            if decompressed.len() > config.max_decompressed_bytes {
+            if decompressed.len() > output_limit {
                 return Err(GraphicError::TooLarge);
             }
             decompressed
@@ -1702,7 +1798,7 @@ fn create_graphic_data(
                     let mut limits = Limits::default();
                     limits.max_image_width = Some(config.max_width);
                     limits.max_image_height = Some(config.max_height);
-                    limits.max_alloc = Some(config.max_decompressed_bytes as u64);
+                    limits.max_alloc = Some(max_image_output_bytes(config) as u64);
                     limits
                 };
 
@@ -1801,7 +1897,7 @@ fn create_graphic_data(
             let expected_size = pixel_count
                 .checked_mul(bytes_per_pixel)
                 .ok_or(GraphicError::TooLarge)?;
-            if expected_size > config.max_decompressed_bytes {
+            if expected_size > max_image_output_bytes(config) {
                 return Err(GraphicError::TooLarge);
             }
             let rgba_size = checked_rgba_output_len(cmd.width, cmd.height, config)?;
@@ -2583,6 +2679,47 @@ mod tests {
     }
 
     #[test]
+    fn declared_sizes_do_not_amplify_incomplete_payload_capacity() {
+        const AGGREGATE_LIMIT: usize = 1_024;
+        let mut state = KittyGraphicsState::default();
+        state.set_config(KittyGraphicsConfig {
+            max_decoded_bytes: AGGREGATE_LIMIT,
+            max_total_incomplete_bytes: AGGREGATE_LIMIT,
+            max_incomplete_transfers: 32,
+            ..KittyGraphicsConfig::default()
+        });
+
+        for image_id in 1..=32 {
+            let control =
+                format!("a=t,f=32,s=1,v=1,m=1,i={image_id},S={AGGREGATE_LIMIT}");
+            let chunk = vec![b"G".as_ref(), control.as_bytes(), b"AA"];
+            assert!(
+                parse(&chunk, &mut state)
+                    .expect("valid first chunk")
+                    .incomplete
+            );
+        }
+
+        let retained_len = incomplete_payload_bytes(&state);
+        let retained_capacity = state
+            .incomplete_images
+            .values()
+            .map(|command| command.payload.capacity())
+            .sum::<usize>();
+        assert_eq!(retained_len, 32);
+        // Base64 decoding and Vec growth may retain small allocator slack per
+        // transfer. It must remain a constant-factor bound on actual retained
+        // bytes, never a multiple of attacker-declared `S=` values.
+        let bounded_capacity = AGGREGATE_LIMIT
+            .saturating_mul(2)
+            .saturating_add(state.incomplete_images.len().saturating_mul(64));
+        assert!(
+            retained_capacity <= bounded_capacity,
+            "declared sizes must not reserve outside the aggregate budget: {retained_capacity}"
+        );
+    }
+
+    #[test]
     fn configured_decompression_cap_rejects_zip_bomb_shape() {
         use flate2::write::ZlibEncoder;
         use flate2::Compression as FlateCompression;
@@ -2628,6 +2765,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn normalized_rgba_output_must_fit_the_total_resident_store() {
+        let payload = BASE64.encode([1u8, 2, 3, 4, 5, 6]);
+        let mut state = KittyGraphicsState::default();
+        state.set_config(KittyGraphicsConfig {
+            max_decoded_bytes: 1_024,
+            max_decompressed_bytes: 1_024,
+            max_total_bytes: 7,
+            ..KittyGraphicsConfig::default()
+        });
+        let params = vec![
+            b"G".as_ref(),
+            b"a=q,f=24,s=2,v=1,i=49".as_ref(),
+            payload.as_bytes(),
+        ];
+        let response = parse(&params, &mut state).unwrap();
+        assert!(response.response.unwrap().contains("image too large"));
+    }
+
     #[cfg(feature = "graphics")]
     #[test]
     fn png_rgba_output_is_bounded_before_pixel_decode() {
@@ -2649,6 +2805,34 @@ mod tests {
         let params = vec![
             b"G".as_ref(),
             b"a=q,f=100,i=48".as_ref(),
+            payload.as_bytes(),
+        ];
+        let response = parse(&params, &mut state).unwrap();
+        assert!(response.response.unwrap().contains("image too large"));
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn png_rgba_output_must_fit_the_total_store_before_pixel_decode() {
+        use image_rs::codecs::png::PngEncoder;
+        use image_rs::{ExtendedColorType, ImageEncoder};
+
+        let mut png = Vec::new();
+        PngEncoder::new(&mut png)
+            .write_image(&[0u8; 4 * 4 * 4], 4, 4, ExtendedColorType::Rgba8)
+            .unwrap();
+        let payload = BASE64.encode(png);
+        let mut state = KittyGraphicsState::default();
+        state.set_config(KittyGraphicsConfig {
+            max_encoded_bytes: payload.len(),
+            max_decoded_bytes: payload.len(),
+            max_decompressed_bytes: 1_024,
+            max_total_bytes: 63,
+            ..KittyGraphicsConfig::default()
+        });
+        let params = vec![
+            b"G".as_ref(),
+            b"a=q,f=100,i=50".as_ref(),
             payload.as_bytes(),
         ];
         let response = parse(&params, &mut state).unwrap();
@@ -2976,6 +3160,77 @@ mod tests {
         assert!(result.is_some());
         let response = result.unwrap();
         assert!(response.graphic_data.is_some());
+    }
+
+    #[test]
+    fn temp_file_validator_rejects_marker_outside_allowlisted_root_without_deleting() {
+        let root = std::env::temp_dir().join(format!(
+            "rio-kitty-temp-policy-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should follow the Unix epoch")
+                .as_nanos()
+        ));
+        let allowed = root.join("allowed");
+        let outside = root.join("outside");
+        std::fs::create_dir_all(&allowed).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let outside_file = outside.join("tty-graphics-protocol-secret.rgba");
+        std::fs::write(&outside_file, [255, 0, 0, 255]).unwrap();
+
+        assert!(
+            resolve_kitty_temp_file_path_in_roots(&outside_file, &[allowed]).is_err()
+        );
+        assert!(outside_file.is_file());
+
+        let _ = std::fs::remove_file(outside_file);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_medium_regular_file_open_rejects_fifo_without_blocking() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "rio-kitty-fifo-policy-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should follow the Unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let fifo = root.join("image.rgba");
+        let fifo_path = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        // SAFETY: `fifo_path` is a valid, NUL-terminated temporary path and
+        // the FIFO permissions are restricted to the current user.
+        let status = unsafe { libc::mkfifo(fifo_path.as_ptr(), 0o600) };
+        assert_eq!(status, 0);
+
+        assert!(open_kitty_regular_file(&fifo).is_err());
+
+        let _ = std::fs::remove_file(fifo);
+        let _ = std::fs::remove_dir(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn file_medium_rejects_sensitive_target_hidden_behind_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let path = std::env::temp_dir()
+            .join(format!("rio-kitty-sensitive-link-{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        symlink("/proc/self/environ", &path).unwrap();
+        let encoded = BASE64.encode(path.as_os_str().as_encoded_bytes());
+        let response =
+            parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1,i=51", &encoded)
+                .expect("blocked symlink should return an addressed error");
+        assert!(response.graphic_data.is_none());
+        assert!(response.response.unwrap().contains("EINVAL"));
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

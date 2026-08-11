@@ -2780,10 +2780,11 @@ impl<U: EventListener> Crosswords<U> {
             self.inactive_grid.sync_template_style();
             self.inactive_grid.reset_region(..);
 
-            // A 1049 entry starts with blank grid contents. DEC-grid atlas
-            // and embedder-owned placements die with those contents, while
-            // Kitty image and placement state follows its protocol lifetime.
+            // A 1049 entry starts with blank alternate-grid contents. Kitty's
+            // protocol explicitly clears direct images on the fresh alternate
+            // screen; virtual prototypes remain non-positional metadata.
             self.graphics.clear_inactive_atlas_placements();
+            self.graphics.clear_inactive_kitty_placements();
             self.clear_external_placements(ExternalPlacementScreen::Alternate);
             self.send_graphics_updates();
         }
@@ -4439,6 +4440,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             ClearMode::All => {
                 let columns = self.grid.columns();
+                // ED2 clears the live screen even while the user is viewing
+                // scrollback. The display offset only changes which history
+                // rows are rendered; it does not move the live grid viewport.
+                let viewport_top =
+                    self.grid.lines_evicted() as i64 + self.history_size() as i64;
+                let viewport_bottom = viewport_top.saturating_add(screen_lines as i64);
+                self.graphics.clear_visible_active_kitty_placements(
+                    viewport_top,
+                    viewport_bottom,
+                    columns,
+                );
                 self.remove_erased_external_placements(
                     0,
                     screen_lines as i32,
@@ -4503,9 +4515,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             ClearMode::All | ClearMode::Saved => {
                 self.mark_fully_damaged();
             }
-        }
-        if !self.graphics.kitty_placements.is_empty() {
-            self.graphics.kitty_graphics_dirty = true;
         }
     }
 
@@ -9438,9 +9447,10 @@ mod tests {
     #[test]
     fn kitty_placement_cap_cannot_be_bypassed_by_p0_or_dual_maps() {
         let mut cw = make_graphics_crosswords();
-        let mut config =
-            crate::ansi::kitty_graphics_protocol::KittyGraphicsConfig::default();
-        config.max_placements = 1;
+        let config = crate::ansi::kitty_graphics_protocol::KittyGraphicsConfig {
+            max_placements: 1,
+            ..Default::default()
+        };
         cw.graphics.set_kitty_graphics_config(config);
         assert!(cw.store_graphic(kitty_test_graphic(1, 1)));
         assert!(cw.place_graphic(kitty_test_placement(1, 0, true)));
@@ -9586,6 +9596,53 @@ mod tests {
         assert!(!cw.graphics.kitty_placements.contains_key(&(1, 1)));
         assert!(cw.graphics.kitty_placements.contains_key(&(2, 1)));
         assert!(cw.graphics.kitty_virtual_placements.contains_key(&(3, 0)));
+    }
+
+    #[test]
+    fn ed2_while_scrolled_back_clears_live_not_historical_kitty_placements() {
+        use crate::ansi::graphics::KittyPlacement;
+
+        let mut cw = make_crosswords();
+        for _ in 0..6 {
+            cw.linefeed();
+        }
+        let live_top = cw.grid.lines_evicted() as i64 + cw.history_size() as i64;
+        let placement = |image_id, dest_row| KittyPlacement {
+            image_id,
+            placement_id: 1,
+            source_x: 0,
+            source_y: 0,
+            source_width: 0,
+            source_height: 0,
+            dest_col: 0,
+            dest_row,
+            columns: 1,
+            rows: 1,
+            clip_top_rows: 0,
+            clip_bottom_rows: 0,
+            unclipped_rows: 1,
+            requested_columns: 1,
+            requested_rows: 1,
+            pixel_width: 1,
+            pixel_height: 1,
+            cell_x_offset: 0,
+            cell_y_offset: 0,
+            z_index: 0,
+            transmit_time: crate::time::Instant::now(),
+        };
+        cw.graphics
+            .kitty_placements
+            .insert((1, 1), placement(1, live_top));
+        cw.graphics
+            .kitty_placements
+            .insert((2, 1), placement(2, live_top - 1));
+        cw.scroll_display(Scroll::Top);
+        assert!(cw.display_offset() > 0);
+
+        cw.clear_screen(ClearMode::All);
+
+        assert!(!cw.graphics.kitty_placements.contains_key(&(1, 1)));
+        assert!(cw.graphics.kitty_placements.contains_key(&(2, 1)));
     }
 
     #[test]
