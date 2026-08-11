@@ -2,11 +2,16 @@ name: Nix Build
 
 on:
   workflow_dispatch:
+  # PRs build the flake only when they touch what the flake consumes;
+  # every merge to main still builds it against the full tree, so a
+  # regression from ordinary Rust changes is caught one merge later
+  # instead of charging every PR push ~10-30 min.
   pull_request:
     paths:
-      - '**/*.rs'
-      - '**/Cargo.toml'
-      - '**/Cargo.lock'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'pkgRio.nix'
+      - 'Cargo.lock'
       - '.github/workflows/nix-build.yml'
   push:
     branches:
@@ -15,12 +20,20 @@ on:
       - '**/*.rs'
       - '**/Cargo.toml'
       - '**/Cargo.lock'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'pkgRio.nix'
       - '.github/workflows/nix-build.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   lints:
     name: Build
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@main
