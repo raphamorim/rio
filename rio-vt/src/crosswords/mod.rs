@@ -2777,9 +2777,10 @@ impl<U: EventListener> Crosswords<U> {
             self.inactive_grid.reset_region(..);
 
             // A 1049 entry starts with blank grid contents. DEC-grid atlas
-            // placements die with those contents, while Kitty and external
-            // preserve-policy placements remain owned by the alternate screen.
+            // and embedder-owned placements die with those contents, while
+            // Kitty image and placement state follows its protocol lifetime.
             self.graphics.clear_inactive_atlas_placements();
+            self.clear_external_placements(ExternalPlacementScreen::Alternate);
             self.send_graphics_updates();
         }
 
@@ -10069,10 +10070,10 @@ mod tests {
             .external_placement(ExternalPlacementScreen::Alternate, 3)
             .is_some());
         term.swap_alt();
-        assert_eq!(term.external_placement_geometries().len(), 1);
+        assert!(term.external_placement_geometries().is_empty());
         assert!(term
             .external_placement(ExternalPlacementScreen::Alternate, 3)
-            .is_some());
+            .is_none());
 
         term.register_external_placement(external_test_placement(
             &term,
