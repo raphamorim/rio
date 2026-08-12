@@ -1566,6 +1566,81 @@ mod tests {
         Apc,
     }
 
+    /// Non-circular exhaustive check of the boundary scanners against
+    /// the per-byte state machine: for every byte value, a byte is
+    /// "put class" exactly when feeding it to the real handler grows
+    /// the payload, and the scanner must classify it as non-boundary
+    /// exactly then. Both the SWAR lane (16-byte input) and the scalar
+    /// tail (1-byte input) are checked.
+    #[test]
+    fn boundary_scanners_match_state_machine() {
+        for b in 0..=255u8 {
+            // OSC: put iff osc_raw grows.
+            let mut d = Dispatcher::default();
+            let mut p = Parser::new();
+            p.advance(&mut d, b"\x1b]");
+            let before = p.osc_raw.len();
+            p.advance_osc_string(&mut d, b);
+            // Pure payload: the raw buffer grew and nothing else
+            // happened. Bytes with side effects (terminators, aborts,
+            // the param separator) must be boundaries even when the
+            // handler also stores them.
+            let put = p.osc_raw.len() > before && p.state == State::OscString;
+            assert_eq!(find_osc_boundary(&[b]) == 1, put, "osc byte {b:#04x}");
+            let wide = [b; 16];
+            assert_eq!(
+                find_osc_boundary(&wide) == 16,
+                put,
+                "osc swar byte {b:#04x}"
+            );
+
+            // APC / SOS / PM: put iff an OpaquePut event is recorded.
+            for kind in ["apc", "sos", "pm"] {
+                let mut d = Dispatcher::default();
+                let mut p = Parser::new();
+                match kind {
+                    "apc" => p.advance(&mut d, b"\x1b_"),
+                    "sos" => p.advance(&mut d, b"\x1bX"),
+                    _ => p.advance(&mut d, b"\x1b^"),
+                }
+                let before = d.dispatched.len();
+                match kind {
+                    "apc" => p.advance_apc_string(&mut d, b),
+                    "sos" => p.advance_sos_string(&mut d, b),
+                    _ => p.advance_pm_string(&mut d, b),
+                }
+                let events = &d.dispatched[before..];
+                let put = events.len() == 1
+                    && matches!(events[0], Sequence::OpaquePut(..))
+                    && p.state != State::Ground
+                    && p.state != State::Escape;
+                assert_eq!(find_string_c0(&[b]) == 1, put, "{kind} byte {b:#04x}");
+                assert_eq!(
+                    find_string_c0(&[b; 16]) == 16,
+                    put,
+                    "{kind} swar byte {b:#04x}"
+                );
+            }
+
+            // DCS passthrough: put iff a DcsPut event is recorded.
+            let mut d = Dispatcher::default();
+            let mut p = Parser::new();
+            p.advance(&mut d, b"\x1bPq");
+            let before = d.dispatched.len();
+            p.advance_dcs_passthrough(&mut d, b);
+            let events = &d.dispatched[before..];
+            let put = events.len() == 1
+                && matches!(events[0], Sequence::DcsPut(_))
+                && p.state == State::DcsPassthrough;
+            assert_eq!(find_dcs_boundary(&[b]) == 1, put, "dcs byte {b:#04x}");
+            assert_eq!(
+                find_dcs_boundary(&[b; 16]) == 16,
+                put,
+                "dcs swar byte {b:#04x}"
+            );
+        }
+    }
+
     /// The batched string-state runs must be observationally identical
     /// to the per-byte state machine for every chunking of the input:
     /// the same stream is fed whole, byte-at-a-time, and split at
