@@ -636,6 +636,13 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     pub fn reset_damage(&mut self) {
         self.damage.reset();
+        // The consumer snapshots the cursor along with the rows, so the
+        // position is painted once this frame is consumed. Without this,
+        // `peek_damage_event` reports CursorOnly forever after the first
+        // cursor movement (`last_cursor` was only maintained by the
+        // legacy `damage()` path), so every PTY drain fires a redraw
+        // event even when nothing changed.
+        self.damage.last_cursor = self.grid.cursor.pos;
     }
 
     #[inline]
@@ -1238,7 +1245,21 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         self.grid.sync_template_style();
+        let pinned_offset = self.grid.display_offset();
         self.grid.scroll_up(&region, lines);
+
+        // A viewport pinned in scrollback normally absorbs the scroll:
+        // the offset grows and the same absolute rows stay on screen.
+        // At the history cap the offset clamps, the view slides, and
+        // every visible row changes while the region damage below only
+        // covers active-area lines. Nothing less than full damage is
+        // correct then.
+        if region.start == 0
+            && pinned_offset != 0
+            && self.grid.display_offset() != pinned_offset + lines
+        {
+            self.mark_fully_damaged();
+        }
 
         // Scroll vi mode cursor.
         let viewport_top = Line(-(self.grid.display_offset() as i32));
@@ -8408,6 +8429,139 @@ mod tests {
             }
             prev = now;
         }
+    }
+
+    fn scrolled_back_term() -> Crosswords<VoidListener> {
+        use crate::crosswords::grid::Scroll;
+        use crate::performer::handler::Handler;
+        // Small scrollback cap so the tests can sit at the boundary.
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(10, 6),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            40,
+        );
+        // Overfill scrollback so history sits at its cap.
+        for i in 0..300 {
+            cw.input((b'a' + (i % 26) as u8) as char);
+            cw.linefeed();
+            cw.carriage_return();
+        }
+        cw.scroll_display(Scroll::Top);
+        assert!(cw.display_offset() > 0);
+        cw.reset_damage();
+        cw
+    }
+
+    /// A sub-region scroll (IL/DL, scroll region not starting at the
+    /// top) adds nothing to history, so it must not move a viewport
+    /// pinned into scrollback. The drifted offset made
+    /// `compute_index` resolve visible lines to wrong storage slots:
+    /// arbitrary rows painted at arbitrary positions.
+    #[test]
+    fn sub_region_scroll_keeps_display_offset() {
+        use crate::performer::handler::Handler;
+        let mut cw = scrolled_back_term();
+        let offset = cw.display_offset();
+
+        // DL and IL at a mid-screen cursor line.
+        cw.grid.cursor.pos = Pos::new(Line(2), Column(0));
+        cw.delete_lines(2);
+        assert_eq!(cw.display_offset(), offset, "DL moved the offset");
+        cw.insert_blank_lines(2);
+        assert_eq!(cw.display_offset(), offset, "IL moved the offset");
+        assert!(
+            cw.display_offset() <= cw.history_size(),
+            "offset past available history"
+        );
+    }
+
+    /// A top-anchored region scroll grows history; a viewport pinned
+    /// in scrollback absorbs it (same absolute rows stay visible), so
+    /// only the region lines are damaged, not the whole screen.
+    #[test]
+    fn pinned_viewport_absorbs_history_scroll() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 6);
+        for _ in 0..20 {
+            cw.linefeed();
+        }
+        cw.scroll_display(crate::crosswords::grid::Scroll::Delta(5));
+        assert_eq!(cw.display_offset(), 5);
+        cw.reset_damage();
+
+        // Region 0..5 with a fixed bottom line: rows rotate into
+        // history and offset grows in lockstep while under the cap.
+        cw.set_scrolling_region(1, Some(5));
+        cw.grid.cursor.pos = Pos::new(Line(4), Column(0));
+        cw.linefeed();
+        assert_eq!(cw.display_offset(), 6, "pin did not absorb the scroll");
+        assert!(cw.display_offset() <= cw.history_size());
+        assert!(
+            !matches!(cw.peek_damage_event(), Some(TerminalDamage::Full)),
+            "absorbed scroll needs no full repaint"
+        );
+    }
+
+    /// At the history cap the pinned offset clamps and the whole
+    /// scrolled-back view slides one row: every visible row changes
+    /// while region damage only covers active-area lines. That frame
+    /// must be full damage or the view keeps stale rows.
+    #[test]
+    fn pinned_viewport_slide_at_cap_is_full_damage() {
+        use crate::performer::handler::Handler;
+        let mut cw = scrolled_back_term();
+        let cap = cw.history_size();
+        assert_eq!(cw.display_offset(), cap, "expected offset pinned at cap");
+
+        cw.set_scrolling_region(1, Some(5));
+        cw.grid.cursor.pos = Pos::new(Line(4), Column(0));
+        cw.linefeed();
+        assert_eq!(cw.history_size(), cap, "history can no longer grow");
+        assert_eq!(cw.display_offset(), cap, "offset must clamp at the cap");
+        assert!(
+            matches!(cw.peek_damage_event(), Some(TerminalDamage::Full)),
+            "slid view must be fully damaged"
+        );
+    }
+
+    /// Growing the viewport pulls rows from history; the offset must
+    /// track the rows actually pulled and never exceed what remains.
+    #[test]
+    fn resize_clamps_pinned_display_offset() {
+        let mut cw = scrolled_back_term();
+        cw.resize(CrosswordsSize::new(10, 9));
+        assert!(
+            cw.display_offset() <= cw.history_size(),
+            "grow_lines left offset {} past history {}",
+            cw.display_offset(),
+            cw.history_size()
+        );
+        cw.resize(CrosswordsSize::new(10, 4));
+        assert!(cw.display_offset() <= cw.history_size());
+        cw.resize(CrosswordsSize::new(7, 8));
+        assert!(cw.display_offset() <= cw.history_size());
+    }
+
+    /// Consuming a frame records the cursor position it carried:
+    /// without that, every subsequent peek reports CursorOnly and
+    /// each PTY drain fires a redraw event forever.
+    #[test]
+    fn reset_damage_quiesces_cursor_events() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 4);
+        cw.reset_damage();
+        assert!(cw.peek_damage_event().is_none());
+
+        cw.input('x');
+        assert!(cw.peek_damage_event().is_some());
+        cw.reset_damage();
+        assert!(
+            cw.peek_damage_event().is_none(),
+            "consumed frame keeps re-reporting the cursor"
+        );
     }
 
     /// Mode 2027: a zero-width codepoint with no base to join (orphan
