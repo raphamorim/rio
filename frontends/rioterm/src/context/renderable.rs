@@ -388,9 +388,9 @@ mod pipeline_tests {
         );
         let grid = grid_text(term);
         assert_eq!(frame.painted.len(), grid.len(), "{context}: row count");
-        for y in 0..grid.len() {
+        for (y, row) in grid.iter().enumerate() {
             assert_eq!(
-                frame.painted[y], grid[y],
+                &frame.painted[y], row,
                 "{context}: painted row {y} diverges from grid"
             );
         }
@@ -415,16 +415,20 @@ mod pipeline_tests {
                         .into_bytes()
                 })
                 .collect(),
-            format!("\x1b[12;1Hstatus \u{00e0} espera\x1b[K").into_bytes(),
+            "\x1b[12;1Hstatus \u{00e0} espera\x1b[K".as_bytes().to_vec(),
             b"\x1b[11;1H\n".to_vec(),
-            format!("\x1b[11;1Hnova linha final\x1b[K").into_bytes(),
+            "\x1b[11;1Hnova linha final\x1b[K".as_bytes().to_vec(),
             b"\x1b[2S".to_vec(),
-            format!("\x1b[10;1Hpenultima\x1b[K\x1b[11;1Hultima\x1b[K").into_bytes(),
+            "\x1b[10;1Hpenultima\x1b[K\x1b[11;1Hultima\x1b[K"
+                .as_bytes()
+                .to_vec(),
             b"\x1b[T".to_vec(),
-            format!("\x1b[1;1Hprimeira de novo\x1b[K").into_bytes(),
+            "\x1b[1;1Hprimeira de novo\x1b[K".as_bytes().to_vec(),
             b"\x1b[5;1H\x1b[2L".to_vec(),
             b"\x1b[7;1H\x1b[M".to_vec(),
-            format!("\x1b[5;1Hinserida A\x1b[K\x1b[6;1Hinserida B\x1b[K").into_bytes(),
+            "\x1b[5;1Hinserida A\x1b[K\x1b[6;1Hinserida B\x1b[K"
+                .as_bytes()
+                .to_vec(),
             b"\x1b[r\x1b[?1049l".to_vec(),
         ];
         for (i, chunk) in steps.iter().enumerate() {
@@ -444,9 +448,11 @@ mod pipeline_tests {
             b"\x1b[S".to_vec(),
             b"\x1b[2S".to_vec(),
             b"\x1b[T".to_vec(),
-            format!("\x1b[3;1Hcontent tail que fica \u{00e0} espera\x1b[K").into_bytes(),
-            format!("\x1b[9;1Hcurta\x1b[K").into_bytes(),
-            format!("\x1b[12;1Hstatus\x1b[K").into_bytes(),
+            "\x1b[3;1Hcontent tail que fica \u{00e0} espera\x1b[K"
+                .as_bytes()
+                .to_vec(),
+            "\x1b[9;1Hcurta\x1b[K".as_bytes().to_vec(),
+            "\x1b[12;1Hstatus\x1b[K".as_bytes().to_vec(),
             b"\x1b[4;1H\x1b[L".to_vec(),
             b"\x1b[8;1H\x1b[M".to_vec(),
             b"\x1b[2;3H".to_vec(),
@@ -457,7 +463,7 @@ mod pipeline_tests {
             b"\x1b[?1049h".to_vec(),
             b"\x1b[?1049l".to_vec(),
             b"um\r\ndois\r\ntres\r\nquatro\r\ncinco\r\n".to_vec(),
-            format!("\x1b[11;1H\n\x1b[11;1Hrolou\x1b[K").into_bytes(),
+            "\x1b[11;1H\n\x1b[11;1Hrolou\x1b[K".as_bytes().to_vec(),
         ];
 
         for seed in 0..24u64 {
