@@ -1988,29 +1988,6 @@ impl<U: EventListener> Crosswords<U> {
         t
     }
 
-    /// If the previous cell is a narrow, text-presentation emoji base whose
-    /// (base, U+FE0F) sequence is listed in emoji-variation-sequences.txt,
-    /// promote it to Wide and write a Spacer into the next column, advancing
-    /// the cursor past it. No-op otherwise.
-    ///
-    /// Mirrors kitty's `draw_combining_char` / ghostty's VS16 branch: font
-    /// shaping will return a wide emoji glyph for the (base, VS16) cluster
-    /// via cmap format 14, so the grid must budget two cells for it.
-    #[inline(never)]
-    fn apply_emoji_vs16(&mut self) {
-        let Some(base_col) = self.prev_cell_col() else {
-            return;
-        };
-        let base_cell = &self.grid[self.grid.cursor.pos.row][Column(base_col)];
-        if !matches!(base_cell.wide(), Wide::Narrow) {
-            return;
-        }
-        if !vs_is_valid_base(base_cell.c(), '\u{FE0F}') {
-            return;
-        }
-        self.widen_prev_cell();
-    }
-
     /// The column of the cell most recently written at the cursor: the
     /// cursor column itself while a pending wrap holds the cursor past
     /// the edge, otherwise the column before it, stepping over a wide
@@ -2114,39 +2091,6 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         self.damage.damage_line(row.0 as usize);
-    }
-
-    /// Inverse of `apply_emoji_vs16`: if the previous cell is a Wide emoji
-    /// base whose (base, U+FE0E) sequence is listed in the variation map,
-    /// narrow it back to a single cell, clear the trailing Spacer, and
-    /// retreat the cursor.
-    #[inline(never)]
-    fn apply_emoji_vs15(&mut self) {
-        let row = self.grid.cursor.pos.row;
-        let cursor_col = self.grid.cursor.pos.col.0;
-        let should_wrap = self.grid.cursor.should_wrap;
-
-        let base_col = if should_wrap {
-            if cursor_col == 0 {
-                return;
-            }
-            cursor_col - 1
-        } else {
-            if cursor_col < 2 {
-                return;
-            }
-            cursor_col - 2
-        };
-
-        let base_cell = &self.grid[row][Column(base_col)];
-        if !matches!(base_cell.wide(), Wide::Wide) {
-            return;
-        }
-        if !vs_is_valid_base(base_cell.c(), '\u{FE0E}') {
-            return;
-        }
-
-        self.narrow_prev_cell();
     }
 
     /// Shrink the wide pair preceding the cursor back to a narrow cell,
@@ -3623,18 +3567,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
             if self.mode.contains(Mode::GRAPHEME_CLUSTER) {
                 return;
             }
-            // Emoji presentation variation selectors flip the *width* of
-            // the preceding cell before being attached as combining data.
-            // Matches kitty/ghostty; see emoji-variation-sequences.txt.
-            // Without this, a text-presentation emoji like U+1F39F picks up
-            // a wide emoji glyph from the font shaper but stays in a single
-            // grid cell, overflowing into the neighbour on render.
-            match c {
-                '\u{FE0F}' => self.apply_emoji_vs16(),
-                '\u{FE0E}' => self.apply_emoji_vs15(),
-                _ => {}
-            }
-
+            // Legacy (clustering opted out or reset by the program):
+            // attach the zero-width codepoint without touching the
+            // base cell's width, exactly wcwidth semantics. Variation
+            // selector width effects live only in the mode-2027
+            // cluster path: a width the application cannot predict
+            // desyncs every wcwidth-based redraw (tmux positions its
+            // cursor from its own per-codepoint math and leaves stray
+            // cells behind whenever the terminal disagrees).
             self.attach_to_prev_cell(c);
             return;
         }
@@ -8704,82 +8644,56 @@ mod tests {
     }
 
     /// The interning lookup must be purged when slots are swept, or a
-    /// re-alloc of old content would return a dead slot id.
+    /// A width-bearing continuation joining a cluster whose base sits
+    /// at the last column widens through the row edge: the base moves
+    /// to the next row as a wide pair and its earlier extras move with
+    /// it (matches ghostty's grapheme transfer block).
     #[test]
-    fn reclaim_purges_interning_lookup() {
+    fn cluster_widen_at_last_column_preserves_base_extras() {
         use crate::performer::handler::Handler;
-        let mut cw = new_term(10, 2);
-        cw.input('e');
-        cw.input('\u{301}');
-        let content = cw
-            .grid
-            .extras_table
-            .get(cw.grid[Line(0)][Column(0)].extras_id().unwrap())
-            .unwrap()
-            .clone();
-        // Drop the only reference and sweep.
-        cw.clear_screen(ClearMode::All);
-        cw.grid.reclaim_extras();
-        // Re-alloc of the same content must yield a live slot.
-        let id = cw.grid.alloc_extras(content.clone());
-        assert_ne!(id, 0);
-        assert_eq!(cw.grid.extras_table.get(id), Some(&content));
-    }
-
-    #[test]
-    fn vs16_at_last_column_preserves_base_extras() {
-        use crate::performer::handler::Handler;
-        // Attach a combining mark to the base BEFORE VS16 arrives, then
-        // trigger the right-edge wrap and confirm the extras follow the
-        // base to the new row (matches ghostty's grapheme transfer block).
-        // Legacy path (clustering off): under mode 2027 a VS16 whose
-        // cluster ends in ZWJ is ignored instead, per ghostty's
-        // `graphemeWidthEffect` prev-codepoint validation.
-        let mut cw = new_term(3, 3);
-        cw.set_grapheme_clustering(false);
+        let mut cw = term_2027(3, 3);
         cw.input('a');
         cw.input('a');
-        cw.input('\u{1F39F}');
-        // U+200D ZERO WIDTH JOINER attaches to the base as zerowidth.
-        cw.input('\u{200D}');
-        let original_extras = cw.grid[Line(0)][Column(2)].extras_id();
-        assert!(original_extras.is_some());
+        cw.input('\u{261D}'); // narrow index-up at the last column
+        cw.input('\u{0301}'); // combining mark joins the cluster
+        assert_eq!(extras_of(&cw, 0, 2), ['\u{0301}']);
 
-        cw.input('\u{FE0F}');
+        cw.input('\u{1F3FB}'); // skin tone: width-bearing joiner, widens
 
-        // The wide base on the new row still carries the earlier ZWJ
-        // plus the VS16 that widened it. Slots are interned with
-        // copy-on-write now, so the id may change; the content is the
-        // contract (comparing ids would pin the old in-place-mutation
-        // behavior, which leaked pushes into shared slots).
-        let moved_extras = cw.grid[Line(1)][Column(0)].extras_id();
-        assert!(moved_extras.is_some());
-        let extras = cw.grid.extras_table.get(moved_extras.unwrap()).unwrap();
-        assert_eq!(extras.zerowidth, vec!['\u{200D}', '\u{FE0F}']);
-        assert_eq!(cw.grid[Line(1)][Column(0)].wide(), Wide::Wide);
         assert_eq!(cw.grid[Line(0)][Column(2)].wide(), Wide::LeadingSpacer);
+        assert_eq!(cw.grid[Line(1)][Column(0)].c(), '\u{261D}');
+        assert_eq!(cw.grid[Line(1)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(
+            extras_of(&cw, 1, 0),
+            ['\u{0301}', '\u{1F3FB}'],
+            "extras must ride the wrap with their base"
+        );
+        assert_eq!(cw.grid[Line(1)][Column(1)].wide(), Wide::Spacer);
     }
 
+    /// Legacy widths (clustering opted out): variation selectors attach
+    /// as combining data and never change the base cell's width, pure
+    /// wcwidth semantics. A width the application cannot predict
+    /// desyncs every wcwidth-based redraw (tmux most of all).
     #[test]
-    fn vs16_then_vs15_round_trip_narrows() {
+    fn legacy_variation_selectors_never_change_width() {
         use crate::performer::handler::Handler;
-        // Text-default 🎟 widened by VS16, then VS15 must narrow it back.
-        // The (🎟, VS15) entry in the variation map is (Text, Text) — our
-        // predicate matches any listed (base, vs) pair, not just the
-        // "changes presentation" ones, so round-tripping works.
-        // Legacy path (clustering off): under mode 2027 the VS15 is
-        // judged against the trailing VS16 and ignored, matching
-        // ghostty, so the round-trip is a legacy-only contract.
         let mut cw = new_term(10, 3);
         cw.set_grapheme_clustering(false);
+
+        // Text-default emoji + VS16: stays narrow, selector attached.
         cw.input('\u{1F39F}');
         cw.input('\u{FE0F}');
-        cw.input('\u{FE0E}');
-
-        let row = Line(0);
-        assert_eq!(cw.grid[row][Column(0)].wide(), Wide::Narrow);
-        assert_eq!(cw.grid[row][Column(1)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{FE0F}']);
         assert_eq!(cw.grid.cursor.pos.col, Column(1));
+
+        // Emoji-default wide char + VS15: stays wide, selector attached.
+        cw.input('\u{231A}');
+        cw.input('\u{FE0E}');
+        assert_eq!(cw.grid[Line(0)][Column(1)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, 0, 1), ['\u{FE0E}']);
+        assert_eq!(cw.grid.cursor.pos.col, Column(3));
     }
 
     #[test]
