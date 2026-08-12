@@ -384,6 +384,17 @@ impl CpuGridRenderer {
         let cursor_y = uniforms.cursor_pos[1];
         let cursor_bg_active = uniforms.cursor_bg_color[3] > 0.0;
         let cursor_bg = normalize_color(uniforms.cursor_bg_color);
+        let clip_top = uniforms.panel_clip[0].round() as i32;
+        let clip_right = uniforms.panel_clip[1].round() as i32;
+        let clip_bottom = uniforms.panel_clip[2].round() as i32;
+        let clip_left = uniforms.panel_clip[3].round() as i32;
+        let extend_left =
+            uniforms.padding_extend & GridUniforms::PADDING_EXTEND_LEFT != 0;
+        let extend_right =
+            uniforms.padding_extend & GridUniforms::PADDING_EXTEND_RIGHT != 0;
+        let extend_up = uniforms.padding_extend & GridUniforms::PADDING_EXTEND_UP != 0;
+        let extend_down =
+            uniforms.padding_extend & GridUniforms::PADDING_EXTEND_DOWN != 0;
 
         let buf_cols = self.cols as usize;
         let row_count = (rows as usize).min(self.rows as usize);
@@ -391,19 +402,55 @@ impl CpuGridRenderer {
         for row in 0..row_count {
             let row_off = row * buf_cols;
             for col in 0..col_count {
-                let mut rgba = self.bg_cells[row_off + col].rgba;
-                if cursor_bg_active && cursor_x == col as u32 && cursor_y == row as u32 {
-                    rgba = cursor_bg;
+                let cell_x0 = (pad_left + (col as f32) * cell_w).round() as i32;
+                let cell_y0 = (pad_top + (row as f32) * cell_h).round() as i32;
+                let cell_x1 = (pad_left + ((col + 1) as f32) * cell_w).round() as i32;
+                let cell_y1 = (pad_top + ((row + 1) as f32) * cell_h).round() as i32;
+
+                let x0 = if col == 0 && extend_left {
+                    clip_left
+                } else {
+                    cell_x0
                 }
-                if rgba[3] == 0 {
-                    continue;
+                .max(clip_left);
+                let y0 = if row == 0 && extend_up {
+                    clip_top
+                } else {
+                    cell_y0
+                }
+                .max(clip_top);
+                let x1 = if col + 1 == col_count && extend_right {
+                    clip_right
+                } else {
+                    cell_x1
+                }
+                .min(clip_right);
+                let y1 = if row + 1 == row_count && extend_down {
+                    clip_bottom
+                } else {
+                    cell_y1
+                }
+                .min(clip_bottom);
+
+                let rgba = self.bg_cells[row_off + col].rgba;
+                if rgba[3] != 0 {
+                    fill_rect(buf, buf_w_i, buf_h_i, x0, y0, x1, y1, rgba);
                 }
 
-                let x0 = (pad_left + (col as f32) * cell_w).round() as i32;
-                let y0 = (pad_top + (row as f32) * cell_h).round() as i32;
-                let x1 = (pad_left + ((col + 1) as f32) * cell_w).round() as i32;
-                let y1 = (pad_top + ((row + 1) as f32) * cell_h).round() as i32;
-                fill_rect(buf, buf_w_i, buf_h_i, x0, y0, x1, y1, rgba);
+                // Match the GPU shader: the block cursor paints only the
+                // real cell and never inherits edge extension.
+                if cursor_bg_active && cursor_x == col as u32 && cursor_y == row as u32 {
+                    fill_rect(
+                        buf,
+                        buf_w_i,
+                        buf_h_i,
+                        cell_x0.max(clip_left),
+                        cell_y0.max(clip_top),
+                        cell_x1.min(clip_right),
+                        cell_y1.min(clip_bottom),
+                        cursor_bg,
+                    );
+                }
             }
         }
     }
@@ -707,5 +754,56 @@ fn blit_color(
             let idx = buf_row + (dst_x as usize);
             buf[idx] = blend_over(src, buf[idx]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytemuck::Zeroable;
+
+    #[test]
+    fn edge_backgrounds_fill_panel_clip_without_extending_cursor() {
+        let mut grid = CpuGridRenderer::new(2, 1);
+        grid.write_row(
+            0,
+            &[
+                CellBg {
+                    rgba: [255, 0, 0, 255],
+                },
+                CellBg {
+                    rgba: [0, 0, 255, 255],
+                },
+            ],
+            &[],
+        );
+
+        let mut uniforms = GridUniforms::zeroed();
+        uniforms.grid_padding = [1.0, 0.0, 0.0, 2.0];
+        uniforms.cell_size = [2.0, 2.0];
+        uniforms.grid_size = [2, 1];
+        uniforms.cursor_pos = [1, 0];
+        uniforms.cursor_bg_color = [0.0, 1.0, 0.0, 1.0];
+        uniforms.padding_extend = GridUniforms::PADDING_EXTEND_LEFT
+            | GridUniforms::PADDING_EXTEND_RIGHT
+            | GridUniforms::PADDING_EXTEND_UP
+            | GridUniforms::PADDING_EXTEND_DOWN;
+        uniforms.panel_clip = [0.0, 8.0, 4.0, 0.0];
+
+        let mut buf = vec![0; 8 * 4];
+        grid.render_bg(&mut buf, 8, 4, &uniforms);
+
+        let extended = [
+            0xff0000, 0xff0000, 0xff0000, 0xff0000, 0x0000ff, 0x0000ff, 0x0000ff,
+            0x0000ff,
+        ];
+        let cursor_row = [
+            0xff0000, 0xff0000, 0xff0000, 0xff0000, 0x00ff00, 0x00ff00, 0x0000ff,
+            0x0000ff,
+        ];
+        assert_eq!(&buf[0..8], &extended);
+        assert_eq!(&buf[8..16], &cursor_row);
+        assert_eq!(&buf[16..24], &cursor_row);
+        assert_eq!(&buf[24..32], &extended);
     }
 }

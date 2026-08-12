@@ -36,7 +36,8 @@ struct Uniforms {
     float    min_contrast;     //       144
     uint     flags;            //       148
     uint     padding_extend;   //       152
-    uint     input_colorspace; //       156 → total 160
+    uint     input_colorspace; //       156
+    float4   panel_clip;       //       160 → total 176
 };
 
 //-------------------------------------------------------------------
@@ -138,6 +139,16 @@ fragment float4 grid_bg_fragment(
     constant Uniforms&   uniforms [[buffer(0)]],
     constant uchar4*     cells    [[buffer(1)]]
 ) {
+ // Keep this fullscreen pass inside the panel that owns the grid.
+ // Bounds are (top, right, bottom, left) in physical pixels.
+    if (in.position.x < uniforms.panel_clip.w
+        || in.position.x >= uniforms.panel_clip.y
+        || in.position.y < uniforms.panel_clip.x
+        || in.position.y >= uniforms.panel_clip.z)
+    {
+        return float4(0.0);
+    }
+
  // `in.position.xy` is the pixel's center in framebuffer pixels.
  // `grid_padding` is (top, right, bottom, left) — we only need
  // left (.w) and top (.x) to locate the grid origin.

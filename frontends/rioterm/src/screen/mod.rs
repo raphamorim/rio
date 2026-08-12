@@ -62,6 +62,75 @@ const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
 /// Maximum number of search terms stored in the history.
 const MAX_SEARCH_HISTORY_SIZE: usize = 255;
 
+/// Compute the physical-pixel clip owned by each terminal panel.
+///
+/// Interior bounds stop at the panel's Taffy allocation. Outermost panels own
+/// the left, right, and bottom window margins, but the top bound always stays
+/// at the terminal viewport so edge-cell colors cannot paint through Rio's
+/// unified titlebar. This also keeps splits from painting over siblings or
+/// configured gutters.
+fn panel_clip_rects(
+    layout_rects: &[[f32; 4]],
+    scaled_margin: Margin,
+    window_size: [f32; 2],
+) -> Vec<[f32; 4]> {
+    if layout_rects.is_empty() {
+        return Vec::new();
+    }
+
+    let min_left = layout_rects
+        .iter()
+        .map(|rect| rect[0])
+        .fold(f32::INFINITY, f32::min);
+    let max_right = layout_rects
+        .iter()
+        .map(|rect| rect[0] + rect[2])
+        .fold(f32::NEG_INFINITY, f32::max);
+    let max_bottom = layout_rects
+        .iter()
+        .map(|rect| rect[1] + rect[3])
+        .fold(f32::NEG_INFINITY, f32::max);
+
+    let same_edge = |a: f32, b: f32| (a - b).abs() <= 0.5;
+    let window_width = window_size[0].max(0.0);
+    let window_height = window_size[1].max(0.0);
+
+    layout_rects
+        .iter()
+        .map(|rect| {
+            let layout_right = rect[0] + rect[2];
+            let layout_bottom = rect[1] + rect[3];
+
+            let left = if same_edge(rect[0], min_left) {
+                0.0
+            } else {
+                (scaled_margin.left + rect[0]).round()
+            }
+            .clamp(0.0, window_width);
+            // Unlike the other outer edges, the top never expands to the
+            // drawable edge: on macOS that area contains the unified
+            // titlebar and tab strip rather than terminal padding.
+            let top = (scaled_margin.top + rect[1])
+                .round()
+                .clamp(0.0, window_height);
+            let right = if same_edge(layout_right, max_right) {
+                window_width
+            } else {
+                (scaled_margin.left + layout_right).round()
+            }
+            .clamp(left, window_width);
+            let bottom = if same_edge(layout_bottom, max_bottom) {
+                window_height
+            } else {
+                (scaled_margin.top + layout_bottom).round()
+            }
+            .clamp(top, window_height);
+
+            [top, right, bottom, left]
+        })
+        .collect()
+}
+
 pub struct Screen<'screen> {
     bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
@@ -3910,6 +3979,7 @@ impl Screen<'_> {
             struct PanelFrame {
                 route_id: usize,
                 layout_rect: [f32; 4],
+                panel_clip: [f32; 4],
                 cols: u32,
                 rows: u32,
                 cell_w: f32,
@@ -4102,6 +4172,7 @@ impl Screen<'_> {
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
+                    panel_clip: [0.0; 4],
                     cols: ctx.renderable_content.columns.max(1) as u32,
                     rows: ctx.renderable_content.screen_lines.max(1) as u32,
                     cell_w,
@@ -4138,6 +4209,15 @@ impl Screen<'_> {
 
             // --- emit cells + build uniforms per panel ---
             let window_size = self.sugarloaf.window_size();
+            let layout_rects: Vec<_> = panels.iter().map(|p| p.layout_rect).collect();
+            let clips = panel_clip_rects(
+                &layout_rects,
+                scaled_margin,
+                [window_size.width, window_size.height],
+            );
+            for (panel, clip) in panels.iter_mut().zip(clips) {
+                panel.panel_clip = clip;
+            }
             let font_library = self.sugarloaf.font_library().clone();
             let bg_col = self.renderer.named_colors.background.0;
             // Same `input_colorspace` value the Metal quad pipeline
@@ -4436,15 +4516,10 @@ impl Screen<'_> {
                             window_size.width,
                             window_size.height,
                         ),
-                    // grid_padding = (top, right, bottom, left). The
-                    // bg shader only reads `.w` (left) + `.x` (top)
-                    // to anchor the grid, so right/bottom can stay
-                    // 0. padding_extend is 0 too — each panel's
-                    // grid must stay bounded to its own rect so
-                    // sibling panels / the window margin aren't
-                    // painted by this grid. The full-window bg fill
-                    // (re-enabled in sugarloaf's render_metal) now
-                    // handles the space outside all panels.
+                    // grid_padding anchors the terminal cells. The bg
+                    // pass extends left/right/bottom edge cells, while
+                    // panel_clip bounds the fill to this pane and keeps
+                    // its top at the terminal viewport below the titlebar.
                     grid_padding: [panel_top, 0.0, 0.0, panel_left],
                     cursor_color: cursor_col_u,
                     cursor_bg_color: cursor_bg_u,
@@ -4454,8 +4529,11 @@ impl Screen<'_> {
                     _pad_cursor: [0; 2],
                     min_contrast: 0.0,
                     flags: 0,
-                    padding_extend: 0,
+                    padding_extend: rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_LEFT
+                        | rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_RIGHT
+                        | rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_DOWN,
                     input_colorspace,
+                    panel_clip: p.panel_clip,
                 };
 
                 frame_grids.push((grid, uniforms));
@@ -4945,6 +5023,35 @@ fn post_process_hyperlink_uri(uri: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panel_clip_rects_extend_only_outer_split_edges() {
+        let rects = [[2.0, 2.0, 390.0, 576.0], [408.0, 2.0, 390.0, 576.0]];
+        let clips = panel_clip_rects(&rects, Margin::all(2.0), [800.0, 580.0]);
+
+        assert_eq!(clips[0], [4.0, 394.0, 580.0, 0.0]);
+        assert_eq!(clips[1], [4.0, 800.0, 580.0, 410.0]);
+    }
+
+    #[test]
+    fn panel_clip_rects_extend_single_panel_sides_and_bottom() {
+        let clips = panel_clip_rects(
+            &[[2.0, 2.0, 794.0, 574.0]],
+            Margin::all(2.0),
+            [800.0, 580.0],
+        );
+
+        assert_eq!(clips, vec![[4.0, 800.0, 580.0, 0.0]]);
+    }
+
+    #[test]
+    fn panel_clip_rects_keep_stacked_panels_below_titlebar() {
+        let rects = [[2.0, 2.0, 794.0, 280.0], [2.0, 298.0, 794.0, 278.0]];
+        let clips = panel_clip_rects(&rects, Margin::all(2.0), [800.0, 580.0]);
+
+        assert_eq!(clips[0], [4.0, 800.0, 284.0, 0.0]);
+        assert_eq!(clips[1], [300.0, 800.0, 580.0, 0.0]);
+    }
 
     #[test]
     fn chrome_press_validates_double_click() {
