@@ -20,7 +20,6 @@ use crate::context::{next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},
-    square::Hyperlink,
     vi_mode::ViMotion,
     Mode,
 };
@@ -52,6 +51,7 @@ use rio_window::event::MouseButton;
 use rio_window::keyboard::ModifiersKeyState;
 use rio_window::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
 use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
+use rio_window::window::CursorIcon;
 use std::error::Error;
 use std::ffi::OsStr;
 use touch::TouchPurpose;
@@ -2233,37 +2233,29 @@ impl Screen<'_> {
         None
     }
 
+    /// Whether a hint (regex match or OSC 8 link) is currently highlighted
+    /// under the mouse. Only ever true while the hint's mods are held, so
+    /// it doubles as "the user is following a link right now".
     #[inline]
-    pub fn trigger_hyperlink(&self) -> bool {
-        // Check if any hyperlink hint configuration has the required modifiers active
-        let mut is_hyperlink_key_active = false;
-        for hint_config in &self.hints_config {
-            if hint_config.hyperlinks && self.modifiers_match(&hint_config.mouse.mods) {
-                is_hyperlink_key_active = true;
-                break;
-            }
+    pub fn has_highlighted_hint(&self) -> bool {
+        self.context_manager
+            .current()
+            .renderable_content
+            .highlighted_hint
+            .is_some()
+    }
+
+    /// Cursor icon for the current mouse position: a pointer over a
+    /// highlighted hint, otherwise the icon the terminal mode calls for.
+    #[inline]
+    pub fn mouse_cursor_icon(&self) -> CursorIcon {
+        if self.has_highlighted_hint() {
+            CursorIcon::Pointer
+        } else if !self.modifiers.state().shift_key() && self.mouse_mode() {
+            CursorIcon::Default
+        } else {
+            CursorIcon::Text
         }
-
-        if !is_hyperlink_key_active
-            || !self.context_manager.current().has_hyperlink_range()
-        {
-            return false;
-        }
-
-        // Look up the cell under the mouse and dispatch open_hyperlink
-        // if it carries an OSC 8 link.
-        let terminal = self.context_manager.current().terminal.lock();
-        let display_offset = terminal.display_offset();
-        let pos = self.mouse_position(display_offset);
-        let pos_hyperlink = terminal.cell_hyperlink(pos.row, pos.col);
-        drop(terminal);
-
-        if let Some(hyperlink) = pos_hyperlink {
-            self.open_hyperlink(hyperlink);
-            return true;
-        }
-
-        false
     }
 
     /// Trigger hint action at mouse position
@@ -2283,13 +2275,6 @@ impl Screen<'_> {
         } else {
             false
         }
-    }
-
-    fn open_hyperlink(&self, hyperlink: Hyperlink) {
-        // Apply post-processing to remove trailing delimiters and handle uneven brackets
-        let processed_uri = post_process_hyperlink_uri(hyperlink.uri());
-
-        self.open_with_default_handler(&processed_uri);
     }
 
     /// Hand `target` to the platform's default handler.

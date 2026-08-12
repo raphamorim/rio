@@ -92,25 +92,6 @@ impl<T: EventListener> Context<T> {
     }
 
     #[inline]
-    pub fn set_hyperlink_range(&mut self, hyperlink_range: Option<SelectionRange>) {
-        let old_hyperlink = self.renderable_content.hyperlink_range;
-
-        if old_hyperlink != hyperlink_range {
-            // Hyperlinks affect terminal line rendering, so use terminal damage
-            self.renderable_content
-                .pending_update
-                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
-        }
-
-        self.renderable_content.hyperlink_range = hyperlink_range;
-    }
-
-    #[inline]
-    pub fn has_hyperlink_range(&self) -> bool {
-        self.renderable_content.hyperlink_range.is_some()
-    }
-
-    #[inline]
     pub fn cursor_from_ref(&self) -> Cursor {
         Cursor {
             state: self.renderable_content.cursor.state.new_from_self(),

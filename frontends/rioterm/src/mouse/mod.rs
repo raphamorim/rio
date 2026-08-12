@@ -43,6 +43,12 @@ pub struct Mouse {
     /// within the same cell — replaces the old pixel-equality check
     /// that fired on every subpixel HiDPI jitter.
     pub last_cell: Option<Pos>,
+    /// Whether the in-flight left press bypassed mouse reporting to
+    /// follow a highlighted hint. The release consults this latch
+    /// instead of re-checking the highlight: the modifier can change
+    /// mid-click, and re-evaluating would let an application see a
+    /// press without its release (or the reverse).
+    pub hint_click_latched: bool,
 }
 
 impl Default for Mouse {
@@ -64,6 +70,7 @@ impl Default for Mouse {
             y: 0.0,
             raw_y: 0.0,
             last_cell: None,
+            hint_click_latched: false,
         }
     }
 }
