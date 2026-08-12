@@ -106,7 +106,7 @@ const _: () = {
 /// - Group scalars into 16-byte blocks or add explicit `_pad` fields.
 /// - Struct size must be a multiple of 16 bytes.
 ///
-/// Current layout: 144 bytes, 16-byte aligned.
+/// Current layout: 176 bytes, 16-byte aligned.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct GridUniforms {
@@ -162,6 +162,12 @@ pub struct GridUniforms {
     /// grid bg appears brighter/more saturated than the window bg
     /// fill, which runs through `prepare_output_rgb`.
     pub input_colorspace: u32,
+    // --- 16-byte block: panel_clip (vec4) at offset 160 ---
+    /// Physical-pixel clip bounds for this panel (top, right, bottom, left).
+    /// The cell-bg shader draws a fullscreen triangle, so this keeps padding
+    /// extension inside the panel that owns the edge cells. Outermost panels
+    /// may expand their corresponding bounds to the drawable edge.
+    pub panel_clip: [f32; 4],
 }
 
 impl GridUniforms {
