@@ -636,6 +636,13 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     pub fn reset_damage(&mut self) {
         self.damage.reset();
+        // The consumer snapshots the cursor along with the rows, so the
+        // position is painted once this frame is consumed. Without this,
+        // `peek_damage_event` reports CursorOnly forever after the first
+        // cursor movement (`last_cursor` was only maintained by the
+        // legacy `damage()` path), so every PTY drain fires a redraw
+        // event even when nothing changed.
+        self.damage.last_cursor = self.grid.cursor.pos;
     }
 
     #[inline]
@@ -1238,7 +1245,21 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         self.grid.sync_template_style();
+        let pinned_offset = self.grid.display_offset();
         self.grid.scroll_up(&region, lines);
+
+        // A viewport pinned in scrollback normally absorbs the scroll:
+        // the offset grows and the same absolute rows stay on screen.
+        // At the history cap the offset clamps, the view slides, and
+        // every visible row changes while the region damage below only
+        // covers active-area lines. Nothing less than full damage is
+        // correct then.
+        if region.start == 0
+            && pinned_offset != 0
+            && self.grid.display_offset() != pinned_offset + lines
+        {
+            self.mark_fully_damaged();
+        }
 
         // Scroll vi mode cursor.
         let viewport_top = Line(-(self.grid.display_offset() as i32));
@@ -1588,6 +1609,11 @@ impl<U: EventListener> Crosswords<U> {
             cell.set_extras_id(Some(id));
             cell.insert_cell_flag(CellFlags::GRAPHEME);
             self.grid[row].has_extras = true;
+            // The attach mutated an already-painted cell and the input
+            // paths return without touching the write-path damage
+            // bookkeeping: record it here or the renderer never
+            // repaints the row (stale glyphs until a full redraw).
+            self.damage.damage_line(row.0 as usize);
         }
         // id == 0: slot space exhausted. Keep the cell's existing
         // extras (hyperlink, earlier marks) rather than erasing
@@ -8225,6 +8251,317 @@ mod tests {
         cw.input('x');
         assert_eq!(cw.cell_hyperlink(Line(0), Column(0)), Some(link));
         cw.swap_alt();
+    }
+
+    fn partial_damage_lines(cw: &mut Crosswords<VoidListener>) -> Vec<usize> {
+        match cw.damage() {
+            TermDamage::Full => panic!("expected partial damage"),
+            TermDamage::Partial(iter) => {
+                let mut lines: Vec<usize> = iter.map(|d| d.line).collect();
+                lines.sort_unstable();
+                lines
+            }
+        }
+    }
+
+    /// A combining mark arriving in its own damage window (its base was
+    /// painted and the damage consumed) must damage the base's row: the
+    /// attach mutates a painted cell. This is the mechanism behind the
+    /// 0.5.20 "stale glyphs until you scroll" report.
+    #[test]
+    fn cluster_attach_records_damage() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(8, 3);
+        cw.input('e');
+        cw.reset_damage(); // renderer consumed the frame with the base
+
+        cw.input('\u{0301}');
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{0301}']);
+        assert_eq!(partial_damage_lines(&mut cw), [0]);
+    }
+
+    /// Same contract on the legacy wcwidth path (clustering opted out):
+    /// the zero-width attach predates mode 2027 and had the same gap.
+    #[test]
+    fn legacy_zero_width_attach_records_damage() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(8, 3);
+        cw.set_grapheme_clustering(false);
+        cw.input('e');
+        cw.reset_damage();
+
+        cw.input('\u{0301}');
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{0301}']);
+        assert_eq!(partial_damage_lines(&mut cw), [0]);
+    }
+
+    /// A VS16 that widens the cluster damages the row through both the
+    /// widen and the attach; the selector must also land in the extras.
+    #[test]
+    fn vs16_widen_records_damage() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(8, 3);
+        cw.input('\u{2764}'); // text-default heart, narrow
+        cw.reset_damage();
+
+        cw.input('\u{FE0F}');
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{FE0F}']);
+        assert!(partial_damage_lines(&mut cw).contains(&0));
+    }
+
+    /// Damage soundness: every row whose visible content changed since
+    /// the last reset must be covered by the damage the terminal
+    /// reports. Feeds randomized VT streams (clusters, wide chars,
+    /// erases, scrolls, alt screen) and diffs full row snapshots. Bare
+    /// continuation codepoints are separate chunks deliberately: an
+    /// attach that lands in its own damage window is exactly the
+    /// "stale glyphs until you scroll" class of bug.
+    #[test]
+    fn damage_covers_every_content_change() {
+        use crate::performer::handler::Processor;
+
+        const COLS: usize = 40;
+        const ROWS: usize = 12;
+
+        fn row_snapshot(
+            cw: &Crosswords<VoidListener>,
+        ) -> Vec<Vec<(char, u8, Vec<char>)>> {
+            (0..ROWS)
+                .map(|r| {
+                    (0..COLS)
+                        .map(|c| {
+                            let sq = cw.grid[Line(r as i32)][Column(c)];
+                            let zw = sq
+                                .extras_id()
+                                .and_then(|id| cw.grid.extras_table.get(id))
+                                .map(|e| e.zerowidth.clone())
+                                .unwrap_or_default();
+                            (sq.c(), sq.wide() as u8, zw)
+                        })
+                        .collect()
+                })
+                .collect()
+        }
+
+        fn damaged_rows(cw: &mut Crosswords<VoidListener>) -> Vec<bool> {
+            match cw.damage() {
+                TermDamage::Full => vec![true; ROWS],
+                TermDamage::Partial(iter) => {
+                    let mut out = vec![false; ROWS];
+                    for d in iter {
+                        if d.line < ROWS {
+                            out[d.line] = true;
+                        }
+                    }
+                    out
+                }
+            }
+        }
+
+        // Deterministic LCG so failures reproduce.
+        let mut state: u64 = 0x2027_5EED;
+        let mut rng = move |n: usize| {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            ((state >> 33) as usize) % n
+        };
+
+        let chunks: &[&[u8]] = &[
+            b"hello world 12345",
+            b"\x1b[H",
+            b"\x1b[3;7H5",
+            b"\r\n",
+            "你好世界".as_bytes(),
+            "🧑\u{200D}🌾".as_bytes(),
+            "e\u{301}".as_bytes(),
+            "❤\u{FE0F}".as_bytes(),
+            "👍🏻x".as_bytes(),
+            // Bare continuations: attach to whatever the previous step
+            // left at the cursor, inside a fresh damage window.
+            "\u{301}".as_bytes(),
+            "\u{200D}🌾".as_bytes(),
+            "\u{FE0F}".as_bytes(),
+            "🏻".as_bytes(),
+            b"\x1b[K",
+            b"\x1b[2K",
+            b"\x1b[J",
+            b"\x1b[2J",
+            b"\x1b[4X",
+            b"\x1b[3@",
+            b"\x1b[2P",
+            b"\x1b[2L",
+            b"\x1b[2M",
+            b"\x1b[3;9r\x1b[2S",
+            b"\x1b[2T\x1b[r",
+            b"\x1b[?1049h",
+            b"\x1b[?1049l",
+            b"\x1b[3b",
+            b"\x1b[10;20Hmid",
+        ];
+
+        let mut cw: Crosswords<VoidListener> = Crosswords::new(
+            CrosswordsSize::new(COLS, ROWS),
+            CursorShape::Block,
+            VoidListener,
+            WindowId::from(0),
+            0,
+            50,
+        );
+        let mut parser = Processor::default();
+        cw.reset_damage();
+        let mut prev = row_snapshot(&cw);
+
+        for step in 0..800 {
+            for _ in 0..(1 + rng(3)) {
+                let chunk = chunks[rng(chunks.len())];
+                parser.advance(&mut cw, chunk);
+            }
+            let damaged = damaged_rows(&mut cw);
+            cw.reset_damage();
+            let now = row_snapshot(&cw);
+            for r in 0..ROWS {
+                if now[r] != prev[r] {
+                    assert!(
+                        damaged[r],
+                        "step {step}: row {r} content changed without damage"
+                    );
+                }
+            }
+            prev = now;
+        }
+    }
+
+    fn scrolled_back_term() -> Crosswords<VoidListener> {
+        use crate::crosswords::grid::Scroll;
+        use crate::performer::handler::Handler;
+        // Small scrollback cap so the tests can sit at the boundary.
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(10, 6),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            40,
+        );
+        // Overfill scrollback so history sits at its cap.
+        for i in 0..300 {
+            cw.input((b'a' + (i % 26) as u8) as char);
+            cw.linefeed();
+            cw.carriage_return();
+        }
+        cw.scroll_display(Scroll::Top);
+        assert!(cw.display_offset() > 0);
+        cw.reset_damage();
+        cw
+    }
+
+    /// A sub-region scroll (IL/DL, scroll region not starting at the
+    /// top) adds nothing to history, so it must not move a viewport
+    /// pinned into scrollback. The drifted offset made
+    /// `compute_index` resolve visible lines to wrong storage slots:
+    /// arbitrary rows painted at arbitrary positions.
+    #[test]
+    fn sub_region_scroll_keeps_display_offset() {
+        use crate::performer::handler::Handler;
+        let mut cw = scrolled_back_term();
+        let offset = cw.display_offset();
+
+        // DL and IL at a mid-screen cursor line.
+        cw.grid.cursor.pos = Pos::new(Line(2), Column(0));
+        cw.delete_lines(2);
+        assert_eq!(cw.display_offset(), offset, "DL moved the offset");
+        cw.insert_blank_lines(2);
+        assert_eq!(cw.display_offset(), offset, "IL moved the offset");
+        assert!(
+            cw.display_offset() <= cw.history_size(),
+            "offset past available history"
+        );
+    }
+
+    /// A top-anchored region scroll grows history; a viewport pinned
+    /// in scrollback absorbs it (same absolute rows stay visible), so
+    /// only the region lines are damaged, not the whole screen.
+    #[test]
+    fn pinned_viewport_absorbs_history_scroll() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 6);
+        for _ in 0..20 {
+            cw.linefeed();
+        }
+        cw.scroll_display(crate::crosswords::grid::Scroll::Delta(5));
+        assert_eq!(cw.display_offset(), 5);
+        cw.reset_damage();
+
+        // Region 0..5 with a fixed bottom line: rows rotate into
+        // history and offset grows in lockstep while under the cap.
+        cw.set_scrolling_region(1, Some(5));
+        cw.grid.cursor.pos = Pos::new(Line(4), Column(0));
+        cw.linefeed();
+        assert_eq!(cw.display_offset(), 6, "pin did not absorb the scroll");
+        assert!(cw.display_offset() <= cw.history_size());
+        assert!(
+            !matches!(cw.peek_damage_event(), Some(TerminalDamage::Full)),
+            "absorbed scroll needs no full repaint"
+        );
+    }
+
+    /// At the history cap the pinned offset clamps and the whole
+    /// scrolled-back view slides one row: every visible row changes
+    /// while region damage only covers active-area lines. That frame
+    /// must be full damage or the view keeps stale rows.
+    #[test]
+    fn pinned_viewport_slide_at_cap_is_full_damage() {
+        use crate::performer::handler::Handler;
+        let mut cw = scrolled_back_term();
+        let cap = cw.history_size();
+        assert_eq!(cw.display_offset(), cap, "expected offset pinned at cap");
+
+        cw.set_scrolling_region(1, Some(5));
+        cw.grid.cursor.pos = Pos::new(Line(4), Column(0));
+        cw.linefeed();
+        assert_eq!(cw.history_size(), cap, "history can no longer grow");
+        assert_eq!(cw.display_offset(), cap, "offset must clamp at the cap");
+        assert!(
+            matches!(cw.peek_damage_event(), Some(TerminalDamage::Full)),
+            "slid view must be fully damaged"
+        );
+    }
+
+    /// Growing the viewport pulls rows from history; the offset must
+    /// track the rows actually pulled and never exceed what remains.
+    #[test]
+    fn resize_clamps_pinned_display_offset() {
+        let mut cw = scrolled_back_term();
+        cw.resize(CrosswordsSize::new(10, 9));
+        assert!(
+            cw.display_offset() <= cw.history_size(),
+            "grow_lines left offset {} past history {}",
+            cw.display_offset(),
+            cw.history_size()
+        );
+        cw.resize(CrosswordsSize::new(10, 4));
+        assert!(cw.display_offset() <= cw.history_size());
+        cw.resize(CrosswordsSize::new(7, 8));
+        assert!(cw.display_offset() <= cw.history_size());
+    }
+
+    /// Consuming a frame records the cursor position it carried:
+    /// without that, every subsequent peek reports CursorOnly and
+    /// each PTY drain fires a redraw event forever.
+    #[test]
+    fn reset_damage_quiesces_cursor_events() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 4);
+        cw.reset_damage();
+        assert!(cw.peek_damage_event().is_none());
+
+        cw.input('x');
+        assert!(cw.peek_damage_event().is_some());
+        cw.reset_damage();
+        assert!(
+            cw.peek_damage_event().is_none(),
+            "consumed frame keeps re-reporting the cursor"
+        );
     }
 
     /// Mode 2027: a zero-width codepoint with no base to join (orphan

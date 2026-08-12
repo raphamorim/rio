@@ -230,10 +230,60 @@ impl Navigation {
     pub fn island_visible(&self, num_tabs: usize) -> bool {
         self.is_enabled() && !(self.hide_if_single && num_tabs == 1)
     }
+
+    /// Whether the top band is reserved as custom window chrome this
+    /// frame, painted island or not. On macOS the full-size content
+    /// view keeps the band whenever Tab navigation is enabled, even
+    /// with `hide-if-single` hiding the strip; other platforms render
+    /// the terminal from the top when the island is hidden. Must agree
+    /// with `padding_top_from_config`, which reserves the band's
+    /// height under the same condition.
+    #[inline]
+    pub fn chrome_band_reserved(&self, num_tabs: usize) -> bool {
+        if cfg!(target_os = "macos") {
+            self.is_enabled()
+        } else {
+            self.island_visible(num_tabs)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn chrome_band_follows_padding_contract() {
+        use crate::config::navigation::{Navigation, NavigationMode};
+
+        let mut nav = Navigation {
+            mode: NavigationMode::Tab,
+            hide_if_single: true,
+            ..Navigation::default()
+        };
+
+        // Visible island: band reserved everywhere.
+        assert!(nav.island_visible(2));
+        assert!(nav.chrome_band_reserved(2));
+
+        // Hidden island (single tab): macOS keeps the band as chrome,
+        // other platforms hand it to the terminal, matching
+        // padding_top_from_config.
+        assert!(!nav.island_visible(1));
+        assert_eq!(nav.chrome_band_reserved(1), cfg!(target_os = "macos"));
+
+        // Non-Tab modes never reserve the band.
+        nav.mode = NavigationMode::Plain;
+        assert!(!nav.island_visible(1));
+        assert!(!nav.chrome_band_reserved(1));
+        assert!(!nav.chrome_band_reserved(2));
+
+        #[cfg(target_os = "macos")]
+        {
+            nav.mode = NavigationMode::NativeTab;
+            assert!(!nav.chrome_band_reserved(1));
+            assert!(!nav.chrome_band_reserved(2));
+        }
+    }
+
     use crate::config::colors::hex_to_color_arr;
     use crate::config::navigation::{Navigation, NavigationMode};
     use serde::Deserialize;

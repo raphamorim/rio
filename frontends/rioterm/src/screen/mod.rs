@@ -2822,9 +2822,11 @@ impl Screen<'_> {
 
         let mouse_x_unscaled = mouse_x as f32 / scale_factor;
 
-        // Island isn't painted (hide_if_single + single tab on macOS).
-        // Nothing to click on, so let the caller route the event to the
-        // grid for selection / double-click maximize at the OS title bar.
+        // Island isn't painted (hide_if_single + single tab). On macOS the
+        // terminal still starts below this band, so it remains custom window
+        // chrome and must keep the same drag/double-click behavior as a
+        // visible island. Other platforms render the terminal from the top
+        // when the island is hidden, so their clicks keep falling through.
         if !island_visible {
             // …unless a ×-close just hid the strip (2 tabs → 1 with
             // hide-if-single): the tail press of a double-click on the
@@ -2833,6 +2835,19 @@ impl Screen<'_> {
             if self.is_close_press_tail(mouse_x_unscaled) {
                 return true;
             }
+
+            if self.renderer.navigation.chrome_band_reserved(num_tabs) {
+                // Same contract as the visible island's chrome regions:
+                // left starts a drag / validates a double-click, right
+                // is consumed without an action. Letting a right-click
+                // fall through would act on the first terminal row
+                // while the pointer is over window chrome.
+                if !is_right_click {
+                    self.on_chrome_press(window, chrome_press);
+                }
+                return true;
+            }
+
             return false;
         }
 

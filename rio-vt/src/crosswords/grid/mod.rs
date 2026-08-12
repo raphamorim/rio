@@ -382,14 +382,19 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
             return;
         }
 
-        // Update display offset when not pinned to active area.
-        if self.display_offset != 0 {
-            self.display_offset =
-                min(self.display_offset + positions, self.max_scroll_limit);
-        }
-
         // Only rotate the entire history if the active region starts at the top.
         if region.start == 0 {
+            // A viewport scrolled into history stays pinned to the same
+            // absolute rows by growing the offset alongside history.
+            // This belongs to this branch only: a sub-region scroll
+            // (region.start != 0, e.g. IL/DL) adds nothing to history,
+            // and bumping the offset for it drifts the offset past the
+            // rows that exist; `compute_index` then resolves visible
+            // lines to the wrong storage slots.
+            if self.display_offset != 0 {
+                self.display_offset =
+                    min(self.display_offset + positions, self.max_scroll_limit);
+            }
             // Create scrollback for the new lines. Whatever the cap
             // refuses to grow is evicted off the ring instead.
             let grown = min(positions, self.max_scroll_limit - self.history_size());
