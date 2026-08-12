@@ -1564,6 +1564,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
         self.state.apc_state.buffer.push(byte);
     }
 
+    fn apc_put_slice(&mut self, bytes: &[u8]) {
+        self.state.apc_state.buffer.extend_from_slice(bytes);
+    }
+
     /// Called when the APC sequence ends. Processes the accumulated APC data.
     fn apc_end(&mut self) {
         debug!(

@@ -99,6 +99,26 @@ impl OscBuffer {
         self.overflow.push(byte);
     }
 
+    /// Bulk append, equivalent to pushing every byte: fills the fixed
+    /// buffer when the slice fits, otherwise spills to the heap once
+    /// and appends there (same final contents as per-byte pushes; the
+    /// stale `fixed_len` is never read while `overflow` is non-empty).
+    #[inline]
+    fn extend_from_slice(&mut self, bytes: &[u8]) {
+        if self.overflow.is_empty() {
+            let fits = OSC_FIXED_LEN - self.fixed_len;
+            if bytes.len() <= fits {
+                self.fixed[self.fixed_len..self.fixed_len + bytes.len()]
+                    .copy_from_slice(bytes);
+                self.fixed_len += bytes.len();
+                return;
+            }
+            self.overflow
+                .extend_from_slice(&self.fixed[..self.fixed_len]);
+        }
+        self.overflow.extend_from_slice(bytes);
+    }
+
     #[inline]
     fn slice(&self, start: usize, end: usize) -> &[u8] {
         if self.overflow.is_empty() {
@@ -150,6 +170,21 @@ impl Parser {
                 State::Ground => i += self.advance_ground(performer, &bytes[i..]),
                 State::CsiParam => {
                     i += self.advance_csi_param_run(performer, &bytes[i..])
+                }
+                State::OscString => {
+                    i += self.advance_osc_string_run(performer, &bytes[i..])
+                }
+                State::ApcString => {
+                    i += self.advance_apc_string_run(performer, &bytes[i..])
+                }
+                State::SosString => {
+                    i += self.advance_sos_string_run(performer, &bytes[i..])
+                }
+                State::PmString => {
+                    i += self.advance_pm_string_run(performer, &bytes[i..])
+                }
+                State::DcsPassthrough => {
+                    i += self.advance_dcs_passthrough_run(performer, &bytes[i..])
                 }
                 _ => {
                     // Inlining it results in worse codegen.
@@ -461,6 +496,98 @@ impl Parser {
     }
 
     #[inline(always)]
+    /// Consume a run of bytes while in `OscString`: the payload span up
+    /// to the next control byte or param separator is appended in one
+    /// `extend_from_slice` instead of paying two state dispatches and a
+    /// `Vec::push` per byte (OSC 52 payloads are megabytes of base64).
+    /// The boundary byte goes through the per-byte state machine, which
+    /// stays the single source of truth for semantics.
+    fn advance_osc_string_run<P: Perform>(
+        &mut self,
+        performer: &mut P,
+        bytes: &[u8],
+    ) -> usize {
+        let n = find_osc_boundary(bytes);
+        if n != 0 {
+            self.osc_raw.extend_from_slice(&bytes[..n]);
+        }
+        if n == bytes.len() {
+            return n;
+        }
+        self.advance_osc_string(performer, bytes[n]);
+        n + 1
+    }
+
+    /// Same shape for `ApcString` (kitty graphics payloads).
+    fn advance_apc_string_run<P: Perform>(
+        &mut self,
+        performer: &mut P,
+        bytes: &[u8],
+    ) -> usize {
+        let n = find_string_c0(bytes);
+        if n != 0 {
+            performer.apc_put_slice(&bytes[..n]);
+        }
+        if n == bytes.len() {
+            return n;
+        }
+        self.advance_apc_string(performer, bytes[n]);
+        n + 1
+    }
+
+    /// Same shape for `SosString`.
+    fn advance_sos_string_run<P: Perform>(
+        &mut self,
+        performer: &mut P,
+        bytes: &[u8],
+    ) -> usize {
+        let n = find_string_c0(bytes);
+        if n != 0 {
+            performer.sos_put_slice(&bytes[..n]);
+        }
+        if n == bytes.len() {
+            return n;
+        }
+        self.advance_sos_string(performer, bytes[n]);
+        n + 1
+    }
+
+    /// Same shape for `PmString`.
+    fn advance_pm_string_run<P: Perform>(
+        &mut self,
+        performer: &mut P,
+        bytes: &[u8],
+    ) -> usize {
+        let n = find_string_c0(bytes);
+        if n != 0 {
+            performer.pm_put_slice(&bytes[..n]);
+        }
+        if n == bytes.len() {
+            return n;
+        }
+        self.advance_pm_string(performer, bytes[n]);
+        n + 1
+    }
+
+    /// Same shape for `DcsPassthrough` (sixel payloads). The put class
+    /// here includes most C0 bytes and stops at 0x7F, so it has its own
+    /// boundary scan.
+    fn advance_dcs_passthrough_run<P: Perform>(
+        &mut self,
+        performer: &mut P,
+        bytes: &[u8],
+    ) -> usize {
+        let n = find_dcs_boundary(bytes);
+        if n != 0 {
+            performer.put_slice(&bytes[..n]);
+        }
+        if n == bytes.len() {
+            return n;
+        }
+        self.advance_dcs_passthrough(performer, bytes[n]);
+        n + 1
+    }
+
     fn advance_osc_string<P: Perform>(&mut self, performer: &mut P, byte: u8) {
         match byte {
             0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1C..=0x1F => (),
@@ -1033,6 +1160,101 @@ fn find_non_printable(bytes: &[u8]) -> usize {
     len
 }
 
+/// First index whose byte ends an OSC payload run: any C0 byte
+/// (terminator, abort, or ignored control) or the `;` param separator.
+/// Same SWAR shape as `find_non_printable`: 8 bytes per iteration,
+/// first-position exact (a borrow can only misflag a byte that sits
+/// after an already-flagged one).
+fn find_osc_boundary(bytes: &[u8]) -> usize {
+    const LO: u64 = 0x0101_0101_0101_0101;
+    const HI: u64 = 0x8080_8080_8080_8080;
+
+    let mut i = 0;
+    let len = bytes.len();
+    while i + 8 <= len {
+        let w = u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap());
+        let lt20 = w.wrapping_sub(LO * 0x20) & !w & HI;
+        let x = w ^ (LO * 0x3B);
+        let eq3b = x.wrapping_sub(LO) & !x & HI;
+        let stop = lt20 | eq3b;
+        if stop != 0 {
+            return i + (stop.trailing_zeros() as usize) / 8;
+        }
+        i += 8;
+    }
+    while i < len {
+        if bytes[i] < 0x20 || bytes[i] == 0x3B {
+            return i;
+        }
+        i += 1;
+    }
+    len
+}
+
+/// First index whose byte ends an APC/SOS/PM payload run: any C0 byte.
+/// Those states put `0x20..=0xFF` and treat every C0 as terminator,
+/// abort, or ignored.
+fn find_string_c0(bytes: &[u8]) -> usize {
+    const LO: u64 = 0x0101_0101_0101_0101;
+    const HI: u64 = 0x8080_8080_8080_8080;
+
+    let mut i = 0;
+    let len = bytes.len();
+    while i + 8 <= len {
+        let w = u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap());
+        let lt20 = w.wrapping_sub(LO * 0x20) & !w & HI;
+        if lt20 != 0 {
+            return i + (lt20.trailing_zeros() as usize) / 8;
+        }
+        i += 8;
+    }
+    while i < len {
+        if bytes[i] < 0x20 {
+            return i;
+        }
+        i += 1;
+    }
+    len
+}
+
+/// First index whose byte ends a DCS passthrough run. The put class is
+/// `0x00..=0x17 | 0x19 | 0x1C..=0x7E`; everything else (CAN, SUB, ESC,
+/// DEL, and all bytes above 0x7E) is a terminator or ignored and goes
+/// through the per-byte state machine.
+fn find_dcs_boundary(bytes: &[u8]) -> usize {
+    const LO: u64 = 0x0101_0101_0101_0101;
+    const HI: u64 = 0x8080_8080_8080_8080;
+
+    #[inline(always)]
+    fn eq(w: u64, b: u8) -> u64 {
+        const LO: u64 = 0x0101_0101_0101_0101;
+        const HI: u64 = 0x8080_8080_8080_8080;
+        let x = w ^ (LO * b as u64);
+        x.wrapping_sub(LO) & !x & HI
+    }
+
+    let mut i = 0;
+    let len = bytes.len();
+    while i + 8 <= len {
+        let w = u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap());
+        let ge80 = w & HI;
+        let x = w ^ (LO * 0x7F);
+        let eq7f = x.wrapping_sub(LO) & !x & HI;
+        let stop = ge80 | eq7f | eq(w, 0x18) | eq(w, 0x1A) | eq(w, 0x1B);
+        if stop != 0 {
+            return i + (stop.trailing_zeros() as usize) / 8;
+        }
+        i += 8;
+    }
+    while i < len {
+        if matches!(bytes[i], 0x18 | 0x1A | 0x1B | 0x7F) || bytes[i] >= 0x80 {
+            return i;
+        }
+        i += 1;
+    }
+    len
+}
+
 /// Byte cap per decode chunk in `ground_dispatch`, bounding `decode_buf`
 /// growth. Chunks never split a UTF-8 sequence.
 const DECODE_CHUNK: usize = 4096;
@@ -1221,6 +1443,16 @@ pub trait Perform {
     /// `hook`. C0 controls will also be passed to the handler.
     fn put(&mut self, _byte: u8) {}
 
+    /// Bulk form of [`put`](Perform::put): a DCS passthrough span with
+    /// no terminator or ignored bytes. The default loops over the
+    /// per-byte hook; sinks whose per-byte handling carries cross-byte
+    /// state (the sixel error path) should keep it.
+    fn put_slice(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.put(byte);
+        }
+    }
+
     /// Called when a device control string is terminated.
     ///
     /// The previously selected handler should be notified that the DCS has
@@ -1258,6 +1490,14 @@ pub trait Perform {
     /// sequence.
     fn sos_put(&mut self, _byte: u8) {}
 
+    /// Bulk form of [`sos_put`](Perform::sos_put): a payload span with
+    /// no control bytes. The default loops over the per-byte hook.
+    fn sos_put_slice(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.sos_put(byte);
+        }
+    }
+
     /// Invoked when the end of an SOS (Start of String) sequence is
     /// encountered.
     fn sos_end(&mut self) {}
@@ -1270,6 +1510,13 @@ pub trait Perform {
     /// sequence.
     fn pm_put(&mut self, _byte: u8) {}
 
+    /// Bulk form of [`pm_put`](Perform::pm_put).
+    fn pm_put_slice(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.pm_put(byte);
+        }
+    }
+
     /// Invoked when the end of a PM (Privacy Message) sequence is encountered.
     fn pm_end(&mut self) {}
 
@@ -1280,6 +1527,15 @@ pub trait Perform {
     /// Invoked for every valid byte (0x20-0xFF) in an APC (Application Program
     /// Command) sequence.
     fn apc_put(&mut self, _byte: u8) {}
+
+    /// Bulk form of [`apc_put`](Perform::apc_put): a payload span with
+    /// no control bytes. Kitty graphics stream megabytes through APC,
+    /// so implementors should append the whole slice.
+    fn apc_put_slice(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.apc_put(byte);
+        }
+    }
     /// Invoked when the end of an APC (Application Program Command) sequence is
     /// encountered.
     fn apc_end(&mut self) {}
@@ -1308,6 +1564,81 @@ mod tests {
         Sos,
         Pm,
         Apc,
+    }
+
+    /// The batched string-state runs must be observationally identical
+    /// to the per-byte state machine for every chunking of the input:
+    /// the same stream is fed whole, byte-at-a-time, and split at
+    /// random boundaries, and all three must dispatch the same events.
+    /// (Same discipline as ghostty's "simd matches scalar" test.)
+    #[test]
+    fn string_state_runs_match_per_byte() {
+        let big = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=".repeat(300);
+        let mut streams: Vec<Vec<u8>> = vec![
+            // OSC 52 clipboard, BEL and ST terminated.
+            format!("\x1b]52;c;{big}\x07next").into_bytes(),
+            format!("\x1b]52;c;{big}\x1b\\next").into_bytes(),
+            // OSC with many params and an abort.
+            b"\x1b]4;1;rgb:aa/bb/cc;2;rgb:dd/ee/ff\x07".to_vec(),
+            b"\x1b]0;title\x18after-can".to_vec(),
+            // Kitty APC: ST, BEL, and CAN termination (CAN puts itself).
+            format!("\x1b_Gf=100,a=T;{big}\x1b\\tail").into_bytes(),
+            format!("\x1b_G{big}\x07").into_bytes(),
+            b"\x1b_Gpayload\x18rest".to_vec(),
+            // DCS sixel: C0s inside payload are put, DEL and >0x7E are
+            // ignored, ST via ESC-backslash and via 8-bit 0x9C.
+            b"\x1bP0;1q#0;2;0;0;0#1~~@@\x09data\x7fmore\x1b\\after".to_vec(),
+            b"\x1bPq~~\xc3\xa9~~\x9cafter".to_vec(),
+            b"\x1bPqdata\x1arest".to_vec(),
+            // SOS and PM payloads.
+            b"\x1bXsos payload 123\x1b\\g".to_vec(),
+            b"\x1b^pm payload 456\x07g".to_vec(),
+            // Interleaved with ground text and CSI.
+            format!("plain\x1b[31m\x1b]52;c;{big}\x07\x1b[0mtext").into_bytes(),
+        ];
+        // One stream that exercises every boundary byte adjacent to
+        // payload bytes in every string state.
+        let mut soup = Vec::new();
+        for chunk in &streams {
+            soup.extend_from_slice(chunk);
+        }
+        streams.push(soup);
+
+        let mut lcg: u64 = 0x5EED_CAFE;
+        let mut rng = move |n: usize| {
+            lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1);
+            ((lcg >> 33) as usize) % n
+        };
+
+        for stream in &streams {
+            let whole = {
+                let mut d = Dispatcher::default();
+                let mut p = Parser::new();
+                p.advance(&mut d, stream);
+                d.dispatched
+            };
+            let bytewise = {
+                let mut d = Dispatcher::default();
+                let mut p = Parser::new();
+                for &b in stream {
+                    p.advance(&mut d, &[b]);
+                }
+                d.dispatched
+            };
+            assert_eq!(whole, bytewise, "whole vs per-byte");
+
+            for _round in 0..8 {
+                let mut d = Dispatcher::default();
+                let mut p = Parser::new();
+                let mut i = 0;
+                while i < stream.len() {
+                    let n = 1 + rng(stream.len() - i);
+                    p.advance(&mut d, &stream[i..i + n]);
+                    i += n;
+                }
+                assert_eq!(d.dispatched, whole, "random splits vs whole");
+            }
+        }
     }
 
     #[derive(Clone, Debug, PartialEq, Eq)]
