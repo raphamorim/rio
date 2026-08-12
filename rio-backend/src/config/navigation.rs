@@ -271,10 +271,17 @@ mod tests {
         assert_eq!(nav.chrome_band_reserved(1), cfg!(target_os = "macos"));
 
         // Non-Tab modes never reserve the band.
-        nav.mode = NavigationMode::NativeTab;
+        nav.mode = NavigationMode::Plain;
         assert!(!nav.island_visible(1));
         assert!(!nav.chrome_band_reserved(1));
         assert!(!nav.chrome_band_reserved(2));
+
+        #[cfg(target_os = "macos")]
+        {
+            nav.mode = NavigationMode::NativeTab;
+            assert!(!nav.chrome_band_reserved(1));
+            assert!(!nav.chrome_band_reserved(2));
+        }
     }
 
     use crate::config::colors::hex_to_color_arr;
