@@ -1380,9 +1380,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // A left click on a highlighted hint bypasses mouse
                         // reporting the same way shift does: the hint's mods
                         // are held, so the user is following the link, not
-                        // clicking inside the application.
+                        // clicking inside the application. The decision is
+                        // latched for the release handler: re-evaluating
+                        // there would split a press from its release when
+                        // the modifier changes mid-click.
                         let hint_click = button == MouseButton::Left
                             && route.window.screen.has_highlighted_hint();
+                        if button == MouseButton::Left {
+                            route.window.screen.mouse.hint_click_latched = hint_click;
+                        }
 
                         if route.window.screen.select_current_based_on_mouse() {
                             route.request_redraw();
@@ -1470,12 +1476,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        // A left click that follows a highlighted hint bypasses
-                        // mouse reporting, matching the press handler: the
-                        // hint fires below instead of being swallowed by the
-                        // application.
+                        // Consume the press handler's latched decision so
+                        // press and release always take the same path, even
+                        // when the hint modifier changed mid-click. The
+                        // application never sees one without the other.
                         let hint_click = button == MouseButton::Left
-                            && route.window.screen.has_highlighted_hint();
+                            && std::mem::take(
+                                &mut route.window.screen.mouse.hint_click_latched,
+                            );
 
                         if !route.window.screen.modifiers.state().shift_key()
                             && !hint_click
