@@ -466,7 +466,7 @@ mod pipeline_tests {
             "\x1b[11;1H\n\x1b[11;1Hrolou\x1b[K".as_bytes().to_vec(),
         ];
 
-        for seed in 0..24u64 {
+        for seed in 0..200u64 {
             let mut state = 0x9E37_79B9_7F4A_7C15u64.wrapping_add(seed);
             let mut rng = move |n: usize| {
                 state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
