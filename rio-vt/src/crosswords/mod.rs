@@ -1588,6 +1588,13 @@ impl<U: EventListener> Crosswords<U> {
             cell.set_extras_id(Some(id));
             cell.insert_cell_flag(CellFlags::GRAPHEME);
             self.grid[row].has_extras = true;
+            // The attach mutated an already-painted cell and the input
+            // paths return without touching the write-path damage
+            // bookkeeping: record it here or the renderer never
+            // repaints the row (stale glyphs until a full redraw).
+            // Ghostty marks dirty at both of its attach sites the same
+            // way (Terminal.zig:1090, :1174).
+            self.damage.damage_line(row.0 as usize);
         }
         // id == 0: slot space exhausted. Keep the cell's existing
         // extras (hyperlink, earlier marks) rather than erasing
@@ -8232,6 +8239,130 @@ mod tests {
     /// computed a boundary and wcwidth-attaching would contradict it
     /// (ghostty Terminal.zig, print width==0 branch).
     #[test]
+    /// Damage soundness: every row whose visible content changed since
+    /// the last reset must be covered by the damage the terminal
+    /// reports. Feeds randomized VT streams (clusters, wide chars,
+    /// erases, scrolls, alt screen) and diffs full row snapshots. Bare
+    /// continuation codepoints are separate chunks deliberately: an
+    /// attach that lands in its own damage window is exactly the
+    /// "stale glyphs until you scroll" class of bug. Ghostty guards
+    /// the same invariant by calling cursorMarkDirty at every
+    /// mutation site, including both attach paths (Terminal.zig:1090,
+    /// :1174).
+    #[test]
+    fn damage_covers_every_content_change() {
+        use crate::performer::handler::Processor;
+
+        const COLS: usize = 40;
+        const ROWS: usize = 12;
+
+        fn row_snapshot(
+            cw: &Crosswords<VoidListener>,
+        ) -> Vec<Vec<(char, u8, Vec<char>)>> {
+            (0..ROWS)
+                .map(|r| {
+                    (0..COLS)
+                        .map(|c| {
+                            let sq = cw.grid[Line(r as i32)][Column(c)];
+                            let zw = sq
+                                .extras_id()
+                                .and_then(|id| cw.grid.extras_table.get(id))
+                                .map(|e| e.zerowidth.clone())
+                                .unwrap_or_default();
+                            (sq.c(), sq.wide() as u8, zw)
+                        })
+                        .collect()
+                })
+                .collect()
+        }
+
+        fn damaged_rows(cw: &mut Crosswords<VoidListener>) -> Vec<bool> {
+            match cw.damage() {
+                TermDamage::Full => vec![true; ROWS],
+                TermDamage::Partial(iter) => {
+                    let mut out = vec![false; ROWS];
+                    for d in iter {
+                        if d.line < ROWS {
+                            out[d.line] = true;
+                        }
+                    }
+                    out
+                }
+            }
+        }
+
+        // Deterministic LCG so failures reproduce.
+        let mut state: u64 = 0x2027_5EED;
+        let mut rng = move |n: usize| {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            ((state >> 33) as usize) % n
+        };
+
+        let chunks: &[&[u8]] = &[
+            b"hello world 12345",
+            b"\x1b[H",
+            b"\x1b[3;7H5",
+            b"\r\n",
+            "你好世界".as_bytes(),
+            "🧑\u{200D}🌾".as_bytes(),
+            "e\u{301}".as_bytes(),
+            "❤\u{FE0F}".as_bytes(),
+            "👍🏻x".as_bytes(),
+            // Bare continuations: attach to whatever the previous step
+            // left at the cursor, inside a fresh damage window.
+            "\u{301}".as_bytes(),
+            "\u{200D}🌾".as_bytes(),
+            "\u{FE0F}".as_bytes(),
+            "🏻".as_bytes(),
+            b"\x1b[K",
+            b"\x1b[2K",
+            b"\x1b[J",
+            b"\x1b[2J",
+            b"\x1b[4X",
+            b"\x1b[3@",
+            b"\x1b[2P",
+            b"\x1b[2L",
+            b"\x1b[2M",
+            b"\x1b[3;9r\x1b[2S",
+            b"\x1b[2T\x1b[r",
+            b"\x1b[?1049h",
+            b"\x1b[?1049l",
+            b"\x1b[3b",
+            b"\x1b[10;20Hmid",
+        ];
+
+        let mut cw: Crosswords<VoidListener> = Crosswords::new(
+            CrosswordsSize::new(COLS, ROWS),
+            CursorShape::Block,
+            VoidListener,
+            WindowId::from(0),
+            0,
+            50,
+        );
+        let mut parser = Processor::default();
+        cw.reset_damage();
+        let mut prev = row_snapshot(&cw);
+
+        for step in 0..800 {
+            for _ in 0..(1 + rng(3)) {
+                let chunk = chunks[rng(chunks.len())];
+                parser.advance(&mut cw, chunk);
+            }
+            let damaged = damaged_rows(&mut cw);
+            cw.reset_damage();
+            let now = row_snapshot(&cw);
+            for r in 0..ROWS {
+                if now[r] != prev[r] {
+                    assert!(
+                        damaged[r],
+                        "step {step}: row {r} content changed without damage"
+                    );
+                }
+            }
+            prev = now;
+        }
+    }
+
     fn mode_2027_orphan_zero_width_dropped() {
         use crate::ansi::mode::PrivateMode;
         use crate::performer::handler::Handler;
