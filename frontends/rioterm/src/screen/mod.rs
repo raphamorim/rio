@@ -2851,9 +2851,15 @@ impl Screen<'_> {
                 return true;
             }
 
-            #[cfg(target_os = "macos")]
-            if !is_right_click {
-                self.on_chrome_press(window, chrome_press);
+            if self.renderer.navigation.chrome_band_reserved(num_tabs) {
+                // Same contract as the visible island's chrome regions:
+                // left starts a drag / validates a double-click, right
+                // is consumed without an action. Letting a right-click
+                // fall through would act on the first terminal row
+                // while the pointer is over window chrome.
+                if !is_right_click {
+                    self.on_chrome_press(window, chrome_press);
+                }
                 return true;
             }
 

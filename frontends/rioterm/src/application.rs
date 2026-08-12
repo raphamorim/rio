@@ -1630,9 +1630,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
                 let num_tabs = route.window.screen.ctx().len();
                 let nav = &route.window.screen.renderer.navigation;
-                let custom_chrome_visible = nav.island_visible(num_tabs)
-                    || (cfg!(target_os = "macos") && nav.is_enabled());
-                if custom_chrome_visible && y <= island_height_px {
+                if nav.chrome_band_reserved(num_tabs) && y <= island_height_px {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
                 }
