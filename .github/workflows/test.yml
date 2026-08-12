@@ -103,4 +103,8 @@ jobs:
 
     - name: Build (smoke, debug)
       shell: msys2 {0}
-      run: cargo build --features wgpu
+      # Scoped to the app binary: a debug build of librio's cdylib
+      # exceeds the PE export-ordinal limit on windows-gnu (the release
+      # flavor matrix in release.yml still builds the whole workspace,
+      # where LTO keeps exports under the cap).
+      run: cargo build -p rioterm --features wgpu
